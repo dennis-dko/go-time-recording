@@ -1,15 +1,17 @@
 package main
 
 import (
+	v1 "github.com/dennis-dko/go-time-recording/internal/interface/api/v1"
 	"gofr.dev/pkg/gofr"
 )
 
 func main() {
 	app := gofr.New()
 
-	app.GET("/hello", func(ctx *gofr.Context) (interface{}, error) {
-		return "Hello World!", nil
-	})
+	err := v1.RegisterRoutes(app)
+	if err != nil {
+		panic("FAILED")
+	}
 
 	app.Run()
 }

@@ -3,20 +3,20 @@ package v1
 import (
 	"gofr.dev/pkg/gofr"
 
-	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/dto"
+	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
 )
 
 // RegisterRoutes register all v1-specified routes
 func RegisterRoutes(app *gofr.App) error {
-	err := app.AddRESTHandlers(&dto.User{})
+	err := app.AddRESTHandlers(&rest.User{})
 	if err != nil {
 		return err
 	}
-	err = app.AddRESTHandlers(&dto.Project{})
+	err = app.AddRESTHandlers(&rest.Project{})
 	if err != nil {
 		return err
 	}
-	err = app.AddRESTHandlers(&dto.Timesheet{})
+	err = app.AddRESTHandlers(&rest.Timesheet{})
 	if err != nil {
 		return err
 	}
