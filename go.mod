@@ -2,7 +2,10 @@ module github.com/dennis-dko/go-time-recording
 
 go 1.22.4
 
-require gofr.dev v1.17.0
+require (
+	github.com/magefile/mage v1.15.0
+	gofr.dev v1.17.0
+)
 
 require (
 	cloud.google.com/go v0.115.0 // indirect

@@ -1,6 +1,6 @@
 FROM golang:1.24
 
-ENV APP_ENV=dev
+ENV APP_ENV=local
 RUN mkdir /src/
 WORKDIR /src/
 COPY . .
