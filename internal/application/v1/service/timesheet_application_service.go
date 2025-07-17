@@ -5,10 +5,20 @@ import (
 	"errors"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/query"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 )
+
+// TimesheetService service interface
+type TimesheetService interface {
+	CreateTimesheet(ctx context.Context, cmd command.CreateTimesheetCommand) (*command.CreateTimesheetCommandResult, error)
+	GetTimesheet(ctx context.Context, q query.GetTimesheetQuery) (*query.GetTimesheetQueryResult, error)
+	ListTimesheets(ctx context.Context, q query.ListTimesheetsQuery) (*query.ListTimesheetsQueryResult, error)
+	UpdateTimesheet(ctx context.Context, cmd command.UpdateTimesheetCommand) (*command.UpdateTimesheetCommandResult, error)
+	DeleteTimesheet(ctx context.Context, cmd command.DeleteTimesheetCommand) error
+}
 
 // TimesheetApplicationService application service for time entries
 type TimesheetApplicationService struct {
@@ -31,7 +41,7 @@ func NewTimesheetApplicationService(
 }
 
 // CreateTimesheet processes the command to create a time entry
-func (s *TimesheetApplicationService) CreateTimesheet(ctx context.Context, cmd command.CreateTimesheetCommand) (*model.Timesheet, error) {
+func (s *TimesheetApplicationService) CreateTimesheet(ctx context.Context, cmd command.CreateTimesheetCommand) (*command.CreateTimesheetCommandResult, error) {
 	// Check if user and project exists
 	_, err := s.userRepository.GetByID(ctx, cmd.UserID)
 	if err != nil {
@@ -42,8 +52,8 @@ func (s *TimesheetApplicationService) CreateTimesheet(ctx context.Context, cmd c
 		return nil, errors.New("project not found")
 	}
 
-	// Create new domain timesheet object
-	timesheet := &model.Timesheet{
+	// Create timesheet model
+	timesheetModel := &model.Timesheet{
 		UserID:        cmd.UserID,
 		ProjectID:     cmd.ProjectID,
 		Date:          cmd.Date,
@@ -52,30 +62,40 @@ func (s *TimesheetApplicationService) CreateTimesheet(ctx context.Context, cmd c
 		Status:        cmd.Status,
 	}
 
-	createdTimesheet, err := s.timesheetRepository.Save(ctx, timesheet)
+	createdTimesheet, err := s.timesheetRepository.Save(ctx, timesheetModel)
 	if err != nil {
 		return nil, err
 	}
 
-	return createdTimesheet, nil
+	// Convert timesheet model to response
+	appResponse := &command.CreateTimesheetCommandResult{
+		Result: common.NewTimesheetResultFromModel(createdTimesheet)[0],
+	}
+
+	return appResponse, nil
 }
 
 // GetTimesheet processes the query to get a time entry
-func (s *TimesheetApplicationService) GetTimesheet(ctx context.Context, q query.GetTimesheetQuery) (*model.Timesheet, error) {
+func (s *TimesheetApplicationService) GetTimesheet(ctx context.Context, q query.GetTimesheetQuery) (*query.GetTimesheetQueryResult, error) {
 	if q.ID == 0 {
 		return nil, errors.New("timesheet ID cannot be empty")
 	}
 
-	timesheet, err := s.timesheetRepository.GetByID(ctx, q.ID)
+	getTimesheet, err := s.timesheetRepository.GetByID(ctx, q.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	return timesheet, nil
+	// Convert timesheet model to response
+	appResponse := &query.GetTimesheetQueryResult{
+		Result: common.NewTimesheetResultFromModel(getTimesheet)[0],
+	}
+
+	return appResponse, nil
 }
 
 // ListTimesheets processes the query to get all time entries
-func (s *TimesheetApplicationService) ListTimesheets(ctx context.Context, q query.ListTimesheetsQuery) ([]*model.Timesheet, error) {
+func (s *TimesheetApplicationService) ListTimesheets(ctx context.Context, q query.ListTimesheetsQuery) (*query.ListTimesheetsQueryResult, error) {
 	// Get all time entries by filter
 	filter := repository.TimesheetFilter{
 		UserID:    q.UserID,
@@ -84,15 +104,21 @@ func (s *TimesheetApplicationService) ListTimesheets(ctx context.Context, q quer
 		StartDate: q.StartDate,
 		EndDate:   q.EndDate,
 	}
-	timesheets, err := s.timesheetRepository.GetByFilter(ctx, filter)
+	allTimesheets, err := s.timesheetRepository.GetByFilter(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
-	return timesheets, nil
+
+	// Convert timesheet model to response
+	appResponse := &query.ListTimesheetsQueryResult{
+		Result: common.NewTimesheetResultFromModel(allTimesheets...),
+	}
+
+	return appResponse, nil
 }
 
 // UpdateTimesheet processes the command to update a time entry
-func (s *TimesheetApplicationService) UpdateTimesheet(ctx context.Context, cmd command.UpdateTimesheetCommand) (*model.Timesheet, error) {
+func (s *TimesheetApplicationService) UpdateTimesheet(ctx context.Context, cmd command.UpdateTimesheetCommand) (*command.UpdateTimesheetCommandResult, error) {
 	if cmd.ID == 0 {
 		return nil, errors.New("timesheet ID cannot be empty for update")
 	}
@@ -127,6 +153,10 @@ func (s *TimesheetApplicationService) UpdateTimesheet(ctx context.Context, cmd c
 		existingTimesheet.Description = cmd.Description
 	}
 	if cmd.Status != nil {
+		// Check that the new status is not 'open' again if it was set to 'approved' before
+		if existingTimesheet.Status == model.TimesheetStatusApproved && *cmd.Status == model.TimesheetStatusOpen {
+			return nil, errors.New("cannot revert approved timesheet to open status")
+		}
 		existingTimesheet.Status = *cmd.Status
 	}
 
@@ -135,7 +165,12 @@ func (s *TimesheetApplicationService) UpdateTimesheet(ctx context.Context, cmd c
 		return nil, err
 	}
 
-	return updatedTimesheet, nil
+	// Convert timesheet model to response
+	appResponse := &command.UpdateTimesheetCommandResult{
+		Result: common.NewTimesheetResultFromModel(updatedTimesheet)[0],
+	}
+
+	return appResponse, nil
 }
 
 // DeleteTimesheet processes the command to delete a time entry
@@ -144,28 +179,4 @@ func (s *TimesheetApplicationService) DeleteTimesheet(ctx context.Context, cmd c
 		return errors.New("timesheet ID cannot be empty for delete")
 	}
 	return s.timesheetRepository.Delete(ctx, cmd.ID)
-}
-
-// ChangeTimesheetStatus processes the command to change the status of a time entry
-func (s *TimesheetApplicationService) ChangeTimesheetStatus(ctx context.Context, cmd command.ChangeTimesheetStatusCommand) (*model.Timesheet, error) {
-	if cmd.ID == 0 {
-		return nil, errors.New("timesheet ID cannot be empty for status change")
-	}
-
-	timesheet, err := s.timesheetRepository.GetByID(ctx, cmd.ID)
-	if err != nil {
-		return nil, errors.New("timesheet not found")
-	}
-
-	// Check that the new status is not 'open' again if it was set to 'approved' before
-	if timesheet.Status == model.TimesheetStatusApproved && cmd.NewStatus == model.TimesheetStatusOpen {
-		return nil, errors.New("cannot revert approved timesheet to open status")
-	}
-
-	timesheet.Status = cmd.NewStatus
-	updatedTimesheet, err := s.timesheetRepository.Update(ctx, timesheet)
-	if err != nil {
-		return nil, err
-	}
-	return updatedTimesheet, nil
 }

@@ -1,6 +1,10 @@
 package command
 
-import "time"
+import (
+	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
+)
 
 // UpdateTimesheetCommand command to update existing timesheet
 type UpdateTimesheetCommand struct {
@@ -13,8 +17,7 @@ type UpdateTimesheetCommand struct {
 	Status        *string
 }
 
-// ChangeTimesheetStatusCommand command to change the status of an existing timesheet
-type ChangeTimesheetStatusCommand struct {
-	ID        uint
-	NewStatus string
+// UpdateTimesheetCommandResult command to get update result of existing timesheet
+type UpdateTimesheetCommandResult struct {
+	Result *common.TimesheetResult
 }
