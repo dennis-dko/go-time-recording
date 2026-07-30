@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"errors"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // UserDomainService encapsulates domain logic
@@ -20,22 +20,26 @@ func NewUserDomainService(userRepo repository.UserRepository) *UserDomainService
 	}
 }
 
-// AssignRoleToUser add a new role to user
-func (s *UserDomainService) AssignRoleToUser(ctx context.Context, userID uint, newRole string) (*model.User, error) {
+// AssignRoleToUser assigns a new role to a user.
+func (s *UserDomainService) AssignRoleToUser(
+	ctx context.Context,
+	userID uint,
+	newRole string,
+) (*model.User, error) {
 	user, err := s.userRepository.GetByID(ctx, userID)
 	if err != nil {
-		return nil, errors.New("user not found")
+		return nil, err
 	}
 
-	// Check if a valid role is specified
 	if !isValidRole(newRole) {
-		return nil, errors.New("invalid role specified")
+		return nil, apperror.InvalidFields("role")
 	}
 
 	user.Role = newRole
+
 	updatedUser, err := s.userRepository.Update(ctx, user)
 	if err != nil {
-		return nil, errors.New("failed to assign role")
+		return nil, err
 	}
 
 	return updatedUser, nil

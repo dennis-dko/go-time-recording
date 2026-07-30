@@ -1,6 +1,6 @@
 module github.com/dennis-dko/go-time-recording
 
-go 1.26.1
+go 1.26.5
 
 require gofr.dev v1.58.0
 

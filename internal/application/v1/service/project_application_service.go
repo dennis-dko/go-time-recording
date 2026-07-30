@@ -2,9 +2,14 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/query"
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // ProjectService service interface
@@ -14,4 +19,234 @@ type ProjectService interface {
 	ListProjects(ctx context.Context, q query.ListProjectsQuery) (*query.ListProjectsQueryResult, error)
 	UpdateProject(ctx context.Context, cmd command.UpdateProjectCommand) (*command.UpdateProjectCommandResult, error)
 	DeleteProject(ctx context.Context, cmd command.DeleteProjectCommand) error
+}
+
+// ProjectApplicationService application service for projects
+type ProjectApplicationService struct {
+	projectRepository   repository.ProjectRepository
+	timesheetRepository repository.TimesheetRepository
+}
+
+// NewProjectApplicationService creates new instance
+func NewProjectApplicationService(
+	projectRepo repository.ProjectRepository,
+	timesheetRepo repository.TimesheetRepository,
+) *ProjectApplicationService {
+	return &ProjectApplicationService{
+		projectRepository:   projectRepo,
+		timesheetRepository: timesheetRepo,
+	}
+}
+
+var _ ProjectService = (*ProjectApplicationService)(nil)
+
+// CreateProject processes the command to create a project
+func (s *ProjectApplicationService) CreateProject(
+	ctx context.Context,
+	cmd command.CreateProjectCommand,
+) (*command.CreateProjectCommandResult, error) {
+	status := cmd.Status
+	if status == "" {
+		status = model.ProjectStatusActive
+	}
+
+	if err := validateProject(cmd.Name, status, cmd.StartDate, cmd.EndDate); err != nil {
+		return nil, err
+	}
+
+	createdProject, err := s.projectRepository.Save(ctx, &model.Project{
+		Name:        cmd.Name,
+		Description: cmd.Description,
+		StartDate:   cmd.StartDate,
+		EndDate:     cmd.EndDate,
+		Status:      status,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &command.CreateProjectCommandResult{
+		Result: common.NewProjectResultFromModel(createdProject)[0],
+	}, nil
+}
+
+// GetProject processes the query to get a project
+func (s *ProjectApplicationService) GetProject(
+	ctx context.Context,
+	q query.GetProjectQuery,
+) (*query.GetProjectQueryResult, error) {
+	if q.ID == 0 {
+		return nil, apperror.InvalidFields("id")
+	}
+
+	project, err := s.projectRepository.GetByID(ctx, q.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &query.GetProjectQueryResult{
+		Result: common.NewProjectResultFromModel(project)[0],
+	}, nil
+}
+
+// ListProjects processes the query to get all projects, optionally filtered
+// by status.
+func (s *ProjectApplicationService) ListProjects(
+	ctx context.Context,
+	q query.ListProjectsQuery,
+) (*query.ListProjectsQueryResult, error) {
+	allProjects, err := s.projectRepository.GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	matching := allProjects
+
+	if q.Status != "" {
+		matching = make([]*model.Project, 0, len(allProjects))
+
+		for _, project := range allProjects {
+			if project.Status == q.Status {
+				matching = append(matching, project)
+			}
+		}
+	}
+
+	return &query.ListProjectsQueryResult{
+		Result:     common.NewProjectResultFromModel(matching...),
+		TotalCount: uint(len(matching)),
+	}, nil
+}
+
+// UpdateProject processes the command to update a project
+func (s *ProjectApplicationService) UpdateProject(
+	ctx context.Context,
+	cmd command.UpdateProjectCommand,
+) (*command.UpdateProjectCommandResult, error) {
+	if cmd.ID == 0 {
+		return nil, apperror.InvalidFields("id")
+	}
+
+	existingProject, err := s.projectRepository.GetByID(ctx, cmd.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if cmd.Name != nil {
+		existingProject.Name = *cmd.Name
+	}
+
+	if cmd.Description != nil {
+		existingProject.Description = cmd.Description
+	}
+
+	if cmd.StartDate != nil {
+		existingProject.StartDate = *cmd.StartDate
+	}
+
+	if cmd.EndDate != nil {
+		existingProject.EndDate = cmd.EndDate
+	}
+
+	if cmd.Status != nil {
+		if err := s.validateStatusTransition(ctx, existingProject, *cmd.Status); err != nil {
+			return nil, err
+		}
+
+		existingProject.Status = *cmd.Status
+	}
+
+	err = validateProject(existingProject.Name, existingProject.Status,
+		existingProject.StartDate, existingProject.EndDate)
+	if err != nil {
+		return nil, err
+	}
+
+	updatedProject, err := s.projectRepository.Update(ctx, existingProject)
+	if err != nil {
+		return nil, err
+	}
+
+	return &command.UpdateProjectCommandResult{
+		Result: common.NewProjectResultFromModel(updatedProject)[0],
+	}, nil
+}
+
+// validateStatusTransition mirrors the archiving rule enforced by the domain
+// service: a project may only be archived once it is completed and has no
+// open time entries left.
+func (s *ProjectApplicationService) validateStatusTransition(
+	ctx context.Context,
+	project *model.Project,
+	newStatus string,
+) error {
+	if newStatus != model.ProjectStatusArchived {
+		return nil
+	}
+
+	if project.Status != model.ProjectStatusCompleted {
+		return apperror.Conflictf("a project can only be archived once its status is %q",
+			model.ProjectStatusCompleted)
+	}
+
+	openEntries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
+		ProjectID: project.ID,
+		Status:    model.TimesheetStatusOpen,
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(openEntries) > 0 {
+		return apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries))
+	}
+
+	return nil
+}
+
+// DeleteProject refuses to delete a project that still has time entries, so
+// booked hours cannot be orphaned.
+func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd command.DeleteProjectCommand) error {
+	if cmd.ID == 0 {
+		return apperror.InvalidFields("id")
+	}
+
+	entries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{ProjectID: cmd.ID})
+	if err != nil {
+		return err
+	}
+
+	if len(entries) > 0 {
+		return apperror.Conflictf("cannot delete a project that still has %d time entries", len(entries))
+	}
+
+	return s.projectRepository.Delete(ctx, cmd.ID)
+}
+
+func validateProject(name, status string, startDate time.Time, endDate *time.Time) error {
+	var invalid []string
+
+	if name == "" {
+		invalid = append(invalid, "name")
+	}
+
+	if startDate.IsZero() {
+		invalid = append(invalid, "startDate")
+	}
+
+	if endDate != nil && !startDate.IsZero() && endDate.Before(startDate) {
+		invalid = append(invalid, "endDate")
+	}
+
+	switch status {
+	case model.ProjectStatusActive, model.ProjectStatusCompleted, model.ProjectStatusArchived:
+	default:
+		invalid = append(invalid, "status")
+	}
+
+	if len(invalid) > 0 {
+		return apperror.InvalidFields(invalid...)
+	}
+
+	return nil
 }

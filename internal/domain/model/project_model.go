@@ -3,6 +3,9 @@ package model
 import "time"
 
 const (
+	// ProjectStatusActive is the state a project starts in: it accepts new
+	// time entries.
+	ProjectStatusActive    = "active"
 	ProjectStatusArchived  = "archived"
 	ProjectStatusCompleted = "completed"
 )

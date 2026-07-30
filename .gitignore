@@ -1,1 +1,10 @@
 .vscode
+
+# Build output
+bin/
+coverage.out
+
+# SQLite databases created at runtime (GoFr derives the file from DB_NAME)
+*.db
+*.db-shm
+*.db-wal

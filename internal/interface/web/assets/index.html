@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zeiterfassung</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>&#9201;</text></svg>">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Zeiterfassung</h1>
+    <nav id="tabs">
+      <button class="tab" data-view="timesheets" aria-current="true">Zeiteinträge</button>
+      <button class="tab" data-view="projects">Projekte</button>
+      <button class="tab" data-view="users">Mitarbeiter</button>
+      <button class="tab" data-view="report">Auswertung</button>
+    </nav>
+  </header>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <main>
+    <!-- Zeiteinträge -->
+    <section id="view-timesheets" class="view">
+      <form id="form-timesheet" class="card form">
+        <h2>Zeit buchen</h2>
+        <div class="grid">
+          <label>Mitarbeiter
+            <select name="userId" required></select>
+          </label>
+          <label>Projekt
+            <select name="projectId" required></select>
+          </label>
+          <label>Datum
+            <input type="date" name="date" required>
+          </label>
+          <label>Stunden
+            <input type="number" name="durationHours" step="0.25" min="0.25" max="24" required>
+          </label>
+          <label class="wide">Beschreibung
+            <input type="text" name="description" placeholder="optional">
+          </label>
+        </div>
+        <button type="submit">Buchen</button>
+      </form>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Einträge</h2>
+          <div class="filters">
+            <select id="filter-ts-user"><option value="">Alle Mitarbeiter</option></select>
+            <select id="filter-ts-project"><option value="">Alle Projekte</option></select>
+            <select id="filter-ts-status">
+              <option value="">Alle Status</option>
+              <option value="open">offen</option>
+              <option value="submitted">eingereicht</option>
+              <option value="approved">genehmigt</option>
+              <option value="rejected">abgelehnt</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="table-timesheets">
+            <thead>
+              <tr>
+                <th>Datum</th><th>Mitarbeiter</th><th>Projekt</th><th class="num">Stunden</th>
+                <th>Beschreibung</th><th>Status</th><th class="actions">Aktion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Projekte -->
+    <section id="view-projects" class="view" hidden>
+      <form id="form-project" class="card form">
+        <h2>Projekt anlegen</h2>
+        <div class="grid">
+          <label>Name<input type="text" name="name" required></label>
+          <label>Start<input type="date" name="startDate" required></label>
+          <label>Ende<input type="date" name="endDate"></label>
+          <label class="wide">Beschreibung<input type="text" name="description" placeholder="optional"></label>
+        </div>
+        <button type="submit">Anlegen</button>
+      </form>
+
+      <div class="card">
+        <h2>Projekte</h2>
+        <div class="table-wrap">
+          <table id="table-projects">
+            <thead>
+              <tr><th>Name</th><th>Zeitraum</th><th>Beschreibung</th><th>Status</th><th class="actions">Aktion</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Mitarbeiter -->
+    <section id="view-users" class="view" hidden>
+      <form id="form-user" class="card form">
+        <h2>Mitarbeiter anlegen</h2>
+        <div class="grid">
+          <label>Name<input type="text" name="name" required></label>
+          <label>E-Mail<input type="email" name="email" required></label>
+          <label>Rolle
+            <select name="role" required>
+              <option value="employee">employee</option>
+              <option value="manager">manager</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+        </div>
+        <button type="submit">Anlegen</button>
+      </form>
+
+      <div class="card">
+        <h2>Mitarbeiter</h2>
+        <div class="table-wrap">
+          <table id="table-users">
+            <thead><tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th class="actions">Aktion</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Auswertung -->
+    <section id="view-report" class="view" hidden>
+      <form id="form-report" class="card form">
+        <h2>Projektauswertung</h2>
+        <div class="grid">
+          <label>Projekt<select name="projectId" required></select></label>
+          <label>Von<input type="date" name="from"></label>
+          <label>Bis<input type="date" name="to"></label>
+        </div>
+        <button type="submit">Auswerten</button>
+      </form>
+
+      <div class="card" id="report-result" hidden>
+        <h2>Ergebnis <span id="report-total" class="pill"></span></h2>
+        <div class="table-wrap">
+          <table id="table-report">
+            <thead><tr><th>Mitarbeiter</th><th class="num">Stunden</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -67,6 +67,17 @@ tasks:
     cmds:
       - go test ./...
 
+  upgrade:
+    desc: Bump go.mod to the installed Go toolchain and update all dependencies to their latest compatible releases.
+    cmds:
+      - |
+        GOVERSION=$(go env GOVERSION)
+        echo "Bumping go.mod to ${GOVERSION#go}"
+        go get go@${GOVERSION#go}
+      - go get -u ./...
+      - task: test
+      - echo "Done. Remember to also bump the base image in Dockerfile (FROM golang:...) if it changed."
+
   version:
     desc: Print the version used for builds, images, and releases.
     cmds:

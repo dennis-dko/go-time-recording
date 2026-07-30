@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"errors"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // ProjectDomainService encapsulates domain logic
@@ -25,36 +25,40 @@ func NewProjectDomainService(
 	}
 }
 
-// ArchiveProject archives the project
+// ArchiveProject archives the project once it is completed and has no open
+// time entries left.
 func (s *ProjectDomainService) ArchiveProject(ctx context.Context, projectID uint) (*model.Project, error) {
+	// Repository errors are already classified, so they are returned as-is
+	// rather than flattened into a generic message, which would cost the
+	// caller its 404.
 	project, err := s.projectRepository.GetByID(ctx, projectID)
 	if err != nil {
-		return nil, errors.New("project not found")
+		return nil, err
 	}
 
-	// Archive the project if it's completed
 	if project.Status != model.ProjectStatusCompleted {
-		return nil, errors.New("project can only be archived if its status is 'completed'")
+		return nil, apperror.Conflictf("a project can only be archived once its status is %q",
+			model.ProjectStatusCompleted)
 	}
 
-	// Check if open timesheets exist for this project
-	timesheets, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{ProjectID: projectID})
+	// Open entries still expect edits, so archiving would strand them.
+	openEntries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
+		ProjectID: projectID,
+		Status:    model.TimesheetStatusOpen,
+	})
 	if err != nil {
-		return nil, errors.New("failed to check for open timesheets")
-	}
-	if len(timesheets) > 0 {
-		for _, timesheet := range timesheets {
-			if timesheet.Status == model.TimesheetStatusOpen {
-				return nil, errors.New("cannot archive project with open timesheets")
-			}
-		}
+		return nil, err
 	}
 
-	// Change the status
+	if len(openEntries) > 0 {
+		return nil, apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries))
+	}
+
 	project.Status = model.ProjectStatusArchived
+
 	updatedProject, err := s.projectRepository.Update(ctx, project)
 	if err != nil {
-		return nil, errors.New("failed to archive the project")
+		return nil, err
 	}
 
 	return updatedProject, nil
