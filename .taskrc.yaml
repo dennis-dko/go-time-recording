@@ -1,0 +1,8 @@
+# Project-level configuration for the go-task CLI (https://taskfile.dev).
+# Task looks for this file as .taskrc.yml / .taskrc.yaml next to the
+# Taskfile (or in a parent directory), so it must keep the leading dot.
+# Reference: https://taskfile.dev/docs/reference/config
+
+# Prompts interactively for missing required task variables (with a
+# selection menu for enum vars) instead of failing, when run in a TTY.
+interactive: true

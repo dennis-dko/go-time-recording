@@ -1,0 +1,100 @@
+version: '3'
+
+# Local dev convenience only. Formatting, vet diagnostics, linting and test
+# running/coverage are handled by the VS Code Go extension in the editor,
+# and enforced independently in CI (see .github/workflows/ci.yml and
+# .github/workflows/release.yml) - they're intentionally not duplicated here.
+
+vars:
+  APP_NAME: go-time-recording
+  BIN_DIR: bin
+  CONFIG_SRC: cmd/configs
+  # Docker registry to push images to, e.g. ghcr.io/dennis-dko. Empty by
+  # default so a push without a target fails loudly instead of going nowhere.
+  REGISTRY: ''
+  # Image/build version. Defaults to the nearest git tag (or short SHA if
+  # there is none yet). Override explicitly for releases: task release VERSION=v1.2.3
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev"
+
+tasks:
+  default:
+    desc: Build the application for the default (dev) environment.
+    cmds:
+      - task: build
+
+  build:
+    desc: Build the application for the dev environment.
+    cmds:
+      - task: build:env
+        vars:
+          ENV: dev
+
+  build:env:
+    desc: 'Build the application for a specific environment. Usage: task build:env ENV=staging'
+    deps: [clean, tidy]
+    vars:
+      ENV: '{{.ENV | default "dev"}}'
+    env:
+      APP_ENV: '{{.ENV}}'
+    cmds:
+      - echo "Building application for {{.ENV}} ({{.VERSION}})"
+      - mkdir -p {{.BIN_DIR}}
+      - cp -r {{.CONFIG_SRC}} {{.BIN_DIR}}/
+      - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd/main.go
+
+  run:
+    desc: 'Build and run the application. Usage: task run ENV=staging (default: dev)'
+    cmds:
+      - task: build:env
+        vars: { ENV: '{{.ENV | default "dev"}}' }
+      - ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}}
+
+  clean:
+    desc: Remove build artifacts.
+    cmds:
+      - rm -rf {{.BIN_DIR}}
+      - rm -f coverage.out
+
+  tidy:
+    desc: Ensure go.mod and go.sum are tidy.
+    cmds:
+      - go mod tidy
+
+  test:
+    desc: Run all unit and integration tests.
+    deps: [tidy]
+    cmds:
+      - go test ./...
+
+  version:
+    desc: Print the version used for builds, images, and releases.
+    cmds:
+      - echo "{{.VERSION}}"
+
+  docker:build:
+    desc: Build the Docker image, tagged with the version and "latest".
+    deps: [test]
+    cmds:
+      - docker build -t {{.APP_NAME}}:{{.VERSION}} -t {{.APP_NAME}}:latest .
+
+  docker:push:
+    desc: 'Push the Docker image to REGISTRY. Usage: task docker:push REGISTRY=ghcr.io/you'
+    deps: [docker:build]
+    preconditions:
+      - sh: '[ -n "{{.REGISTRY}}" ]'
+        msg: 'REGISTRY is not set. Usage: task docker:push REGISTRY=ghcr.io/you'
+    cmds:
+      - docker tag {{.APP_NAME}}:{{.VERSION}} {{.REGISTRY}}/{{.APP_NAME}}:{{.VERSION}}
+      - docker tag {{.APP_NAME}}:latest {{.REGISTRY}}/{{.APP_NAME}}:latest
+      - docker push {{.REGISTRY}}/{{.APP_NAME}}:{{.VERSION}}
+      - docker push {{.REGISTRY}}/{{.APP_NAME}}:latest
+
+  release:
+    desc: 'Tag a release; the release workflow in CI builds, verifies, and publishes it. Usage: task release VERSION=v1.2.3'
+    preconditions:
+      - sh: echo "{{.VERSION}}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'
+        msg: 'VERSION must be a semantic version, e.g. task release VERSION=v1.2.3'
+    cmds:
+      - git tag -a {{.VERSION}} -m "Release {{.VERSION}}"
+      - git push origin {{.VERSION}}

@@ -1,4 +1,4 @@
-FROM golang:1.24
+FROM golang:1.26.1
 
 ENV APP_ENV=local
 RUN mkdir /src/
