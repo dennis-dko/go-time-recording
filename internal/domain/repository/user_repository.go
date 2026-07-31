@@ -12,6 +12,9 @@ type UserRepository interface {
 
 	GetByID(ctx context.Context, id uint) (*model.User, error)
 
+	// GetByEmail resolves the login identifier used for authentication.
+	GetByEmail(ctx context.Context, email string) (*model.User, error)
+
 	GetAll(ctx context.Context) ([]*model.User, error)
 
 	Update(ctx context.Context, user *model.User) (*model.User, error)

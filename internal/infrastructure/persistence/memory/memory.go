@@ -5,6 +5,7 @@ package memory
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -100,7 +101,14 @@ func (s *store[T]) delete(id uint) error {
 }
 
 // UserRepository is an in-memory repository.UserRepository.
-type UserRepository struct{ store *store[model.User] }
+type UserRepository struct {
+	store *store[model.User]
+
+	// roles resolves the role name on read. The SQL repository does this with
+	// a join; without it here the two implementations would disagree and
+	// tests against this one would give false confidence.
+	roles *RoleRepository
+}
 
 // NewUserRepository creates an empty in-memory user repository.
 func NewUserRepository() *UserRepository {
@@ -108,6 +116,19 @@ func NewUserRepository() *UserRepository {
 }
 
 var _ repository.UserRepository = (*UserRepository)(nil)
+
+// withRoleName fills in the display name for the user's role.
+func (r *UserRepository) withRoleName(user *model.User) *model.User {
+	if user == nil || r.roles == nil || user.RoleID == 0 {
+		return user
+	}
+
+	if role, err := r.roles.store.get(user.RoleID); err == nil {
+		user.RoleName = role.Name
+	}
+
+	return user
+}
 
 func (r *UserRepository) Save(_ context.Context, user *model.User) (*model.User, error) {
 	r.store.mu.RLock()
@@ -120,23 +141,131 @@ func (r *UserRepository) Save(_ context.Context, user *model.User) (*model.User,
 	}
 	r.store.mu.RUnlock()
 
-	return r.store.add(user, func(u *model.User, id uint) { u.ID = id }), nil
+	return r.withRoleName(r.store.add(user, func(u *model.User, id uint) { u.ID = id })), nil
 }
 
 func (r *UserRepository) GetByID(_ context.Context, id uint) (*model.User, error) {
-	return r.store.get(id)
+	user, err := r.store.get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.withRoleName(user), nil
+}
+
+func (r *UserRepository) GetByEmail(_ context.Context, email string) (*model.User, error) {
+	r.store.mu.RLock()
+	defer r.store.mu.RUnlock()
+
+	for _, user := range r.store.items {
+		if strings.EqualFold(user.Email, email) {
+			found := *user
+
+			return r.withRoleName(&found), nil
+		}
+	}
+
+	return nil, apperror.NotFound("user", email)
 }
 
 func (r *UserRepository) GetAll(_ context.Context) ([]*model.User, error) {
-	return r.store.all(), nil
+	users := r.store.all()
+	for _, user := range users {
+		r.withRoleName(user)
+	}
+
+	return users, nil
 }
 
 func (r *UserRepository) Update(_ context.Context, user *model.User) (*model.User, error) {
-	return r.store.update(user.ID, user)
+	updated, err := r.store.update(user.ID, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.withRoleName(updated), nil
 }
 
 func (r *UserRepository) Delete(_ context.Context, id uint) error {
 	return r.store.delete(id)
+}
+
+// RoleRepository is an in-memory repository.RoleRepository.
+type RoleRepository struct {
+	store *store[model.Role]
+	users *UserRepository
+}
+
+// NewRoleRepository creates an in-memory role repository seeded with the
+// default roles, matching what the migration does for a real database.
+func NewRoleRepository(users *UserRepository) *RoleRepository {
+	r := &RoleRepository{store: newStore[model.Role]("role"), users: users}
+
+	// Register both ways so a user read can resolve its role name, matching
+	// what the SQL repository gets from a join.
+	if users != nil {
+		users.roles = r
+	}
+
+	for _, role := range model.DefaultRoles() {
+		seeded := role
+		r.store.add(&seeded, func(x *model.Role, id uint) { x.ID = id })
+	}
+
+	return r
+}
+
+var _ repository.RoleRepository = (*RoleRepository)(nil)
+
+func (r *RoleRepository) Save(_ context.Context, role *model.Role) (*model.Role, error) {
+	return r.store.add(role, func(x *model.Role, id uint) { x.ID = id }), nil
+}
+
+func (r *RoleRepository) GetByID(_ context.Context, id uint) (*model.Role, error) {
+	return r.store.get(id)
+}
+
+func (r *RoleRepository) GetByName(_ context.Context, name string) (*model.Role, error) {
+	for _, role := range r.store.all() {
+		if strings.EqualFold(role.Name, name) {
+			return role, nil
+		}
+	}
+
+	return nil, apperror.NotFound("role", name)
+}
+
+func (r *RoleRepository) GetAll(_ context.Context) ([]*model.Role, error) {
+	return r.store.all(), nil
+}
+
+func (r *RoleRepository) Update(_ context.Context, role *model.Role) (*model.Role, error) {
+	return r.store.update(role.ID, role)
+}
+
+func (r *RoleRepository) Delete(_ context.Context, id uint) error {
+	return r.store.delete(id)
+}
+
+func (r *RoleRepository) CountUsers(ctx context.Context, roleID uint) (int, error) {
+	if r.users == nil {
+		return 0, nil
+	}
+
+	all, err := r.users.GetAll(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	var count int
+
+	for _, user := range all {
+		if user.RoleID == roleID {
+			count++
+		}
+	}
+
+	return count, nil
 }
 
 // ProjectRepository is an in-memory repository.ProjectRepository.

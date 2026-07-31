@@ -5,12 +5,18 @@
  *
  * Plain DOM APIs on purpose: the assets are embedded in the Go binary, so
  * keeping the UI build-step-free means `go build` is the only build there is.
+ *
+ * Permission checks here only decide what to *show*. Every rule is enforced
+ * again by the server, so hiding a control is convenience, never security.
  */
 
 const API = '/api/v1';
 
 /** Cached lookups so tables can show names instead of raw ids. */
-const cache = { users: [], projects: [] };
+const cache = { users: [], projects: [], roles: [], permissions: [] };
+
+/** The signed-in user, their permissions, and whether auth is on at all. */
+let me = { user: null, permissions: [], authEnabled: false };
 
 // ---------------------------------------------------------------- transport
 
@@ -53,6 +59,12 @@ function errorMessage(body) {
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+/** Whether the signed-in user holds at least one of the given permissions. */
+function can(...permissions) {
+  if (!me.authEnabled) return true;
+  return permissions.some((p) => me.permissions.includes(p));
+}
+
 let toastTimer;
 function toast(message, kind = 'ok') {
   const el = $('#toast');
@@ -60,7 +72,7 @@ function toast(message, kind = 'ok') {
   el.className = `toast ${kind}`;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 4000);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
 }
 
 /** Builds an element; text is assigned via textContent, never innerHTML. */
@@ -69,6 +81,7 @@ function el(tag, props = {}, ...children) {
   for (const [key, value] of Object.entries(props)) {
     if (key === 'class') node.className = value;
     else if (key === 'text') node.textContent = value;
+    else if (key === 'checked') node.checked = value;
     else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
     else if (value !== null && value !== undefined) node.setAttribute(key, value);
   }
@@ -88,6 +101,17 @@ function fmtDate(iso) {
   return `${d}.${m}.${y}`;
 }
 
+const fmtHours = (n) => `${n.toFixed(2)} h`;
+
+/** Renders a signed balance, coloured as a credit or a debt. */
+function balanceCell(value) {
+  const sign = value > 0 ? '+' : '';
+  return el('td', {
+    class: `num ${value > 0 ? 'plus' : value < 0 ? 'minus' : ''}`,
+    text: `${sign}${value.toFixed(2)} h`,
+  });
+}
+
 const userName = (id) => cache.users.find((u) => u.id === id)?.name ?? `#${id}`;
 const projectName = (id) => cache.projects.find((p) => p.id === id)?.name ?? `#${id}`;
 
@@ -102,12 +126,13 @@ function fillTable(tbody, rows, columnCount, emptyText) {
 }
 
 /** Fills a <select> with options, preserving the current selection if possible. */
-function fillSelect(select, items, { placeholder } = {}) {
+function fillSelect(select, items, { placeholder, labelKey = 'name', valueKey = 'id' } = {}) {
+  if (!select) return;
   const previous = select.value;
   select.replaceChildren();
   if (placeholder) select.append(el('option', { value: '', text: placeholder }));
   for (const item of items) {
-    select.append(el('option', { value: String(item.id), text: item.name }));
+    select.append(el('option', { value: String(item[valueKey]), text: item[labelKey] }));
   }
   if (previous && [...select.options].some((o) => o.value === previous)) {
     select.value = previous;
@@ -124,30 +149,242 @@ function formData(form) {
   return out;
 }
 
+/** Shows or hides every element that declares a data-perm requirement. */
+function applyPermissionVisibility(root = document) {
+  for (const node of $$('[data-perm]', root)) {
+    node.hidden = !can(...node.dataset.perm.split(','));
+  }
+}
+
+// ---------------------------------------------------------------------- i18n
+
+/**
+ * Translations for the interface. Only the strings that appear in static
+ * markup or in the sign-in flow are listed; German is the source language, so
+ * an untranslated key falls back to the text already in the document.
+ */
+const TRANSLATIONS = {
+  en: {
+    'nav.timesheets': 'Time entries',
+    'nav.overtime': 'Overtime',
+    'nav.projects': 'Projects',
+    'nav.users': 'Staff',
+    'nav.roles': 'Roles',
+    'nav.report': 'Reports',
+    'nav.settings': 'My account',
+    'nav.logout': 'Sign out',
+    'login.title': 'Sign in',
+    'login.hint': 'Please sign in with your email address and password.',
+    'login.email': 'Email',
+    'login.password': 'Password',
+    'login.totp': 'Code from your authenticator app',
+    'login.submit': 'Sign in',
+    'login.failed': 'Email address or password is not correct.',
+    'login.totpNeeded': 'Please enter the code from your authenticator app.',
+    'banner.password': 'The initial password is still in place. Please change it under My account.',
+    'totp.title': 'Two-factor authentication',
+    'totp.instructions': 'Add this key to your authenticator app and confirm the code it shows:',
+    'totp.code': 'Code',
+    'totp.enable': 'Enable',
+    'totp.confirm': 'Confirm',
+    'totp.disable': 'Disable',
+    'totp.on': 'Two-factor authentication is enabled.',
+    'totp.off': 'Two-factor authentication is not enabled.',
+  },
+  de: {},
+};
+
+/** Applies the active language to every element carrying data-i18n. */
+function applyLanguage(language) {
+  const dict = TRANSLATIONS[language] ?? {};
+  document.documentElement.lang = language;
+
+  for (const node of $$('[data-i18n]')) {
+    const translated = dict[node.dataset.i18n];
+    if (!translated) continue;
+
+    // Labels wrap their input, so only the leading text node is replaced -
+    // assigning textContent would delete the field.
+    const first = node.firstChild;
+    if (first && first.nodeType === Node.TEXT_NODE) first.nodeValue = translated;
+    else node.textContent = translated;
+  }
+}
+
+/** Translates one key for use in code-generated text. */
+function t(key, fallback) {
+  const language = me.user?.language ?? 'de';
+  return TRANSLATIONS[language]?.[key] ?? fallback;
+}
+
 // -------------------------------------------------------------------- views
 
+async function loadMe() {
+  me = await api('/me');
+  me.permissions = me.permissions ?? [];
+
+  const who = $('#who');
+  if (me.authEnabled) {
+    who.replaceChildren(
+      el('strong', { text: me.user.name }),
+      el('span', { text: ` · ${me.user.role || 'ohne Rolle'}` }),
+    );
+  } else {
+    who.replaceChildren(el('span', { text: 'Authentifizierung deaktiviert' }));
+  }
+
+  $("#password-banner").hidden = !me.user.mustChangePassword;
+  $("#logout").hidden = !me.authEnabled;
+
+  applyLanguage(me.user.language ?? "de");
+  applyPermissionVisibility();
+  renderTOTPState();
+}
+
 async function loadUsers() {
-  cache.users = (await api('/users'))?.items ?? [];
+  // Everyone can see themselves, but listing all users is a permission.
+  if (!can('users:read')) {
+    cache.users = me.user ? [me.user] : [];
+  } else {
+    cache.users = (await api('/users'))?.items ?? [];
+  }
 
   fillSelect($('#form-timesheet select[name=userId]'), cache.users);
   fillSelect($('#filter-ts-user'), cache.users, { placeholder: 'Alle Mitarbeiter' });
+  fillSelect($('#form-overtime select[name=userId]'), cache.users);
 
-  const rows = cache.users.map((u) => el('tr', {},
-    el('td', { text: u.name }),
-    el('td', { text: u.email }),
-    el('td', { text: u.role }),
-    el('td', { class: 'actions' },
-      el('button', {
+  if (me.user) {
+    const own = String(me.user.id);
+    const overtimeSelect = $('#form-overtime select[name=userId]');
+    if (overtimeSelect && !overtimeSelect.value) overtimeSelect.value = own;
+    const bookFor = $('#form-timesheet select[name=userId]');
+    if (bookFor && !bookFor.value) bookFor.value = own;
+  }
+
+  if (!can('users:read')) return;
+
+  const rows = cache.users.map((u) => {
+    const actions = el('td', { class: 'actions' });
+
+    if (can('users:delete') && !u.isSystem) {
+      actions.append(el('button', {
         class: 'link danger',
         text: 'löschen',
         onclick: () => remove(`/users/${u.id}`, `${u.name} gelöscht`, refreshAll),
-      })),
-  ));
+      }));
+    }
 
-  fillTable($('#table-users tbody'), rows, 4, 'Noch keine Mitarbeiter angelegt.');
+    if (u.isSystem) actions.append(el('span', { class: 'muted', text: 'Systemkonto' }));
+
+    const roleCell = el('td', {});
+    if (can('users:write') && can('roles:read')) {
+      // Changing a role is a select rather than a form: it is the one field
+      // that is changed on its own often enough to deserve it.
+      const select = el('select', {
+        onchange: (e) => patch(`/users/${u.id}/role`, { role: e.target.value },
+          `${u.name}: Rolle geändert`, refreshAll),
+      });
+      fillSelect(select, cache.roles, { labelKey: 'name', valueKey: 'name' });
+      select.value = u.role;
+      if (u.isSystem) select.disabled = true;
+      roleCell.append(select);
+    } else {
+      roleCell.textContent = u.role || '–';
+    }
+
+    return el('tr', { class: me.user && u.id === me.user.id ? 'self' : '' },
+      el('td', { text: u.name }),
+      el('td', { text: u.email }),
+      roleCell,
+      el('td', { class: 'num', text: u.dailyTargetHours ? u.dailyTargetHours.toFixed(1) : 'Standard' }),
+      el('td', { class: 'num', text: u.maxDailyHours ? u.maxDailyHours.toFixed(1) : 'Standard' }),
+      actions,
+    );
+  });
+
+  fillTable($('#table-users tbody'), rows, 6, 'Noch keine Mitarbeiter angelegt.');
+}
+
+async function loadRoles() {
+  if (!can('roles:read')) return;
+
+  cache.roles = (await api('/roles'))?.items ?? [];
+  cache.permissions = (await api('/permissions'))?.permissions ?? [];
+
+  fillSelect($('#form-user select[name=role]'), cache.roles, { labelKey: 'name', valueKey: 'name' });
+  renderPermissionCheckboxes();
+
+  const rows = cache.roles.map((role) => {
+    const actions = el('td', { class: 'actions' });
+
+    if (can('roles:write')) {
+      actions.append(el('button', {
+        class: 'link',
+        text: 'bearbeiten',
+        onclick: () => editRole(role),
+      }));
+
+      if (!role.isSystem) {
+        actions.append(el('button', {
+          class: 'link danger',
+          text: 'löschen',
+          onclick: () => remove(`/roles/${role.id}`, `Rolle ${role.name} gelöscht`, refreshAll),
+        }));
+      }
+    }
+
+    if (role.isSystem) actions.append(el('span', { class: 'muted', text: 'Systemrolle' }));
+
+    return el('tr', {},
+      el('td', { text: role.name }),
+      el('td', { text: role.description || '–' }),
+      el('td', { class: 'num', text: String(role.permissions.length) }),
+      actions,
+    );
+  });
+
+  fillTable($('#table-roles tbody'), rows, 4, 'Keine Rollen vorhanden.');
+}
+
+function renderPermissionCheckboxes(selected = []) {
+  const list = $('#permission-list');
+  list.replaceChildren();
+  for (const permission of cache.permissions) {
+    list.append(el('label', {},
+      el('input', {
+        type: 'checkbox',
+        name: 'permissions',
+        value: permission,
+        checked: selected.includes(permission),
+      }),
+      el('span', { text: permission }),
+    ));
+  }
+}
+
+function editRole(role) {
+  const form = $('#form-role');
+  form.elements.id.value = String(role.id);
+  form.elements.name.value = role.name;
+  form.elements.description.value = role.description ?? '';
+  form.elements.name.readOnly = role.isSystem;
+  renderPermissionCheckboxes(role.permissions);
+  $('#role-form-title').textContent = `Rolle „${role.name}" bearbeiten`;
+  switchView('roles');
+}
+
+function resetRoleForm() {
+  const form = $('#form-role');
+  form.reset();
+  form.elements.id.value = '';
+  form.elements.name.readOnly = false;
+  renderPermissionCheckboxes();
+  $('#role-form-title').textContent = 'Rolle anlegen';
 }
 
 async function loadProjects() {
+  if (!can('projects:read')) return;
+
   cache.projects = (await api('/projects'))?.items ?? [];
 
   const bookable = cache.projects.filter((p) => p.status === 'active');
@@ -158,7 +395,7 @@ async function loadProjects() {
   const rows = cache.projects.map((p) => {
     const actions = el('td', { class: 'actions' });
 
-    if (p.status === 'active') {
+    if (can('projects:write') && p.status === 'active') {
       actions.append(el('button', {
         class: 'link',
         text: 'abschließen',
@@ -166,7 +403,7 @@ async function loadProjects() {
       }));
     }
 
-    if (p.status === 'completed') {
+    if (can('projects:archive') && p.status === 'completed') {
       actions.append(el('button', {
         class: 'link',
         text: 'archivieren',
@@ -174,11 +411,13 @@ async function loadProjects() {
       }));
     }
 
-    actions.append(el('button', {
-      class: 'link danger',
-      text: 'löschen',
-      onclick: () => remove(`/projects/${p.id}`, `${p.name} gelöscht`, refreshAll),
-    }));
+    if (can('projects:delete')) {
+      actions.append(el('button', {
+        class: 'link danger',
+        text: 'löschen',
+        onclick: () => remove(`/projects/${p.id}`, `${p.name} gelöscht`, refreshAll),
+      }));
+    }
 
     const period = `${fmtDate(p.startDate)} – ${p.endDate ? fmtDate(p.endDate) : 'offen'}`;
 
@@ -195,6 +434,8 @@ async function loadProjects() {
 }
 
 async function loadTimesheets() {
+  if (!can('timesheets:read:own', 'timesheets:read:all')) return;
+
   const params = new URLSearchParams();
   const userId = $('#filter-ts-user').value;
   const projectId = $('#filter-ts-project').value;
@@ -208,9 +449,11 @@ async function loadTimesheets() {
 
   const rows = entries.map((t) => {
     const actions = el('td', { class: 'actions' });
+    const mine = me.user && t.userId === me.user.id;
+    const mayEdit = can('timesheets:write:all') || (mine && can('timesheets:write:own'));
 
     // The API only allows open -> submitted -> approved/rejected.
-    if (t.status === 'open') {
+    if (mayEdit && t.status === 'open') {
       actions.append(el('button', {
         class: 'link',
         text: 'einreichen',
@@ -218,7 +461,7 @@ async function loadTimesheets() {
       }));
     }
 
-    if (t.status === 'submitted') {
+    if (can('timesheets:approve') && t.status === 'submitted') {
       actions.append(el('button', {
         class: 'link',
         text: 'genehmigen',
@@ -231,7 +474,7 @@ async function loadTimesheets() {
       }));
     }
 
-    if (t.status !== 'approved') {
+    if (mayEdit && t.status !== 'approved') {
       actions.append(el('button', {
         class: 'link danger',
         text: 'löschen',
@@ -239,7 +482,7 @@ async function loadTimesheets() {
       }));
     }
 
-    return el('tr', {},
+    return el('tr', { class: mine ? 'self' : '' },
       el('td', { text: fmtDate(t.date) }),
       el('td', { text: userName(t.userId) }),
       el('td', { text: projectName(t.projectId) }),
@@ -251,6 +494,13 @@ async function loadTimesheets() {
   });
 
   fillTable($('#table-timesheets tbody'), rows, 7, 'Keine Einträge für diesen Filter.');
+}
+
+function fillSettingsForm() {
+  if (!me.user) return;
+  const form = $('#form-working-times');
+  form.elements.dailyTargetHours.value = me.user.dailyTargetHours || '';
+  form.elements.maxDailyHours.value = me.user.maxDailyHours || '';
 }
 
 // ------------------------------------------------------------- mutations
@@ -275,6 +525,125 @@ const patch = (path, body, msg, after) => mutate(
 const remove = (path, msg, after) => mutate(
   () => api(path, { method: 'DELETE' }), msg, after);
 
+// ------------------------------------------------------------------ sign-in
+
+/** Shows the sign-in overlay and hides the application behind it. */
+function showLogin(message) {
+  $('#login-screen').hidden = false;
+  const error = $('#login-error');
+  error.textContent = message ?? '';
+  error.hidden = !message;
+}
+
+function hideLogin() {
+  $('#login-screen').hidden = true;
+  $('#login-error').hidden = true;
+  $('#login-totp-field').hidden = true;
+  $('#form-login').reset();
+}
+
+async function submitLogin(e) {
+  e.preventDefault();
+
+  const form = e.target;
+  const body = {
+    email: form.elements.email.value.trim(),
+    password: form.elements.password.value,
+    totp: form.elements.totp.value.trim(),
+  };
+
+  try {
+    const result = await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
+
+    // The password was right but the account has a second factor: ask for the
+    // code instead of reporting a failed sign-in.
+    if (result.totpRequired) {
+      $('#login-totp-field').hidden = false;
+      $('#login-error').textContent = t('login.totpNeeded',
+        'Bitte den Code aus der Authenticator-App eingeben.');
+      $('#login-error').hidden = false;
+      form.elements.totp.focus();
+
+      return;
+    }
+
+    hideLogin();
+    await refreshAll();
+    switchView(firstVisibleView());
+  } catch {
+    // The server deliberately does not say which part was wrong, so neither
+    // does the interface.
+    showLogin(t('login.failed', 'E-Mail-Adresse oder Passwort ist nicht korrekt.'));
+    form.elements.password.value = '';
+  }
+}
+
+async function doLogout() {
+  try {
+    await api('/auth/logout', { method: 'POST' });
+  } catch {
+    // Even a failed call should drop the client back to the sign-in screen.
+  }
+
+  me = { user: null, permissions: [], authEnabled: true };
+  showLogin();
+}
+
+// ------------------------------------------------------------- two-factor
+
+function renderTOTPState() {
+  const enabled = me.user?.totpEnabled ?? false;
+
+  $('#totp-state').textContent = enabled
+    ? t('totp.on', 'Zwei-Faktor-Authentifizierung ist aktiviert.')
+    : t('totp.off', 'Zwei-Faktor-Authentifizierung ist nicht aktiviert.');
+
+  $('#totp-begin').hidden = enabled;
+  $('#totp-disable').hidden = !enabled;
+  $('#totp-confirm').hidden = true;
+  $('#totp-setup').hidden = true;
+  // Disabling also needs a current code, so the field stays visible for it.
+  $('#totp-code-field').hidden = !enabled;
+}
+
+function wireTOTP() {
+  $('#totp-begin').addEventListener('click', () => mutate(async () => {
+    const setup = await api('/me/totp', { method: 'POST' });
+    $('#totp-secret').textContent = setup.secret;
+    $('#totp-uri').textContent = setup.uri;
+    $('#totp-setup').hidden = false;
+    $('#totp-code-field').hidden = false;
+    $('#totp-confirm').hidden = false;
+    $('#totp-begin').hidden = true;
+  }, null, null));
+
+  $('#totp-confirm').addEventListener('click', () => {
+    const code = $('#totp-code').value.trim();
+    mutate(() => api('/me/totp', { method: 'PUT', body: JSON.stringify({ code }) }),
+      'Zwei-Faktor-Authentifizierung aktiviert',
+      async () => { $('#totp-code').value = ''; await refreshAll(); });
+  });
+
+  $('#totp-disable').addEventListener('click', () => {
+    const code = $('#totp-code').value.trim();
+    mutate(() => api(`/me/totp?code=${encodeURIComponent(code)}`, { method: 'DELETE' }),
+      'Zwei-Faktor-Authentifizierung deaktiviert',
+      async () => { $('#totp-code').value = ''; await refreshAll(); });
+  });
+}
+
+async function loadLanguages() {
+  const languages = (await api('/languages'))?.languages ?? ['de'];
+  const picker = $('#language-picker');
+
+  picker.replaceChildren();
+  for (const language of languages) {
+    picker.append(el('option', { value: language, text: language.toUpperCase() }));
+  }
+
+  picker.value = me.user?.language ?? 'de';
+}
+
 // --------------------------------------------------------------- bootstrap
 
 function switchView(name) {
@@ -282,20 +651,55 @@ function switchView(name) {
   $$('.view').forEach((view) => { view.hidden = view.id !== `view-${name}`; });
 }
 
+/** Picks the first tab the user is actually allowed to see. */
+function firstVisibleView() {
+  const tab = $$('.tab').find((t) => !t.hidden);
+  return tab ? tab.dataset.view : 'settings';
+}
+
 async function refreshAll() {
-  // Users and projects first: the timesheet table resolves ids through them.
+  await loadMe();
+  await loadLanguages();
+  // Roles first: the user table renders a role picker from them.
+  await loadRoles();
   await Promise.all([loadUsers(), loadProjects()]);
   await loadTimesheets();
+  fillSettingsForm();
 }
 
 function wireForms() {
   $('#form-user').addEventListener('submit', (e) => {
     e.preventDefault();
-    const body = formData(e.target);
+    const raw = formData(e.target);
+    const body = { ...raw };
+    for (const key of ['dailyTargetHours', 'maxDailyHours']) {
+      if (body[key] !== undefined) body[key] = Number(body[key]);
+    }
     mutate(() => api('/users', { method: 'POST', body: JSON.stringify(body) }),
       'Mitarbeiter angelegt',
       async () => { e.target.reset(); await refreshAll(); });
   });
+
+  $('#form-role').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const id = form.elements.id.value;
+    const permissions = $$('input[name=permissions]:checked', form).map((i) => i.value);
+    const body = {
+      name: form.elements.name.value.trim(),
+      description: form.elements.description.value.trim(),
+      permissions,
+    };
+
+    const request = id
+      ? api(`/roles/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+      : api('/roles', { method: 'POST', body: JSON.stringify(body) });
+
+    mutate(() => request, id ? 'Rolle gespeichert' : 'Rolle angelegt',
+      async () => { resetRoleForm(); await refreshAll(); });
+  });
+
+  $('#role-reset').addEventListener('click', resetRoleForm);
 
   $('#form-project').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -344,6 +748,59 @@ function wireForms() {
     }, null, null);
   });
 
+  $('#form-overtime').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const { userId, from, to } = formData(e.target);
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const suffix = params.toString() ? `?${params}` : '';
+
+    mutate(async () => {
+      const balance = await api(`/users/${userId}/overtime${suffix}`);
+      const rows = (balance.days ?? []).map((d) => el('tr', {},
+        el('td', { text: fmtDate(d.date) }),
+        el('td', { class: 'num', text: fmtHours(d.booked) }),
+        el('td', { class: 'num', text: fmtHours(d.target) }),
+        balanceCell(d.balance),
+      ));
+      fillTable($('#table-overtime tbody'), rows, 4, 'Keine Buchungen in diesem Zeitraum.');
+
+      const total = balance.totalBalance;
+      const pill = $('#overtime-total');
+      pill.textContent = `${total > 0 ? '+' : ''}${total.toFixed(2)} h`;
+      pill.className = `pill ${total > 0 ? 'plus' : total < 0 ? 'minus' : ''}`;
+      $('#overtime-meta').textContent =
+        `${balance.userName} · Soll ${fmtHours(balance.dailyTarget)}/Tag · `
+        + `gebucht ${fmtHours(balance.totalBooked)} von ${fmtHours(balance.totalTarget)}`;
+      $('#overtime-result').hidden = false;
+
+      if (can('reports:read')) await loadTeamOvertime(suffix);
+    }, null, null);
+  });
+
+  $('#form-working-times').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+    // Empty means "use the instance default", which the API expresses as 0.
+    const body = {
+      dailyTargetHours: Number(form.elements.dailyTargetHours.value || 0),
+      maxDailyHours: Number(form.elements.maxDailyHours.value || 0),
+    };
+    mutate(() => api(`/users/${me.user.id}/working-times`,
+      { method: 'PUT', body: JSON.stringify(body) }),
+      'Arbeitszeiten gespeichert',
+      refreshAll);
+  });
+
+  $('#form-password').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const body = formData(e.target);
+    mutate(() => api('/me/password', { method: 'PUT', body: JSON.stringify(body) }),
+      'Passwort geändert. Der Browser fragt beim nächsten Aufruf neu nach.',
+      async () => { e.target.reset(); await refreshAll(); });
+  });
+
   for (const id of ['#filter-ts-user', '#filter-ts-project', '#filter-ts-status']) {
     $(id).addEventListener('change', () => mutate(loadTimesheets, null, null));
   }
@@ -354,10 +811,39 @@ function wireForms() {
   });
 }
 
-function init() {
+async function loadTeamOvertime(suffix) {
+  const balances = (await api(`/overtime${suffix}`))?.items ?? [];
+  const rows = balances.map((b) => el('tr', { class: me.user && b.userId === me.user.id ? 'self' : '' },
+    el('td', { text: b.userName }),
+    el('td', { class: 'num', text: fmtHours(b.totalBooked) }),
+    el('td', { class: 'num', text: fmtHours(b.totalTarget) }),
+    balanceCell(b.totalBalance),
+  ));
+  fillTable($('#table-overtime-team tbody'), rows, 4, 'Keine Buchungen in diesem Zeitraum.');
+  $('#overtime-team-card').hidden = false;
+}
+
+async function init() {
   wireForms();
-  $('#form-timesheet').elements.date.value = new Date().toISOString().slice(0, 10);
-  mutate(refreshAll, null, null);
+  wireTOTP();
+  $("#form-login").addEventListener("submit", submitLogin);
+  $("#logout").addEventListener("click", doLogout);
+  $("#language-picker").addEventListener("change", (e) => mutate(
+    () => api("/me/language", { method: "PUT", body: JSON.stringify({ language: e.target.value }) }),
+    null,
+    refreshAll));
+
+  $("#form-timesheet").elements.date.value = new Date().toISOString().slice(0, 10);
+
+  try {
+    await refreshAll();
+    hideLogin();
+    switchView(firstVisibleView());
+  } catch {
+    // No usable session: the sign-in screen is the whole interface until
+    // there is one.
+    showLogin();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

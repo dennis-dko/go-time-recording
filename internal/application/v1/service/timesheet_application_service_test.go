@@ -23,9 +23,17 @@ type fixture struct {
 	projects   *service.ProjectApplicationService
 	users      *service.UserApplicationService
 
+	roles *service.RoleApplicationService
+	auth  *service.AuthService
+
 	// domain services, exercised where a rule lives in the domain layer
 	tsDomain      *domainservice.TimesheetDomainService
 	projectDomain *domainservice.ProjectDomainService
+	userDomain    *domainservice.UserDomainService
+
+	// repositories, so a test can build a service the fixture does not wire
+	userRepo      *memory.UserRepository
+	timesheetRepo *memory.TimesheetRepository
 
 	userID    uint
 	projectID uint
@@ -35,15 +43,21 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 
 	userRepo := memory.NewUserRepository()
+	roleRepo := memory.NewRoleRepository(userRepo)
 	projectRepo := memory.NewProjectRepository()
 	timesheetRepo := memory.NewTimesheetRepository()
 
 	f := &fixture{
-		users:         service.NewUserApplicationService(userRepo),
+		users:         service.NewUserApplicationService(userRepo, roleRepo),
+		roles:         service.NewRoleApplicationService(roleRepo),
+		auth:          service.NewAuthService(userRepo, roleRepo),
 		projects:      service.NewProjectApplicationService(projectRepo, timesheetRepo),
 		timesheets:    service.NewTimesheetApplicationService(timesheetRepo, userRepo, projectRepo, maxDailyHours),
 		tsDomain:      domainservice.NewTimesheetDomainService(timesheetRepo, projectRepo, userRepo),
 		projectDomain: domainservice.NewProjectDomainService(projectRepo, timesheetRepo),
+		userDomain:    domainservice.NewUserDomainService(userRepo, roleRepo),
+		userRepo:      userRepo,
+		timesheetRepo: timesheetRepo,
 	}
 
 	user, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{

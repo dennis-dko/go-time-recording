@@ -6,6 +6,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/query"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 )
 
@@ -13,18 +14,24 @@ import (
 type ProjectHandler struct {
 	projects service.ProjectService
 	domain   *domainservice.ProjectDomainService
+	authz    *Authorizer
 }
 
 // NewProjectHandler creates a project handler.
 func NewProjectHandler(
 	projects service.ProjectService,
 	domain *domainservice.ProjectDomainService,
+	authz *Authorizer,
 ) *ProjectHandler {
-	return &ProjectHandler{projects: projects, domain: domain}
+	return &ProjectHandler{projects: projects, domain: domain, authz: authz}
 }
 
 // List handles GET /api/v1/projects
 func (h *ProjectHandler) List(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermProjectRead); err != nil {
+		return nil, err
+	}
+
 	result, err := h.projects.ListProjects(c, query.ListProjectsQuery{Status: c.Param("status")})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -38,6 +45,10 @@ func (h *ProjectHandler) List(c *gofr.Context) (any, error) {
 
 // Get handles GET /api/v1/projects/{id}
 func (h *ProjectHandler) Get(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermProjectRead); err != nil {
+		return nil, err
+	}
+
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -53,6 +64,10 @@ func (h *ProjectHandler) Get(c *gofr.Context) (any, error) {
 
 // Create handles POST /api/v1/projects
 func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermProjectWrite); err != nil {
+		return nil, err
+	}
+
 	var req CreateProjectRequest
 	if err := bind(c, &req); err != nil {
 		return nil, toHTTPError(err)
@@ -80,6 +95,10 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 
 // Update handles PUT /api/v1/projects/{id}
 func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermProjectWrite); err != nil {
+		return nil, err
+	}
+
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -117,6 +136,10 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 
 // Delete handles DELETE /api/v1/projects/{id}
 func (h *ProjectHandler) Delete(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermProjectDelete); err != nil {
+		return nil, err
+	}
+
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -132,6 +155,10 @@ func (h *ProjectHandler) Delete(c *gofr.Context) (any, error) {
 // Archive handles POST /api/v1/projects/{id}/archive, delegating to the domain
 // service that owns the archiving preconditions.
 func (h *ProjectHandler) Archive(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermProjectArchive); err != nil {
+		return nil, err
+	}
+
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)

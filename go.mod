@@ -2,7 +2,10 @@ module github.com/dennis-dko/go-time-recording
 
 go 1.26.5
 
-require gofr.dev v1.58.0
+require (
+	gofr.dev v1.58.0
+	golang.org/x/crypto v0.54.0
+)
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
@@ -80,7 +83,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect

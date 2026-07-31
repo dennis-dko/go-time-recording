@@ -31,14 +31,15 @@ tasks:
           ENV: dev
 
   build:env:
-    desc: 'Build the application for a specific environment. Usage: task build:env ENV=staging'
+    desc: 'Build the application. Usage: task build:env ENV=staging (selects which config the binary loads at run time)'
     deps: [clean, tidy]
     vars:
       ENV: '{{.ENV | default "dev"}}'
-    env:
-      APP_ENV: '{{.ENV}}'
     cmds:
-      - echo "Building application for {{.ENV}} ({{.VERSION}})"
+      # The artifact itself is environment-independent: GoFr picks its config
+      # file from APP_ENV at start-up, so ENV only matters when running. It is
+      # echoed here so the build log states which environment is intended.
+      - echo "Building application (intended for {{.ENV}}, version {{.VERSION}})"
       - mkdir -p {{.BIN_DIR}}
       - cp -r {{.CONFIG_SRC}} {{.BIN_DIR}}/
       - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd/main.go
@@ -48,7 +49,21 @@ tasks:
     cmds:
       - task: build:env
         vars: { ENV: '{{.ENV | default "dev"}}' }
-      - ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}}
+      - task: run:binary
+        vars: { ENV: '{{.ENV | default "dev"}}' }
+
+  run:binary:
+    internal: true
+    # Must run from BIN_DIR: GoFr resolves its configuration as ./configs
+    # relative to the working directory, and build:env puts them there.
+    # Starting from the repository root leaves the app with no database.
+    dir: '{{.BIN_DIR}}'
+    # APP_ENV has to be set here rather than at build time: it selects the
+    # config file GoFr loads on start-up and is not compiled into the binary.
+    env:
+      APP_ENV: '{{.ENV}}'
+    cmds:
+      - ./{{.APP_NAME}}{{exeExt}}
 
   clean:
     desc: Remove build artifacts.

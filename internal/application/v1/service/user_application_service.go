@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
@@ -9,6 +10,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
 )
 
 // UserService service interface
@@ -18,16 +20,21 @@ type UserService interface {
 	ListUsers(ctx context.Context, q query.ListUsersQuery) (*query.ListUsersQueryResult, error)
 	UpdateUser(ctx context.Context, cmd command.UpdateUserCommand) (*command.UpdateUserCommandResult, error)
 	DeleteUser(ctx context.Context, cmd command.DeleteUserCommand) error
+	UpdateWorkingTimes(ctx context.Context, cmd command.UpdateWorkingTimesCommand) (*common.UserResult, error)
 }
 
 // UserApplicationService application service for users
 type UserApplicationService struct {
 	userRepository repository.UserRepository
+	roleRepository repository.RoleRepository
 }
 
 // NewUserApplicationService creates new instance
-func NewUserApplicationService(userRepo repository.UserRepository) *UserApplicationService {
-	return &UserApplicationService{userRepository: userRepo}
+func NewUserApplicationService(
+	userRepo repository.UserRepository,
+	roleRepo repository.RoleRepository,
+) *UserApplicationService {
+	return &UserApplicationService{userRepository: userRepo, roleRepository: roleRepo}
 }
 
 var _ UserService = (*UserApplicationService)(nil)
@@ -37,14 +44,38 @@ func (s *UserApplicationService) CreateUser(
 	ctx context.Context,
 	cmd command.CreateUserCommand,
 ) (*command.CreateUserCommandResult, error) {
-	if err := validateUser(cmd.Name, cmd.Email, cmd.Role); err != nil {
+	if err := validateUser(cmd.Name, cmd.Email); err != nil {
 		return nil, err
 	}
 
+	role, err := s.resolveRole(ctx, cmd.Role)
+	if err != nil {
+		return nil, err
+	}
+
+	// A user with no password cannot sign in, so a new account either gets the
+	// password it was given or one that must be replaced on first use.
+	password := cmd.Password
+	mustChange := false
+
+	if password == "" {
+		password = SystemUserPassword
+		mustChange = true
+	}
+
+	hash, err := security.HashPassword(password)
+	if err != nil {
+		return nil, apperror.Invalidf("%v", err)
+	}
+
 	createdUser, err := s.userRepository.Save(ctx, &model.User{
-		Name:  cmd.Name,
-		Email: cmd.Email,
-		Role:  cmd.Role,
+		Name:               cmd.Name,
+		Email:              normalizeEmail(cmd.Email),
+		RoleID:             role.ID,
+		PasswordHash:       hash,
+		MustChangePassword: mustChange,
+		DailyTargetHours:   cmd.DailyTargetHours,
+		MaxDailyHours:      cmd.MaxDailyHours,
 	})
 	if err != nil {
 		return nil, err
@@ -112,14 +143,39 @@ func (s *UserApplicationService) UpdateUser(
 	}
 
 	if cmd.Email != nil {
-		existingUser.Email = *cmd.Email
+		existingUser.Email = normalizeEmail(*cmd.Email)
 	}
 
 	if cmd.Role != nil {
-		existingUser.Role = *cmd.Role
+		role, roleErr := s.resolveRole(ctx, *cmd.Role)
+		if roleErr != nil {
+			return nil, roleErr
+		}
+
+		// Same protection as the domain service: the built-in administrator
+		// must keep a role that can still administer.
+		if existingUser.IsSystem && !role.Has(model.PermRoleWrite) {
+			return nil, apperror.Conflictf(
+				"the built-in administrator cannot be moved to role %q, which lacks %q",
+				role.Name, model.PermRoleWrite)
+		}
+
+		existingUser.RoleID = role.ID
 	}
 
-	if err := validateUser(existingUser.Name, existingUser.Email, existingUser.Role); err != nil {
+	if cmd.DailyTargetHours != nil {
+		existingUser.DailyTargetHours = *cmd.DailyTargetHours
+	}
+
+	if cmd.MaxDailyHours != nil {
+		existingUser.MaxDailyHours = *cmd.MaxDailyHours
+	}
+
+	if err := validateUser(existingUser.Name, existingUser.Email); err != nil {
+		return nil, err
+	}
+
+	if err := validateWorkingTimes(existingUser.DailyTargetHours, existingUser.MaxDailyHours); err != nil {
 		return nil, err
 	}
 
@@ -133,19 +189,82 @@ func (s *UserApplicationService) UpdateUser(
 	}, nil
 }
 
+// UpdateWorkingTimes sets the daily target and cap for a user. It is separate
+// from UpdateUser so a user may adjust their own working times without also
+// holding the right to edit accounts.
+func (s *UserApplicationService) UpdateWorkingTimes(
+	ctx context.Context,
+	cmd command.UpdateWorkingTimesCommand,
+) (*common.UserResult, error) {
+	if cmd.ID == 0 {
+		return nil, apperror.InvalidFields("id")
+	}
+
+	user, err := s.userRepository.GetByID(ctx, cmd.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if cmd.DailyTargetHours != nil {
+		user.DailyTargetHours = *cmd.DailyTargetHours
+	}
+
+	if cmd.MaxDailyHours != nil {
+		user.MaxDailyHours = *cmd.MaxDailyHours
+	}
+
+	if err := validateWorkingTimes(user.DailyTargetHours, user.MaxDailyHours); err != nil {
+		return nil, err
+	}
+
+	updated, err := s.userRepository.Update(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return common.NewUserResultFromModel(updated)[0], nil
+}
+
 // DeleteUser processes the command to delete a user
 func (s *UserApplicationService) DeleteUser(ctx context.Context, cmd command.DeleteUserCommand) error {
 	if cmd.ID == 0 {
 		return apperror.InvalidFields("id")
 	}
 
+	user, err := s.userRepository.GetByID(ctx, cmd.ID)
+	if err != nil {
+		return err
+	}
+
+	// Deleting the built-in administrator would leave an installation with no
+	// guaranteed way back in.
+	if user.IsSystem {
+		return apperror.Conflictf("the built-in administrator cannot be deleted")
+	}
+
 	return s.userRepository.Delete(ctx, cmd.ID)
 }
 
-func validateUser(name, email, role string) error {
+// resolveRole accepts a role name, defaulting to the least privileged role
+// when none is given.
+func (s *UserApplicationService) resolveRole(ctx context.Context, name string) (*model.Role, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = model.RoleEmployee
+	}
+
+	role, err := s.roleRepository.GetByName(ctx, name)
+	if err != nil {
+		return nil, apperror.InvalidFields("role")
+	}
+
+	return role, nil
+}
+
+func validateUser(name, email string) error {
 	var invalid []string
 
-	if name == "" {
+	if strings.TrimSpace(name) == "" {
 		invalid = append(invalid, "name")
 	}
 
@@ -153,10 +272,29 @@ func validateUser(name, email, role string) error {
 		invalid = append(invalid, "email")
 	}
 
-	switch role {
-	case model.UserRoleAdmin, model.UserRoleManager, model.UserRoleEmployee:
-	default:
-		invalid = append(invalid, "role")
+	if len(invalid) > 0 {
+		return apperror.InvalidFields(invalid...)
+	}
+
+	return nil
+}
+
+// validateWorkingTimes keeps the pair coherent: 0 means "use the default", and
+// a target above the cap could never be reached.
+func validateWorkingTimes(target, maxDaily float64) error {
+	var invalid []string
+
+	if target < 0 || target > 24 {
+		invalid = append(invalid, "dailyTargetHours")
+	}
+
+	if maxDaily < 0 || maxDaily > 24 {
+		invalid = append(invalid, "maxDailyHours")
+	}
+
+	if len(invalid) == 0 && target > 0 && maxDaily > 0 && target > maxDaily {
+		return apperror.Invalidf("the daily target (%.2fh) cannot exceed the daily maximum (%.2fh)",
+			target, maxDaily)
 	}
 
 	if len(invalid) > 0 {

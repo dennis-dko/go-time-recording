@@ -10,6 +10,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/query"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
@@ -18,22 +19,35 @@ import (
 type TimesheetHandler struct {
 	timesheets service.TimesheetService
 	domain     *domainservice.TimesheetDomainService
+	authz      *Authorizer
 }
 
 // NewTimesheetHandler creates a timesheet handler.
 func NewTimesheetHandler(
 	timesheets service.TimesheetService,
 	domain *domainservice.TimesheetDomainService,
+	authz *Authorizer,
 ) *TimesheetHandler {
-	return &TimesheetHandler{timesheets: timesheets, domain: domain}
+	return &TimesheetHandler{timesheets: timesheets, domain: domain, authz: authz}
 }
 
 // List handles GET /api/v1/timesheets, filtered by user, project, status and
-// date range.
+// date range. A caller who may only see their own entries is pinned to their
+// own id regardless of the filter they sent.
 func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
-	userID, err := queryUint(c, "userId")
+	principal, err := h.authz.RequireAny(c, model.PermTimesheetReadOwn, model.PermTimesheetReadAll)
+	if err != nil {
+		return nil, err
+	}
+
+	requestedUserID, err := queryUint(c, "userId")
 	if err != nil {
 		return nil, toHTTPError(err)
+	}
+
+	userID, err := h.authz.scopeUserID(principal, requestedUserID)
+	if err != nil {
+		return nil, err
 	}
 
 	projectID, err := queryUint(c, "projectId")
@@ -70,6 +84,11 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 
 // Get handles GET /api/v1/timesheets/{id}
 func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
+	principal, err := h.authz.RequireAny(c, model.PermTimesheetReadOwn, model.PermTimesheetReadAll)
+	if err != nil {
+		return nil, err
+	}
+
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -80,14 +99,34 @@ func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	if h.authz.Enabled() && !principal.Can(model.PermTimesheetReadAll) &&
+		result.Result.UserID != principal.User.ID {
+		return nil, forbiddenError{msg: "you may only read your own time entries"}
+	}
+
 	return newTimesheetResponse(result.Result), nil
 }
 
 // Create handles POST /api/v1/timesheets
 func (h *TimesheetHandler) Create(c *gofr.Context) (any, error) {
+	principal, err := h.authz.RequireAny(c, model.PermTimesheetWriteOwn, model.PermTimesheetWriteAll)
+	if err != nil {
+		return nil, err
+	}
+
 	var req CreateTimesheetRequest
 	if err := bind(c, &req); err != nil {
 		return nil, toHTTPError(err)
+	}
+
+	// Booking without naming a user means booking for yourself, which is what
+	// the common case wants.
+	if req.UserID == 0 && principal.User != nil {
+		req.UserID = principal.User.ID
+	}
+
+	if err := h.authz.requireOwnerOrAll(principal, req.UserID); err != nil {
+		return nil, err
 	}
 
 	result, err := h.timesheets.CreateTimesheet(c, command.CreateTimesheetCommand{
@@ -107,14 +146,35 @@ func (h *TimesheetHandler) Create(c *gofr.Context) (any, error) {
 
 // Update handles PUT /api/v1/timesheets/{id}
 func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
+	principal, err := h.authz.RequireAny(c, model.PermTimesheetWriteOwn, model.PermTimesheetWriteAll)
+	if err != nil {
+		return nil, err
+	}
+
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
+	existing, err := h.timesheets.GetTimesheet(c, query.GetTimesheetQuery{ID: id})
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.authz.requireOwnerOrAll(principal, existing.Result.UserID); err != nil {
+		return nil, err
+	}
+
 	var req UpdateTimesheetRequest
 	if err := bind(c, &req); err != nil {
 		return nil, toHTTPError(err)
+	}
+
+	// Approving or rejecting is a separate right from editing your own hours.
+	if req.Status != nil && isReviewDecision(*req.Status) {
+		if _, err := h.authz.Require(c, model.PermTimesheetApprove); err != nil {
+			return nil, err
+		}
 	}
 
 	cmd := command.UpdateTimesheetCommand{
@@ -139,11 +199,31 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 	return newTimesheetResponse(result.Result), nil
 }
 
+// isReviewDecision reports whether a status change is an approval decision
+// rather than something the author may do themselves.
+func isReviewDecision(status string) bool {
+	return status == model.TimesheetStatusApproved || status == model.TimesheetStatusRejected
+}
+
 // Delete handles DELETE /api/v1/timesheets/{id}
 func (h *TimesheetHandler) Delete(c *gofr.Context) (any, error) {
+	principal, err := h.authz.RequireAny(c, model.PermTimesheetWriteOwn, model.PermTimesheetWriteAll)
+	if err != nil {
+		return nil, err
+	}
+
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
+	}
+
+	existing, err := h.timesheets.GetTimesheet(c, query.GetTimesheetQuery{ID: id})
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.authz.requireOwnerOrAll(principal, existing.Result.UserID); err != nil {
+		return nil, err
 	}
 
 	if err := h.timesheets.DeleteTimesheet(c, command.DeleteTimesheetCommand{ID: id}); err != nil {
@@ -156,6 +236,10 @@ func (h *TimesheetHandler) Delete(c *gofr.Context) (any, error) {
 // Transfer handles POST /api/v1/timesheets/{id}/transfer, moving an entry to
 // another project via the domain service.
 func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermTimesheetTransfer); err != nil {
+		return nil, err
+	}
+
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -189,6 +273,10 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 // Report handles GET /api/v1/projects/{id}/report, totalling booked hours per
 // user over a date range. The range defaults to the last 30 days.
 func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermReportRead); err != nil {
+		return nil, err
+	}
+
 	projectID, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)

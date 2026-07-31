@@ -6,6 +6,7 @@ package config
 import (
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Provider is the subset of GoFr's config.Config this package needs, kept
@@ -25,9 +26,17 @@ type Config struct {
 	// binary as a headless API.
 	UIEnabled bool
 
-	// BasicAuthUser/BasicAuthPassword protect every route when both are set.
-	BasicAuthUser     string
-	BasicAuthPassword string
+	// AppName labels the instance, and is what authenticator apps show next to
+	// a two-factor account.
+	AppName string
+
+	// AuthRequired turns on sign-in and role enforcement. With it off every
+	// request is treated as fully privileged, which suits a local trial only.
+	AuthRequired bool
+
+	// SessionLifetime is how long a sign-in lasts before the user has to
+	// authenticate again.
+	SessionLifetime time.Duration
 
 	// AutoCloseSchedule is the cron expression for sweeping stale open
 	// timesheets. Empty disables the job.
@@ -46,27 +55,38 @@ const (
 	defaultAutoCloseSchedule  = "0 2 * * *" // 02:00 daily
 	defaultAutoCloseAfterDays = 14
 	defaultMaxDailyHours      = 24
+	defaultSessionLifetime    = 12 * time.Hour
 )
 
 // Load reads the application settings, applying defaults that let the binary
 // run with no configuration at all.
 func Load(p Provider) Config {
 	return Config{
-		Dialect:            strings.ToLower(p.GetOrDefault("DB_DIALECT", defaultDialect)),
-		UIEnabled:          boolOr(p.GetOrDefault("UI_ENABLED", "true"), true),
-		BasicAuthUser:      p.Get("BASIC_AUTH_USER"),
-		BasicAuthPassword:  p.Get("BASIC_AUTH_PASSWORD"),
+		Dialect:   strings.ToLower(p.GetOrDefault("DB_DIALECT", defaultDialect)),
+		AppName:   p.GetOrDefault("APP_NAME", "Zeiterfassung"),
+		UIEnabled: boolOr(p.GetOrDefault("UI_ENABLED", "true"), true),
+		// Defaults to on: an instance that quietly serves everyone full
+		// administrative rights should be a deliberate choice, not an oversight.
+		AuthRequired:       boolOr(p.GetOrDefault("AUTH_ENABLED", "true"), true),
+		SessionLifetime:    durationOr(p.GetOrDefault("SESSION_LIFETIME", ""), defaultSessionLifetime),
 		AutoCloseSchedule:  p.GetOrDefault("AUTO_CLOSE_SCHEDULE", defaultAutoCloseSchedule),
 		AutoCloseAfterDays: intOr(p.GetOrDefault("AUTO_CLOSE_AFTER_DAYS", ""), defaultAutoCloseAfterDays),
 		MaxDailyHours:      floatOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),
 	}
 }
 
-// AuthEnabled reports whether basic auth should be installed. Both halves of
-// the credential must be present; a username with no password would otherwise
-// silently accept every request.
+// AuthEnabled reports whether sign-in and role checks are enforced.
 func (c Config) AuthEnabled() bool {
-	return c.BasicAuthUser != "" && c.BasicAuthPassword != ""
+	return c.AuthRequired
+}
+
+func durationOr(raw string, fallback time.Duration) time.Duration {
+	v, err := time.ParseDuration(strings.TrimSpace(raw))
+	if err != nil || v <= 0 {
+		return fallback
+	}
+
+	return v
 }
 
 func boolOr(raw string, fallback bool) bool {

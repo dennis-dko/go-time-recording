@@ -98,10 +98,9 @@ func TestCreateUserValidation(t *testing.T) {
 	f := newFixture(t)
 
 	cases := map[string]command.CreateUserCommand{
-		"no name":    {Email: "a@b.de", Role: model.UserRoleAdmin},
-		"bad email":  {Name: "A", Email: "not-an-email", Role: model.UserRoleAdmin},
-		"bad role":   {Name: "A", Email: "a@b.de", Role: "wizard"},
-		"empty role": {Name: "A", Email: "a@b.de"},
+		"no name":   {Email: "a@b.de", Role: model.UserRoleAdmin},
+		"bad email": {Name: "A", Email: "not-an-email", Role: model.UserRoleAdmin},
+		"bad role":  {Name: "A", Email: "a@b.de", Role: "wizard"},
 	}
 
 	for name, cmd := range cases {
@@ -109,6 +108,23 @@ func TestCreateUserValidation(t *testing.T) {
 			_, err := f.users.CreateUser(context.Background(), cmd)
 			requireKind(t, err, apperror.KindInvalid)
 		})
+	}
+}
+
+// Omitting the role must not fail but land on the least privileged role, so a
+// new account can never accidentally be created with elevated rights.
+func TestCreateUserWithoutRoleFallsBackToEmployee(t *testing.T) {
+	f := newFixture(t)
+
+	created, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
+		Name: "No Role", Email: "norole@example.com",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if created.Result.Role != model.RoleEmployee {
+		t.Errorf("expected fallback to %q, got %q", model.RoleEmployee, created.Result.Role)
 	}
 }
 

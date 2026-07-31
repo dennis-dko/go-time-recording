@@ -34,13 +34,17 @@ type base struct {
 	dialect string
 }
 
-// rebind rewrites the '?' placeholders used throughout this package into the
+func (b base) rebind(query string) string {
+	return Rebind(b.dialect, query)
+}
+
+// Rebind rewrites the '?' placeholders used throughout this package into the
 // dialect's own form. Only PostgreSQL differs; it wants ordinal $1, $2, ...
 //
-// Placeholders inside string literals would be rewritten too, so queries in
-// this package must never contain a literal '?' in quoted text.
-func (b base) rebind(query string) string {
-	if b.dialect != DialectPostgres {
+// Placeholders inside string literals would be rewritten too, so queries
+// passed here must never contain a literal '?' in quoted text.
+func Rebind(dialect, query string) string {
+	if dialect != DialectPostgres {
 		return query
 	}
 
