@@ -31,7 +31,9 @@
     bis dahin bleiben Änderungen gesperrt.
   </div>
 
-  <div id="login-screen" class="login-screen" hidden>
+  <!-- Visible until a session is confirmed, so the application never flashes
+       into view before we know whether anyone is signed in. -->
+  <div id="login-screen" class="login-screen">
     <form id="form-login" class="login-card">
       <h2 data-i18n="login.title">Anmelden</h2>
       <p class="muted" id="login-hint" data-i18n="login.hint">Bitte mit E-Mail-Adresse und Passwort anmelden.</p>

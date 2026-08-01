@@ -824,16 +824,24 @@ async function loadTeamOvertime(suffix) {
 }
 
 async function init() {
-  wireForms();
-  wireTOTP();
-  $("#form-login").addEventListener("submit", submitLogin);
-  $("#logout").addEventListener("click", doLogout);
-  $("#language-picker").addEventListener("change", (e) => mutate(
-    () => api("/me/language", { method: "PUT", body: JSON.stringify({ language: e.target.value }) }),
-    null,
-    refreshAll));
+  // The sign-in form is wired first and on its own: if anything below fails,
+  // the user must still be able to sign in rather than face a form whose
+  // submit handler was never attached, which would silently reload the page.
+  $('#form-login').addEventListener('submit', submitLogin);
 
-  $("#form-timesheet").elements.date.value = new Date().toISOString().slice(0, 10);
+  try {
+    wireForms();
+    wireTOTP();
+    $('#logout').addEventListener('click', doLogout);
+    $('#language-picker').addEventListener('change', (e) => mutate(
+      () => api('/me/language', { method: 'PUT', body: JSON.stringify({ language: e.target.value }) }),
+      null,
+      refreshAll));
+
+    $('#form-timesheet').elements.date.value = new Date().toISOString().slice(0, 10);
+  } catch (err) {
+    toast(`Initialisierung fehlgeschlagen: ${err.message}`, 'error');
+  }
 
   try {
     await refreshAll();

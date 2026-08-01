@@ -25,6 +25,14 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * The `hidden` attribute must beat every layout rule below. Without this,
+ * `display: flex` on `label` or `.login-screen` silently wins over the
+ * browser's own `[hidden] { display: none }`, and elements the script hides
+ * stay on screen - which is why `!important` is warranted here.
+ */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
