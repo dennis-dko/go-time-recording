@@ -38,7 +38,7 @@ async function api(path, options = {}) {
   }
 
   if (!res.ok) {
-    throw new Error(errorMessage(body) || `Fehler ${res.status}`);
+    throw new Error(errorMessage(body) || `${t('msg.error', 'Fehler')} ${res.status}`);
   }
 
   return body ? body.data : null;
@@ -50,7 +50,7 @@ function errorMessage(body) {
   if (!err) return '';
   if (typeof err === 'string') return err;
   if (err.message) return err.message;
-  if (Array.isArray(err.param)) return `Ungültige Felder: ${err.param.join(', ')}`;
+  if (Array.isArray(err.param)) return `${t('msg.invalidFields', 'Ungültige Felder')}: ${err.param.join(', ')}`;
   return JSON.stringify(err);
 }
 
@@ -92,7 +92,9 @@ function el(tag, props = {}, ...children) {
 }
 
 function statusBadge(status) {
-  return el('span', { class: `status status-${status}`, text: status });
+  // The class keeps the raw status so the colour rules still match; only the
+  // label is translated.
+  return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
 }
 
 function fmtDate(iso) {
@@ -159,12 +161,18 @@ function applyPermissionVisibility(root = document) {
 // ---------------------------------------------------------------------- i18n
 
 /**
- * Translations for the interface. Only the strings that appear in static
- * markup or in the sign-in flow are listed; German is the source language, so
- * an untranslated key falls back to the text already in the document.
+ * Translations for the interface.
+ *
+ * German is the source language and lives in the markup itself, so the `de`
+ * dictionary is intentionally empty: switching back to German restores the
+ * original text nodes. Every user-visible string has a key here, including the
+ * ones this script generates at run time.
  */
 const TRANSLATIONS = {
   en: {
+    'app.title': 'Time tracking',
+    'app.language': 'Language',
+
     'nav.timesheets': 'Time entries',
     'nav.overtime': 'Overtime',
     'nav.projects': 'Projects',
@@ -173,6 +181,7 @@ const TRANSLATIONS = {
     'nav.report': 'Reports',
     'nav.settings': 'My account',
     'nav.logout': 'Sign out',
+
     'login.title': 'Sign in',
     'login.hint': 'Please sign in with your email address and password.',
     'login.email': 'Email',
@@ -181,7 +190,103 @@ const TRANSLATIONS = {
     'login.submit': 'Sign in',
     'login.failed': 'Email address or password is not correct.',
     'login.totpNeeded': 'Please enter the code from your authenticator app.',
-    'banner.password': 'The initial password is still in place. Please change it under My account.',
+
+    'banner.password':
+      'The initial password is still in place. Please change it under "My account" — '
+      + 'changes stay blocked until you do.',
+
+    // Field labels and table headings, shared across views.
+    'field.user': 'Staff member',
+    'field.project': 'Project',
+    'field.date': 'Date',
+    'field.hours': 'Hours',
+    'field.description': 'Description',
+    'field.status': 'Status',
+    'field.action': 'Action',
+    'field.name': 'Name',
+    'field.email': 'Email',
+    'field.role': 'Role',
+    'field.password': 'Password',
+    'field.start': 'Start',
+    'field.end': 'End',
+    'field.period': 'Period',
+    'field.from': 'From',
+    'field.to': 'To',
+    'field.optional': 'optional',
+    'field.default': 'default',
+    'field.targetPerDay': 'Target h/day',
+    'field.maxPerDay': 'Max h/day',
+
+    'action.book': 'Book',
+    'action.create': 'Create',
+    'action.save': 'Save',
+    'action.new': 'New',
+    'action.evaluate': 'Evaluate',
+    'action.calculate': 'Calculate',
+    'action.delete': 'delete',
+    'action.edit': 'edit',
+    'action.submit': 'submit',
+    'action.approve': 'approve',
+    'action.reject': 'reject',
+    'action.complete': 'complete',
+    'action.archive': 'archive',
+
+    'filter.allUsers': 'All staff',
+    'filter.allProjects': 'All projects',
+    'filter.allStatus': 'All statuses',
+
+    'status.open': 'open',
+    'status.submitted': 'submitted',
+    'status.approved': 'approved',
+    'status.rejected': 'rejected',
+    'status.active': 'active',
+    'status.completed': 'completed',
+    'status.archived': 'archived',
+
+    'ts.book': 'Book time',
+    'ts.entries': 'Entries',
+    'ts.empty': 'No entries for this filter.',
+
+    'ot.balance': 'Balance',
+    'ot.booked': 'Booked',
+    'ot.target': 'Target',
+    'ot.team': 'Team balance (same period)',
+    'ot.total': 'total',
+    'ot.perDay': '/day',
+    'ot.of': 'of',
+    'ot.empty': 'No bookings in this period.',
+
+    'project.create': 'Create project',
+    'project.empty': 'No projects yet.',
+    'project.open': 'open',
+
+    'user.create': 'Add staff member',
+    'user.initialPassword': 'empty = initial password',
+    'user.empty': 'No staff members yet.',
+    'user.systemAccount': 'System account',
+
+    'role.create': 'Create role',
+    'role.edit': 'Edit role',
+    'role.permissions': 'Permissions',
+    'role.rights': 'Rights',
+    'role.empty': 'No roles available.',
+    'role.systemRole': 'System role',
+    'role.noRole': 'no role',
+
+    'report.title': 'Project report',
+    'report.result': 'Result',
+    'report.empty': 'No bookings in this period.',
+
+    'settings.workingTimes': 'My working hours',
+    'settings.workingTimesHint':
+      'The daily target is the basis for overtime. The daily maximum limits how much '
+      + 'may be booked on a single day.',
+    'settings.targetHours': 'Target hours per day',
+    'settings.maxHours': 'Maximum hours per day',
+    'settings.changePassword': 'Change password',
+    'settings.currentPassword': 'Current password',
+    'settings.newPassword': 'New password',
+
     'totp.title': 'Two-factor authentication',
     'totp.instructions': 'Add this key to your authenticator app and confirm the code it shows:',
     'totp.code': 'Code',
@@ -190,25 +295,94 @@ const TRANSLATIONS = {
     'totp.disable': 'Disable',
     'totp.on': 'Two-factor authentication is enabled.',
     'totp.off': 'Two-factor authentication is not enabled.',
+    'totp.enabled': 'Two-factor authentication enabled',
+    'totp.disabled': 'Two-factor authentication disabled',
+
+    'msg.authDisabled': 'Authentication is disabled',
+    'msg.userCreated': 'Staff member created',
+    'msg.userDeleted': 'Staff member deleted',
+    'msg.roleCreated': 'Role created',
+    'msg.roleSaved': 'Role saved',
+    'msg.roleDeleted': 'Role deleted',
+    'msg.roleChanged': 'Role changed',
+    'msg.projectCreated': 'Project created',
+    'msg.projectDeleted': 'Project deleted',
+    'msg.projectCompleted': 'Project completed',
+    'msg.projectArchived': 'Project archived',
+    'msg.booked': 'Time booked',
+    'msg.submitted': 'Submitted',
+    'msg.approved': 'Approved',
+    'msg.rejected': 'Rejected',
+    'msg.entryDeleted': 'Entry deleted',
+    'msg.workingTimesSaved': 'Working hours saved',
+    'msg.passwordChanged': 'Password changed. Please sign in again.',
+    'msg.initFailed': 'Initialisation failed',
+    'msg.invalidFields': 'Invalid field(s)',
+    'msg.error': 'Error',
   },
   de: {},
 };
 
-/** Applies the active language to every element carrying data-i18n. */
+/**
+ * Applies the active language.
+ *
+ * Elements keep their German text in the markup, so switching back to German
+ * simply finds no translation and leaves the original in place.
+ */
 function applyLanguage(language) {
   const dict = TRANSLATIONS[language] ?? {};
   document.documentElement.lang = language;
 
   for (const node of $$('[data-i18n]')) {
     const translated = dict[node.dataset.i18n];
-    if (!translated) continue;
+    if (translated === undefined) {
+      // Restore the source language from the copy taken on first run.
+      if (language === 'de' && node.dataset.i18nSource !== undefined) {
+        setLeadingText(node, node.dataset.i18nSource);
+      }
 
-    // Labels wrap their input, so only the leading text node is replaced -
-    // assigning textContent would delete the field.
-    const first = node.firstChild;
-    if (first && first.nodeType === Node.TEXT_NODE) first.nodeValue = translated;
-    else node.textContent = translated;
+      continue;
+    }
+
+    if (node.dataset.i18nSource === undefined) {
+      node.dataset.i18nSource = leadingText(node);
+    }
+
+    setLeadingText(node, translated);
   }
+
+  for (const node of $$('[data-i18n-placeholder]')) {
+    const translated = dict[node.dataset.i18nPlaceholder];
+    if (node.dataset.i18nPlaceholderSource === undefined) {
+      node.dataset.i18nPlaceholderSource = node.placeholder;
+    }
+
+    node.placeholder = translated ?? node.dataset.i18nPlaceholderSource;
+  }
+
+  for (const node of $$('[data-i18n-aria]')) {
+    const translated = dict[node.dataset.i18nAria];
+    if (translated) node.setAttribute('aria-label', translated);
+  }
+}
+
+/**
+ * Reads the label text of a node, ignoring any nested elements.
+ *
+ * Labels wrap their input, so the text lives in the first text node; using
+ * textContent would pull the field's own content in as well.
+ */
+function leadingText(node) {
+  const first = node.firstChild;
+
+  return first && first.nodeType === Node.TEXT_NODE ? first.nodeValue : node.textContent;
+}
+
+function setLeadingText(node, value) {
+  const first = node.firstChild;
+
+  if (first && first.nodeType === Node.TEXT_NODE) first.nodeValue = value;
+  else node.textContent = value;
 }
 
 /** Translates one key for use in code-generated text. */
@@ -269,12 +443,12 @@ async function loadUsers() {
     if (can('users:delete') && !u.isSystem) {
       actions.append(el('button', {
         class: 'link danger',
-        text: 'löschen',
-        onclick: () => remove(`/users/${u.id}`, `${u.name} gelöscht`, refreshAll),
+        text: t('action.delete', 'löschen'),
+        onclick: () => remove(`/users/${u.id}`, t('msg.userDeleted', 'Mitarbeiter gelöscht'), refreshAll),
       }));
     }
 
-    if (u.isSystem) actions.append(el('span', { class: 'muted', text: 'Systemkonto' }));
+    if (u.isSystem) actions.append(el('span', { class: 'muted', text: t('user.systemAccount', 'Systemkonto') }));
 
     const roleCell = el('td', {});
     if (can('users:write') && can('roles:read')) {
@@ -282,7 +456,7 @@ async function loadUsers() {
       // that is changed on its own often enough to deserve it.
       const select = el('select', {
         onchange: (e) => patch(`/users/${u.id}/role`, { role: e.target.value },
-          `${u.name}: Rolle geändert`, refreshAll),
+          t('msg.roleChanged', 'Rolle geändert'), refreshAll),
       });
       fillSelect(select, cache.roles, { labelKey: 'name', valueKey: 'name' });
       select.value = u.role;
@@ -302,7 +476,7 @@ async function loadUsers() {
     );
   });
 
-  fillTable($('#table-users tbody'), rows, 6, 'Noch keine Mitarbeiter angelegt.');
+  fillTable($('#table-users tbody'), rows, 6, t('user.empty', t('user.empty', 'Noch keine Mitarbeiter angelegt.')));
 }
 
 async function loadRoles() {
@@ -320,20 +494,20 @@ async function loadRoles() {
     if (can('roles:write')) {
       actions.append(el('button', {
         class: 'link',
-        text: 'bearbeiten',
+        text: t('action.edit', 'bearbeiten'),
         onclick: () => editRole(role),
       }));
 
       if (!role.isSystem) {
         actions.append(el('button', {
           class: 'link danger',
-          text: 'löschen',
-          onclick: () => remove(`/roles/${role.id}`, `Rolle ${role.name} gelöscht`, refreshAll),
+          text: t('action.delete', 'löschen'),
+          onclick: () => remove(`/roles/${role.id}`, t('msg.roleDeleted', 'Rolle gelöscht'), refreshAll),
         }));
       }
     }
 
-    if (role.isSystem) actions.append(el('span', { class: 'muted', text: 'Systemrolle' }));
+    if (role.isSystem) actions.append(el('span', { class: 'muted', text: t('role.systemRole', 'Systemrolle') }));
 
     return el('tr', {},
       el('td', { text: role.name }),
@@ -343,7 +517,7 @@ async function loadRoles() {
     );
   });
 
-  fillTable($('#table-roles tbody'), rows, 4, 'Keine Rollen vorhanden.');
+  fillTable($('#table-roles tbody'), rows, 4, t('role.empty', t('role.empty', 'Keine Rollen vorhanden.')));
 }
 
 function renderPermissionCheckboxes(selected = []) {
@@ -398,24 +572,24 @@ async function loadProjects() {
     if (can('projects:write') && p.status === 'active') {
       actions.append(el('button', {
         class: 'link',
-        text: 'abschließen',
-        onclick: () => patch(`/projects/${p.id}`, { status: 'completed' }, 'Projekt abgeschlossen', refreshAll),
+        text: t('action.complete', 'abschließen'),
+        onclick: () => patch(`/projects/${p.id}`, { status: 'completed' }, t('msg.projectCompleted', 'Projekt abgeschlossen'), refreshAll),
       }));
     }
 
     if (can('projects:archive') && p.status === 'completed') {
       actions.append(el('button', {
         class: 'link',
-        text: 'archivieren',
-        onclick: () => post(`/projects/${p.id}/archive`, null, 'Projekt archiviert', refreshAll),
+        text: t('action.archive', 'archivieren'),
+        onclick: () => post(`/projects/${p.id}/archive`, null, t('msg.projectArchived', 'Projekt archiviert'), refreshAll),
       }));
     }
 
     if (can('projects:delete')) {
       actions.append(el('button', {
         class: 'link danger',
-        text: 'löschen',
-        onclick: () => remove(`/projects/${p.id}`, `${p.name} gelöscht`, refreshAll),
+        text: t('action.delete', 'löschen'),
+        onclick: () => remove(`/projects/${p.id}`, t('msg.projectDeleted', 'Projekt gelöscht'), refreshAll),
       }));
     }
 
@@ -430,7 +604,7 @@ async function loadProjects() {
     );
   });
 
-  fillTable($('#table-projects tbody'), rows, 5, 'Noch keine Projekte angelegt.');
+  fillTable($('#table-projects tbody'), rows, 5, t('project.empty', t('project.empty', 'Noch keine Projekte angelegt.')));
 }
 
 async function loadTimesheets() {
@@ -447,53 +621,58 @@ async function loadTimesheets() {
   const suffix = params.toString() ? `?${params}` : '';
   const entries = (await api(`/timesheets${suffix}`))?.items ?? [];
 
-  const rows = entries.map((t) => {
+  // Named `entry` rather than `t`, which would shadow the translation helper.
+  const rows = entries.map((entry) => {
     const actions = el('td', { class: 'actions' });
-    const mine = me.user && t.userId === me.user.id;
+    const mine = me.user && entry.userId === me.user.id;
     const mayEdit = can('timesheets:write:all') || (mine && can('timesheets:write:own'));
 
     // The API only allows open -> submitted -> approved/rejected.
-    if (mayEdit && t.status === 'open') {
+    if (mayEdit && entry.status === 'open') {
       actions.append(el('button', {
         class: 'link',
-        text: 'einreichen',
-        onclick: () => patch(`/timesheets/${t.id}`, { status: 'submitted' }, 'Eingereicht', loadTimesheets),
+        text: t('action.submit', 'einreichen'),
+        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'submitted' },
+          t('msg.submitted', 'Eingereicht'), loadTimesheets),
       }));
     }
 
-    if (can('timesheets:approve') && t.status === 'submitted') {
+    if (can('timesheets:approve') && entry.status === 'submitted') {
       actions.append(el('button', {
         class: 'link',
-        text: 'genehmigen',
-        onclick: () => patch(`/timesheets/${t.id}`, { status: 'approved' }, 'Genehmigt', loadTimesheets),
+        text: t('action.approve', 'genehmigen'),
+        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'approved' },
+          t('msg.approved', 'Genehmigt'), loadTimesheets),
       }));
       actions.append(el('button', {
         class: 'link danger',
-        text: 'ablehnen',
-        onclick: () => patch(`/timesheets/${t.id}`, { status: 'rejected' }, 'Abgelehnt', loadTimesheets),
+        text: t('action.reject', 'ablehnen'),
+        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'rejected' },
+          t('msg.rejected', 'Abgelehnt'), loadTimesheets),
       }));
     }
 
-    if (mayEdit && t.status !== 'approved') {
+    if (mayEdit && entry.status !== 'approved') {
       actions.append(el('button', {
         class: 'link danger',
-        text: 'löschen',
-        onclick: () => remove(`/timesheets/${t.id}`, 'Eintrag gelöscht', loadTimesheets),
+        text: t('action.delete', 'löschen'),
+        onclick: () => remove(`/timesheets/${entry.id}`,
+          t('msg.entryDeleted', 'Eintrag gelöscht'), loadTimesheets),
       }));
     }
 
     return el('tr', { class: mine ? 'self' : '' },
-      el('td', { text: fmtDate(t.date) }),
-      el('td', { text: userName(t.userId) }),
-      el('td', { text: projectName(t.projectId) }),
-      el('td', { class: 'num', text: t.durationHours.toFixed(2) }),
-      el('td', { text: t.description ?? '–' }),
-      el('td', {}, statusBadge(t.status)),
+      el('td', { text: fmtDate(entry.date) }),
+      el('td', { text: userName(entry.userId) }),
+      el('td', { text: projectName(entry.projectId) }),
+      el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
+      el('td', { text: entry.description ?? '–' }),
+      el('td', {}, statusBadge(entry.status)),
       actions,
     );
   });
 
-  fillTable($('#table-timesheets tbody'), rows, 7, 'Keine Einträge für diesen Filter.');
+  fillTable($('#table-timesheets tbody'), rows, 7, t('ts.empty', 'Keine Einträge für diesen Filter.'));
 }
 
 function fillSettingsForm() {
@@ -620,14 +799,14 @@ function wireTOTP() {
   $('#totp-confirm').addEventListener('click', () => {
     const code = $('#totp-code').value.trim();
     mutate(() => api('/me/totp', { method: 'PUT', body: JSON.stringify({ code }) }),
-      'Zwei-Faktor-Authentifizierung aktiviert',
+      t('totp.enabled', 'Zwei-Faktor-Authentifizierung aktiviert'),
       async () => { $('#totp-code').value = ''; await refreshAll(); });
   });
 
   $('#totp-disable').addEventListener('click', () => {
     const code = $('#totp-code').value.trim();
     mutate(() => api(`/me/totp?code=${encodeURIComponent(code)}`, { method: 'DELETE' }),
-      'Zwei-Faktor-Authentifizierung deaktiviert',
+      t('totp.disabled', 'Zwei-Faktor-Authentifizierung deaktiviert'),
       async () => { $('#totp-code').value = ''; await refreshAll(); });
   });
 }
@@ -653,7 +832,7 @@ function switchView(name) {
 
 /** Picks the first tab the user is actually allowed to see. */
 function firstVisibleView() {
-  const tab = $$('.tab').find((t) => !t.hidden);
+  const tab = $$('.tab').find((candidate) => !candidate.hidden);
   return tab ? tab.dataset.view : 'settings';
 }
 
@@ -676,7 +855,7 @@ function wireForms() {
       if (body[key] !== undefined) body[key] = Number(body[key]);
     }
     mutate(() => api('/users', { method: 'POST', body: JSON.stringify(body) }),
-      'Mitarbeiter angelegt',
+      t('msg.userCreated', 'Mitarbeiter angelegt'),
       async () => { e.target.reset(); await refreshAll(); });
   });
 
@@ -695,7 +874,7 @@ function wireForms() {
       ? api(`/roles/${id}`, { method: 'PUT', body: JSON.stringify(body) })
       : api('/roles', { method: 'POST', body: JSON.stringify(body) });
 
-    mutate(() => request, id ? 'Rolle gespeichert' : 'Rolle angelegt',
+    mutate(() => request, id ? t('msg.roleSaved', 'Rolle gespeichert') : t('msg.roleCreated', 'Rolle angelegt'),
       async () => { resetRoleForm(); await refreshAll(); });
   });
 
@@ -705,7 +884,7 @@ function wireForms() {
     e.preventDefault();
     const body = formData(e.target);
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
-      'Projekt angelegt',
+      t('msg.projectCreated', 'Projekt angelegt'),
       async () => { e.target.reset(); await refreshAll(); });
   });
 
@@ -719,7 +898,7 @@ function wireForms() {
       durationHours: Number(raw.durationHours),
     };
     mutate(() => api('/timesheets', { method: 'POST', body: JSON.stringify(body) }),
-      'Zeit gebucht',
+      t('msg.booked', 'Zeit gebucht'),
       async () => {
         // Keep user/project/date so booking several entries in a row is quick.
         e.target.elements.durationHours.value = '';
@@ -742,7 +921,7 @@ function wireForms() {
         el('td', { text: userName(entry.userId) }),
         el('td', { class: 'num', text: entry.hours.toFixed(2) }),
       ));
-      fillTable($('#table-report tbody'), rows, 2, 'Keine Buchungen in diesem Zeitraum.');
+      fillTable($('#table-report tbody'), rows, 2, t('ot.empty', t('ot.empty', 'Keine Buchungen in diesem Zeitraum.')));
       $('#report-total').textContent = `${report.totalHours.toFixed(2)} h gesamt`;
       $('#report-result').hidden = false;
     }, null, null);
@@ -764,7 +943,7 @@ function wireForms() {
         el('td', { class: 'num', text: fmtHours(d.target) }),
         balanceCell(d.balance),
       ));
-      fillTable($('#table-overtime tbody'), rows, 4, 'Keine Buchungen in diesem Zeitraum.');
+      fillTable($('#table-overtime tbody'), rows, 4, t('ot.empty', t('ot.empty', 'Keine Buchungen in diesem Zeitraum.')));
 
       const total = balance.totalBalance;
       const pill = $('#overtime-total');
@@ -789,7 +968,7 @@ function wireForms() {
     };
     mutate(() => api(`/users/${me.user.id}/working-times`,
       { method: 'PUT', body: JSON.stringify(body) }),
-      'Arbeitszeiten gespeichert',
+      t('msg.workingTimesSaved', 'Arbeitszeiten gespeichert'),
       refreshAll);
   });
 
@@ -797,7 +976,7 @@ function wireForms() {
     e.preventDefault();
     const body = formData(e.target);
     mutate(() => api('/me/password', { method: 'PUT', body: JSON.stringify(body) }),
-      'Passwort geändert. Der Browser fragt beim nächsten Aufruf neu nach.',
+      t('msg.passwordChanged', 'Passwort geändert. Bitte neu anmelden.'),
       async () => { e.target.reset(); await refreshAll(); });
   });
 
@@ -819,7 +998,7 @@ async function loadTeamOvertime(suffix) {
     el('td', { class: 'num', text: fmtHours(b.totalTarget) }),
     balanceCell(b.totalBalance),
   ));
-  fillTable($('#table-overtime-team tbody'), rows, 4, 'Keine Buchungen in diesem Zeitraum.');
+  fillTable($('#table-overtime-team tbody'), rows, 4, t('ot.empty', t('ot.empty', 'Keine Buchungen in diesem Zeitraum.')));
   $('#overtime-team-card').hidden = false;
 }
 
@@ -840,7 +1019,7 @@ async function init() {
 
     $('#form-timesheet').elements.date.value = new Date().toISOString().slice(0, 10);
   } catch (err) {
-    toast(`Initialisierung fehlgeschlagen: ${err.message}`, 'error');
+    toast(`${t('msg.initFailed', 'Initialisierung fehlgeschlagen')}: ${err.message}`, 'error');
   }
 
   try {

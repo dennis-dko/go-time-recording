@@ -9,7 +9,7 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Zeiterfassung</h1>
+    <h1 data-i18n="app.title">Zeiterfassung</h1>
     <nav id="tabs">
       <button class="tab" data-view="timesheets" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.timesheets">Zeiteinträge</button>
       <button class="tab" data-view="overtime" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.overtime">Überstunden</button>
@@ -20,16 +20,13 @@
       <button class="tab" data-view="settings" data-i18n="nav.settings">Mein Konto</button>
     </nav>
     <div class="who" id="who"></div>
-    <select id="language-picker" class="lang" aria-label="Sprache"></select>
+    <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Sprache"></select>
     <button id="logout" class="secondary" hidden data-i18n="nav.logout">Abmelden</button>
   </header>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <div id="password-banner" class="banner" hidden>
-    Das Initialpasswort ist noch aktiv. Bitte unter <strong>Mein Konto</strong> ändern —
-    bis dahin bleiben Änderungen gesperrt.
-  </div>
+  <div id="password-banner" class="banner" hidden data-i18n="banner.password">Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleiben Änderungen gesperrt.</div>
 
   <!-- Visible until a session is confirmed, so the application never flashes
        into view before we know whether anyone is signed in. -->
@@ -55,39 +52,39 @@
     <!-- Zeiteinträge -->
     <section id="view-timesheets" class="view">
       <form id="form-timesheet" class="card form" data-perm="timesheets:write:own,timesheets:write:all">
-        <h2>Zeit buchen</h2>
+        <h2 data-i18n="ts.book">Zeit buchen</h2>
         <div class="grid">
-          <label>Mitarbeiter
+          <label data-i18n="field.user">Mitarbeiter
             <select name="userId" required></select>
           </label>
-          <label>Projekt
+          <label data-i18n="field.project">Projekt
             <select name="projectId" required></select>
           </label>
-          <label>Datum
+          <label data-i18n="field.date">Datum
             <input type="date" name="date" required>
           </label>
-          <label>Stunden
+          <label data-i18n="field.hours">Stunden
             <input type="number" name="durationHours" step="0.25" min="0.25" max="24" required>
           </label>
-          <label class="wide">Beschreibung
-            <input type="text" name="description" placeholder="optional">
+          <label class="wide" data-i18n="field.description">Beschreibung
+            <input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
-        <button type="submit">Buchen</button>
+        <button type="submit" data-i18n="action.book">Buchen</button>
       </form>
 
       <div class="card">
         <div class="card-head">
-          <h2>Einträge</h2>
+          <h2 data-i18n="ts.entries">Einträge</h2>
           <div class="filters">
-            <select id="filter-ts-user"><option value="">Alle Mitarbeiter</option></select>
-            <select id="filter-ts-project"><option value="">Alle Projekte</option></select>
+            <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">Alle Mitarbeiter</option></select>
+            <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">Alle Projekte</option></select>
             <select id="filter-ts-status">
-              <option value="">Alle Status</option>
-              <option value="open">offen</option>
-              <option value="submitted">eingereicht</option>
-              <option value="approved">genehmigt</option>
-              <option value="rejected">abgelehnt</option>
+              <option value="" data-i18n="filter.allStatus">Alle Status</option>
+              <option value="open" data-i18n="status.open">offen</option>
+              <option value="submitted" data-i18n="status.submitted">eingereicht</option>
+              <option value="approved" data-i18n="status.approved">genehmigt</option>
+              <option value="rejected" data-i18n="status.rejected">abgelehnt</option>
             </select>
           </div>
         </div>
@@ -95,8 +92,13 @@
           <table id="table-timesheets">
             <thead>
               <tr>
-                <th>Datum</th><th>Mitarbeiter</th><th>Projekt</th><th class="num">Stunden</th>
-                <th>Beschreibung</th><th>Status</th><th class="actions">Aktion</th>
+                <th data-i18n="field.date">Datum</th>
+                <th data-i18n="field.user">Mitarbeiter</th>
+                <th data-i18n="field.project">Projekt</th>
+                <th class="num" data-i18n="field.hours">Stunden</th>
+                <th data-i18n="field.description">Beschreibung</th>
+                <th data-i18n="field.status">Status</th>
+                <th class="actions" data-i18n="field.action">Aktion</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -108,24 +110,29 @@
     <!-- Überstunden -->
     <section id="view-overtime" class="view" hidden>
       <form id="form-overtime" class="card form">
-        <h2>Überstunden</h2>
+        <h2 data-i18n="nav.overtime">Überstunden</h2>
         <div class="grid">
-          <label>Mitarbeiter<select name="userId"></select></label>
-          <label>Von<input type="date" name="from"></label>
-          <label>Bis<input type="date" name="to"></label>
+          <label data-i18n="field.user">Mitarbeiter<select name="userId"></select></label>
+          <label data-i18n="field.from">Von<input type="date" name="from"></label>
+          <label data-i18n="field.to">Bis<input type="date" name="to"></label>
         </div>
-        <button type="submit">Berechnen</button>
+        <button type="submit" data-i18n="action.calculate">Berechnen</button>
       </form>
 
       <div class="card" id="overtime-result" hidden>
         <div class="card-head">
-          <h2>Saldo <span id="overtime-total" class="pill"></span></h2>
+          <h2><span data-i18n="ot.balance">Saldo</span> <span id="overtime-total" class="pill"></span></h2>
           <span class="muted" id="overtime-meta"></span>
         </div>
         <div class="table-wrap">
           <table id="table-overtime">
             <thead>
-              <tr><th>Datum</th><th class="num">Gebucht</th><th class="num">Soll</th><th class="num">Saldo</th></tr>
+              <tr>
+                <th data-i18n="field.date">Datum</th>
+                <th class="num" data-i18n="ot.booked">Gebucht</th>
+                <th class="num" data-i18n="ot.target">Soll</th>
+                <th class="num" data-i18n="ot.balance">Saldo</th>
+              </tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -133,11 +140,16 @@
       </div>
 
       <div class="card" id="overtime-team-card" data-perm="reports:read" hidden>
-        <h2>Team-Saldo (gleicher Zeitraum)</h2>
+        <h2 data-i18n="ot.team">Team-Saldo (gleicher Zeitraum)</h2>
         <div class="table-wrap">
           <table id="table-overtime-team">
             <thead>
-              <tr><th>Mitarbeiter</th><th class="num">Gebucht</th><th class="num">Soll</th><th class="num">Saldo</th></tr>
+              <tr>
+                <th data-i18n="field.user">Mitarbeiter</th>
+                <th class="num" data-i18n="ot.booked">Gebucht</th>
+                <th class="num" data-i18n="ot.target">Soll</th>
+                <th class="num" data-i18n="ot.balance">Saldo</th>
+              </tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -148,22 +160,28 @@
     <!-- Projekte -->
     <section id="view-projects" class="view" hidden>
       <form id="form-project" class="card form" data-perm="projects:write">
-        <h2>Projekt anlegen</h2>
+        <h2 data-i18n="project.create">Projekt anlegen</h2>
         <div class="grid">
-          <label>Name<input type="text" name="name" required></label>
-          <label>Start<input type="date" name="startDate" required></label>
-          <label>Ende<input type="date" name="endDate"></label>
-          <label class="wide">Beschreibung<input type="text" name="description" placeholder="optional"></label>
+          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
+          <label data-i18n="field.start">Start<input type="date" name="startDate" required></label>
+          <label data-i18n="field.end">Ende<input type="date" name="endDate"></label>
+          <label class="wide" data-i18n="field.description">Beschreibung<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
-        <button type="submit">Anlegen</button>
+        <button type="submit" data-i18n="action.create">Anlegen</button>
       </form>
 
       <div class="card">
-        <h2>Projekte</h2>
+        <h2 data-i18n="nav.projects">Projekte</h2>
         <div class="table-wrap">
           <table id="table-projects">
             <thead>
-              <tr><th>Name</th><th>Zeitraum</th><th>Beschreibung</th><th>Status</th><th class="actions">Aktion</th></tr>
+              <tr>
+                <th data-i18n="field.name">Name</th>
+                <th data-i18n="field.period">Zeitraum</th>
+                <th data-i18n="field.description">Beschreibung</th>
+                <th data-i18n="field.status">Status</th>
+                <th class="actions" data-i18n="field.action">Aktion</th>
+              </tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -174,29 +192,33 @@
     <!-- Mitarbeiter -->
     <section id="view-users" class="view" hidden>
       <form id="form-user" class="card form" data-perm="users:write">
-        <h2>Mitarbeiter anlegen</h2>
+        <h2 data-i18n="user.create">Mitarbeiter anlegen</h2>
         <div class="grid">
-          <label>Name<input type="text" name="name" required></label>
-          <label>E-Mail<input type="email" name="email" required></label>
-          <label>Rolle<select name="role" required></select></label>
-          <label>Passwort
+          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
+          <label data-i18n="field.email">E-Mail<input type="email" name="email" required></label>
+          <label data-i18n="field.role">Rolle<select name="role" required></select></label>
+          <label data-i18n="field.password">Passwort
             <input type="password" name="password" minlength="8"
-                   placeholder="leer = Initialpasswort">
+                   data-i18n-placeholder="user.initialPassword" placeholder="leer = Initialpasswort">
           </label>
-          <label>Soll-Std./Tag<input type="number" name="dailyTargetHours" step="0.5" min="0" max="24" placeholder="8"></label>
-          <label>Max-Std./Tag<input type="number" name="maxDailyHours" step="0.5" min="0" max="24" placeholder="Standard"></label>
+          <label data-i18n="field.targetPerDay">Soll-Std./Tag<input type="number" name="dailyTargetHours" step="0.5" min="0" max="24" placeholder="8"></label>
+          <label data-i18n="field.maxPerDay">Max-Std./Tag<input type="number" name="maxDailyHours" step="0.5" min="0" max="24" data-i18n-placeholder="field.default" placeholder="Standard"></label>
         </div>
-        <button type="submit">Anlegen</button>
+        <button type="submit" data-i18n="action.create">Anlegen</button>
       </form>
 
       <div class="card">
-        <h2>Mitarbeiter</h2>
+        <h2 data-i18n="nav.users">Mitarbeiter</h2>
         <div class="table-wrap">
           <table id="table-users">
             <thead>
               <tr>
-                <th>Name</th><th>E-Mail</th><th>Rolle</th>
-                <th class="num">Soll/Tag</th><th class="num">Max/Tag</th><th class="actions">Aktion</th>
+                <th data-i18n="field.name">Name</th>
+                <th data-i18n="field.email">E-Mail</th>
+                <th data-i18n="field.role">Rolle</th>
+                <th class="num" data-i18n="field.targetPerDay">Soll/Tag</th>
+                <th class="num" data-i18n="field.maxPerDay">Max/Tag</th>
+                <th class="actions" data-i18n="field.action">Aktion</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -208,28 +230,33 @@
     <!-- Rollen -->
     <section id="view-roles" class="view" hidden>
       <form id="form-role" class="card form" data-perm="roles:write">
-        <h2 id="role-form-title">Rolle anlegen</h2>
+        <h2 id="role-form-title" data-i18n="role.create">Rolle anlegen</h2>
         <input type="hidden" name="id">
         <div class="grid">
-          <label>Name<input type="text" name="name" required></label>
-          <label class="wide">Beschreibung<input type="text" name="description" placeholder="optional"></label>
+          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
+          <label class="wide" data-i18n="field.description">Beschreibung<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
         <fieldset class="perms">
-          <legend>Berechtigungen</legend>
+          <legend data-i18n="role.permissions">Berechtigungen</legend>
           <div id="permission-list" class="perm-grid"></div>
         </fieldset>
         <div class="row">
-          <button type="submit">Speichern</button>
-          <button type="button" class="secondary" id="role-reset">Neu</button>
+          <button type="submit" data-i18n="action.save">Speichern</button>
+          <button type="button" class="secondary" id="role-reset" data-i18n="action.new">Neu</button>
         </div>
       </form>
 
       <div class="card">
-        <h2>Rollen</h2>
+        <h2 data-i18n="nav.roles">Rollen</h2>
         <div class="table-wrap">
           <table id="table-roles">
             <thead>
-              <tr><th>Name</th><th>Beschreibung</th><th class="num">Rechte</th><th class="actions">Aktion</th></tr>
+              <tr>
+                <th data-i18n="field.name">Name</th>
+                <th data-i18n="field.description">Beschreibung</th>
+                <th class="num" data-i18n="role.rights">Rechte</th>
+                <th class="actions" data-i18n="field.action">Aktion</th>
+              </tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -240,20 +267,25 @@
     <!-- Auswertung -->
     <section id="view-report" class="view" hidden>
       <form id="form-report" class="card form">
-        <h2>Projektauswertung</h2>
+        <h2 data-i18n="report.title">Projektauswertung</h2>
         <div class="grid">
-          <label>Projekt<select name="projectId" required></select></label>
-          <label>Von<input type="date" name="from"></label>
-          <label>Bis<input type="date" name="to"></label>
+          <label data-i18n="field.project">Projekt<select name="projectId" required></select></label>
+          <label data-i18n="field.from">Von<input type="date" name="from"></label>
+          <label data-i18n="field.to">Bis<input type="date" name="to"></label>
         </div>
-        <button type="submit">Auswerten</button>
+        <button type="submit" data-i18n="action.evaluate">Auswerten</button>
       </form>
 
       <div class="card" id="report-result" hidden>
-        <h2>Ergebnis <span id="report-total" class="pill"></span></h2>
+        <h2><span data-i18n="report.result">Ergebnis</span> <span id="report-total" class="pill"></span></h2>
         <div class="table-wrap">
           <table id="table-report">
-            <thead><tr><th>Mitarbeiter</th><th class="num">Stunden</th></tr></thead>
+            <thead>
+              <tr>
+                <th data-i18n="field.user">Mitarbeiter</th>
+                <th class="num" data-i18n="field.hours">Stunden</th>
+              </tr>
+            </thead>
             <tbody></tbody>
           </table>
         </div>
@@ -263,20 +295,20 @@
     <!-- Mein Konto -->
     <section id="view-settings" class="view" hidden>
       <form id="form-working-times" class="card form">
-        <h2>Meine Arbeitszeiten</h2>
-        <p class="muted">
+        <h2 data-i18n="settings.workingTimes">Meine Arbeitszeiten</h2>
+        <p class="muted" data-i18n="settings.workingTimesHint">
           Das Tagessoll ist die Grundlage der Überstunden. Das Tagesmaximum begrenzt,
           wie viel an einem Tag gebucht werden darf.
         </p>
         <div class="grid">
-          <label>Soll-Stunden pro Tag
+          <label data-i18n="settings.targetHours">Soll-Stunden pro Tag
             <input type="number" name="dailyTargetHours" step="0.5" min="0" max="24" placeholder="8">
           </label>
-          <label>Maximale Stunden pro Tag
-            <input type="number" name="maxDailyHours" step="0.5" min="0" max="24" placeholder="Standard">
+          <label data-i18n="settings.maxHours">Maximale Stunden pro Tag
+            <input type="number" name="maxDailyHours" step="0.5" min="0" max="24" data-i18n-placeholder="field.default" placeholder="Standard">
           </label>
         </div>
-        <button type="submit">Speichern</button>
+        <button type="submit" data-i18n="action.save">Speichern</button>
       </form>
 
       <div class="card" id="totp-card">
@@ -302,12 +334,12 @@
       </div>
 
       <form id="form-password" class="card form">
-        <h2>Passwort ändern</h2>
+        <h2 data-i18n="settings.changePassword">Passwort ändern</h2>
         <div class="grid">
-          <label>Aktuelles Passwort<input type="password" name="currentPassword" required></label>
-          <label>Neues Passwort<input type="password" name="newPassword" minlength="8" required></label>
+          <label data-i18n="settings.currentPassword">Aktuelles Passwort<input type="password" name="currentPassword" required></label>
+          <label data-i18n="settings.newPassword">Neues Passwort<input type="password" name="newPassword" minlength="8" required></label>
         </div>
-        <button type="submit">Passwort ändern</button>
+        <button type="submit" data-i18n="settings.changePassword">Passwort ändern</button>
       </form>
     </section>
   </main>
