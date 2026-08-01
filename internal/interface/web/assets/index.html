@@ -205,9 +205,9 @@
     <!-- Projekte -->
     <section id="view-projects" class="view" hidden>
       <form id="form-category" class="card form" data-perm="projects:write:own">
-        <h2 data-i18n="cat.create">Eigene Kategorie anlegen</h2>
+        <h2 data-i18n="cat.create">Eigenes Projekt anlegen</h2>
         <p class="muted" data-i18n="cat.hint">
-          Kategorien sind privat und nur für Sie sichtbar. Damit lässt sich Zeit
+          Eigene Projekte sind privat und nur für Sie sichtbar. Damit lässt sich Zeit
           innerhalb eines Tages aufteilen, wenn kein gemeinsames Projekt passt.
         </p>
         <div class="grid">
@@ -393,6 +393,45 @@
         </div>
       </div>
 
+      <div class="card" id="token-card">
+        <div class="card-head">
+          <h2 data-i18n="token.title">API-Tokens</h2>
+          <a class="tab" href="/api-docs" target="_blank" rel="noopener" data-i18n="token.docs">API-Dokumentation &#8599;</a>
+        </div>
+        <p class="muted" data-i18n="token.hint">
+          Ein Token ersetzt bei API-Aufrufen Ihr Passwort und hat immer genau die Rechte
+          Ihrer aktuellen Rolle. Der Wert wird nur einmal angezeigt.
+        </p>
+        <form id="form-token" class="form">
+          <div class="grid">
+            <label data-i18n="token.name">Bezeichnung<input type="text" name="name" required maxlength="120"></label>
+            <label data-i18n="token.expires">Gültig für (Tage, 0 = unbegrenzt)
+              <input type="number" name="expiresInDays" min="0" max="3650" value="0">
+            </label>
+          </div>
+          <button type="submit" data-i18n="token.create">Token erstellen</button>
+        </form>
+        <div id="token-secret" hidden>
+          <p class="muted plus" data-i18n="token.copyNow">Jetzt kopieren — dieser Wert wird nicht wieder angezeigt:</p>
+          <pre class="secret" id="token-secret-value"></pre>
+        </div>
+        <div class="table-wrap">
+          <table id="table-tokens">
+            <thead>
+              <tr>
+                <th data-i18n="token.name">Bezeichnung</th>
+                <th data-i18n="token.prefix">Präfix</th>
+                <th data-i18n="token.created">Erstellt</th>
+                <th data-i18n="token.expiresAt">Läuft ab</th>
+                <th data-i18n="token.lastUsed">Zuletzt genutzt</th>
+                <th class="actions" data-i18n="field.action">Aktion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
       <form id="form-password" class="card form">
         <h2 data-i18n="settings.changePassword">Passwort ändern</h2>
         <div class="grid">
@@ -473,7 +512,11 @@
             <input type="text" name="sslMode" placeholder="disable">
           </label>
         </div>
-        <button type="submit" data-i18n="action.save">Speichern</button>
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Speichern</button>
+          <button type="button" class="secondary" id="datasource-test" data-i18n="admin.testConnection">Verbindung testen</button>
+        </div>
+        <p class="muted" id="datasource-test-result"></p>
       </form>
 
       <form id="form-ldap" class="card form">

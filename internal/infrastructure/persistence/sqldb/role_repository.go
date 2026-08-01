@@ -74,7 +74,7 @@ func (r *RoleRepository) GetAll(ctx context.Context) ([]*model.Role, error) {
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	roles := make([]*model.Role, 0)
 
@@ -157,7 +157,7 @@ func (r *RoleRepository) permissionsOf(ctx context.Context, roleID uint) ([]stri
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	permissions := make([]string, 0)
 

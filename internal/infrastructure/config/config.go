@@ -38,6 +38,23 @@ type Config struct {
 	// authenticate again.
 	SessionLifetime time.Duration
 
+	// TLS serves HTTPS with automatically obtained Let's Encrypt certificates.
+	TLSEnabled  bool
+	TLSDomains  []string
+	TLSEmail    string
+	TLSCacheDir string
+	TLSPort     int
+	HTTPPort    int
+	TLSStaging  bool
+
+	// HSTSMaxAge tells browsers to refuse plain HTTP for this long. It is only
+	// sent over connections that already are HTTPS.
+	HSTSMaxAge time.Duration
+
+	// RateLimit bounds sign-in and API-token requests per client per window.
+	RateLimit       int
+	RateLimitWindow time.Duration
+
 	// AutoCloseSchedule is the cron expression for sweeping stale open
 	// timesheets. Empty disables the job.
 	AutoCloseSchedule string
@@ -56,7 +73,32 @@ const (
 	defaultAutoCloseAfterDays = 14
 	defaultMaxDailyHours      = 24
 	defaultSessionLifetime    = 12 * time.Hour
+
+	defaultTLSCacheDir      = "configs/certs"
+	defaultTLSPort          = 443
+	defaultHTTPRedirectPort = 80
+
+	// A year is the value browsers expect before they will preload a host.
+	defaultHSTSMaxAge = 365 * 24 * time.Hour
+
+	// Generous enough for a script polling the API, tight enough that
+	// guessing a password or a token is hopeless.
+	defaultRateLimit       = 30
+	defaultRateLimitWindow = time.Minute
 )
+
+// splitList reads a comma-separated setting, dropping blanks.
+func splitList(raw string) []string {
+	var out []string
+
+	for _, part := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+
+	return out
+}
 
 // Load reads the application settings, applying defaults that let the binary
 // run with no configuration at all.
@@ -67,8 +109,20 @@ func Load(p Provider) Config {
 		UIEnabled: boolOr(p.GetOrDefault("UI_ENABLED", "true"), true),
 		// Defaults to on: an instance that quietly serves everyone full
 		// administrative rights should be a deliberate choice, not an oversight.
-		AuthRequired:       boolOr(p.GetOrDefault("AUTH_ENABLED", "true"), true),
-		SessionLifetime:    durationOr(p.GetOrDefault("SESSION_LIFETIME", ""), defaultSessionLifetime),
+		AuthRequired:    boolOr(p.GetOrDefault("AUTH_ENABLED", "true"), true),
+		SessionLifetime: durationOr(p.GetOrDefault("SESSION_LIFETIME", ""), defaultSessionLifetime),
+
+		TLSEnabled:  boolOr(p.GetOrDefault("TLS_ENABLED", "false"), false),
+		TLSDomains:  splitList(p.Get("TLS_DOMAINS")),
+		TLSEmail:    p.Get("TLS_EMAIL"),
+		TLSCacheDir: p.GetOrDefault("TLS_CACHE_DIR", defaultTLSCacheDir),
+		TLSPort:     intOr(p.GetOrDefault("TLS_PORT", ""), defaultTLSPort),
+		HTTPPort:    intOr(p.GetOrDefault("TLS_REDIRECT_PORT", ""), defaultHTTPRedirectPort),
+		TLSStaging:  boolOr(p.GetOrDefault("TLS_STAGING", "false"), false),
+
+		HSTSMaxAge:         durationOr(p.GetOrDefault("HSTS_MAX_AGE", ""), defaultHSTSMaxAge),
+		RateLimit:          intOr(p.GetOrDefault("RATE_LIMIT", ""), defaultRateLimit),
+		RateLimitWindow:    durationOr(p.GetOrDefault("RATE_LIMIT_WINDOW", ""), defaultRateLimitWindow),
 		AutoCloseSchedule:  p.GetOrDefault("AUTO_CLOSE_SCHEDULE", defaultAutoCloseSchedule),
 		AutoCloseAfterDays: intOr(p.GetOrDefault("AUTO_CLOSE_AFTER_DAYS", ""), defaultAutoCloseAfterDays),
 		MaxDailyHours:      floatOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),

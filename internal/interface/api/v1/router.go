@@ -16,6 +16,7 @@ type Handlers struct {
 	Timesheets *rest.TimesheetHandler
 	Me         *rest.MeHandler
 	Settings   *rest.SettingsHandler
+	Tokens     *rest.APITokenHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -46,6 +47,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/settings/ldap/test", h.Settings.TestLDAP)
 	app.GET(base+"/settings/datasource", h.Settings.Datasource)
 	app.PUT(base+"/settings/datasource", h.Settings.SaveDatasource)
+	app.POST(base+"/settings/datasource/test", h.Settings.TestDatasource)
 
 	app.GET(base+"/me", h.Me.Me)
 	app.PUT(base+"/me/password", h.Me.ChangePassword)
@@ -53,6 +55,9 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/me/totp", h.Auth.BeginTOTP)
 	app.PUT(base+"/me/totp", h.Auth.ConfirmTOTP)
 	app.DELETE(base+"/me/totp", h.Auth.DisableTOTP)
+	app.GET(base+"/me/tokens", h.Tokens.List)
+	app.POST(base+"/me/tokens", h.Tokens.Create)
+	app.DELETE(base+"/me/tokens/{id}", h.Tokens.Revoke)
 	app.GET(base+"/overtime", h.Me.TeamOvertime)
 
 	app.GET(base+"/users", h.Users.List)

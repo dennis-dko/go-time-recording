@@ -125,7 +125,16 @@ func TestSessionTokensAreDistinctAndHashed(t *testing.T) {
 		t.Error("the stored form must not equal the token itself")
 	}
 
-	if HashToken(first) != HashToken(first) {
+	// Separate variables, not two calls compared inline: the compiler and the
+	// linter both treat `f(x) != f(x)` as trivially false.
+	firstHash := HashToken(first)
+	secondHash := HashToken(first)
+
+	if firstHash != secondHash {
 		t.Error("hashing must be deterministic")
+	}
+
+	if firstHash == HashToken(second) {
+		t.Error("different tokens must not hash alike")
 	}
 }

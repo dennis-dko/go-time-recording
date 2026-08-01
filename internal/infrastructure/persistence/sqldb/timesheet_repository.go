@@ -148,7 +148,7 @@ func (r *TimesheetRepository) query(ctx context.Context, query string, args ...a
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	timesheets := make([]*model.Timesheet, 0)
 

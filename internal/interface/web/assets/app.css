@@ -418,3 +418,31 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 /* The file picker is not a text field, so it must not stretch like one. */
 input[type="file"] { border: none; background: none; padding: 6px 0; }
+
+/* --- API documentation page --- */
+
+.op { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+.op:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+
+.op-head { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
+.op-summary { color: var(--muted); font-size: 13px; }
+.op-path { font-size: 13px; overflow-wrap: anywhere; }
+
+.op h3 { color: var(--muted); font-size: 12px; margin: 12px 0 4px; text-transform: uppercase; }
+
+.method {
+  border-radius: 6px;
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding: 2px 8px;
+}
+
+.method-get { background: #2f6feb; }
+.method-post { background: #2e9e5b; }
+.method-put { background: #d68910; }
+.method-patch { background: #8e44ad; }
+.method-delete { background: #c0392b; }
+
+.topbar a.tab { text-decoration: none; }

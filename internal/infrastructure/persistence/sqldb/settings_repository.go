@@ -70,7 +70,7 @@ func (r *SettingsRepository) GetAll(ctx context.Context) (map[string]string, err
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := make(map[string]string)
 

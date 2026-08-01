@@ -404,12 +404,31 @@ const TRANSLATIONS = {
     'ts.noProject': 'no project',
     'filter.noProject': 'Without project',
 
-    'cat.create': 'Create your own category',
+    'cat.create': 'Create your own project',
     'cat.hint':
-      'Categories are private and visible only to you. Use them to split up a day '
-      + 'when no shared project fits.',
+      'Your own projects are private and visible only to you. Use them to split up a '
+      + 'day when no shared project fits.',
     'cat.badge': 'private',
-    'msg.categoryCreated': 'Category created',
+
+    'token.title': 'API tokens',
+    'token.docs': 'API documentation ↗',
+    'token.hint':
+      'A token replaces your password for API calls and always carries exactly the '
+      + 'permissions of your current role. The value is shown only once.',
+    'token.name': 'Label',
+    'token.expires': 'Valid for (days, 0 = unlimited)',
+    'token.create': 'Create token',
+    'token.copyNow': 'Copy it now — this value is never shown again:',
+    'token.prefix': 'Prefix',
+    'token.created': 'Created',
+    'token.expiresAt': 'Expires',
+    'token.lastUsed': 'Last used',
+    'token.never': 'unlimited',
+    'token.unused': 'never',
+    'token.revoke': 'revoke',
+    'token.revoked': 'Token revoked',
+    'token.empty': 'No tokens yet.',
+    'msg.categoryCreated': 'Project created',
 
     'nav.admin': 'Settings',
     'admin.branding': 'Appearance',
@@ -519,10 +538,41 @@ function setLeadingText(node, value) {
   else node.textContent = value;
 }
 
+/**
+ * The language to render in.
+ *
+ * A signed-in user's stored choice wins. Before anyone has signed in - which
+ * is exactly the sign-in screen - the browser's own preference decides, so a
+ * first-time visitor is not greeted in a language they may not read.
+ */
+function activeLanguage() {
+  if (me.user?.language) return me.user.language;
+
+  return detectBrowserLanguage();
+}
+
+/**
+ * Picks the best supported language from the browser's preference list.
+ *
+ * Only the primary subtag is compared, so "en-GB" and "en-US" both match "en".
+ */
+function detectBrowserLanguage() {
+  const supported = Object.keys(TRANSLATIONS);
+  const preferences = navigator.languages?.length
+    ? navigator.languages
+    : [navigator.language ?? 'de'];
+
+  for (const preference of preferences) {
+    const primary = String(preference).toLowerCase().split('-')[0];
+    if (supported.includes(primary)) return primary;
+  }
+
+  return 'de';
+}
+
 /** Translates one key for use in code-generated text. */
 function t(key, fallback) {
-  const language = me.user?.language ?? 'de';
-  return TRANSLATIONS[language]?.[key] ?? fallback;
+  return TRANSLATIONS[activeLanguage()]?.[key] ?? fallback;
 }
 
 // -------------------------------------------------------------------- views
@@ -544,7 +594,7 @@ async function loadMe() {
   $("#password-banner").hidden = !me.user.mustChangePassword;
   $("#logout").hidden = !me.authEnabled;
 
-  applyLanguage(me.user.language ?? "de");
+  applyLanguage(activeLanguage());
   applyPermissionVisibility();
   renderTOTPState();
 }
@@ -958,6 +1008,47 @@ function fillSettingsForm() {
   form.elements.maxDailyHours.value = me.user.maxDailyHours || '';
 }
 
+// --------------------------------------------------------------- API tokens
+
+async function loadTokens() {
+  const tokens = (await api('/me/tokens'))?.items ?? [];
+
+  const rows = tokens.map((token) => el('tr', { class: token.expired ? 'empty' : '' },
+    el('td', { text: token.name }),
+    el('td', {}, el('code', { text: `${token.prefix}…` })),
+    el('td', { text: fmtDate(token.createdAt) }),
+    el('td', { text: token.expiresAt ? fmtDate(token.expiresAt) : t('token.never', 'unbegrenzt') }),
+    el('td', { text: token.lastUsedAt ? fmtDate(token.lastUsedAt) : t('token.unused', 'nie') }),
+    el('td', { class: 'actions' }, el('button', {
+      class: 'link danger',
+      text: t('token.revoke', 'widerrufen'),
+      onclick: () => remove(`/me/tokens/${token.id}`, t('token.revoked', 'Token widerrufen'), loadTokens),
+    })),
+  ));
+
+  fillTable($('#table-tokens tbody'), rows, 6, t('token.empty', 'Noch keine Tokens angelegt.'));
+}
+
+function wireTokens() {
+  $('#form-token').addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    const raw = formData(e.target);
+    const body = { name: raw.name, expiresInDays: Number(raw.expiresInDays ?? 0) };
+
+    mutate(async () => {
+      const created = await api('/me/tokens', { method: 'POST', body: JSON.stringify(body) });
+
+      // The secret exists only in this response, so it is shown until the
+      // user navigates away rather than in a toast that disappears.
+      $('#token-secret-value').textContent = created.secret;
+      $('#token-secret').hidden = false;
+      e.target.reset();
+      await loadTokens();
+    }, null, null);
+  });
+}
+
 // ------------------------------------------------------------ administration
 
 /** Whether the caller may open the administration screen. */
@@ -1095,6 +1186,20 @@ function wireAdmin() {
     mutate(() => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
       t('admin.saved', 'Einstellungen gespeichert'),
       loadAdmin);
+  });
+
+  $('#datasource-test').addEventListener('click', () => {
+    const result = $('#datasource-test-result');
+    result.textContent = t('admin.testing', 'Verbindung wird geprüft …');
+    result.className = 'muted';
+
+    mutate(async () => {
+      const outcome = await api('/settings/datasource/test',
+        { method: 'POST', body: JSON.stringify(formData($('#form-datasource'))) });
+
+      result.textContent = outcome.message;
+      result.className = outcome.ok ? 'muted plus' : 'muted minus';
+    }, null, null);
   });
 
   $('#ldap-test').addEventListener('click', () => {
@@ -1297,6 +1402,7 @@ async function refreshAll() {
   // After users and projects, so the calendar can resolve names.
   await loadCalendar();
   await loadAdmin();
+  await loadTokens();
   fillSettingsForm();
 }
 
@@ -1348,7 +1454,7 @@ function wireForms() {
     e.preventDefault();
     const body = { ...formData(e.target), private: true };
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
-      t('msg.categoryCreated', 'Kategorie angelegt'),
+      t('msg.categoryCreated', 'Projekt angelegt'),
       async () => { e.target.reset(); await refreshAll(); });
   });
 
@@ -1481,11 +1587,16 @@ async function init() {
     // Falls back to the built-in title.
   }
 
+  // Applied before the first render so the sign-in screen already speaks the
+  // browser language; a signed-in user overrides it in loadMe.
+  applyLanguage(activeLanguage());
+
   try {
     wireForms();
     wireTOTP();
     wireCalendar();
     wireAdmin();
+    wireTokens();
     $('#logout').addEventListener('click', doLogout);
     $('#language-picker').addEventListener('change', (e) => mutate(
       () => api('/me/language', { method: 'PUT', body: JSON.stringify({ language: e.target.value }) }),

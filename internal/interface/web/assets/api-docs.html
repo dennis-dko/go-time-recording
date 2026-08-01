@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API documentation</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>&#9201;</text></svg>">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="doc-title">API documentation</h1>
+    <nav>
+      <a class="tab" href="/">&#8592; Back to the application</a>
+      <a class="tab" href="/openapi.json" download>Download openapi.json</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <p class="muted" id="doc-description"></p>
+      <p class="muted">
+        This page renders the OpenAPI specification that ships with the binary. The raw
+        specification is at <code>/openapi.json</code> and can be loaded into Swagger UI,
+        Postman, Insomnia or any OpenAPI client.
+      </p>
+    </div>
+
+    <div id="doc-body"></div>
+  </main>
+
+  <script src="/api-docs.js"></script>
+</body>
+</html>

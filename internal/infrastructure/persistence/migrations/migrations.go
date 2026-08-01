@@ -43,7 +43,29 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260801020000: {UP: func(d migration.Datasource) error {
 			return addPrivateProjects(d, dialect)
 		}},
+		20260801030000: {UP: func(d migration.Datasource) error {
+			return createAPITokens(d, dialect)
+		}},
 	}
+}
+
+// createAPITokens adds the personal tokens used for API access.
+//
+// A token stores only a hash, plus a short readable prefix so its owner can
+// tell their tokens apart in a list without the secret being present.
+func createAPITokens(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE api_tokens (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		name VARCHAR(120) NOT NULL,
+		token_hash VARCHAR(64) NOT NULL UNIQUE,
+		prefix VARCHAR(32) NOT NULL,
+		created_at %s NOT NULL,
+		expires_at %s,
+		last_used_at %s
+	)`, primaryKey(dialect), foreignKeyID(dialect),
+		timestamp(dialect), timestamp(dialect), timestamp(dialect)),
+		"CREATE INDEX idx_api_tokens_user ON api_tokens (user_id)")
 }
 
 // addPrivateProjects lets every user keep personal categories.
@@ -83,7 +105,7 @@ func grantToAllRoles(d migration.Datasource, dialect, permission string) error {
 	for rows.Next() {
 		var id int64
 		if scanErr := rows.Scan(&id); scanErr != nil {
-			rows.Close()
+			_ = rows.Close()
 
 			return fmt.Errorf("reading roles: %w", scanErr)
 		}
@@ -92,7 +114,7 @@ func grantToAllRoles(d migration.Datasource, dialect, permission string) error {
 	}
 
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 
 	if err != nil {
 		return fmt.Errorf("reading roles: %w", err)

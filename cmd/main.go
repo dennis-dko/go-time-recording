@@ -3,7 +3,9 @@
 package main
 
 import (
+	"context"
 	"reflect"
+	"time"
 
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
@@ -15,6 +17,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/directory"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/tlsserver"
 	v1 "github.com/dennis-dko/go-time-recording/internal/interface/api/v1"
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
@@ -76,7 +79,10 @@ func main() {
 	timesheetRepo := sqldb.NewTimesheetRepository(db, cfg.Dialect)
 	settingsRepo := sqldb.NewSettingsRepository(db, cfg.Dialect)
 
+	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
+
 	auth := appservice.NewAuthService(userRepo, roleRepo)
+	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
 	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo)
 
 	// The directory starts unconfigured and is loaded from the settings once
@@ -139,11 +145,17 @@ func main() {
 
 	authorizer := rest.NewAuthorizer(auth, cfg.AuthEnabled())
 
-	// Order matters: the cookie queue must wrap the session lookup, which must
-	// in turn run before the UI so a signed-in user is known by the time a
-	// handler asks. GoFr applies middleware in registration order.
+	// Order matters, and GoFr applies middleware in registration order:
+	// security headers first so they are set even on a rejected request, then
+	// the rate limit, then the cookie queue wrapping the two authentication
+	// paths, and only then the UI.
+	app.UseMiddleware(rest.SecurityHeaders(cfg.HSTSMaxAge))
+	app.UseMiddleware(rest.NewRateLimiter(cfg.RateLimit, cfg.RateLimitWindow).Middleware())
 	app.UseMiddleware(rest.CookieMiddleware())
 	app.UseMiddleware(rest.SessionMiddleware(sessions))
+	// Tokens are checked after sessions and only fill in when no session was
+	// found, so a browser session always wins over a stray header.
+	app.UseMiddleware(rest.APITokenMiddleware(apiTokens))
 
 	if cfg.UIEnabled {
 		// GoFr's AddStaticFiles only serves a directory from disk, which would
@@ -160,6 +172,7 @@ func main() {
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer),
 		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer),
+		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, cfg.Dialect,
 			ldapClient.Configure,
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
@@ -187,5 +200,65 @@ func main() {
 			worker.AutoSubmitStaleTimesheets(timesheetRepo, cfg.AutoCloseAfterDays))
 	}
 
+	if stop := startTLS(app, cfg); stop != nil {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), tlsShutdownGrace)
+			defer cancel()
+
+			if err := stop(ctx); err != nil {
+				app.Logger().Errorf("stopping the HTTPS server: %v", err)
+			}
+		}()
+	}
+
 	app.Run()
+}
+
+// tlsShutdownGrace bounds how long the HTTPS listener is given to drain.
+const tlsShutdownGrace = 10 * time.Second
+
+// startTLS puts a Let's Encrypt terminated HTTPS listener in front of GoFr's
+// plain one, and returns its shutdown function.
+//
+// GoFr owns its listener and accepts only a static certificate pair, so
+// automatic certificates are terminated in front of it and proxied to
+// localhost. Returns nil when TLS is switched off.
+func startTLS(app *gofr.App, cfg appconfig.Config) func(context.Context) error {
+	if !cfg.TLSEnabled {
+		app.Logger().Warn(
+			"TLS_ENABLED is false: traffic is served over plain HTTP. " +
+				"Set TLS_ENABLED=true with TLS_DOMAINS to serve HTTPS with Let's Encrypt")
+
+		return nil
+	}
+
+	if len(cfg.TLSDomains) == 0 {
+		app.Logger().Errorf("TLS_ENABLED is true but TLS_DOMAINS is empty; continuing without HTTPS")
+
+		return nil
+	}
+
+	backendPort := app.Config.GetOrDefault("HTTP_PORT", "8000")
+
+	stop, err := tlsserver.Start(tlsserver.Config{
+		Domains:   cfg.TLSDomains,
+		Email:     cfg.TLSEmail,
+		CacheDir:  cfg.TLSCacheDir,
+		HTTPSPort: cfg.TLSPort,
+		HTTPPort:  cfg.HTTPPort,
+		Backend:   "127.0.0.1:" + backendPort,
+		Staging:   cfg.TLSStaging,
+	}, app.Logger())
+	if err != nil {
+		app.Logger().Errorf("could not start HTTPS: %v; continuing without it", err)
+
+		return nil
+	}
+
+	if cfg.TLSStaging {
+		app.Logger().Warn("TLS_STAGING is on: certificates come from Let's Encrypt's test " +
+			"authority and browsers will not trust them")
+	}
+
+	return stop
 }

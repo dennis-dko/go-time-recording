@@ -74,7 +74,7 @@ func (unauthorizedError) StatusCode() int { return http.StatusUnauthorized }
 
 // Require returns the caller only if they hold the permission.
 func (a *Authorizer) Require(c *gofr.Context, permission string) (*service.Principal, error) {
-	principal, err := a.Principal(c)
+	principal, err := a.permittedPrincipal(c)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (a *Authorizer) Require(c *gofr.Context, permission string) (*service.Princ
 // RequireAny returns the caller if they hold at least one of the permissions.
 // Used where a broad right implies a narrower one.
 func (a *Authorizer) RequireAny(c *gofr.Context, permissions ...string) (*service.Principal, error) {
-	principal, err := a.Principal(c)
+	principal, err := a.permittedPrincipal(c)
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +107,27 @@ func (a *Authorizer) RequireAny(c *gofr.Context, permissions ...string) (*servic
 	return nil, forbiddenError{msg: "missing permission: " + permissions[0]}
 }
 
+// permittedPrincipal resolves the caller and refuses anyone still on their
+// initial password.
+//
+// The interface tells users that changes are blocked until they choose a
+// password; without this the server did not actually enforce it. The password
+// change itself, and reading /me, go through Principal and stay reachable.
+func (a *Authorizer) permittedPrincipal(c *gofr.Context) (*service.Principal, error) {
+	principal, err := a.Principal(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if !a.open {
+		if err := mustChangePassword(principal); err != nil {
+			return nil, toHTTPError(err)
+		}
+	}
+
+	return principal, nil
+}
+
 // RequireSelfOr allows the action when the caller is acting on their own
 // account, or otherwise holds the wider permission.
 func (a *Authorizer) RequireSelfOr(
@@ -114,7 +135,7 @@ func (a *Authorizer) RequireSelfOr(
 	targetUserID uint,
 	permission string,
 ) (*service.Principal, error) {
-	principal, err := a.Principal(c)
+	principal, err := a.permittedPrincipal(c)
 	if err != nil {
 		return nil, err
 	}

@@ -85,7 +85,7 @@ func (r *UserRepository) GetAll(ctx context.Context) ([]*model.User, error) {
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	users := make([]*model.User, 0)
 

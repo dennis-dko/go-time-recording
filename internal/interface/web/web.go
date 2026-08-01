@@ -51,6 +51,13 @@ func Handler() func(http.Handler) http.Handler {
 				return
 			}
 
+			// /api-docs is a second page, not part of the single-page app, so
+			// it is resolved to its own file rather than the SPA fallback.
+			if p := path(r); p == "/api-docs" || p == "/api-docs/" {
+				r = r.Clone(r.Context())
+				r.URL.Path = "/api-docs.html"
+			}
+
 			// The UI is a single page: unknown paths must render the app
 			// rather than 404, so deep links work on reload.
 			if _, statErr := fs.Stat(sub, strings.TrimPrefix(path(r), "/")); statErr != nil {

@@ -1,12 +1,23 @@
 package config
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	// Registered for the connection test only. GoFr opens the application's
+	// own connection; these let the settings screen probe a target before
+	// anyone restarts into it. They are the same drivers GoFr uses, so a
+	// successful probe means the real connection will work too.
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	_ "modernc.org/sqlite"
 )
 
 // DatasourceFile is where the administered database connection is stored.
@@ -110,6 +121,79 @@ func SaveDatasource(path string, ds Datasource) error {
 
 	// 0600: the file holds a database password.
 	return os.WriteFile(path, raw, 0o600)
+}
+
+// TestDatasource opens the connection and runs a trivial query, so the
+// administrator learns whether the settings work before restarting into them.
+//
+// The connection is opened and closed here rather than handed to the
+// application: this is a probe, not a switch.
+func TestDatasource(ctx context.Context, ds Datasource) error {
+	if err := ds.Validate(); err != nil {
+		return err
+	}
+
+	driver, dsn, err := driverDSN(ds)
+	if err != nil {
+		return err
+	}
+
+	db, err := sql.Open(driver, dsn)
+	if err != nil {
+		return fmt.Errorf("cannot open the connection: %w", err)
+	}
+
+	defer func() { _ = db.Close() }()
+
+	probeCtx, cancel := context.WithTimeout(ctx, testTimeout)
+	defer cancel()
+
+	if err := db.PingContext(probeCtx); err != nil {
+		return fmt.Errorf("cannot reach the database: %w", err)
+	}
+
+	// A ping can succeed against a server while the named database is missing
+	// or unreadable, so a real statement is issued too.
+	if _, err := db.ExecContext(probeCtx, "SELECT 1"); err != nil {
+		return fmt.Errorf("connected, but the database is not usable: %w", err)
+	}
+
+	return nil
+}
+
+// testTimeout keeps an unreachable host from holding the request open.
+const testTimeout = 8 * time.Second
+
+// driverDSN builds the driver name and connection string for a probe. It
+// mirrors what GoFr assembles internally from the same settings.
+func driverDSN(ds Datasource) (driver, dsn string, err error) {
+	port := ds.Port
+
+	switch strings.ToLower(ds.Dialect) {
+	case "sqlite":
+		return "sqlite", fmt.Sprintf("file:%s.db", strings.TrimSuffix(ds.Name, ".db")), nil
+	case "postgres":
+		if port == "" {
+			port = "5432"
+		}
+
+		sslMode := ds.SSLMode
+		if sslMode == "" {
+			sslMode = "disable"
+		}
+
+		return "postgres", fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			ds.Host, port, ds.User, ds.Password, ds.Name, sslMode), nil
+	case "mysql":
+		if port == "" {
+			port = "3306"
+		}
+
+		return "mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+			ds.User, ds.Password, ds.Host, port, ds.Name), nil
+	default:
+		return "", "", fmt.Errorf("unsupported dialect %q", ds.Dialect)
+	}
 }
 
 // ApplyDatasource exports the connection as the environment variables GoFr

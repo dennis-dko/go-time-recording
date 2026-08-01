@@ -81,7 +81,7 @@ func (l *LDAP) Authenticate(
 	if err != nil {
 		return nil, false, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	entry, err := findUser(conn, config, login)
 	if err != nil {
@@ -122,7 +122,7 @@ func (l *LDAP) TestConnection(ctx context.Context, config model.LDAPConfig) erro
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if config.BindDN != "" {
 		if err := conn.Bind(config.BindDN, config.BindPassword); err != nil {
@@ -178,7 +178,7 @@ func dial(ctx context.Context, config model.LDAPConfig) (*ldap.Conn, error) {
 
 	if config.StartTLS && !config.UseTLS {
 		if err := conn.StartTLS(tlsConfig); err != nil {
-			conn.Close()
+			_ = conn.Close()
 
 			return nil, fmt.Errorf("StartTLS failed: %w", err)
 		}

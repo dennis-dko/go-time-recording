@@ -319,6 +319,45 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 	}, nil
 }
 
+// TestDatasource handles POST /api/v1/settings/datasource/test.
+//
+// It probes the connection without saving or switching to it, so the
+// administrator can find a typo before restarting into a broken setting.
+func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
+	if err := h.requireAdmin(c); err != nil {
+		return nil, err
+	}
+
+	var req DatasourceRequest
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	ds := appconfig.Datasource{
+		Dialect:  req.Dialect,
+		Name:     req.Name,
+		Host:     req.Host,
+		Port:     req.Port,
+		User:     req.User,
+		Password: req.Password,
+		SSLMode:  req.SSLMode,
+	}
+
+	// An empty password means "use the stored one", the same as on save.
+	if ds.Password == "" {
+		if stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
+			ds.Password = stored.Password
+		}
+	}
+
+	if err := appconfig.TestDatasource(c, ds); err != nil {
+		// A failed probe is information, not a server fault.
+		return map[string]any{"ok": false, "message": err.Error()}, nil
+	}
+
+	return map[string]any{"ok": true, "message": "connection established"}, nil
+}
+
 // requireAdmin restricts the screen to the built-in administrator: these
 // settings decide where the data lives and who may sign in at all.
 func (h *SettingsHandler) requireAdmin(c *gofr.Context) error {

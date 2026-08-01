@@ -61,7 +61,7 @@ func (r *ProjectRepository) GetAll(ctx context.Context) ([]*model.Project, error
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	projects := make([]*model.Project, 0)
 
