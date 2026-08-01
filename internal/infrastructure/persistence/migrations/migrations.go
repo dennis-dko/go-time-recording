@@ -34,7 +34,143 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260731020000: {UP: func(d migration.Datasource) error {
 			return addSessionsAndPreferences(d, dialect)
 		}},
+		20260801010000: {UP: func(d migration.Datasource) error {
+			return makeProjectOptional(d, dialect)
+		}},
+		20260801010100: {UP: func(d migration.Datasource) error {
+			return createSettings(d, dialect)
+		}},
+		20260801020000: {UP: func(d migration.Datasource) error {
+			return addPrivateProjects(d, dialect)
+		}},
 	}
+}
+
+// addPrivateProjects lets every user keep personal categories.
+//
+// A project with an owner is private to that user; NULL keeps the existing
+// shared projects exactly as they were, so nothing has to be migrated.
+func addPrivateProjects(d migration.Datasource, dialect string) error {
+	err := execAll(d,
+		fmt.Sprintf("ALTER TABLE projects ADD COLUMN owner_id %s REFERENCES users(id)",
+			foreignKeyID(dialect)),
+		"CREATE INDEX idx_projects_owner ON projects (owner_id)",
+	)
+	if err != nil {
+		return err
+	}
+
+	// Grant the new permission to every existing role, so upgrading an
+	// installation does not silently take the feature away from its users.
+	return grantToAllRoles(d, dialect, model.PermProjectWriteOwn)
+}
+
+// grantToAllRoles adds a permission to every role that does not have it yet.
+//
+// The check is done per role in Go rather than with a single INSERT ... SELECT
+// guarded by NOT EXISTS: referencing the target table inside an insert is not
+// portable across the supported engines. Skipping existing rows matters
+// because a freshly seeded admin role already holds every permission, and a
+// duplicate insert would abort the migration.
+func grantToAllRoles(d migration.Datasource, dialect, permission string) error {
+	rows, err := d.SQL.Query("SELECT id FROM roles")
+	if err != nil {
+		return fmt.Errorf("reading roles: %w", err)
+	}
+
+	var roleIDs []int64
+
+	for rows.Next() {
+		var id int64
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			rows.Close()
+
+			return fmt.Errorf("reading roles: %w", scanErr)
+		}
+
+		roleIDs = append(roleIDs, id)
+	}
+
+	err = rows.Err()
+	rows.Close()
+
+	if err != nil {
+		return fmt.Errorf("reading roles: %w", err)
+	}
+
+	countQuery := sqldb.Rebind(dialect,
+		"SELECT COUNT(*) FROM role_permissions WHERE role_id = ? AND permission = ?")
+	insertQuery := sqldb.Rebind(dialect,
+		"INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)")
+
+	for _, roleID := range roleIDs {
+		var existing int
+
+		if err := d.SQL.QueryRow(countQuery, roleID, permission).Scan(&existing); err != nil {
+			return fmt.Errorf("checking %q on role %d: %w", permission, roleID, err)
+		}
+
+		if existing > 0 {
+			continue
+		}
+
+		if _, err := d.SQL.Exec(insertQuery, roleID, permission); err != nil {
+			return fmt.Errorf("granting %q to role %d: %w", permission, roleID, err)
+		}
+	}
+
+	return nil
+}
+
+// makeProjectOptional lets a time entry be booked without a project, so hours
+// can be recorded first and categorised later (or not at all).
+//
+// SQLite cannot drop a NOT NULL constraint in place, so there the table is
+// rebuilt; the other engines alter the column directly.
+func makeProjectOptional(d migration.Datasource, dialect string) error {
+	switch dialect {
+	case sqldb.DialectPostgres:
+		return execAll(d, "ALTER TABLE timesheets ALTER COLUMN project_id DROP NOT NULL")
+	case sqldb.DialectMySQL:
+		return execAll(d, fmt.Sprintf("ALTER TABLE timesheets MODIFY project_id %s NULL",
+			foreignKeyID(dialect)))
+	default: // sqlite
+		return execAll(d,
+			fmt.Sprintf(`CREATE TABLE timesheets_new (
+				%s,
+				user_id %s NOT NULL REFERENCES users(id),
+				project_id %s REFERENCES projects(id),
+				date %s NOT NULL,
+				duration_hours %s NOT NULL,
+				description TEXT,
+				status VARCHAR(32) NOT NULL
+			)`, primaryKey(dialect), foreignKeyID(dialect), foreignKeyID(dialect),
+				timestamp(dialect), float(dialect)),
+
+			"INSERT INTO timesheets_new (id, user_id, project_id, date, duration_hours, description, status) "+
+				"SELECT id, user_id, project_id, date, duration_hours, description, status FROM timesheets",
+
+			// Dropping the table takes its indexes with it, so they are
+			// recreated against the replacement below.
+			"DROP TABLE timesheets",
+			"ALTER TABLE timesheets_new RENAME TO timesheets",
+			"CREATE INDEX idx_timesheets_user_date ON timesheets (user_id, date)",
+			"CREATE INDEX idx_timesheets_project ON timesheets (project_id)",
+		)
+	}
+}
+
+// createSettings adds the key/value table behind the administration screen:
+// branding, and the LDAP connection.
+//
+// The database connection itself is deliberately *not* stored here - it would
+// live in the very database it configures - and goes to a file instead.
+func createSettings(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE settings (
+		key_name VARCHAR(64) PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at %s NOT NULL
+	)`, timestamp(dialect)))
 }
 
 // addSessionsAndPreferences introduces real sign-in sessions, per-user

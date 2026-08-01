@@ -8,3 +8,8 @@ coverage.out
 *.db
 *.db-shm
 *.db-wal
+
+# Administered database connection (contains a password)
+configs/datasource.json
+cmd/configs/datasource.json
+bin/configs/datasource.json

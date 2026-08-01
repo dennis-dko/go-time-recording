@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -50,16 +51,25 @@ func (s *ProjectApplicationService) CreateProject(
 		status = model.ProjectStatusActive
 	}
 
-	if err := validateProject(cmd.Name, status, cmd.StartDate, cmd.EndDate); err != nil {
+	startDate := cmd.StartDate
+
+	// A personal category is not a project plan, so it does not need a start
+	// date; defaulting it keeps the form down to just a name.
+	if startDate.IsZero() && cmd.OwnerID != nil {
+		startDate = startOfDay(time.Now())
+	}
+
+	if err := validateProject(cmd.Name, status, startDate, cmd.EndDate); err != nil {
 		return nil, err
 	}
 
 	createdProject, err := s.projectRepository.Save(ctx, &model.Project{
 		Name:        cmd.Name,
 		Description: cmd.Description,
-		StartDate:   cmd.StartDate,
+		StartDate:   startDate,
 		EndDate:     cmd.EndDate,
 		Status:      status,
+		OwnerID:     cmd.OwnerID,
 	})
 	if err != nil {
 		return nil, err
@@ -84,9 +94,23 @@ func (s *ProjectApplicationService) GetProject(
 		return nil, err
 	}
 
+	if err := requireVisible(project, q.ViewerID); err != nil {
+		return nil, err
+	}
+
 	return &query.GetProjectQueryResult{
 		Result: common.NewProjectResultFromModel(project)[0],
 	}, nil
+}
+
+// requireVisible hides someone else's private project behind a not-found,
+// so its existence is not revealed by a different status code.
+func requireVisible(project *model.Project, viewerID uint) error {
+	if viewerID == 0 || project.VisibleTo(viewerID) {
+		return nil
+	}
+
+	return apperror.NotFound("project", strconv.FormatUint(uint64(project.ID), 10))
 }
 
 // ListProjects processes the query to get all projects, optionally filtered
@@ -100,16 +124,24 @@ func (s *ProjectApplicationService) ListProjects(
 		return nil, err
 	}
 
-	matching := allProjects
+	matching := make([]*model.Project, 0, len(allProjects))
 
-	if q.Status != "" {
-		matching = make([]*model.Project, 0, len(allProjects))
-
-		for _, project := range allProjects {
-			if project.Status == q.Status {
-				matching = append(matching, project)
-			}
+	for _, project := range allProjects {
+		// Private projects belong to one person; nobody else gets to see that
+		// they exist, let alone what they are called.
+		if q.ViewerID != 0 && !project.VisibleTo(q.ViewerID) {
+			continue
 		}
+
+		if q.OnlyOwn && (!project.IsPrivate() || *project.OwnerID != q.ViewerID) {
+			continue
+		}
+
+		if q.Status != "" && project.Status != q.Status {
+			continue
+		}
+
+		matching = append(matching, project)
 	}
 
 	return &query.ListProjectsQueryResult{
@@ -129,6 +161,10 @@ func (s *ProjectApplicationService) UpdateProject(
 
 	existingProject, err := s.projectRepository.GetByID(ctx, cmd.ID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := requireVisible(existingProject, cmd.ActorID); err != nil {
 		return nil, err
 	}
 
@@ -209,6 +245,15 @@ func (s *ProjectApplicationService) validateStatusTransition(
 func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd command.DeleteProjectCommand) error {
 	if cmd.ID == 0 {
 		return apperror.InvalidFields("id")
+	}
+
+	project, err := s.projectRepository.GetByID(ctx, cmd.ID)
+	if err != nil {
+		return err
+	}
+
+	if err := requireVisible(project, cmd.ActorID); err != nil {
+		return err
 	}
 
 	entries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{ProjectID: cmd.ID})

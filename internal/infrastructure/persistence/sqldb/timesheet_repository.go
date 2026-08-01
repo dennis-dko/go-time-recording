@@ -78,6 +78,10 @@ func (r *TimesheetRepository) GetByFilter(
 		args = append(args, filter.ProjectID)
 	}
 
+	if filter.WithoutProject {
+		conditions = append(conditions, "project_id IS NULL")
+	}
+
 	if filter.Status != "" {
 		conditions = append(conditions, "status = ?")
 		args = append(args, filter.Status)

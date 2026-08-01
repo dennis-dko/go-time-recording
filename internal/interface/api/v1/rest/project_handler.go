@@ -26,13 +26,21 @@ func NewProjectHandler(
 	return &ProjectHandler{projects: projects, domain: domain, authz: authz}
 }
 
-// List handles GET /api/v1/projects
+// List handles GET /api/v1/projects.
+//
+// Everyone sees the shared projects plus their own private categories; a
+// "private=true" parameter narrows the result to the latter.
 func (h *ProjectHandler) List(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermProjectRead); err != nil {
+	principal, err := h.authz.RequireAny(c, model.PermProjectRead, model.PermProjectWriteOwn)
+	if err != nil {
 		return nil, err
 	}
 
-	result, err := h.projects.ListProjects(c, query.ListProjectsQuery{Status: c.Param("status")})
+	result, err := h.projects.ListProjects(c, query.ListProjectsQuery{
+		Status:   c.Param("status"),
+		ViewerID: h.viewerID(principal),
+		OnlyOwn:  c.Param("private") == "true",
+	})
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -45,7 +53,8 @@ func (h *ProjectHandler) List(c *gofr.Context) (any, error) {
 
 // Get handles GET /api/v1/projects/{id}
 func (h *ProjectHandler) Get(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermProjectRead); err != nil {
+	principal, err := h.authz.RequireAny(c, model.PermProjectRead, model.PermProjectWriteOwn)
+	if err != nil {
 		return nil, err
 	}
 
@@ -54,7 +63,9 @@ func (h *ProjectHandler) Get(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	result, err := h.projects.GetProject(c, query.GetProjectQuery{ID: id})
+	result, err := h.projects.GetProject(c, query.GetProjectQuery{
+		ID: id, ViewerID: h.viewerID(principal),
+	})
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -62,15 +73,59 @@ func (h *ProjectHandler) Get(c *gofr.Context) (any, error) {
 	return newProjectResponse(result.Result), nil
 }
 
-// Create handles POST /api/v1/projects
-func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermProjectWrite); err != nil {
-		return nil, err
+// viewerID returns the id the visibility rules should be evaluated against,
+// or 0 when authorization is switched off entirely.
+func (h *ProjectHandler) viewerID(principal *service.Principal) uint {
+	if !h.authz.Enabled() || principal.User == nil {
+		return 0
 	}
 
+	return principal.User.ID
+}
+
+// requireMayWrite decides whether the caller may change this particular
+// project: a shared one needs projects:write, an own category does not.
+func (h *ProjectHandler) requireMayWrite(
+	c *gofr.Context,
+	principal *service.Principal,
+	projectID uint,
+) error {
+	if !h.authz.Enabled() || principal.Can(model.PermProjectWrite) {
+		return nil
+	}
+
+	existing, err := h.projects.GetProject(c, query.GetProjectQuery{
+		ID: projectID, ViewerID: h.viewerID(principal),
+	})
+	if err != nil {
+		return toHTTPError(err)
+	}
+
+	if existing.Result.OwnerID != nil && *existing.Result.OwnerID == principal.User.ID {
+		return nil
+	}
+
+	return forbiddenError{msg: "missing permission: " + model.PermProjectWrite}
+}
+
+// Create handles POST /api/v1/projects.
+//
+// Sending "private": true creates a personal category, which only needs the
+// own-project permission. A shared project still needs projects:write.
+func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 	var req CreateProjectRequest
 	if err := bind(c, &req); err != nil {
 		return nil, toHTTPError(err)
+	}
+
+	permission := model.PermProjectWrite
+	if req.Private {
+		permission = model.PermProjectWriteOwn
+	}
+
+	principal, err := h.authz.Require(c, permission)
+	if err != nil {
+		return nil, err
 	}
 
 	cmd := command.CreateProjectCommand{
@@ -78,6 +133,11 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 		Description: req.Description,
 		StartDate:   req.StartDate.Time,
 		Status:      req.Status,
+	}
+
+	if req.Private && principal.User != nil && principal.User.ID != 0 {
+		owner := principal.User.ID
+		cmd.OwnerID = &owner
 	}
 
 	if req.EndDate != nil {
@@ -93,15 +153,23 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 	return newProjectResponse(result.Result), nil
 }
 
-// Update handles PUT /api/v1/projects/{id}
+// Update handles PUT /api/v1/projects/{id}.
+//
+// Editing your own category needs only the own-project permission; the
+// service refuses anything that is not yours.
 func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermProjectWrite); err != nil {
+	principal, err := h.authz.RequireAny(c, model.PermProjectWrite, model.PermProjectWriteOwn)
+	if err != nil {
 		return nil, err
 	}
 
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
+	}
+
+	if err := h.requireMayWrite(c, principal, id); err != nil {
+		return nil, err
 	}
 
 	var req UpdateProjectRequest
@@ -111,6 +179,7 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 
 	cmd := command.UpdateProjectCommand{
 		ID:          id,
+		ActorID:     h.viewerID(principal),
 		Name:        req.Name,
 		Description: req.Description,
 		Status:      req.Status,
@@ -134,9 +203,13 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 	return newProjectResponse(result.Result), nil
 }
 
-// Delete handles DELETE /api/v1/projects/{id}
+// Delete handles DELETE /api/v1/projects/{id}.
+//
+// Removing your own category needs only the own-project permission; deleting
+// a shared project still needs projects:delete.
 func (h *ProjectHandler) Delete(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermProjectDelete); err != nil {
+	principal, err := h.authz.RequireAny(c, model.PermProjectDelete, model.PermProjectWriteOwn)
+	if err != nil {
 		return nil, err
 	}
 
@@ -145,11 +218,42 @@ func (h *ProjectHandler) Delete(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	if err := h.projects.DeleteProject(c, command.DeleteProjectCommand{ID: id}); err != nil {
+	if err := h.requireMayDelete(c, principal, id); err != nil {
+		return nil, err
+	}
+
+	err = h.projects.DeleteProject(c, command.DeleteProjectCommand{
+		ID: id, ActorID: h.viewerID(principal),
+	})
+	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
 	return map[string]string{"status": "deleted"}, nil
+}
+
+// requireMayDelete mirrors requireMayWrite for removal.
+func (h *ProjectHandler) requireMayDelete(
+	c *gofr.Context,
+	principal *service.Principal,
+	projectID uint,
+) error {
+	if !h.authz.Enabled() || principal.Can(model.PermProjectDelete) {
+		return nil
+	}
+
+	existing, err := h.projects.GetProject(c, query.GetProjectQuery{
+		ID: projectID, ViewerID: h.viewerID(principal),
+	})
+	if err != nil {
+		return toHTTPError(err)
+	}
+
+	if existing.Result.OwnerID != nil && *existing.Result.OwnerID == principal.User.ID {
+		return nil
+	}
+
+	return forbiddenError{msg: "missing permission: " + model.PermProjectDelete}
 }
 
 // Archive handles POST /api/v1/projects/{id}/archive, delegating to the domain

@@ -14,6 +14,10 @@ type UpdateProjectCommand struct {
 	StartDate   *time.Time
 	EndDate     *time.Time
 	Status      *string
+
+	// ActorID is who is editing. A private project may only be changed by its
+	// owner; zero skips the check.
+	ActorID uint
 }
 
 // UpdateProjectCommandResult command to get update result of existing project

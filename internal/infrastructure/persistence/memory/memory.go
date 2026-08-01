@@ -341,7 +341,9 @@ func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool 
 	switch {
 	case filter.UserID != 0 && ts.UserID != filter.UserID:
 		return false
-	case filter.ProjectID != 0 && ts.ProjectID != filter.ProjectID:
+	case filter.ProjectID != 0 && (!ts.HasProject() || *ts.ProjectID != filter.ProjectID):
+		return false
+	case filter.WithoutProject && ts.HasProject():
 		return false
 	case filter.Status != "" && ts.Status != filter.Status:
 		return false

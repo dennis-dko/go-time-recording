@@ -13,6 +13,10 @@ type CreateProjectCommand struct {
 	StartDate   time.Time
 	EndDate     *time.Time
 	Status      string
+
+	// OwnerID makes the project private to that user, where it serves as a
+	// personal category. nil creates a shared project.
+	OwnerID *uint
 }
 
 // CreateProjectCommandResult command to get create result of new project

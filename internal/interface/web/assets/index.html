@@ -9,15 +9,18 @@
 </head>
 <body>
   <header class="topbar">
-    <h1 data-i18n="app.title">Zeiterfassung</h1>
+    <img id="brand-logo" class="brand-logo" alt="" hidden>
+    <h1 id="app-title">Zeiterfassung</h1>
     <nav id="tabs">
       <button class="tab" data-view="timesheets" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.timesheets">Zeiteinträge</button>
+      <button class="tab" data-view="calendar" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.calendar">Kalender</button>
       <button class="tab" data-view="overtime" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.overtime">Überstunden</button>
       <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projekte</button>
       <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Mitarbeiter</button>
       <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Rollen</button>
       <button class="tab" data-view="report" data-perm="reports:read" data-i18n="nav.report">Auswertung</button>
       <button class="tab" data-view="settings" data-i18n="nav.settings">Mein Konto</button>
+      <button class="tab" data-view="admin" id="tab-admin" hidden data-i18n="nav.admin">Einstellungen</button>
     </nav>
     <div class="who" id="who"></div>
     <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Sprache"></select>
@@ -26,12 +29,16 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+  <!-- The instance's own announcement, set under Einstellungen. -->
+  <div id="instance-banner" class="banner" hidden></div>
+
   <div id="password-banner" class="banner" hidden data-i18n="banner.password">Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleiben Änderungen gesperrt.</div>
 
   <!-- Visible until a session is confirmed, so the application never flashes
        into view before we know whether anyone is signed in. -->
   <div id="login-screen" class="login-screen">
     <form id="form-login" class="login-card">
+      <img id="login-logo" class="brand-logo" alt="" hidden>
       <h2 data-i18n="login.title">Anmelden</h2>
       <p class="muted" id="login-hint" data-i18n="login.hint">Bitte mit E-Mail-Adresse und Passwort anmelden.</p>
       <label data-i18n="login.email">E-Mail
@@ -57,8 +64,8 @@
           <label data-i18n="field.user">Mitarbeiter
             <select name="userId" required></select>
           </label>
-          <label data-i18n="field.project">Projekt
-            <select name="projectId" required></select>
+          <label data-i18n="field.projectOptional">Projekt (optional)
+            <select name="projectId"></select>
           </label>
           <label data-i18n="field.date">Datum
             <input type="date" name="date" required>
@@ -99,6 +106,44 @@
                 <th data-i18n="field.description">Beschreibung</th>
                 <th data-i18n="field.status">Status</th>
                 <th class="actions" data-i18n="field.action">Aktion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Kalender -->
+    <section id="view-calendar" class="view" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2 id="calendar-title" data-i18n="cal.title">Kalender</h2>
+          <div class="filters">
+            <select id="calendar-user"></select>
+            <button type="button" class="secondary" id="calendar-prev" aria-label="&#8592;">&#8592;</button>
+            <button type="button" class="secondary" id="calendar-today" data-i18n="cal.today">Heute</button>
+            <button type="button" class="secondary" id="calendar-next" aria-label="&#8594;">&#8594;</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="calendar-weekdays"></div>
+        <div class="cal-grid" id="calendar-days"></div>
+        <p class="muted" id="calendar-summary"></p>
+      </div>
+
+      <div class="card" id="calendar-day-card" hidden>
+        <div class="card-head">
+          <h2 id="calendar-day-title"></h2>
+          <button type="button" class="link" id="calendar-day-close" data-i18n="cal.close">schließen</button>
+        </div>
+        <div class="table-wrap">
+          <table id="table-calendar-day">
+            <thead>
+              <tr>
+                <th data-i18n="field.project">Projekt</th>
+                <th class="num" data-i18n="field.hours">Stunden</th>
+                <th data-i18n="field.description">Beschreibung</th>
+                <th data-i18n="field.status">Status</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -159,6 +204,21 @@
 
     <!-- Projekte -->
     <section id="view-projects" class="view" hidden>
+      <form id="form-category" class="card form" data-perm="projects:write:own">
+        <h2 data-i18n="cat.create">Eigene Kategorie anlegen</h2>
+        <p class="muted" data-i18n="cat.hint">
+          Kategorien sind privat und nur für Sie sichtbar. Damit lässt sich Zeit
+          innerhalb eines Tages aufteilen, wenn kein gemeinsames Projekt passt.
+        </p>
+        <div class="grid">
+          <label data-i18n="field.name"><input type="text" name="name" required></label>
+          <label class="wide" data-i18n="field.description">
+            <input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
+          </label>
+        </div>
+        <button type="submit" data-i18n="action.create">Anlegen</button>
+      </form>
+
       <form id="form-project" class="card form" data-perm="projects:write">
         <h2 data-i18n="project.create">Projekt anlegen</h2>
         <div class="grid">
@@ -342,7 +402,123 @@
         <button type="submit" data-i18n="settings.changePassword">Passwort ändern</button>
       </form>
     </section>
+    <!-- Einstellungen (nur eingebauter Administrator) -->
+    <section id="view-admin" class="view" hidden>
+      <form id="form-branding" class="card form">
+        <h2 data-i18n="admin.branding">Erscheinungsbild</h2>
+        <p class="muted" data-i18n="admin.brandingHint">
+          Titel, Banner, Logo und Fußzeile dieser Installation.
+        </p>
+        <div class="grid">
+          <label data-i18n="admin.title">Titel (Browser-Tab und Kopfzeile)
+            <input type="text" name="title" maxlength="80">
+          </label>
+          <label class="wide" data-i18n="admin.banner">Banner-Text (leer = ausgeblendet)
+            <input type="text" name="banner" maxlength="300">
+          </label>
+          <label data-i18n="admin.company">Firma
+            <input type="text" name="companyName" maxlength="120">
+          </label>
+          <label data-i18n="admin.companyUrl">Firmen-Website
+            <input type="url" name="companyUrl" placeholder="https://">
+          </label>
+          <label class="wide" data-i18n="admin.footer">Fußzeile
+            <input type="text" name="footerText" maxlength="200">
+          </label>
+          <label class="wide" data-i18n="admin.legal">Rechtlicher Hinweis
+            <input type="text" name="legalNotice" maxlength="200">
+          </label>
+        </div>
+        <div class="row">
+          <label data-i18n="admin.logo">Logo (PNG/SVG, max. 256 KB)
+            <input type="file" id="logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+          </label>
+          <img id="logo-preview" class="logo-preview" alt="" hidden>
+          <button type="button" class="secondary" id="logo-clear" data-i18n="admin.logoClear">Logo entfernen</button>
+        </div>
+        <button type="submit" data-i18n="action.save">Speichern</button>
+      </form>
+
+      <form id="form-datasource" class="card form">
+        <h2 data-i18n="admin.database">Datenbank-Anbindung</h2>
+        <p class="muted" id="datasource-active"></p>
+        <p class="muted" data-i18n="admin.databaseHint">
+          Die Verbindung wird gespeichert und beim nächsten Start der Anwendung verwendet.
+          Ein Wechsel im laufenden Betrieb wäre nicht gefahrlos möglich.
+        </p>
+        <div class="grid">
+          <label data-i18n="admin.dialect">Typ
+            <select name="dialect">
+              <option value="sqlite">SQLite</option>
+              <option value="postgres">PostgreSQL</option>
+              <option value="mysql">MySQL</option>
+            </select>
+          </label>
+          <label data-i18n="admin.dbName">Datenbank / Dateiname
+            <input type="text" name="name" required>
+          </label>
+          <label data-i18n="admin.dbHost">Host
+            <input type="text" name="host">
+          </label>
+          <label data-i18n="admin.dbPort">Port
+            <input type="text" name="port" inputmode="numeric">
+          </label>
+          <label data-i18n="admin.dbUser">Benutzer
+            <input type="text" name="user">
+          </label>
+          <label data-i18n="admin.dbPassword">Passwort
+            <input type="password" name="password" data-i18n-placeholder="admin.keepStored" placeholder="unverändert lassen">
+          </label>
+          <label data-i18n="admin.dbSsl">SSL-Modus
+            <input type="text" name="sslMode" placeholder="disable">
+          </label>
+        </div>
+        <button type="submit" data-i18n="action.save">Speichern</button>
+      </form>
+
+      <form id="form-ldap" class="card form">
+        <h2 data-i18n="admin.ldap">LDAP-Anbindung</h2>
+        <p class="muted" data-i18n="admin.ldapHint">
+          Bei aktivierter Anbindung wird das Passwort gegen das Verzeichnis geprüft.
+          Unbekannte Benutzer werden beim ersten erfolgreichen Login lokal angelegt.
+        </p>
+        <div class="perm-grid">
+          <label><input type="checkbox" name="enabled"><span data-i18n="admin.ldapEnabled">Aktiviert</span></label>
+          <label><input type="checkbox" name="startTls"><span>StartTLS</span></label>
+          <label><input type="checkbox" name="useTls"><span>LDAPS</span></label>
+          <label><input type="checkbox" name="skipVerify"><span data-i18n="admin.skipVerify">Zertifikat nicht prüfen (unsicher)</span></label>
+        </div>
+        <div class="grid">
+          <label data-i18n="admin.dbHost">Host<input type="text" name="host"></label>
+          <label data-i18n="admin.dbPort">Port<input type="number" name="port" min="1" max="65535"></label>
+          <label class="wide" data-i18n="admin.baseDn">Base DN<input type="text" name="baseDn" placeholder="dc=example,dc=com"></label>
+          <label class="wide" data-i18n="admin.bindDn">Bind DN (optional)<input type="text" name="bindDn"></label>
+          <label data-i18n="admin.bindPassword">Bind-Passwort
+            <input type="password" name="bindPassword" data-i18n-placeholder="admin.keepStored" placeholder="unverändert lassen">
+          </label>
+          <label class="wide" data-i18n="admin.userFilter">Benutzer-Filter (%s = Anmeldename)
+            <input type="text" name="userFilter">
+          </label>
+          <label data-i18n="admin.nameAttr">Namens-Attribut<input type="text" name="nameAttribute"></label>
+          <label data-i18n="admin.mailAttr">E-Mail-Attribut<input type="text" name="emailAttribute"></label>
+          <label data-i18n="admin.defaultRole">Standardrolle für neue Benutzer
+            <select name="defaultRole"></select>
+          </label>
+        </div>
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Speichern</button>
+          <button type="button" class="secondary" id="ldap-test" data-i18n="admin.testConnection">Verbindung testen</button>
+        </div>
+        <p class="muted" id="ldap-test-result"></p>
+      </form>
+    </section>
   </main>
+
+  <footer class="site-footer" id="site-footer" hidden>
+    <span id="footer-text"></span>
+    <a id="footer-company" href="#" target="_blank" rel="noopener noreferrer" hidden></a>
+    <span id="footer-legal" class="muted"></span>
+  </footer>
 
   <script src="/app.js"></script>
 </body>

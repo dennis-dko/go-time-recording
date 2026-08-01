@@ -16,6 +16,10 @@ const (
 	PermProjectDelete  = "projects:delete"
 	PermProjectArchive = "projects:archive"
 
+	// PermProjectWriteOwn allows creating and managing private projects,
+	// which act as personal categories and are visible only to their owner.
+	PermProjectWriteOwn = "projects:write:own"
+
 	// Own vs. all separates "my time sheet" from "everyone's".
 	PermTimesheetReadOwn   = "timesheets:read:own"
 	PermTimesheetReadAll   = "timesheets:read:all"
@@ -37,6 +41,7 @@ func AllPermissions() []string {
 		PermUserRead, PermUserWrite, PermUserDelete,
 		PermRoleRead, PermRoleWrite,
 		PermProjectRead, PermProjectWrite, PermProjectDelete, PermProjectArchive,
+		PermProjectWriteOwn,
 		PermTimesheetReadOwn, PermTimesheetReadAll,
 		PermTimesheetWriteOwn, PermTimesheetWriteAll,
 		PermTimesheetApprove, PermTimesheetTransfer,
@@ -81,7 +86,7 @@ func DefaultRoles() []Role {
 			// administrator may see what other people total up to.
 			Permissions: []string{
 				PermUserRead, PermRoleRead,
-				PermProjectRead, PermProjectWrite, PermProjectArchive,
+				PermProjectRead, PermProjectWrite, PermProjectArchive, PermProjectWriteOwn,
 				PermTimesheetReadOwn, PermTimesheetReadAll,
 				PermTimesheetWriteOwn, PermTimesheetWriteAll,
 				PermTimesheetApprove, PermTimesheetTransfer,
@@ -93,7 +98,7 @@ func DefaultRoles() []Role {
 			Name:        RoleEmployee,
 			Description: "Books and submits their own time",
 			Permissions: []string{
-				PermProjectRead,
+				PermProjectRead, PermProjectWriteOwn,
 				PermTimesheetReadOwn, PermTimesheetWriteOwn,
 				PermReportReadOwn, PermSettingsWriteOwn,
 			},

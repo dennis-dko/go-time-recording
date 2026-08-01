@@ -4,9 +4,12 @@ import "github.com/dennis-dko/go-time-recording/internal/application/v1/common"
 
 // TimesheetResponse is the wire representation of a time entry.
 type TimesheetResponse struct {
-	ID            uint    `json:"id"`
-	UserID        uint    `json:"userId"`
-	ProjectID     uint    `json:"projectId"`
+	ID     uint `json:"id"`
+	UserID uint `json:"userId"`
+
+	// null when the entry has not been assigned to a project.
+	ProjectID *uint `json:"projectId"`
+
 	Date          Date    `json:"date"`
 	DurationHours float64 `json:"durationHours"`
 	Description   *string `json:"description"`

@@ -15,6 +15,7 @@ type Handlers struct {
 	Projects   *rest.ProjectHandler
 	Timesheets *rest.TimesheetHandler
 	Me         *rest.MeHandler
+	Settings   *rest.SettingsHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -34,6 +35,17 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/auth/login", h.Auth.Login)
 	app.POST(base+"/auth/logout", h.Auth.Logout)
 	app.GET(base+"/languages", h.Auth.Languages)
+
+	// Branding is readable without a session: the sign-in screen shows the
+	// instance's own title and logo before anyone has authenticated.
+	app.GET(base+"/branding", h.Settings.Branding)
+
+	app.PUT(base+"/settings/branding", h.Settings.SaveBranding)
+	app.GET(base+"/settings/ldap", h.Settings.LDAP)
+	app.PUT(base+"/settings/ldap", h.Settings.SaveLDAP)
+	app.POST(base+"/settings/ldap/test", h.Settings.TestLDAP)
+	app.GET(base+"/settings/datasource", h.Settings.Datasource)
+	app.PUT(base+"/settings/datasource", h.Settings.SaveDatasource)
 
 	app.GET(base+"/me", h.Me.Me)
 	app.PUT(base+"/me/password", h.Me.ChangePassword)

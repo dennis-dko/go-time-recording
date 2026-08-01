@@ -51,7 +51,7 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 		return nil, err
 	}
 
-	if timesheet.ProjectID == newProject.ID {
+	if timesheet.HasProject() && *timesheet.ProjectID == newProject.ID {
 		return nil, apperror.Conflictf("the timesheet is already booked on project %q", newProject.Name)
 	}
 
@@ -60,7 +60,9 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 			newProject.Name, newProject.Status)
 	}
 
-	timesheet.ProjectID = newProject.ID
+	// Transferring is also how an uncategorised entry gets its first project.
+	projectID := newProject.ID
+	timesheet.ProjectID = &projectID
 
 	updatedTimesheet, err := s.timesheetRepository.Update(ctx, timesheet)
 	if err != nil {

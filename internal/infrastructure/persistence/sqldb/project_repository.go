@@ -11,7 +11,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-const projectColumns = "id, name, description, start_date, end_date, status"
+const projectColumns = "id, name, description, start_date, end_date, status, owner_id"
 
 // ProjectRepository stores projects in a SQL database.
 type ProjectRepository struct {
@@ -27,8 +27,10 @@ var _ repository.ProjectRepository = (*ProjectRepository)(nil)
 
 func (r *ProjectRepository) Save(ctx context.Context, project *model.Project) (*model.Project, error) {
 	id, err := r.insert(ctx,
-		"INSERT INTO projects (name, description, start_date, end_date, status) VALUES (?, ?, ?, ?, ?)",
-		project.Name, project.Description, project.StartDate, project.EndDate, project.Status)
+		"INSERT INTO projects (name, description, start_date, end_date, status, owner_id) "+
+			"VALUES (?, ?, ?, ?, ?, ?)",
+		project.Name, project.Description, project.StartDate, project.EndDate,
+		project.Status, project.OwnerID)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -81,8 +83,10 @@ func (r *ProjectRepository) GetAll(ctx context.Context) ([]*model.Project, error
 
 func (r *ProjectRepository) Update(ctx context.Context, project *model.Project) (*model.Project, error) {
 	affected, err := r.exec(ctx,
-		"UPDATE projects SET name = ?, description = ?, start_date = ?, end_date = ?, status = ? WHERE id = ?",
-		project.Name, project.Description, project.StartDate, project.EndDate, project.Status, project.ID)
+		"UPDATE projects SET name = ?, description = ?, start_date = ?, end_date = ?, "+
+			"status = ?, owner_id = ? WHERE id = ?",
+		project.Name, project.Description, project.StartDate, project.EndDate,
+		project.Status, project.OwnerID, project.ID)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -116,7 +120,8 @@ func scanProject(s scanner) (*model.Project, error) {
 		endDate   dateTime
 	)
 
-	err := s.Scan(&project.ID, &project.Name, &project.Description, &startDate, &endDate, &project.Status)
+	err := s.Scan(&project.ID, &project.Name, &project.Description, &startDate, &endDate,
+		&project.Status, &project.OwnerID)
 	if err != nil {
 		return nil, err
 	}

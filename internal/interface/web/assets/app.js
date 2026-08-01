@@ -151,6 +151,74 @@ function formData(form) {
   return out;
 }
 
+/**
+ * Gives every password field a reveal toggle.
+ *
+ * Done in script rather than markup so any password field added later is
+ * covered automatically. Runs once; already-enhanced fields are skipped.
+ */
+function enhancePasswordFields(root = document) {
+  for (const input of $$('input[type="password"]', root)) {
+    if (input.parentElement?.classList.contains('pw-wrap')) continue;
+
+    const wrap = el('span', { class: 'pw-wrap' });
+    input.replaceWith(wrap);
+    wrap.append(input);
+
+    const button = el('button', {
+      type: 'button',
+      class: 'pw-toggle',
+      'aria-label': t('pw.show', 'Passwort anzeigen'),
+      'aria-pressed': 'false',
+    });
+
+    button.append(eyeIcon(false));
+
+    button.addEventListener('click', () => {
+      const revealed = input.type === 'text';
+      input.type = revealed ? 'password' : 'text';
+
+      button.setAttribute('aria-pressed', String(!revealed));
+      button.setAttribute('aria-label', revealed
+        ? t('pw.show', 'Passwort anzeigen')
+        : t('pw.hide', 'Passwort verbergen'));
+
+      button.replaceChildren(eyeIcon(!revealed));
+
+      // Keep the caret where the user left it; changing `type` moves it to
+      // the end in some browsers.
+      const caret = input.value.length;
+      input.focus();
+      input.setSelectionRange(caret, caret);
+    });
+
+    wrap.append(button);
+  }
+}
+
+/** Builds the eye icon, struck through when the password is visible. */
+function eyeIcon(revealed) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const paths = ['M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z', 'M12 9a3 3 0 100 6 3 3 0 000-6z'];
+  if (revealed) paths.push('M3 3l18 18');
+
+  for (const d of paths) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+
+  return svg;
+}
+
 /** Shows or hides every element that declares a data-perm requirement. */
 function applyPermissionVisibility(root = document) {
   for (const node of $$('[data-perm]', root)) {
@@ -319,6 +387,72 @@ const TRANSLATIONS = {
     'msg.initFailed': 'Initialisation failed',
     'msg.invalidFields': 'Invalid field(s)',
     'msg.error': 'Error',
+
+    'pw.show': 'Show password',
+    'pw.hide': 'Hide password',
+
+    'nav.calendar': 'Calendar',
+    'cal.title': 'Calendar',
+    'cal.today': 'Today',
+    'cal.close': 'close',
+    'cal.monthTotal': 'Month total',
+    'cal.weekdays': 'Mon,Tue,Wed,Thu,Fri,Sat,Sun',
+    'cal.months':
+      'January,February,March,April,May,June,July,August,September,October,November,December',
+
+    'field.projectOptional': 'Project (optional)',
+    'ts.noProject': 'no project',
+    'filter.noProject': 'Without project',
+
+    'cat.create': 'Create your own category',
+    'cat.hint':
+      'Categories are private and visible only to you. Use them to split up a day '
+      + 'when no shared project fits.',
+    'cat.badge': 'private',
+    'msg.categoryCreated': 'Category created',
+
+    'nav.admin': 'Settings',
+    'admin.branding': 'Appearance',
+    'admin.brandingHint': 'Title, banner, logo and footer of this installation.',
+    'admin.title': 'Title (browser tab and header)',
+    'admin.banner': 'Banner text (empty hides it)',
+    'admin.company': 'Company',
+    'admin.companyUrl': 'Company website',
+    'admin.footer': 'Footer',
+    'admin.legal': 'Legal notice',
+    'admin.logo': 'Logo (PNG/SVG, max. 256 KB)',
+    'admin.logoClear': 'Remove logo',
+    'admin.logoTooBig': 'The logo must be smaller than 256 KB.',
+    'admin.database': 'Database connection',
+    'admin.databaseHint':
+      'The connection is saved and used the next time the application starts. '
+      + 'Switching it while running would not be safe.',
+    'admin.activeConnection': 'Currently connected via',
+    'admin.dialect': 'Type',
+    'admin.dbName': 'Database / file name',
+    'admin.dbHost': 'Host',
+    'admin.dbPort': 'Port',
+    'admin.dbUser': 'User',
+    'admin.dbPassword': 'Password',
+    'admin.dbSsl': 'SSL mode',
+    'admin.keepStored': 'leave unchanged',
+    'admin.ldap': 'LDAP connection',
+    'admin.ldapHint':
+      'When enabled, passwords are checked against the directory. Unknown users are '
+      + 'created locally on their first successful sign-in.',
+    'admin.ldapEnabled': 'Enabled',
+    'admin.skipVerify': 'Do not verify certificate (unsafe)',
+    'admin.baseDn': 'Base DN',
+    'admin.bindDn': 'Bind DN (optional)',
+    'admin.bindPassword': 'Bind password',
+    'admin.userFilter': 'User filter (%s = login name)',
+    'admin.nameAttr': 'Name attribute',
+    'admin.mailAttr': 'Email attribute',
+    'admin.defaultRole': 'Default role for new users',
+    'admin.testConnection': 'Test connection',
+    'admin.testing': 'Testing the connection …',
+    'admin.saved': 'Settings saved',
+    'admin.restartNeeded': 'Saved. Applied on the next start.',
   },
   de: {},
 };
@@ -424,15 +558,16 @@ async function loadUsers() {
   }
 
   fillSelect($('#form-timesheet select[name=userId]'), cache.users);
-  fillSelect($('#filter-ts-user'), cache.users, { placeholder: 'Alle Mitarbeiter' });
+  fillSelect($('#filter-ts-user'), cache.users, { placeholder: t('filter.allUsers', 'Alle Mitarbeiter') });
   fillSelect($('#form-overtime select[name=userId]'), cache.users);
+  fillSelect($('#calendar-user'), cache.users);
 
   if (me.user) {
     const own = String(me.user.id);
-    const overtimeSelect = $('#form-overtime select[name=userId]');
-    if (overtimeSelect && !overtimeSelect.value) overtimeSelect.value = own;
-    const bookFor = $('#form-timesheet select[name=userId]');
-    if (bookFor && !bookFor.value) bookFor.value = own;
+    for (const selector of ['#form-overtime select[name=userId]', '#form-timesheet select[name=userId]', '#calendar-user']) {
+      const select = $(selector);
+      if (select && !select.value) select.value = own;
+    }
   }
 
   if (!can('users:read')) return;
@@ -562,12 +697,18 @@ async function loadProjects() {
   cache.projects = (await api('/projects'))?.items ?? [];
 
   const bookable = cache.projects.filter((p) => p.status === 'active');
-  fillSelect($('#form-timesheet select[name=projectId]'), bookable);
+  // A blank first option is what lets time be booked without a project.
+  fillSelect($('#form-timesheet select[name=projectId]'), bookable,
+    { placeholder: t('ts.noProject', 'ohne Projekt') });
   fillSelect($('#form-report select[name=projectId]'), cache.projects);
   fillSelect($('#filter-ts-project'), cache.projects, { placeholder: 'Alle Projekte' });
 
   const rows = cache.projects.map((p) => {
     const actions = el('td', { class: 'actions' });
+
+    // A private category belongs to the signed-in user, so they may manage it
+    // whatever their project permissions are.
+    const mine = p.private && me.user && p.ownerId === me.user.id;
 
     if (can('projects:write') && p.status === 'active') {
       actions.append(el('button', {
@@ -585,7 +726,7 @@ async function loadProjects() {
       }));
     }
 
-    if (can('projects:delete')) {
+    if (can('projects:delete') || mine) {
       actions.append(el('button', {
         class: 'link danger',
         text: t('action.delete', 'löschen'),
@@ -593,11 +734,17 @@ async function loadProjects() {
       }));
     }
 
-    const period = `${fmtDate(p.startDate)} – ${p.endDate ? fmtDate(p.endDate) : 'offen'}`;
+    const period = `${fmtDate(p.startDate)} – ${p.endDate ? fmtDate(p.endDate) : t('project.open', 'offen')}`;
 
-    return el('tr', {},
-      el('td', { text: p.name }),
-      el('td', { text: period }),
+    const name = el('td', { text: p.name });
+    if (p.private) {
+      name.append(' ', el('span', { class: 'pill', text: t('cat.badge', 'privat') }));
+    }
+
+    return el('tr', { class: mine ? 'self' : '' },
+      name,
+      // A category has no meaningful period, so the column stays quiet for it.
+      el('td', { class: p.private ? 'empty' : '', text: p.private ? '–' : period }),
       el('td', { text: p.description ?? '–' }),
       el('td', {}, statusBadge(p.status)),
       actions,
@@ -664,7 +811,10 @@ async function loadTimesheets() {
     return el('tr', { class: mine ? 'self' : '' },
       el('td', { text: fmtDate(entry.date) }),
       el('td', { text: userName(entry.userId) }),
-      el('td', { text: projectName(entry.projectId) }),
+      el('td', {
+        class: entry.projectId ? '' : 'empty',
+        text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'ohne Projekt'),
+      }),
       el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
       el('td', { text: entry.description ?? '–' }),
       el('td', {}, statusBadge(entry.status)),
@@ -675,11 +825,312 @@ async function loadTimesheets() {
   fillTable($('#table-timesheets tbody'), rows, 7, t('ts.empty', 'Keine Einträge für diesen Filter.'));
 }
 
+// ----------------------------------------------------------------- calendar
+
+/** The month the calendar is showing, as a Date on the first of that month. */
+let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+const ISO_DAY = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/**
+ * Renders the month grid with the hours booked on each day.
+ *
+ * The whole month is fetched in one request and grouped client-side; asking
+ * per day would be dozens of round trips for one screen.
+ */
+async function loadCalendar() {
+  if (!can('timesheets:read:own', 'timesheets:read:all')) return;
+
+  const first = calendarMonth;
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+
+  const params = new URLSearchParams({ from: ISO_DAY(first), to: ISO_DAY(last) });
+  const userId = $('#calendar-user').value;
+  if (userId) params.set('userId', userId);
+
+  const entries = (await api(`/timesheets?${params}`))?.items ?? [];
+
+  const byDay = new Map();
+  for (const entry of entries) {
+    if (!byDay.has(entry.date)) byDay.set(entry.date, []);
+    byDay.get(entry.date).push(entry);
+  }
+
+  renderCalendarGrid(first, last, byDay);
+}
+
+function renderCalendarGrid(first, last, byDay) {
+  const monthNames = t('cal.months', 'Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember').split(',');
+  $('#calendar-title').textContent = `${monthNames[first.getMonth()]} ${first.getFullYear()}`;
+
+  const weekdays = t('cal.weekdays', 'Mo,Di,Mi,Do,Fr,Sa,So').split(',');
+  $('#calendar-weekdays').replaceChildren(...weekdays.map((d) => el('span', { text: d })));
+
+  // Weeks start on Monday, so Sunday (0) becomes the last column.
+  const leading = (first.getDay() + 6) % 7;
+  const cells = [];
+
+  for (let i = 0; i < leading; i += 1) {
+    cells.push(el('div', { class: 'cal-day outside' }));
+  }
+
+  const todayIso = ISO_DAY(new Date());
+  const maxHours = Math.max(8, ...[...byDay.values()].map(
+    (list) => list.reduce((sum, e) => sum + e.durationHours, 0)));
+
+  let monthTotal = 0;
+
+  for (let d = 1; d <= last.getDate(); d += 1) {
+    const date = new Date(first.getFullYear(), first.getMonth(), d);
+    const iso = ISO_DAY(date);
+    const dayEntries = byDay.get(iso) ?? [];
+    const hours = dayEntries.reduce((sum, e) => sum + e.durationHours, 0);
+    monthTotal += hours;
+
+    const classes = ['cal-day'];
+    if (dayEntries.length) classes.push('has-entries');
+    if (iso === todayIso) classes.push('today');
+
+    const cell = el(dayEntries.length ? 'button' : 'div', {
+      class: classes.join(' '),
+      ...(dayEntries.length ? { type: 'button' } : {}),
+    }, el('span', { class: 'cal-daynum', text: String(d) }));
+
+    if (hours > 0) {
+      cell.append(el('span', { class: 'cal-hours', text: fmtHours(hours) }));
+
+      const names = [...new Set(dayEntries.map(
+        (e) => (e.projectId ? projectName(e.projectId) : t('ts.noProject', 'ohne Projekt'))))];
+      cell.append(el('span', { class: 'cal-projects', text: names.join(', ') }));
+
+      const bar = el('div', { class: 'cal-bar' });
+      bar.style.width = `${Math.min(100, (hours / maxHours) * 100)}%`;
+      cell.append(bar);
+
+      cell.addEventListener('click', () => showCalendarDay(iso, dayEntries));
+    }
+
+    cells.push(cell);
+  }
+
+  $('#calendar-days').replaceChildren(...cells);
+  $('#calendar-summary').textContent =
+    `${t('cal.monthTotal', 'Gesamt im Monat')}: ${fmtHours(monthTotal)}`;
+  $('#calendar-day-card').hidden = true;
+}
+
+/** Shows the entries behind one day. */
+function showCalendarDay(iso, entries) {
+  $('#calendar-day-title').textContent = fmtDate(iso);
+
+  const rows = entries.map((entry) => el('tr', {},
+    el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'ohne Projekt') }),
+    el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
+    el('td', { text: entry.description ?? '–' }),
+    el('td', {}, statusBadge(entry.status)),
+  ));
+
+  fillTable($('#table-calendar-day tbody'), rows, 4, t('ot.empty', 'Keine Buchungen in diesem Zeitraum.'));
+  $('#calendar-day-card').hidden = false;
+}
+
+function wireCalendar() {
+  const shift = (months) => {
+    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + months, 1);
+    mutate(loadCalendar, null, null);
+  };
+
+  $('#calendar-prev').addEventListener('click', () => shift(-1));
+  $('#calendar-next').addEventListener('click', () => shift(1));
+  $('#calendar-today').addEventListener('click', () => {
+    const now = new Date();
+    calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    mutate(loadCalendar, null, null);
+  });
+  $('#calendar-user').addEventListener('change', () => mutate(loadCalendar, null, null));
+  $('#calendar-day-close').addEventListener('click', () => { $('#calendar-day-card').hidden = true; });
+}
+
 function fillSettingsForm() {
   if (!me.user) return;
   const form = $('#form-working-times');
   form.elements.dailyTargetHours.value = me.user.dailyTargetHours || '';
   form.elements.maxDailyHours.value = me.user.maxDailyHours || '';
+}
+
+// ------------------------------------------------------------ administration
+
+/** Whether the caller may open the administration screen. */
+const isSystemAdmin = () => !me.authEnabled || (me.user?.isSystem ?? false);
+
+/**
+ * Applies the instance branding.
+ *
+ * Fetched separately from /me because the sign-in screen must show the title
+ * and logo before anyone has authenticated.
+ */
+async function loadBranding() {
+  const branding = await api('/branding');
+
+  document.title = branding.title || 'Zeiterfassung';
+  $('#app-title').textContent = branding.title || 'Zeiterfassung';
+
+  for (const holder of ['#brand-logo', '#login-logo']) {
+    const img = $(holder);
+    if (!img) continue;
+
+    img.src = branding.logo || '';
+    img.hidden = !branding.logo;
+    img.alt = branding.title || '';
+  }
+
+  // The announcement banner is separate from the "change your password" one.
+  const banner = $('#instance-banner');
+  banner.textContent = branding.banner ?? '';
+  banner.hidden = !branding.banner;
+
+  $('#footer-text').textContent = branding.footerText ?? '';
+  $('#footer-legal').textContent = branding.legalNotice ?? '';
+
+  const company = $('#footer-company');
+  company.textContent = branding.companyName ?? '';
+  company.hidden = !branding.companyName;
+  if (branding.companyUrl) company.href = branding.companyUrl;
+  else company.removeAttribute('href');
+
+  $('#site-footer').hidden = !(branding.footerText || branding.companyName || branding.legalNotice);
+
+  return branding;
+}
+
+async function loadAdmin() {
+  $('#tab-admin').hidden = !isSystemAdmin();
+  if (!isSystemAdmin()) return;
+
+  const branding = await api('/branding');
+  const form = $('#form-branding');
+  for (const field of ['title', 'banner', 'companyName', 'companyUrl', 'footerText', 'legalNotice']) {
+    form.elements[field].value = branding[field] ?? '';
+  }
+
+  setLogoPreview(branding.logo ?? '');
+
+  const ds = await api('/settings/datasource');
+  const dsForm = $('#form-datasource');
+  for (const field of ['dialect', 'name', 'host', 'port', 'user', 'sslMode']) {
+    dsForm.elements[field].value = ds[field] ?? '';
+  }
+
+  $('#datasource-active').textContent =
+    `${t('admin.activeConnection', 'Aktuell verbunden über')}: ${ds.active}`;
+
+  const ldap = await api('/settings/ldap');
+  const ldapForm = $('#form-ldap');
+  for (const field of ['host', 'baseDn', 'bindDn', 'userFilter', 'nameAttribute', 'emailAttribute']) {
+    ldapForm.elements[field].value = ldap[field] ?? '';
+  }
+  ldapForm.elements.port.value = ldap.port || 389;
+  for (const flag of ['enabled', 'startTls', 'useTls', 'skipVerify']) {
+    ldapForm.elements[flag].checked = Boolean(ldap[flag]);
+  }
+
+  fillSelect(ldapForm.elements.defaultRole, cache.roles, { labelKey: 'name', valueKey: 'name' });
+  ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'employee';
+}
+
+/** The logo travels as a data URI, so it needs no upload endpoint. */
+let pendingLogo = '';
+
+function setLogoPreview(dataURI) {
+  pendingLogo = dataURI;
+
+  const preview = $('#logo-preview');
+  preview.src = dataURI || '';
+  preview.hidden = !dataURI;
+}
+
+function wireAdmin() {
+  $('#logo-file').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 256 KB matches the server-side limit; checking here gives a better
+    // message than a rejected request would.
+    if (file.size > 256 * 1024) {
+      toast(t('admin.logoTooBig', 'Das Logo darf höchstens 256 KB groß sein.'), 'error');
+      e.target.value = '';
+
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setLogoPreview(String(reader.result));
+    reader.readAsDataURL(file);
+  });
+
+  $('#logo-clear').addEventListener('click', () => {
+    setLogoPreview('');
+    $('#logo-file').value = '';
+  });
+
+  $('#form-branding').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const body = { ...formData(e.target), logo: pendingLogo };
+    mutate(() => api('/settings/branding', { method: 'PUT', body: JSON.stringify(body) }),
+      t('admin.saved', 'Einstellungen gespeichert'),
+      async () => { await loadBranding(); await loadAdmin(); });
+  });
+
+  $('#form-datasource').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const body = formData(e.target);
+    mutate(async () => {
+      const result = await api('/settings/datasource', { method: 'PUT', body: JSON.stringify(body) });
+      toast(result.message ?? t('admin.restartNeeded', 'Gespeichert. Wird beim nächsten Start übernommen.'), 'ok');
+    }, null, loadAdmin);
+  });
+
+  $('#form-ldap').addEventListener('submit', (e) => {
+    e.preventDefault();
+    mutate(() => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
+      t('admin.saved', 'Einstellungen gespeichert'),
+      loadAdmin);
+  });
+
+  $('#ldap-test').addEventListener('click', () => {
+    const result = $('#ldap-test-result');
+    result.textContent = t('admin.testing', 'Verbindung wird geprüft …');
+
+    mutate(async () => {
+      const outcome = await api('/settings/ldap/test',
+        { method: 'POST', body: JSON.stringify(ldapPayload()) });
+
+      result.textContent = outcome.message;
+      result.className = outcome.ok ? 'muted plus' : 'muted minus';
+    }, null, null);
+  });
+}
+
+/** Reads the LDAP form, including its checkboxes and numeric port. */
+function ldapPayload() {
+  const form = $('#form-ldap');
+  const body = {
+    host: form.elements.host.value.trim(),
+    port: Number(form.elements.port.value || 389),
+    baseDn: form.elements.baseDn.value.trim(),
+    bindDn: form.elements.bindDn.value.trim(),
+    bindPassword: form.elements.bindPassword.value,
+    userFilter: form.elements.userFilter.value.trim(),
+    nameAttribute: form.elements.nameAttribute.value.trim(),
+    emailAttribute: form.elements.emailAttribute.value.trim(),
+    defaultRole: form.elements.defaultRole.value,
+  };
+
+  for (const flag of ['enabled', 'startTls', 'useTls', 'skipVerify']) {
+    body[flag] = form.elements[flag].checked;
+  }
+
+  return body;
 }
 
 // ------------------------------------------------------------- mutations
@@ -843,6 +1294,9 @@ async function refreshAll() {
   await loadRoles();
   await Promise.all([loadUsers(), loadProjects()]);
   await loadTimesheets();
+  // After users and projects, so the calendar can resolve names.
+  await loadCalendar();
+  await loadAdmin();
   fillSettingsForm();
 }
 
@@ -885,6 +1339,16 @@ function wireForms() {
     const body = formData(e.target);
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.projectCreated', 'Projekt angelegt'),
+      async () => { e.target.reset(); await refreshAll(); });
+  });
+
+  // A personal category is the same endpoint with "private", which is what
+  // makes the caller its owner.
+  $('#form-category').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const body = { ...formData(e.target), private: true };
+    mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
+      t('msg.categoryCreated', 'Kategorie angelegt'),
       async () => { e.target.reset(); await refreshAll(); });
   });
 
@@ -1007,10 +1471,21 @@ async function init() {
   // the user must still be able to sign in rather than face a form whose
   // submit handler was never attached, which would silently reload the page.
   $('#form-login').addEventListener('submit', submitLogin);
+  enhancePasswordFields();
+
+  // Branding is public, so the sign-in screen already carries the instance's
+  // own title and logo. A failure here must not block signing in.
+  try {
+    await loadBranding();
+  } catch {
+    // Falls back to the built-in title.
+  }
 
   try {
     wireForms();
     wireTOTP();
+    wireCalendar();
+    wireAdmin();
     $('#logout').addEventListener('click', doLogout);
     $('#language-picker').addEventListener('change', (e) => mutate(
       () => api('/me/language', { method: 'PUT', body: JSON.stringify({ language: e.target.value }) }),

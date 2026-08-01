@@ -9,8 +9,10 @@ import (
 	"gofr.dev/pkg/gofr/container"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/directory"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 	v1 "github.com/dennis-dko/go-time-recording/internal/interface/api/v1"
@@ -37,6 +39,16 @@ func unavailable(db container.DB) bool {
 }
 
 func main() {
+	// An administered database connection is exported into the environment
+	// before GoFr reads its configuration: GoFr lets real environment
+	// variables win over its .env files, so this overrides them without
+	// touching GoFr's API. It has to happen before gofr.New().
+	if ds, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
+		if err := appconfig.ApplyDatasource(ds); err != nil {
+			panic("cannot apply the configured datasource: " + err.Error())
+		}
+	}
+
 	app := gofr.New()
 
 	cfg := appconfig.Load(app.Config)
@@ -62,9 +74,17 @@ func main() {
 	sessionRepo := sqldb.NewSessionRepository(db, cfg.Dialect)
 	projectRepo := sqldb.NewProjectRepository(db, cfg.Dialect)
 	timesheetRepo := sqldb.NewTimesheetRepository(db, cfg.Dialect)
+	settingsRepo := sqldb.NewSettingsRepository(db, cfg.Dialect)
 
 	auth := appservice.NewAuthService(userRepo, roleRepo)
-	sessions := appservice.NewSessionService(userRepo, roleRepo, sessionRepo, auth, cfg.SessionLifetime)
+	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo)
+
+	// The directory starts unconfigured and is loaded from the settings once
+	// the database is reachable, so a broken LDAP entry cannot stop start-up.
+	ldapClient := directory.New()
+
+	sessions := appservice.NewSessionService(userRepo, roleRepo, sessionRepo, auth, cfg.SessionLifetime).
+		WithExternalAuth(ldapClient, model.RoleEmployee)
 
 	users := appservice.NewUserApplicationService(userRepo, roleRepo)
 	roles := appservice.NewRoleApplicationService(roleRepo)
@@ -89,6 +109,21 @@ func main() {
 			ctx.Logger.Warnf(
 				"created the built-in administrator %q with the initial password %q - change it on first sign-in",
 				appservice.SystemUserEmail, appservice.SystemUserPassword)
+		}
+
+		// Load the directory settings now that the database is up. A failure
+		// here only means no LDAP; it must not stop the application.
+		ldapConfig, err := settingsService.LDAP(ctx)
+		if err != nil {
+			ctx.Logger.Errorf("could not read the LDAP settings: %v", err)
+
+			return nil
+		}
+
+		ldapClient.Configure(ldapConfig)
+
+		if ldapConfig.Enabled {
+			ctx.Logger.Infof("LDAP authentication enabled against %s:%d", ldapConfig.Host, ldapConfig.Port)
 		}
 
 		return nil
@@ -125,6 +160,11 @@ func main() {
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer),
 		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer),
+		Settings: rest.NewSettingsHandler(settingsService, authorizer, cfg.Dialect,
+			ldapClient.Configure,
+			func(ctx *gofr.Context, config model.LDAPConfig) error {
+				return ldapClient.TestConnection(ctx, config)
+			}),
 	})
 
 	// Expired sessions would otherwise accumulate forever.

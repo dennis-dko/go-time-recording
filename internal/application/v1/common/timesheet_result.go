@@ -8,9 +8,12 @@ import (
 
 // TimesheetResult result model
 type TimesheetResult struct {
-	ID            uint
-	UserID        uint
-	ProjectID     uint
+	ID     uint
+	UserID uint
+
+	// ProjectID is nil for an entry that has not been assigned to a project.
+	ProjectID *uint
+
 	Date          time.Time
 	DurationHours float64
 	Description   *string

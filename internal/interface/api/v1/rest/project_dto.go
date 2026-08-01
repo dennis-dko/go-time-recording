@@ -10,6 +10,10 @@ type ProjectResponse struct {
 	StartDate   Date    `json:"startDate"`
 	EndDate     *Date   `json:"endDate"`
 	Status      string  `json:"status"`
+
+	// Private marks a personal category, visible only to its owner.
+	Private bool  `json:"private"`
+	OwnerID *uint `json:"ownerId"`
 }
 
 // CreateProjectRequest is the payload for creating a project.
@@ -19,6 +23,10 @@ type CreateProjectRequest struct {
 	StartDate   Date    `json:"startDate"`
 	EndDate     *Date   `json:"endDate"`
 	Status      string  `json:"status"`
+
+	// Private creates a personal category owned by the caller instead of a
+	// shared project. It needs only the own-project permission.
+	Private bool `json:"private"`
 }
 
 // UpdateProjectRequest is the payload for a partial update.
@@ -37,6 +45,8 @@ func newProjectResponse(r *common.ProjectResult) ProjectResponse {
 		Description: r.Description,
 		StartDate:   Date{Time: r.StartDate},
 		Status:      r.Status,
+		Private:     r.OwnerID != nil,
+		OwnerID:     r.OwnerID,
 	}
 
 	if r.EndDate != nil {

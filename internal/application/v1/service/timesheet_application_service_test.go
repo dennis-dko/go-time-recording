@@ -9,6 +9,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/query"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
@@ -307,4 +308,84 @@ func TestBookingOntoNonActiveProjectIsRejected(t *testing.T) {
 		UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: 4,
 	})
 	requireKind(t, err, apperror.KindConflict)
+}
+
+// Hours may be recorded before it is known which project they belong to, so a
+// booking without a project must succeed and stay uncategorised.
+func TestBookingWithoutProjectIsAllowed(t *testing.T) {
+	f := newFixture(t)
+
+	res, err := f.timesheets.CreateTimesheet(context.Background(), command.CreateTimesheetCommand{
+		UserID: f.userID, Date: day(15), DurationHours: 4,
+	})
+	if err != nil {
+		t.Fatalf("booking without a project: %v", err)
+	}
+
+	if res.Result.ProjectID != nil {
+		t.Errorf("expected no project, got %v", *res.Result.ProjectID)
+	}
+}
+
+// Assigning a project afterwards is how an entry gets categorised.
+func TestUncategorisedEntryCanBeAssignedLater(t *testing.T) {
+	f := newFixture(t)
+
+	created, err := f.timesheets.CreateTimesheet(context.Background(), command.CreateTimesheetCommand{
+		UserID: f.userID, Date: day(15), DurationHours: 4,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	projectID := f.projectID
+	updated, err := f.timesheets.UpdateTimesheet(context.Background(), command.UpdateTimesheetCommand{
+		ID: created.Result.ID, ProjectID: &projectID,
+	})
+	if err != nil {
+		t.Fatalf("assign project: %v", err)
+	}
+
+	if updated.Result.ProjectID == nil || *updated.Result.ProjectID != projectID {
+		t.Errorf("expected project %d, got %v", projectID, updated.Result.ProjectID)
+	}
+
+	// And it can be removed again by sending the zero id.
+	var none uint
+	cleared, err := f.timesheets.UpdateTimesheet(context.Background(), command.UpdateTimesheetCommand{
+		ID: created.Result.ID, ProjectID: &none,
+	})
+	if err != nil {
+		t.Fatalf("clear project: %v", err)
+	}
+
+	if cleared.Result.ProjectID != nil {
+		t.Error("expected the project assignment to be removed")
+	}
+}
+
+// The filter must be able to find exactly the uncategorised entries.
+func TestFilterFindsEntriesWithoutProject(t *testing.T) {
+	f := newFixture(t)
+	f.book(t, day(15), 4) // with project
+
+	if _, err := f.timesheets.CreateTimesheet(context.Background(), command.CreateTimesheetCommand{
+		UserID: f.userID, Date: day(16), DurationHours: 2,
+	}); err != nil {
+		t.Fatalf("create uncategorised: %v", err)
+	}
+
+	found, err := f.timesheetRepo.GetByFilter(context.Background(),
+		repository.TimesheetFilter{WithoutProject: true})
+	if err != nil {
+		t.Fatalf("filter: %v", err)
+	}
+
+	if len(found) != 1 {
+		t.Fatalf("expected 1 uncategorised entry, got %d", len(found))
+	}
+
+	if found[0].HasProject() {
+		t.Error("the returned entry must have no project")
+	}
 }

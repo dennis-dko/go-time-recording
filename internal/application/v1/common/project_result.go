@@ -14,6 +14,10 @@ type ProjectResult struct {
 	StartDate   time.Time
 	EndDate     *time.Time
 	Status      string
+
+	// OwnerID is set for a private project, which acts as a personal
+	// category for its owner only.
+	OwnerID *uint
 }
 
 func NewProjectResultFromModel(projectModels ...*model.Project) []*ProjectResult {
@@ -28,6 +32,7 @@ func NewProjectResultFromModel(projectModels ...*model.Project) []*ProjectResult
 			StartDate: projectModel.StartDate,
 			EndDate:   projectModel.EndDate,
 			Status:    projectModel.Status,
+			OwnerID:   projectModel.OwnerID,
 		}
 		if projectModel.Description != nil {
 			projectData.Description = projectModel.Description

@@ -13,6 +13,11 @@ type TimesheetFilter struct {
 	Status    string
 	StartDate *time.Time
 	EndDate   *time.Time
+
+	// WithoutProject selects only the entries that have no project yet.
+	// A zero ProjectID means "any project", so a separate flag is needed to
+	// ask for the uncategorised ones.
+	WithoutProject bool
 }
 
 // TimesheetRepository repository functions for timesheet

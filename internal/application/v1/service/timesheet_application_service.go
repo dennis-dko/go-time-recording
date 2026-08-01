@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -72,7 +73,7 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 
 	createdTimesheet, err := s.timesheetRepository.Save(ctx, &model.Timesheet{
 		UserID:        cmd.UserID,
-		ProjectID:     cmd.ProjectID,
+		ProjectID:     normalizeProjectID(cmd.ProjectID),
 		Date:          cmd.Date,
 		DurationHours: cmd.DurationHours,
 		Description:   cmd.Description,
@@ -157,11 +158,17 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 	}
 
 	if cmd.ProjectID != nil {
-		if _, err := s.projectRepository.GetByID(ctx, *cmd.ProjectID); err != nil {
-			return nil, err
-		}
+		// 0 is how a client asks to remove the assignment again, which is what
+		// makes an entry uncategorised.
+		if *cmd.ProjectID == 0 {
+			existingTimesheet.ProjectID = nil
+		} else {
+			if _, err := s.projectRepository.GetByID(ctx, *cmd.ProjectID); err != nil {
+				return nil, err
+			}
 
-		existingTimesheet.ProjectID = *cmd.ProjectID
+			existingTimesheet.ProjectID = normalizeProjectID(*cmd.ProjectID)
+		}
 	}
 
 	if cmd.Date != nil {
@@ -223,14 +230,26 @@ func (s *TimesheetApplicationService) DeleteTimesheet(ctx context.Context, cmd c
 	return s.timesheetRepository.Delete(ctx, cmd.ID)
 }
 
+// requireUserAndProject validates the booking target. The project is optional:
+// hours may be recorded without one and categorised later.
 func (s *TimesheetApplicationService) requireUserAndProject(ctx context.Context, userID, projectID uint) error {
 	if _, err := s.userRepository.GetByID(ctx, userID); err != nil {
 		return err
 	}
 
+	if projectID == 0 {
+		return nil
+	}
+
 	project, err := s.projectRepository.GetByID(ctx, projectID)
 	if err != nil {
 		return err
+	}
+
+	// A private project is one person's own category. Reporting it as "not
+	// found" rather than "forbidden" keeps its existence private.
+	if !project.VisibleTo(userID) {
+		return apperror.NotFound("project", strconv.FormatUint(uint64(projectID), 10))
 	}
 
 	// Booking onto a finished project would corrupt its final figures.
@@ -240,6 +259,16 @@ func (s *TimesheetApplicationService) requireUserAndProject(ctx context.Context,
 	}
 
 	return nil
+}
+
+// normalizeProjectID turns the "no project" sentinel into a nil pointer, so
+// the absence is stored as NULL rather than as a dangling foreign key.
+func normalizeProjectID(projectID uint) *uint {
+	if projectID == 0 {
+		return nil
+	}
+
+	return &projectID
 }
 
 // checkDailyBudget rejects a booking that would push the user over the daily
