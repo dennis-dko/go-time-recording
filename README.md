@@ -10,13 +10,17 @@ Built on [GoFr](https://gofr.dev), structured after [gogs](https://github.com/go
 ## Quick start
 
 ```bash
-task run          # build and start (defaults to the dev environment)
+task dev DB=sqlite   # build and start on a local file, nothing else needed
 # or directly:
 go run ./cmd/main.go
 ```
 
 Then open <http://localhost:8000>. The web interface is served by the same
 binary as the API.
+
+`task dev` on its own adds PostgreSQL and a seeded test directory in
+containers; `task stage` runs the real deployment image against them. See
+[Development](#development).
 
 **First sign-in.** An administrator account is created on first start:
 
@@ -307,10 +311,50 @@ Decisions that would otherwise be surprising:
 
 ## Configuration
 
-Values come from `cmd/configs/.<env>.env`; `APP_ENV` selects the environment.
+GoFr reads `configs/.env` first, then overlays `configs/.$APP_ENV.env` on top
+of it. So `.env` holds every default, and the environment files beside it hold
+only what actually differs — `.dev.env` is one line, `.prod.env` is none.
+
+Four layers, lowest to highest:
+
+| | Source | Set by |
+| --- | --- | --- |
+| 1 | `configs/.env` | the repository — every default |
+| 2 | `configs/.$APP_ENV.env` | the repository — differences per environment |
+| 3 | real environment variables | the deployment: compose, systemd, the shell |
+| 4 | `configs/datasource.json` | the **setup wizard**, when someone changes the database in the interface |
+
+Layer 3 is why a deployment needs no file edits: `deploy/compose.yaml` sets
+everything it needs as environment variables. Layer 4 is deliberately on top of
+it — changing the database in the interface is an explicit act, and it would be
+surprising for it to be silently ignored because a stale variable was still set
+somewhere.
+
+With `APP_ENV` unset, layer 2 falls back to `configs/.local.env`. That file is
+not in the repository and is gitignored: it is the right place for a personal
+database or a debug log level, and the wrong thing to commit, because it would
+silently apply to everyone.
+
+### What belongs in a file, and what belongs in the application
+
+**Bootstrap** settings can only be set in layers 1–3. They decide how the
+process starts, so an application that has not started cannot administer them —
+and getting one wrong must not be fixable only from a screen it takes away:
+ports, `LOG_LEVEL`, `TLS_*`, `AUTH_ENABLED`, `UI_ENABLED`, the `*_SCHEDULE`
+cron expressions, and the `DB_*` connection everything else is stored in.
+
+**Starting values** are what a fresh installation begins with; the setup wizard
+and *Settings* administer them at run time and what is stored there wins:
+`SESSION_LIFETIME`, `MAX_DAILY_HOURS`, `RATE_LIMIT`, `RATE_LIMIT_WINDOW`,
+`AUTO_CLOSE_AFTER_DAYS`, `LDAP_SYNC_MAX_DELETE_RATIO`, `APP_NAME`.
+
+The **timezone and the LDAP connection appear in no file at all**. Both are
+administered entirely in the application — a second place to write them would
+only disagree with the first.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
+| `APP_NAME` | `Time Recording` | instance title, until one is set under Settings |
 | `HTTP_PORT` | `8000` | API and web interface |
 | `METRICS_PORT` | `2121` | Prometheus endpoint |
 | `DB_DIALECT` | `sqlite` | also `postgres`, `mysql` |
@@ -423,12 +467,48 @@ The server enforces these; the interface merely also hides what is not allowed:
 
 ## Development
 
+| Task | What it does |
+| --- | --- |
+| `task dev` | **Develop.** Backing services, then the locally built binary against them, on :8000 |
+| `task test` | Unit and integration tests |
+| `task stage` | **Verify.** The shipped container image against real services, on :8080 |
+| `task image` | **Ship.** Build the deployment image |
+| `task release VERSION=v1.2.3` | Tag it; CI does the rest |
+
+`task` on its own lists everything, and `task --summary <name>` explains one.
+
+### Develop
+
 ```bash
-task            # build (dev)
-task run        # build and start; ENV=staging and so on are possible
-task test       # tests
-task upgrade    # bump go.mod to the installed toolchain and update dependencies
-task release VERSION=v1.2.3   # tags; CI does the rest
+task dev                 # PostgreSQL + seeded directory, then the app
+task dev DB=sqlite       # no containers at all, straight onto a local file
+task env:down            # stop everything and delete the data
+```
+
+The application runs in the foreground; `Ctrl-C` stops it and leaves the
+containers up, so the next start is quick. LDAP is not configured through the
+environment — it is administered in the running application under *Settings*;
+[`test/README.md`](test/README.md) lists the values and the seeded accounts
+that make the synchronisation's edge cases reproducible.
+
+### Verify
+
+```bash
+task test                # the test suite
+task stage               # the real image, against real services, on :8080
+task stage:logs          # follow its log
+task stage:down          # stop it and delete the data
+```
+
+`task stage` is what `task dev` is not. Development runs a binary compiled on
+your machine — fast, but not the artifact anyone deploys. Staging goes through
+the repository `Dockerfile`: multi-stage build, embedded assets, non-root user,
+healthcheck, `prod` configuration. It publishes on **8080** rather than 8000 so
+a development instance can keep running beside it.
+
+```bash
+# Check a connection with the application's own drivers, before trusting it
+task probe -- --ldap ldaps://dc.corp.example --id-attribute objectGUID
 ```
 
 Formatting, vet and linting deliberately do not run through the Taskfile: the
@@ -441,21 +521,86 @@ golangci-lint run ./...   # configured in .golangci.yml
 
 ## Deployment
 
+Releases are cut from git tags. `task release VERSION=v1.2.3` tags and pushes;
+[`release.yml`](.github/workflows/release.yml) then runs the tests with `-race`,
+builds the image, and publishes it to GHCR as both `:v1.2.3` and `:latest`,
+along with a GitHub release.
+
+Nothing has to be built on the server.
+
+### On the server
+
+Copy [`deploy/`](deploy/) — two compose files and an environment template — and
+nothing else. The source tree is not needed.
+
 ```bash
-docker build -t go-time-recording .
-docker run -p 8000:8000 -v go-time-data:/data go-time-recording
+cp .env.example .env
+$EDITOR .env            # DB_PASSWORD is required and has no default
+chmod 600 .env
+docker compose up -d
 ```
 
-The image is built in two stages; the final layer holds only the static binary,
-the configuration and a non-root user. The SQLite file lives under `/data` and
-belongs on a volume, or it is gone when the container is replaced.
+That brings up the published image and a PostgreSQL beside it, both with
+`restart: unless-stopped` and their data on named volumes. The application
+listens on `127.0.0.1:8000`, for a reverse proxy in front of it. PostgreSQL
+publishes **no port at all**: it is reachable from the application container by
+name, and from nowhere else.
 
-For HTTPS, publish ports 80 and 443 as well and set `TLS_ENABLED`,
-`TLS_DOMAINS` and `TLS_EMAIL`. Mount `TLS_CACHE_DIR` on a volume too, so
-certificates survive a restart and are not requested again.
+Pin `GTR_VERSION` to a release rather than leaving it on `latest`. A container
+restarted at 3am otherwise comes back as a different version than the one that
+went down.
 
-On a `vX.Y.Z` tag, [`release.yml`](.github/workflows/release.yml) publishes the
-image to GHCR and creates a GitHub release.
+### HTTPS
+
+With a reverse proxy already terminating TLS, there is nothing more to do. To
+terminate it in the application instead, add the overlay:
+
+```bash
+docker compose -f compose.yaml -f compose.tls.yaml up -d
+```
+
+Certificates come from Let's Encrypt automatically, and are kept on a volume so
+a restart does not request them again — their rate limit is five per domain per
+week, and running into it leaves the site with no certificate at all. Two
+things must be true, and neither is in the compose file: `TLS_DOMAINS` has to
+resolve to this server publicly, and port 80 has to be reachable, because that
+is where the challenge arrives.
+
+Do not terminate TLS in both places. Two certificates for one name means one
+renewal that quietly stops working.
+
+### Updating
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Schema migrations run at start-up, so there is no separate step. Back the
+database up first — the application will not undo a migration for you:
+
+```bash
+docker compose exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" | gzip > backup-$(date +%F).sql.gz
+```
+
+### Configuration
+
+`.env` carries only what a deployment must decide: the database password, the
+image version, the instance name, and the TLS settings. Everything operational —
+session lifetime, rate limits, the daily booking cap, the directory connection,
+the timezone — is administered in the running application under *Settings*, and
+takes effect without a restart. See [Configuration](#configuration) for which
+settings live where and why.
+
+### Running it without containers
+
+The binary is self-contained; the image is a convenience, not a requirement.
+
+```bash
+DB_DIALECT=postgres DB_HOST=… DB_USER=… DB_PASSWORD=… ./go-time-recording
+```
+
+It has to be started from a directory containing `configs/`, which is where
+GoFr looks for its configuration.
 
 ## Licence
 

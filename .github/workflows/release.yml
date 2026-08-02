@@ -84,7 +84,8 @@ jobs:
     steps:
       - name: Smoke-test the published image
         run: |
-          docker run -d --name smoke -p 9090:9090 ${{ needs.publish.outputs.image }}:${{ github.ref_name }}
+          # The image serves on 8000; publishing 9090:9090 could never have answered.
+          docker run -d --name smoke -p 9090:8000 ${{ needs.publish.outputs.image }}:${{ github.ref_name }}
           ok=0
           for i in $(seq 1 10); do
             if curl -fsS http://localhost:9090/ >/dev/null 2>&1; then

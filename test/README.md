@@ -77,11 +77,16 @@ go run ./test/probe --ldap ldaps://dc.corp.example \
 
 ## Point the application at these services
 
+Usually there is nothing to do: `task dev` starts these services and connects
+the application to them in one step, and `task stage` does the same with the
+real deployment image. Both are described in the [main README](../README.md#development).
+
+The settings, for running it some other way:
+
 ```bash
-# PostgreSQL
 DB_DIALECT=postgres DB_HOST=localhost DB_PORT=55432 \
 DB_NAME=go-time-recording DB_USER=gtr DB_PASSWORD=gtr-test-password \
-DB_SSL_MODE=disable task run
+DB_SSL_MODE=disable ./go-time-recording
 ```
 
 The directory is configured in the running application under **Settings →

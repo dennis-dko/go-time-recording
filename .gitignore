@@ -13,3 +13,13 @@ coverage.out
 configs/datasource.json
 cmd/configs/datasource.json
 bin/configs/datasource.json
+
+# The production environment file. It holds the database password, and the
+# example next to it is what belongs in the repository instead.
+deploy/.env
+
+# Personal config override. GoFr loads it automatically when APP_ENV is unset,
+# which makes it the right place for a local database or a debug log level -
+# and the wrong thing to commit, because it silently applies to everyone.
+cmd/configs/.local.env
+bin/configs/.local.env

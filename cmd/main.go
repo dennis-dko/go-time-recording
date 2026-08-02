@@ -90,7 +90,7 @@ func main() {
 
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
-	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo)
+	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName)
 	setup := appservice.NewSetupService(settingsService, userRepo, cfg.Dialect)
 
 	// The directory starts unconfigured and is loaded from the settings once

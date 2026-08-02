@@ -1,0 +1,40 @@
+# Overlay for serving HTTPS directly, without a reverse proxy in front.
+#
+#   docker compose -f compose.yaml -f compose.tls.yaml up -d
+#
+# Certificates are obtained from Let's Encrypt automatically. Two things have
+# to be true for that to work, and both are outside this file:
+#
+#   - TLS_DOMAINS must resolve to this server, publicly. Let's Encrypt verifies
+#     by connecting to it; a name that only resolves internally cannot be
+#     issued for.
+#   - Port 80 must be reachable from the internet. It is what the challenge
+#     arrives on, and it also redirects visitors to HTTPS.
+#
+# Leave this overlay out if something else already terminates TLS - a reverse
+# proxy, a load balancer, an ingress controller. Doing it in both places means
+# two certificates for one name and a renewal that quietly stops working.
+
+services:
+  app:
+    ports: !override
+      # Replaces the loopback binding from compose.yaml rather than adding to
+      # it: with TLS terminated here, the plain port should not be listening at
+      # all.
+      - "80:80"
+      - "443:443"
+    environment:
+      TLS_ENABLED: "true"
+      TLS_DOMAINS: ${TLS_DOMAINS:?set TLS_DOMAINS in .env, comma separated}
+      # Let's Encrypt sends expiry warnings here. Worth a real mailbox: it is
+      # the only notice that renewal has stopped working.
+      TLS_EMAIL: ${TLS_EMAIL:?set TLS_EMAIL in .env}
+      TLS_CACHE_DIR: /certs
+    volumes:
+      # Certificates survive a container replacement. Without this, every
+      # restart asks Let's Encrypt again and runs into their rate limit - five
+      # per domain per week, and then the site has no certificate at all.
+      - tls-certs:/certs
+
+volumes:
+  tls-certs:

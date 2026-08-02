@@ -1,85 +1,117 @@
 version: '3'
 
-# Local dev convenience only. Formatting, vet diagnostics, linting and test
-# running/coverage are handled by the VS Code Go extension in the editor,
-# and enforced independently in CI (see .github/workflows/ci.yml and
-# .github/workflows/release.yml) - they're intentionally not duplicated here.
+# Three things this file is for, in the order a change travels through them:
+#
+#   develop   task dev      local binary, fast rebuild, real backing services
+#   verify    task stage    the shipped container image, against real services
+#   ship      task release  a git tag; CI builds, publishes and releases
+#
+# Formatting, vet diagnostics and linting are deliberately absent: the VS Code
+# Go extension covers them while editing, and ci.yml enforces them independently
+# on every push. Duplicating them here would only create a third place to keep
+# in step.
 
 vars:
   APP_NAME: go-time-recording
   BIN_DIR: bin
+  CONFIG_SRC: cmd/configs
+
   # Build scratch space for tests, kept out of %TEMP% - see the test task.
   TMP_DIR: bin/gotmp
-  CONFIG_SRC: cmd/configs
-  # Docker registry to push images to, e.g. ghcr.io/dennis-dko. Empty by
-  # default so a push without a target fails loudly instead of going nowhere.
-  REGISTRY: ''
-  # Image/build version. Defaults to the nearest git tag (or short SHA if
-  # there is none yet). Override explicitly for releases: task release VERSION=v1.2.3
+
+  # Image and build version. Defaults to the nearest git tag (or the short SHA
+  # if there is none yet). Override for releases: task release VERSION=v1.2.3
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev"
 
 tasks:
   default:
-    desc: Build the application for the default (dev) environment.
+    desc: Show what is available.
+    silent: true
+    cmds:
+      - task --list
+
+  # ----------------------------------------------------------------- develop
+
+  dev:
+    desc: 'Develop: build and run against real backing services. Ctrl-C to stop.'
+    summary: |
+      Starts PostgreSQL and the seeded test directory, waits until both are
+      genuinely usable rather than merely listening, then builds and runs the
+      application connected to them.
+
+      The application runs in the foreground. Ctrl-C stops it and leaves the
+      containers up, so the next start is quick.
+
+      LDAP is not configured through the environment - it is administered in the
+      running application under Settings. test/README.md lists the values, and
+      the seeded accounts that make the synchronisation's edge cases
+      reproducible.
+
+      Usage:
+        task dev                 PostgreSQL and the directory
+        task dev DB=sqlite       no containers at all, straight onto a local file
+        task dev PROFILE=all     ...and MySQL too
+    cmds:
+      - task: '{{if eq .DB "sqlite"}}dev:sqlite{{else}}dev:services{{end}}'
+
+  dev:services:
+    internal: true
+    cmds:
+      # "dev", not "all": MySQL is a compatibility check, not something to wait
+      # for on every start.
+      - task: env:up
+        vars: { PROFILE: '{{.PROFILE | default "dev"}}' }
+      - task: build
+      - task: dev:binary
+        vars:
+          MESSAGE: 'PostgreSQL on localhost:55432'
+          DB_DIALECT: postgres
+          DB_HOST: localhost
+          DB_PORT: '55432'
+          DB_USER: gtr
+          DB_PASSWORD: gtr-test-password
+          DB_SSL_MODE: disable
+
+  dev:sqlite:
+    internal: true
     cmds:
       - task: build
-
-  build:
-    desc: Build the application for the dev environment.
-    cmds:
-      - task: build:env
+      - task: dev:binary
         vars:
-          ENV: dev
+          MESSAGE: 'a local SQLite file'
+          DB_DIALECT: sqlite
 
-  build:env:
-    desc: 'Build the application. Usage: task build:env ENV=staging (selects which config the binary loads at run time)'
-    deps: [clean, tidy]
-    vars:
-      ENV: '{{.ENV | default "dev"}}'
-    cmds:
-      # The artifact itself is environment-independent: GoFr picks its config
-      # file from APP_ENV at start-up, so ENV only matters when running. It is
-      # echoed here so the build log states which environment is intended.
-      - echo "Building application (intended for {{.ENV}}, version {{.VERSION}})"
-      - mkdir -p {{.BIN_DIR}}
-      - cp -r {{.CONFIG_SRC}} {{.BIN_DIR}}/
-      - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd/main.go
-
-  run:
-    desc: 'Build and run the application. Usage: task run ENV=staging (default: dev)'
-    cmds:
-      - task: build:env
-        vars: { ENV: '{{.ENV | default "dev"}}' }
-      - task: run:binary
-        vars: { ENV: '{{.ENV | default "dev"}}' }
-
-  run:binary:
+  dev:binary:
     internal: true
     # Must run from BIN_DIR: GoFr resolves its configuration as ./configs
-    # relative to the working directory, and build:env puts them there.
-    # Starting from the repository root leaves the app with no database.
+    # relative to the working directory, and build puts them there. Starting
+    # from the repository root leaves the application with no database.
     dir: '{{.BIN_DIR}}'
-    # APP_ENV has to be set here rather than at build time: it selects the
-    # config file GoFr loads on start-up and is not compiled into the binary.
     env:
-      APP_ENV: '{{.ENV}}'
+      # APP_ENV selects the config file GoFr loads at start-up. It is read at
+      # run time, not compiled in, so it belongs here rather than in the build.
+      APP_ENV: dev
+      DB_DIALECT: '{{.DB_DIALECT}}'
+      DB_NAME: '{{.APP_NAME}}'
+      DB_HOST: '{{.DB_HOST}}'
+      DB_PORT: '{{.DB_PORT}}'
+      DB_USER: '{{.DB_USER}}'
+      DB_PASSWORD: '{{.DB_PASSWORD}}'
+      DB_SSL_MODE: '{{.DB_SSL_MODE}}'
     cmds:
+      # A datasource.json written by the Settings screen in an earlier session
+      # is applied *before* GoFr reads its configuration and overwrites every
+      # DB_* variable above - so this task would silently connect somewhere
+      # else. Removing it is what keeps `task dev` mean one thing.
+      - rm -f configs/datasource.json
+      - echo "Starting against {{.MESSAGE}} - open http://localhost:8000"
       - ./{{.APP_NAME}}{{exeExt}}
 
-  clean:
-    desc: Remove build artifacts.
-    cmds:
-      - rm -rf {{.BIN_DIR}}
-      - rm -f coverage.out
-
-  tidy:
-    desc: Ensure go.mod and go.sum are tidy.
-    cmds:
-      - go mod tidy
+  # ------------------------------------------------------------------ verify
 
   test:
-    desc: Run all unit and integration tests.
+    desc: 'Verify: run the unit and integration tests.'
     deps: [tidy]
     # Go writes each test binary to %TEMP%/go-build before running it, and
     # real-time virus scanning on Windows intermittently locks those files -
@@ -90,12 +122,63 @@ tasks:
       # relative path would resolve somewhere different for each of them.
       GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
     cmds:
-      - '{{if eq OS "windows"}}powershell -NoProfile -Command "New-Item -ItemType Directory -Force {{.TMP_DIR}} | Out-Null"{{else}}mkdir -p {{.TMP_DIR}}{{end}}'
-      - defer: '{{if eq OS "windows"}}powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue {{.TMP_DIR}}"{{else}}rm -rf {{.TMP_DIR}}{{end}}'
+      - mkdir -p {{.TMP_DIR}}
+      - defer: rm -rf {{.TMP_DIR}}
       - go test ./...
 
-  test:env:up:
-    desc: 'Start the throwaway test services. Usage: task test:env:up PROFILE=postgres|mysql|ldap|all'
+  stage:
+    desc: 'Verify: run the shipped container image against real services, for a full test.'
+    summary: |
+      Builds the actual deployment image from the repository Dockerfile and runs
+      it against PostgreSQL and the seeded directory.
+
+      This is what `task dev` is not. Development runs a binary compiled on your
+      machine, which is fast but is not the artifact anyone deploys. This goes
+      through the real image - multi-stage build, embedded assets, non-root
+      user, healthcheck, prod configuration - so what is tested is what will be
+      running.
+
+      Reachable on http://localhost:8080 (deliberately not 8000, so a
+      development instance can keep running alongside it).
+
+      Usage:
+        task stage           start it
+        task stage:logs      follow the application log
+        task stage:down      stop it and delete the data
+    dir: test
+    cmds:
+      - docker compose --profile stage up -d --build --wait
+      - echo "Staging is up on http://localhost:8080 - sign in as admin@local / changeme123"
+
+  stage:logs:
+    desc: 'Verify: follow the staging application log.'
+    dir: test
+    cmds:
+      - docker compose --profile stage logs -f app
+
+  stage:down:
+    desc: 'Verify: stop the staging environment and delete its data.'
+    dir: test
+    cmds:
+      - docker compose --profile stage down -v
+
+  probe:
+    desc: 'Verify: check a database or directory connection using the application''s own drivers. Usage: task probe -- --ldap ldaps://dc.corp.example'
+    summary: |
+      Opens the connection with the same drivers the application uses and runs
+      the same kind of query, which is what makes a pass mean something: a port
+      check proves a socket answers, not that this binary can authenticate.
+
+      For a directory it also reports whether every entry carries the stable
+      identifier the synchronisation matches on. Without it, accounts are
+      matched by mail address - and renaming a mailbox then deletes the account
+      together with every hour recorded against it. Worth running before
+      pointing a real installation at a real directory.
+    cmds:
+      - go run ./test/probe {{.CLI_ARGS}}
+
+  env:up:
+    desc: 'Verify: start the backing services on their own. Usage: task env:up PROFILE=dev|postgres|mysql|ldap|all'
     vars:
       PROFILE: '{{.PROFILE | default "all"}}'
     dir: test
@@ -103,20 +186,53 @@ tasks:
       - docker compose --profile {{.PROFILE}} up -d --wait
       - echo "Ready. See test/README.md for connection details."
 
-  test:env:down:
-    desc: Stop the test services and delete their data.
+  env:down:
+    desc: 'Verify: stop every container this project starts and delete their data.'
     dir: test
     cmds:
-      # --profile all so nothing is left behind whichever profile was started.
-      - docker compose --profile all down -v
+      # Every profile, so nothing is left behind whichever one was started.
+      - docker compose --profile all --profile stage --profile probe down -v
 
-  test:probe:
-    desc: 'Check a database and directory connection using the application''s own drivers. Usage: task test:probe -- --ldap ldap://localhost:5389'
+  # -------------------------------------------------------------------- ship
+
+  build:
+    desc: 'Ship: build the binary into bin/, with its configuration beside it.'
+    deps: [tidy]
     cmds:
-      - go run ./test/probe {{.CLI_ARGS}}
+      # The artifact is environment-independent: GoFr picks its config file from
+      # APP_ENV at start-up, so there is nothing to choose here.
+      - echo "Building {{.APP_NAME}} {{.VERSION}}"
+      - mkdir -p {{.BIN_DIR}}
+      - cp -r {{.CONFIG_SRC}} {{.BIN_DIR}}/
+      - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd/main.go
+
+  image:
+    desc: 'Ship: build the deployment image, tagged with the version and "latest".'
+    deps: [test]
+    cmds:
+      - docker build -t {{.APP_NAME}}:{{.VERSION}} -t {{.APP_NAME}}:latest .
+      - echo "Built {{.APP_NAME}}:{{.VERSION}}"
+
+  release:
+    desc: 'Ship: tag a release; CI builds, verifies and publishes it. Usage: task release VERSION=v1.2.3'
+    preconditions:
+      - sh: echo "{{.VERSION}}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'
+        msg: 'VERSION must be a semantic version, e.g. task release VERSION=v1.2.3'
+      - sh: '[ -z "$(git status --porcelain)" ]'
+        msg: 'Working tree is not clean. Commit or stash first, or the tag will not match what is built.'
+    cmds:
+      - git tag -a {{.VERSION}} -m "Release {{.VERSION}}"
+      - git push origin {{.VERSION}}
+
+  # ---------------------------------------------------------------- upkeep
+
+  tidy:
+    desc: 'Upkeep: ensure go.mod and go.sum are tidy.'
+    cmds:
+      - go mod tidy
 
   upgrade:
-    desc: Bump go.mod to the installed Go toolchain and update all dependencies to their latest compatible releases.
+    desc: 'Upkeep: bump go.mod to the installed toolchain and update dependencies.'
     cmds:
       - |
         GOVERSION=$(go env GOVERSION)
@@ -124,36 +240,10 @@ tasks:
         go get go@${GOVERSION#go}
       - go get -u ./...
       - task: test
-      - echo "Done. Remember to also bump the base image in Dockerfile (FROM golang:...) if it changed."
+      - echo "Done. Remember to bump the base images in Dockerfile and test/ldap/Dockerfile if the toolchain moved."
 
-  version:
-    desc: Print the version used for builds, images, and releases.
+  clean:
+    desc: 'Upkeep: remove build artifacts.'
     cmds:
-      - echo "{{.VERSION}}"
-
-  docker:build:
-    desc: Build the Docker image, tagged with the version and "latest".
-    deps: [test]
-    cmds:
-      - docker build -t {{.APP_NAME}}:{{.VERSION}} -t {{.APP_NAME}}:latest .
-
-  docker:push:
-    desc: 'Push the Docker image to REGISTRY. Usage: task docker:push REGISTRY=ghcr.io/you'
-    deps: [docker:build]
-    preconditions:
-      - sh: '[ -n "{{.REGISTRY}}" ]'
-        msg: 'REGISTRY is not set. Usage: task docker:push REGISTRY=ghcr.io/you'
-    cmds:
-      - docker tag {{.APP_NAME}}:{{.VERSION}} {{.REGISTRY}}/{{.APP_NAME}}:{{.VERSION}}
-      - docker tag {{.APP_NAME}}:latest {{.REGISTRY}}/{{.APP_NAME}}:latest
-      - docker push {{.REGISTRY}}/{{.APP_NAME}}:{{.VERSION}}
-      - docker push {{.REGISTRY}}/{{.APP_NAME}}:latest
-
-  release:
-    desc: 'Tag a release; the release workflow in CI builds, verifies, and publishes it. Usage: task release VERSION=v1.2.3'
-    preconditions:
-      - sh: echo "{{.VERSION}}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'
-        msg: 'VERSION must be a semantic version, e.g. task release VERSION=v1.2.3'
-    cmds:
-      - git tag -a {{.VERSION}} -m "Release {{.VERSION}}"
-      - git push origin {{.VERSION}}
+      - rm -rf {{.BIN_DIR}}
+      - rm -f coverage.out

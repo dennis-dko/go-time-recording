@@ -1,0 +1,89 @@
+# Production deployment.
+#
+# Unlike test/docker-compose.yml, which builds everything from this repository
+# and throws it away afterwards, this pulls the published image and keeps its
+# data. Nothing here needs the source: copy this file and .env next to each
+# other on the server and run `docker compose up -d`.
+#
+#   1. cp .env.example .env
+#   2. edit .env - the passwords in it are the only ones protecting the data
+#   3. docker compose up -d
+#
+# The application is reachable on 127.0.0.1:8000 by default, for a reverse
+# proxy in front of it. To terminate TLS here instead, add compose.tls.yaml:
+#
+#   docker compose -f compose.yaml -f compose.tls.yaml up -d
+
+name: go-time-recording
+
+services:
+  app:
+    image: ${GTR_IMAGE:-ghcr.io/dennis-dko/go-time-recording}:${GTR_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: prod
+
+      DB_DIALECT: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:?set DB_NAME in .env}
+      DB_USER: ${DB_USER:?set DB_USER in .env}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      # The database is not published outside this network, so plain traffic
+      # between the two containers is not crossing anything hostile.
+      DB_SSL_MODE: disable
+
+      APP_NAME: ${APP_NAME:-Time Recording}
+
+    ports:
+      # Bound to the loopback interface, not 0.0.0.0: without TLS in front,
+      # publishing this to the network would serve session cookies in the
+      # clear. A reverse proxy on the same host reaches it here; nothing else
+      # does. See compose.tls.yaml to serve HTTPS directly instead.
+      - "127.0.0.1:8000:8000"
+
+    volumes:
+      # Only used if DB_DIALECT is ever switched back to sqlite, but a volume
+      # costs nothing and its absence would cost the data.
+      - app-data:/data
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/.well-known/alive"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+    logging:
+      # Without a limit the JSON log grows until the disk is full, which is a
+      # slow and confusing way for a server to stop working.
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:?set DB_NAME in .env}
+      POSTGRES_USER: ${DB_USER:?set DB_USER in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    # Deliberately no `ports:`. The database is reachable from the application
+    # container by name and from nowhere else - a published 5432 is how these
+    # end up on the internet.
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  postgres-data:
+  app-data:

@@ -6,9 +6,11 @@
 # connection and an LDAP bind can be exercised for real, and it must never be
 # mistaken for a deployment example - see ../Dockerfile for that.
 #
+#   docker compose --profile dev up -d       PostgreSQL + directory
 #   docker compose --profile postgres up -d
 #   docker compose --profile ldap up -d
-#   docker compose --profile all up -d
+#   docker compose --profile stage up -d     ...plus the application image
+#   docker compose --profile all up -d       ...plus MySQL
 #
 # Profiles keep it to what is needed: starting three databases to test one is
 # a slow way to find out the third does not fit in memory.
@@ -18,7 +20,7 @@ name: gtr-test
 services:
   postgres:
     image: postgres:17-alpine
-    profiles: [postgres, all]
+    profiles: [postgres, dev, all, stage]
     environment:
       POSTGRES_DB: go-time-recording
       POSTGRES_USER: gtr
@@ -53,7 +55,7 @@ services:
   # contains the cases the synchronisation has to get right, not just a user
   # that can bind. See ldap/Dockerfile for why it is not a stock image.
   openldap:
-    profiles: [ldap, all]
+    profiles: [ldap, dev, all, stage]
     build: ./ldap
     ports:
       - "5389:389"
@@ -64,6 +66,39 @@ services:
       interval: 3s
       timeout: 5s
       retries: 20
+
+  # The application itself, built from the image that actually ships.
+  #
+  # This is the difference between the "stage" profile and everything else
+  # here: `task dev` runs a binary compiled on your machine, which is fast but
+  # is not the artifact anyone deploys. This one goes through the real
+  # Dockerfile - the multi-stage build, the embedded assets, the non-root user,
+  # the healthcheck - so a full run against it exercises what will be running
+  # in production, not an approximation of it.
+  app:
+    profiles: [stage]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: prod
+      # Overrides the image's SQLite default: a staging run that quietly used a
+      # file database would test the one thing production does not do.
+      DB_DIALECT: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: go-time-recording
+      DB_USER: gtr
+      DB_PASSWORD: gtr-test-password
+      DB_SSL_MODE: disable
+    ports:
+      - "8080:8000"
+      - "8021:2121"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openldap:
+        condition: service_healthy
 
   # Runs the connection probe from inside the network, where the service names
   # resolve and the published ports do not. A check that passes from the host
@@ -89,7 +124,7 @@ services:
   # rather than guessing at.
   ldap-ui:
     image: osixia/phpldapadmin:0.9.0
-    profiles: [ldap, all]
+    profiles: [ldap, dev, all]
     environment:
       PHPLDAPADMIN_LDAP_HOSTS: openldap
       PHPLDAPADMIN_HTTPS: "false"

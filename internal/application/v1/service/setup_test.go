@@ -64,7 +64,9 @@ func newSetupFixture(t *testing.T, dialect string) *setupFixture {
 
 	f := newFixture(t)
 	store := newStubSettings()
-	settings := service.NewSettingsService(store, f.roleRepo)
+	// Empty app name: these tests are about which steps are outstanding, and
+	// the instance title only decides what the branding step falls back to.
+	settings := service.NewSettingsService(store, f.roleRepo, "")
 
 	return &setupFixture{
 		fixture: f,

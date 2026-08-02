@@ -49,9 +49,22 @@ type Branding struct {
 	LegalNotice string
 }
 
+// FallbackAppTitle is the name an instance carries when nothing else has been
+// configured - neither a title under Settings nor APP_NAME in the environment.
+const FallbackAppTitle = "Time Recording"
+
 // DefaultBranding is what a fresh instance shows.
-func DefaultBranding() Branding {
-	return Branding{Title: "Time Recording"}
+//
+// The title comes from APP_NAME when the deployment set one, so an operator who
+// names their instance in the environment sees that name, rather than having to
+// discover that the variable only fed the two-factor issuer and set it a second
+// time under Settings.
+func DefaultBranding(appName string) Branding {
+	if appName == "" {
+		appName = FallbackAppTitle
+	}
+
+	return Branding{Title: appName}
 }
 
 // LDAPConfig describes how to authenticate against a directory.

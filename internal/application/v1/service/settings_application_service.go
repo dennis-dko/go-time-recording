@@ -18,14 +18,19 @@ const maxLogoBytes = 256 * 1024
 type SettingsService struct {
 	settings repository.SettingsRepository
 	roles    repository.RoleRepository
+
+	// appName is APP_NAME from the environment, used as the instance title
+	// until an administrator sets one under Settings.
+	appName string
 }
 
 // NewSettingsService creates new instance.
 func NewSettingsService(
 	settings repository.SettingsRepository,
 	roles repository.RoleRepository,
+	appName string,
 ) *SettingsService {
-	return &SettingsService{settings: settings, roles: roles}
+	return &SettingsService{settings: settings, roles: roles, appName: appName}
 }
 
 // Branding returns the instance labelling, with defaults filled in.
@@ -35,7 +40,7 @@ func (s *SettingsService) Branding(ctx context.Context) (model.Branding, error) 
 		return model.Branding{}, err
 	}
 
-	branding := model.DefaultBranding()
+	branding := model.DefaultBranding(s.appName)
 
 	if v := all[model.SettingAppTitle]; v != "" {
 		branding.Title = v
