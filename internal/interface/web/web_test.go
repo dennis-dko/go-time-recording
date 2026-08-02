@@ -36,13 +36,13 @@ func TestServesEmbeddedIndex(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	if !strings.Contains(rec.Body.String(), "<title>Zeiterfassung</title>") {
+	if !strings.Contains(rec.Body.String(), "<title>Time Recording</title>") {
 		t.Error("expected the embedded index.html")
 	}
 }
 
 func TestServesEmbeddedAssets(t *testing.T) {
-	for _, path := range []string{"/app.css", "/app.js"} {
+	for _, path := range []string{"/app.css", "/app.js", "/theme.js"} {
 		t.Run(path, func(t *testing.T) {
 			rec := get(t, http.MethodGet, path)
 
@@ -102,7 +102,7 @@ func TestUnknownUIPathFallsBackToIndex(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	if !strings.Contains(rec.Body.String(), "<title>Zeiterfassung</title>") {
+	if !strings.Contains(rec.Body.String(), "<title>Time Recording</title>") {
 		t.Error("expected the SPA fallback to serve index.html")
 	}
 }

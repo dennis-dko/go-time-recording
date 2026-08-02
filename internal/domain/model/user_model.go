@@ -49,22 +49,45 @@ type User struct {
 	// Language is the interface language; empty means the default.
 	Language string
 
+	// TourSeen records that this person has been shown the guided tour. Per
+	// user rather than per device: it answers "has this person been introduced
+	// to the application", which does not become false again on a new laptop.
+	TourSeen bool
+
+	// Timezone is an IANA name such as "Europe/Berlin". Empty means "use the
+	// instance setting", which is the common case: only someone working from
+	// another country needs their own.
+	//
+	// It decides which calendar day a booking falls on, so getting it wrong
+	// moves hours between days rather than merely displaying them oddly.
+	Timezone string
+
 	// IsExternal marks an account whose password lives in LDAP, so the local
 	// password fields are not used for it.
 	IsExternal bool
+
+	// ExternalID is the directory-side identifier that never changes. It is
+	// what the synchronisation matches on: matching by mail address would read
+	// a renamed mailbox as a departure and delete the person's recorded hours.
+	ExternalID string
 }
 
 // Supported interface languages.
 const (
-	LanguageGerman  = "de"
 	LanguageEnglish = "en"
+	LanguageGerman  = "de"
 
-	DefaultLanguage = LanguageGerman
+	// DefaultLanguage is what an account without a stored choice gets, and what
+	// an unrecognised choice falls back to. English, because that is the
+	// language the interface itself is written in: every other language is a
+	// translation layered over it, so a gap in one still reads.
+	DefaultLanguage = LanguageEnglish
 )
 
-// SupportedLanguages lists the languages the interface ships translations for.
+// SupportedLanguages lists the languages the interface ships translations for,
+// the fallback first.
 func SupportedLanguages() []string {
-	return []string{LanguageGerman, LanguageEnglish}
+	return []string{LanguageEnglish, LanguageGerman}
 }
 
 // IsSupportedLanguage reports whether the interface has translations for it.

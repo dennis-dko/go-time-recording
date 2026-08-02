@@ -15,12 +15,18 @@ type AuthHandler struct {
 	sessions *service.SessionService
 	authz    *Authorizer
 	issuer   string
+	timezone InstanceTimezoneFunc
 }
 
 // NewAuthHandler creates the handler. issuer is the name authenticator apps
 // display next to the account.
-func NewAuthHandler(sessions *service.SessionService, authz *Authorizer, issuer string) *AuthHandler {
-	return &AuthHandler{sessions: sessions, authz: authz, issuer: issuer}
+func NewAuthHandler(
+	sessions *service.SessionService,
+	authz *Authorizer,
+	issuer string,
+	timezone InstanceTimezoneFunc,
+) *AuthHandler {
+	return &AuthHandler{sessions: sessions, authz: authz, issuer: issuer, timezone: timezone}
 }
 
 // LoginRequest is the sign-in payload.
@@ -62,9 +68,17 @@ func (h *AuthHandler) Login(c *gofr.Context) (any, error) {
 		return nil, unauthorizedError{}
 	}
 
-	setCookie(c, sessionCookie(requestOf(c), result.Token, result.ExpiresAt))
+	request := requestOf(c)
+	setCookie(c, sessionCookie(request, result.Token, result.ExpiresAt))
 
-	user := newUserResponseFromModel(result.Principal.User)
+	// A token handed to an anonymous visitor must not follow them into a
+	// signed-in session: if someone else planted the one they arrived with,
+	// they would know the value protecting the new session.
+	if rotated := RotateCSRFToken(request); rotated != nil {
+		setCookie(c, rotated)
+	}
+
+	user := newUserResponseFromModel(result.Principal.User, h.timezone.resolve(c))
 
 	return LoginResponse{
 		User:        &user,
@@ -168,6 +182,53 @@ func (h *AuthHandler) SetLanguage(c *gofr.Context) (any, error) {
 	}
 
 	return map[string]string{"status": "language saved"}, nil
+}
+
+// SetTimezone handles PUT /api/v1/me/timezone.
+//
+// An empty value is meaningful and not an omission: it clears the personal
+// setting so the account follows the instance-wide zone again.
+func (h *AuthHandler) SetTimezone(c *gofr.Context) (any, error) {
+	principal, err := h.authz.Principal(c)
+	if err != nil {
+		return nil, err
+	}
+
+	var req struct {
+		Timezone string `json:"timezone"`
+	}
+
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.sessions.SetTimezone(c, principal.User.ID, req.Timezone); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return map[string]string{"status": "timezone saved"}, nil
+}
+
+// SetTourSeen handles PUT /api/v1/me/tour.
+func (h *AuthHandler) SetTourSeen(c *gofr.Context) (any, error) {
+	principal, err := h.authz.Principal(c)
+	if err != nil {
+		return nil, err
+	}
+
+	var req struct {
+		Seen bool `json:"seen"`
+	}
+
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.sessions.SetTourSeen(c, principal.User.ID, req.Seen); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return map[string]any{"tourSeen": req.Seen}, nil
 }
 
 // Languages handles GET /api/v1/languages, so the UI offers exactly the

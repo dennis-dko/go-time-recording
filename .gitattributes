@@ -1,0 +1,33 @@
+# Line endings.
+#
+# Git on Windows converts to CRLF on checkout by default. For most files that
+# is harmless, but a few are read by Linux inside a container, where a stray
+# carriage return is not whitespace:
+#
+#   - a shell script with CRLF fails as "bad interpreter: /bin/sh^M"
+#   - an LDIF with CRLF imports as empty, which looks exactly like a wrong
+#     base DN and costs an afternoon to find
+#
+# So those are pinned to LF regardless of platform or user configuration.
+
+* text=auto
+
+*.sh        text eol=lf
+*.ldif      text eol=lf
+*.conf      text eol=lf
+Dockerfile* text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Go tooling writes and expects LF everywhere.
+*.go        text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
+
+# The embedded web assets are served byte for byte; CRLF would only inflate
+# them and make diffs noisier.
+*.js        text eol=lf
+*.css       text eol=lf
+*.html      text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf

@@ -80,6 +80,110 @@ func (s *SettingsService) SaveBranding(ctx context.Context, branding model.Brand
 	return nil
 }
 
+// Raw returns a stored setting exactly as it is, with no default filled in.
+//
+// The setup wizard needs this rather than the resolved accessors: those cannot
+// tell "the administrator chose UTC" from "nobody has chosen anything", and
+// only the second is a step still to do.
+func (s *SettingsService) Raw(ctx context.Context, key string) (string, error) {
+	return s.settings.Get(ctx, key)
+}
+
+// SetupCompleted reports whether the first-run wizard was dismissed.
+func (s *SettingsService) SetupCompleted(ctx context.Context) (bool, error) {
+	stored, err := s.settings.Get(ctx, model.SettingSetupCompleted)
+	if err != nil {
+		return false, err
+	}
+
+	return stored == "true", nil
+}
+
+// SetSetupCompleted records the wizard as dismissed, or brings it back.
+func (s *SettingsService) SetSetupCompleted(ctx context.Context, completed bool) error {
+	value := "false"
+	if completed {
+		value = "true"
+	}
+
+	return s.settings.Set(ctx, model.SettingSetupCompleted, value)
+}
+
+// MarkDatasourceChosen records that a database connection was picked
+// deliberately, so the wizard stops asking before the restart that applies it.
+func (s *SettingsService) MarkDatasourceChosen(ctx context.Context) error {
+	return s.settings.Set(ctx, model.SettingDatasourceChosen, "true")
+}
+
+// Operational returns the administered limits, unresolved: a nil field means
+// the environment's value still applies.
+func (s *SettingsService) Operational(ctx context.Context) (model.Operational, error) {
+	raw, err := s.settings.Get(ctx, model.SettingOperational)
+	if err != nil {
+		return model.Operational{}, err
+	}
+
+	var operational model.Operational
+
+	if raw == "" {
+		return operational, nil
+	}
+
+	if err := json.Unmarshal([]byte(raw), &operational); err != nil {
+		// A corrupt entry falls back to the environment rather than locking the
+		// administrator out of the screen that would let them repair it.
+		return model.Operational{}, nil
+	}
+
+	return operational, nil
+}
+
+// SaveOperational stores the administered limits.
+func (s *SettingsService) SaveOperational(ctx context.Context, operational model.Operational) error {
+	if invalid := operational.InvalidOperationalFields(); len(invalid) > 0 {
+		return apperror.InvalidFields(invalid...)
+	}
+
+	raw, err := json.Marshal(operational)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	return s.settings.Set(ctx, model.SettingOperational, string(raw))
+}
+
+// Timezone returns the instance-wide zone, or the default.
+//
+// It falls back rather than erroring on an unknown name, because this is read
+// on the way to rendering nearly every page: a zone that stopped being valid
+// should shift the display, not take the application down.
+func (s *SettingsService) Timezone(ctx context.Context) (string, error) {
+	stored, err := s.settings.Get(ctx, model.SettingTimezone)
+	if err != nil {
+		return model.DefaultTimezone, err
+	}
+
+	if !model.IsSupportedTimezone(stored) {
+		return model.DefaultTimezone, nil
+	}
+
+	return stored, nil
+}
+
+// SaveTimezone stores the instance-wide zone.
+func (s *SettingsService) SaveTimezone(ctx context.Context, name string) error {
+	name = strings.TrimSpace(name)
+
+	// Rejected rather than quietly corrected: a name that does not resolve
+	// would move everyone's bookings to a different day than the administrator
+	// intended, and they would have no way to tell from the screen.
+	if !model.IsSupportedTimezone(name) {
+		return apperror.InvalidFields("timezone")
+	}
+
+	return s.settings.Set(ctx, model.SettingTimezone, name)
+}
+
 // LDAP returns the stored directory configuration, or the defaults.
 func (s *SettingsService) LDAP(ctx context.Context) (model.LDAPConfig, error) {
 	raw, err := s.settings.Get(ctx, model.SettingLDAPSettings)

@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"context"
+
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
@@ -24,6 +26,22 @@ type UserResponse struct {
 	TOTPEnabled bool   `json:"totpEnabled"`
 	Language    string `json:"language"`
 	IsExternal  bool   `json:"isExternal"`
+
+	// Timezone is this user's own choice; empty means they follow the
+	// instance-wide setting. The UI needs the difference so its picker can show
+	// "follow the instance" rather than pretending the inherited zone was
+	// chosen deliberately.
+	Timezone string `json:"timezone"`
+
+	// TourSeen tells the interface whether to offer the guided tour. It is on
+	// the user rather than in the browser, so someone who has been introduced
+	// to the application is not introduced again on their next device.
+	TourSeen bool `json:"tourSeen"`
+
+	// EffectiveTimezone is what actually applies once the fallback has been
+	// worked out. Every date the client computes - which day "today" is, where
+	// a calendar month starts - has to use this, not the browser's own zone.
+	EffectiveTimezone string `json:"effectiveTimezone"`
 }
 
 // CreateUserRequest is the payload for creating a user.
@@ -78,7 +96,7 @@ type MeResponse struct {
 	AuthEnabled bool `json:"authEnabled"`
 }
 
-func newUserResponse(r *common.UserResult) UserResponse {
+func newUserResponse(r *common.UserResult, instanceTimezone string) UserResponse {
 	return UserResponse{
 		ID:                 r.ID,
 		Name:               r.Name,
@@ -87,14 +105,37 @@ func newUserResponse(r *common.UserResult) UserResponse {
 		Role:               r.Role,
 		IsSystem:           r.IsSystem,
 		MustChangePassword: r.MustChangePassword,
+		IsExternal:         r.IsExternal,
+		TOTPEnabled:        r.TOTPEnabled,
+		Language:           r.Language,
+		Timezone:           r.Timezone,
+		TourSeen:           r.TourSeen,
+		EffectiveTimezone:  model.EffectiveTimezoneName(r.Timezone, instanceTimezone),
 		DailyTargetHours:   r.DailyTargetHours,
 		MaxDailyHours:      r.MaxDailyHours,
 	}
 }
 
+// InstanceTimezoneFunc reports the instance-wide zone.
+//
+// A function rather than the settings service itself, so the handlers that only
+// need this one value do not gain the ability to rewrite every setting. It
+// returns a plain string because a failure here has an obvious right answer -
+// the default - and must never fail the request it is decorating.
+type InstanceTimezoneFunc func(ctx context.Context) string
+
+// resolve is nil-safe, so a handler built without one still answers sensibly.
+func (f InstanceTimezoneFunc) resolve(ctx context.Context) string {
+	if f == nil {
+		return model.DefaultTimezone
+	}
+
+	return f(ctx)
+}
+
 // newUserResponseFromModel converts a domain user, for the handlers that call
 // a domain service directly.
-func newUserResponseFromModel(u *model.User) UserResponse {
+func newUserResponseFromModel(u *model.User, instanceTimezone string) UserResponse {
 	return UserResponse{
 		ID:                 u.ID,
 		Name:               u.Name,
@@ -108,13 +149,16 @@ func newUserResponseFromModel(u *model.User) UserResponse {
 		TOTPEnabled:        u.TOTPEnabled,
 		Language:           u.EffectiveLanguage(),
 		IsExternal:         u.IsExternal,
+		Timezone:           u.Timezone,
+		TourSeen:           u.TourSeen,
+		EffectiveTimezone:  model.EffectiveTimezoneName(u.Timezone, instanceTimezone),
 	}
 }
 
-func newUserResponses(results []*common.UserResult) []UserResponse {
+func newUserResponses(results []*common.UserResult, instanceTimezone string) []UserResponse {
 	out := make([]UserResponse, 0, len(results))
 	for _, r := range results {
-		out = append(out, newUserResponse(r))
+		out = append(out, newUserResponse(r, instanceTimezone))
 	}
 
 	return out

@@ -20,6 +20,7 @@ type TimesheetHandler struct {
 	timesheets service.TimesheetService
 	domain     *domainservice.TimesheetDomainService
 	authz      *Authorizer
+	timezone   InstanceTimezoneFunc
 }
 
 // NewTimesheetHandler creates a timesheet handler.
@@ -27,8 +28,11 @@ func NewTimesheetHandler(
 	timesheets service.TimesheetService,
 	domain *domainservice.TimesheetDomainService,
 	authz *Authorizer,
+	timezone InstanceTimezoneFunc,
 ) *TimesheetHandler {
-	return &TimesheetHandler{timesheets: timesheets, domain: domain, authz: authz}
+	return &TimesheetHandler{
+		timesheets: timesheets, domain: domain, authz: authz, timezone: timezone,
+	}
 }
 
 // List handles GET /api/v1/timesheets, filtered by user, project, status and
@@ -273,7 +277,8 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 // Report handles GET /api/v1/projects/{id}/report, totalling booked hours per
 // user over a date range. The range defaults to the last 30 days.
 func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermReportRead); err != nil {
+	principal, err := h.authz.Require(c, model.PermReportRead)
+	if err != nil {
 		return nil, err
 	}
 
@@ -292,7 +297,9 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	now := time.Now()
+	// In the reader's zone: "the last 30 days" ending on the server's idea of
+	// today would be off by one for anyone far enough east or west.
+	now := time.Now().In(principal.User.TimezoneOf(h.timezone.resolve(c)))
 	if to == nil {
 		to = &now
 	}

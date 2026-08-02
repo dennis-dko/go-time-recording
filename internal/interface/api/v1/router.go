@@ -17,6 +17,8 @@ type Handlers struct {
 	Me         *rest.MeHandler
 	Settings   *rest.SettingsHandler
 	Tokens     *rest.APITokenHandler
+	LDAPSync   *rest.LDAPSyncHandler
+	Setup      *rest.SetupHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -45,6 +47,15 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/settings/ldap", h.Settings.LDAP)
 	app.PUT(base+"/settings/ldap", h.Settings.SaveLDAP)
 	app.POST(base+"/settings/ldap/test", h.Settings.TestLDAP)
+	app.POST(base+"/settings/ldap/sync/preview", h.LDAPSync.Preview)
+	app.POST(base+"/settings/ldap/sync", h.LDAPSync.Run)
+	app.GET(base+"/setup", h.Setup.State)
+	app.POST(base+"/setup/complete", h.Setup.Complete)
+	app.POST(base+"/setup/keep-database", h.Setup.KeepDatabase)
+	app.GET(base+"/settings/operational", h.Settings.Operational)
+	app.PUT(base+"/settings/operational", h.Settings.SaveOperational)
+	app.GET(base+"/settings/timezone", h.Settings.Timezone)
+	app.PUT(base+"/settings/timezone", h.Settings.SaveTimezone)
 	app.GET(base+"/settings/datasource", h.Settings.Datasource)
 	app.PUT(base+"/settings/datasource", h.Settings.SaveDatasource)
 	app.POST(base+"/settings/datasource/test", h.Settings.TestDatasource)
@@ -52,6 +63,8 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me", h.Me.Me)
 	app.PUT(base+"/me/password", h.Me.ChangePassword)
 	app.PUT(base+"/me/language", h.Auth.SetLanguage)
+	app.PUT(base+"/me/timezone", h.Auth.SetTimezone)
+	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
 	app.POST(base+"/me/totp", h.Auth.BeginTOTP)
 	app.PUT(base+"/me/totp", h.Auth.ConfirmTOTP)
 	app.DELETE(base+"/me/totp", h.Auth.DisableTOTP)

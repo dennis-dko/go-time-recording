@@ -96,8 +96,8 @@ func (s *AuthService) principalFor(ctx context.Context, user *model.User) (*Prin
 // deleted directly in the database is restored, and so the password is hashed
 // by the same code that verifies it.
 func (s *AuthService) EnsureSystemUser(ctx context.Context) (created bool, err error) {
-	if _, err := s.users.GetByEmail(ctx, SystemUserEmail); err == nil {
-		return false, nil
+	if existing, err := s.users.GetByEmail(ctx, SystemUserEmail); err == nil {
+		return false, s.repairSystemUser(ctx, existing)
 	}
 
 	adminRole, err := s.roles.GetByName(ctx, model.RoleAdmin)
@@ -124,6 +124,26 @@ func (s *AuthService) EnsureSystemUser(ctx context.Context) (created bool, err e
 	}
 
 	return true, nil
+}
+
+// repairSystemUser restores the two properties the built-in administrator is
+// defined by, in case a directory sync, a migration or a hand-edited database
+// row ever took them away.
+//
+// It runs on every start because this account is the guaranteed way back into
+// an installation, and an account the directory owns would not be that.
+func (s *AuthService) repairSystemUser(ctx context.Context, user *model.User) error {
+	if user.IsSystem && !user.IsExternal && user.ExternalID == "" {
+		return nil
+	}
+
+	user.IsSystem = true
+	user.IsExternal = false
+	user.ExternalID = ""
+
+	_, err := s.users.Update(ctx, user)
+
+	return err
 }
 
 // ChangePassword sets a new password for the user, clearing the

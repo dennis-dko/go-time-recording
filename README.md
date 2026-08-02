@@ -25,10 +25,39 @@ binary as the API.
 | User | `admin@local` |
 | Password | `changeme123` |
 
-That account **cannot be deleted** and cannot be moved to a role without
-administration rights, so an installation can never lock itself out. Until the
-initial password is replaced the server refuses every change, including
-issuing API tokens.
+That account **cannot be deleted**, cannot be moved to a role without
+administration rights, and is never authenticated against a directory — so an
+installation can never lock itself out, and nobody who controls the directory
+can take it over. Until the initial password is replaced the server refuses
+everything else, including issuing API tokens.
+
+**Setup wizard.** On first sign-in the built-in administrator is walked through
+what an installation has to settle, one step at a time. Three are required —
+**the database first**, then the administrator password and the timezone. The
+instance title and the directory connection can be skipped.
+
+The database comes first because everything else is stored *in* it. Switching
+later points the application at an empty database: the password change, the
+timezone and the title stay behind in the old one, and start-up recreates the
+administrator with the initial password above. An installation that looked
+configured would then be reachable with a password anyone can look up — and
+nobody would expect it, having set a real one minutes earlier. Staying on
+SQLite is a perfectly good answer and settles the step; what the wizard will
+not accept is not having decided.
+
+**Guided tour.** On a first sign-in every user — not just the administrator —
+is walked through the areas of the application: booking time, the calendar, the
+overtime balance, projects, their account. Steps are dropped for anything their
+role cannot reach, so nobody is shown a tab they do not have, and the highlight
+points at the real control rather than a picture of one. It runs once and can
+be restarted any time from *My account*; skipping counts as seen. "Seen" is
+stored on the user, so a second device does not mean a second introduction.
+
+Whether a setup step is done is worked out from what is **actually configured**, not
+from a record of the wizard having been shown. So a setting that is later
+undone makes its step outstanding again, and dismissing the wizard settles the
+optional steps only: it comes back on its own while anything required is
+missing. That is why "Finish later" is safe to offer.
 
 ## What is included
 
@@ -104,6 +133,14 @@ Implemented, and verified against a running instance:
 - **Session cookies** are `HttpOnly` and `SameSite=Lax`, and `Secure` whenever
   the connection is HTTPS. Sessions live in the database, so a restart does not
   sign everyone out. Changing a password ends every session of that user.
+- **CSRF protection** on every request that changes something. Two independent
+  checks have to pass: the `Origin` (or, failing that, the `Referer`) must name
+  this host, and the `X-CSRF-Token` header must equal the `gtr_csrf` cookie.
+  That cookie is deliberately readable by JavaScript — the point is that our own
+  script can read it and another site's cannot. The token is replaced on
+  sign-in, so one handed to an anonymous visitor never carries into a session.
+  Requests authenticated by a personal API token are exempt, because a browser
+  never attaches that header by itself and there is nothing to forge.
 - **Two-factor authentication** (TOTP, RFC 6238) is opt-in per user. The
   implementation is checked against the RFC's published test vectors, so it
   interoperates with real authenticator apps.
@@ -147,16 +184,40 @@ is terminated in front of it and proxied to localhost.
 The administrator configures a directory under **Settings**. When it is
 enabled, passwords are checked against the directory by binding as the user.
 
-**Are LDAP users synchronised into the time recording?** Not on a schedule, and
-deliberately so. Accounts are created **on first successful sign-in**
-(just-in-time provisioning): the local account then exists with the configured
-default role, and is marked external so it never falls back to a local
-password. There is no background job that mirrors the whole directory, so
-nothing is copied for people who never use the application, and no deletions
-are propagated. Local-only accounts keep working alongside directory ones.
+Accounts are also created on first successful sign-in, so someone can start
+working without being provisioned first. Local-only accounts keep working
+alongside directory ones. Roles and permissions always stay local — the
+directory decides *who you are*, this application decides *what you may do*.
 
-Roles and permissions always stay local — the directory decides *who you are*,
-this application decides *what you may do*.
+### Synchronisation
+
+Under **Settings → Directory synchronisation** the whole directory is
+reconciled with the local accounts:
+
+- Accounts the directory has and this installation does not are **created**.
+- Accounts the directory no longer holds are **deleted**, together with their
+  time entries, private projects, API tokens and sessions.
+
+**The directory is only ever read.** Nothing is written back to LDAP.
+
+Set `LDAP_SYNC_SCHEDULE` to run it automatically; it is empty by default
+because a run destroys recorded work irreversibly. Whatever the schedule, an
+administrator can start a run by hand — and should use **Preview** first, which
+reports exactly which accounts would go and how many time entries each one
+would take with it. The real run asks for confirmation naming those numbers.
+
+Four guards make a broken directory answer non-destructive:
+
+| Guard | Reason |
+| --- | --- |
+| A failed directory read aborts with an error | An outage must never be read as "everybody left" |
+| An empty result deletes nothing | Almost always a wrong base DN or filter, not a mass departure |
+| `LDAP_SYNC_MAX_DELETE_RATIO` (default 0.5) | A truncated or misfiltered answer would otherwise look like half the company leaving |
+| Local and built-in accounts are never touched | They were never in the directory, so its silence says nothing about them |
+
+Listing is paged, because directories commonly cap a plain search at 500 or
+1000 entries — a silent truncation would read as "everyone beyond the first
+page has left".
 
 ## Overtime
 
@@ -169,6 +230,23 @@ bookings**. Days without bookings deliberately do not count: without a holiday
 and leave calendar — which this application does not have — weekends and time
 off would otherwise accumulate as a growing deficit. Rejected entries are
 excluded.
+
+## Timezones
+
+An administrator sets one **instance-wide** zone under *Settings*; an
+individual can override it under *My account*. An empty personal setting means
+"follow the instance", which is the normal case — that way changing the
+instance zone moves everyone who has not deliberately opted out.
+
+This is not a display detail. The zone decides which **calendar day** a booking
+falls on, so getting it wrong moves recorded hours between days and quietly
+changes month-end totals. Zones are validated when saved, because a plausible
+but wrong name like `Europe/Munich` would otherwise be stored and then fall
+back to UTC at every use, with nothing on screen to show it.
+
+The tz database is compiled into the binary (`time/tzdata`), so zones resolve
+identically on a scratch or distroless container with no zoneinfo files of its
+own.
 
 ## Projects
 
@@ -247,9 +325,50 @@ Values come from `cmd/configs/.<env>.env`; `APP_ENV` selects the environment.
 | `TLS_STAGING` | `false` | Let's Encrypt test authority |
 | `HSTS_MAX_AGE` | `8760h` | only sent over HTTPS |
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client |
+| `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only |
+| `LDAP_SYNC_MAX_DELETE_RATIO` | `0.5` | refuse a run removing more than this share of directory accounts |
 | `AUTO_CLOSE_SCHEDULE` | `0 2 * * *` | cron for the sweep; empty disables it |
 | `AUTO_CLOSE_AFTER_DAYS` | `14` | when an open entry gets submitted |
 | `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day |
+
+### What can be changed from the interface, and what cannot
+
+Six of the values above are **operational limits** rather than deployment
+facts, so *Settings → Operation and limits* overrides them while the
+application runs — no restart, no file access. A field left empty keeps
+following the file, and its value is shown as the placeholder, so it is always
+visible what a blank field means. The screen also prints what is currently in
+force, and *Reset* drops every override at once.
+
+| Administered from the interface | Applies |
+| --- | --- |
+| `SESSION_LIFETIME` | to the next sign-in |
+| `MAX_DAILY_HOURS` | to the next booking |
+| `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | within seconds |
+| `AUTO_CLOSE_AFTER_DAYS` | at the next sweep |
+| `LDAP_SYNC_MAX_DELETE_RATIO` | at the next synchronisation |
+
+Values are bounded on save, because this is the one screen that can lock its
+own administrator out: a session lifetime of a second would sign everyone out
+mid-click, and a rate limit of one would refuse the very sign-in needed to
+undo it.
+
+The rest stays in the file **on purpose**, because getting it wrong would
+remove the way back in:
+
+| Stays in the file | Why |
+| --- | --- |
+| `AUTH_ENABLED` | switching it off from the interface would open the instance to anyone, and nobody could switch it back on |
+| `UI_ENABLED` | it removes the interface that would restore it |
+| `TLS_*` | the listener is bound at start-up; a wrong domain or port makes the instance unreachable |
+| `HSTS_MAX_AGE` | a browser told to refuse plain HTTP keeps refusing for as long as the value said, whatever is served later |
+| `DB_*` | it is the connection the settings themselves are read from |
+| `*_SCHEDULE` | cron jobs are registered once at start-up and cannot be re-registered live |
+| `HTTP_PORT`, `METRICS_PORT` | bound at start-up |
+
+`APP_NAME` is not administered here either — the instance title under
+*Settings → Appearance* already overrides it, and two fields for one label
+would only disagree.
 
 For PostgreSQL also set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` and
 `DB_SSL_MODE` — or configure them under **Settings**, where a *Test connection*

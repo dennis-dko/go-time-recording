@@ -12,10 +12,11 @@ import (
 
 // UserHandler serves the user endpoints.
 type UserHandler struct {
-	users  service.UserService
-	domain *domainservice.UserDomainService
-	authz  *Authorizer
-	auth   *service.AuthService
+	users    service.UserService
+	domain   *domainservice.UserDomainService
+	authz    *Authorizer
+	auth     *service.AuthService
+	timezone InstanceTimezoneFunc
 }
 
 // NewUserHandler creates a user handler.
@@ -24,8 +25,11 @@ func NewUserHandler(
 	domain *domainservice.UserDomainService,
 	authz *Authorizer,
 	auth *service.AuthService,
+	timezone InstanceTimezoneFunc,
 ) *UserHandler {
-	return &UserHandler{users: users, domain: domain, authz: authz, auth: auth}
+	return &UserHandler{
+		users: users, domain: domain, authz: authz, auth: auth, timezone: timezone,
+	}
 }
 
 // List handles GET /api/v1/users
@@ -43,7 +47,7 @@ func (h *UserHandler) List(c *gofr.Context) (any, error) {
 	}
 
 	return listResponse[UserResponse]{
-		Items:      newUserResponses(result.Result),
+		Items:      newUserResponses(result.Result, h.timezone.resolve(c)),
 		TotalCount: result.TotalCount,
 	}, nil
 }
@@ -65,7 +69,7 @@ func (h *UserHandler) Get(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return newUserResponse(result.Result), nil
+	return newUserResponse(result.Result, h.timezone.resolve(c)), nil
 }
 
 // Create handles POST /api/v1/users
@@ -91,7 +95,7 @@ func (h *UserHandler) Create(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return newUserResponse(result.Result), nil
+	return newUserResponse(result.Result, h.timezone.resolve(c)), nil
 }
 
 // Update handles PUT /api/v1/users/{id}
@@ -122,7 +126,7 @@ func (h *UserHandler) Update(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return newUserResponse(result.Result), nil
+	return newUserResponse(result.Result, h.timezone.resolve(c)), nil
 }
 
 // Delete handles DELETE /api/v1/users/{id}
@@ -164,7 +168,7 @@ func (h *UserHandler) AssignRole(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return newUserResponseFromModel(user), nil
+	return newUserResponseFromModel(user, h.timezone.resolve(c)), nil
 }
 
 // UpdateWorkingTimes handles PUT /api/v1/users/{id}/working-times.
@@ -195,5 +199,5 @@ func (h *UserHandler) UpdateWorkingTimes(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return newUserResponse(result), nil
+	return newUserResponse(result, h.timezone.resolve(c)), nil
 }

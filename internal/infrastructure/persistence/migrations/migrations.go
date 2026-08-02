@@ -46,7 +46,55 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260801030000: {UP: func(d migration.Datasource) error {
 			return createAPITokens(d, dialect)
 		}},
+		20260801040000: {UP: func(d migration.Datasource) error {
+			return addExternalIdentity(d, dialect)
+		}},
+		20260801050000: {UP: func(d migration.Datasource) error {
+			return addUserTimezone(d, dialect)
+		}},
+		20260802010000: {UP: func(d migration.Datasource) error {
+			return addUserTourSeen(d, dialect)
+		}},
 	}
+}
+
+// addUserTimezone lets an individual work in a zone other than the instance's.
+//
+// Empty means "follow the instance setting", which is what nearly everyone
+// does; only someone working from another country needs their own. Storing the
+// empty string rather than the resolved name matters, because it means changing
+// the instance setting moves those people with it.
+func addUserTimezone(d migration.Datasource, _ string) error {
+	return execAll(d,
+		"ALTER TABLE users ADD COLUMN timezone VARCHAR(64) NOT NULL DEFAULT ''",
+	)
+}
+
+// addExternalIdentity gives directory-backed accounts a stable identifier.
+//
+// The synchronisation used to match on the mail address, which meant a renamed
+// mailbox looked like one person leaving and another arriving - and the
+// departure would have deleted their recorded hours.
+//
+// Existing rows keep an empty identifier and are matched by mail address until
+// their next sign-in fills it in, so an upgrade loses nothing.
+func addExternalIdentity(d migration.Datasource, dialect string) error {
+	return execAll(d,
+		"ALTER TABLE users ADD COLUMN external_id VARCHAR(128) NOT NULL DEFAULT ''",
+		// Not UNIQUE: every local account carries the empty string, and most
+		// engines would count those as duplicates.
+		"CREATE INDEX idx_users_external_id ON users (external_id)",
+	)
+}
+
+// addUserTourSeen remembers who has already been shown the guided tour.
+//
+// Existing accounts default to false and are therefore offered the tour once,
+// which is the right outcome for an upgrade: they have not seen it either.
+func addUserTourSeen(d migration.Datasource, _ string) error {
+	return execAll(d,
+		"ALTER TABLE users ADD COLUMN tour_seen BOOLEAN NOT NULL DEFAULT FALSE",
+	)
 }
 
 // createAPITokens adds the personal tokens used for API access.

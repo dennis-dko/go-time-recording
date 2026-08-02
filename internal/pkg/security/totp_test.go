@@ -2,6 +2,7 @@ package security
 
 import (
 	"encoding/base32"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -97,12 +98,25 @@ func TestTOTPSecretsAreDistinct(t *testing.T) {
 }
 
 func TestTOTPURIIsScannable(t *testing.T) {
-	uri := TOTPURI("Zeiterfassung", "admin@local", "ABCDEF")
+	uri := TOTPURI("Time Recording", "admin@local", "ABCDEF")
 
-	for _, want := range []string{"otpauth://totp/", "secret=ABCDEF", "issuer=Zeiterfassung", "digits=6", "period=30"} {
+	// The issuer is checked in its encoded form: a title with a space is
+	// ordinary, and an authenticator app reads the query the same way.
+	for _, want := range []string{
+		"otpauth://totp/", "secret=ABCDEF", "issuer=Time+Recording", "digits=6", "period=30",
+	} {
 		if !strings.Contains(uri, want) {
 			t.Errorf("URI %q is missing %q", uri, want)
 		}
+	}
+
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		t.Fatalf("the URI must parse: %v", err)
+	}
+
+	if got := parsed.Query().Get("issuer"); got != "Time Recording" {
+		t.Errorf("expected the issuer to decode back to the title, got %q", got)
 	}
 }
 

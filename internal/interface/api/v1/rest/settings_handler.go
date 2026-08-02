@@ -16,6 +16,10 @@ type SettingsHandler struct {
 	authz    *Authorizer
 	ldap     *ldapAdmin
 
+	// limits is dropped from cache after a save, so an administrator sees the
+	// change take effect immediately rather than after the refresh interval.
+	limits *service.LimitsProvider
+
 	// activeDialect is what this process actually connected to, which differs
 	// from the stored settings until the next restart.
 	activeDialect string
@@ -32,6 +36,7 @@ type ldapAdmin struct {
 func NewSettingsHandler(
 	settings *service.SettingsService,
 	authz *Authorizer,
+	limits *service.LimitsProvider,
 	activeDialect string,
 	configure func(model.LDAPConfig),
 	test func(*gofr.Context, model.LDAPConfig) error,
@@ -39,9 +44,91 @@ func NewSettingsHandler(
 	return &SettingsHandler{
 		settings:      settings,
 		authz:         authz,
+		limits:        limits,
 		activeDialect: activeDialect,
 		ldap:          &ldapAdmin{configure: configure, test: test},
 	}
+}
+
+// OperationalResponse carries the administered limits together with what the
+// environment configured, so the screen can show what a blank field means
+// instead of leaving the reader to guess.
+type OperationalResponse struct {
+	// Configured holds only what has been overridden; an absent field follows
+	// the environment.
+	Configured model.Operational `json:"configured"`
+
+	// Effective is what is actually in force right now.
+	Effective OperationalLimits `json:"effective"`
+
+	// Defaults is what the environment supplies, shown as the placeholder in
+	// each empty field.
+	Defaults OperationalLimits `json:"defaults"`
+}
+
+// OperationalLimits is model.Limits on the wire.
+type OperationalLimits struct {
+	SessionLifetimeHours   float64 `json:"sessionLifetimeHours"`
+	MaxDailyHours          float64 `json:"maxDailyHours"`
+	RateLimit              int     `json:"rateLimit"`
+	RateLimitWindowSeconds int     `json:"rateLimitWindowSeconds"`
+	AutoCloseAfterDays     int     `json:"autoCloseAfterDays"`
+	LDAPSyncMaxDeleteRatio float64 `json:"ldapSyncMaxDeleteRatio"`
+}
+
+func newOperationalLimits(l model.Limits) OperationalLimits {
+	return OperationalLimits{
+		SessionLifetimeHours:   l.SessionLifetimeHours,
+		MaxDailyHours:          l.MaxDailyHours,
+		RateLimit:              l.RateLimit,
+		RateLimitWindowSeconds: l.RateLimitWindowSeconds,
+		AutoCloseAfterDays:     l.AutoCloseAfterDays,
+		LDAPSyncMaxDeleteRatio: l.LDAPSyncMaxDeleteRatio,
+	}
+}
+
+// Operational handles GET /api/v1/settings/operational.
+func (h *SettingsHandler) Operational(c *gofr.Context) (any, error) {
+	if err := h.requireAdmin(c); err != nil {
+		return nil, err
+	}
+
+	configured, err := h.settings.Operational(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return OperationalResponse{
+		Configured: configured,
+		Effective:  newOperationalLimits(h.limits.Limits(c)),
+		Defaults:   newOperationalLimits(h.limits.Fallback()),
+	}, nil
+}
+
+// SaveOperational handles PUT /api/v1/settings/operational.
+func (h *SettingsHandler) SaveOperational(c *gofr.Context) (any, error) {
+	if err := h.requireAdmin(c); err != nil {
+		return nil, err
+	}
+
+	var req model.Operational
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.settings.SaveOperational(c, req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	// Without this the caller would read back the values they just replaced,
+	// for as long as the cache holds them.
+	h.limits.Invalidate()
+
+	return OperationalResponse{
+		Configured: req,
+		Effective:  newOperationalLimits(h.limits.Limits(c)),
+		Defaults:   newOperationalLimits(h.limits.Fallback()),
+	}, nil
 }
 
 // BrandingResponse is the instance labelling.
@@ -100,6 +187,43 @@ func (h *SettingsHandler) SaveBranding(c *gofr.Context) (any, error) {
 	return newBrandingResponse(branding), nil
 }
 
+// TimezoneRequest carries the instance-wide zone.
+type TimezoneRequest struct {
+	Timezone string `json:"timezone"`
+}
+
+// Timezone handles GET /api/v1/settings/timezone.
+func (h *SettingsHandler) Timezone(c *gofr.Context) (any, error) {
+	if err := h.requireAdmin(c); err != nil {
+		return nil, err
+	}
+
+	timezone, err := h.settings.Timezone(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return TimezoneRequest{Timezone: timezone}, nil
+}
+
+// SaveTimezone handles PUT /api/v1/settings/timezone.
+func (h *SettingsHandler) SaveTimezone(c *gofr.Context) (any, error) {
+	if err := h.requireAdmin(c); err != nil {
+		return nil, err
+	}
+
+	var req TimezoneRequest
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.settings.SaveTimezone(c, req.Timezone); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return TimezoneRequest{Timezone: req.Timezone}, nil
+}
+
 // LDAPRequest mirrors model.LDAPConfig on the wire. The bind password is
 // write-only: it is accepted but never sent back.
 type LDAPRequest struct {
@@ -115,7 +239,13 @@ type LDAPRequest struct {
 	UserFilter     string `json:"userFilter"`
 	NameAttribute  string `json:"nameAttribute"`
 	EmailAttribute string `json:"emailAttribute"`
-	DefaultRole    string `json:"defaultRole"`
+
+	// IDAttribute is the identifier that survives a rename. Without it the
+	// synchronisation matches on the mail address, and a renamed mailbox reads
+	// as a departure that takes the person's recorded hours with it.
+	IDAttribute string `json:"idAttribute"`
+
+	DefaultRole string `json:"defaultRole"`
 }
 
 // LDAPResponse is the stored configuration without the password.
@@ -208,6 +338,7 @@ func (h *SettingsHandler) bindLDAP(c *gofr.Context) (model.LDAPConfig, error) {
 		UserFilter:     req.UserFilter,
 		NameAttribute:  req.NameAttribute,
 		EmailAttribute: req.EmailAttribute,
+		IDAttribute:    req.IDAttribute,
 		DefaultRole:    req.DefaultRole,
 	}
 
@@ -312,6 +443,14 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(apperror.Internal(err))
 	}
 
+	// Noted inside the database so the setup wizard stops asking, even though
+	// the connection only takes effect at the next restart. A failure here is
+	// not worth failing the save over: the connection is already written, and
+	// the wizard asking once more is a smaller problem than a lost setting.
+	if err := h.settings.MarkDatasourceChosen(c); err != nil {
+		c.Logger.Errorf("could not record the database choice for the setup wizard: %v", err)
+	}
+
 	return map[string]any{
 		"status":          "saved",
 		"restartRequired": true,
@@ -399,6 +538,7 @@ func newLDAPResponse(c model.LDAPConfig) LDAPResponse {
 			UserFilter:     c.UserFilter,
 			NameAttribute:  c.NameAttribute,
 			EmailAttribute: c.EmailAttribute,
+			IDAttribute:    c.IDAttribute,
 			DefaultRole:    c.DefaultRole,
 		},
 		HasPassword: c.BindPassword != "",

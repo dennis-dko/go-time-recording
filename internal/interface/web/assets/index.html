@@ -1,97 +1,142 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Zeiterfassung</title>
+  <title>Time Recording</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>&#9201;</text></svg>">
+  <!-- Blocking on purpose: it has to pick the theme before the first paint,
+       or the page flashes in the wrong colours. -->
+  <script src="/theme.js"></script>
 </head>
 <body>
   <header class="topbar">
     <img id="brand-logo" class="brand-logo" alt="" hidden>
-    <h1 id="app-title">Zeiterfassung</h1>
+    <h1 id="app-title">Time Recording</h1>
     <nav id="tabs">
-      <button class="tab" data-view="timesheets" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.timesheets">Zeiteinträge</button>
-      <button class="tab" data-view="calendar" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.calendar">Kalender</button>
-      <button class="tab" data-view="overtime" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.overtime">Überstunden</button>
-      <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projekte</button>
-      <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Mitarbeiter</button>
-      <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Rollen</button>
-      <button class="tab" data-view="report" data-perm="reports:read" data-i18n="nav.report">Auswertung</button>
-      <button class="tab" data-view="settings" data-i18n="nav.settings">Mein Konto</button>
-      <button class="tab" data-view="admin" id="tab-admin" hidden data-i18n="nav.admin">Einstellungen</button>
+      <button class="tab" data-view="timesheets" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.timesheets">Time entries</button>
+      <button class="tab" data-view="calendar" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.calendar">Calendar</button>
+      <button class="tab" data-view="overtime" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.overtime">Overtime</button>
+      <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects</button>
+      <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Staff</button>
+      <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Roles</button>
+      <button class="tab" data-view="report" data-perm="reports:read" data-i18n="nav.report">Reports</button>
+      <button class="tab" data-view="settings" data-i18n="nav.settings">My account</button>
+      <button class="tab" data-view="admin" id="tab-admin" hidden data-i18n="nav.admin">Settings</button>
     </nav>
     <div class="who" id="who"></div>
-    <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Sprache"></select>
-    <button id="logout" class="secondary" hidden data-i18n="nav.logout">Abmelden</button>
+    <select id="theme-picker" class="lang" data-i18n-aria="app.theme" aria-label="Appearance">
+      <option value="auto" data-i18n="theme.auto">Automatic (by time of day)</option>
+      <option value="light" data-i18n="theme.light">Light</option>
+      <option value="dark" data-i18n="theme.dark">Dark</option>
+    </select>
+    <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Language"></select>
+    <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
   </header>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <!-- The instance's own announcement, set under Einstellungen. -->
+  <!-- The instance's own announcement, set under Settings. -->
   <div id="instance-banner" class="banner" hidden></div>
 
-  <div id="password-banner" class="banner" hidden data-i18n="banner.password">Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleiben Änderungen gesperrt.</div>
+  <div id="password-banner" class="banner" hidden data-i18n="banner.password">The initial password is still in place. Please change it under "My account" — the rest of the application stays locked until you do.</div>
+
+  <!-- First-run wizard. One step at a time on purpose: a list of everything at
+       once is a list to skim, and the point is that nothing gets skimmed past.
+       Shown only to the built-in administrator, and only while something is
+       outstanding. -->
+  <div id="setup-wizard" class="overlay" hidden>
+    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+      <div class="setup-head">
+        <h2 id="setup-title" data-i18n="setup.title">Setting up</h2>
+        <p class="muted" id="setup-progress"></p>
+      </div>
+
+      <ol class="setup-steps" id="setup-steps"></ol>
+
+      <div class="setup-body">
+        <h3 id="setup-step-title"></h3>
+        <p class="muted" id="setup-step-text"></p>
+        <div id="setup-step-fields"></div>
+        <p class="setup-error" id="setup-error" hidden></p>
+      </div>
+
+      <div class="row setup-actions">
+        <button type="button" class="secondary" id="setup-back" data-i18n="setup.back">Back</button>
+        <button type="button" id="setup-next" data-i18n="setup.next">Next</button>
+        <button type="button" class="link" id="setup-skip" data-i18n="setup.skip">Skip this step</button>
+        <button type="button" class="link" id="setup-dismiss" data-i18n="setup.later">Finish later</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guided tour. The spotlight is a ring drawn around the element being
+       described rather than a copy of it, so it always points at the real
+       control - one that has moved or been renamed cannot drift out of sync
+       with what the tour highlights. -->
+  <div id="tour-spotlight" class="tour-spotlight" hidden></div>
+  <div id="tour-bubble" class="tour-bubble" role="dialog" aria-live="polite" hidden>
+    <p class="tour-count" id="tour-count"></p>
+    <h3 id="tour-title"></h3>
+    <p id="tour-text"></p>
+    <div class="row tour-actions">
+      <button type="button" class="secondary" id="tour-back" data-i18n="tour.back">Back</button>
+      <button type="button" id="tour-next" data-i18n="tour.next">Next</button>
+      <button type="button" class="link" id="tour-end" data-i18n="tour.end">Skip the tour</button>
+    </div>
+  </div>
 
   <!-- Visible until a session is confirmed, so the application never flashes
        into view before we know whether anyone is signed in. -->
   <div id="login-screen" class="login-screen">
     <form id="form-login" class="login-card">
       <img id="login-logo" class="brand-logo" alt="" hidden>
-      <h2 data-i18n="login.title">Anmelden</h2>
-      <p class="muted" id="login-hint" data-i18n="login.hint">Bitte mit E-Mail-Adresse und Passwort anmelden.</p>
-      <label data-i18n="login.email">E-Mail
-        <input type="email" name="email" autocomplete="username" required>
+      <h2 data-i18n="login.title">Sign in</h2>
+      <p class="muted" id="login-hint" data-i18n="login.hint">Please sign in with your email address and password.</p>
+      <label data-i18n="login.email">Email<input type="email" name="email" autocomplete="username" required>
       </label>
-      <label data-i18n="login.password">Passwort
-        <input type="password" name="password" autocomplete="current-password" required>
+      <label data-i18n="login.password">Password<input type="password" name="password" autocomplete="current-password" required>
       </label>
-      <label id="login-totp-field" hidden data-i18n="login.totp">Code der Authenticator-App
-        <input type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+      <label id="login-totp-field" hidden data-i18n="login.totp">Code from your authenticator app<input type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
       </label>
-      <button type="submit" data-i18n="login.submit">Anmelden</button>
+      <button type="submit" data-i18n="login.submit">Sign in</button>
       <p class="login-error" id="login-error" hidden></p>
     </form>
   </div>
 
   <main>
-    <!-- Zeiteinträge -->
+    <!-- Time entries -->
     <section id="view-timesheets" class="view">
       <form id="form-timesheet" class="card form" data-perm="timesheets:write:own,timesheets:write:all">
-        <h2 data-i18n="ts.book">Zeit buchen</h2>
+        <h2 data-i18n="ts.book">Book time</h2>
         <div class="grid">
-          <label data-i18n="field.user">Mitarbeiter
-            <select name="userId" required></select>
+          <label data-i18n="field.user">Staff member<select name="userId" required></select>
           </label>
-          <label data-i18n="field.projectOptional">Projekt (optional)
-            <select name="projectId"></select>
+          <label data-i18n="field.projectOptional">Project (optional)<select name="projectId"></select>
           </label>
-          <label data-i18n="field.date">Datum
-            <input type="date" name="date" required>
+          <label data-i18n="field.date">Date<input type="date" name="date" required>
           </label>
-          <label data-i18n="field.hours">Stunden
-            <input type="number" name="durationHours" step="0.25" min="0.25" max="24" required>
+          <label data-i18n="field.hours">Hours<input type="number" name="durationHours" step="0.25" min="0.25" max="24" required>
           </label>
-          <label class="wide" data-i18n="field.description">Beschreibung
-            <input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
-        <button type="submit" data-i18n="action.book">Buchen</button>
+        <button type="submit" data-i18n="action.book">Book</button>
       </form>
 
       <div class="card">
         <div class="card-head">
-          <h2 data-i18n="ts.entries">Einträge</h2>
+          <h2 data-i18n="ts.entries">Entries</h2>
           <div class="filters">
-            <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">Alle Mitarbeiter</option></select>
-            <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">Alle Projekte</option></select>
+            <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">All staff</option></select>
+            <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">All projects</option></select>
             <select id="filter-ts-status">
-              <option value="" data-i18n="filter.allStatus">Alle Status</option>
-              <option value="open" data-i18n="status.open">offen</option>
-              <option value="submitted" data-i18n="status.submitted">eingereicht</option>
-              <option value="approved" data-i18n="status.approved">genehmigt</option>
-              <option value="rejected" data-i18n="status.rejected">abgelehnt</option>
+              <option value="" data-i18n="filter.allStatus">All statuses</option>
+              <option value="open" data-i18n="status.open">open</option>
+              <option value="submitted" data-i18n="status.submitted">submitted</option>
+              <option value="approved" data-i18n="status.approved">approved</option>
+              <option value="rejected" data-i18n="status.rejected">rejected</option>
             </select>
           </div>
         </div>
@@ -99,13 +144,13 @@
           <table id="table-timesheets">
             <thead>
               <tr>
-                <th data-i18n="field.date">Datum</th>
-                <th data-i18n="field.user">Mitarbeiter</th>
-                <th data-i18n="field.project">Projekt</th>
-                <th class="num" data-i18n="field.hours">Stunden</th>
-                <th data-i18n="field.description">Beschreibung</th>
+                <th data-i18n="field.date">Date</th>
+                <th data-i18n="field.user">Staff member</th>
+                <th data-i18n="field.project">Project</th>
+                <th class="num" data-i18n="field.hours">Hours</th>
+                <th data-i18n="field.description">Description</th>
                 <th data-i18n="field.status">Status</th>
-                <th class="actions" data-i18n="field.action">Aktion</th>
+                <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -114,15 +159,15 @@
       </div>
     </section>
 
-    <!-- Kalender -->
+    <!-- Calendar -->
     <section id="view-calendar" class="view" hidden>
       <div class="card">
         <div class="card-head">
-          <h2 id="calendar-title" data-i18n="cal.title">Kalender</h2>
+          <h2 id="calendar-title" data-i18n="cal.title">Calendar</h2>
           <div class="filters">
             <select id="calendar-user"></select>
             <button type="button" class="secondary" id="calendar-prev" aria-label="&#8592;">&#8592;</button>
-            <button type="button" class="secondary" id="calendar-today" data-i18n="cal.today">Heute</button>
+            <button type="button" class="secondary" id="calendar-today" data-i18n="cal.today">Today</button>
             <button type="button" class="secondary" id="calendar-next" aria-label="&#8594;">&#8594;</button>
           </div>
         </div>
@@ -134,15 +179,15 @@
       <div class="card" id="calendar-day-card" hidden>
         <div class="card-head">
           <h2 id="calendar-day-title"></h2>
-          <button type="button" class="link" id="calendar-day-close" data-i18n="cal.close">schließen</button>
+          <button type="button" class="link" id="calendar-day-close" data-i18n="cal.close">close</button>
         </div>
         <div class="table-wrap">
           <table id="table-calendar-day">
             <thead>
               <tr>
-                <th data-i18n="field.project">Projekt</th>
-                <th class="num" data-i18n="field.hours">Stunden</th>
-                <th data-i18n="field.description">Beschreibung</th>
+                <th data-i18n="field.project">Project</th>
+                <th class="num" data-i18n="field.hours">Hours</th>
+                <th data-i18n="field.description">Description</th>
                 <th data-i18n="field.status">Status</th>
               </tr>
             </thead>
@@ -152,31 +197,31 @@
       </div>
     </section>
 
-    <!-- Überstunden -->
+    <!-- Overtime -->
     <section id="view-overtime" class="view" hidden>
       <form id="form-overtime" class="card form">
-        <h2 data-i18n="nav.overtime">Überstunden</h2>
+        <h2 data-i18n="nav.overtime">Overtime</h2>
         <div class="grid">
-          <label data-i18n="field.user">Mitarbeiter<select name="userId"></select></label>
-          <label data-i18n="field.from">Von<input type="date" name="from"></label>
-          <label data-i18n="field.to">Bis<input type="date" name="to"></label>
+          <label data-i18n="field.user">Staff member<select name="userId"></select></label>
+          <label data-i18n="field.from">From<input type="date" name="from"></label>
+          <label data-i18n="field.to">To<input type="date" name="to"></label>
         </div>
-        <button type="submit" data-i18n="action.calculate">Berechnen</button>
+        <button type="submit" data-i18n="action.calculate">Calculate</button>
       </form>
 
       <div class="card" id="overtime-result" hidden>
         <div class="card-head">
-          <h2><span data-i18n="ot.balance">Saldo</span> <span id="overtime-total" class="pill"></span></h2>
+          <h2><span data-i18n="ot.balance">Balance</span> <span id="overtime-total" class="pill"></span></h2>
           <span class="muted" id="overtime-meta"></span>
         </div>
         <div class="table-wrap">
           <table id="table-overtime">
             <thead>
               <tr>
-                <th data-i18n="field.date">Datum</th>
-                <th class="num" data-i18n="ot.booked">Gebucht</th>
-                <th class="num" data-i18n="ot.target">Soll</th>
-                <th class="num" data-i18n="ot.balance">Saldo</th>
+                <th data-i18n="field.date">Date</th>
+                <th class="num" data-i18n="ot.booked">Booked</th>
+                <th class="num" data-i18n="ot.target">Target</th>
+                <th class="num" data-i18n="ot.balance">Balance</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -185,15 +230,15 @@
       </div>
 
       <div class="card" id="overtime-team-card" data-perm="reports:read" hidden>
-        <h2 data-i18n="ot.team">Team-Saldo (gleicher Zeitraum)</h2>
+        <h2 data-i18n="ot.team">Team balance (same period)</h2>
         <div class="table-wrap">
           <table id="table-overtime-team">
             <thead>
               <tr>
-                <th data-i18n="field.user">Mitarbeiter</th>
-                <th class="num" data-i18n="ot.booked">Gebucht</th>
-                <th class="num" data-i18n="ot.target">Soll</th>
-                <th class="num" data-i18n="ot.balance">Saldo</th>
+                <th data-i18n="field.user">Staff member</th>
+                <th class="num" data-i18n="ot.booked">Booked</th>
+                <th class="num" data-i18n="ot.target">Target</th>
+                <th class="num" data-i18n="ot.balance">Balance</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -202,45 +247,41 @@
       </div>
     </section>
 
-    <!-- Projekte -->
+    <!-- Projects -->
     <section id="view-projects" class="view" hidden>
       <form id="form-category" class="card form" data-perm="projects:write:own">
-        <h2 data-i18n="cat.create">Eigenes Projekt anlegen</h2>
-        <p class="muted" data-i18n="cat.hint">
-          Eigene Projekte sind privat und nur für Sie sichtbar. Damit lässt sich Zeit
-          innerhalb eines Tages aufteilen, wenn kein gemeinsames Projekt passt.
-        </p>
+        <h2 data-i18n="cat.create">Create your own project</h2>
+        <p class="muted" data-i18n="cat.hint">Your own projects are private and visible only to you. Use them to split up a day when no shared project fits.</p>
         <div class="grid">
-          <label data-i18n="field.name"><input type="text" name="name" required></label>
-          <label class="wide" data-i18n="field.description">
-            <input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
+          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
-        <button type="submit" data-i18n="action.create">Anlegen</button>
+        <button type="submit" data-i18n="action.create">Create</button>
       </form>
 
       <form id="form-project" class="card form" data-perm="projects:write">
-        <h2 data-i18n="project.create">Projekt anlegen</h2>
+        <h2 data-i18n="project.create">Create project</h2>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" required></label>
           <label data-i18n="field.start">Start<input type="date" name="startDate" required></label>
-          <label data-i18n="field.end">Ende<input type="date" name="endDate"></label>
-          <label class="wide" data-i18n="field.description">Beschreibung<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <label data-i18n="field.end">End<input type="date" name="endDate"></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
-        <button type="submit" data-i18n="action.create">Anlegen</button>
+        <button type="submit" data-i18n="action.create">Create</button>
       </form>
 
       <div class="card">
-        <h2 data-i18n="nav.projects">Projekte</h2>
+        <h2 data-i18n="nav.projects">Projects</h2>
         <div class="table-wrap">
           <table id="table-projects">
             <thead>
               <tr>
                 <th data-i18n="field.name">Name</th>
-                <th data-i18n="field.period">Zeitraum</th>
-                <th data-i18n="field.description">Beschreibung</th>
+                <th data-i18n="field.period">Period</th>
+                <th data-i18n="field.description">Description</th>
                 <th data-i18n="field.status">Status</th>
-                <th class="actions" data-i18n="field.action">Aktion</th>
+                <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -249,36 +290,35 @@
       </div>
     </section>
 
-    <!-- Mitarbeiter -->
+    <!-- Staff -->
     <section id="view-users" class="view" hidden>
       <form id="form-user" class="card form" data-perm="users:write">
-        <h2 data-i18n="user.create">Mitarbeiter anlegen</h2>
+        <h2 data-i18n="user.create">Add staff member</h2>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" required></label>
-          <label data-i18n="field.email">E-Mail<input type="email" name="email" required></label>
-          <label data-i18n="field.role">Rolle<select name="role" required></select></label>
-          <label data-i18n="field.password">Passwort
-            <input type="password" name="password" minlength="8"
-                   data-i18n-placeholder="user.initialPassword" placeholder="leer = Initialpasswort">
+          <label data-i18n="field.email">Email<input type="email" name="email" required></label>
+          <label data-i18n="field.role">Role<select name="role" required></select></label>
+          <label data-i18n="field.password">Password<input type="password" name="password" minlength="8"
+                   data-i18n-placeholder="user.initialPassword" placeholder="empty = initial password">
           </label>
-          <label data-i18n="field.targetPerDay">Soll-Std./Tag<input type="number" name="dailyTargetHours" step="0.5" min="0" max="24" placeholder="8"></label>
-          <label data-i18n="field.maxPerDay">Max-Std./Tag<input type="number" name="maxDailyHours" step="0.5" min="0" max="24" data-i18n-placeholder="field.default" placeholder="Standard"></label>
+          <label data-i18n="field.targetPerDay">Target h/day<input type="number" name="dailyTargetHours" step="0.5" min="0" max="24" placeholder="8"></label>
+          <label data-i18n="field.maxPerDay">Max h/day<input type="number" name="maxDailyHours" step="0.5" min="0" max="24" data-i18n-placeholder="field.default" placeholder="default"></label>
         </div>
-        <button type="submit" data-i18n="action.create">Anlegen</button>
+        <button type="submit" data-i18n="action.create">Create</button>
       </form>
 
       <div class="card">
-        <h2 data-i18n="nav.users">Mitarbeiter</h2>
+        <h2 data-i18n="nav.users">Staff</h2>
         <div class="table-wrap">
           <table id="table-users">
             <thead>
               <tr>
                 <th data-i18n="field.name">Name</th>
-                <th data-i18n="field.email">E-Mail</th>
-                <th data-i18n="field.role">Rolle</th>
-                <th class="num" data-i18n="field.targetPerDay">Soll/Tag</th>
-                <th class="num" data-i18n="field.maxPerDay">Max/Tag</th>
-                <th class="actions" data-i18n="field.action">Aktion</th>
+                <th data-i18n="field.email">Email</th>
+                <th data-i18n="field.role">Role</th>
+                <th class="num" data-i18n="field.targetPerDay">Target h/day</th>
+                <th class="num" data-i18n="field.maxPerDay">Max h/day</th>
+                <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -287,35 +327,35 @@
       </div>
     </section>
 
-    <!-- Rollen -->
+    <!-- Roles -->
     <section id="view-roles" class="view" hidden>
       <form id="form-role" class="card form" data-perm="roles:write">
-        <h2 id="role-form-title" data-i18n="role.create">Rolle anlegen</h2>
+        <h2 id="role-form-title" data-i18n="role.create">Create role</h2>
         <input type="hidden" name="id">
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" required></label>
-          <label class="wide" data-i18n="field.description">Beschreibung<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
         <fieldset class="perms">
-          <legend data-i18n="role.permissions">Berechtigungen</legend>
+          <legend data-i18n="role.permissions">Permissions</legend>
           <div id="permission-list" class="perm-grid"></div>
         </fieldset>
         <div class="row">
-          <button type="submit" data-i18n="action.save">Speichern</button>
-          <button type="button" class="secondary" id="role-reset" data-i18n="action.new">Neu</button>
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="role-reset" data-i18n="action.new">New</button>
         </div>
       </form>
 
       <div class="card">
-        <h2 data-i18n="nav.roles">Rollen</h2>
+        <h2 data-i18n="nav.roles">Roles</h2>
         <div class="table-wrap">
           <table id="table-roles">
             <thead>
               <tr>
                 <th data-i18n="field.name">Name</th>
-                <th data-i18n="field.description">Beschreibung</th>
-                <th class="num" data-i18n="role.rights">Rechte</th>
-                <th class="actions" data-i18n="field.action">Aktion</th>
+                <th data-i18n="field.description">Description</th>
+                <th class="num" data-i18n="role.rights">Rights</th>
+                <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -324,26 +364,26 @@
       </div>
     </section>
 
-    <!-- Auswertung -->
+    <!-- Reports -->
     <section id="view-report" class="view" hidden>
       <form id="form-report" class="card form">
-        <h2 data-i18n="report.title">Projektauswertung</h2>
+        <h2 data-i18n="report.title">Project report</h2>
         <div class="grid">
-          <label data-i18n="field.project">Projekt<select name="projectId" required></select></label>
-          <label data-i18n="field.from">Von<input type="date" name="from"></label>
-          <label data-i18n="field.to">Bis<input type="date" name="to"></label>
+          <label data-i18n="field.project">Project<select name="projectId" required></select></label>
+          <label data-i18n="field.from">From<input type="date" name="from"></label>
+          <label data-i18n="field.to">To<input type="date" name="to"></label>
         </div>
-        <button type="submit" data-i18n="action.evaluate">Auswerten</button>
+        <button type="submit" data-i18n="action.evaluate">Evaluate</button>
       </form>
 
       <div class="card" id="report-result" hidden>
-        <h2><span data-i18n="report.result">Ergebnis</span> <span id="report-total" class="pill"></span></h2>
+        <h2><span data-i18n="report.result">Result</span> <span id="report-total" class="pill"></span></h2>
         <div class="table-wrap">
           <table id="table-report">
             <thead>
               <tr>
-                <th data-i18n="field.user">Mitarbeiter</th>
-                <th class="num" data-i18n="field.hours">Stunden</th>
+                <th data-i18n="field.user">Staff member</th>
+                <th class="num" data-i18n="field.hours">Hours</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -352,79 +392,85 @@
       </div>
     </section>
 
-    <!-- Mein Konto -->
+    <!-- My account -->
     <section id="view-settings" class="view" hidden>
       <form id="form-working-times" class="card form">
-        <h2 data-i18n="settings.workingTimes">Meine Arbeitszeiten</h2>
-        <p class="muted" data-i18n="settings.workingTimesHint">
-          Das Tagessoll ist die Grundlage der Überstunden. Das Tagesmaximum begrenzt,
-          wie viel an einem Tag gebucht werden darf.
-        </p>
+        <h2 data-i18n="settings.workingTimes">My working hours</h2>
+        <p class="muted" data-i18n="settings.workingTimesHint">The daily target is the basis for overtime. The daily maximum limits how much may be booked on a single day.</p>
         <div class="grid">
-          <label data-i18n="settings.targetHours">Soll-Stunden pro Tag
-            <input type="number" name="dailyTargetHours" step="0.5" min="0" max="24" placeholder="8">
+          <label data-i18n="settings.targetHours">Target hours per day<input type="number" name="dailyTargetHours" step="0.5" min="0" max="24" placeholder="8">
           </label>
-          <label data-i18n="settings.maxHours">Maximale Stunden pro Tag
-            <input type="number" name="maxDailyHours" step="0.5" min="0" max="24" data-i18n-placeholder="field.default" placeholder="Standard">
+          <label data-i18n="settings.maxHours">Maximum hours per day<input type="number" name="maxDailyHours" step="0.5" min="0" max="24" data-i18n-placeholder="field.default" placeholder="default">
           </label>
         </div>
-        <button type="submit" data-i18n="action.save">Speichern</button>
+        <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
+      <div class="card">
+        <h2 data-i18n="tour.card.title">Guided tour</h2>
+        <p class="muted" data-i18n="tour.card.text">A short walk through the areas of the application. Shown once on your first sign-in; start it again whenever you like.</p>
+        <button type="button" class="secondary" id="tour-restart" data-i18n="tour.card.start">Show the tour</button>
+      </div>
+
+      <form id="form-my-timezone" class="card form">
+        <h2 data-i18n="tz.myTitle">My timezone</h2>
+        <p class="muted" data-i18n="tz.myHint">Decides which calendar day your bookings fall on. Leave it on "follow the instance" unless you work from another country.</p>
+        <div class="grid">
+          <label class="wide" data-i18n="tz.timezone">Timezone
+            <select name="timezone" id="my-timezone"></select>
+          </label>
+        </div>
+        <p class="muted" id="my-timezone-now"></p>
+        <button type="submit" data-i18n="action.save">Save</button>
       </form>
 
       <div class="card" id="totp-card">
-        <h2 data-i18n="totp.title">Zwei-Faktor-Authentifizierung</h2>
+        <h2 data-i18n="totp.title">Two-factor authentication</h2>
         <p class="muted" id="totp-state"></p>
         <div id="totp-setup" hidden>
-          <p class="muted" data-i18n="totp.instructions">
-            Diesen Schlüssel in der Authenticator-App eintragen und den angezeigten Code bestätigen:
-          </p>
+          <p class="muted" data-i18n="totp.instructions">Add this key to your authenticator app and confirm the code it shows:</p>
           <pre class="secret" id="totp-secret"></pre>
           <pre class="secret" id="totp-uri"></pre>
         </div>
         <div class="grid">
-          <label id="totp-code-field" hidden data-i18n="totp.code">Code
-            <input type="text" id="totp-code" inputmode="numeric" maxlength="6">
+          <label id="totp-code-field" hidden data-i18n="totp.code">Code<input type="text" id="totp-code" inputmode="numeric" maxlength="6">
           </label>
         </div>
         <div class="row">
-          <button type="button" id="totp-begin" data-i18n="totp.enable">Aktivieren</button>
-          <button type="button" id="totp-confirm" hidden data-i18n="totp.confirm">Bestätigen</button>
-          <button type="button" id="totp-disable" class="secondary" hidden data-i18n="totp.disable">Deaktivieren</button>
+          <button type="button" id="totp-begin" data-i18n="totp.enable">Enable</button>
+          <button type="button" id="totp-confirm" hidden data-i18n="totp.confirm">Confirm</button>
+          <button type="button" id="totp-disable" class="secondary" hidden data-i18n="totp.disable">Disable</button>
         </div>
       </div>
 
       <div class="card" id="token-card">
         <div class="card-head">
-          <h2 data-i18n="token.title">API-Tokens</h2>
-          <a class="tab" href="/api-docs" target="_blank" rel="noopener" data-i18n="token.docs">API-Dokumentation &#8599;</a>
+          <h2 data-i18n="token.title">API tokens</h2>
+          <a class="tab" href="/api-docs" target="_blank" rel="noopener" data-i18n="token.docs">API documentation ↗</a>
         </div>
-        <p class="muted" data-i18n="token.hint">
-          Ein Token ersetzt bei API-Aufrufen Ihr Passwort und hat immer genau die Rechte
-          Ihrer aktuellen Rolle. Der Wert wird nur einmal angezeigt.
-        </p>
+        <p class="muted" data-i18n="token.hint">A token replaces your password for API calls and always carries exactly the permissions of your current role. The value is shown only once.</p>
         <form id="form-token" class="form">
           <div class="grid">
-            <label data-i18n="token.name">Bezeichnung<input type="text" name="name" required maxlength="120"></label>
-            <label data-i18n="token.expires">Gültig für (Tage, 0 = unbegrenzt)
-              <input type="number" name="expiresInDays" min="0" max="3650" value="0">
+            <label data-i18n="token.name">Label<input type="text" name="name" required maxlength="120"></label>
+            <label data-i18n="token.expires">Valid for (days, 0 = unlimited)<input type="number" name="expiresInDays" min="0" max="3650" value="0">
             </label>
           </div>
-          <button type="submit" data-i18n="token.create">Token erstellen</button>
+          <button type="submit" data-i18n="token.create">Create token</button>
         </form>
         <div id="token-secret" hidden>
-          <p class="muted plus" data-i18n="token.copyNow">Jetzt kopieren — dieser Wert wird nicht wieder angezeigt:</p>
+          <p class="muted plus" data-i18n="token.copyNow">Copy it now — this value is never shown again:</p>
           <pre class="secret" id="token-secret-value"></pre>
         </div>
         <div class="table-wrap">
           <table id="table-tokens">
             <thead>
               <tr>
-                <th data-i18n="token.name">Bezeichnung</th>
-                <th data-i18n="token.prefix">Präfix</th>
-                <th data-i18n="token.created">Erstellt</th>
-                <th data-i18n="token.expiresAt">Läuft ab</th>
-                <th data-i18n="token.lastUsed">Zuletzt genutzt</th>
-                <th class="actions" data-i18n="field.action">Aktion</th>
+                <th data-i18n="token.name">Label</th>
+                <th data-i18n="token.prefix">Prefix</th>
+                <th data-i18n="token.created">Created</th>
+                <th data-i18n="token.expiresAt">Expires</th>
+                <th data-i18n="token.lastUsed">Last used</th>
+                <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -433,127 +479,169 @@
       </div>
 
       <form id="form-password" class="card form">
-        <h2 data-i18n="settings.changePassword">Passwort ändern</h2>
+        <h2 data-i18n="settings.changePassword">Change password</h2>
         <div class="grid">
-          <label data-i18n="settings.currentPassword">Aktuelles Passwort<input type="password" name="currentPassword" required></label>
-          <label data-i18n="settings.newPassword">Neues Passwort<input type="password" name="newPassword" minlength="8" required></label>
+          <label data-i18n="settings.currentPassword">Current password<input type="password" name="currentPassword" required></label>
+          <label data-i18n="settings.newPassword">New password<input type="password" name="newPassword" minlength="8" required></label>
         </div>
-        <button type="submit" data-i18n="settings.changePassword">Passwort ändern</button>
+        <button type="submit" data-i18n="settings.changePassword">Change password</button>
       </form>
     </section>
-    <!-- Einstellungen (nur eingebauter Administrator) -->
+    <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
       <form id="form-branding" class="card form">
-        <h2 data-i18n="admin.branding">Erscheinungsbild</h2>
-        <p class="muted" data-i18n="admin.brandingHint">
-          Titel, Banner, Logo und Fußzeile dieser Installation.
-        </p>
+        <h2 data-i18n="admin.branding">Appearance</h2>
+        <p class="muted" data-i18n="admin.brandingHint">Title, banner, logo and footer of this installation.</p>
         <div class="grid">
-          <label data-i18n="admin.title">Titel (Browser-Tab und Kopfzeile)
-            <input type="text" name="title" maxlength="80">
+          <label data-i18n="admin.title">Title (browser tab and header)<input type="text" name="title" maxlength="80">
           </label>
-          <label class="wide" data-i18n="admin.banner">Banner-Text (leer = ausgeblendet)
-            <input type="text" name="banner" maxlength="300">
+          <label class="wide" data-i18n="admin.banner">Banner text (empty hides it)<input type="text" name="banner" maxlength="300">
           </label>
-          <label data-i18n="admin.company">Firma
-            <input type="text" name="companyName" maxlength="120">
+          <label data-i18n="admin.company">Company<input type="text" name="companyName" maxlength="120">
           </label>
-          <label data-i18n="admin.companyUrl">Firmen-Website
-            <input type="url" name="companyUrl" placeholder="https://">
+          <label data-i18n="admin.companyUrl">Company website<input type="url" name="companyUrl" placeholder="https://">
           </label>
-          <label class="wide" data-i18n="admin.footer">Fußzeile
-            <input type="text" name="footerText" maxlength="200">
+          <label class="wide" data-i18n="admin.footer">Footer<input type="text" name="footerText" maxlength="200">
           </label>
-          <label class="wide" data-i18n="admin.legal">Rechtlicher Hinweis
-            <input type="text" name="legalNotice" maxlength="200">
+          <label class="wide" data-i18n="admin.legal">Legal notice<input type="text" name="legalNotice" maxlength="200">
           </label>
         </div>
         <div class="row">
-          <label data-i18n="admin.logo">Logo (PNG/SVG, max. 256 KB)
-            <input type="file" id="logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+          <label data-i18n="admin.logo">Logo (PNG/SVG, max. 256 KB)<input type="file" id="logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
           </label>
           <img id="logo-preview" class="logo-preview" alt="" hidden>
-          <button type="button" class="secondary" id="logo-clear" data-i18n="admin.logoClear">Logo entfernen</button>
+          <button type="button" class="secondary" id="logo-clear" data-i18n="admin.logoClear">Remove logo</button>
         </div>
-        <button type="submit" data-i18n="action.save">Speichern</button>
+        <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
+      <form id="form-operational" class="card form">
+        <h2 data-i18n="ops.title">Operation and limits</h2>
+        <p class="muted" data-i18n="ops.hint">Leave a field empty to keep the value from the configuration file. Changes take effect within a few seconds, without a restart.</p>
+        <div class="grid">
+          <label data-i18n="ops.sessionLifetime">Session lifetime (hours)
+            <input type="number" name="sessionLifetimeHours" step="0.25" min="0.25" max="336">
+          </label>
+          <label data-i18n="ops.maxDailyHours">Maximum hours per day (instance-wide)
+            <input type="number" name="maxDailyHours" step="0.5" min="0.5" max="24">
+          </label>
+          <label data-i18n="ops.rateLimit">Rate limit (requests)
+            <input type="number" name="rateLimit" step="1" min="5">
+          </label>
+          <label data-i18n="ops.rateWindow">Rate limit window (seconds)
+            <input type="number" name="rateLimitWindowSeconds" step="1" min="1" max="3600">
+          </label>
+          <label data-i18n="ops.autoClose">Submit open entries after (days)
+            <input type="number" name="autoCloseAfterDays" step="1" min="0">
+          </label>
+          <label data-i18n="ops.deleteRatio">Directory sync: deletion limit (0–1)
+            <input type="number" name="ldapSyncMaxDeleteRatio" step="0.05" min="0" max="1">
+          </label>
+        </div>
+        <p class="muted" id="operational-effective"></p>
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="operational-reset" data-i18n="ops.reset">Reset all to the configuration file</button>
+        </div>
+      </form>
+
+      <form id="form-timezone" class="card form">
+        <h2 data-i18n="tz.title">Timezone</h2>
+        <p class="muted" data-i18n="tz.hint">Decides which calendar day a booking falls on, for everyone who has not set their own under "My account".</p>
+        <div class="grid">
+          <label class="wide" data-i18n="tz.timezone">Timezone
+            <select name="timezone" id="instance-timezone"></select>
+          </label>
+        </div>
+        <p class="muted" id="instance-timezone-now"></p>
+        <button type="submit" data-i18n="action.save">Save</button>
       </form>
 
       <form id="form-datasource" class="card form">
-        <h2 data-i18n="admin.database">Datenbank-Anbindung</h2>
+        <h2 data-i18n="admin.database">Database connection</h2>
         <p class="muted" id="datasource-active"></p>
-        <p class="muted" data-i18n="admin.databaseHint">
-          Die Verbindung wird gespeichert und beim nächsten Start der Anwendung verwendet.
-          Ein Wechsel im laufenden Betrieb wäre nicht gefahrlos möglich.
-        </p>
+        <p class="muted" data-i18n="admin.databaseHint">The connection is saved and used the next time the application starts. Switching it while running would not be safe.</p>
         <div class="grid">
-          <label data-i18n="admin.dialect">Typ
-            <select name="dialect">
+          <label data-i18n="admin.dialect">Type<select name="dialect">
               <option value="sqlite">SQLite</option>
               <option value="postgres">PostgreSQL</option>
               <option value="mysql">MySQL</option>
             </select>
           </label>
-          <label data-i18n="admin.dbName">Datenbank / Dateiname
-            <input type="text" name="name" required>
+          <label data-i18n="admin.dbName">Database / file name<input type="text" name="name" required>
           </label>
-          <label data-i18n="admin.dbHost">Host
-            <input type="text" name="host">
+          <label data-i18n="admin.dbHost">Host<input type="text" name="host">
           </label>
-          <label data-i18n="admin.dbPort">Port
-            <input type="text" name="port" inputmode="numeric">
+          <label data-i18n="admin.dbPort">Port<input type="text" name="port" inputmode="numeric">
           </label>
-          <label data-i18n="admin.dbUser">Benutzer
-            <input type="text" name="user">
+          <label data-i18n="admin.dbUser">User<input type="text" name="user">
           </label>
-          <label data-i18n="admin.dbPassword">Passwort
-            <input type="password" name="password" data-i18n-placeholder="admin.keepStored" placeholder="unverändert lassen">
+          <label data-i18n="admin.dbPassword">Password<input type="password" name="password" data-i18n-placeholder="admin.keepStored" placeholder="leave unchanged">
           </label>
-          <label data-i18n="admin.dbSsl">SSL-Modus
-            <input type="text" name="sslMode" placeholder="disable">
+          <label data-i18n="admin.dbSsl">SSL mode<input type="text" name="sslMode" placeholder="disable">
           </label>
         </div>
         <div class="row">
-          <button type="submit" data-i18n="action.save">Speichern</button>
-          <button type="button" class="secondary" id="datasource-test" data-i18n="admin.testConnection">Verbindung testen</button>
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="datasource-test" data-i18n="admin.testConnection">Test connection</button>
         </div>
         <p class="muted" id="datasource-test-result"></p>
       </form>
 
       <form id="form-ldap" class="card form">
-        <h2 data-i18n="admin.ldap">LDAP-Anbindung</h2>
-        <p class="muted" data-i18n="admin.ldapHint">
-          Bei aktivierter Anbindung wird das Passwort gegen das Verzeichnis geprüft.
-          Unbekannte Benutzer werden beim ersten erfolgreichen Login lokal angelegt.
-        </p>
+        <h2 data-i18n="admin.ldap">LDAP connection</h2>
+        <p class="muted" data-i18n="admin.ldapHint">When enabled, passwords are checked against the directory. Unknown users are created locally on their first successful sign-in.</p>
         <div class="perm-grid">
-          <label><input type="checkbox" name="enabled"><span data-i18n="admin.ldapEnabled">Aktiviert</span></label>
+          <label><input type="checkbox" name="enabled"><span data-i18n="admin.ldapEnabled">Enabled</span></label>
           <label><input type="checkbox" name="startTls"><span>StartTLS</span></label>
           <label><input type="checkbox" name="useTls"><span>LDAPS</span></label>
-          <label><input type="checkbox" name="skipVerify"><span data-i18n="admin.skipVerify">Zertifikat nicht prüfen (unsicher)</span></label>
+          <label><input type="checkbox" name="skipVerify"><span data-i18n="admin.skipVerify">Do not verify certificate (unsafe)</span></label>
         </div>
         <div class="grid">
           <label data-i18n="admin.dbHost">Host<input type="text" name="host"></label>
           <label data-i18n="admin.dbPort">Port<input type="number" name="port" min="1" max="65535"></label>
           <label class="wide" data-i18n="admin.baseDn">Base DN<input type="text" name="baseDn" placeholder="dc=example,dc=com"></label>
           <label class="wide" data-i18n="admin.bindDn">Bind DN (optional)<input type="text" name="bindDn"></label>
-          <label data-i18n="admin.bindPassword">Bind-Passwort
-            <input type="password" name="bindPassword" data-i18n-placeholder="admin.keepStored" placeholder="unverändert lassen">
+          <label data-i18n="admin.bindPassword">Bind password<input type="password" name="bindPassword" data-i18n-placeholder="admin.keepStored" placeholder="leave unchanged">
           </label>
-          <label class="wide" data-i18n="admin.userFilter">Benutzer-Filter (%s = Anmeldename)
-            <input type="text" name="userFilter">
+          <label class="wide" data-i18n="admin.userFilter">User filter (%s = login name)<input type="text" name="userFilter">
           </label>
-          <label data-i18n="admin.nameAttr">Namens-Attribut<input type="text" name="nameAttribute"></label>
-          <label data-i18n="admin.mailAttr">E-Mail-Attribut<input type="text" name="emailAttribute"></label>
-          <label data-i18n="admin.defaultRole">Standardrolle für neue Benutzer
-            <select name="defaultRole"></select>
+          <label data-i18n="admin.nameAttr">Name attribute<input type="text" name="nameAttribute"></label>
+          <label data-i18n="admin.mailAttr">Email attribute<input type="text" name="emailAttribute"></label>
+          <label class="wide" data-i18n="admin.idAttr">Unique ID attribute (entryUUID, Active Directory: objectGUID)<input type="text" name="idAttribute" placeholder="entryUUID">
+          </label>
+          <label data-i18n="admin.defaultRole">Default role for new users<select name="defaultRole"></select>
           </label>
         </div>
         <div class="row">
-          <button type="submit" data-i18n="action.save">Speichern</button>
-          <button type="button" class="secondary" id="ldap-test" data-i18n="admin.testConnection">Verbindung testen</button>
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="ldap-test" data-i18n="admin.testConnection">Test connection</button>
         </div>
         <p class="muted" id="ldap-test-result"></p>
       </form>
+
+      <div class="card" id="sync-card">
+        <h2 data-i18n="sync.title">Directory synchronisation</h2>
+        <p class="muted" data-i18n="sync.hint">Reconciles the users with the directory. LDAP is only ever read, never changed.</p>
+        <p class="muted minus" data-i18n="sync.warning">Careful: accounts missing from the directory are deleted here, together with their recorded time, own projects and tokens. This cannot be undone. Always run the preview first.</p>
+        <div class="row">
+          <button type="button" class="secondary" id="sync-preview" data-i18n="sync.preview">Preview</button>
+          <button type="button" id="sync-run" data-i18n="sync.run">Run synchronisation</button>
+        </div>
+        <p class="muted" id="sync-status"></p>
+        <div class="table-wrap" id="sync-result" hidden>
+          <table id="table-sync">
+            <thead>
+              <tr>
+                <th data-i18n="field.name">Name</th>
+                <th data-i18n="field.email">Email</th>
+                <th class="num" data-i18n="sync.entries">Time entries</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
     </section>
   </main>
 

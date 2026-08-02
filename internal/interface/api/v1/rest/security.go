@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"sync"
@@ -96,6 +97,10 @@ type RateLimiter struct {
 	window  time.Duration
 	lastGC  time.Time
 	gcEvery time.Duration
+
+	// current, when set, supplies the administered budget instead of the one
+	// configured at start-up, so a change applies without a restart.
+	current func(ctx context.Context) (int, time.Duration)
 }
 
 type bucket struct {
@@ -114,6 +119,32 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 	}
 }
 
+// WithLimits makes the budget follow the Settings screen.
+//
+// Applied per request rather than cached in the struct, because the point of
+// administering it is that a change takes effect at once - and the provider
+// behind it already caches, so this stays cheap.
+func (l *RateLimiter) WithLimits(current func(ctx context.Context) (int, time.Duration)) *RateLimiter {
+	l.current = current
+
+	return l
+}
+
+// budget reports the limit and window in force for this request.
+func (l *RateLimiter) budget(ctx context.Context) (int, time.Duration) {
+	if l.current == nil {
+		return l.limit, l.window
+	}
+
+	limit, window := l.current(ctx)
+	if limit <= 0 || window <= 0 {
+		// A nonsensical administered value must not switch the limiter off.
+		return l.limit, l.window
+	}
+
+	return limit, window
+}
+
 // Middleware applies the limit to the paths where guessing actually pays off:
 // signing in and anything carrying an API token. Ordinary browsing by a
 // signed-in user is left alone so a busy day cannot lock someone out.
@@ -126,8 +157,10 @@ func (l *RateLimiter) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			if !l.allow(clientKey(r)) {
-				w.Header().Set("Retry-After", itoa(int(l.window.Seconds())))
+			limit, window := l.budget(r.Context())
+
+			if !l.allow(clientKey(r), limit, window) {
+				w.Header().Set("Retry-After", itoa(int(window.Seconds())))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
 				_, _ = w.Write([]byte(`{"error":{"message":"too many requests, please slow down"}}` + "\n"))
@@ -152,7 +185,7 @@ func (l *RateLimiter) guards(r *http.Request) bool {
 		strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
 }
 
-func (l *RateLimiter) allow(key string) bool {
+func (l *RateLimiter) allow(key string, limit int, window time.Duration) bool {
 	now := time.Now()
 
 	l.mu.Lock()
@@ -162,12 +195,12 @@ func (l *RateLimiter) allow(key string) bool {
 
 	b, ok := l.hits[key]
 	if !ok || now.After(b.reset) {
-		l.hits[key] = &bucket{count: 1, reset: now.Add(l.window)}
+		l.hits[key] = &bucket{count: 1, reset: now.Add(window)}
 
 		return true
 	}
 
-	if b.count >= l.limit {
+	if b.count >= limit {
 		return false
 	}
 

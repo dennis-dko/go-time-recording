@@ -17,6 +17,7 @@ type MeHandler struct {
 	sessions *service.SessionService
 	overtime *service.OvertimeService
 	authz    *Authorizer
+	timezone InstanceTimezoneFunc
 }
 
 // NewMeHandler creates the handler.
@@ -25,8 +26,11 @@ func NewMeHandler(
 	sessions *service.SessionService,
 	overtime *service.OvertimeService,
 	authz *Authorizer,
+	timezone InstanceTimezoneFunc,
 ) *MeHandler {
-	return &MeHandler{auth: auth, sessions: sessions, overtime: overtime, authz: authz}
+	return &MeHandler{
+		auth: auth, sessions: sessions, overtime: overtime, authz: authz, timezone: timezone,
+	}
 }
 
 // Me handles GET /api/v1/me. The UI uses it to decide what to render, so it
@@ -43,7 +47,7 @@ func (h *MeHandler) Me(c *gofr.Context) (any, error) {
 	}
 
 	return MeResponse{
-		User:        newUserResponseFromModel(principal.User),
+		User:        newUserResponseFromModel(principal.User, h.timezone.resolve(c)),
 		Permissions: permissions,
 		AuthEnabled: h.authz.Enabled(),
 	}, nil
@@ -101,7 +105,7 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 		return nil, forbiddenError{msg: "missing permission: " + model.PermReportRead}
 	}
 
-	from, to, err := overtimeRange(c)
+	from, to, err := overtimeRange(c, h.locationFor(c, principal.User))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -116,11 +120,12 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 
 // TeamOvertime handles GET /api/v1/overtime, the balance of every user.
 func (h *MeHandler) TeamOvertime(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermReportRead); err != nil {
+	principal, err := h.authz.Require(c, model.PermReportRead)
+	if err != nil {
 		return nil, err
 	}
 
-	from, to, err := overtimeRange(c)
+	from, to, err := overtimeRange(c, h.locationFor(c, principal.User))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -138,8 +143,22 @@ func (h *MeHandler) TeamOvertime(c *gofr.Context) (any, error) {
 	return listResponse[OvertimeResponse]{Items: items, TotalCount: uint(len(items))}, nil
 }
 
+// locationFor returns the zone the caller's calendar questions are answered in.
+//
+// The caller's rather than the subject's: "this month" is asked by the person
+// looking at the screen, and a manager in Berlin reviewing someone abroad means
+// their own month. The stored booking dates are calendar days already, so this
+// only decides the window, never which day an entry belongs to.
+func (h *MeHandler) locationFor(c *gofr.Context, user *model.User) *time.Location {
+	return user.TimezoneOf(h.timezone.resolve(c))
+}
+
 // overtimeRange reads the from/to parameters, defaulting to the current month.
-func overtimeRange(c *gofr.Context) (from, to time.Time, err error) {
+//
+// "The current month" is a question about a calendar, so it is answered in the
+// applicable zone: for someone in Auckland on the first of the month, the
+// server's own idea of now is still the previous month.
+func overtimeRange(c *gofr.Context, location *time.Location) (from, to time.Time, err error) {
 	fromParam, err := queryDate(c, "from")
 	if err != nil {
 		return from, to, err
@@ -150,14 +169,14 @@ func overtimeRange(c *gofr.Context) (from, to time.Time, err error) {
 		return from, to, err
 	}
 
-	now := time.Now()
+	now := time.Now().In(location)
 
 	to = now
 	if toParam != nil {
 		to = *toParam
 	}
 
-	from = time.Date(to.Year(), to.Month(), 1, 0, 0, 0, 0, to.Location())
+	from = time.Date(to.Year(), to.Month(), 1, 0, 0, 0, 0, location)
 	if fromParam != nil {
 		from = *fromParam
 	}

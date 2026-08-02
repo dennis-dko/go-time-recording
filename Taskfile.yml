@@ -8,6 +8,8 @@ version: '3'
 vars:
   APP_NAME: go-time-recording
   BIN_DIR: bin
+  # Build scratch space for tests, kept out of %TEMP% - see the test task.
+  TMP_DIR: bin/gotmp
   CONFIG_SRC: cmd/configs
   # Docker registry to push images to, e.g. ghcr.io/dennis-dko. Empty by
   # default so a push without a target fails loudly instead of going nowhere.
@@ -79,8 +81,39 @@ tasks:
   test:
     desc: Run all unit and integration tests.
     deps: [tidy]
+    # Go writes each test binary to %TEMP%/go-build before running it, and
+    # real-time virus scanning on Windows intermittently locks those files -
+    # "Access is denied" on a package that compiles perfectly well. Building
+    # under the project directory avoids the scanned path entirely.
+    env:
+      # Absolute: the tests run from their own package directories, so a
+      # relative path would resolve somewhere different for each of them.
+      GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
     cmds:
+      - '{{if eq OS "windows"}}powershell -NoProfile -Command "New-Item -ItemType Directory -Force {{.TMP_DIR}} | Out-Null"{{else}}mkdir -p {{.TMP_DIR}}{{end}}'
+      - defer: '{{if eq OS "windows"}}powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue {{.TMP_DIR}}"{{else}}rm -rf {{.TMP_DIR}}{{end}}'
       - go test ./...
+
+  test:env:up:
+    desc: 'Start the throwaway test services. Usage: task test:env:up PROFILE=postgres|mysql|ldap|all'
+    vars:
+      PROFILE: '{{.PROFILE | default "all"}}'
+    dir: test
+    cmds:
+      - docker compose --profile {{.PROFILE}} up -d --wait
+      - echo "Ready. See test/README.md for connection details."
+
+  test:env:down:
+    desc: Stop the test services and delete their data.
+    dir: test
+    cmds:
+      # --profile all so nothing is left behind whichever profile was started.
+      - docker compose --profile all down -v
+
+  test:probe:
+    desc: 'Check a database and directory connection using the application''s own drivers. Usage: task test:probe -- --ldap ldap://localhost:5389'
+    cmds:
+      - go run ./test/probe {{.CLI_ARGS}}
 
   upgrade:
     desc: Bump go.mod to the installed Go toolchain and update all dependencies to their latest compatible releases.

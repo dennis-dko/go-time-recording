@@ -14,6 +14,17 @@ type UserResult struct {
 	IsSystem           bool
 	MustChangePassword bool
 
+	// IsExternal marks an account backed by the directory. The staff list is
+	// where an administrator decides who to edit or remove, and a directory
+	// account shown as local invites both - the password cannot be changed here
+	// and a deletion is undone by the next synchronisation.
+	IsExternal bool
+
+	TOTPEnabled bool
+	Language    string
+	Timezone    string
+	TourSeen    bool
+
 	// Effective working times, with the defaults already applied so callers
 	// do not have to know the fallback rules.
 	DailyTargetHours float64
@@ -36,6 +47,11 @@ func NewUserResultFromModel(userModels ...*model.User) []*UserResult {
 			Role:               userModel.RoleName,
 			IsSystem:           userModel.IsSystem,
 			MustChangePassword: userModel.MustChangePassword,
+			IsExternal:         userModel.IsExternal,
+			TOTPEnabled:        userModel.TOTPEnabled,
+			Language:           userModel.EffectiveLanguage(),
+			Timezone:           userModel.Timezone,
+			TourSeen:           userModel.TourSeen,
 			DailyTargetHours:   userModel.DailyTargetHours,
 			MaxDailyHours:      userModel.MaxDailyHours,
 		})

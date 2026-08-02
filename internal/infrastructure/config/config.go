@@ -55,6 +55,18 @@ type Config struct {
 	RateLimit       int
 	RateLimitWindow time.Duration
 
+	// LDAPSyncSchedule runs the directory reconciliation. Empty disables the
+	// scheduled run; the administrator can still trigger one by hand.
+	//
+	// A run deletes accounts the directory no longer holds, together with
+	// their recorded hours, so it is off by default.
+	LDAPSyncSchedule string
+
+	// LDAPSyncMaxDeleteRatio refuses a run that would remove more than this
+	// share of the directory-backed accounts. It is the guard against a
+	// truncated or misfiltered directory answer reading as a mass departure.
+	LDAPSyncMaxDeleteRatio float64
+
 	// AutoCloseSchedule is the cron expression for sweeping stale open
 	// timesheets. Empty disables the job.
 	AutoCloseSchedule string
@@ -85,7 +97,22 @@ const (
 	// guessing a password or a token is hopeless.
 	defaultRateLimit       = 30
 	defaultRateLimitWindow = time.Minute
+
+	// Half the directory-backed accounts disappearing in one run is far more
+	// likely to be a broken filter than a real mass departure.
+	defaultSyncMaxDeleteRatio = 0.5
 )
+
+// ratioOr reads a share between 0 and 1. Zero disables the check, which the
+// caller must opt into explicitly.
+func ratioOr(raw string, fallback float64) float64 {
+	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || v < 0 || v > 1 {
+		return fallback
+	}
+
+	return v
+}
 
 // splitList reads a comma-separated setting, dropping blanks.
 func splitList(raw string) []string {
@@ -105,7 +132,7 @@ func splitList(raw string) []string {
 func Load(p Provider) Config {
 	return Config{
 		Dialect:   strings.ToLower(p.GetOrDefault("DB_DIALECT", defaultDialect)),
-		AppName:   p.GetOrDefault("APP_NAME", "Zeiterfassung"),
+		AppName:   p.GetOrDefault("APP_NAME", "Time Recording"),
 		UIEnabled: boolOr(p.GetOrDefault("UI_ENABLED", "true"), true),
 		// Defaults to on: an instance that quietly serves everyone full
 		// administrative rights should be a deliberate choice, not an oversight.
@@ -120,9 +147,15 @@ func Load(p Provider) Config {
 		HTTPPort:    intOr(p.GetOrDefault("TLS_REDIRECT_PORT", ""), defaultHTTPRedirectPort),
 		TLSStaging:  boolOr(p.GetOrDefault("TLS_STAGING", "false"), false),
 
-		HSTSMaxAge:         durationOr(p.GetOrDefault("HSTS_MAX_AGE", ""), defaultHSTSMaxAge),
-		RateLimit:          intOr(p.GetOrDefault("RATE_LIMIT", ""), defaultRateLimit),
-		RateLimitWindow:    durationOr(p.GetOrDefault("RATE_LIMIT_WINDOW", ""), defaultRateLimitWindow),
+		HSTSMaxAge:      durationOr(p.GetOrDefault("HSTS_MAX_AGE", ""), defaultHSTSMaxAge),
+		RateLimit:       intOr(p.GetOrDefault("RATE_LIMIT", ""), defaultRateLimit),
+		RateLimitWindow: durationOr(p.GetOrDefault("RATE_LIMIT_WINDOW", ""), defaultRateLimitWindow),
+
+		// Empty by default: a scheduled run deletes people and their hours,
+		// which must be a deliberate choice.
+		LDAPSyncSchedule: p.Get("LDAP_SYNC_SCHEDULE"),
+		LDAPSyncMaxDeleteRatio: ratioOr(p.GetOrDefault("LDAP_SYNC_MAX_DELETE_RATIO", ""),
+			defaultSyncMaxDeleteRatio),
 		AutoCloseSchedule:  p.GetOrDefault("AUTO_CLOSE_SCHEDULE", defaultAutoCloseSchedule),
 		AutoCloseAfterDays: intOr(p.GetOrDefault("AUTO_CLOSE_AFTER_DAYS", ""), defaultAutoCloseAfterDays),
 		MaxDailyHours:      floatOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),

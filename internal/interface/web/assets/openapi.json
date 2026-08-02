@@ -5,21 +5,62 @@
     "version": "1.0.0",
     "description": "Project time tracking.\n\nAuthenticate either with the session cookie obtained from `POST /auth/login`, or with a personal API token sent as `Authorization: Bearer <token>` or `X-API-Token: <token>`.\n\nA token carries no rights of its own: every request is evaluated against the owner's **current** role, so changing or revoking a role takes effect on the very next call.\n\nAll responses are wrapped by the framework as `{\"data\": ...}` on success and `{\"error\": {\"message\": ...}}` on failure."
   },
-  "servers": [{ "url": "/api/v1" }],
-  "security": [{ "bearerAuth": [] }, { "apiToken": [] }, { "sessionCookie": [] }],
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {
+      "apiToken": []
+    },
+    {
+      "sessionCookie": []
+    }
+  ],
   "tags": [
-    { "name": "auth", "description": "Sign-in, sign-out and your own account" },
-    { "name": "timesheets", "description": "Time entries" },
-    { "name": "projects", "description": "Shared projects and your own private projects" },
-    { "name": "users", "description": "User administration" },
-    { "name": "roles", "description": "Roles and permissions" },
-    { "name": "reports", "description": "Reports and overtime" },
-    { "name": "settings", "description": "Instance administration, built-in administrator only" }
+    {
+      "name": "auth",
+      "description": "Sign-in, sign-out and your own account"
+    },
+    {
+      "name": "timesheets",
+      "description": "Time entries"
+    },
+    {
+      "name": "projects",
+      "description": "Shared projects and your own private projects"
+    },
+    {
+      "name": "users",
+      "description": "User administration"
+    },
+    {
+      "name": "roles",
+      "description": "Roles and permissions"
+    },
+    {
+      "name": "reports",
+      "description": "Reports and overtime"
+    },
+    {
+      "name": "settings",
+      "description": "Instance administration, built-in administrator only"
+    },
+    {
+      "name": "setup",
+      "description": "First-run wizard"
+    }
   ],
   "paths": {
     "/auth/login": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Sign in",
         "security": [],
         "requestBody": {
@@ -28,49 +69,197 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["email", "password"],
+                "required": [
+                  "email",
+                  "password"
+                ],
                 "properties": {
-                  "email": { "type": "string", "format": "email" },
-                  "password": { "type": "string", "format": "password" },
-                  "totp": { "type": "string", "description": "Required when the account has two-factor authentication enabled." }
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password"
+                  },
+                  "totp": {
+                    "type": "string",
+                    "description": "Required when the account has two-factor authentication enabled."
+                  }
                 }
               }
             }
           }
         },
         "responses": {
-          "201": { "description": "Signed in; a session cookie is set. When the response says `totpRequired`, no cookie is set and the code must be supplied." },
-          "401": { "description": "Invalid credentials" },
-          "429": { "description": "Too many attempts" }
+          "201": {
+            "description": "Signed in; a session cookie is set. When the response says `totpRequired`, no cookie is set and the code must be supplied."
+          },
+          "401": {
+            "description": "Invalid credentials"
+          },
+          "429": {
+            "description": "Too many attempts"
+          }
         }
       }
     },
     "/auth/logout": {
-      "post": { "tags": ["auth"], "summary": "Sign out and end the session", "responses": { "201": { "description": "Signed out" } } }
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign out and end the session",
+        "responses": {
+          "201": {
+            "description": "Signed out"
+          }
+        }
+      }
     },
     "/me": {
-      "get": { "tags": ["auth"], "summary": "The signed-in user and their permissions", "responses": { "200": { "description": "Identity and permissions" }, "401": { "description": "Not authenticated" } } }
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "The signed-in user and their permissions",
+        "responses": {
+          "200": {
+            "description": "Identity and permissions"
+          },
+          "401": {
+            "description": "Not authenticated"
+          }
+        }
+      }
     },
     "/me/password": {
-      "put": { "tags": ["auth"], "summary": "Change your own password; ends every session you have", "responses": { "200": { "description": "Changed" }, "400": { "description": "Wrong current password, or the new one is too short" } } }
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change your own password; ends every session you have",
+        "responses": {
+          "200": {
+            "description": "Changed"
+          },
+          "400": {
+            "description": "Wrong current password, or the new one is too short"
+          }
+        }
+      }
     },
     "/me/language": {
-      "put": { "tags": ["auth"], "summary": "Set your interface language", "responses": { "200": { "description": "Saved" }, "400": { "description": "Unsupported language" } } }
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Set your interface language",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "400": {
+            "description": "Unsupported language"
+          }
+        }
+      }
+    },
+    "/me/timezone": {
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Set your own timezone, or clear it to follow the instance",
+        "description": "An IANA name such as \"Europe/Berlin\". An empty value is meaningful: it clears the personal setting so the account follows the instance-wide zone again. An unknown name is rejected rather than stored, because it would otherwise fall back to UTC at every use and move bookings between days.",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
+    },
+    "/me/tour": {
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Record whether you have been shown the guided tour",
+        "description": "Stored on the user rather than in the browser, so someone who has been introduced to the application is not introduced again on their next device. Settable both ways: sending false offers the tour again, which is how the \"Show the tour\" button works.",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
     },
     "/me/totp": {
-      "post": { "tags": ["auth"], "summary": "Begin two-factor enrolment; the secret is returned once", "responses": { "201": { "description": "Secret and otpauth URI" } } },
-      "put": { "tags": ["auth"], "summary": "Confirm two-factor with a current code", "responses": { "200": { "description": "Enabled" }, "400": { "description": "Invalid code" } } },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Begin two-factor enrolment; the secret is returned once",
+        "responses": {
+          "201": {
+            "description": "Secret and otpauth URI"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Confirm two-factor with a current code",
+        "responses": {
+          "200": {
+            "description": "Enabled"
+          },
+          "400": {
+            "description": "Invalid code"
+          }
+        }
+      },
       "delete": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Disable two-factor",
-        "parameters": [{ "name": "code", "in": "query", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Disabled" }, "400": { "description": "Invalid code" } }
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Disabled"
+          },
+          "400": {
+            "description": "Invalid code"
+          }
+        }
       }
     },
     "/me/tokens": {
-      "get": { "tags": ["auth"], "summary": "List your API tokens; secrets are never returned", "responses": { "200": { "description": "Tokens" } } },
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List your API tokens; secrets are never returned",
+        "responses": {
+          "200": {
+            "description": "Tokens"
+          }
+        }
+      },
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Issue an API token; the secret is shown once and cannot be recovered",
         "requestBody": {
           "required": true,
@@ -78,235 +267,1002 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["name"],
+                "required": [
+                  "name"
+                ],
                 "properties": {
-                  "name": { "type": "string" },
-                  "expiresInDays": { "type": "integer", "description": "0 means the token does not expire on its own." }
+                  "name": {
+                    "type": "string"
+                  },
+                  "expiresInDays": {
+                    "type": "integer",
+                    "description": "0 means the token does not expire on its own."
+                  }
                 }
               }
             }
           }
         },
-        "responses": { "201": { "description": "The token, including its secret" }, "409": { "description": "Token limit reached" } }
+        "responses": {
+          "201": {
+            "description": "The token, including its secret"
+          },
+          "409": {
+            "description": "Token limit reached"
+          }
+        }
       }
     },
     "/me/tokens/{id}": {
       "delete": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Revoke one of your own tokens",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "Revoked" }, "404": { "description": "Not one of your tokens" } }
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked"
+          },
+          "404": {
+            "description": "Not one of your tokens"
+          }
+        }
       }
     },
     "/timesheets": {
       "get": {
-        "tags": ["timesheets"],
+        "tags": [
+          "timesheets"
+        ],
         "summary": "List time entries",
         "description": "A caller holding only `timesheets:read:own` is pinned to their own entries regardless of the filter sent.",
         "parameters": [
-          { "name": "userId", "in": "query", "schema": { "type": "integer" } },
-          { "name": "projectId", "in": "query", "schema": { "type": "integer" } },
-          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["open", "submitted", "approved", "rejected"] } },
-          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
-          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+          {
+            "name": "userId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "submitted",
+                "approved",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
         ],
-        "responses": { "200": { "description": "Entries" } }
+        "responses": {
+          "200": {
+            "description": "Entries"
+          }
+        }
       },
       "post": {
-        "tags": ["timesheets"],
+        "tags": [
+          "timesheets"
+        ],
         "summary": "Book time",
         "description": "`projectId` is optional; omitting it records uncategorised hours. Omitting `userId` books for the caller.",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TimesheetInput" } } } },
-        "responses": { "201": { "description": "Created" }, "409": { "description": "Daily limit exceeded, or the project no longer accepts entries" } }
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TimesheetInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "409": {
+            "description": "Daily limit exceeded, or the project no longer accepts entries"
+          }
+        }
       }
     },
     "/timesheets/{id}": {
-      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-      "get": { "tags": ["timesheets"], "summary": "Read one entry", "responses": { "200": { "description": "Entry" } } },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Read one entry",
+        "responses": {
+          "200": {
+            "description": "Entry"
+          }
+        }
+      },
       "put": {
-        "tags": ["timesheets"],
+        "tags": [
+          "timesheets"
+        ],
         "summary": "Update an entry",
         "description": "Sending `projectId: 0` clears the project assignment. Approving or rejecting needs `timesheets:approve`.",
-        "responses": { "200": { "description": "Updated" }, "409": { "description": "Illegal status change, or the entry is already approved" } }
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "409": {
+            "description": "Illegal status change, or the entry is already approved"
+          }
+        }
       },
-      "delete": { "tags": ["timesheets"], "summary": "Delete an entry", "responses": { "200": { "description": "Deleted" } } }
+      "delete": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Delete an entry",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
     },
     "/timesheets/{id}/transfer": {
       "post": {
-        "tags": ["timesheets"],
+        "tags": [
+          "timesheets"
+        ],
         "summary": "Move an entry to another project",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "201": { "description": "Moved" }, "409": { "description": "Approved entries cannot be moved" } }
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Moved"
+          },
+          "409": {
+            "description": "Approved entries cannot be moved"
+          }
+        }
       }
     },
     "/projects": {
       "get": {
-        "tags": ["projects"],
+        "tags": [
+          "projects"
+        ],
         "summary": "List projects",
         "description": "Returns the shared projects plus the caller's own private ones. Other people's private projects are never included.",
         "parameters": [
-          { "name": "status", "in": "query", "schema": { "type": "string" } },
-          { "name": "private", "in": "query", "schema": { "type": "string", "enum": ["true"] }, "description": "Narrow the result to the caller's own private projects." }
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "private",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            },
+            "description": "Narrow the result to the caller's own private projects."
+          }
         ],
-        "responses": { "200": { "description": "Projects" } }
+        "responses": {
+          "200": {
+            "description": "Projects"
+          }
+        }
       },
       "post": {
-        "tags": ["projects"],
+        "tags": [
+          "projects"
+        ],
         "summary": "Create a project",
         "description": "`private: true` creates a personal project owned by the caller and needs only `projects:write:own`. A shared project needs `projects:write`.",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectInput" } } } },
-        "responses": { "201": { "description": "Created" }, "403": { "description": "Missing permission" } }
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
+        }
       }
     },
     "/projects/{id}": {
-      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-      "get": { "tags": ["projects"], "summary": "Read one project", "responses": { "200": { "description": "Project" }, "404": { "description": "Unknown, or someone else's private project" } } },
-      "put": { "tags": ["projects"], "summary": "Update a project", "responses": { "200": { "description": "Updated" } } },
-      "delete": { "tags": ["projects"], "summary": "Delete a project", "responses": { "200": { "description": "Deleted" }, "409": { "description": "The project still has time entries" } } }
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Read one project",
+        "responses": {
+          "200": {
+            "description": "Project"
+          },
+          "404": {
+            "description": "Unknown, or someone else's private project"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Update a project",
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete a project",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "409": {
+            "description": "The project still has time entries"
+          }
+        }
+      }
     },
     "/projects/{id}/archive": {
       "post": {
-        "tags": ["projects"],
+        "tags": [
+          "projects"
+        ],
         "summary": "Archive a completed project",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "201": { "description": "Archived" }, "409": { "description": "Not completed, or open entries remain" } }
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Archived"
+          },
+          "409": {
+            "description": "Not completed, or open entries remain"
+          }
+        }
       }
     },
     "/projects/{id}/report": {
       "get": {
-        "tags": ["reports"],
+        "tags": [
+          "reports"
+        ],
         "summary": "Hours per user on a project",
         "description": "Requires `reports:read`, which by default only the built-in administrator holds.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
-          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
-          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
         ],
-        "responses": { "200": { "description": "Report" }, "403": { "description": "Missing permission" } }
+        "responses": {
+          "200": {
+            "description": "Report"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
+        }
       }
     },
     "/users/{id}/overtime": {
       "get": {
-        "tags": ["reports"],
+        "tags": [
+          "reports"
+        ],
         "summary": "Overtime balance for one user",
         "description": "Your own balance needs no special permission; anyone else's needs `reports:read`. Only days with bookings count, and rejected entries are excluded.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
-          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
-          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
         ],
-        "responses": { "200": { "description": "Balance" }, "403": { "description": "Missing permission" } }
+        "responses": {
+          "200": {
+            "description": "Balance"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
+        }
       }
     },
     "/overtime": {
-      "get": { "tags": ["reports"], "summary": "Overtime balance of every user; administrator only", "responses": { "200": { "description": "Balances" }, "403": { "description": "Missing permission" } } }
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Overtime balance of every user; administrator only",
+        "responses": {
+          "200": {
+            "description": "Balances"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
+        }
+      }
     },
     "/users": {
       "get": {
-        "tags": ["users"],
+        "tags": [
+          "users"
+        ],
         "summary": "List users",
         "parameters": [
-          { "name": "page", "in": "query", "schema": { "type": "integer" } },
-          { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
         ],
-        "responses": { "200": { "description": "Users" } }
+        "responses": {
+          "200": {
+            "description": "Users"
+          }
+        }
       },
-      "post": { "tags": ["users"], "summary": "Create a user", "responses": { "201": { "description": "Created" }, "409": { "description": "Email already in use" } } }
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create a user",
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "409": {
+            "description": "Email already in use"
+          }
+        }
+      }
     },
     "/users/{id}": {
-      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-      "get": { "tags": ["users"], "summary": "Read a user; your own account needs no permission", "responses": { "200": { "description": "User" } } },
-      "put": { "tags": ["users"], "summary": "Update a user", "responses": { "200": { "description": "Updated" } } },
-      "delete": { "tags": ["users"], "summary": "Delete a user", "responses": { "200": { "description": "Deleted" }, "409": { "description": "The built-in administrator cannot be deleted" } } }
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Read a user; your own account needs no permission",
+        "responses": {
+          "200": {
+            "description": "User"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Update a user",
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Delete a user",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "409": {
+            "description": "The built-in administrator cannot be deleted"
+          }
+        }
+      }
     },
     "/users/{id}/role": {
       "put": {
-        "tags": ["users"],
+        "tags": [
+          "users"
+        ],
         "summary": "Assign a role",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "Assigned" }, "409": { "description": "The built-in administrator must keep a role that can administer" } }
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assigned"
+          },
+          "409": {
+            "description": "The built-in administrator must keep a role that can administer"
+          }
+        }
       }
     },
     "/users/{id}/working-times": {
       "put": {
-        "tags": ["users"],
+        "tags": [
+          "users"
+        ],
         "summary": "Set the daily target and the daily maximum",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "Saved" }, "400": { "description": "The target cannot exceed the maximum" } }
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "400": {
+            "description": "The target cannot exceed the maximum"
+          }
+        }
       }
     },
     "/roles": {
-      "get": { "tags": ["roles"], "summary": "List roles", "responses": { "200": { "description": "Roles" } } },
-      "post": { "tags": ["roles"], "summary": "Create a role", "responses": { "201": { "description": "Created" }, "400": { "description": "Unknown permission" } } }
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "List roles",
+        "responses": {
+          "200": {
+            "description": "Roles"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Create a role",
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Unknown permission"
+          }
+        }
+      }
     },
     "/roles/{id}": {
-      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-      "get": { "tags": ["roles"], "summary": "Read a role", "responses": { "200": { "description": "Role" } } },
-      "put": { "tags": ["roles"], "summary": "Update a role", "responses": { "200": { "description": "Updated" }, "409": { "description": "System roles cannot be renamed or weakened" } } },
-      "delete": { "tags": ["roles"], "summary": "Delete a role", "responses": { "200": { "description": "Deleted" }, "409": { "description": "System role, or the role is still assigned" } } }
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Read a role",
+        "responses": {
+          "200": {
+            "description": "Role"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Update a role",
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "409": {
+            "description": "System roles cannot be renamed or weakened"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Delete a role",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "409": {
+            "description": "System role, or the role is still assigned"
+          }
+        }
+      }
     },
     "/permissions": {
-      "get": { "tags": ["roles"], "summary": "Every permission the application enforces", "responses": { "200": { "description": "Permissions" } } }
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Every permission the application enforces",
+        "responses": {
+          "200": {
+            "description": "Permissions"
+          }
+        }
+      }
     },
     "/languages": {
-      "get": { "tags": ["auth"], "summary": "Supported interface languages", "security": [], "responses": { "200": { "description": "Languages" } } }
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Supported interface languages",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Languages"
+          }
+        }
+      }
     },
     "/branding": {
       "get": {
-        "tags": ["settings"],
+        "tags": [
+          "settings"
+        ],
         "summary": "Instance title, logo and footer",
         "security": [],
         "description": "Public on purpose: the sign-in screen needs it before anyone is authenticated.",
-        "responses": { "200": { "description": "Branding" } }
+        "responses": {
+          "200": {
+            "description": "Branding"
+          }
+        }
       }
     },
     "/settings/branding": {
-      "put": { "tags": ["settings"], "summary": "Save branding", "responses": { "200": { "description": "Saved" }, "403": { "description": "Built-in administrator only" } } }
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Save branding",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "403": {
+            "description": "Built-in administrator only"
+          }
+        }
+      }
+    },
+    "/setup": {
+      "get": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "What a fresh installation still has to settle",
+        "description": "Each step reports whether it is done, worked out from what is actually configured rather than from a record of the wizard having been shown - so a setting that is undone makes its step outstanding again. Two steps are required (the administrator password and the timezone); the rest are optional. Built-in administrator only, because a list of what is not yet configured is a useful thing for an attacker to read. Deliberately reachable while the initial password blocks the rest of the API.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/setup/complete": {
+      "post": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "Dismiss the wizard",
+        "description": "Records that the wizard was dismissed, which settles the optional steps only. It reappears by itself while any required step is outstanding, so this cannot be used to run an installation without a timezone.",
+        "responses": {
+          "201": {
+            "description": "Dismissed"
+          }
+        }
+      }
+    },
+    "/setup/keep-database": {
+      "post": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "Confirm the current database and settle that step",
+        "description": "Records that the database question was answered by keeping what this process already runs on. The step is required and comes first, because everything else is stored in the database it chooses; without a way to say \"this one is fine\", an installation happy on SQLite could never complete the wizard.",
+        "responses": {
+          "201": {
+            "description": "Settled"
+          }
+        }
+      }
+    },
+    "/settings/operational": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read the operational limits",
+        "description": "Returns three things: the values an administrator has overridden, the values currently in force, and the values the configuration file supplies. An absent field under \"configured\" means that limit still follows the file.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Set the operational limits",
+        "description": "Send only the fields to override; omitting one makes it follow the configuration file again, and an empty object resets everything. Values are bounded on save, because this screen can otherwise lock out its own administrator. Takes effect within seconds, without a restart. Administrator only.",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
+    },
+    "/settings/timezone": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read the instance-wide timezone",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Set the instance-wide timezone",
+        "description": "Decides which calendar day a booking falls on for every user who has not set their own. Administrator only.",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
     },
     "/settings/datasource": {
-      "get": { "tags": ["settings"], "summary": "Read the stored database connection; the password is never returned", "responses": { "200": { "description": "Connection" } } },
-      "put": { "tags": ["settings"], "summary": "Save the database connection; applied on the next restart", "responses": { "200": { "description": "Saved" } } }
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read the stored database connection; the password is never returned",
+        "responses": {
+          "200": {
+            "description": "Connection"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Save the database connection; applied on the next restart",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
     },
     "/settings/datasource/test": {
-      "post": { "tags": ["settings"], "summary": "Probe a database connection without saving or switching to it", "responses": { "201": { "description": "Result; the `ok` field tells success from failure" } } }
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Probe a database connection without saving or switching to it",
+        "responses": {
+          "201": {
+            "description": "Result; the `ok` field tells success from failure"
+          }
+        }
+      }
     },
     "/settings/ldap": {
-      "get": { "tags": ["settings"], "summary": "Read the LDAP configuration; the bind password is never returned", "responses": { "200": { "description": "Configuration" } } },
-      "put": { "tags": ["settings"], "summary": "Save the LDAP configuration; takes effect immediately", "responses": { "200": { "description": "Saved" } } }
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read the LDAP configuration; the bind password is never returned",
+        "responses": {
+          "200": {
+            "description": "Configuration"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Save the LDAP configuration; takes effect immediately",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
     },
     "/settings/ldap/test": {
-      "post": { "tags": ["settings"], "summary": "Probe an LDAP connection without saving it", "responses": { "201": { "description": "Result; the `ok` field tells success from failure" } } }
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Probe an LDAP connection without saving it",
+        "responses": {
+          "201": {
+            "description": "Result; the `ok` field tells success from failure"
+          }
+        }
+      }
     }
   },
   "components": {
     "securitySchemes": {
-      "bearerAuth": { "type": "http", "scheme": "bearer", "description": "A personal API token." },
-      "apiToken": { "type": "apiKey", "in": "header", "name": "X-API-Token" },
-      "sessionCookie": { "type": "apiKey", "in": "cookie", "name": "gtr_session" }
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A personal API token. Not subject to the CSRF check, since a browser never sends this header on its own."
+      },
+      "apiToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Token"
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "gtr_session",
+        "description": "A browser session. State-changing calls made with this must also echo the gtr_csrf cookie in the X-CSRF-Token header and come from this origin; calls authenticated by a personal API token are exempt."
+      },
+      "csrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "description": "The value of the gtr_csrf cookie, echoed back. Required alongside sessionCookie on POST, PUT, PATCH and DELETE."
+      }
     },
     "schemas": {
       "TimesheetInput": {
         "type": "object",
-        "required": ["date", "durationHours"],
+        "required": [
+          "date",
+          "durationHours"
+        ],
         "properties": {
-          "userId": { "type": "integer", "description": "Defaults to the caller." },
-          "projectId": { "type": "integer", "nullable": true, "description": "Optional; omit for uncategorised hours." },
-          "date": { "type": "string", "format": "date" },
-          "durationHours": { "type": "number", "minimum": 0.01, "maximum": 24 },
-          "description": { "type": "string", "nullable": true },
-          "status": { "type": "string", "enum": ["open", "submitted", "approved", "rejected"] }
+          "userId": {
+            "type": "integer",
+            "description": "Defaults to the caller."
+          },
+          "projectId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Optional; omit for uncategorised hours."
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "durationHours": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 24
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "submitted",
+              "approved",
+              "rejected"
+            ]
+          }
         }
       },
       "ProjectInput": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "description": { "type": "string", "nullable": true },
-          "startDate": { "type": "string", "format": "date" },
-          "endDate": { "type": "string", "format": "date", "nullable": true },
-          "status": { "type": "string", "enum": ["active", "completed", "archived"] },
-          "private": { "type": "boolean", "description": "Creates a personal project owned by the caller." }
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "archived"
+            ]
+          },
+          "private": {
+            "type": "boolean",
+            "description": "Creates a personal project owned by the caller."
+          }
         }
       }
     }

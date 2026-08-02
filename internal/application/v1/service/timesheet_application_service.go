@@ -28,8 +28,11 @@ type TimesheetApplicationService struct {
 	userRepository      repository.UserRepository
 	projectRepository   repository.ProjectRepository
 
-	// maxDailyHours caps what one user may book on a single day.
+	// maxDailyHours caps what one user may book on a single day. It is the
+	// value the environment configured; limits, when attached, may override it
+	// with what an administrator set from the Settings screen.
 	maxDailyHours float64
+	limits        *LimitsProvider
 }
 
 // NewTimesheetApplicationService creates new instance
@@ -273,6 +276,7 @@ func normalizeProjectID(projectID uint) *uint {
 
 // checkDailyBudget rejects a booking that would push the user over the daily
 // cap. excludeID skips one entry so an update does not count itself twice.
+
 func (s *TimesheetApplicationService) checkDailyBudget(
 	ctx context.Context,
 	userID uint,
@@ -280,7 +284,8 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 	hours float64,
 	excludeID uint,
 ) error {
-	if s.maxDailyHours <= 0 {
+	limit := s.dailyCap(ctx)
+	if limit <= 0 {
 		return nil
 	}
 
@@ -306,9 +311,9 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 		total += entry.DurationHours
 	}
 
-	if total > s.maxDailyHours {
+	if total > limit {
 		return apperror.Conflictf("booking %.2fh would total %.2fh on %s, over the %.2fh daily limit",
-			hours, total, from.Format(time.DateOnly), s.maxDailyHours)
+			hours, total, from.Format(time.DateOnly), limit)
 	}
 
 	return nil
@@ -369,6 +374,23 @@ func validateTimesheet(date time.Time, hours float64, status string) error {
 	}
 
 	return nil
+}
+
+// dailyCap is the administered booking limit, or the one the environment set.
+func (s *TimesheetApplicationService) dailyCap(ctx context.Context) float64 {
+	if s.limits == nil {
+		return s.maxDailyHours
+	}
+
+	return s.limits.Limits(ctx).MaxDailyHours
+}
+
+// WithLimits attaches the administered limits, so a change to the daily cap
+// applies without a restart.
+func (s *TimesheetApplicationService) WithLimits(limits *LimitsProvider) *TimesheetApplicationService {
+	s.limits = limits
+
+	return s
 }
 
 func startOfDay(t time.Time) time.Time {

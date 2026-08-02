@@ -168,6 +168,25 @@ func (r *UserRepository) GetByEmail(_ context.Context, email string) (*model.Use
 	return nil, apperror.NotFound("user", email)
 }
 
+func (r *UserRepository) GetByExternalID(_ context.Context, externalID string) (*model.User, error) {
+	if externalID == "" {
+		return nil, apperror.NotFound("user", "")
+	}
+
+	r.store.mu.RLock()
+	defer r.store.mu.RUnlock()
+
+	for _, user := range r.store.items {
+		if user.ExternalID == externalID {
+			found := *user
+
+			return r.withRoleName(&found), nil
+		}
+	}
+
+	return nil, apperror.NotFound("user", externalID)
+}
+
 func (r *UserRepository) GetAll(_ context.Context) ([]*model.User, error) {
 	users := r.store.all()
 	for _, user := range users {

@@ -7,6 +7,13 @@ import (
 	"reflect"
 	"time"
 
+	// The timezone database, compiled in. Without it time.LoadLocation depends
+	// on zoneinfo files being present on the host, which a scratch or distroless
+	// container has none of - and the binary is meant to be self-contained. The
+	// cost is a few hundred kilobytes; the alternative is every zone silently
+	// resolving to UTC and bookings landing on the wrong day.
+	_ "time/tzdata"
+
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
 
@@ -84,19 +91,37 @@ func main() {
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
 	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo)
+	setup := appservice.NewSetupService(settingsService, userRepo, cfg.Dialect)
 
 	// The directory starts unconfigured and is loaded from the settings once
 	// the database is reachable, so a broken LDAP entry cannot stop start-up.
 	ldapClient := directory.New()
 
+	// The environment's values are the floor: anything the administrator has not
+	// overridden from the Settings screen keeps coming from here.
+	limits := appservice.NewLimitsProvider(settingsService, model.Limits{
+		SessionLifetimeHours:   cfg.SessionLifetime.Hours(),
+		MaxDailyHours:          cfg.MaxDailyHours,
+		RateLimit:              cfg.RateLimit,
+		RateLimitWindowSeconds: int(cfg.RateLimitWindow.Seconds()),
+		AutoCloseAfterDays:     cfg.AutoCloseAfterDays,
+		LDAPSyncMaxDeleteRatio: cfg.LDAPSyncMaxDeleteRatio,
+	})
+
 	sessions := appservice.NewSessionService(userRepo, roleRepo, sessionRepo, auth, cfg.SessionLifetime).
-		WithExternalAuth(ldapClient, model.RoleEmployee)
+		WithExternalAuth(ldapClient, model.RoleEmployee).
+		WithLimits(limits)
+
+	ldapSync := appservice.NewLDAPSyncService(ldapClient, userRepo, roleRepo, timesheetRepo,
+		userRepo, cfg.LDAPSyncMaxDeleteRatio, model.RoleEmployee).
+		WithLimits(limits)
 
 	users := appservice.NewUserApplicationService(userRepo, roleRepo)
 	roles := appservice.NewRoleApplicationService(roleRepo)
 	projects := appservice.NewProjectApplicationService(projectRepo, timesheetRepo)
 	timesheets := appservice.NewTimesheetApplicationService(
-		timesheetRepo, userRepo, projectRepo, cfg.MaxDailyHours)
+		timesheetRepo, userRepo, projectRepo, cfg.MaxDailyHours).
+		WithLimits(limits)
 	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo)
 
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
@@ -150,7 +175,11 @@ func main() {
 	// the rate limit, then the cookie queue wrapping the two authentication
 	// paths, and only then the UI.
 	app.UseMiddleware(rest.SecurityHeaders(cfg.HSTSMaxAge))
-	app.UseMiddleware(rest.NewRateLimiter(cfg.RateLimit, cfg.RateLimitWindow).Middleware())
+	app.UseMiddleware(rest.NewRateLimiter(cfg.RateLimit, cfg.RateLimitWindow).
+		WithLimits(limits.RateLimit).Middleware())
+	// Before the authentication middleware, so a forged request is turned away
+	// without a session ever being resolved for it.
+	app.UseMiddleware(rest.CSRFMiddleware())
 	app.UseMiddleware(rest.CookieMiddleware())
 	app.UseMiddleware(rest.SessionMiddleware(sessions))
 	// Tokens are checked after sessions and only fill in when no session was
@@ -165,15 +194,28 @@ func main() {
 		app.UseMiddleware(web.Handler())
 	}
 
+	// Read per request rather than cached, so changing the instance zone takes
+	// effect at once instead of at the next restart.
+	instanceTimezone := rest.InstanceTimezoneFunc(func(ctx context.Context) string {
+		name, err := settingsService.Timezone(ctx)
+		if err != nil {
+			return model.DefaultTimezone
+		}
+
+		return name
+	})
+
 	v1.RegisterRoutes(app, v1.Handlers{
-		Auth:       rest.NewAuthHandler(sessions, authorizer, cfg.AppName),
-		Users:      rest.NewUserHandler(users, userDomain, authorizer, auth),
+		Auth:       rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone),
+		Users:      rest.NewUserHandler(users, userDomain, authorizer, auth, instanceTimezone),
 		Roles:      rest.NewRoleHandler(roles, authorizer, auth),
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
-		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer),
-		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer),
+		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),
+		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone),
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
-		Settings: rest.NewSettingsHandler(settingsService, authorizer, cfg.Dialect,
+		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
+		Setup:      rest.NewSetupHandler(setup, authorizer),
+		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits, cfg.Dialect,
 			ldapClient.Configure,
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
 				return ldapClient.TestConnection(ctx, config)
@@ -194,10 +236,45 @@ func main() {
 		}
 	})
 
+	// Directory reconciliation. Off unless a schedule is configured, because a
+	// run deletes accounts the directory no longer holds together with their
+	// recorded hours.
+	if cfg.LDAPSyncSchedule != "" {
+		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", func(ctx *gofr.Context) {
+			report, err := ldapSync.Sync(ctx)
+			if err != nil {
+				ctx.Logger.Errorf("directory sync failed: %v", err)
+
+				return
+			}
+
+			if report.Aborted != "" {
+				ctx.Logger.Warnf("directory sync refused: %s", report.Aborted)
+
+				return
+			}
+
+			for _, removed := range report.Deleted {
+				ctx.Logger.Warnf("directory sync removed %q (%d time entries)",
+					removed.Email, removed.Timesheets)
+			}
+
+			if len(report.Created) > 0 {
+				ctx.Logger.Infof("directory sync added %d account(s)", len(report.Created))
+			}
+		})
+	}
+
 	// Nightly sweep so stale open entries do not linger unreported.
 	if cfg.AutoCloseSchedule != "" {
 		app.AddCronJob(cfg.AutoCloseSchedule, "auto-submit-stale-timesheets",
-			worker.AutoSubmitStaleTimesheets(timesheetRepo, cfg.AutoCloseAfterDays))
+			worker.AutoSubmitStaleTimesheets(timesheetRepo,
+				func(ctx *gofr.Context) int { return limits.Limits(ctx).AutoCloseAfterDays },
+				func(ctx *gofr.Context) *time.Location {
+					// No user in a cron run, so the instance zone is the only one
+					// that could apply.
+					return model.EffectiveTimezone("", instanceTimezone(ctx))
+				}))
 	}
 
 	if stop := startTLS(app, cfg); stop != nil {

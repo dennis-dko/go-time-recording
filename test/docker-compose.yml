@@ -1,0 +1,100 @@
+# Throwaway backing services for trying the application against something
+# other than SQLite, and against a real directory.
+#
+# Everything here is deliberately insecure and deliberately ephemeral: fixed
+# trivial passwords, no volumes, no restart policy. It exists so a database
+# connection and an LDAP bind can be exercised for real, and it must never be
+# mistaken for a deployment example - see ../Dockerfile for that.
+#
+#   docker compose --profile postgres up -d
+#   docker compose --profile ldap up -d
+#   docker compose --profile all up -d
+#
+# Profiles keep it to what is needed: starting three databases to test one is
+# a slow way to find out the third does not fit in memory.
+
+name: gtr-test
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    profiles: [postgres, all]
+    environment:
+      POSTGRES_DB: go-time-recording
+      POSTGRES_USER: gtr
+      POSTGRES_PASSWORD: gtr-test-password
+    ports:
+      - "55432:5432"
+    healthcheck:
+      # pg_isready alone reports the socket is up while the server is still
+      # replaying its bootstrap, so a real query is the check.
+      test: ["CMD-SHELL", "pg_isready -U gtr -d go-time-recording && psql -U gtr -d go-time-recording -c 'SELECT 1'"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  mysql:
+    image: mysql:8.4
+    profiles: [mysql, all]
+    environment:
+      MYSQL_DATABASE: go-time-recording
+      MYSQL_USER: gtr
+      MYSQL_PASSWORD: gtr-test-password
+      MYSQL_ROOT_PASSWORD: gtr-test-root
+    ports:
+      - "53306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ugtr", "-pgtr-test-password"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  # A seeded OpenLDAP, built here rather than pulled. The seed is the point: it
+  # contains the cases the synchronisation has to get right, not just a user
+  # that can bind. See ldap/Dockerfile for why it is not a stock image.
+  openldap:
+    profiles: [ldap, all]
+    build: ./ldap
+    ports:
+      - "5389:389"
+    healthcheck:
+      # A real search for a real entry, not a port check: an empty directory
+      # answers on 389 just as readily as a seeded one, and would pass.
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://127.0.0.1:389 -b dc=example,dc=com -D 'cn=admin,dc=example,dc=com' -w gtr-test-password '(uid=alice)' | grep -q '^dn:'"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # Runs the connection probe from inside the network, where the service names
+  # resolve and the published ports do not. A check that passes from the host
+  # but fails here is a networking problem, not a credentials problem.
+  probe:
+    profiles: [probe]
+    build:
+      # The repository root, so the probe is built from the application's own
+      # go.mod and connects with the same drivers it does.
+      context: ..
+      dockerfile: test/Dockerfile.probe
+    command:
+      - --db=postgres
+      - --dsn=postgres://gtr:gtr-test-password@postgres:5432/go-time-recording?sslmode=disable
+      # The container port, not the published one: inside the network the
+      # service name resolves and 5389 does not exist.
+      - --ldap=ldap://openldap:389
+      - --base-dn=dc=example,dc=com
+      - --bind-dn=cn=admin,dc=example,dc=com
+      - --bind-password=gtr-test-password
+
+  # A browser for the directory, for when a failing bind needs looking at
+  # rather than guessing at.
+  ldap-ui:
+    image: osixia/phpldapadmin:0.9.0
+    profiles: [ldap, all]
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: openldap
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "5080:80"
+    depends_on:
+      openldap:
+        condition: service_healthy

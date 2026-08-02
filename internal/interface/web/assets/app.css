@@ -1,3 +1,15 @@
+/*
+ * Light is the base, dark is an override, and theme.js decides which by
+ * stamping data-theme on <html> before the first paint.
+ *
+ * The three layers below are ordered deliberately:
+ *   1. :root            - light, and the answer if script never runs at all
+ *   2. prefers-color-scheme - only while nothing has been stamped yet, so the
+ *                        operating system's preference covers that instant
+ *   3. [data-theme]     - the decision, which must beat the media query in
+ *                        both directions: someone who picks light at midnight
+ *                        gets light, on a machine set to dark.
+ */
 :root {
   --bg: #f5f6f8;
   --surface: #ffffff;
@@ -8,10 +20,13 @@
   --accent-text: #ffffff;
   --danger: #c0392b;
   --radius: 10px;
+
+  /* Tells form controls and scrollbars which palette they are sitting on. */
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --bg: #14171a;
     --surface: #1c2126;
     --border: #2c333b;
@@ -20,7 +35,32 @@
     --accent: #5b8dfa;
     --accent-text: #0d1117;
     --danger: #e06c5c;
+    color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #14171a;
+  --surface: #1c2126;
+  --border: #2c333b;
+  --text: #e8eaed;
+  --muted: #98a2ad;
+  --accent: #5b8dfa;
+  --accent-text: #0d1117;
+  --danger: #e06c5c;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1c2126;
+  --muted: #626d78;
+  --accent: #2f6feb;
+  --accent-text: #ffffff;
+  --danger: #c0392b;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -446,3 +486,141 @@ input[type="file"] { border: none; background: none; padding: 6px 0; }
 .method-delete { background: #c0392b; }
 
 .topbar a.tab { text-decoration: none; }
+
+/* ------------------------------------------------------------ setup wizard */
+
+/*
+ * Sits above everything but the sign-in screen, which must always win: an
+ * expired session behind a modal would be a dead end.
+ */
+.overlay {
+  align-items: center;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 25;
+}
+
+.overlay-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 40px rgb(0 0 0 / 25%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: calc(100vh - 40px);
+  max-width: 560px;
+  overflow-y: auto;
+  padding: 24px;
+  width: 100%;
+}
+
+.setup-head h2 { margin: 0 0 4px; }
+.setup-head p { margin: 0; }
+
+/* The trail through the steps: numbered, with the current one marked, so the
+ * shape of what is left is visible without reading. */
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.setup-steps li {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  gap: 6px;
+  padding: 4px 12px;
+}
+
+.setup-steps li.current {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.setup-steps li.done {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--text);
+}
+
+.setup-steps li.done::before { content: "\2713"; color: var(--accent); }
+.setup-steps li.required:not(.done)::before { content: "\2022"; color: var(--danger); }
+
+.setup-body { border-top: 1px solid var(--border); padding-top: 16px; }
+.setup-body h3 { margin: 0 0 6px; }
+.setup-body p { margin: 0 0 12px; }
+
+.setup-body label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.setup-error { color: var(--danger); font-size: 14px; margin: 8px 0 0; }
+
+.setup-actions { align-items: center; }
+
+/* Pushes the two text buttons away from the primary action, so "Finish later"
+ * is never the thing a fast click lands on. */
+.setup-actions #setup-skip { margin-left: auto; }
+
+/* ------------------------------------------------------------- guided tour */
+
+/*
+ * The spotlight is one element with an enormous spread shadow: the shadow
+ * covers the page and the element's own box punches the hole. That keeps it to
+ * a single node whose position is set from the target's bounding rectangle, so
+ * the highlight follows the real control rather than a copy of it.
+ */
+.tour-spotlight {
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--bg) 78%, transparent);
+  pointer-events: none;
+  position: absolute;
+  transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease;
+  z-index: 40;
+}
+
+.tour-bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 28%);
+  max-width: 340px;
+  padding: 16px 18px;
+  position: absolute;
+  width: max-content;
+  z-index: 41;
+}
+
+.tour-bubble h3 { font-size: 15px; margin: 0 0 6px; }
+.tour-bubble p { font-size: 14px; margin: 0 0 12px; }
+
+.tour-count {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.tour-actions { align-items: center; }
+.tour-actions #tour-end { margin-left: auto; }
+
+/* Motion is decoration here; the tour works identically without it. */
+@media (prefers-reduced-motion: reduce) {
+  .tour-spotlight { transition: none; }
+}

@@ -17,7 +17,7 @@ import (
 const userSelect = `SELECT u.id, u.name, u.email, u.role_id, COALESCE(r.name, ''),
 	u.password_hash, u.must_change_password, u.is_system,
 	u.daily_target_hours, u.max_daily_hours,
-	u.totp_secret, u.totp_enabled, u.language, u.is_external
+	u.totp_secret, u.totp_enabled, u.language, u.is_external, u.external_id, u.timezone, u.tour_seen
 	FROM users u LEFT JOIN roles r ON r.id = u.role_id`
 
 // UserRepository stores users in a SQL database.
@@ -37,10 +37,12 @@ func (r *UserRepository) Save(ctx context.Context, user *model.User) (*model.Use
 	id, err := r.insert(ctx,
 		"INSERT INTO users (name, email, role_id, password_hash, must_change_password, "+
 			"is_system, daily_target_hours, max_daily_hours, totp_secret, totp_enabled, "+
-			"language, is_external) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"language, is_external, external_id, timezone, tour_seen) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		user.Name, user.Email, user.RoleID, user.PasswordHash, user.MustChangePassword,
 		user.IsSystem, user.DailyTargetHours, user.MaxDailyHours,
-		user.TOTPSecret, user.TOTPEnabled, user.Language, user.IsExternal)
+		user.TOTPSecret, user.TOTPEnabled, user.Language, user.IsExternal, user.ExternalID,
+		user.Timezone, user.TourSeen)
 	if err != nil {
 		return nil, translateUserErr(err, user.Email)
 	}
@@ -55,6 +57,27 @@ func (r *UserRepository) GetByID(ctx context.Context, id uint) (*model.User, err
 	user, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, apperror.NotFound("user", strconv.FormatUint(uint64(id), 10))
+	}
+
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	return user, nil
+}
+
+// GetByExternalID resolves a directory-backed account by the identifier the
+// directory assigned it, which never changes for the life of that account.
+func (r *UserRepository) GetByExternalID(ctx context.Context, externalID string) (*model.User, error) {
+	if externalID == "" {
+		return nil, apperror.NotFound("user", "")
+	}
+
+	row := r.db.QueryRowContext(ctx, r.rebind(userSelect+" WHERE u.external_id = ?"), externalID)
+
+	user, err := scanUser(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, apperror.NotFound("user", externalID)
 	}
 
 	if err != nil {
@@ -109,10 +132,12 @@ func (r *UserRepository) Update(ctx context.Context, user *model.User) (*model.U
 	affected, err := r.exec(ctx,
 		"UPDATE users SET name = ?, email = ?, role_id = ?, password_hash = ?, "+
 			"must_change_password = ?, daily_target_hours = ?, max_daily_hours = ?, "+
-			"totp_secret = ?, totp_enabled = ?, language = ?, is_external = ? WHERE id = ?",
+			"totp_secret = ?, totp_enabled = ?, language = ?, is_external = ?, "+
+			"external_id = ?, timezone = ?, tour_seen = ? WHERE id = ?",
 		user.Name, user.Email, user.RoleID, user.PasswordHash, user.MustChangePassword,
 		user.DailyTargetHours, user.MaxDailyHours,
-		user.TOTPSecret, user.TOTPEnabled, user.Language, user.IsExternal, user.ID)
+		user.TOTPSecret, user.TOTPEnabled, user.Language, user.IsExternal,
+		user.ExternalID, user.Timezone, user.TourSeen, user.ID)
 	if err != nil {
 		return nil, translateUserErr(err, user.Email)
 	}
@@ -148,7 +173,8 @@ func scanUser(s scanner) (*model.User, error) {
 	err := s.Scan(&user.ID, &user.Name, &user.Email, &user.RoleID, &user.RoleName,
 		&user.PasswordHash, &user.MustChangePassword, &user.IsSystem,
 		&user.DailyTargetHours, &user.MaxDailyHours,
-		&user.TOTPSecret, &user.TOTPEnabled, &user.Language, &user.IsExternal)
+		&user.TOTPSecret, &user.TOTPEnabled, &user.Language, &user.IsExternal, &user.ExternalID,
+		&user.Timezone, &user.TourSeen)
 	if err != nil {
 		return nil, err
 	}

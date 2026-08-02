@@ -16,12 +16,21 @@ import (
 // open for longer than afterDays, so forgotten entries still reach approval.
 //
 // The job only moves open -> submitted; approving remains a human decision.
+//
+// timezone reports the instance zone, read on each run so an administrator
+// changing it does not have to restart. The cutoff is a calendar day, and a
+// job running at 03:00 server time would otherwise count a different day than
+// the people whose entries it is submitting.
+// afterDays is likewise read per run rather than captured, so the Settings
+// screen can change how long an entry may stay open without a restart.
 func AutoSubmitStaleTimesheets(
 	timesheets repository.TimesheetRepository,
-	afterDays int,
+	afterDays func(ctx *gofr.Context) int,
+	timezone func(ctx *gofr.Context) *time.Location,
 ) gofr.CronFunc {
 	return func(ctx *gofr.Context) {
-		cutoff := time.Now().AddDate(0, 0, -afterDays)
+		days := afterDays(ctx)
+		cutoff := time.Now().In(timezone(ctx)).AddDate(0, 0, -days)
 
 		stale, err := timesheets.GetByFilter(ctx, repository.TimesheetFilter{
 			Status:  model.TimesheetStatusOpen,
@@ -49,7 +58,7 @@ func AutoSubmitStaleTimesheets(
 		}
 
 		if submitted > 0 {
-			ctx.Logger.Infof("auto-submit: submitted %d timesheet(s) older than %d days", submitted, afterDays)
+			ctx.Logger.Infof("auto-submit: submitted %d timesheet(s) older than %d days", submitted, days)
 		}
 	}
 }
