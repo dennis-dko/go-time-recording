@@ -103,6 +103,11 @@ jobs:
         with:
           context: .
           push: true
+          # The tag is the version, and it has to reach the binary: the footer
+          # reads it, and a release that calls itself "dev" is worse than no
+          # version at all.
+          build-args: |
+            VERSION=${{ github.ref_name }}
           tags: |
             ${{ steps.image.outputs.name }}:${{ github.ref_name }}
             ${{ steps.image.outputs.name }}:latest

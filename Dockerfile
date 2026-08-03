@@ -23,6 +23,26 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 
 FROM alpine:3.22
 
+# The version again: ARG does not cross a FROM, and the labels below want it.
+ARG VERSION=dev
+
+# What links this image to its repository.
+#
+# GHCR reads org.opencontainers.image.source and, when it names a repository on
+# the same account, attaches the package to it: the repository grows a Packages
+# section, the package page gains a link back to the source, and tooling that
+# wants to know where an image came from can find out. Without it the package
+# exists but is an orphan, reachable only through the account's Packages tab.
+#
+# The rest is the standard set a registry and a `docker inspect` will show.
+LABEL org.opencontainers.image.source="https://github.com/dennis-dko/go-time-recording" \
+      org.opencontainers.image.url="https://github.com/dennis-dko/go-time-recording" \
+      org.opencontainers.image.documentation="https://github.com/dennis-dko/go-time-recording#readme" \
+      org.opencontainers.image.title="go-time-recording" \
+      org.opencontainers.image.description="Project time tracking as a single self-contained binary: REST API, embedded web interface, SQLite, PostgreSQL or MySQL." \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}"
+
 RUN apk add --no-cache ca-certificates tzdata \
     && adduser -D -u 10001 app
 

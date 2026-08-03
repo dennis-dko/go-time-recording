@@ -213,6 +213,11 @@ jobs:
         with:
           context: .
           push: true
+          # Without this the binary and the labels both say "dev", so the version
+          # in the footer of a deployed image would answer "which build is this?"
+          # with "a build".
+          build-args: |
+            VERSION=edge-${{ github.sha }}
           tags: |
             ${{ steps.image.outputs.name }}:edge
             ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
