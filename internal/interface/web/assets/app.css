@@ -295,6 +295,14 @@ tbody tr:last-child td { border-bottom: none; }
   font-size: 14px;
 }
 
+/* Maintenance is not the same kind of news as an announcement, so it does not
+   look the same. Stronger, and it sits above the announcement banner. */
+.banner-warn {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  font-weight: 500;
+}
+
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 
 button.secondary {

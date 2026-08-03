@@ -73,6 +73,17 @@ async function api(path, options = {}) {
 
   if (!res.ok) {
     const err = new Error(errorMessage(body) || `${t('msg.error', 'Error')} ${res.status}`);
+
+    // A 503 from maintenance mode is not a failure of this request, it is the
+    // state of the installation. Showing the banner here means every screen
+    // reports it the same way rather than each one growing its own handling.
+    if (res.status === 503 && body?.error?.maintenance) {
+      const banner = $('#maintenance-banner');
+      if (banner) {
+        banner.textContent = err.message;
+        banner.hidden = false;
+      }
+    }
     // The status alongside the message, so a caller can tell "you are not
     // signed in" from "that did not work" without parsing prose. The log
     // viewer's poller needs exactly that distinction: on a 401 it has to stop
@@ -499,6 +510,16 @@ const TRANSLATIONS = {
     'msg.booked': 'Zeit gebucht',
     'msg.categoryCreated': 'Projekt angelegt',
     'msg.entryDeleted': 'Eintrag gelöscht',
+    'maint.confirm': 'Installation außer Betrieb nehmen? Alle außer diesem Konto werden abgewiesen.',
+    'maint.default': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
+    'maint.enabled': 'Außer Betrieb',
+    'maint.hint': 'Weist alle anderen mit einem Hinweis ab, während die Installation weiterläuft. Vor dem Wiederherstellen oder Verschieben der Datenbank zu benutzen: in diesem Zeitraum erfasste Zeiten sind verloren, sobald der Stand zurückgespielt wird, und wer sie erfasst hat, erfährt es nicht.',
+    'maint.message': 'Hinweis für alle anderen',
+    'maint.messagePlaceholder': 'Ab 14:00 wieder erreichbar',
+    'maint.offSaved': 'Die Installation ist wieder in Betrieb.',
+    'maint.onSaved': 'Die Installation ist jetzt außer Betrieb.',
+    'maint.title': 'Wartungsmodus',
+    'maint.who': 'Solange er aktiv ist, kann nur dieser eingebaute Administrator arbeiten. Alle anderen, auch weitere Administratoren, werden abgewiesen — genau das ist der Zweck.',
     'msg.error': 'Fehler',
     'msg.initFailed': 'Initialisierung fehlgeschlagen',
     'msg.loadFailed': 'Konnte nicht alles laden',
@@ -1311,6 +1332,8 @@ async function loadBranding() {
 async function loadAdmin() {
   $('#tab-admin').hidden = !isSystemAdmin();
   if (!isSystemAdmin()) return;
+
+  await loadMaintenance();
 
   const branding = await api('/branding');
   const form = $('#form-branding');
@@ -2903,6 +2926,79 @@ function formatLogTime(iso) {
   return at.toLocaleTimeString(undefined, { hour12: false });
 }
 
+// -------------------------------------------------------- maintenance mode
+
+/**
+ * Renders the notice, and reports whether the installation is out of service.
+ *
+ * Read on its own rather than as part of the branding, because it has to work on
+ * the sign-in screen - where there is no session and most of the API is refused.
+ */
+async function loadMaintenance() {
+  const banner = $('#maintenance-banner');
+  if (!banner) return false;
+
+  let state = { enabled: false, message: '' };
+
+  try {
+    state = await api('/maintenance');
+  } catch {
+    // Not fatal. An installation whose settings cannot be read has a bigger
+    // problem than a missing banner, and the request that needs them will say so.
+    banner.hidden = true;
+
+    return false;
+  }
+
+  banner.textContent = state.enabled
+    ? (state.message || t('maint.default', 'This installation is temporarily unavailable for maintenance.'))
+    : '';
+  banner.hidden = !state.enabled;
+
+  // The form, for the administrator who is looking at it.
+  const form = $('#form-maintenance');
+  if (form) {
+    form.elements.enabled.checked = Boolean(state.enabled);
+    form.elements.message.value = state.message ?? '';
+  }
+
+  return Boolean(state.enabled);
+}
+
+function wireMaintenance() {
+  const form = $('#form-maintenance');
+  if (!form) return;
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    const enabled = form.elements.enabled.checked;
+
+    // Asked about only when switching it on. Turning it off needs no
+    // confirmation: that is the direction that ends an outage, and a dialog in
+    // front of it is a dialog between somebody and fixing their installation.
+    if (enabled) {
+      const question = t('maint.confirm',
+        'Turn this installation out of service? Everyone except this account will be turned away.');
+      if (!window.confirm(question)) {
+        form.elements.enabled.checked = false;
+
+        return;
+      }
+    }
+
+    mutate(
+      () => api('/settings/maintenance', {
+        method: 'PUT',
+        body: JSON.stringify({ enabled, message: form.elements.message.value }),
+      }),
+      enabled
+        ? t('maint.onSaved', 'The installation is now out of service.')
+        : t('maint.offSaved', 'The installation is back in service.'),
+      loadMaintenance);
+  });
+}
+
 // ---------------------------------------------------------------- timezone
 
 /**
@@ -3322,6 +3418,7 @@ async function init() {
   // Before the sign-in screen is shown, so its passkey button appears with it
   // rather than popping in afterwards.
   await loadPasskeySupport();
+  await loadMaintenance();
 
   try {
     wireForms();
@@ -3336,6 +3433,7 @@ async function init() {
     wireTour();
     wirePasskeys();
     wireLogViewer();
+    wireMaintenance();
     $('#logout').addEventListener('click', doLogout);
     $('#language-picker').addEventListener('change', (e) => mutate(
       () => api('/me/language', { method: 'PUT', body: JSON.stringify({ language: e.target.value }) }),

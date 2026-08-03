@@ -28,6 +28,21 @@ type SettingsHandler struct {
 	// the branding because the footer renders both and one request is better
 	// than two for something on every page.
 	version string
+
+	// maintenance is dropped from cache after a save, so the switch takes effect
+	// on the next request rather than within the cache interval.
+	maintenance MaintenanceState
+}
+
+// WithMaintenance lets the handler clear the cached maintenance state.
+//
+// Fluent rather than a constructor parameter because the middleware that owns the
+// cache is built after the handlers, and threading it back through the
+// constructor would mean building one of them twice.
+func (h *SettingsHandler) WithMaintenance(state MaintenanceState) *SettingsHandler {
+	h.maintenance = state
+
+	return h
 }
 
 // ldapAdmin is the subset of the LDAP client this handler drives, kept as an
@@ -559,4 +574,57 @@ func newLDAPResponse(c model.LDAPConfig) LDAPResponse {
 		},
 		HasPassword: c.BindPassword != "",
 	}
+}
+
+// MaintenanceResponse is the maintenance state on the wire.
+type MaintenanceResponse struct {
+	Enabled bool   `json:"enabled"`
+	Message string `json:"message"`
+}
+
+// Maintenance handles GET /api/v1/maintenance.
+//
+// Public, like the branding, and for the same reason: somebody who opens the page
+// during maintenance should read the notice on the sign-in screen rather than
+// watch requests fail silently. It reveals that an installation is down for
+// maintenance, which is what a maintenance notice is for.
+func (h *SettingsHandler) Maintenance(c *gofr.Context) (any, error) {
+	maintenance, err := h.settings.Maintenance(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return MaintenanceResponse{Enabled: maintenance.Enabled, Message: maintenance.Message}, nil
+}
+
+// SaveMaintenance handles PUT /api/v1/settings/maintenance.
+func (h *SettingsHandler) SaveMaintenance(c *gofr.Context) (any, error) {
+	if err := h.requireAdmin(c); err != nil {
+		return nil, err
+	}
+
+	var req MaintenanceResponse
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	saved := model.Maintenance{Enabled: req.Enabled, Message: req.Message}
+
+	if err := h.settings.SaveMaintenance(c, saved); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if h.maintenance != nil {
+		h.maintenance.Invalidate()
+	}
+
+	// Read back rather than echo: the message is trimmed and cut on the way in,
+	// so echoing the request would show the administrator something the
+	// installation is not going to say.
+	stored, err := h.settings.Maintenance(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return MaintenanceResponse{Enabled: stored.Enabled, Message: stored.Message}, nil
 }

@@ -137,6 +137,40 @@ func (s *SettingsService) Operational(ctx context.Context) (model.Operational, e
 	return operational, nil
 }
 
+// Maintenance reports whether the installation is out of service.
+//
+// A corrupt or unreadable entry reads as off. The alternative - failing closed -
+// would turn a bad byte in one settings row into an outage nobody can end,
+// because ending it needs the screen that this same call feeds.
+func (s *SettingsService) Maintenance(ctx context.Context) (model.Maintenance, error) {
+	raw, err := s.settings.Get(ctx, model.SettingMaintenance)
+	if err != nil {
+		return model.Maintenance{}, err
+	}
+
+	var maintenance model.Maintenance
+
+	if raw == "" {
+		return maintenance, nil
+	}
+
+	if err := json.Unmarshal([]byte(raw), &maintenance); err != nil {
+		return model.Maintenance{}, nil
+	}
+
+	return maintenance, nil
+}
+
+// SaveMaintenance turns maintenance mode on or off.
+func (s *SettingsService) SaveMaintenance(ctx context.Context, maintenance model.Maintenance) error {
+	encoded, err := json.Marshal(maintenance.Normalise())
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	return s.settings.Set(ctx, model.SettingMaintenance, string(encoded))
+}
+
 // SaveOperational stores the administered limits.
 func (s *SettingsService) SaveOperational(ctx context.Context, operational model.Operational) error {
 	if invalid := operational.InvalidOperationalFields(); len(invalid) > 0 {

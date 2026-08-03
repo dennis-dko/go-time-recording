@@ -20,6 +20,11 @@ const (
 	// Settings screen, layered over what the environment configured.
 	SettingOperational = "instance.operational"
 
+	// SettingMaintenance takes the installation out of service without stopping
+	// the process, so people cannot record time against a database that is about
+	// to be restored or moved.
+	SettingMaintenance = "instance.maintenance"
+
 	// SettingSetupCompleted records that the first-run wizard was dismissed.
 	// Only that: which steps are done is worked out from what is configured.
 	SettingSetupCompleted = "instance.setupCompleted"

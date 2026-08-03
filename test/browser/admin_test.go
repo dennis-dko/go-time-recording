@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
+	page_ "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 
 	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // Two things that can only be checked in a browser: the log viewer, which is
@@ -291,4 +293,77 @@ func truncateText(s string, max int) string {
 	}
 
 	return s[:max] + "…"
+}
+
+// ------------------------------------------------------- maintenance mode
+
+// The switch has to work from the screen it lives on, and the notice has to be
+// visible afterwards - including on the sign-in screen, which is the only place
+// somebody turned away can read anything at all.
+func TestTurningMaintenanceModeOnAndOffFromTheInterface(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-maintenance", chromedp.ByID))
+
+	// window.confirm blocks a headless browser forever, so it is answered
+	// automatically. The dialog itself is not what this case is about.
+	p.acceptDialogs()
+
+	p.run("turn it on",
+		chromedp.SendKeys(`#form-maintenance input[name="message"]`, "Restoring a backup", chromedp.ByQuery),
+		p.click(`#form-maintenance input[name="enabled"]`),
+		p.click(`#form-maintenance button[type="submit"]`),
+	)
+
+	p.waitForText("#maintenance-banner", "Restoring a backup")
+
+	// Signed out, the notice is what a person sees instead of silence.
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	if !p.visible("#maintenance-banner") {
+		t.Error("the notice is not shown on the sign-in screen, where it matters most")
+	}
+
+	// And back in, the administrator can end it.
+	p.signIn(harness.AdminEmail, adminPassword)
+	p.waitGone("#login-screen")
+	p.settleWizard()
+
+	p.run("turn it off", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-maintenance", chromedp.ByID),
+		p.click(`#form-maintenance input[name="enabled"]`),
+		p.click(`#form-maintenance button[type="submit"]`),
+	)
+
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if !p.visible("#maintenance-banner") {
+			return
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	t.Errorf("the notice is still shown after maintenance mode was turned off: %q",
+		p.text("#maintenance-banner"))
+}
+
+// acceptDialogs answers window.confirm and window.alert automatically.
+//
+// A headless browser has nobody to click them, so an unanswered dialog blocks
+// every later action until the test's deadline - which reads as "the click did
+// nothing" rather than "something asked a question".
+func (p *page) acceptDialogs() {
+	p.t.Helper()
+
+	chromedp.ListenTarget(p.ctx, func(event any) {
+		if _, ok := event.(*page_.EventJavascriptDialogOpening); ok {
+			go func() {
+				_ = chromedp.Run(p.ctx, page_.HandleJavaScriptDialog(true))
+			}()
+		}
+	})
 }

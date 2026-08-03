@@ -37,6 +37,11 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+  <!-- Shown while the installation is out of service. Separate from the
+       announcement banner because it is not news, it is the state the
+       installation is in - and it has to be visible on the sign-in screen too. -->
+  <div id="maintenance-banner" class="banner banner-warn" hidden></div>
+
   <!-- The instance's own announcement, set under Settings. -->
   <div id="instance-banner" class="banner" hidden></div>
 
@@ -519,6 +524,18 @@
     </section>
     <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
+      <form id="form-maintenance" class="card form">
+        <h2 data-i18n="maint.title">Maintenance mode</h2>
+        <p class="muted" data-i18n="maint.hint">Turns everyone else away with a notice while the installation stays running. Use it before restoring or moving the database: time recorded during that window is lost when the snapshot goes back, and whoever recorded it has no way to know.</p>
+        <p class="muted minus" data-i18n="maint.who">While it is on, only this built-in administrator can work. Everyone else, including other administrators, is turned away — that is the point.</p>
+        <div class="grid">
+          <label><input type="checkbox" name="enabled"><span data-i18n="maint.enabled">Out of service</span></label>
+          <label class="wide" data-i18n="maint.message">Notice shown to everyone else<input type="text" name="message" maxlength="300" data-i18n-placeholder="maint.messagePlaceholder" placeholder="Back at 14:00">
+          </label>
+        </div>
+        <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
       <form id="form-branding" class="card form">
         <h2 data-i18n="admin.branding">Appearance</h2>
         <p class="muted" data-i18n="admin.brandingHint">Title, banner, logo and footer of this installation.</p>

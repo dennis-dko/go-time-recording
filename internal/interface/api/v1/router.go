@@ -52,6 +52,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// instance's own title and logo before anyone has authenticated.
 	app.GET(base+"/branding", h.Settings.Branding)
 
+	// Also readable without a session, so the sign-in screen can say why nothing
+	// works rather than letting requests fail without explanation.
+	app.GET(base+"/maintenance", h.Settings.Maintenance)
+	app.PUT(base+"/settings/maintenance", h.Settings.SaveMaintenance)
+
 	app.PUT(base+"/settings/branding", h.Settings.SaveBranding)
 	app.GET(base+"/settings/ldap", h.Settings.LDAP)
 	app.PUT(base+"/settings/ldap", h.Settings.SaveLDAP)
