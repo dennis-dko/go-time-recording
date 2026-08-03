@@ -324,7 +324,51 @@ tasks:
       - echo "Done. Remember to bump the base images in Dockerfile and test/ldap/Dockerfile if the toolchain moved."
 
   clean:
-    desc: 'Upkeep: remove build artifacts.'
+    desc: 'Upkeep: remove everything testing and building leave behind.'
+    summary: |
+      Build output, containers, volumes, locally built images and any instance
+      still holding a database file open.
+
+      That last one is the reason this is more than `rm -rf bin`. A run that was
+      interrupted - Ctrl-C at the wrong moment, a test binary that outlived its
+      test - leaves the application running, and on Windows it keeps the SQLite
+      file open, so removing the directory fails with "Device or resource busy"
+      and the next build inherits the mess.
+
+      Usage:
+        task clean        build output, containers, volumes, stray processes
+        task clean:images ...and the images built locally
     cmds:
+      # Processes first: they are what holds the files the next step deletes.
+      - task: clean:processes
+      - task: env:down
       - rm -rf {{.BIN_DIR}}
       - rm -f coverage.out
+      - echo "Clean. Locally built images are kept - task clean:images removes those too."
+
+  clean:processes:
+    internal: true
+    # Ignored errors throughout: "no such process" is the normal outcome and not
+    # a failure, and this must never be the reason `task clean` stops.
+    cmds:
+      - cmd: '{{if eq OS "windows"}}taskkill /F /IM {{.APP_NAME}}.exe{{else}}pkill -f {{.APP_NAME}}{{end}}'
+        ignore_error: true
+      # The harness builds to app.exe; a test killed mid-run leaves it behind.
+      - cmd: '{{if eq OS "windows"}}taskkill /F /IM app.exe{{else}}true{{end}}'
+        ignore_error: true
+
+  clean:images:
+    desc: 'Upkeep: remove the container images built locally by task image and task stage.'
+    summary: |
+      Separate from `task clean` because images are expensive to rebuild and
+      cheap to keep, so deleting them should be asked for rather than assumed.
+
+      Only images built here are touched. A published image pulled from the
+      registry is left alone.
+    cmds:
+      - cmd: docker rmi {{.APP_NAME}}:{{.VERSION}} {{.APP_NAME}}:latest
+        ignore_error: true
+      - cmd: docker rmi gtr-test-app:latest gtr-test-probe:latest gtr-test-openldap:latest
+        ignore_error: true
+      - docker image prune -f
+      - echo "Locally built images removed."
