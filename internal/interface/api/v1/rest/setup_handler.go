@@ -59,29 +59,6 @@ func (h *SetupHandler) Complete(c *gofr.Context) (any, error) {
 	return state, nil
 }
 
-// KeepDatabase handles POST /api/v1/setup/keep-database.
-//
-// Confirms the database question without changing anything, which is the answer
-// for an installation that is happy on SQLite. It exists because the step is
-// required: without a way to say "this one is fine", nobody choosing SQLite
-// could ever finish the wizard.
-func (h *SetupHandler) KeepDatabase(c *gofr.Context) (any, error) {
-	if err := h.requireSystemAdmin(c); err != nil {
-		return nil, err
-	}
-
-	if err := h.setup.KeepDatabase(c); err != nil {
-		return nil, toHTTPError(err)
-	}
-
-	state, err := h.setup.State(c)
-	if err != nil {
-		return nil, toHTTPError(err)
-	}
-
-	return state, nil
-}
-
 // requireSystemAdmin restricts the wizard to the built-in administrator, which
 // is the account that can reach every screen it points at.
 func (h *SetupHandler) requireSystemAdmin(c *gofr.Context) error {

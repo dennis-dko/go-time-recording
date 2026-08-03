@@ -21,6 +21,14 @@
   --danger: #c0392b;
   --radius: 10px;
 
+  /* Log levels. Own variables rather than reusing --danger and --accent:
+     a log line is read as a category, and four levels that all render as
+     the same two colours cannot be scanned. */
+  --log-warn: #9a6700;
+  --log-error: #b3261e;
+  --log-debug: #6a737d;
+  --log-notice: #0b6bcb;
+
   /* Tells form controls and scrollbars which palette they are sitting on. */
   color-scheme: light;
 }
@@ -35,6 +43,10 @@
     --accent: #5b8dfa;
     --accent-text: #0d1117;
     --danger: #e06c5c;
+    --log-warn: #d8a657;
+    --log-error: #f07a6a;
+    --log-debug: #8b949e;
+    --log-notice: #6cb6ff;
     color-scheme: dark;
   }
 }
@@ -48,6 +60,10 @@
   --accent: #5b8dfa;
   --accent-text: #0d1117;
   --danger: #e06c5c;
+  --log-warn: #d8a657;
+  --log-error: #f07a6a;
+  --log-debug: #8b949e;
+  --log-notice: #6cb6ff;
   color-scheme: dark;
 }
 
@@ -60,6 +76,10 @@
   --accent: #2f6feb;
   --accent-text: #ffffff;
   --danger: #c0392b;
+  --log-warn: #9a6700;
+  --log-error: #b3261e;
+  --log-debug: #6a737d;
+  --log-notice: #0b6bcb;
   color-scheme: light;
 }
 
@@ -459,11 +479,37 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   gap: 12px;
   justify-content: center;
   margin-top: 20px;
-  padding: 16px 20px;
+  /* Room on the right for the version, so long branding text cannot run
+     underneath it. */
+  padding: 16px 96px 16px 20px;
+  position: relative;
 }
 
 .site-footer a { color: var(--accent); text-decoration: none; }
 .site-footer a:hover { text-decoration: underline; }
+
+/* Taken out of the flow so the branding stays centred in the footer rather
+   than being shoved off-centre by whatever the version happens to be. */
+#footer-version {
+  font-variant-numeric: tabular-nums;
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Narrow enough that a corner would overlap wrapped branding text: put the
+   version back in the flow as its own last line. */
+@media (max-width: 560px) {
+  .site-footer { padding: 16px 20px; }
+
+  #footer-version {
+    flex-basis: 100%;
+    position: static;
+    text-align: center;
+    transform: none;
+  }
+}
 
 .login-card .brand-logo { align-self: center; height: 40px; margin-bottom: 4px; }
 
@@ -634,4 +680,107 @@ input[type="file"] { border: none; background: none; padding: 6px 0; }
 /* Motion is decoration here; the tour works identically without it. */
 @media (prefers-reduced-motion: reduce) {
   .tour-spotlight { transition: none; }
+}
+
+/* --- Live log --- */
+
+.log-controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-bottom: 12px;
+}
+
+/* The level filters. Laid out as chips rather than a column of checkboxes so
+   the whole set is visible at once - which is the point of having them. */
+.log-levels { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.log-levels label {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  padding: 5px 11px;
+  user-select: none;
+}
+
+.log-levels label:hover { border-color: var(--accent); }
+
+/* :has so the chip itself shows the state. Where it is unsupported the
+   checkbox is still visible inside the chip, so nothing becomes unusable. */
+.log-levels label:has(input:checked) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+}
+
+.log-levels input { accent-color: var(--accent); margin: 0; }
+
+.log-search { flex: 1 1 200px; min-width: 160px; }
+.log-delay { flex: 0 0 auto; width: 130px; }
+.log-buttons { align-items: center; gap: 10px; }
+
+.log-follow {
+  align-items: center;
+  display: inline-flex;
+  font-size: 13px;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.log-output {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 460px;
+  min-height: 120px;
+  /* Both axes: a stack trace is tall and a logged statement is wide, and
+     wrapping SQL onto four lines makes the log harder to scan, not easier. */
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.log-line { display: flex; gap: 10px; white-space: pre; }
+
+.log-line + .log-line { margin-top: 1px; }
+
+.log-time { color: var(--muted); flex: 0 0 auto; }
+
+.log-level {
+  flex: 0 0 auto;
+  font-weight: 600;
+  text-align: right;
+  /* Fixed width so the messages line up into a readable column however the
+     levels alternate. */
+  width: 52px;
+}
+
+.log-message { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.log-line[data-level="ERROR"] .log-level,
+.log-line[data-level="FATAL"] .log-level { color: var(--log-error); }
+.log-line[data-level="WARN"]   .log-level { color: var(--log-warn); }
+.log-line[data-level="NOTICE"] .log-level { color: var(--log-notice); }
+.log-line[data-level="DEBUG"]  .log-level { color: var(--log-debug); }
+.log-line[data-level="DEBUG"]  .log-message { color: var(--muted); }
+
+/* An error deserves to be findable while scrolling past, not only by filtering
+   for it. */
+.log-line[data-level="ERROR"],
+.log-line[data-level="FATAL"] {
+  background: color-mix(in srgb, var(--log-error) 9%, transparent);
+  border-radius: 4px;
+}
+
+@media (max-width: 640px) {
+  .log-controls { align-items: stretch; flex-direction: column; }
+  .log-delay, .log-search { width: auto; }
+  /* The timestamp is the first thing worth losing when there is no room. */
+  .log-time { display: none; }
 }

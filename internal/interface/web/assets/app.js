@@ -72,7 +72,13 @@ async function api(path, options = {}) {
   }
 
   if (!res.ok) {
-    throw new Error(errorMessage(body) || `${t('msg.error', 'Error')} ${res.status}`);
+    const err = new Error(errorMessage(body) || `${t('msg.error', 'Error')} ${res.status}`);
+    // The status alongside the message, so a caller can tell "you are not
+    // signed in" from "that did not work" without parsing prose. The log
+    // viewer's poller needs exactly that distinction: on a 401 it has to stop
+    // rather than keep asking every few seconds forever.
+    err.status = res.status;
+    throw err;
   }
 
   return body ? body.data : null;
@@ -334,12 +340,6 @@ const TRANSLATIONS = {
     'tour.theme.text': 'Hell oder dunkel — automatisch richtet sich nach der Tageszeit. Die Sprache folgt dem Browser, bis du eine wählst. Das war alles, viel Erfolg.',
 
     'setup.decideFirst': 'Bitte diesen Schritt zuerst erledigen.',
-    'setup.database.title': 'Datenbank wählen',
-    'setup.database.text': 'Dieser Schritt kommt zuerst, weil alles Weitere in der hier gewählten Datenbank gespeichert wird. Ein späterer Wechsel richtet die Anwendung auf eine leere Datenbank: Passwort, Zeitzone und Titel bleiben in der alten zurück, und die Installation kommt mit dem Initialpasswort aus der Dokumentation wieder hoch.',
-    'setup.database.current': 'Läuft derzeit auf: {dialect}',
-    'setup.database.keep': 'Bei dieser Datenbank bleiben',
-    'setup.database.configure': 'Andere Datenbank einrichten',
-    'setup.database.gotoHint': 'Verbindung einrichten, dann neu starten. Der Assistent läuft in der neuen Datenbank weiter.',
     'setup.branding.title': 'Installation benennen',
     'setup.branding.text': 'Der Titel erscheint im Browser-Tab und in der Kopfzeile. Optional, aber genau das unterscheidet auf einen Blick eine Testinstanz von der echten.',
     'setup.directory.title': 'Verzeichnis anbinden (optional)',
@@ -471,6 +471,22 @@ const TRANSLATIONS = {
     'filter.allProjects': 'Alle Projekte',
     'filter.allStatus': 'Alle Status',
     'filter.allUsers': 'Alle Mitarbeiter',
+    'footer.versionTitle': 'Laufende Version dieser Installation',
+    'log.clear': 'Ansicht leeren',
+    'log.delay': 'Aktualisierung alle (s)',
+    'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
+    'log.failed': 'Das Protokoll konnte nicht gelesen werden',
+    'log.follow': 'Mitlaufen',
+    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was LOG_LEVEL zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
+    'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
+    'log.pause': 'Anhalten',
+    'log.paused': 'Angehalten.',
+    'log.resume': 'Fortsetzen',
+    'log.search': 'Suche',
+    'log.signedOut': 'Nicht mehr angemeldet; das Protokoll wird nicht weiter aktualisiert.',
+    'log.title': 'Live-Protokoll',
+    'log.unavailable': 'In diesem Prozess ist keine Protokollerfassung aktiv, es gibt daher nichts anzuzeigen.',
+    'log.upTo': 'Bis Zeile',
     'login.email': 'E-Mail',
     'login.failed': 'E-Mail-Adresse oder Passwort ist nicht korrekt.',
     'login.hint': 'Bitte mit E-Mail-Adresse und Passwort anmelden.',
@@ -1275,7 +1291,18 @@ async function loadBranding() {
   if (branding.companyUrl) company.href = branding.companyUrl;
   else company.removeAttribute('href');
 
-  $('#site-footer').hidden = !(branding.footerText || branding.companyName || branding.legalNotice);
+  // The build serving this page. Shown even when nothing else is configured,
+  // which is why the footer is no longer hidden when the branding is empty:
+  // "which version is actually running" is the first question of every support
+  // conversation, and guessing it from a container tag is not an answer.
+  const versionEl = $('#footer-version');
+  if (versionEl) {
+    const version = branding.version || '';
+    versionEl.textContent = version;
+    versionEl.title = version
+      ? t('footer.versionTitle', 'Running version of this installation')
+      : '';
+  }
 
   return branding;
 }
@@ -1613,6 +1640,11 @@ async function doLogout() {
   } catch {
     // Even a failed call should drop the client back to the sign-in screen.
   }
+
+  // Before the state is cleared: the poller checks isSystemAdmin(), and a
+  // timer left running would keep asking for the log with no session and paint
+  // the screen with authentication failures.
+  stopLogPolling();
 
   me = { user: null, permissions: [], authEnabled: true };
   showLogin();
@@ -1999,42 +2031,6 @@ const SETUP_STEPS = {
     },
   },
 
-  database: {
-    title: () => t('setup.database.title', 'Choose the database'),
-    text: () => t('setup.database.text',
-      'This comes first because everything else is stored in the database chosen here. '
-      + 'Switching later points the application at an empty one: the password, the timezone '
-      + 'and the title stay behind in the old database, and this installation comes back up '
-      + 'with the initial password from the documentation.'),
-    fields: () => [
-      el('p', {
-        class: 'muted',
-        text: t('setup.database.current', 'Currently running on: {dialect}')
-          .replace('{dialect}', setup.activeDialect ?? 'sqlite'),
-      }),
-      el('div', { class: 'row' },
-        el('button', {
-          type: 'button',
-          class: 'secondary',
-          text: t('setup.database.keep', 'Stay on this database'),
-          onclick: keepDatabaseAndAdvance,
-        }),
-        el('button', {
-          type: 'button',
-          text: t('setup.database.configure', 'Configure another database'),
-          onclick: () => {
-            // The real form rather than a copy of it: the connection screen
-            // already tests a connection before committing to it, which is the
-            // part that matters most here.
-            $('#setup-wizard').hidden = true;
-            switchView('admin');
-            toast(t('setup.database.gotoHint',
-              'Configure the connection, then restart. The wizard continues in the new database.'), 'ok');
-          },
-        })),
-    ],
-  },
-
   branding: {
     title: () => t('setup.branding.title', 'Name this installation'),
     text: () => t('setup.branding.text',
@@ -2080,21 +2076,7 @@ function guessTimezone() {
 }
 
 /** Server state, where in it we are, and what this process is running on. */
-let setup = { state: null, index: 0, activeDialect: null };
-
-/** Confirms the current database and moves on. */
-async function keepDatabaseAndAdvance() {
-  try {
-    setup.state = await api('/setup/keep-database', { method: 'POST' });
-  } catch (err) {
-    setupError(err.message);
-
-    return;
-  }
-
-  setup.index += 1;
-  renderSetup();
-}
+let setup = { state: null, index: 0 };
 
 /** Loads the wizard state and shows it if anything is outstanding. */
 async function loadSetup() {
@@ -2106,10 +2088,6 @@ async function loadSetup() {
 
   try {
     setup.state = await api('/setup');
-
-    // Which database this process actually connected to, so the step can say
-    // what "stay on this one" means rather than leaving it to be guessed.
-    setup.activeDialect = (await api('/settings/datasource'))?.active ?? null;
   } catch {
     // Not fatal: an installation is usable without the wizard, and failing
     // here would block the interface over a hint.
@@ -2585,6 +2563,305 @@ function wirePasskeys() {
   });
 }
 
+// --------------------------------------------------------------- live log
+
+/**
+ * State of the log viewer.
+ *
+ * `since` is the sequence number the server last reported, not the last line
+ * rendered. The filtering happens on the server, so a filter that matches
+ * nothing still advances the cursor - asking from the last *rendered* line
+ * would re-scan the whole buffer on every poll.
+ */
+const logView = {
+  since: 0,
+  timer: null,
+  polling: false,
+  paused: false,
+  levels: null,
+  // A default that is useful rather than complete: DEBUG carries every SQL
+  // statement the process runs, which buries everything else.
+  quiet: new Set(['DEBUG']),
+};
+
+const LOG_DEFAULT_DELAY = 3;
+const LOG_MAX_LINES = 2000;
+
+function wireLogViewer() {
+  const search = $('#log-search');
+  const delay = $('#log-delay');
+  const pause = $('#log-pause');
+
+  if (!search || !delay || !pause) return;
+
+  // A filter change means the server has to re-scan from the start of its
+  // buffer, so the cursor and the view both reset.
+  const restart = () => {
+    logView.since = 0;
+    $('#log-output').replaceChildren();
+    schedulePoll({ immediate: true });
+  };
+
+  search.addEventListener('input', debounce(restart, 300));
+  $('#log-levels').addEventListener('change', restart);
+
+  delay.addEventListener('change', () => schedulePoll({ immediate: true }));
+
+  pause.addEventListener('click', () => {
+    logView.paused = !logView.paused;
+    renderPauseButton();
+    schedulePoll({ immediate: !logView.paused });
+  });
+
+  $('#log-clear').addEventListener('click', () => {
+    // The view only. The server's buffer is not the viewer's to discard, and an
+    // administrator clearing their screen must not destroy evidence for the
+    // next person to look.
+    $('#log-output').replaceChildren();
+    $('#log-warning').hidden = true;
+  });
+
+  renderPauseButton();
+}
+
+/** Waits until the user stops typing, so each keystroke is not a request. */
+function debounce(fn, ms) {
+  let handle = null;
+
+  return (...args) => {
+    clearTimeout(handle);
+    handle = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function renderPauseButton() {
+  $('#log-pause').textContent = logView.paused
+    ? t('log.resume', 'Resume')
+    : t('log.pause', 'Pause');
+}
+
+/** The levels currently ticked. */
+function selectedLogLevels() {
+  return $$('#log-levels input:checked').map((input) => input.value);
+}
+
+/** The refresh interval in seconds; 0 means do not poll. */
+function logDelaySeconds() {
+  const value = Number.parseInt($('#log-delay').value, 10);
+  if (!Number.isFinite(value) || value < 0) return LOG_DEFAULT_DELAY;
+
+  return Math.min(value, 300);
+}
+
+/**
+ * Restarts the polling timer for the current settings.
+ *
+ * Called on every change rather than adjusting a running timer, because
+ * "refresh every n seconds" has to mean the new n immediately - not after the
+ * old interval has elapsed one more time.
+ */
+function schedulePoll({ immediate = false } = {}) {
+  clearTimeout(logView.timer);
+  logView.timer = null;
+
+  if (immediate) void pollLog();
+
+  if (logView.paused) {
+    setLogStatus(t('log.paused', 'Paused.'));
+    return;
+  }
+
+  const seconds = logDelaySeconds();
+  if (seconds === 0) {
+    setLogStatus(t('log.manual', 'Refreshing is off. Set a number of seconds to follow along.'));
+    return;
+  }
+
+  logView.timer = setTimeout(() => {
+    void pollLog().finally(() => {
+      // Chained rather than an interval: a slow or hanging request must not
+      // pile up behind itself.
+      if (logViewerActive()) schedulePoll();
+    });
+  }, seconds * 1000);
+}
+
+/** Stops polling. Called when the screen is left or the session ends. */
+function stopLogPolling() {
+  clearTimeout(logView.timer);
+  logView.timer = null;
+}
+
+/**
+ * Whether the log should be polled at all.
+ *
+ * Only while its own screen is on top: an administrator who moved on to book
+ * time has no use for a request every three seconds, and the endpoint is not
+ * free - it reads a mutex-guarded buffer.
+ */
+function logViewerActive() {
+  const card = $('#log-card');
+  if (!card) return false;
+
+  // The sign-in screen being up means there is no session to poll with. Without
+  // this the poller keeps asking through a password change - which ends every
+  // session - and paints the screen with authentication failures.
+  return isSystemAdmin() && !$('#view-admin').hidden && $('#login-screen').hidden;
+}
+
+function setLogStatus(text) {
+  const status = $('#log-status');
+  if (status) status.textContent = text;
+}
+
+async function pollLog() {
+  if (!logViewerActive() || logView.polling) return;
+
+  logView.polling = true;
+
+  try {
+    const query = new URLSearchParams({ since: String(logView.since), limit: '500' });
+
+    const levels = selectedLogLevels();
+    // Every level ticked is the same request as none, and sending none keeps
+    // the server from filtering at all.
+    if (levels.length > 0 && levels.length < (logView.levels?.length ?? 0)) {
+      query.set('levels', levels.join(','));
+    }
+
+    const search = $('#log-search').value.trim();
+    if (search) query.set('search', search);
+
+    const page = await api(`/admin/logs?${query}`);
+
+    if (logView.levels === null) buildLogLevelFilters(page.levels ?? []);
+
+    if (!page.available) {
+      setLogStatus(t('log.unavailable',
+        'Log capture is not installed in this process, so there is nothing to show.'));
+      return;
+    }
+
+    logView.since = page.lastSeq ?? logView.since;
+
+    appendLogLines(page.records ?? []);
+
+    const warning = $('#log-warning');
+    if (page.dropped > 0) {
+      warning.textContent = t('log.dropped',
+        'Older lines have been discarded from the buffer and cannot be recovered.');
+      warning.hidden = false;
+    }
+
+    setLogStatus(logView.paused
+      ? t('log.paused', 'Paused.')
+      : `${t('log.upTo', 'Up to line')} ${logView.since}`);
+  } catch (err) {
+    if (err.status === 401 || err.status === 403) {
+      // The session ended - a password change does that, and so does an
+      // expiry. Retrying would produce one failure per interval for as long as
+      // the tab stays open. Signing in again restarts it, because switchView
+      // does.
+      stopLogPolling();
+      setLogStatus(t('log.signedOut', 'Not signed in any more; the log stopped updating.'));
+
+      return;
+    }
+
+    // Any other failure leaves it running: a viewer that gives up on one bad
+    // request is useless during exactly the incident it exists for.
+    setLogStatus(`${t('log.failed', 'Could not read the log')}: ${err.message}`);
+  } finally {
+    logView.polling = false;
+  }
+}
+
+/** Builds the level chips from what the server says it can emit. */
+function buildLogLevelFilters(levels) {
+  logView.levels = levels;
+
+  const holder = $('#log-levels');
+  holder.replaceChildren();
+
+  for (const level of levels) {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+
+    input.type = 'checkbox';
+    input.value = level;
+    input.checked = !logView.quiet.has(level);
+
+    label.append(input, document.createTextNode(level));
+    holder.append(label);
+  }
+}
+
+function appendLogLines(records) {
+  if (records.length === 0) return;
+
+  const output = $('#log-output');
+
+  // Whether to scroll afterwards has to be decided before anything is added,
+  // because appending changes scrollHeight.
+  const follow = $('#log-follow').checked && atLogBottom(output);
+
+  const batch = document.createDocumentFragment();
+
+  for (const record of records) {
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.dataset.level = record.level;
+
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = formatLogTime(record.time);
+
+    const level = document.createElement('span');
+    level.className = 'log-level';
+    level.textContent = record.level;
+
+    const message = document.createElement('span');
+    message.className = 'log-message';
+    // textContent, not innerHTML: these are log lines, and a log line is
+    // attacker-influenced text - a failed sign-in carries whatever address was
+    // typed into it.
+    message.textContent = record.message;
+
+    if (record.traceId) line.title = `trace ${record.traceId}`;
+
+    line.append(time, level, message);
+    batch.append(line);
+  }
+
+  output.append(batch);
+
+  // The view is not the buffer: keeping every line since the screen opened
+  // would grow without limit in a long incident.
+  while (output.childElementCount > LOG_MAX_LINES) output.firstElementChild.remove();
+
+  if (follow) output.scrollTop = output.scrollHeight;
+}
+
+/**
+ * Whether the view is scrolled to the end.
+ *
+ * Scrolling up is a deliberate act - reading something. Following would yank
+ * the reader back down on the next poll, so it only applies while they are
+ * already at the bottom.
+ */
+function atLogBottom(output) {
+  return output.scrollHeight - output.scrollTop - output.clientHeight < 40;
+}
+
+function formatLogTime(iso) {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+
+  // The viewer's own zone, which is the one they are comparing against a
+  // clock on the wall while working out what happened when.
+  return at.toLocaleTimeString(undefined, { hour12: false });
+}
+
 // ---------------------------------------------------------------- timezone
 
 /**
@@ -2754,6 +3031,11 @@ function wireTheme() {
 function switchView(name) {
   $$('.tab').forEach((tab) => tab.setAttribute('aria-current', String(tab.dataset.view === name)));
   $$('.view').forEach((view) => { view.hidden = view.id !== `view-${name}`; });
+
+  // The log viewer polls, so it follows the screen it lives on rather than
+  // running for as long as the tab is open.
+  if (logViewerActive()) schedulePoll({ immediate: true });
+  else stopLogPolling();
 }
 
 /** Picks the first tab the user is actually allowed to see. */
@@ -3012,6 +3294,7 @@ async function init() {
     wireSetup();
     wireTour();
     wirePasskeys();
+    wireLogViewer();
     $('#logout').addEventListener('click', doLogout);
     $('#language-picker').addEventListener('change', (e) => mutate(
       () => api('/me/language', { method: 'PUT', body: JSON.stringify({ language: e.target.value }) }),

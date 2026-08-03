@@ -114,12 +114,6 @@ func (s *SettingsService) SetSetupCompleted(ctx context.Context, completed bool)
 	return s.settings.Set(ctx, model.SettingSetupCompleted, value)
 }
 
-// MarkDatasourceChosen records that a database connection was picked
-// deliberately, so the wizard stops asking before the restart that applies it.
-func (s *SettingsService) MarkDatasourceChosen(ctx context.Context) error {
-	return s.settings.Set(ctx, model.SettingDatasourceChosen, "true")
-}
-
 // Operational returns the administered limits, unresolved: a nil field means
 // the environment's value still applies.
 func (s *SettingsService) Operational(ctx context.Context) (model.Operational, error) {

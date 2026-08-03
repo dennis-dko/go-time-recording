@@ -328,3 +328,54 @@ func readResponse(t *testing.T, resp *http.Response) response {
 
 	return response{Status: resp.StatusCode, Body: data}
 }
+
+// ------------------------------------------------------- plain HTTP helpers
+
+// get fetches a URL as a browser would with no session at all, which is how the
+// installer and the sign-in page are reached.
+func get(t *testing.T, url string) string {
+	t.Helper()
+
+	body, err := fetch(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+
+	return body
+}
+
+// tryGet is get for a URL that is expected to fail while something is starting
+// up. It returns an empty string rather than failing the test.
+func tryGet(url string) string {
+	body, err := fetch(url)
+	if err != nil {
+		return ""
+	}
+
+	return body
+}
+
+func fetch(url string) (string, error) {
+	res, err := (&http.Client{Timeout: 10 * time.Second}).Get(url)
+	if err != nil {
+		return "", err
+	}
+
+	defer func() { _ = res.Body.Close() }()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(body), nil
+}
+
+// truncate keeps a failure message readable when the body is a whole HTML page.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+
+	return s[:max] + "…"
+}

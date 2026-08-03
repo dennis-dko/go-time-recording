@@ -2,8 +2,8 @@
 
 Project time tracking as **a single self-contained binary**: the REST API and
 the web interface live in the same executable (the UI assets are embedded with
-`go:embed`), and the database is SQLite by default. Starting it needs no
-database server, no asset directory and no migration step.
+`go:embed`). Starting it needs no asset directory and no migration step, and no
+database server unless you choose one.
 
 Built on [GoFr](https://gofr.dev), structured after [gogs](https://github.com/gogs/gogs).
 
@@ -22,6 +22,34 @@ binary as the API.
 containers; `task stage` runs the real deployment image against them. See
 [Development](#development).
 
+**Installer.** With no database configured — no `DB_DIALECT` and no
+`configs/datasource.json` — the binary does not start the application. It serves
+an installer on the same port and waits, because there is nowhere to put an
+account, a project or an hour until a database exists.
+
+The connection is tested before it is accepted, written to
+`configs/datasource.json`, and then the application takes over the same port **in
+the same process**. No restart: a container that exited to finish installing
+itself would look like one that crashed.
+
+It asks for a token, printed to the log when the process starts:
+
+```
+no database is configured, so Time Recording is serving its installer instead
+open http://localhost:8000 to choose one - the application will not start until you do
+setup token: 782106f2d715eaebba8e1c4b93f0a2d1
+```
+
+Until a database exists there is no account to authenticate against, and whoever
+completes that screen decides where the installation keeps its data — so the one
+thing standing between an exposed port and that decision is a value only somebody
+who can already see the process can read. Set `SETUP_TOKEN` to choose it yourself
+and drive the screen unattended.
+
+Setting `DB_DIALECT` skips the installer entirely, which is how a container
+deployment configures itself; see [Deployment](#deployment). `task dev` sets it
+too, so development never meets this screen.
+
 **First sign-in.** An administrator account is created on first start:
 
 | | |
@@ -36,18 +64,18 @@ can take it over. Until the initial password is replaced the server refuses
 everything else, including issuing API tokens.
 
 **Setup wizard.** On first sign-in the built-in administrator is walked through
-what an installation has to settle, one step at a time. Three are required —
-**the database first**, then the administrator password and the timezone. The
-instance title and the directory connection can be skipped.
+what an installation has to settle, one step at a time. Two are required — the
+administrator password and the timezone. The instance title and the directory
+connection can be skipped.
 
-The database comes first because everything else is stored *in* it. Switching
-later points the application at an empty database: the password change, the
-timezone and the title stay behind in the old one, and start-up recreates the
+The database is deliberately **not** among them, and that is the reason the
+installer exists rather than a third step here. Everything the wizard settles is
+stored *in* the database, so choosing one at this point would point the
+application at an empty one: the password change, the timezone and the title
+would stay behind in the old database, and start-up would recreate the
 administrator with the initial password above. An installation that looked
 configured would then be reachable with a password anyone can look up — and
-nobody would expect it, having set a real one minutes earlier. Staying on
-SQLite is a perfectly good answer and settles the step; what the wizard will
-not accept is not having decided.
+nobody would expect it, having set a real one minutes earlier.
 
 **Guided tour.** On a first sign-in every user — not just the administrator —
 is walked through the areas of the application: booking time, the calendar, the
@@ -56,6 +84,26 @@ role cannot reach, so nobody is shown a tab they do not have, and the highlight
 points at the real control rather than a picture of one. It runs once and can
 be restarted any time from *My account*; skipping counts as seen. "Seen" is
 stored on the user, so a second device does not mean a second introduction.
+
+**Live log.** The built-in administrator can read what the process has written,
+under *Settings*: filter by level, search the text, and set how often it
+refreshes in seconds — or pause it. Newest at the bottom, and it follows along
+only while you are already scrolled there, so reading something does not get
+yanked away on the next refresh.
+
+It shows the framework's own output too — the request log, a failing statement,
+what happened during the migrations — because it captures the process output
+rather than wrapping a logger. Two things worth knowing: only what `LOG_LEVEL`
+admits reaches it, so ticking `DEBUG` on an installation running at `WARN` shows
+nothing and is not a fault; and it is held in memory in a fixed-size ring, so it
+starts empty after a restart and is no substitute for collecting logs. The
+capture makes the console output JSON even on a terminal, which is what a log
+collector wants anyway — `task dev` renders readable lines back for the console.
+
+**Version.** The build the process was compiled from is in the bottom-right
+corner of every page, including the sign-in screen. "Which version is actually
+running" is the first question of every support conversation, and guessing it from
+a container tag is not an answer.
 
 Whether a setup step is done is worked out from what is **actually configured**, not
 from a record of the wizard having been shown. So a setting that is later
@@ -67,12 +115,15 @@ missing. That is why "Finish later" is safe to offer.
 
 | Area | Implementation |
 | --- | --- |
-| Storage | SQLite by default (pure Go, no cgo); switchable to PostgreSQL or MySQL |
+| Storage | SQLite (pure Go, no cgo), PostgreSQL or MySQL - chosen in the installer, never defaulted |
+| Concurrency | SQLite runs in write-ahead logging, so a save and a page load do not refuse each other |
 | Schema | GoFr migrations, applied automatically at start-up |
 | API | REST under `/api/v1`, documented at `/api-docs` |
 | Web interface | Embedded via `go:embed`, vanilla JS with no build step |
 | Access control | RBAC with roles administered at run time; bcrypt password hashes |
-| Sign-in | Session cookies, optional TOTP two-factor per user |
+| Sign-in | Session cookies, optional passkeys and TOTP two-factor per user |
+| Live log | The process log, filterable and searchable, for the built-in administrator |
+| Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
@@ -165,6 +216,19 @@ Implemented, and verified against a running instance:
 - **Two-factor authentication** (TOTP, RFC 6238) is opt-in per user. The
   implementation is checked against the RFC's published test vectors, so it
   interoperates with real authenticator apps.
+
+  **With both enabled, a passkey sign-in does not ask for a code.** That is
+  deliberate rather than an oversight: registration and sign-in both require user
+  verification, so the device had to see a fingerprint or a PIN before it would
+  sign — possession of the device plus verification of the person, which is
+  already two factors. Google, Microsoft and Apple treat passkeys the same way:
+  they *satisfy* multi-factor rather than needing another one stacked on top.
+
+  The consequence to be aware of: turning two-factor on does **not** force a
+  second factor on somebody who has a passkey, because their passkey is a way in
+  that never asks for one. If you need two-factor as an enforceable policy, this
+  setting alone is not it. A browser test pins the behaviour, so changing it
+  would have to be a decision rather than an accident.
 - **Security headers** on every response: a strict `Content-Security-Policy`
   (no external origin is permitted, which nothing legitimate needs here),
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
@@ -374,8 +438,9 @@ only disagree with the first.
 | `APP_NAME` | `Time Recording` | instance title, until one is set under Settings |
 | `HTTP_PORT` | `8000` | API and web interface |
 | `METRICS_PORT` | `2121` | Prometheus endpoint |
-| `DB_DIALECT` | `sqlite` | also `postgres`, `mysql` |
-| `DB_NAME` | `go-time-recording` | with SQLite, the file name without `.db` |
+| `DB_DIALECT` | – | `sqlite`, `postgres` or `mysql`. **Empty serves the installer** |
+| `DB_NAME` | – | with SQLite, the file name without `.db` |
+| `SETUP_TOKEN` | generated | what the installer asks for; logged when generated |
 | `UI_ENABLED` | `true` | `false` runs the binary as a headless API |
 | `AUTH_ENABLED` | `true` | `false` gives **every** caller full admin rights |
 | `SESSION_LIFETIME` | `12h` | how long a sign-in stays valid |
@@ -545,6 +610,14 @@ and the application unusable. This project shipped exactly that once.
 task test:browser
 ```
 
+Or all three at once, in the order that fails fastest — a compile error should
+not be found after twenty minutes of browser automation:
+
+```bash
+task test:all              # unit, then integration, then browser
+task test:all DB=postgres  # with the integration leg against PostgreSQL
+```
+
 CI runs all of it on every push and before every release: unit tests with
 `-race`, integration against **all three dialects**, and the browser suite.
 
@@ -604,6 +677,13 @@ name, and from nowhere else.
 Pin `GTR_VERSION` to a release rather than leaving it on `latest`. A container
 restarted at 3am otherwise comes back as a different version than the one that
 went down.
+
+The compose file sets `DB_DIALECT`, so a server deployment never meets the
+installer — it is configured before it starts, which is what an unattended
+deployment needs. Leaving `DB_DIALECT` out is what turns the installer on, and a
+container waiting for somebody to click something is rarely what you want on a
+server; if you do, set `SETUP_TOKEN` so the token is not something you have to go
+and read out of `docker logs`.
 
 ### HTTPS
 

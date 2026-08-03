@@ -672,13 +672,53 @@
           </table>
         </div>
       </div>
+
+      <!-- The process log. Last in the administration screen because it is
+           what you scroll to when something already went wrong. -->
+      <div class="card" id="log-card">
+        <h2 data-i18n="log.title">Live log</h2>
+        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what LOG_LEVEL admits reaches here, so ticking a level below it shows nothing. Held in memory only: the view is empty after a restart, and this is no substitute for collecting logs.</p>
+
+        <div class="log-controls">
+          <div class="log-levels" id="log-levels" role="group" aria-label="Log levels"></div>
+
+          <label class="log-search" data-i18n="log.search">Search
+            <input type="search" id="log-search" autocomplete="off" placeholder="…">
+          </label>
+
+          <label class="log-delay" data-i18n="log.delay">Refresh every (s)
+            <input type="number" id="log-delay" min="0" max="300" step="1" value="3" inputmode="numeric">
+          </label>
+
+          <div class="row log-buttons">
+            <button type="button" class="secondary" id="log-pause" data-i18n="log.pause">Pause</button>
+            <button type="button" class="secondary" id="log-clear" data-i18n="log.clear">Clear view</button>
+            <label class="log-follow" data-i18n="log.follow">
+              <input type="checkbox" id="log-follow" checked> Follow
+            </label>
+          </div>
+        </div>
+
+        <p class="muted minus" id="log-warning" hidden></p>
+        <p class="muted" id="log-status"></p>
+
+        <!-- tabindex so it can be scrolled with the keyboard; aria-live off
+             because a screen reader announcing every arriving line would make
+             the page unusable. -->
+        <div class="log-output" id="log-output" tabindex="0" aria-live="off"></div>
+      </div>
     </section>
   </main>
 
-  <footer class="site-footer" id="site-footer" hidden>
+  <!-- No longer hidden by default: the build version is always there to show,
+       even on an installation that has configured no branding at all. -->
+  <footer class="site-footer" id="site-footer">
     <span id="footer-text"></span>
     <a id="footer-company" href="#" target="_blank" rel="noopener noreferrer" hidden></a>
     <span id="footer-legal" class="muted"></span>
+    <!-- Pushed to the right edge by margin-left:auto, so it stays in the corner
+         however much or little branding sits beside it. -->
+    <span id="footer-version" class="muted" title=""></span>
   </footer>
 
   <script src="/app.js"></script>

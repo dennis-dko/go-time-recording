@@ -23,12 +23,6 @@ const (
 	// SettingSetupCompleted records that the first-run wizard was dismissed.
 	// Only that: which steps are done is worked out from what is configured.
 	SettingSetupCompleted = "instance.setupCompleted"
-
-	// SettingDatasourceChosen records that a database connection was chosen
-	// deliberately. The connection itself lives outside the database - it is
-	// how the database is reached - so this marker is what remains readable
-	// from inside it.
-	SettingDatasourceChosen = "instance.datasourceChosen"
 )
 
 // Branding is the instance's own labelling, editable by the administrator.

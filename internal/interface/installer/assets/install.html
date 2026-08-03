@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- No external anything: this page is served by a binary that has not
+       reached its database yet, and may be running somewhere with no route to
+       the internet at all. -->
+  <title>Set up Time Recording</title>
+  <style>
+    :root {
+      --bg: #f5f6f8; --surface: #fff; --border: #dfe3e8; --text: #1c2126;
+      --muted: #626d78; --accent: #2f6feb; --accent-text: #fff; --danger: #c0392b;
+      --ok: #1a7f37; --radius: 10px;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14171a; --surface: #1c2126; --border: #2c333b; --text: #e8eaed;
+        --muted: #98a2ad; --accent: #5b8dfa; --accent-text: #0d1117;
+        --danger: #e06c5c; --ok: #4ac26b;
+        color-scheme: dark;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--text); margin: 0;
+      font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding: 32px 20px;
+    }
+    main { margin: 0 auto; max-width: 640px; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    h2 { font-size: 16px; margin: 0 0 4px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 16px; padding: 20px;
+    }
+    .muted { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+    label { display: block; font-size: 13px; margin-bottom: 12px; }
+    input, select {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font: inherit; margin-top: 4px;
+      padding: 9px 10px; width: 100%;
+    }
+    input:focus-visible, select:focus-visible, button:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
+    .grid { display: grid; gap: 0 14px; grid-template-columns: 1fr 1fr; }
+    .grid .wide { grid-column: 1 / -1; }
+    @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
+    .row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+    button {
+      background: var(--accent); border: 1px solid var(--accent); border-radius: 8px;
+      color: var(--accent-text); cursor: pointer; font: inherit; font-weight: 500;
+      padding: 9px 16px;
+    }
+    button.secondary { background: transparent; border-color: var(--border); color: var(--text); }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    .note { border-left: 3px solid var(--border); font-size: 13px; margin: 14px 0 0; padding: 2px 0 2px 12px; }
+    .note.bad { border-color: var(--danger); color: var(--danger); }
+    .note.good { border-color: var(--ok); color: var(--ok); }
+    [hidden] { display: none !important; }
+    code { background: var(--bg); border-radius: 4px; font-size: 12px; padding: 1px 5px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1 id="heading">Set up Time Recording</h1>
+  <p class="muted">
+    This installation has no database yet. Nothing can be stored, and nobody can
+    sign in, until one is chosen here — so this is the first and only screen
+    until it works.
+  </p>
+
+  <div class="card">
+    <h2>Setup token</h2>
+    <p class="muted">
+      Printed in this process's log when it started. It is asked for because
+      until a database exists there is no account to authenticate against, and
+      whoever completes this screen decides where the installation keeps its
+      data.
+    </p>
+    <label>Token
+      <input type="text" id="token" autocomplete="off" spellcheck="false" autofocus>
+    </label>
+  </div>
+
+  <form class="card" id="form">
+    <h2>Database</h2>
+    <p class="muted">
+      The connection is tested before it is saved, so a typo is found here
+      rather than at the next start.
+    </p>
+
+    <label>Type
+      <select id="dialect">
+        <option value="sqlite">SQLite — a single file, no server needed</option>
+        <option value="postgres">PostgreSQL</option>
+        <option value="mysql">MySQL / MariaDB</option>
+      </select>
+    </label>
+
+    <div class="grid">
+      <label class="wide" id="name-label">Database name
+        <input type="text" id="name" autocomplete="off" spellcheck="false">
+      </label>
+
+      <div id="server-fields" hidden style="display:contents">
+        <label>Host<input type="text" id="host" autocomplete="off" spellcheck="false"></label>
+        <label>Port<input type="text" id="port" inputmode="numeric" autocomplete="off"></label>
+        <label>User<input type="text" id="user" autocomplete="off" spellcheck="false"></label>
+        <label>Password<input type="password" id="password" autocomplete="new-password"></label>
+        <label class="wide" id="ssl-label">SSL mode
+          <select id="sslMode">
+            <option value="disable">disable</option>
+            <option value="require">require</option>
+            <option value="verify-ca">verify-ca</option>
+            <option value="verify-full">verify-full</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="row">
+      <button type="button" class="secondary" id="test">Test connection</button>
+      <button type="submit" id="save">Save and start</button>
+    </div>
+
+    <p class="note" id="note" hidden></p>
+  </form>
+
+  <p class="muted" id="footer"></p>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  // A SQLite "name" is a file path and a server "name" is a database; the same
+  // field means different things and has to say so.
+  const SQLITE_HINT = 'Database name — a file, created if it does not exist';
+  const SERVER_HINT = 'Database name — must already exist';
+
+  // Prefilled from the link in the log, if that is how this page was opened.
+  // Also kept out of the address bar afterwards, so the token does not sit in
+  // browser history for the rest of the machine's life.
+  const fromURL = new URLSearchParams(location.search).get('token');
+  if (fromURL) {
+    $('token').value = fromURL;
+    history.replaceState(null, '', location.pathname);
+  }
+
+  function isServer() {
+    return $('dialect').value !== 'sqlite';
+  }
+
+  function syncFields() {
+    const server = isServer();
+
+    $('server-fields').hidden = !server;
+    $('name-label').firstChild.textContent = server ? SERVER_HINT : SQLITE_HINT;
+    $('ssl-label').hidden = $('dialect').value !== 'postgres';
+
+    if (server && !$('port').value) {
+      $('port').value = $('dialect').value === 'postgres' ? '5432' : '3306';
+    }
+  }
+
+  function datasource() {
+    const base = { dialect: $('dialect').value, name: $('name').value.trim() };
+    if (!isServer()) return base;
+
+    return {
+      ...base,
+      host: $('host').value.trim(),
+      port: $('port').value.trim(),
+      user: $('user').value.trim(),
+      password: $('password').value,
+      sslMode: $('dialect').value === 'postgres' ? $('sslMode').value : '',
+    };
+  }
+
+  function say(text, kind) {
+    const note = $('note');
+    note.textContent = text;
+    note.className = `note ${kind ?? ''}`;
+    note.hidden = !text;
+  }
+
+  async function call(path) {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Setup-Token': $('token').value.trim() },
+      body: JSON.stringify(datasource()),
+    });
+
+    let body = {};
+    try { body = await res.json(); } catch { /* a non-JSON error page */ }
+
+    if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
+
+    return body;
+  }
+
+  function busy(on) {
+    $('test').disabled = on;
+    $('save').disabled = on;
+  }
+
+  $('dialect').addEventListener('change', syncFields);
+
+  $('test').addEventListener('click', async () => {
+    busy(true);
+    say('Testing…');
+
+    try {
+      await call('/install/test');
+      say('The connection works.', 'good');
+    } catch (err) {
+      say(err.message, 'bad');
+    } finally {
+      busy(false);
+    }
+  });
+
+  $('form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    busy(true);
+    say('Saving…');
+
+    try {
+      await call('/install/save');
+      say('Saved. The application is starting — this page will reload when it answers.', 'good');
+      waitForTheApplication();
+    } catch (err) {
+      say(err.message, 'bad');
+      busy(false);
+    }
+  });
+
+  /**
+   * Polls until the real application is serving, then reloads.
+   *
+   * The installer hands the port to the application in the same process, so
+   * there is a moment with nothing listening and requests fail. Failures are
+   * therefore expected and ignored rather than reported.
+   */
+  function waitForTheApplication() {
+    let attempts = 0;
+
+    const tick = setInterval(async () => {
+      attempts += 1;
+
+      try {
+        const res = await fetch('/install/state', { cache: 'no-store' });
+
+        // The installer still answers, so it is still in charge.
+        if (res.ok) return;
+      } catch {
+        // Nothing listening yet, or the handover is in progress.
+      }
+
+      try {
+        const res = await fetch('/', { cache: 'no-store' });
+        if (res.ok) {
+          clearInterval(tick);
+          location.reload();
+        }
+      } catch {
+        // Still starting. Migrations on a cold server take a moment.
+      }
+
+      if (attempts > 120) {
+        clearInterval(tick);
+        say('The application has not come up after two minutes. Check this process\'s log.', 'bad');
+      }
+    }, 1000);
+  }
+
+  (async function start() {
+    syncFields();
+
+    try {
+      const res = await fetch('/install/state', { cache: 'no-store' });
+      const state = await res.json();
+
+      if (state.appName) {
+        document.title = `Set up ${state.appName}`;
+        $('heading').textContent = `Set up ${state.appName}`;
+      }
+
+      if (state.version) $('footer').textContent = state.version;
+
+      // Pre-filling what the environment already supplies means an operator who
+      // set some of it in a compose file does not retype it here.
+      if (state.datasource) {
+        for (const [key, value] of Object.entries(state.datasource)) {
+          const field = $(key);
+          if (field && value) field.value = value;
+        }
+        syncFields();
+      }
+    } catch {
+      // The page is still usable; only the labelling is missing.
+    }
+  })();
+</script>
+</body>
+</html>

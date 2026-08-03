@@ -59,7 +59,7 @@ type setupFixture struct {
 	setup *service.SetupService
 }
 
-func newSetupFixture(t *testing.T, dialect string) *setupFixture {
+func newSetupFixture(t *testing.T) *setupFixture {
 	t.Helper()
 
 	f := newFixture(t)
@@ -71,7 +71,7 @@ func newSetupFixture(t *testing.T, dialect string) *setupFixture {
 	return &setupFixture{
 		fixture: f,
 		store:   store,
-		setup:   service.NewSetupService(settings, f.userRepo, dialect),
+		setup:   service.NewSetupService(settings, f.userRepo),
 	}
 }
 
@@ -91,7 +91,7 @@ func stepByID(t *testing.T, state model.SetupState, id string) model.SetupStep {
 }
 
 func TestFreshInstallationHasEverythingOutstanding(t *testing.T) {
-	f := newSetupFixture(t, "sqlite")
+	f := newSetupFixture(t)
 
 	if _, err := f.auth.EnsureSystemUser(context.Background()); err != nil {
 		t.Fatalf("ensure system user: %v", err)
@@ -112,9 +112,10 @@ func TestFreshInstallationHasEverythingOutstanding(t *testing.T) {
 		}
 	}
 
-	// Exactly these three are worth blocking on. Making everything mandatory
+	// Exactly these two are worth blocking on. Making everything mandatory
 	// trains people to click past the wizard, and then the step that mattered
-	// goes past too.
+	// goes past too. The database is not among them because it cannot be
+	// outstanding here: the installer settles it before the application starts.
 	required := map[string]bool{}
 	for _, step := range state.Steps {
 		if step.Required {
@@ -122,7 +123,7 @@ func TestFreshInstallationHasEverythingOutstanding(t *testing.T) {
 		}
 	}
 
-	want := []string{model.SetupStepDatabase, model.SetupStepPassword, model.SetupStepTimezone}
+	want := []string{model.SetupStepPassword, model.SetupStepTimezone}
 	if len(required) != len(want) {
 		t.Errorf("expected %v to be required, got %v", want, required)
 	}
@@ -134,66 +135,10 @@ func TestFreshInstallationHasEverythingOutstanding(t *testing.T) {
 	}
 }
 
-// The database has to be settled before anything else, because everything else
-// is stored in it. Switching later leaves the password change, the timezone and
-// the title behind in the old database, and start-up recreates the
-// administrator with the documented initial password - so an installation that
-// looked configured comes back up reachable with a password anyone can look up.
-func TestTheDatabaseIsTheFirstStep(t *testing.T) {
-	f := newSetupFixture(t, "sqlite")
-
-	state, err := f.setup.State(context.Background())
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
-
-	if len(state.Steps) == 0 {
-		t.Fatal("the wizard offers no steps")
-	}
-
-	if state.Steps[0].ID != model.SetupStepDatabase {
-		t.Errorf("the database must come first, got %q", state.Steps[0].ID)
-	}
-
-	if !state.Steps[0].Required {
-		t.Error("the database step must be required")
-	}
-}
-
-// Staying on SQLite is a legitimate answer, so it has to be expressible -
-// otherwise the required step could never be completed by anyone who wants it,
-// and a required step nobody can complete is a wizard that never goes away.
-func TestKeepingTheCurrentDatabaseSettlesTheStep(t *testing.T) {
-	f := newSetupFixture(t, "sqlite")
-	ctx := context.Background()
-
-	before, err := f.setup.State(ctx)
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
-
-	if stepByID(t, before, model.SetupStepDatabase).Done {
-		t.Fatal("the database step must start outstanding on SQLite")
-	}
-
-	if err := f.setup.KeepDatabase(ctx); err != nil {
-		t.Fatalf("keep database: %v", err)
-	}
-
-	after, err := f.setup.State(ctx)
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
-
-	if !stepByID(t, after, model.SetupStepDatabase).Done {
-		t.Error("confirming the current database must settle the step")
-	}
-}
-
 // Done-ness is read from what is configured, not from a record of the wizard
 // having been through.
 func TestStepsFollowWhatIsActuallyConfigured(t *testing.T) {
-	f := newSetupFixture(t, "sqlite")
+	f := newSetupFixture(t)
 	ctx := context.Background()
 
 	if _, err := f.auth.EnsureSystemUser(ctx); err != nil {
@@ -230,10 +175,8 @@ func TestStepsFollowWhatIsActuallyConfigured(t *testing.T) {
 		}
 	}
 
-	for _, id := range []string{model.SetupStepDatabase, model.SetupStepDirectory} {
-		if stepByID(t, state, id).Done {
-			t.Errorf("%s should still be outstanding", id)
-		}
+	if stepByID(t, state, model.SetupStepDirectory).Done {
+		t.Error("the directory step should still be outstanding")
 	}
 }
 
@@ -241,7 +184,7 @@ func TestStepsFollowWhatIsActuallyConfigured(t *testing.T) {
 // setting, so the step reads the stored value instead. Otherwise an
 // administrator who genuinely wants UTC could never complete the step.
 func TestChoosingUTCCompletesTheTimezoneStep(t *testing.T) {
-	f := newSetupFixture(t, "sqlite")
+	f := newSetupFixture(t)
 	ctx := context.Background()
 
 	before, err := f.setup.State(ctx)
@@ -267,43 +210,8 @@ func TestChoosingUTCCompletesTheTimezoneStep(t *testing.T) {
 	}
 }
 
-// Running on PostgreSQL is itself the answer to the database step; there is
-// nothing left to ask.
-func TestRunningOnARealDatabaseCompletesThatStep(t *testing.T) {
-	f := newSetupFixture(t, "postgres")
-
-	state, err := f.setup.State(context.Background())
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
-
-	if !stepByID(t, state, model.SetupStepDatabase).Done {
-		t.Error("an installation already on PostgreSQL has nothing to configure here")
-	}
-}
-
-// A connection saved from the Settings screen only applies at the next
-// restart, but the decision has been made - the wizard should stop asking.
-func TestASavedConnectionCompletesTheDatabaseStepBeforeTheRestart(t *testing.T) {
-	f := newSetupFixture(t, "sqlite")
-	ctx := context.Background()
-
-	if err := f.store.Set(ctx, model.SettingDatasourceChosen, "true"); err != nil {
-		t.Fatalf("mark the choice: %v", err)
-	}
-
-	state, err := f.setup.State(ctx)
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
-
-	if !stepByID(t, state, model.SetupStepDatabase).Done {
-		t.Error("a saved connection should settle the step even before it is applied")
-	}
-}
-
 func TestCompleteDismissesTheWizard(t *testing.T) {
-	f := newSetupFixture(t, "postgres")
+	f := newSetupFixture(t)
 	ctx := context.Background()
 
 	if err := f.setup.Complete(ctx); err != nil {
@@ -325,7 +233,7 @@ func TestCompleteDismissesTheWizard(t *testing.T) {
 // the wizard back rather than leaving an installation half-configured and
 // quiet about it.
 func TestDismissingDoesNotSuppressAnOutstandingRequiredStep(t *testing.T) {
-	f := newSetupFixture(t, "postgres")
+	f := newSetupFixture(t)
 	ctx := context.Background()
 
 	if _, err := f.auth.EnsureSystemUser(ctx); err != nil {
