@@ -101,6 +101,10 @@
       <label id="login-totp-field" hidden data-i18n="login.totp">Code from your authenticator app<input type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
       </label>
       <button type="submit" data-i18n="login.submit">Sign in</button>
+      <!-- Hidden until the server says passkeys can work here: browsers only
+           expose WebAuthn over HTTPS or on localhost, and a button that cannot
+           work is worse than no button. -->
+      <button type="button" class="secondary" id="login-passkey" hidden data-i18n="passkey.signIn">Sign in with a passkey</button>
       <p class="login-error" id="login-error" hidden></p>
     </form>
   </div>
@@ -405,6 +409,32 @@
         </div>
         <button type="submit" data-i18n="action.save">Save</button>
       </form>
+
+      <div class="card" id="passkey-card" hidden>
+        <h2 data-i18n="passkey.title">Passkeys</h2>
+        <p class="muted" data-i18n="passkey.hint">Sign in with a fingerprint, a face or a device PIN instead of typing a password. The key never leaves your device, so it cannot be phished or read from a breach. Your password keeps working alongside it.</p>
+        <form id="form-passkey" class="form">
+          <div class="grid">
+            <label class="wide" data-i18n="passkey.name">Name for this device
+              <input type="text" name="name" maxlength="120" data-i18n-placeholder="passkey.namePlaceholder" placeholder="Work laptop">
+            </label>
+          </div>
+          <button type="submit" data-i18n="passkey.add">Add a passkey</button>
+        </form>
+        <div class="table-wrap">
+          <table id="table-passkeys">
+            <thead>
+              <tr>
+                <th data-i18n="passkey.name">Name</th>
+                <th data-i18n="passkey.added">Added</th>
+                <th data-i18n="passkey.lastUsed">Last used</th>
+                <th class="actions" data-i18n="field.action">Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
 
       <div class="card">
         <h2 data-i18n="tour.card.title">Guided tour</h2>

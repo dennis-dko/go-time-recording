@@ -19,6 +19,7 @@ type Handlers struct {
 	Tokens     *rest.APITokenHandler
 	LDAPSync   *rest.LDAPSyncHandler
 	Setup      *rest.SetupHandler
+	Passkeys   *rest.PasskeyHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -36,6 +37,13 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 
 	// Sign-in is the one endpoint that must work without a session.
 	app.POST(base+"/auth/login", h.Auth.Login)
+
+	// Reachable without a session, because this is how a session begins. The
+	// support endpoint tells the interface whether to offer passkeys at all:
+	// browsers expose WebAuthn only on HTTPS or localhost.
+	app.GET(base+"/auth/passkey", h.Passkeys.Support)
+	app.POST(base+"/auth/passkey/login", h.Passkeys.BeginLogin)
+	app.PUT(base+"/auth/passkey/login", h.Passkeys.FinishLogin)
 	app.POST(base+"/auth/logout", h.Auth.Logout)
 	app.GET(base+"/languages", h.Auth.Languages)
 
@@ -65,6 +73,10 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/me/language", h.Auth.SetLanguage)
 	app.PUT(base+"/me/timezone", h.Auth.SetTimezone)
 	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
+	app.GET(base+"/me/passkeys", h.Passkeys.List)
+	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)
+	app.PUT(base+"/me/passkeys/register", h.Passkeys.FinishRegistration)
+	app.DELETE(base+"/me/passkeys/{id}", h.Passkeys.Delete)
 	app.POST(base+"/me/totp", h.Auth.BeginTOTP)
 	app.PUT(base+"/me/totp", h.Auth.ConfirmTOTP)
 	app.DELETE(base+"/me/totp", h.Auth.DisableTOTP)

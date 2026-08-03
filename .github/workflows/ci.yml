@@ -52,6 +52,94 @@ jobs:
           path: coverage.out
           retention-days: 14
 
+  # The unit tests cover the rules; this covers everything between a request
+  # arriving and a rule being reached - middleware order, CSRF, sessions,
+  # migrations, embedded assets, the wiring in main.go. Run against both
+  # dialects, because that gap is where the dialect actually shows.
+  integration:
+    name: Integration (${{ matrix.dialect }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dialect: [sqlite, postgres, mysql]
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: go-time-recording
+          POSTGRES_USER: gtr
+          POSTGRES_PASSWORD: gtr-test-password
+        ports:
+          - 5432:5432
+        # Without this the tests start before the server can answer, and the
+        # failure looks like a bug rather than a race.
+        options: >-
+          --health-cmd "pg_isready -U gtr -d go-time-recording"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: go-time-recording
+          MYSQL_ROOT_PASSWORD: gtr-test-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pgtr-test-root"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Integration tests
+        env:
+          # Empty for the sqlite leg: the harness falls back to a file per test.
+          # root on MySQL, because each test creates its own database.
+          GTR_TEST_DSN: ${{ matrix.dialect == 'postgres' && 'postgres://gtr:gtr-test-password@localhost:5432/go-time-recording?sslmode=disable' || matrix.dialect == 'mysql' && 'mysql://root:gtr-test-root@localhost:3306/go-time-recording' || '' }}
+        run: go test -tags integration -count=1 -timeout 15m ./test/integration/
+
+  # Drives the real interface in a real browser. The integration tests prove the
+  # API answers correctly; these prove the application is usable - that the
+  # sign-in overlay goes away, that a tab switch shows the right panel, that a
+  # stylesheet rule has not quietly beaten the hidden attribute. Those failures
+  # leave every API check passing.
+  browser:
+    name: Browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # ubuntu-latest ships Chrome, but pinning the action means the tests do
+      # not start failing the day the runner image drops it.
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+
+      - name: Browser tests
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        # -v so a failure names the case and the log shows which steps ran
+        # before it. Thirteen tests is a readable amount of output, and a
+        # browser failure without it is a package name and a timeout.
+        run: go test -tags browser -count=1 -timeout 20m -v ./test/browser/
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -72,7 +160,7 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
-    needs: [lint, test, build]
+    needs: [lint, test, integration, browser, build]
     permissions:
       contents: read
       packages: write

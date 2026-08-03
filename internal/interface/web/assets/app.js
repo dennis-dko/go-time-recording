@@ -366,6 +366,21 @@ const TRANSLATIONS = {
     'user.directoryAccount': 'aus dem Verzeichnis',
     'user.directoryHint': 'Wird im LDAP verwaltet. Das Passwort liegt dort, und das Entfernen des Eintrags dort entfernt auch dieses Konto.',
 
+    'passkey.title': 'Passkeys',
+    'passkey.hint': 'Mit Fingerabdruck, Gesicht oder Geräte-PIN anmelden, statt ein Passwort einzutippen. Der Schlüssel verlässt das Gerät nie, kann also weder abgephisht noch aus einem Datenleck gelesen werden. Dein Passwort funktioniert weiterhin.',
+    'passkey.name': 'Name für dieses Gerät',
+    'passkey.namePlaceholder': 'Arbeitslaptop',
+    'passkey.add': 'Passkey hinzufügen',
+    'passkey.added': 'Hinzugefügt',
+    'passkey.lastUsed': 'Zuletzt benutzt',
+    'passkey.never': 'nie',
+    'passkey.empty': 'Noch keine Passkeys. Füge einen hinzu, um dich ohne Passwort anzumelden.',
+    'passkey.signIn': 'Mit Passkey anmelden',
+    'passkey.added.done': 'Passkey hinzugefügt',
+    'passkey.removed': 'Passkey entfernt',
+    'passkey.cancelled': 'Der Passkey wurde nicht verwendet.',
+    'passkey.failed': 'Der Passkey wurde nicht akzeptiert.',
+
     'tz.title': 'Zeitzone',
     'tz.hint': 'Bestimmt, auf welchen Kalendertag eine Buchung fällt — für alle, die unter „Mein Konto" keine eigene gesetzt haben.',
     'tz.myTitle': 'Meine Zeitzone',
@@ -470,6 +485,7 @@ const TRANSLATIONS = {
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.error': 'Fehler',
     'msg.initFailed': 'Initialisierung fehlgeschlagen',
+    'msg.loadFailed': 'Konnte nicht alles laden',
     'msg.invalidFields': 'Ungültige Felder',
     'msg.passwordChanged': 'Passwort geändert. Bitte neu anmelden.',
     'msg.projectArchived': 'Projekt archiviert',
@@ -1546,28 +1562,48 @@ async function submitLogin(e) {
     totp: form.elements.totp.value.trim(),
   };
 
+  // Only the sign-in call itself decides whether the credentials were wrong.
+  //
+  // Wrapping the loading that follows in the same catch made a correct password
+  // look like a wrong one: with the initial password still in place the server
+  // refuses the rest of the API, refreshAll threw, and the handler put the
+  // sign-in screen back with "email address or password is not correct" - on
+  // the one account that had just authenticated successfully. There was no way
+  // through to the screen that would have fixed it.
+  let result;
+
   try {
-    const result = await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
-
-    // The password was right but the account has a second factor: ask for the
-    // code instead of reporting a failed sign-in.
-    if (result.totpRequired) {
-      $('#login-totp-field').hidden = false;
-      $('#login-error').textContent = t('login.totpNeeded', 'Please enter the code from your authenticator app.');
-      $('#login-error').hidden = false;
-      form.elements.totp.focus();
-
-      return;
-    }
-
-    hideLogin();
-    await refreshAll();
-    switchView(firstVisibleView());
+    result = await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
   } catch {
     // The server deliberately does not say which part was wrong, so neither
     // does the interface.
     showLogin(t('login.failed', 'Email address or password is not correct.'));
     form.elements.password.value = '';
+
+    return;
+  }
+
+  // The password was right but the account has a second factor: ask for the
+  // code instead of reporting a failed sign-in.
+  if (result.totpRequired) {
+    $('#login-totp-field').hidden = false;
+    $('#login-error').textContent = t('login.totpNeeded', 'Please enter the code from your authenticator app.');
+    $('#login-error').hidden = false;
+    form.elements.totp.focus();
+
+    return;
+  }
+
+  hideLogin();
+
+  try {
+    await refreshAll();
+    switchView(firstVisibleView());
+  } catch (err) {
+    // Signed in, but something behind it would not load. Staying on the
+    // application with an explanation beats being thrown back to a sign-in
+    // screen that will accept the same password and do this again.
+    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
   }
 }
 
@@ -2351,6 +2387,204 @@ async function loadOperational() {
   fillOperationalForm(await api('/settings/operational'));
 }
 
+// ---------------------------------------------------------------- passkeys
+
+/**
+ * WebAuthn speaks ArrayBuffers; JSON speaks strings. Everything crossing that
+ * boundary is base64url, and getting one of these backwards produces a
+ * signature that verifies against nothing, with no useful error - so they live
+ * here, once, rather than inline at four call sites.
+ */
+function b64urlToBytes(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/')
+    .padEnd(value.length + (4 - value.length % 4) % 4, '=');
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+
+  return bytes.buffer;
+}
+
+function bytesToB64url(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Whether this browser and this connection can do passkeys at all. */
+let passkeysAvailable = false;
+
+/**
+ * Asks the server whether to offer passkeys.
+ *
+ * Two conditions have to hold: the browser has to implement WebAuthn, and the
+ * connection has to be a secure context. Chrome does not define
+ * PublicKeyCredential at all over plain HTTP, so the first check covers the
+ * second - but the server knows why, and can be asked before showing a button
+ * that could only fail.
+ */
+async function loadPasskeySupport() {
+  if (!window.PublicKeyCredential) {
+    passkeysAvailable = false;
+
+    return;
+  }
+
+  try {
+    passkeysAvailable = Boolean((await api('/auth/passkey'))?.available);
+  } catch {
+    passkeysAvailable = false;
+  }
+
+  $('#login-passkey').hidden = !passkeysAvailable;
+}
+
+/** Registers a new credential for the signed-in user. */
+async function registerPasskey(name) {
+  const started = await api('/me/passkeys/register', { method: 'POST' });
+  const options = started.options.publicKey;
+
+  // The server sends base64url because JSON cannot hold bytes; the browser
+  // wants the bytes back.
+  options.challenge = b64urlToBytes(options.challenge);
+  options.user.id = b64urlToBytes(options.user.id);
+
+  for (const credential of options.excludeCredentials ?? []) {
+    credential.id = b64urlToBytes(credential.id);
+  }
+
+  const created = await navigator.credentials.create({ publicKey: options });
+  if (!created) throw new Error(t('passkey.cancelled', 'The passkey was not created.'));
+
+  return api('/me/passkeys/register', {
+    method: 'PUT',
+    body: JSON.stringify({
+      token: started.token,
+      name,
+      credential: {
+        id: created.id,
+        rawId: bytesToB64url(created.rawId),
+        type: created.type,
+        response: {
+          clientDataJSON: bytesToB64url(created.response.clientDataJSON),
+          attestationObject: bytesToB64url(created.response.attestationObject),
+        },
+        // What the device is: a phone, a security key, the laptop itself. The
+        // server keeps it so the next prompt can ask for the right thing.
+        transports: created.response.getTransports?.() ?? [],
+      },
+    }),
+  });
+}
+
+/**
+ * Signs in with a passkey, without a username.
+ *
+ * The browser offers whichever credentials it holds for this site, and the one
+ * that signs names its own owner - so there is nothing to type. That is the
+ * point: a password never typed cannot be phished, reused, or read out of
+ * somebody else's breach.
+ */
+async function signInWithPasskey() {
+  const started = await api('/auth/passkey/login', { method: 'POST' });
+  const options = started.options.publicKey;
+
+  options.challenge = b64urlToBytes(options.challenge);
+
+  for (const credential of options.allowCredentials ?? []) {
+    credential.id = b64urlToBytes(credential.id);
+  }
+
+  const assertion = await navigator.credentials.get({ publicKey: options });
+  if (!assertion) throw new Error(t('passkey.cancelled', 'The passkey was not used.'));
+
+  return api('/auth/passkey/login', {
+    method: 'PUT',
+    body: JSON.stringify({
+      token: started.token,
+      credential: {
+        id: assertion.id,
+        rawId: bytesToB64url(assertion.rawId),
+        type: assertion.type,
+        response: {
+          clientDataJSON: bytesToB64url(assertion.response.clientDataJSON),
+          authenticatorData: bytesToB64url(assertion.response.authenticatorData),
+          signature: bytesToB64url(assertion.response.signature),
+          userHandle: assertion.response.userHandle
+            ? bytesToB64url(assertion.response.userHandle)
+            : null,
+        },
+      },
+    }),
+  });
+}
+
+async function loadPasskeys() {
+  const card = $('#passkey-card');
+
+  // The built-in administrator keeps its password on purpose, so it is never
+  // offered a passkey it might then come to rely on.
+  card.hidden = !passkeysAvailable || !me.user || me.user.isSystem;
+
+  if (card.hidden) return;
+
+  const passkeys = (await api('/me/passkeys'))?.items ?? [];
+
+  const rows = passkeys.map((passkey) => el('tr', {},
+    el('td', { text: passkey.name }),
+    el('td', { text: fmtDate(passkey.createdAt) }),
+    el('td', {
+      text: passkey.lastUsedAt ? fmtDate(passkey.lastUsedAt) : t('passkey.never', 'never'),
+    }),
+    el('td', { class: 'actions' }, el('button', {
+      class: 'link danger',
+      text: t('action.delete', 'delete'),
+      onclick: () => remove(`/me/passkeys/${passkey.id}`,
+        t('passkey.removed', 'Passkey removed'), loadPasskeys),
+    })),
+  ));
+
+  fillTable($('#table-passkeys tbody'), rows, 4,
+    t('passkey.empty', 'No passkeys yet. Add one to sign in without a password.'));
+}
+
+function wirePasskeys() {
+  $('#form-passkey').addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    const field = e.target.elements.name;
+
+    mutate(() => registerPasskey(field.value.trim()),
+      t('passkey.added.done', 'Passkey added'),
+      async () => { field.value = ''; await loadPasskeys(); });
+  });
+
+  $('#login-passkey').addEventListener('click', async () => {
+    try {
+      await signInWithPasskey();
+    } catch (err) {
+      // A cancelled prompt and a rejected credential are indistinguishable
+      // from here, so the message covers both without guessing.
+      showLogin(err.message || t('passkey.failed', 'The passkey was not accepted.'));
+
+      return;
+    }
+
+    hideLogin();
+
+    try {
+      await refreshAll();
+      switchView(firstVisibleView());
+    } catch (err) {
+      toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+    }
+  });
+}
+
 // ---------------------------------------------------------------- timezone
 
 /**
@@ -2541,6 +2775,18 @@ async function refreshAll() {
   await loadSetup();
 
   await loadLanguages();
+
+  // With the initial password still in place the server refuses everything
+  // below, so asking would only produce a screenful of errors. What is left -
+  // the banner, My account, the wizard - is exactly what is needed to get past
+  // it, and My account is where that happens.
+  if (me.user?.mustChangePassword) {
+    fillSettingsForm();
+    switchView('settings');
+
+    return;
+  }
+
   // Roles first: the user table renders a role picker from them.
   await loadRoles();
   await Promise.all([loadUsers(), loadProjects()]);
@@ -2549,6 +2795,7 @@ async function refreshAll() {
   await loadCalendar();
   await loadAdmin();
   await loadTokens();
+  await loadPasskeys();
   fillSettingsForm();
 }
 
@@ -2693,7 +2940,15 @@ function wireForms() {
     const body = formData(e.target);
     mutate(() => api('/me/password', { method: 'PUT', body: JSON.stringify(body) }),
       t('msg.passwordChanged', 'Password changed. Please sign in again.'),
-      async () => { e.target.reset(); await refreshAll(); });
+      async () => {
+        e.target.reset();
+
+        // The server ends every session of this user on a password change, so
+        // reloading would only produce 401s and leave a dead screen. The
+        // message already says to sign in again; this is what takes them
+        // there.
+        await doLogout();
+      });
   });
 
   for (const id of ['#filter-ts-user', '#filter-ts-project', '#filter-ts-status']) {
@@ -2741,6 +2996,10 @@ async function init() {
   // browser language; a signed-in user overrides it in loadMe.
   applyLanguage(activeLanguage());
 
+  // Before the sign-in screen is shown, so its passkey button appears with it
+  // rather than popping in afterwards.
+  await loadPasskeySupport();
+
   try {
     wireForms();
     wireTOTP();
@@ -2752,6 +3011,7 @@ async function init() {
     wireOperational();
     wireSetup();
     wireTour();
+    wirePasskeys();
     $('#logout').addEventListener('click', doLogout);
     $('#language-picker').addEventListener('change', (e) => mutate(
       () => api('/me/language', { method: 'PUT', body: JSON.stringify({ language: e.target.value }) }),

@@ -135,6 +135,20 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 		}
 	}
 
+	return s.OpenSession(ctx, user)
+}
+
+// OpenSession issues a session for a user whose identity has already been
+// established.
+//
+// Split out of Login because a password is not the only way to establish it: a
+// passkey signature does the same, and the session that follows has to be
+// identical in every respect - same lifetime, same storage, same principal.
+// Two code paths building sessions would eventually build two different ones.
+//
+// It performs no authentication of its own, so every caller has to have done
+// that first.
+func (s *SessionService) OpenSession(ctx context.Context, user *model.User) (*LoginResult, error) {
 	token, err := security.NewSessionToken()
 	if err != nil {
 		return nil, apperror.Internal(err)

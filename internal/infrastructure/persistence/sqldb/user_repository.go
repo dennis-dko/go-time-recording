@@ -129,11 +129,12 @@ func (r *UserRepository) GetAll(ctx context.Context) ([]*model.User, error) {
 }
 
 func (r *UserRepository) Update(ctx context.Context, user *model.User) (*model.User, error) {
-	affected, err := r.exec(ctx,
+	found, err := r.update(ctx, "users",
 		"UPDATE users SET name = ?, email = ?, role_id = ?, password_hash = ?, "+
 			"must_change_password = ?, daily_target_hours = ?, max_daily_hours = ?, "+
 			"totp_secret = ?, totp_enabled = ?, language = ?, is_external = ?, "+
 			"external_id = ?, timezone = ?, tour_seen = ? WHERE id = ?",
+		user.ID,
 		user.Name, user.Email, user.RoleID, user.PasswordHash, user.MustChangePassword,
 		user.DailyTargetHours, user.MaxDailyHours,
 		user.TOTPSecret, user.TOTPEnabled, user.Language, user.IsExternal,
@@ -142,7 +143,7 @@ func (r *UserRepository) Update(ctx context.Context, user *model.User) (*model.U
 		return nil, translateUserErr(err, user.Email)
 	}
 
-	if affected == 0 {
+	if !found {
 		return nil, apperror.NotFound("user", strconv.FormatUint(uint64(user.ID), 10))
 	}
 

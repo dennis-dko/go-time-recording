@@ -87,9 +87,11 @@ func main() {
 	settingsRepo := sqldb.NewSettingsRepository(db, cfg.Dialect)
 
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
+	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
+	passkeys := appservice.NewPasskeyService(passkeyRepo, userRepo, auth)
 	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName)
 	setup := appservice.NewSetupService(settingsService, userRepo, cfg.Dialect)
 
@@ -215,6 +217,18 @@ func main() {
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      rest.NewSetupHandler(setup, authorizer),
+		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
+			// What the device's prompt calls this installation. The
+			// administered title if there is one, so a person sees the name
+			// they know rather than a default.
+			func(ctx *gofr.Context) string {
+				branding, err := settingsService.Branding(ctx)
+				if err != nil || branding.Title == "" {
+					return cfg.AppName
+				}
+
+				return branding.Title
+			}),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits, cfg.Dialect,
 			ldapClient.Configure,
 			func(ctx *gofr.Context, config model.LDAPConfig) error {

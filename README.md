@@ -145,6 +145,23 @@ Implemented, and verified against a running instance:
   sign-in, so one handed to an anonymous visitor never carries into a session.
   Requests authenticated by a personal API token are exempt, because a browser
   never attaches that header by itself and there is nothing to forge.
+- **Passkeys** (WebAuthn) are opt-in per user, under *My account*. Signing in
+  is then a fingerprint, a face or a device PIN - no password typed, so nothing
+  to phish, reuse or read out of somebody else's breach. The private half never
+  leaves the device; what is stored here is a public key that verifies
+  signatures and cannot produce them.
+
+  They are an **addition**, never a replacement: the password keeps working
+  alongside, so a lost device is an inconvenience rather than a lockout. The
+  built-in administrator is deliberately excluded from registering one at all -
+  it exists so an installation always has a way back in, and a way back in that
+  depends on a particular phone still existing is not one.
+
+  The relying party is derived from the request, so nothing needs configuring.
+  Two consequences worth knowing: passkeys are offered only over HTTPS or on
+  `localhost` (browsers refuse elsewhere, and reject an IP address as a relying
+  party outright), and a credential is bound to that domain permanently -
+  moving the application to a different one means everyone re-registers.
 - **Two-factor authentication** (TOTP, RFC 6238) is opt-in per user. The
   implementation is checked against the RFC's published test vectors, so it
   interoperates with real authenticator apps.
@@ -494,11 +511,42 @@ that make the synchronisation's edge cases reproducible.
 ### Verify
 
 ```bash
-task test                # the test suite
+task test                # unit tests
+task test:integration    # the real binary, driven over HTTP, end to end
+task test:browser        # the real interface, driven in a real browser
 task stage               # the real image, against real services, on :8080
 task stage:logs          # follow its log
 task stage:down          # stop it and delete the data
 ```
+
+**Integration tests** ([`test/integration/`](test/integration/)) start the
+compiled binary and talk to it over HTTP, the way a browser and a script do.
+Nothing is stubbed, so the middleware order, the CSRF check, the session
+cookie, the migrations and the embedded assets are all in the path — which is
+where every bug found by *running* this application rather than testing it has
+lived. They cover sign-in, the setup wizard, booking and approval, the daily
+cap, overtime, private projects, RBAC, API tokens, timezones and the guided
+tour.
+
+```bash
+task test:integration              # against SQLite, one file per test
+task test:integration DB=postgres  # against the dialect production runs on
+task test:integration DB=mysql     # and the third one
+```
+
+**Browser tests** ([`test/browser/`](test/browser/)) click through the real
+interface with Chrome, Chromium or Edge. They cover what no API test can:
+whether the application is *usable*. A sign-in overlay that never goes away, a
+tab that highlights but changes nothing, a stylesheet rule that quietly beats
+the `hidden` attribute — every one of those leaves the API perfectly healthy
+and the application unusable. This project shipped exactly that once.
+
+```bash
+task test:browser
+```
+
+CI runs all of it on every push and before every release: unit tests with
+`-race`, integration against **all three dialects**, and the browser suite.
 
 `task stage` is what `task dev` is not. Development runs a binary compiled on
 your machine — fast, but not the artifact anyone deploys. Staging goes through

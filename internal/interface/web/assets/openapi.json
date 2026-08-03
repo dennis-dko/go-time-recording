@@ -104,6 +104,46 @@
         }
       }
     },
+    "/auth/passkey": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Whether passkeys can be used on this connection",
+        "description": "Browsers expose WebAuthn only on a secure context - HTTPS, or localhost - and reject an IP address as a relying party identifier. The interface asks before offering a button that could only fail with \"SecurityError: This is an invalid domain\".",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/auth/passkey/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start a passwordless sign-in",
+        "description": "Returns a challenge. No username is asked for: the browser offers whichever credentials it holds for this site, and the one that signs names its own owner.",
+        "responses": {
+          "200": {
+            "description": "Challenge"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish a passwordless sign-in",
+        "description": "Verifies the signature and opens a session, exactly as a password sign-in does - same cookie, same lifetime, same CSRF rotation. Every failure answers alike.",
+        "responses": {
+          "201": {
+            "description": "Signed in"
+          }
+        }
+      }
+    },
     "/auth/logout": {
       "post": {
         "tags": [
@@ -189,6 +229,60 @@
         "responses": {
           "200": {
             "description": "Saved"
+          }
+        }
+      }
+    },
+    "/me/passkeys": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "List your registered passkeys",
+        "description": "Carries no key material. The public half could be sent harmlessly - it verifies signatures and cannot produce them - but sending it invites building something on a value that is meaningless outside a ceremony.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/me/passkeys/register": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Start registering a passkey",
+        "description": "Refused for the built-in administrator: it is the guaranteed way back into an installation, and a guarantee that depends on a particular device still existing is not one.",
+        "responses": {
+          "200": {
+            "description": "Challenge"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Finish registering a passkey",
+        "description": "Verifies what the authenticator created and stores the public half.",
+        "responses": {
+          "200": {
+            "description": "Registered"
+          }
+        }
+      }
+    },
+    "/me/passkeys/{id}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Revoke a passkey",
+        "description": "Scoped to the owner, so an id from somewhere else deletes nothing. Allowed even for the last one: a passkey is an addition to the password, never a replacement, so removing it cannot lock anyone out.",
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }

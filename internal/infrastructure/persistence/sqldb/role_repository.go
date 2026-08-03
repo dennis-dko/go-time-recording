@@ -104,14 +104,15 @@ func (r *RoleRepository) GetAll(ctx context.Context) ([]*model.Role, error) {
 }
 
 func (r *RoleRepository) Update(ctx context.Context, role *model.Role) (*model.Role, error) {
-	affected, err := r.exec(ctx,
+	found, err := r.update(ctx, "roles",
 		"UPDATE roles SET name = ?, description = ? WHERE id = ?",
+		role.ID,
 		role.Name, role.Description, role.ID)
 	if err != nil {
 		return nil, translateRoleErr(err, role.Name)
 	}
 
-	if affected == 0 {
+	if !found {
 		return nil, apperror.NotFound("role", strconv.FormatUint(uint64(role.ID), 10))
 	}
 

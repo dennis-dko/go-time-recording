@@ -82,16 +82,17 @@ func (r *ProjectRepository) GetAll(ctx context.Context) ([]*model.Project, error
 }
 
 func (r *ProjectRepository) Update(ctx context.Context, project *model.Project) (*model.Project, error) {
-	affected, err := r.exec(ctx,
+	found, err := r.update(ctx, "projects",
 		"UPDATE projects SET name = ?, description = ?, start_date = ?, end_date = ?, "+
 			"status = ?, owner_id = ? WHERE id = ?",
+		project.ID,
 		project.Name, project.Description, project.StartDate, project.EndDate,
 		project.Status, project.OwnerID, project.ID)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
 
-	if affected == 0 {
+	if !found {
 		return nil, apperror.NotFound("project", strconv.FormatUint(uint64(project.ID), 10))
 	}
 

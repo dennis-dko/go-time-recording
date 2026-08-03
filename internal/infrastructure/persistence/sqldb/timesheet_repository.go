@@ -112,16 +112,17 @@ func (r *TimesheetRepository) GetAll(ctx context.Context) ([]*model.Timesheet, e
 }
 
 func (r *TimesheetRepository) Update(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	affected, err := r.exec(ctx,
+	found, err := r.update(ctx, "timesheets",
 		"UPDATE timesheets SET user_id = ?, project_id = ?, date = ?, duration_hours = ?, "+
 			"description = ?, status = ? WHERE id = ?",
+		timesheet.ID,
 		timesheet.UserID, timesheet.ProjectID, timesheet.Date, timesheet.DurationHours,
 		timesheet.Description, timesheet.Status, timesheet.ID)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
 
-	if affected == 0 {
+	if !found {
 		return nil, apperror.NotFound("timesheet", strconv.FormatUint(uint64(timesheet.ID), 10))
 	}
 
