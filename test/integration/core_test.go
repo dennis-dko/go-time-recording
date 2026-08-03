@@ -1,0 +1,329 @@
+//go:build integration
+
+package integration
+
+import (
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+)
+
+// A fresh installation has to be usable and safe from the first request. These
+// cover the path everybody takes before anything else works.
+
+func TestFreshInstallServesTheInterfaceAndTheAPI(t *testing.T) {
+	a := start(t)
+
+	page := a.newClient().do(http.MethodGet, "/", nil)
+	if page.Status != http.StatusOK {
+		t.Fatalf("the interface must be served, got %d", page.Status)
+	}
+
+	// The embedded assets, not a directory on disk - which is what makes the
+	// single-binary claim true.
+	for _, asset := range []string{"/app.css", "/app.js", "/theme.js", "/openapi.json"} {
+		if r := a.newClient().do(http.MethodGet, asset, nil); r.Status != http.StatusOK {
+			t.Errorf("%s must be served from the binary, got %d", asset, r.Status)
+		}
+	}
+
+	if !strings.Contains(string(page.Body), `<html lang="en"`) {
+		t.Error("English is the source language; the page should say so")
+	}
+}
+
+func TestTheInitialPasswordMustBeChangedBeforeAnythingElse(t *testing.T) {
+	a := start(t)
+	c := a.newClient()
+
+	user := c.signIn(adminEmail, adminPassword)
+	if !user.MustChangePassword {
+		t.Fatal("a fresh administrator must be flagged to change the password")
+	}
+
+	// The banner says the rest of the application is locked; the server has to
+	// actually lock it, or the banner is a suggestion.
+	if r := c.api(http.MethodGet, "/roles", nil); r.Status != http.StatusConflict {
+		t.Errorf("expected the API to be refused, got %d", r.Status)
+	}
+
+	// Two things stay reachable on purpose: seeing who you are, and the wizard
+	// that tells you what to do about it.
+	c.must(c.api(http.MethodGet, "/me", nil), http.StatusOK)
+	c.must(c.api(http.MethodGet, "/setup", nil), http.StatusOK)
+
+	c.must(c.api(http.MethodPut, "/me/password", map[string]string{
+		"currentPassword": adminPassword,
+		"newPassword":     "a-much-better-password",
+	}), http.StatusOK)
+
+	// Changing a password ends every session of that user.
+	if r := c.api(http.MethodGet, "/me", nil); r.Status == http.StatusOK {
+		t.Error("the old session must not survive a password change")
+	}
+
+	fresh := a.newClient()
+	fresh.signIn(adminEmail, "a-much-better-password")
+	fresh.must(fresh.api(http.MethodGet, "/roles", nil), http.StatusOK)
+}
+
+func TestTheOldPasswordStopsWorking(t *testing.T) {
+	a := start(t)
+	a.signInAsAdmin("a-much-better-password")
+
+	c := a.newClient()
+	if r := c.api(http.MethodPost, "/auth/login", map[string]string{
+		"email": adminEmail, "password": adminPassword,
+	}); r.Status == http.StatusCreated || r.Status == http.StatusOK {
+		t.Fatal("the documented initial password must stop working once changed")
+	}
+}
+
+// A wrong password and an unknown account must be indistinguishable, or the
+// response becomes a way to discover which addresses exist.
+func TestFailedSignInsAreIndistinguishable(t *testing.T) {
+	a := start(t)
+	a.signInAsAdmin("a-much-better-password")
+
+	wrongPassword := a.newClient().api(http.MethodPost, "/auth/login", map[string]string{
+		"email": adminEmail, "password": "not-the-password",
+	})
+
+	unknownAccount := a.newClient().api(http.MethodPost, "/auth/login", map[string]string{
+		"email": "nobody@example.com", "password": "not-the-password",
+	})
+
+	if wrongPassword.Status != unknownAccount.Status {
+		t.Errorf("statuses differ: %d vs %d", wrongPassword.Status, unknownAccount.Status)
+	}
+
+	if wrongPassword.Message() != unknownAccount.Message() {
+		t.Errorf("messages differ: %q vs %q", wrongPassword.Message(), unknownAccount.Message())
+	}
+}
+
+// ------------------------------------------------------------------- setup
+
+func TestSetupWizardOrdersTheDatabaseFirst(t *testing.T) {
+	a := start(t)
+	c := a.newClient()
+	c.signIn(adminEmail, adminPassword)
+
+	var state struct {
+		Completed bool `json:"completed"`
+		Steps     []struct {
+			ID       string `json:"id"`
+			Done     bool   `json:"done"`
+			Required bool   `json:"required"`
+		} `json:"steps"`
+	}
+
+	c.must(c.api(http.MethodGet, "/setup", nil), http.StatusOK).Data(t, &state)
+
+	if state.Completed {
+		t.Error("a fresh installation cannot have completed the wizard")
+	}
+
+	if len(state.Steps) == 0 || state.Steps[0].ID != "database" {
+		t.Fatalf("the database must be the first step, got %+v", state.Steps)
+	}
+
+	// Everything else is stored in the database this step chooses, so it has to
+	// be settled before anything worth losing exists.
+	if !state.Steps[0].Required {
+		t.Error("the database step must be required")
+	}
+
+	required := map[string]bool{}
+	for _, step := range state.Steps {
+		if step.Required {
+			required[step.ID] = true
+		}
+	}
+
+	for _, id := range []string{"database", "password", "timezone"} {
+		if !required[id] {
+			t.Errorf("%s should be required", id)
+		}
+	}
+}
+
+func TestSetupWizardCompletesAndStaysAway(t *testing.T) {
+	a := start(t)
+	c := a.signInAsAdmin("a-much-better-password")
+
+	c.must(c.api(http.MethodPost, "/setup/keep-database", nil), http.StatusCreated, http.StatusOK)
+	c.must(c.api(http.MethodPut, "/settings/timezone",
+		map[string]string{"timezone": "Europe/Berlin"}), http.StatusOK)
+	c.must(c.api(http.MethodPost, "/setup/complete", nil), http.StatusCreated, http.StatusOK)
+
+	var state struct {
+		Completed bool `json:"completed"`
+		Steps     []struct {
+			ID       string `json:"id"`
+			Done     bool   `json:"done"`
+			Required bool   `json:"required"`
+		} `json:"steps"`
+	}
+
+	c.must(c.api(http.MethodGet, "/setup", nil), http.StatusOK).Data(t, &state)
+
+	if !state.Completed {
+		t.Error("the wizard should be recorded as dismissed")
+	}
+
+	for _, step := range state.Steps {
+		if step.Required && !step.Done {
+			t.Errorf("%s is required and still outstanding", step.ID)
+		}
+	}
+}
+
+// The wizard is a list of what is not configured yet, which is a useful thing
+// for an attacker to read.
+func TestSetupWizardIsAdministratorOnly(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
+		"name": "Erika", "email": "erika@example.com",
+		"role": "employee", "password": "erika-password-1",
+	}), http.StatusCreated, http.StatusOK)
+
+	employee := a.newClient()
+	employee.signIn("erika@example.com", "erika-password-1")
+
+	if r := employee.api(http.MethodGet, "/setup", nil); r.Status != http.StatusForbidden {
+		t.Errorf("an employee must not read the setup state, got %d", r.Status)
+	}
+}
+
+// --------------------------------------------------------------- timesheets
+
+func TestBookingSubmittingAndApproving(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	today := time.Now().Format("2006-01-02")
+
+	var booked timesheetResponse
+	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": today, "durationHours": 6.5, "description": "Integration work",
+	}), http.StatusCreated, http.StatusOK).Data(t, &booked)
+
+	if booked.Status != "open" {
+		t.Errorf("a new entry should start open, got %q", booked.Status)
+	}
+
+	if booked.DurationHours != 6.5 {
+		t.Errorf("expected 6.5 hours, got %v", booked.DurationHours)
+	}
+
+	// open -> submitted -> approved, the whole review path.
+	for _, status := range []string{"submitted", "approved"} {
+		var updated timesheetResponse
+
+		admin.must(admin.api(http.MethodPut, path("/timesheets/", booked.ID),
+			map[string]any{"status": status}), http.StatusOK).Data(t, &updated)
+
+		if updated.Status != status {
+			t.Fatalf("expected %q, got %q", status, updated.Status)
+		}
+	}
+
+	var list listOf[timesheetResponse]
+	admin.must(admin.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
+
+	if list.TotalCount != 1 {
+		t.Errorf("expected one entry, got %d", list.TotalCount)
+	}
+}
+
+func TestBookingIsRefusedOverTheDailyCap(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	// Administered from the Settings screen, and in force immediately.
+	admin.must(admin.api(http.MethodPut, "/settings/operational",
+		map[string]any{"maxDailyHours": 8}), http.StatusOK)
+
+	today := time.Now().Format("2006-01-02")
+
+	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": today, "durationHours": 6,
+	}), http.StatusCreated, http.StatusOK)
+
+	// 6 + 4 is over 8: the cap counts the day, not the single booking.
+	over := admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": today, "durationHours": 4,
+	})
+
+	if over.Status != http.StatusConflict {
+		t.Fatalf("expected the booking to be refused, got %d: %s", over.Status, over.Body)
+	}
+
+	if !strings.Contains(over.Message(), "daily limit") {
+		t.Errorf("the refusal should say why: %q", over.Message())
+	}
+
+	// And the limit is a limit, not a wall: 2 more hours still fit.
+	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": today, "durationHours": 2,
+	}), http.StatusCreated, http.StatusOK)
+}
+
+func TestOvertimeCountsOnlyDaysWithBookings(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	me := admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK)
+
+	var meResult struct {
+		User userResponse `json:"user"`
+	}
+
+	me.Data(t, &meResult)
+
+	// An 8 hour target, one day of 10: two hours over, and the untouched days
+	// in between must not accumulate as a deficit.
+	admin.must(admin.api(http.MethodPut, path("/users/", meResult.User.ID, "/working-times"),
+		map[string]any{"dailyTargetHours": 8}), http.StatusOK)
+
+	day := time.Now().Format("2006-01-02")
+	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": day, "durationHours": 10,
+	}), http.StatusCreated, http.StatusOK)
+
+	var balance struct {
+		TotalBooked  float64 `json:"totalBooked"`
+		TotalTarget  float64 `json:"totalTarget"`
+		TotalBalance float64 `json:"totalBalance"`
+	}
+
+	// The period is stated rather than left to default to "this month".
+	//
+	// Defaulting made this test fail once an hour either side of midnight: the
+	// booking is dated in the test machine's zone, while the server works out
+	// "now" in the instance's - UTC unless configured. Just after midnight in
+	// Berlin it is still yesterday in UTC, so the window ended before the day
+	// the hours were booked on. The application is right to do that; what was
+	// wrong was a test that asked a question whose answer depends on the clock.
+	// Which zone applies is covered by its own tests.
+	window := path("?from=", day, "&to=", day)
+
+	admin.must(admin.api(http.MethodGet, path("/users/", meResult.User.ID, "/overtime", window), nil),
+		http.StatusOK).Data(t, &balance)
+
+	if balance.TotalBooked != 10 {
+		t.Errorf("expected 10 booked hours, got %v", balance.TotalBooked)
+	}
+
+	if balance.TotalTarget != 8 {
+		t.Errorf("only the day with a booking counts, so the target is 8, got %v", balance.TotalTarget)
+	}
+
+	if balance.TotalBalance != 2 {
+		t.Errorf("expected a balance of +2, got %v", balance.TotalBalance)
+	}
+}
