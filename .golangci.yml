@@ -3,6 +3,14 @@ version: "2"
 run:
   timeout: 5m
 
+  # Without these, the integration and browser suites are invisible to the
+  # linter: their build tags exclude them, so roughly fifteen hundred lines that
+  # decide whether a release is trustworthy were the only code here nothing
+  # checked.
+  build-tags:
+    - integration
+    - browser
+
 linters:
   default: standard
 
