@@ -140,7 +140,16 @@ func (h *UserHandler) Delete(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	if err := h.users.DeleteUser(c, command.DeleteUserCommand{ID: id}); err != nil {
+	// ?purge=true confirms that the account's recorded time goes with it. Without
+	// it an account that has booked hours is refused, and the refusal says how
+	// many - so the confirmation is asked with the number in front of whoever is
+	// about to agree to it.
+	//
+	// A query parameter rather than a body, because DELETE with a body is
+	// awkward for clients and proxies alike, and this is one boolean.
+	purge := boolParam(c, "purge")
+
+	if err := h.users.DeleteUser(c, command.DeleteUserCommand{ID: id, Purge: purge}); err != nil {
 		return nil, toHTTPError(err)
 	}
 

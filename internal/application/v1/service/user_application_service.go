@@ -27,14 +27,34 @@ type UserService interface {
 type UserApplicationService struct {
 	userRepository repository.UserRepository
 	roleRepository repository.RoleRepository
+
+	// timesheetRepository answers how much recorded time an account has, which
+	// is what a deletion has to warn about.
+	timesheetRepository repository.TimesheetRepository
+
+	// purger removes an account together with everything referencing it.
+	//
+	// Deleting only the account row is not an option: the schema declares
+	// foreign keys, so a database that enforces them refuses it outright, and
+	// SQLite - where they are off unless asked for - accepts it and leaves the
+	// hours behind pointing at nobody. Same request, two different wrong
+	// answers, depending on a choice made in the installer.
+	purger UserPurger
 }
 
 // NewUserApplicationService creates new instance
 func NewUserApplicationService(
 	userRepo repository.UserRepository,
 	roleRepo repository.RoleRepository,
+	timesheetRepo repository.TimesheetRepository,
+	purger UserPurger,
 ) *UserApplicationService {
-	return &UserApplicationService{userRepository: userRepo, roleRepository: roleRepo}
+	return &UserApplicationService{
+		userRepository:      userRepo,
+		roleRepository:      roleRepo,
+		timesheetRepository: timesheetRepo,
+		purger:              purger,
+	}
 }
 
 var _ UserService = (*UserApplicationService)(nil)
@@ -242,7 +262,21 @@ func (s *UserApplicationService) DeleteUser(ctx context.Context, cmd command.Del
 		return apperror.Conflictf("the built-in administrator cannot be deleted")
 	}
 
-	return s.userRepository.Delete(ctx, cmd.ID)
+	// How much of the person's work is about to go with the account.
+	entries, err := s.timesheetRepository.GetByFilter(ctx,
+		repository.TimesheetFilter{UserID: cmd.ID})
+	if err != nil {
+		return err
+	}
+
+	if len(entries) > 0 && !cmd.Purge {
+		return apperror.Conflictf(
+			"%q has %d recorded time entries, which would be deleted with the account "+
+				"and cannot be recovered; confirm to proceed",
+			user.Email, len(entries))
+	}
+
+	return s.purger.PurgeUser(ctx, cmd.ID)
 }
 
 // resolveRole accepts a role name, defaulting to the least privileged role

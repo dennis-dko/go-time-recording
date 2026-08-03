@@ -161,3 +161,17 @@ func pageLimit(raw string) int {
 
 	return limit
 }
+
+// boolParam reads a query parameter meant as a flag.
+//
+// "true" and "1" are true; anything else, including absent, is false. A
+// confirmation has to be given explicitly, so an unparseable value counts as not
+// given rather than as an error the caller has to handle before it can proceed.
+func boolParam(c *gofr.Context, name string) bool {
+	switch strings.ToLower(strings.TrimSpace(c.Param(name))) {
+	case "true", "1":
+		return true
+	default:
+		return false
+	}
+}

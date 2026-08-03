@@ -38,6 +38,55 @@ func (b base) rebind(query string) string {
 	return Rebind(b.dialect, query)
 }
 
+// txBeginner is a datasource that can start a transaction.
+//
+// Separate from DB and discovered by assertion rather than required, which is
+// what keeps this package free of any dependency on GoFr. It works out because
+// GoFr's *sql.DB is embedded in its own datasource type, so BeginTx is promoted
+// onto it - and the *sql.Tx that comes back satisfies DB, so the same repository
+// code runs inside a transaction and outside one without knowing which.
+type txBeginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+// withTx runs fn inside a transaction, so a sequence of statements either all
+// land or none do.
+//
+// This matters wherever one logical change is several statements. Without it a
+// connection lost half way through leaves the database describing something
+// nobody asked for: a role stripped of its permissions between the delete and
+// the insert that was meant to replace them, or a person's recorded hours gone
+// while their account remains.
+//
+// fn is given a base bound to the transaction and must use only that. Reaching
+// past it to the original datasource would take a second connection, which on
+// SQLite means waiting for a lock the transaction itself is holding.
+//
+// A datasource that cannot begin one - a test double, say - runs fn directly.
+// Silently, because the alternative is refusing to work at all in a test, and
+// the guarantee a transaction adds is not one those tests are checking.
+func (b base) withTx(ctx context.Context, fn func(tx base) error) error {
+	beginner, ok := b.db.(txBeginner)
+	if !ok {
+		return fn(b)
+	}
+
+	tx, err := beginner.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	if err := fn(base{db: tx, dialect: b.dialect}); err != nil {
+		// The original error is what the caller needs; a rollback that also
+		// fails would only bury it, and the transaction is abandoned either way.
+		_ = tx.Rollback()
+
+		return err
+	}
+
+	return tx.Commit()
+}
+
 // Rebind rewrites the '?' placeholders used throughout this package into the
 // dialect's own form. Only PostgreSQL differs; it wants ordinal $1, $2, ...
 //

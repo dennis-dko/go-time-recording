@@ -123,21 +123,28 @@ func (r *RoleRepository) Update(ctx context.Context, role *model.Role) (*model.R
 	return r.GetByID(ctx, role.ID)
 }
 
+// Delete removes a role and its permissions.
+//
+// One transaction, because it is two tables. The order matters and so does the
+// atomicity: permissions gone with the role still there is a role that grants
+// nothing while everyone assigned to it keeps pointing at it.
 func (r *RoleRepository) Delete(ctx context.Context, id uint) error {
-	if _, err := r.exec(ctx, "DELETE FROM role_permissions WHERE role_id = ?", id); err != nil {
-		return apperror.Internal(err)
-	}
+	return r.withTx(ctx, func(tx base) error {
+		if _, err := tx.exec(ctx, "DELETE FROM role_permissions WHERE role_id = ?", id); err != nil {
+			return apperror.Internal(err)
+		}
 
-	affected, err := r.exec(ctx, "DELETE FROM roles WHERE id = ?", id)
-	if err != nil {
-		return apperror.Internal(err)
-	}
+		affected, err := tx.exec(ctx, "DELETE FROM roles WHERE id = ?", id)
+		if err != nil {
+			return apperror.Internal(err)
+		}
 
-	if affected == 0 {
-		return apperror.NotFound("role", strconv.FormatUint(uint64(id), 10))
-	}
+		if affected == 0 {
+			return apperror.NotFound("role", strconv.FormatUint(uint64(id), 10))
+		}
 
-	return nil
+		return nil
+	})
 }
 
 func (r *RoleRepository) CountUsers(ctx context.Context, roleID uint) (int, error) {
@@ -179,20 +186,31 @@ func (r *RoleRepository) permissionsOf(ctx context.Context, roleID uint) ([]stri
 }
 
 // replacePermissions makes the stored grants match the given set exactly.
+//
+// The most dangerous few lines in this package, and the reason withTx exists: it
+// deletes every permission the role has and then inserts the new set. A
+// connection lost in between leaves the role holding fewer permissions than
+// anybody asked for, or none - and every user on that role loses the access those
+// permissions granted, immediately, with the only trace being an error the
+// administrator saw once.
+//
+// Inside a transaction the role keeps what it had.
 func (r *RoleRepository) replacePermissions(ctx context.Context, roleID uint, permissions []string) error {
-	if _, err := r.exec(ctx, "DELETE FROM role_permissions WHERE role_id = ?", roleID); err != nil {
-		return apperror.Internal(err)
-	}
-
-	for _, permission := range permissions {
-		_, err := r.exec(ctx,
-			"INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)", roleID, permission)
-		if err != nil {
+	return r.withTx(ctx, func(tx base) error {
+		if _, err := tx.exec(ctx, "DELETE FROM role_permissions WHERE role_id = ?", roleID); err != nil {
 			return apperror.Internal(err)
 		}
-	}
 
-	return nil
+		for _, permission := range permissions {
+			_, err := tx.exec(ctx,
+				"INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)", roleID, permission)
+			if err != nil {
+				return apperror.Internal(err)
+			}
+		}
+
+		return nil
+	})
 }
 
 func translateRoleErr(err error, name string) error {
