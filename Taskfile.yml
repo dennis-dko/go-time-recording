@@ -142,14 +142,41 @@ tasks:
       Usage:
         task test:integration              against SQLite, a file per test
         task test:integration DB=postgres  against `task env:up PROFILE=postgres`
+        task test:integration DB=mysql     against `task env:up PROFILE=mysql`
     env:
       GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
       # Empty for SQLite: the harness then gives each instance its own file.
-      GTR_TEST_DSN: '{{if eq .DB "postgres"}}postgres://gtr:gtr-test-password@localhost:55432/go-time-recording?sslmode=disable{{end}}'
+      # root on MySQL: each test creates its own database, which an ordinary
+      # MySQL user is not allowed to do. A throwaway server either way.
+      GTR_TEST_DSN: '{{if eq .DB "postgres"}}postgres://gtr:gtr-test-password@localhost:55432/go-time-recording?sslmode=disable{{else if eq .DB "mysql"}}mysql://root:gtr-test-root@localhost:53306/go-time-recording{{end}}'
+    # Starting the server it needs, rather than failing with "connection
+    # refused" and leaving the reader to work out which container was missing.
     cmds:
+      - '{{if or (eq .DB "postgres") (eq .DB "mysql")}}task env:up PROFILE={{.DB}}{{end}}'
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
       - go test -tags integration -count=1 -timeout 15m ./test/integration/
+
+  test:browser:
+    desc: 'Verify: drive the real interface in a real browser.'
+    summary: |
+      Starts the application and clicks through it with Chrome, Chromium or
+      Edge - whichever is installed. Set CHROME_PATH if it lives somewhere
+      unusual.
+
+      This covers what the API tests cannot: whether the application is
+      *usable*. A sign-in overlay that never goes away, a tab that highlights
+      but changes nothing, a stylesheet rule that quietly beats the hidden
+      attribute - every one of those leaves the API perfectly healthy.
+
+      This project shipped exactly that: a sign-in form that authenticated
+      correctly and then left the overlay on screen. Every API check passed.
+    env:
+      GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
+    cmds:
+      - mkdir -p {{.TMP_DIR}}
+      - defer: rm -rf {{.TMP_DIR}}
+      - go test -tags browser -count=1 -timeout 20m ./test/browser/
 
   stage:
     desc: 'Verify: run the shipped container image against real services, for a full test.'

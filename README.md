@@ -496,6 +496,7 @@ that make the synchronisation's edge cases reproducible.
 ```bash
 task test                # unit tests
 task test:integration    # the real binary, driven over HTTP, end to end
+task test:browser        # the real interface, driven in a real browser
 task stage               # the real image, against real services, on :8080
 task stage:logs          # follow its log
 task stage:down          # stop it and delete the data
@@ -512,11 +513,23 @@ tour.
 
 ```bash
 task test:integration              # against SQLite, one file per test
-task env:up PROFILE=postgres
 task test:integration DB=postgres  # against the dialect production runs on
+task test:integration DB=mysql     # and the third one
 ```
 
-CI runs both legs on every push and before every release.
+**Browser tests** ([`test/browser/`](test/browser/)) click through the real
+interface with Chrome, Chromium or Edge. They cover what no API test can:
+whether the application is *usable*. A sign-in overlay that never goes away, a
+tab that highlights but changes nothing, a stylesheet rule that quietly beats
+the `hidden` attribute — every one of those leaves the API perfectly healthy
+and the application unusable. This project shipped exactly that once.
+
+```bash
+task test:browser
+```
+
+CI runs all of it on every push and before every release: unit tests with
+`-race`, integration against **all three dialects**, and the browser suite.
 
 `task stage` is what `task dev` is not. Development runs a binary compiled on
 your machine — fast, but not the artifact anyone deploys. Staging goes through

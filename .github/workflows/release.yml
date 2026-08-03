@@ -60,6 +60,17 @@ jobs:
           GTR_TEST_DSN: postgres://gtr:gtr-test-password@localhost:5432/go-time-recording?sslmode=disable
         run: go test -tags integration -count=1 -timeout 15m ./test/integration/
 
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+
+      # A release that nobody can sign in to is worse than no release.
+      - name: Browser tests
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: go test -tags browser -count=1 -timeout 20m ./test/browser/
+
   publish:
     name: Publish image & GitHub release
     runs-on: ubuntu-latest

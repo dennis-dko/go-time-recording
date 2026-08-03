@@ -22,7 +22,7 @@ func TestCSRFRejectsARequestFromAnotherSite(t *testing.T) {
 
 	// A real session and a real token - the only thing wrong is where the
 	// request claims to come from, which is exactly the attack.
-	req := rawRequest(t, http.MethodPost, a.baseURL+"/api/v1/projects",
+	req := rawRequest(t, http.MethodPost, a.BaseURL()+"/api/v1/projects",
 		`{"name":"Pwned","startDate":"2026-08-02"}`)
 	req.Header.Set("Origin", "http://evil.example.net")
 	req.Header.Set("X-CSRF-Token", c.csrfToken())
@@ -37,9 +37,9 @@ func TestCSRFRejectsAMissingToken(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	req := rawRequest(t, http.MethodPost, a.baseURL+"/api/v1/projects",
+	req := rawRequest(t, http.MethodPost, a.BaseURL()+"/api/v1/projects",
 		`{"name":"No token","startDate":"2026-08-02"}`)
-	req.Header.Set("Origin", a.baseURL)
+	req.Header.Set("Origin", a.BaseURL())
 
 	if resp := send(t, c, req); resp.Status != http.StatusForbidden {
 		t.Fatalf("a write without the header must be refused, got %d", resp.Status)
@@ -70,7 +70,7 @@ func TestReadsNeedNoToken(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	req := rawRequest(t, http.MethodGet, a.baseURL+"/api/v1/timesheets", "")
+	req := rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/timesheets", "")
 
 	if resp := send(t, c, req); resp.Status != http.StatusOK {
 		t.Errorf("a read must not require a CSRF token, got %d", resp.Status)
@@ -80,7 +80,7 @@ func TestReadsNeedNoToken(t *testing.T) {
 func TestSecurityHeadersAreSet(t *testing.T) {
 	a := start(t)
 
-	resp, err := http.Get(a.baseURL + "/")
+	resp, err := http.Get(a.BaseURL() + "/")
 	if err != nil {
 		t.Fatalf("cannot fetch the page: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestAPIResponsesAreNotCached(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	req := rawRequest(t, http.MethodGet, a.baseURL+"/api/v1/me", "")
+	req := rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/me", "")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -261,7 +261,7 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 
 	// A token authenticates without a cookie and without a CSRF token: a
 	// browser never sends that header by itself, so there is nothing to forge.
-	req := rawRequest(t, http.MethodGet, a.baseURL+"/api/v1/timesheets", "")
+	req := rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/timesheets", "")
 	req.Header.Set("Authorization", "Bearer "+created.Secret)
 
 	if resp := sendPlain(t, req); resp.Status != http.StatusOK {
@@ -270,7 +270,7 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 
 	// It carries the owner's role, not more: an employee's token cannot
 	// administer users.
-	req = rawRequest(t, http.MethodGet, a.baseURL+"/api/v1/users", "")
+	req = rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/users", "")
 	req.Header.Set("X-API-Token", created.Secret)
 
 	if resp := sendPlain(t, req); resp.Status != http.StatusForbidden {
@@ -281,7 +281,7 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 	employee.must(employee.api(http.MethodDelete, path("/me/tokens/", created.ID), nil),
 		http.StatusOK, http.StatusNoContent)
 
-	req = rawRequest(t, http.MethodGet, a.baseURL+"/api/v1/timesheets", "")
+	req = rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/timesheets", "")
 	req.Header.Set("Authorization", "Bearer "+created.Secret)
 
 	if resp := sendPlain(t, req); resp.Status == http.StatusOK {
