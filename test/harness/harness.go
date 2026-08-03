@@ -57,7 +57,7 @@ type App struct {
 	logs    *bytes.Buffer
 }
 
-// BaseURL is where the instance answers, e.g. http://127.0.0.1:54321
+// BaseURL is where the instance answers, e.g. http://localhost:54321
 func (a *App) BaseURL() string { return a.baseURL }
 
 // Log returns what the instance has written so far, for a failure message.
@@ -156,8 +156,13 @@ func Start(t *testing.T, env ...string) *App {
 	}
 
 	a := &App{
-		t:       t,
-		baseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
+		t: t,
+		// localhost rather than 127.0.0.1: browsers treat both as a secure
+		// context, but WebAuthn rejects an IP address as a relying party
+		// identifier - "SecurityError: This is an invalid domain". Passkey
+		// tests would fail for a reason that has nothing to do with the code
+		// under test.
+		baseURL: fmt.Sprintf("http://localhost:%d", port),
 		cmd:     cmd,
 		logs:    logs,
 	}

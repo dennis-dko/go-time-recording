@@ -55,6 +55,65 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260802010000: {UP: func(d migration.Datasource) error {
 			return addUserTourSeen(d, dialect)
 		}},
+		20260803010000: {UP: func(d migration.Datasource) error {
+			return createPasskeys(d, dialect)
+		}},
+	}
+}
+
+// createPasskeys stores the WebAuthn credentials users register for signing in.
+//
+// Nothing here is worth stealing: a passkey's private half never leaves the
+// device, so what is kept is the public key and the counters needed to verify a
+// signature. That is also why there is no "revoke everything" concern - a
+// credential is useless without the device that holds its other half.
+//
+// credential_id is unique across the installation because it is what a sign-in
+// arrives with: the browser sends the credential, and the credential names its
+// owner. That is what allows signing in without typing a username.
+func createPasskeys(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE passkeys (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		name VARCHAR(120) NOT NULL,
+		credential_id %s NOT NULL,
+		public_key %s NOT NULL,
+		attestation_type VARCHAR(32) NOT NULL DEFAULT '',
+		transports VARCHAR(120) NOT NULL DEFAULT '',
+		sign_count BIGINT NOT NULL DEFAULT 0,
+		backup_eligible BOOLEAN NOT NULL DEFAULT FALSE,
+		backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+		created_at %s NOT NULL,
+		last_used_at %s
+	)`, primaryKey(dialect), foreignKeyID(dialect),
+		credentialID(dialect), blob(dialect),
+		timestamp(dialect), timestamp(dialect)),
+		"CREATE INDEX idx_passkeys_user ON passkeys (user_id)",
+		"CREATE UNIQUE INDEX idx_passkeys_credential ON passkeys (credential_id)")
+}
+
+// credentialID is the type for the lookup key.
+//
+// MySQL cannot index a BLOB without a prefix length, so the identifier is
+// stored as VARBINARY there - long enough for anything an authenticator
+// produces, and indexable whole.
+func credentialID(dialect string) string {
+	if dialect == sqldb.DialectMySQL {
+		return "VARBINARY(255)"
+	}
+
+	return blob(dialect)
+}
+
+// blob is the dialect's binary column type.
+func blob(dialect string) string {
+	switch dialect {
+	case sqldb.DialectPostgres:
+		return "BYTEA"
+	case sqldb.DialectMySQL:
+		return "BLOB"
+	default:
+		return "BLOB"
 	}
 }
 

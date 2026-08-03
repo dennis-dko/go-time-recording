@@ -327,3 +327,87 @@ func TestOvertimeCountsOnlyDaysWithBookings(t *testing.T) {
 		t.Errorf("expected a balance of +2, got %v", balance.TotalBalance)
 	}
 }
+
+// Changing the administrator password is required, and required means two
+// independent things hold - because a wizard is a screen, and a screen can be
+// closed.
+//
+// The wizard comes back while the step is outstanding, whatever "completed"
+// says. And the server refuses the rest of the API regardless of the wizard,
+// so an installation cannot be used on the password from the documentation
+// even by someone who never opens the interface.
+func TestChangingTheAdministratorPasswordCannotBeSkipped(t *testing.T) {
+	a := start(t)
+	c := a.newClient()
+	c.signIn(adminEmail, adminPassword)
+
+	// Settle everything else and dismiss the wizard, without touching the
+	// password.
+	c.must(c.api(http.MethodPost, "/setup/keep-database", nil), http.StatusCreated, http.StatusOK)
+	c.must(c.api(http.MethodPut, "/settings/timezone",
+		map[string]string{"timezone": "Europe/Berlin"}), http.StatusOK)
+	c.must(c.api(http.MethodPost, "/setup/complete", nil), http.StatusCreated, http.StatusOK)
+
+	var state struct {
+		Completed bool `json:"completed"`
+		Steps     []struct {
+			ID       string `json:"id"`
+			Done     bool   `json:"done"`
+			Required bool   `json:"required"`
+		} `json:"steps"`
+	}
+
+	c.must(c.api(http.MethodGet, "/setup", nil), http.StatusOK).Data(t, &state)
+
+	var outstanding []string
+
+	for _, step := range state.Steps {
+		if step.Required && !step.Done {
+			outstanding = append(outstanding, step.ID)
+		}
+	}
+
+	if len(outstanding) != 1 || outstanding[0] != "password" {
+		t.Fatalf("expected the password step to be the one outstanding, got %v", outstanding)
+	}
+
+	// Dismissing settles the optional steps only; this one brings it back.
+	if state.Completed && len(outstanding) == 0 {
+		t.Error("the wizard must not count as finished with the password outstanding")
+	}
+
+	// And the second guarantee, which does not depend on the interface at all.
+	for _, call := range []struct{ method, path string }{
+		{http.MethodGet, "/roles"},
+		{http.MethodGet, "/users"},
+		{http.MethodPost, "/timesheets"},
+		{http.MethodPost, "/me/tokens"},
+	} {
+		r := c.api(call.method, call.path, map[string]any{
+			"date": "2026-08-03", "durationHours": 8, "name": "x", "expiresInDays": 0,
+		})
+
+		if r.Status != http.StatusConflict {
+			t.Errorf("%s %s should be refused while the initial password stands, got %d",
+				call.method, call.path, r.Status)
+		}
+	}
+
+	// Once changed, both give way at once.
+	c.must(c.api(http.MethodPut, "/me/password", map[string]string{
+		"currentPassword": adminPassword,
+		"newPassword":     "a-much-better-password",
+	}), http.StatusOK)
+
+	after := a.newClient()
+	after.signIn(adminEmail, "a-much-better-password")
+	after.must(after.api(http.MethodGet, "/roles", nil), http.StatusOK)
+
+	after.must(after.api(http.MethodGet, "/setup", nil), http.StatusOK).Data(t, &state)
+
+	for _, step := range state.Steps {
+		if step.Required && !step.Done {
+			t.Errorf("%s should be settled now", step.ID)
+		}
+	}
+}

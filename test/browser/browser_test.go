@@ -184,6 +184,39 @@ func (p *page) click(selector string) chromedp.Action {
 	})
 }
 
+// readyAdmin signs in, replaces the initial password and settles the wizard,
+// leaving an administrator who can actually do things.
+//
+// All three are needed: the server refuses the rest of the API until the
+// password is replaced, and the wizard is an overlay that swallows clicks
+// until it is settled. A test that skips either spends its time discovering
+// that again.
+const adminPassword = "a-much-better-password"
+
+func (p *page) readyAdmin() {
+	p.t.Helper()
+
+	p.signIn(harness.AdminEmail, harness.AdminPassword)
+	p.waitGone("#login-screen")
+	p.settleWizard()
+
+	p.run("replace the initial password",
+		chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#form-password", chromedp.ByID),
+		chromedp.SendKeys(`#form-password input[name="currentPassword"]`,
+			harness.AdminPassword, chromedp.ByQuery),
+		chromedp.SendKeys(`#form-password input[name="newPassword"]`,
+			adminPassword, chromedp.ByQuery),
+		p.click(`#form-password button[type="submit"]`),
+		// The change ends the session, so the sign-in screen comes back.
+		chromedp.WaitVisible("#form-login", chromedp.ByID),
+	)
+
+	p.signIn(harness.AdminEmail, adminPassword)
+	p.waitGone("#login-screen")
+	p.settleWizard()
+}
+
 // visible reports whether an element is on screen, as the browser sees it -
 // not whether it exists in the markup.
 func (p *page) visible(selector string) bool {

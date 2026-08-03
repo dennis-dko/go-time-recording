@@ -145,6 +145,23 @@ Implemented, and verified against a running instance:
   sign-in, so one handed to an anonymous visitor never carries into a session.
   Requests authenticated by a personal API token are exempt, because a browser
   never attaches that header by itself and there is nothing to forge.
+- **Passkeys** (WebAuthn) are opt-in per user, under *My account*. Signing in
+  is then a fingerprint, a face or a device PIN - no password typed, so nothing
+  to phish, reuse or read out of somebody else's breach. The private half never
+  leaves the device; what is stored here is a public key that verifies
+  signatures and cannot produce them.
+
+  They are an **addition**, never a replacement: the password keeps working
+  alongside, so a lost device is an inconvenience rather than a lockout. The
+  built-in administrator is deliberately excluded from registering one at all -
+  it exists so an installation always has a way back in, and a way back in that
+  depends on a particular phone still existing is not one.
+
+  The relying party is derived from the request, so nothing needs configuring.
+  Two consequences worth knowing: passkeys are offered only over HTTPS or on
+  `localhost` (browsers refuse elsewhere, and reject an IP address as a relying
+  party outright), and a credential is bound to that domain permanently -
+  moving the application to a different one means everyone re-registers.
 - **Two-factor authentication** (TOTP, RFC 6238) is opt-in per user. The
   implementation is checked against the RFC's published test vectors, so it
   interoperates with real authenticator apps.
