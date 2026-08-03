@@ -36,8 +36,23 @@ COPY --from=build /src/cmd/configs /app/configs
 # DB_NAME is a path here because GoFr derives the DSN as "file:<DB_NAME>.db".
 RUN mkdir -p /data && chown -R app:app /data /app
 VOLUME /data
-ENV DB_DIALECT=sqlite \
-    DB_NAME=/data/go-time-recording \
+
+# DB_DIALECT is deliberately absent, so this image serves its installer rather
+# than choosing a database for whoever ran it.
+#
+# It used to be sqlite here, which quietly defeated removing the default from
+# configs/.env: the environment wins, so the image was the one layer that still
+# picked for you. Somebody would run it, configure an installation on a SQLite
+# file inside the container, and find out which database they had been using only
+# when they tried to move to a real one - which is the failure the installer
+# exists to prevent.
+#
+# DB_NAME stays, and configures nothing on its own: it is the path the installer
+# offers when SQLite is chosen, which is the right suggestion in a container and
+# saves the operator working out where the volume is.
+#
+# Set DB_DIALECT to skip the installer, which is what deploy/compose.yaml does.
+ENV DB_NAME=/data/go-time-recording \
     HTTP_PORT=8000 \
     METRICS_PORT=2121
 

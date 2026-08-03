@@ -126,10 +126,18 @@ jobs:
       - name: Smoke-test the published image
         run: |
           # The image serves on 8000; publishing 9090:9090 could never have answered.
-          docker run -d --name smoke -p 9090:8000 ${{ needs.publish.outputs.image }}:${{ github.ref_name }}
+          #
+          # DB_DIALECT because the image ships without one on purpose - run bare it
+          # serves its installer, and a smoke test that only proved the installer
+          # answers would say nothing about the application being publishable.
+          docker run -d --name smoke -p 9090:8000             -e DB_DIALECT=sqlite             ${{ needs.publish.outputs.image }}:${{ github.ref_name }}
           ok=0
           for i in $(seq 1 10); do
-            if curl -fsS http://localhost:9090/ >/dev/null 2>&1; then
+            # The body, not the status. The installer answers every path with its
+            # page and a 200 - including this one - so a successful request proves
+            # only that something is listening. A version field in the response
+            # is the application.
+            if curl -fsS http://localhost:9090/api/v1/branding 2>/dev/null | grep -q '"version"'; then
               ok=1
               break
             fi
@@ -138,7 +146,7 @@ jobs:
           docker logs smoke || true
           docker rm -f smoke || true
           if [ "$ok" -ne 1 ]; then
-            echo "::warning::Container did not respond on :9090/ within 20s. Verify manually before trusting this smoke test."
+            echo "::warning::The application did not answer on :9090/api/v1/branding within 20s. Verify manually before trusting this smoke test."
           fi
 
       - name: Deploy
