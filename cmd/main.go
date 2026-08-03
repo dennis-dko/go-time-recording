@@ -374,6 +374,11 @@ func main() {
 
 	authorizer := rest.NewAuthorizer(auth, cfg.AuthEnabled())
 
+	// Built here rather than inline, because both the middleware that reads it and
+	// the handler that clears it need the same instance - two would mean the
+	// switch takes effect for one of them and not the other.
+	maintenanceState := rest.CachedMaintenanceState(settingsService.Maintenance)
+
 	// Order matters, and GoFr applies middleware in registration order:
 	// security headers first so they are set even on a rejected request, then
 	// the rate limit, then the cookie queue wrapping the two authentication
@@ -389,6 +394,12 @@ func main() {
 	// Tokens are checked after sessions and only fill in when no session was
 	// found, so a browser session always wins over a stray header.
 	app.UseMiddleware(rest.APITokenMiddleware(apiTokens))
+
+	// After both authentication paths, because the exemption for the built-in
+	// administrator needs to know who is calling - placed earlier it would turn
+	// away the one account that can end maintenance mode. Before the UI, so the
+	// assets are still served and the page can render the notice.
+	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState))
 
 	if cfg.UIEnabled {
 		// GoFr's AddStaticFiles only serves a directory from disk, which would
@@ -436,7 +447,7 @@ func main() {
 			ldapClient.Configure,
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
 				return ldapClient.TestConnection(ctx, config)
-			}),
+			}).WithMaintenance(maintenanceState),
 	})
 
 	// Expired sessions would otherwise accumulate forever.

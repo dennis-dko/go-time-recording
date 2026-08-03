@@ -379,3 +379,23 @@ func truncate(s string, max int) string {
 
 	return s[:max] + "…"
 }
+
+// eventually retries a condition for a few seconds.
+//
+// For the handful of things this application caches deliberately - the
+// maintenance state, the operational limits - where a change takes effect within
+// seconds rather than instantly. Asserting immediately would be asserting against
+// the cache.
+func eventually(condition func() bool) bool {
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if condition() {
+			return true
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	return false
+}
