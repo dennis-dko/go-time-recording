@@ -260,7 +260,7 @@ func TestOperationalEndpointsAreServed(t *testing.T) {
 	a := start(t)
 
 	for _, path := range []string{"/.well-known/alive", "/.well-known/health"} {
-		resp, err := http.Get(a.baseURL + path)
+		resp, err := http.Get(a.BaseURL() + path)
 		if err != nil {
 			t.Errorf("%s: %v", path, err)
 
@@ -286,4 +286,58 @@ func lower(s string) string {
 	}
 
 	return string(out)
+}
+
+// Saving a record without editing any field must still work.
+//
+// This is where the dialects genuinely disagree: MySQL reports how many rows an
+// UPDATE actually *changed*, PostgreSQL and SQLite how many it *matched*. Code
+// that reads zero as "no such row" turns an ordinary save into a 404 - but only
+// on MySQL, and only when nothing changed, which is why it went unnoticed until
+// the suite was pointed at MySQL.
+func TestSavingWithoutChangingAnythingIsNotAnError(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	var me struct {
+		User userResponse `json:"user"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+
+	// Twice with the same values. The second is the one that used to 404.
+	for attempt := 1; attempt <= 2; attempt++ {
+		r := admin.api(http.MethodPut, path("/users/", me.User.ID, "/working-times"),
+			map[string]any{"dailyTargetHours": 8})
+
+		if r.Status != http.StatusOK {
+			t.Fatalf("attempt %d: saving unchanged working hours must succeed, got %d: %s",
+				attempt, r.Status, r.Body)
+		}
+	}
+
+	// The same for the other tables that are saved whole.
+	var project projectResponse
+	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Unchanged", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &project)
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		if r := admin.api(http.MethodPut, path("/projects/", project.ID),
+			map[string]any{"name": "Unchanged", "startDate": "2026-08-01"}); r.Status != http.StatusOK {
+			t.Errorf("project attempt %d: got %d: %s", attempt, r.Status, r.Body)
+		}
+	}
+
+	var entry timesheetResponse
+	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-01", "durationHours": 4,
+	}), http.StatusCreated, http.StatusOK).Data(t, &entry)
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		if r := admin.api(http.MethodPut, path("/timesheets/", entry.ID),
+			map[string]any{"durationHours": 4}); r.Status != http.StatusOK {
+			t.Errorf("timesheet attempt %d: got %d: %s", attempt, r.Status, r.Body)
+		}
+	}
 }

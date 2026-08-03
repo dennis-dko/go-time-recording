@@ -110,6 +110,52 @@ func (b base) exec(ctx context.Context, query string, args ...any) (int64, error
 	return res.RowsAffected()
 }
 
+// update runs an UPDATE and reports whether the row was there, which is not
+// the same as whether anything changed.
+//
+// MySQL counts rows it actually *changed*; PostgreSQL and SQLite count rows
+// they *matched*. So saving a record without editing any field reports zero
+// affected rows on MySQL and one on the others - and treating zero as "no such
+// row" turns an ordinary save into a 404. Re-saving a user's working hours at
+// their current values did exactly that.
+//
+// The extra query only runs in the zero case, which on the other dialects
+// means genuinely missing and on MySQL means missing or unchanged.
+func (b base) update(
+	ctx context.Context,
+	table, query string,
+	id uint,
+	args ...any,
+) (found bool, err error) {
+	affected, err := b.exec(ctx, query, args...)
+	if err != nil {
+		return false, err
+	}
+
+	if affected > 0 {
+		return true, nil
+	}
+
+	return b.exists(ctx, table, id)
+}
+
+// exists reports whether a row with this id is present.
+//
+// The table name is interpolated rather than bound: it never comes from a
+// request, only from a caller in this package naming its own table, and a
+// placeholder cannot stand in for an identifier anyway.
+func (b base) exists(ctx context.Context, table string, id uint) (bool, error) {
+	var found int
+
+	err := b.db.QueryRowContext(ctx,
+		b.rebind("SELECT COUNT(*) FROM "+table+" WHERE id = ?"), id).Scan(&found)
+	if err != nil {
+		return false, err
+	}
+
+	return found > 0, nil
+}
+
 // dateTime adapts date/timestamp columns across drivers. Depending on the
 // dialect and driver a date arrives as a time.Time, a string, or a []byte, so
 // scanning straight into time.Time is not portable.
