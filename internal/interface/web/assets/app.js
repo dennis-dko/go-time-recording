@@ -470,6 +470,7 @@ const TRANSLATIONS = {
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.error': 'Fehler',
     'msg.initFailed': 'Initialisierung fehlgeschlagen',
+    'msg.loadFailed': 'Konnte nicht alles laden',
     'msg.invalidFields': 'Ungültige Felder',
     'msg.passwordChanged': 'Passwort geändert. Bitte neu anmelden.',
     'msg.projectArchived': 'Projekt archiviert',
@@ -1546,28 +1547,48 @@ async function submitLogin(e) {
     totp: form.elements.totp.value.trim(),
   };
 
+  // Only the sign-in call itself decides whether the credentials were wrong.
+  //
+  // Wrapping the loading that follows in the same catch made a correct password
+  // look like a wrong one: with the initial password still in place the server
+  // refuses the rest of the API, refreshAll threw, and the handler put the
+  // sign-in screen back with "email address or password is not correct" - on
+  // the one account that had just authenticated successfully. There was no way
+  // through to the screen that would have fixed it.
+  let result;
+
   try {
-    const result = await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
-
-    // The password was right but the account has a second factor: ask for the
-    // code instead of reporting a failed sign-in.
-    if (result.totpRequired) {
-      $('#login-totp-field').hidden = false;
-      $('#login-error').textContent = t('login.totpNeeded', 'Please enter the code from your authenticator app.');
-      $('#login-error').hidden = false;
-      form.elements.totp.focus();
-
-      return;
-    }
-
-    hideLogin();
-    await refreshAll();
-    switchView(firstVisibleView());
+    result = await api('/auth/login', { method: 'POST', body: JSON.stringify(body) });
   } catch {
     // The server deliberately does not say which part was wrong, so neither
     // does the interface.
     showLogin(t('login.failed', 'Email address or password is not correct.'));
     form.elements.password.value = '';
+
+    return;
+  }
+
+  // The password was right but the account has a second factor: ask for the
+  // code instead of reporting a failed sign-in.
+  if (result.totpRequired) {
+    $('#login-totp-field').hidden = false;
+    $('#login-error').textContent = t('login.totpNeeded', 'Please enter the code from your authenticator app.');
+    $('#login-error').hidden = false;
+    form.elements.totp.focus();
+
+    return;
+  }
+
+  hideLogin();
+
+  try {
+    await refreshAll();
+    switchView(firstVisibleView());
+  } catch (err) {
+    // Signed in, but something behind it would not load. Staying on the
+    // application with an explanation beats being thrown back to a sign-in
+    // screen that will accept the same password and do this again.
+    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
   }
 }
 
@@ -2541,6 +2562,18 @@ async function refreshAll() {
   await loadSetup();
 
   await loadLanguages();
+
+  // With the initial password still in place the server refuses everything
+  // below, so asking would only produce a screenful of errors. What is left -
+  // the banner, My account, the wizard - is exactly what is needed to get past
+  // it, and My account is where that happens.
+  if (me.user?.mustChangePassword) {
+    fillSettingsForm();
+    switchView('settings');
+
+    return;
+  }
+
   // Roles first: the user table renders a role picker from them.
   await loadRoles();
   await Promise.all([loadUsers(), loadProjects()]);
@@ -2693,7 +2726,15 @@ function wireForms() {
     const body = formData(e.target);
     mutate(() => api('/me/password', { method: 'PUT', body: JSON.stringify(body) }),
       t('msg.passwordChanged', 'Password changed. Please sign in again.'),
-      async () => { e.target.reset(); await refreshAll(); });
+      async () => {
+        e.target.reset();
+
+        // The server ends every session of this user on a password change, so
+        // reloading would only produce 401s and leave a dead screen. The
+        // message already says to sign in again; this is what takes them
+        // there.
+        await doLogout();
+      });
   });
 
   for (const id of ['#filter-ts-user', '#filter-ts-project', '#filter-ts-status']) {

@@ -66,6 +66,17 @@
 * { box-sizing: border-box; }
 
 /*
+ * The top bar is sticky, so anything scrolled to the top of the viewport lands
+ * underneath it - unreachable by a click and invisible to whoever just tabbed
+ * to it. That applies to keyboard navigation, to in-page anchors, and to
+ * scrollIntoView, which the calendar and the guided tour both use.
+ *
+ * Reserving the bar's height here fixes all of them at once. Found by a browser
+ * test whose click on a submit button landed on a navigation tab instead.
+ */
+html { scroll-padding-top: 76px; }
+
+/*
  * The `hidden` attribute must beat every layout rule below. Without this,
  * `display: flex` on `label` or `.login-screen` silently wins over the
  * browser's own `[hidden] { display: none }`, and elements the script hides
