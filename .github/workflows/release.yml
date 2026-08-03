@@ -69,7 +69,7 @@ jobs:
       - name: Browser tests
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-        run: go test -tags browser -count=1 -timeout 20m ./test/browser/
+        run: go test -tags browser -count=1 -timeout 20m -v ./test/browser/
 
   publish:
     name: Publish image & GitHub release
