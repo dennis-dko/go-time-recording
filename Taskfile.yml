@@ -111,7 +111,7 @@ tasks:
   # ------------------------------------------------------------------ verify
 
   test:
-    desc: 'Verify: run the unit and integration tests.'
+    desc: 'Verify: run the unit tests.'
     deps: [tidy]
     # Go writes each test binary to %TEMP%/go-build before running it, and
     # real-time virus scanning on Windows intermittently locks those files -
@@ -125,6 +125,31 @@ tasks:
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
       - go test ./...
+
+  test:integration:
+    desc: 'Verify: drive the real binary over HTTP, end to end. Usage: task test:integration DB=postgres'
+    summary: |
+      Builds the application and talks to it over HTTP, the way a browser and a
+      script do. Nothing is stubbed: the middleware order, the CSRF check, the
+      session cookie, the migrations and the embedded assets are all in the
+      path - which is where every bug found by running this application rather
+      than testing it has lived.
+
+      Slower than the unit tests, because each case starts its own instance, so
+      it is a separate task rather than part of `task test`. CI runs both, and
+      against both dialects.
+
+      Usage:
+        task test:integration              against SQLite, a file per test
+        task test:integration DB=postgres  against `task env:up PROFILE=postgres`
+    env:
+      GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
+      # Empty for SQLite: the harness then gives each instance its own file.
+      GTR_TEST_DSN: '{{if eq .DB "postgres"}}postgres://gtr:gtr-test-password@localhost:55432/go-time-recording?sslmode=disable{{end}}'
+    cmds:
+      - mkdir -p {{.TMP_DIR}}
+      - defer: rm -rf {{.TMP_DIR}}
+      - go test -tags integration -count=1 -timeout 15m ./test/integration/
 
   stage:
     desc: 'Verify: run the shipped container image against real services, for a full test.'

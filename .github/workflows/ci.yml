@@ -52,6 +52,49 @@ jobs:
           path: coverage.out
           retention-days: 14
 
+  # The unit tests cover the rules; this covers everything between a request
+  # arriving and a rule being reached - middleware order, CSRF, sessions,
+  # migrations, embedded assets, the wiring in main.go. Run against both
+  # dialects, because that gap is where the dialect actually shows.
+  integration:
+    name: Integration (${{ matrix.dialect }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dialect: [sqlite, postgres]
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: go-time-recording
+          POSTGRES_USER: gtr
+          POSTGRES_PASSWORD: gtr-test-password
+        ports:
+          - 5432:5432
+        # Without this the tests start before the server can answer, and the
+        # failure looks like a bug rather than a race.
+        options: >-
+          --health-cmd "pg_isready -U gtr -d go-time-recording"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Integration tests
+        env:
+          # Empty for the sqlite leg: the harness falls back to a file per test.
+          GTR_TEST_DSN: ${{ matrix.dialect == 'postgres' && 'postgres://gtr:gtr-test-password@localhost:5432/go-time-recording?sslmode=disable' || '' }}
+        run: go test -tags integration -count=1 -timeout 15m ./test/integration/
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -72,7 +115,7 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
-    needs: [lint, test, build]
+    needs: [lint, test, integration, build]
     permissions:
       contents: read
       packages: write

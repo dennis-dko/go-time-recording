@@ -494,11 +494,29 @@ that make the synchronisation's edge cases reproducible.
 ### Verify
 
 ```bash
-task test                # the test suite
+task test                # unit tests
+task test:integration    # the real binary, driven over HTTP, end to end
 task stage               # the real image, against real services, on :8080
 task stage:logs          # follow its log
 task stage:down          # stop it and delete the data
 ```
+
+**Integration tests** ([`test/integration/`](test/integration/)) start the
+compiled binary and talk to it over HTTP, the way a browser and a script do.
+Nothing is stubbed, so the middleware order, the CSRF check, the session
+cookie, the migrations and the embedded assets are all in the path — which is
+where every bug found by *running* this application rather than testing it has
+lived. They cover sign-in, the setup wizard, booking and approval, the daily
+cap, overtime, private projects, RBAC, API tokens, timezones and the guided
+tour.
+
+```bash
+task test:integration              # against SQLite, one file per test
+task env:up PROFILE=postgres
+task test:integration DB=postgres  # against the dialect production runs on
+```
+
+CI runs both legs on every push and before every release.
 
 `task stage` is what `task dev` is not. Development runs a binary compiled on
 your machine — fast, but not the artifact anyone deploys. Staging goes through

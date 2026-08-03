@@ -16,6 +16,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
+    # The same database a release is expected to run on. Publishing an image
+    # that only ever met SQLite would leave the dialect differences - the
+    # placeholder syntax, the returning clause - untested at exactly the point
+    # they become someone else's problem.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: go-time-recording
+          POSTGRES_USER: gtr
+          POSTGRES_PASSWORD: gtr-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gtr -d go-time-recording"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +53,12 @@ jobs:
 
       - name: go test
         run: go test -race ./...
+
+      # Against PostgreSQL, because that is what a release is deployed on.
+      - name: Integration tests
+        env:
+          GTR_TEST_DSN: postgres://gtr:gtr-test-password@localhost:5432/go-time-recording?sslmode=disable
+        run: go test -tags integration -count=1 -timeout 15m ./test/integration/
 
   publish:
     name: Publish image & GitHub release
