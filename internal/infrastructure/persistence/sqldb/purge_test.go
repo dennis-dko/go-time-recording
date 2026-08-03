@@ -125,6 +125,20 @@ func TestPurgeUserRemovesEveryReference(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
+	// A passkey, which the purge used to forget. Its table has a foreign key to
+	// users like the rest, so forgetting it does not fail quietly: on PostgreSQL
+	// and MySQL the final delete is refused and the account can never be removed,
+	// while on SQLite the credential outlives the person it belonged to.
+	passkeys := sqldb.NewPasskeyRepository(db, sqldb.DialectSQLite)
+
+	if _, err := passkeys.Save(ctx, &model.Passkey{
+		UserID: leaving.ID, Name: "work laptop",
+		CredentialID: []byte("credential-id"), PublicKey: []byte("public-key"),
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("create passkey: %v", err)
+	}
+
 	if err := users.PurgeUser(ctx, leaving.ID); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
@@ -139,6 +153,7 @@ func TestPurgeUserRemovesEveryReference(t *testing.T) {
 		{"private projects", "SELECT COUNT(*) FROM projects WHERE owner_id = ?"},
 		{"api tokens", "SELECT COUNT(*) FROM api_tokens WHERE user_id = ?"},
 		{"sessions", "SELECT COUNT(*) FROM sessions WHERE user_id = ?"},
+		{"passkeys", "SELECT COUNT(*) FROM passkeys WHERE user_id = ?"},
 	} {
 		var count int
 		if err := db.QueryRow(check.query, leaving.ID).Scan(&count); err != nil {

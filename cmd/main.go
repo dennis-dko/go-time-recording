@@ -320,7 +320,7 @@ func main() {
 		userRepo, cfg.LDAPSyncMaxDeleteRatio, model.RoleEmployee).
 		WithLimits(limits)
 
-	users := appservice.NewUserApplicationService(userRepo, roleRepo)
+	users := appservice.NewUserApplicationService(userRepo, roleRepo, timesheetRepo, userRepo)
 	roles := appservice.NewRoleApplicationService(roleRepo)
 	projects := appservice.NewProjectApplicationService(projectRepo, timesheetRepo)
 	timesheets := appservice.NewTimesheetApplicationService(

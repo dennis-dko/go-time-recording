@@ -603,6 +603,7 @@ const TRANSLATIONS = {
     'user.create': 'Mitarbeiter anlegen',
     'user.empty': 'Noch keine Mitarbeiter angelegt.',
     'user.initialPassword': 'leer = Initialpasswort',
+    'user.deleteConfirm': 'Trotzdem löschen? Die erfassten Zeiten sind danach unwiederbringlich verloren.',
     'user.systemAccount': 'Systemkonto',
   },
 };
@@ -767,7 +768,7 @@ async function loadUsers() {
       actions.append(el('button', {
         class: 'link danger',
         text: t('action.delete', 'delete'),
-        onclick: () => remove(`/users/${u.id}`, t('msg.userDeleted', 'Staff member deleted'), refreshAll),
+        onclick: () => deleteStaffMember(u),
       }));
     }
 
@@ -1561,6 +1562,46 @@ const patch = (path, body, msg, after) => mutate(
 
 const remove = (path, msg, after) => mutate(
   () => api(path, { method: 'DELETE' }), msg, after);
+
+/**
+ * Deletes a staff member, asking first when it would destroy recorded time.
+ *
+ * The server refuses that deletion rather than performing it, and its refusal
+ * carries the number of entries. So the question put to the administrator has
+ * the real number in it rather than a general warning: "42 entries" is a
+ * different decision from "some data may be lost", and only the server knows
+ * which it is.
+ *
+ * An account with nothing recorded is deleted straight away. Asking about
+ * something with no consequence trains people to click through the dialog that
+ * does have one.
+ */
+async function deleteStaffMember(user) {
+  const done = t('msg.userDeleted', 'Staff member deleted');
+
+  try {
+    await api(`/users/${user.id}`, { method: 'DELETE' });
+    toast(done, 'ok');
+    await refreshAll();
+
+    return;
+  } catch (err) {
+    if (err.status !== 409) {
+      toast(err.message, 'error');
+
+      return;
+    }
+
+    // The refusal explains what is attached, so it becomes the question.
+    const question = t('user.deleteConfirm', 'Delete anyway? The recorded time cannot be recovered.');
+    if (!window.confirm(`${err.message}\n\n${question}`)) return;
+  }
+
+  mutate(
+    () => api(`/users/${user.id}?purge=true`, { method: 'DELETE' }),
+    done,
+    refreshAll);
+}
 
 // ------------------------------------------------------------------ sign-in
 

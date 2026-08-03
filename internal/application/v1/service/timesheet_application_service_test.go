@@ -41,6 +41,34 @@ type fixture struct {
 	projectID uint
 }
 
+// memoryPurger stands in for the SQL purge in the unit tests: it removes an
+// account's time entries and then the account.
+//
+// Deliberately not a no-op stub. The service decides whether a deletion is
+// allowed and what it takes with it, and a purger that removed nothing would let
+// a test pass while the account's hours survived. Whether the *real* cascade
+// covers every table is a question about SQL, and the integration tests ask it
+// against all three databases.
+type memoryPurger struct {
+	users      repository.UserRepository
+	timesheets repository.TimesheetRepository
+}
+
+func (p *memoryPurger) PurgeUser(ctx context.Context, userID uint) error {
+	entries, err := p.timesheets.GetByFilter(ctx, repository.TimesheetFilter{UserID: userID})
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if err := p.timesheets.Delete(ctx, entry.ID); err != nil {
+			return err
+		}
+	}
+
+	return p.users.Delete(ctx, userID)
+}
+
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 
@@ -50,7 +78,7 @@ func newFixture(t *testing.T) *fixture {
 	timesheetRepo := memory.NewTimesheetRepository()
 
 	f := &fixture{
-		users:         service.NewUserApplicationService(userRepo, roleRepo),
+		users:         service.NewUserApplicationService(userRepo, roleRepo, timesheetRepo, &memoryPurger{users: userRepo, timesheets: timesheetRepo}),
 		roles:         service.NewRoleApplicationService(roleRepo),
 		auth:          service.NewAuthService(userRepo, roleRepo),
 		projects:      service.NewProjectApplicationService(projectRepo, timesheetRepo),
