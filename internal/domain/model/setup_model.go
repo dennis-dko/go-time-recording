@@ -7,7 +7,6 @@ package model
 const (
 	SetupStepPassword  = "password"
 	SetupStepTimezone  = "timezone"
-	SetupStepDatabase  = "database"
 	SetupStepBranding  = "branding"
 	SetupStepDirectory = "directory"
 )

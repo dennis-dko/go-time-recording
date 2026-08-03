@@ -4,7 +4,12 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/signal"
 	"reflect"
+	"strings"
+	"syscall"
 	"time"
 
 	// The timezone database, compiled in. Without it time.LoadLocation depends
@@ -16,23 +21,152 @@ import (
 
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
+	"gofr.dev/pkg/gofr/logging"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/directory"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/tlsserver"
 	v1 "github.com/dennis-dko/go-time-recording/internal/interface/api/v1"
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
+	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
 	"github.com/dennis-dko/go-time-recording/internal/interface/worker"
 )
 
 // version is stamped at build time via -ldflags "-X main.version=...".
 var version = "dev"
+
+// terminal records whether the process output is a console, decided during
+// package initialisation - which is before main() replaces os.Stdout to capture
+// the log, and therefore the last moment the answer is still the true one.
+var terminal = isCharDevice(os.Stdout)
+
+func isCharDevice(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+// runInstaller serves the first-run screen until a database has been chosen.
+//
+// It reads its own configuration rather than GoFr's, because GoFr has not been
+// constructed yet - and cannot be, since constructing it is what needs the
+// database. Only the port and the instance name are wanted, and both have a
+// sensible answer without a database behind them.
+func runInstaller() (appconfig.Datasource, error) {
+	settings := appconfig.InstallerSettings()
+
+	// A signal ends the wait, so a container that is stopped while sitting on
+	// the installer exits instead of being killed.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	logger := logging.NewLogger(logging.INFO)
+
+	return installer.Serve(ctx, installer.Config{
+		Addr:           ":" + settings.HTTPPort,
+		AppName:        settings.AppName,
+		Version:        version,
+		Token:          settings.SetupToken,
+		DatasourceFile: appconfig.DatasourceFile,
+		Prefill:        settings.Prefill,
+		Logf:           logger.Infof,
+	})
+}
+
+// consoleLine renders a captured record for a human watching a terminal.
+//
+// Not an attempt to reproduce GoFr's own pretty printer, which would drift from
+// it at the first release. It shows what is worth seeing while developing: the
+// time, the level, the message, and the trace id when a request produced the
+// line.
+func consoleLine(r logsink.Record) string {
+	line := fmt.Sprintf("%s %-6s %s", r.Time.Format("15:04:05"), r.Level, r.Message)
+
+	if r.TraceID != "" {
+		line += "  trace=" + r.TraceID
+	}
+
+	return line
+}
+
+// die reports why the process cannot continue, and stops it.
+//
+// restore undoes the log capture first, so the message goes to the real stderr
+// rather than into a pipe whose reader will not outlive this call. Pass nil when
+// nothing was captured.
+func die(restore func(), format string, args ...any) {
+	if restore != nil {
+		restore()
+	}
+
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	os.Exit(1)
+}
+
+// hostSuffix names the server in a failure message, or nothing for SQLite,
+// which has none.
+func hostSuffix(ds appconfig.Datasource) string {
+	if ds.Host == "" {
+		return ""
+	}
+
+	where := ds.Host
+	if ds.Port != "" {
+		where += ":" + ds.Port
+	}
+
+	return fmt.Sprintf(", host %s, user %q", where, ds.User)
+}
+
+// tuneSQLite puts a SQLite database into write-ahead logging.
+//
+// SQLite's default journal makes a reader and a writer exclude each other, and
+// without a busy timeout the loser is refused rather than made to wait. The
+// symptom is a request failing with "database is locked (5) (SQLITE_BUSY)"
+// whenever a save happens while another page is loading - a 500 for one person
+// because somebody else was reading, and worse, a session lookup that fails the
+// same way and reads as "not signed in".
+//
+// This was found by a browser test: the setup wizard's last step failed because
+// the administration screen was loading beside it. Two ordinary users on the
+// same installation would collide the same way.
+//
+// WAL lets readers and the writer proceed at once, and it persists in the
+// database file rather than in the connection, so setting it once is enough.
+// Concurrent *writers* still serialise, and GoFr builds the connection string
+// itself - "file:name.db", with nowhere to add a busy timeout - so that narrower
+// window remains. It is the right trade for an installation small enough to be
+// on SQLite; anything busier belongs on PostgreSQL, which the installer offers.
+func tuneSQLite(app *gofr.App, db container.DB, dialect string) {
+	if dialect != "sqlite" || unavailable(db) {
+		return
+	}
+
+	// A pragma answers with a row, so it is a query rather than an exec.
+	var mode string
+
+	if err := db.QueryRow("PRAGMA journal_mode=WAL").Scan(&mode); err != nil {
+		app.Logger().Warnf("could not switch SQLite to write-ahead logging: %v; "+
+			"concurrent requests may fail with SQLITE_BUSY", err)
+
+		return
+	}
+
+	if !strings.EqualFold(mode, "wal") {
+		app.Logger().Warnf("SQLite stayed in %q journal mode; concurrent requests may fail "+
+			"with SQLITE_BUSY", mode)
+	}
+}
 
 // unavailable reports whether the container has no usable SQL datasource.
 //
@@ -49,14 +183,68 @@ func unavailable(db container.DB) bool {
 }
 
 func main() {
+	// Capture the process output before anything writes to it. GoFr's logger
+	// takes os.Stdout when gofr.New() constructs it and keeps it for the life
+	// of the process, so this is the only moment at which the log viewer can be
+	// given something to show. See the logsink package for what that costs.
+	logs := logsink.New(logsink.DefaultCapacity)
+
+	if terminal {
+		// Interception makes the output a pipe, and GoFr prints JSON when its
+		// output is not a terminal. On a terminal that would be a regression in
+		// readability for no gain, so the captured records are rendered back to
+		// human lines on the way to the console.
+		logs.SetPassthroughRenderer(consoleLine)
+	}
+
+	restoreOutput, err := logs.Capture()
+	if err != nil {
+		// Not fatal: an application that refuses to start because it could not
+		// install a log viewer has its priorities wrong.
+		_, _ = os.Stderr.WriteString("could not capture the log for the viewer: " + err.Error() + "\n")
+	} else {
+		defer restoreOutput()
+	}
+
 	// An administered database connection is exported into the environment
 	// before GoFr reads its configuration: GoFr lets real environment
 	// variables win over its .env files, so this overrides them without
 	// touching GoFr's API. It has to happen before gofr.New().
-	if ds, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
-		if err := appconfig.ApplyDatasource(ds); err != nil {
-			panic("cannot apply the configured datasource: " + err.Error())
+	// Three places a connection can come from, in order of precedence: the file
+	// the installer or the settings screen wrote, then the environment, then a
+	// person answering the installer.
+	ds, configured := appconfig.LoadDatasource(appconfig.DatasourceFile)
+	if !configured {
+		ds, configured = appconfig.DatasourceFromEnvironment()
+	}
+
+	// Nothing anywhere: serve the installer until somebody chooses a database,
+	// then carry on into the application in this same process. See the installer
+	// package for why this cannot be a step of the in-application wizard.
+	if !configured {
+		chosen, err := runInstaller()
+		if err != nil {
+			die(restoreOutput, "cannot run the installer: %v", err)
 		}
+
+		ds = chosen
+	}
+
+	// Proven before GoFr touches it, with the same drivers GoFr will use. GoFr
+	// discovers an unreachable database part-way through its migrations and
+	// exits on a message about a table it could not create, which describes
+	// neither what is wrong nor where.
+	if err := appconfig.TestDatasource(context.Background(), ds); err != nil {
+		die(restoreOutput,
+			"cannot reach the configured database.\n"+
+				"  %v\n"+
+				"  dialect %q, name %q%s\n"+
+				"  Remove DB_DIALECT and %s to choose a connection interactively instead.",
+			err, ds.Dialect, ds.Name, hostSuffix(ds), appconfig.DatasourceFile)
+	}
+
+	if err := appconfig.ApplyDatasource(ds); err != nil {
+		die(restoreOutput, "cannot apply the configured datasource: %v", err)
 	}
 
 	app := gofr.New()
@@ -64,19 +252,33 @@ func main() {
 	cfg := appconfig.Load(app.Config)
 	app.Logger().Infof("go-time-recording %s starting (dialect=%s)", version, cfg.Dialect)
 
+	db := app.GetSQL()
+
+	// Before the migrations, because they are the first writes.
+	tuneSQLite(app, db, cfg.Dialect)
+
 	// Schema first: the binary provisions its own database on first start, so
 	// a deployment needs no separate migration step.
 	app.Migrate(migrations.All(cfg.Dialect))
 
-	db := app.GetSQL()
 	if unavailable(db) {
 		// Without this the app starts happily and every request panics on a
 		// nil datasource, which surfaces as a 500 and a stack trace instead of
 		// the actual problem. Refuse to start and say what to check.
-		app.Logger().Fatalf(
-			"no database connection. GoFr reads ./configs relative to the working "+
-				"directory - start the binary from the directory holding configs/, "+
-				"and check DB_DIALECT (%q) and the DB_* settings", cfg.Dialect)
+		//
+		// Written straight to stderr rather than logged, and only after the
+		// capture is undone: a Fatal goes through the pipe the log viewer reads
+		// from, and the process exits before that reader is scheduled - so the
+		// one message an operator actually needs is the one that would go
+		// missing. See the logsink package.
+		die(restoreOutput,
+			"no database connection.\n"+
+				"  configured dialect: %q\n"+
+				"  GoFr reads ./configs relative to the working directory, so start the\n"+
+				"  binary from the directory holding configs/.\n"+
+				"  To choose a connection interactively, remove DB_DIALECT and %s and\n"+
+				"  start again - the installer is served in its place.",
+			cfg.Dialect, appconfig.DatasourceFile)
 	}
 
 	userRepo := sqldb.NewUserRepository(db, cfg.Dialect)
@@ -93,7 +295,7 @@ func main() {
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
 	passkeys := appservice.NewPasskeyService(passkeyRepo, userRepo, auth)
 	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName)
-	setup := appservice.NewSetupService(settingsService, userRepo, cfg.Dialect)
+	setup := appservice.NewSetupService(settingsService, userRepo)
 
 	// The directory starts unconfigured and is loaded from the settings once
 	// the database is reachable, so a broken LDAP entry cannot stop start-up.
@@ -217,6 +419,7 @@ func main() {
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      rest.NewSetupHandler(setup, authorizer),
+		Logs:       rest.NewLogHandler(logs, authorizer),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
 			// What the device's prompt calls this installation. The
 			// administered title if there is one, so a person sees the name
@@ -229,7 +432,7 @@ func main() {
 
 				return branding.Title
 			}),
-		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits, cfg.Dialect,
+		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits, cfg.Dialect, version,
 			ldapClient.Configure,
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
 				return ldapClient.TestConnection(ctx, config)

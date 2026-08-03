@@ -72,6 +72,26 @@ func (unauthorizedError) Error() string { return "not authenticated" }
 // StatusCode is what GoFr's responder reads to pick the HTTP status.
 func (unauthorizedError) StatusCode() int { return http.StatusUnauthorized }
 
+// RequireSystemAdmin returns the caller only if they are the built-in
+// administrator.
+//
+// Deliberately not a permission. Everything behind this - the database
+// connection, the directory bind, the process log - describes the installation
+// rather than the work recorded in it, and a role that could be edited into
+// holding it would be a way to grant yourself the installation.
+func (a *Authorizer) RequireSystemAdmin(c *gofr.Context) (*service.Principal, error) {
+	principal, err := a.Principal(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if a.open || principal.User.IsSystem {
+		return principal, nil
+	}
+
+	return nil, forbiddenError{msg: "only the built-in administrator may do this"}
+}
+
 // Require returns the caller only if they hold the permission.
 func (a *Authorizer) Require(c *gofr.Context, permission string) (*service.Principal, error) {
 	principal, err := a.permittedPrincipal(c)

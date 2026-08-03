@@ -105,7 +105,13 @@ func TestFailedSignInsAreIndistinguishable(t *testing.T) {
 
 // ------------------------------------------------------------------- setup
 
-func TestSetupWizardOrdersTheDatabaseFirst(t *testing.T) {
+// The database is deliberately absent from this wizard. It cannot be a step
+// here, because every other step is stored in the database it would choose:
+// answering it at this point would point the application at an empty one and
+// leave the password change behind in the old database - so the installation
+// would come back up reachable with the initial password from the
+// documentation. It is settled by the installer, before the application starts.
+func TestTheWizardRequiresAPasswordAndAZoneAndNotADatabase(t *testing.T) {
 	a := start(t)
 	c := a.newClient()
 	c.signIn(adminEmail, adminPassword)
@@ -125,27 +131,27 @@ func TestSetupWizardOrdersTheDatabaseFirst(t *testing.T) {
 		t.Error("a fresh installation cannot have completed the wizard")
 	}
 
-	if len(state.Steps) == 0 || state.Steps[0].ID != "database" {
-		t.Fatalf("the database must be the first step, got %+v", state.Steps)
-	}
-
-	// Everything else is stored in the database this step chooses, so it has to
-	// be settled before anything worth losing exists.
-	if !state.Steps[0].Required {
-		t.Error("the database step must be required")
-	}
-
 	required := map[string]bool{}
 	for _, step := range state.Steps {
+		if step.ID == "database" {
+			t.Error("the wizard must not ask about the database; the installer already did")
+		}
+
 		if step.Required {
 			required[step.ID] = true
 		}
 	}
 
-	for _, id := range []string{"database", "password", "timezone"} {
+	for _, id := range []string{"password", "timezone"} {
 		if !required[id] {
 			t.Errorf("%s should be required", id)
 		}
+	}
+
+	// Making everything mandatory trains people to click past the wizard, and
+	// then the step that mattered goes past too.
+	if len(required) != 2 {
+		t.Errorf("exactly password and timezone should be required, got %v", required)
 	}
 }
 
@@ -153,7 +159,6 @@ func TestSetupWizardCompletesAndStaysAway(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	c.must(c.api(http.MethodPost, "/setup/keep-database", nil), http.StatusCreated, http.StatusOK)
 	c.must(c.api(http.MethodPut, "/settings/timezone",
 		map[string]string{"timezone": "Europe/Berlin"}), http.StatusOK)
 	c.must(c.api(http.MethodPost, "/setup/complete", nil), http.StatusCreated, http.StatusOK)
@@ -343,7 +348,6 @@ func TestChangingTheAdministratorPasswordCannotBeSkipped(t *testing.T) {
 
 	// Settle everything else and dismiss the wizard, without touching the
 	// password.
-	c.must(c.api(http.MethodPost, "/setup/keep-database", nil), http.StatusCreated, http.StatusOK)
 	c.must(c.api(http.MethodPut, "/settings/timezone",
 		map[string]string{"timezone": "Europe/Berlin"}), http.StatusOK)
 	c.must(c.api(http.MethodPost, "/setup/complete", nil), http.StatusCreated, http.StatusOK)

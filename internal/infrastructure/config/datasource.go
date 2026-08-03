@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	gofrconfig "gofr.dev/pkg/gofr/config"
+	"gofr.dev/pkg/gofr/logging"
+
 	// Registered for the connection test only. GoFr opens the application's
 	// own connection; these let the settings screen probe a target before
 	// anyone restarts into it. They are the same drivers GoFr uses, so a
@@ -76,6 +79,119 @@ func (d Datasource) Validate() error {
 	default:
 		return fmt.Errorf("unsupported dialect %q; use sqlite, postgres or mysql", d.Dialect)
 	}
+}
+
+// ConfigLocation is where GoFr looks for its .env files, and therefore where
+// DatabaseConfigured has to look too.
+const ConfigLocation = "./configs"
+
+// DatabaseConfigured reports whether a database is configured anywhere GoFr
+// would read one from.
+//
+// It answers the question that decides whether this binary serves its installer
+// or the application, so it has to see exactly what GoFr will: .env, then the
+// stage's own file, then real environment variables. GoFr's own reader is used
+// rather than a second implementation of that precedence, because the two
+// disagreeing would mean an installation that runs the installer and then
+// connects somewhere else - or the reverse, which is worse.
+//
+// The logger discards: this runs before the application has said anything, and
+// "Loaded config from file" twice in the first two lines invites the reader to
+// look for a bug that is not there.
+func DatabaseConfigured() bool {
+	return strings.TrimSpace(gofrConfig().Get("DB_DIALECT")) != ""
+}
+
+// DatasourceFromEnvironment reads the connection GoFr would assemble from its
+// configuration, password included.
+//
+// Used to probe it before GoFr does. GoFr's failure here is a fatal from inside
+// its migration step - "failed to create gofr_migration table, err: dial tcp" -
+// which names the symptom and not the cause, and arrives through the pipe the
+// log viewer reads from, moments before the process exits. Checking first turns
+// that into a sentence naming the host and the actual refusal.
+//
+// The second return value is false when no dialect is configured, which is the
+// case that sends the binary to its installer instead.
+func DatasourceFromEnvironment() (Datasource, bool) {
+	cfg := gofrConfig()
+
+	dialect := strings.TrimSpace(cfg.Get("DB_DIALECT"))
+	if dialect == "" {
+		return Datasource{}, false
+	}
+
+	return Datasource{
+		Dialect:  dialect,
+		Name:     strings.TrimSpace(cfg.Get("DB_NAME")),
+		Host:     strings.TrimSpace(cfg.Get("DB_HOST")),
+		Port:     strings.TrimSpace(cfg.Get("DB_PORT")),
+		User:     strings.TrimSpace(cfg.Get("DB_USER")),
+		Password: cfg.Get("DB_PASSWORD"),
+		SSLMode:  strings.TrimSpace(cfg.Get("DB_SSL_MODE")),
+	}, true
+}
+
+// Installer is what the first-run screen needs before GoFr exists.
+type Installer struct {
+	// HTTPPort is the port the application would have used, so the installer
+	// answers where the operator already looked.
+	HTTPPort string
+
+	// AppName labels the page.
+	AppName string
+
+	// SetupToken is SETUP_TOKEN, empty when one should be generated.
+	SetupToken string
+
+	// Prefill is whatever the environment already supplied. An operator who set
+	// DB_HOST in a compose file but forgot DB_DIALECT should not retype the
+	// rest.
+	Prefill Datasource
+}
+
+// InstallerSettings reads the few settings the first-run screen needs.
+//
+// Separate from Load because that takes GoFr's config, and GoFr cannot be
+// constructed before the database question is answered - which is the question
+// the installer exists to answer.
+func InstallerSettings() Installer {
+	cfg := gofrConfig()
+
+	return Installer{
+		HTTPPort:   valueOr(cfg, "HTTP_PORT", "8000"),
+		AppName:    valueOr(cfg, "APP_NAME", "Time Recording"),
+		SetupToken: strings.TrimSpace(cfg.Get("SETUP_TOKEN")),
+		Prefill: Datasource{
+			Dialect: strings.TrimSpace(cfg.Get("DB_DIALECT")),
+			Name:    strings.TrimSpace(cfg.Get("DB_NAME")),
+			Host:    strings.TrimSpace(cfg.Get("DB_HOST")),
+			Port:    strings.TrimSpace(cfg.Get("DB_PORT")),
+			User:    strings.TrimSpace(cfg.Get("DB_USER")),
+			SSLMode: strings.TrimSpace(cfg.Get("DB_SSL_MODE")),
+		},
+	}
+}
+
+func valueOr(cfg Provider, key, fallback string) string {
+	if value := strings.TrimSpace(cfg.Get(key)); value != "" {
+		return value
+	}
+
+	return fallback
+}
+
+// gofrConfig reads the .env layering the way GoFr will, with a logger that
+// discards: this runs before the application has said anything, and "Loaded
+// config from file" twice in the first two lines invites the reader to look for
+// a bug that is not there.
+func gofrConfig() Provider {
+	location := ""
+	if _, err := os.Stat(ConfigLocation); err == nil {
+		location = ConfigLocation
+	}
+
+	return gofrconfig.NewEnvFile(location, logging.NewFileLogger(""))
 }
 
 // LoadDatasource reads the administered connection, if one has been saved.

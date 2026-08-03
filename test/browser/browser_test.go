@@ -25,6 +25,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,16 @@ type page struct {
 func open(t *testing.T) *page {
 	t.Helper()
 
-	app := harness.Start(t)
+	return openWith(t)
+}
+
+// openWith is open with extra environment for the instance, for the cases that
+// need the application configured differently - the log viewer needs a log level
+// that actually produces lines.
+func openWith(t *testing.T, env ...string) *page {
+	t.Helper()
+
+	app := harness.Start(t, env...)
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
@@ -148,7 +158,6 @@ func (p *page) settleWizard() {
 			}).then(r => r.status);
 
 			const results = [];
-			results.push('keep-db=' + await post('/api/v1/setup/keep-database'));
 			results.push('tz=' + await post('/api/v1/settings/timezone', { timezone: 'Europe/Berlin' }));
 			results.push('complete=' + await post('/api/v1/setup/complete'));
 
@@ -156,8 +165,16 @@ func (p *page) settleWizard() {
 			return results.join(' ');
 		})()`, &out, awaitPromise))
 
-	if strings.Contains(out, "=4") || strings.Contains(out, "=5") {
-		p.t.Fatalf("could not settle the wizard: %s\n\napplication log:\n%s", out, p.app.Log())
+	// Every result has to be a 2xx. Checked by parsing rather than by looking
+	// for "=4", which also matches "=404" - and did, when an endpoint this
+	// helper used to call was removed.
+	for _, result := range strings.Fields(out) {
+		_, status, _ := strings.Cut(result, "=")
+
+		code, err := strconv.Atoi(status)
+		if err != nil || code < 200 || code > 299 {
+			p.t.Fatalf("could not settle the wizard: %s\n\napplication log:\n%s", out, p.app.Log())
+		}
 	}
 }
 

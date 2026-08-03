@@ -82,6 +82,22 @@ func VerifyTOTP(secret, code string) bool {
 	return false
 }
 
+// CurrentTOTPCode returns the code an authenticator app would be showing for
+// secret right now.
+//
+// The counterpart to VerifyTOTP, and the side an authenticator normally plays.
+// Exported so a test can sign in with two-factor enabled without reimplementing
+// RFC 6238, which would only prove that the copy agrees with itself.
+func CurrentTOTPCode(secret string) (string, error) {
+	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).
+		DecodeString(strings.ToUpper(strings.ReplaceAll(secret, " ", "")))
+	if err != nil {
+		return "", err
+	}
+
+	return totpCode(key, time.Now().Unix()/int64(totpPeriod.Seconds())), nil
+}
+
 // totpCode implements the HOTP truncation of RFC 4226 for one counter value.
 func totpCode(key []byte, counter int64) string {
 	var buf [8]byte

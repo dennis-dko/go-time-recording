@@ -23,6 +23,11 @@ type SettingsHandler struct {
 	// activeDialect is what this process actually connected to, which differs
 	// from the stored settings until the next restart.
 	activeDialect string
+
+	// version is the build this process was compiled from, reported alongside
+	// the branding because the footer renders both and one request is better
+	// than two for something on every page.
+	version string
 }
 
 // ldapAdmin is the subset of the LDAP client this handler drives, kept as an
@@ -38,6 +43,7 @@ func NewSettingsHandler(
 	authz *Authorizer,
 	limits *service.LimitsProvider,
 	activeDialect string,
+	version string,
 	configure func(model.LDAPConfig),
 	test func(*gofr.Context, model.LDAPConfig) error,
 ) *SettingsHandler {
@@ -46,6 +52,7 @@ func NewSettingsHandler(
 		authz:         authz,
 		limits:        limits,
 		activeDialect: activeDialect,
+		version:       version,
 		ldap:          &ldapAdmin{configure: configure, test: test},
 	}
 }
@@ -142,6 +149,22 @@ type BrandingResponse struct {
 	LegalNotice string `json:"legalNotice"`
 }
 
+// InstanceResponse is the branding plus the build serving it.
+//
+// Embedded rather than nested, so the JSON stays the flat object the interface
+// already reads. It is the GET shape only: SaveBranding still binds
+// BrandingResponse, which is what keeps a PUT from carrying a version field
+// that nothing could act on.
+type InstanceResponse struct {
+	BrandingResponse
+
+	// Version is the build this process was compiled from - a tag for a
+	// release, "dev" for a binary built without -ldflags. Public, like the rest
+	// of the branding: it is in the footer of a page anyone can reach, and a
+	// version number is not what keeps an installation safe.
+	Version string `json:"version"`
+}
+
 // Branding handles GET /api/v1/branding.
 //
 // It is readable by anyone, signed in or not: the sign-in screen has to show
@@ -152,7 +175,10 @@ func (h *SettingsHandler) Branding(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return newBrandingResponse(branding), nil
+	return InstanceResponse{
+		BrandingResponse: newBrandingResponse(branding),
+		Version:          h.version,
+	}, nil
 }
 
 // SaveBranding handles PUT /api/v1/settings/branding.
@@ -184,7 +210,12 @@ func (h *SettingsHandler) SaveBranding(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return newBrandingResponse(branding), nil
+	// The same shape GET returns, so the interface can render the saved result
+	// with the code that renders a fetched one.
+	return InstanceResponse{
+		BrandingResponse: newBrandingResponse(branding),
+		Version:          h.version,
+	}, nil
 }
 
 // TimezoneRequest carries the instance-wide zone.
@@ -443,14 +474,6 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(apperror.Internal(err))
 	}
 
-	// Noted inside the database so the setup wizard stops asking, even though
-	// the connection only takes effect at the next restart. A failure here is
-	// not worth failing the save over: the connection is already written, and
-	// the wizard asking once more is a smaller problem than a lost setting.
-	if err := h.settings.MarkDatasourceChosen(c); err != nil {
-		c.Logger.Errorf("could not record the database choice for the setup wizard: %v", err)
-	}
-
 	return map[string]any{
 		"status":          "saved",
 		"restartRequired": true,
@@ -500,16 +523,9 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 // requireAdmin restricts the screen to the built-in administrator: these
 // settings decide where the data lives and who may sign in at all.
 func (h *SettingsHandler) requireAdmin(c *gofr.Context) error {
-	principal, err := h.authz.Principal(c)
-	if err != nil {
-		return err
-	}
+	_, err := h.authz.RequireSystemAdmin(c)
 
-	if !h.authz.Enabled() || principal.User.IsSystem {
-		return nil
-	}
-
-	return forbiddenError{msg: "only the built-in administrator may change these settings"}
+	return err
 }
 
 func newBrandingResponse(b model.Branding) BrandingResponse {

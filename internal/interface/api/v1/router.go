@@ -20,6 +20,7 @@ type Handlers struct {
 	LDAPSync   *rest.LDAPSyncHandler
 	Setup      *rest.SetupHandler
 	Passkeys   *rest.PasskeyHandler
+	Logs       *rest.LogHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -59,7 +60,6 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/settings/ldap/sync", h.LDAPSync.Run)
 	app.GET(base+"/setup", h.Setup.State)
 	app.POST(base+"/setup/complete", h.Setup.Complete)
-	app.POST(base+"/setup/keep-database", h.Setup.KeepDatabase)
 	app.GET(base+"/settings/operational", h.Settings.Operational)
 	app.PUT(base+"/settings/operational", h.Settings.SaveOperational)
 	app.GET(base+"/settings/timezone", h.Settings.Timezone)
@@ -67,6 +67,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/settings/datasource", h.Settings.Datasource)
 	app.PUT(base+"/settings/datasource", h.Settings.SaveDatasource)
 	app.POST(base+"/settings/datasource/test", h.Settings.TestDatasource)
+
+	// The process log. Under /admin rather than /settings because it changes
+	// nothing - and behind the built-in administrator, because it carries
+	// everything the process has written.
+	app.GET(base+"/admin/logs", h.Logs.Logs)
 
 	app.GET(base+"/me", h.Me.Me)
 	app.PUT(base+"/me/password", h.Me.ChangePassword)

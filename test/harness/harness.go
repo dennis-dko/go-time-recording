@@ -53,6 +53,7 @@ const (
 type App struct {
 	t       *testing.T
 	baseURL string
+	dir     string
 	cmd     *exec.Cmd
 	logs    *bytes.Buffer
 }
@@ -117,6 +118,27 @@ func RepoRoot() string {
 func Start(t *testing.T, env ...string) *App {
 	t.Helper()
 
+	return start(t, true, env...)
+}
+
+// StartUnconfigured launches an instance with no database configured at all, so
+// it serves its installer rather than the application.
+//
+// The one case Start cannot cover: it always supplies a database, which is what
+// every other test wants and exactly what the installer must not have.
+func StartUnconfigured(t *testing.T, env ...string) *App {
+	t.Helper()
+
+	return start(t, false, env...)
+}
+
+// Dir is the working directory of the instance, which is where its configs/ and
+// - for SQLite - its database file live.
+func (a *App) Dir() string { return a.dir }
+
+func start(t *testing.T, withDatabase bool, env ...string) *App {
+	t.Helper()
+
 	path := binaryPath.Load()
 	if path == nil {
 		t.Fatal("harness.Build() was not called from TestMain")
@@ -136,13 +158,23 @@ func Start(t *testing.T, env ...string) *App {
 		"APP_ENV=", // only .env, so a stray .local.env cannot change the outcome
 		fmt.Sprintf("HTTP_PORT=%d", port),
 		fmt.Sprintf("METRICS_PORT=%d", FreePort(t)),
-		"DB_DIALECT=sqlite",
-		"DB_NAME="+filepath.Join(dir, "test"),
 		"LOG_LEVEL=WARN",
 	)
 
-	if dsn := os.Getenv(DSNEnv); dsn != "" {
-		cmd.Env = append(cmd.Env, serverEnv(t, dsn)...)
+	if withDatabase {
+		cmd.Env = append(cmd.Env,
+			"DB_DIALECT=sqlite",
+			"DB_NAME="+filepath.Join(dir, "test"),
+		)
+
+		if dsn := os.Getenv(DSNEnv); dsn != "" {
+			cmd.Env = append(cmd.Env, serverEnv(t, dsn)...)
+		}
+	} else {
+		// Explicitly blank rather than merely absent: the process inherits this
+		// test run's own environment, which on a developer's machine may well
+		// have DB_DIALECT set from something else.
+		cmd.Env = append(cmd.Env, "DB_DIALECT=", "DB_NAME=", "SETUP_TOKEN=")
 	}
 
 	cmd.Env = append(cmd.Env, env...)
@@ -163,6 +195,7 @@ func Start(t *testing.T, env ...string) *App {
 		// tests would fail for a reason that has nothing to do with the code
 		// under test.
 		baseURL: fmt.Sprintf("http://localhost:%d", port),
+		dir:     dir,
 		cmd:     cmd,
 		logs:    logs,
 	}
@@ -356,4 +389,37 @@ func (a *App) stop() {
 
 	_ = a.cmd.Process.Kill()
 	_, _ = a.cmd.Process.Wait()
+
+	a.removeDir()
+}
+
+// removeDir deletes the instance's directory before testing.T gets to it.
+//
+// Windows releases a file handle some time after the process holding it dies, and
+// a SQLite database in write-ahead logging has three files rather than one. So
+// t.TempDir's own cleanup regularly ran a moment too early and failed the test
+// with "The directory is not empty" - a failure about the operating system, on a
+// test that had already passed.
+//
+// Retried briefly rather than slept through, and the outcome is ignored: if it
+// still cannot be removed, t.TempDir will report it, which is the behaviour
+// without this.
+func (a *App) removeDir() {
+	if a.dir == "" {
+		return
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for {
+		if err := os.RemoveAll(a.dir); err == nil {
+			return
+		}
+
+		if time.Now().After(deadline) {
+			return
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
 }
