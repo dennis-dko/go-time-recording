@@ -567,6 +567,13 @@ VS Code Go extension covers them locally, and
 golangci-lint run ./...   # configured in .golangci.yml
 ```
 
+CI runs the version named in
+[`.golangci-lint-version`](.golangci-lint-version) rather than whatever is
+newest, so a push cannot fail on a commit that passed yesterday because a new
+release added a check. Keep the locally installed version in step with that
+file — `golangci-lint --version` — or local runs and CI will disagree about
+clean.
+
 ## Deployment
 
 Releases are cut from git tags. `task release VERSION=v1.2.3` tags and pushes;

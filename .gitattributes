@@ -24,6 +24,10 @@ Dockerfile* text eol=lf
 go.mod      text eol=lf
 go.sum      text eol=lf
 
+# Read by golangci-lint-action, which wants a bare version and nothing else on
+# the line. A trailing carriage return would be part of the version it looks up.
+.golangci-lint-version text eol=lf
+
 # The embedded web assets are served byte for byte; CRLF would only inflate
 # them and make diffs noisier.
 *.js        text eol=lf
