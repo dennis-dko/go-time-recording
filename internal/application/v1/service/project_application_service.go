@@ -59,7 +59,7 @@ func (s *ProjectApplicationService) CreateProject(
 		startDate = startOfDay(time.Now())
 	}
 
-	if err := validateProject(cmd.Name, status, startDate, cmd.EndDate); err != nil {
+	if err := validateProject(cmd.Name, status, cmd.Description, startDate, cmd.EndDate); err != nil {
 		return nil, err
 	}
 
@@ -192,7 +192,7 @@ func (s *ProjectApplicationService) UpdateProject(
 		existingProject.Status = *cmd.Status
 	}
 
-	err = validateProject(existingProject.Name, existingProject.Status,
+	err = validateProject(existingProject.Name, existingProject.Status, existingProject.Description,
 		existingProject.StartDate, existingProject.EndDate)
 	if err != nil {
 		return nil, err
@@ -268,11 +268,25 @@ func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd comma
 	return s.projectRepository.Delete(ctx, cmd.ID)
 }
 
-func validateProject(name, status string, startDate time.Time, endDate *time.Time) error {
+func validateProject(
+	name, status string,
+	description *string,
+	startDate time.Time,
+	endDate *time.Time,
+) error {
 	var invalid []string
 
-	if name == "" {
+	// Too long is refused here rather than by the column, which only PostgreSQL
+	// and MySQL enforce - so without this it is stored on SQLite and answered
+	// with a driver error everywhere else.
+	if name == "" || model.TooLong(name, model.MaxNameLength) {
 		invalid = append(invalid, "name")
+	}
+
+	// TEXT has no width, so nothing below this would refuse a description large
+	// enough to slow every listing that renders it.
+	if description != nil && model.TooLong(*description, model.MaxDescriptionLength) {
+		invalid = append(invalid, "description")
 	}
 
 	if startDate.IsZero() {

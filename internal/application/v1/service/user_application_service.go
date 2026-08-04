@@ -68,6 +68,14 @@ func (s *UserApplicationService) CreateUser(
 		return nil, err
 	}
 
+	// The same bounds the working-times screen enforces. Without this an account
+	// could be created with a negative daily target that no later edit was
+	// required to fix, and every overtime balance computed from it would be
+	// wrong in a direction nobody would think to question.
+	if err := validateWorkingTimes(cmd.DailyTargetHours, cmd.MaxDailyHours); err != nil {
+		return nil, err
+	}
+
 	role, err := s.resolveRole(ctx, cmd.Role)
 	if err != nil {
 		return nil, err
@@ -298,11 +306,15 @@ func (s *UserApplicationService) resolveRole(ctx context.Context, name string) (
 func validateUser(name, email string) error {
 	var invalid []string
 
-	if strings.TrimSpace(name) == "" {
+	// Empty and too long are both "not a name", and both have to be caught
+	// here: the column enforces the second only on PostgreSQL and MySQL, so on
+	// SQLite it is stored and everywhere else it is a driver error the caller
+	// reads as a broken application.
+	if strings.TrimSpace(name) == "" || model.TooLong(name, model.MaxNameLength) {
 		invalid = append(invalid, "name")
 	}
 
-	if !validEmail(email) {
+	if !validEmail(email) || model.TooLong(email, model.MaxEmailLength) {
 		invalid = append(invalid, "email")
 	}
 

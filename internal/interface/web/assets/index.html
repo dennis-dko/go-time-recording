@@ -136,7 +136,7 @@
           </label>
           <label data-i18n="field.hours">Hours<input type="number" name="durationHours" step="0.25" min="0.25" max="24" required>
           </label>
-          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
         <button type="submit" data-i18n="action.book">Book</button>
@@ -270,8 +270,8 @@
         <h2 data-i18n="cat.create">Create your own project</h2>
         <p class="muted" data-i18n="cat.hint">Your own projects are private and visible only to you. Use them to split up a day when no shared project fits.</p>
         <div class="grid">
-          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
-          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
+          <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
         <button type="submit" data-i18n="action.create">Create</button>
@@ -280,10 +280,10 @@
       <form id="form-project" class="card form" data-perm="projects:write">
         <h2 data-i18n="project.create">Create project</h2>
         <div class="grid">
-          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
+          <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <label data-i18n="field.start">Start<input type="date" name="startDate" required></label>
           <label data-i18n="field.end">End<input type="date" name="endDate"></label>
-          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
         <button type="submit" data-i18n="action.create">Create</button>
       </form>
@@ -312,7 +312,7 @@
       <form id="form-user" class="card form" data-perm="users:write">
         <h2 data-i18n="user.create">Add staff member</h2>
         <div class="grid">
-          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
+          <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <label data-i18n="field.email">Email<input type="email" name="email" required></label>
           <label data-i18n="field.role">Role<select name="role" required></select></label>
           <label data-i18n="field.password">Password<input type="password" name="password" minlength="8"
@@ -350,8 +350,8 @@
         <h2 id="role-form-title" data-i18n="role.create">Create role</h2>
         <input type="hidden" name="id">
         <div class="grid">
-          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
-          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <label data-i18n="field.name">Name<input type="text" name="name" maxlength="64" required></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
         <fieldset class="perms">
           <legend data-i18n="role.permissions">Permissions</legend>

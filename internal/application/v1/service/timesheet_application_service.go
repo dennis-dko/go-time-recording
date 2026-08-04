@@ -62,7 +62,7 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 		status = model.TimesheetStatusOpen
 	}
 
-	if err := validateTimesheet(cmd.Date, cmd.DurationHours, status); err != nil {
+	if err := validateTimesheet(cmd.Date, cmd.DurationHours, status, cmd.Description); err != nil {
 		return nil, err
 	}
 
@@ -194,7 +194,8 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 		existingTimesheet.Status = *cmd.Status
 	}
 
-	err = validateTimesheet(existingTimesheet.Date, existingTimesheet.DurationHours, existingTimesheet.Status)
+	err = validateTimesheet(existingTimesheet.Date, existingTimesheet.DurationHours,
+		existingTimesheet.Status, existingTimesheet.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +350,7 @@ func validateStatusChange(current, next string) error {
 	return apperror.Conflictf("cannot change timesheet status from %q to %q", current, next)
 }
 
-func validateTimesheet(date time.Time, hours float64, status string) error {
+func validateTimesheet(date time.Time, hours float64, status string, description *string) error {
 	var invalid []string
 
 	if date.IsZero() {
@@ -360,6 +361,12 @@ func validateTimesheet(date time.Time, hours float64, status string) error {
 	// most that can be booked on one entry.
 	if hours <= 0 || hours > 24 {
 		invalid = append(invalid, "durationHours")
+	}
+
+	// The column is TEXT and would take anything; a description large enough to
+	// slow every listing that renders it is still not one.
+	if description != nil && model.TooLong(*description, model.MaxDescriptionLength) {
+		invalid = append(invalid, "description")
 	}
 
 	switch status {

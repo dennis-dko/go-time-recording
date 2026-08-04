@@ -142,7 +142,9 @@ func (s *RoleApplicationService) DeleteRole(ctx context.Context, id uint) error 
 // validateRole checks the name and rejects permissions the application does
 // not enforce, so the UI cannot store a right that grants nothing.
 func validateRole(name string, permissions []string) ([]string, error) {
-	if strings.TrimSpace(name) == "" {
+	// Empty and longer than the column are both refused here: roles.name is
+	// VARCHAR(64), which SQLite ignores and the servers do not.
+	if strings.TrimSpace(name) == "" || model.TooLong(name, model.MaxRoleNameLength) {
 		return nil, apperror.InvalidFields("name")
 	}
 
