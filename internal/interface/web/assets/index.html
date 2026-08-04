@@ -19,7 +19,7 @@
       <button class="tab" data-view="calendar" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.calendar">Calendar</button>
       <button class="tab" data-view="overtime" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.overtime">Overtime</button>
       <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects</button>
-      <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Staff</button>
+      <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Users</button>
       <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Roles</button>
       <button class="tab" data-view="report" data-perm="reports:read" data-i18n="nav.report">Reports</button>
       <button class="tab" data-view="settings" data-i18n="nav.settings">My account</button>
@@ -100,9 +100,24 @@
     </div>
   </div>
 
-  <!-- Visible until a session is confirmed, so the application never flashes
-       into view before we know whether anyone is signed in. -->
-  <div id="login-screen" class="login-screen">
+  <!-- Covers the application until a session is confirmed, so it never flashes
+       into view before we know whether anyone is signed in.
+       It starts in "checking": the cover is up but the form is not shown, so a
+       returning user with a valid session sees a quiet screen for a moment
+       rather than a sign-in form that is snatched away again. -->
+  <div id="login-screen" class="login-screen checking">
+    <!-- The notice again, inside the sign-in screen.
+         The banner at the top of the page cannot be seen from here: this screen
+         is position:fixed over the whole viewport with an opaque background, so
+         it covers it. Somebody arriving at a closed installation would otherwise
+         type a password and be turned away with no explanation. -->
+    <div id="login-maintenance" class="banner banner-warn" hidden></div>
+
+    <!-- Shown only while the session is being checked, and replaced by whichever
+         answer comes back. No text: it is on screen for a moment and a sentence
+         nobody finishes reading is noise. -->
+    <div class="session-check"><div class="spinner" aria-hidden="true"></div></div>
+
     <form id="form-login" class="login-card">
       <img id="login-logo" class="brand-logo" alt="" hidden>
       <h2 data-i18n="login.title">Sign in</h2>
@@ -128,13 +143,18 @@
       <form id="form-timesheet" class="card form" data-perm="timesheets:write:own,timesheets:write:all">
         <h2 data-i18n="ts.book">Book time</h2>
         <div class="grid">
-          <label data-i18n="field.user">Staff member<select name="userId" required></select>
+          <label data-i18n="field.user">User<select name="userId" required></select>
           </label>
           <label data-i18n="field.projectOptional">Project (optional)<select name="projectId"></select>
           </label>
           <label data-i18n="field.date">Date<input type="date" name="date" required>
           </label>
-          <label data-i18n="field.hours">Hours<input type="number" name="durationHours" step="0.25" min="0.25" max="24" required>
+          <!-- step="any", because the point of recording time is recording the
+               time that was worked. step="0.25" did not round anything - it made
+               the browser refuse the submit outright, so 1.37 h could not be
+               entered at all while the API accepted it perfectly well from a
+               token client. min matches the API and the OpenAPI document. -->
+          <label data-i18n="field.hours">Hours<input type="number" name="durationHours" step="any" min="0.01" max="24" required>
           </label>
           <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
@@ -146,7 +166,7 @@
         <div class="card-head">
           <h2 data-i18n="ts.entries">Entries</h2>
           <div class="filters">
-            <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">All staff</option></select>
+            <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">All users</option></select>
             <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">All projects</option></select>
             <select id="filter-ts-status">
               <option value="" data-i18n="filter.allStatus">All statuses</option>
@@ -162,7 +182,7 @@
             <thead>
               <tr>
                 <th data-i18n="field.date">Date</th>
-                <th data-i18n="field.user">Staff member</th>
+                <th data-i18n="field.user">User</th>
                 <th data-i18n="field.project">Project</th>
                 <th class="num" data-i18n="field.hours">Hours</th>
                 <th data-i18n="field.description">Description</th>
@@ -219,7 +239,7 @@
       <form id="form-overtime" class="card form">
         <h2 data-i18n="nav.overtime">Overtime</h2>
         <div class="grid">
-          <label data-i18n="field.user">Staff member<select name="userId"></select></label>
+          <label data-i18n="field.user">User<select name="userId"></select></label>
           <label data-i18n="field.from">From<input type="date" name="from"></label>
           <label data-i18n="field.to">To<input type="date" name="to"></label>
         </div>
@@ -252,7 +272,7 @@
           <table id="table-overtime-team">
             <thead>
               <tr>
-                <th data-i18n="field.user">Staff member</th>
+                <th data-i18n="field.user">User</th>
                 <th class="num" data-i18n="ot.booked">Booked</th>
                 <th class="num" data-i18n="ot.target">Target</th>
                 <th class="num" data-i18n="ot.balance">Balance</th>
@@ -307,10 +327,10 @@
       </div>
     </section>
 
-    <!-- Staff -->
+    <!-- Users -->
     <section id="view-users" class="view" hidden>
       <form id="form-user" class="card form" data-perm="users:write">
-        <h2 data-i18n="user.create">Add staff member</h2>
+        <h2 data-i18n="user.create">Add user</h2>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <label data-i18n="field.email">Email<input type="email" name="email" required></label>
@@ -325,7 +345,7 @@
       </form>
 
       <div class="card">
-        <h2 data-i18n="nav.users">Staff</h2>
+        <h2 data-i18n="nav.users">Users</h2>
         <div class="table-wrap">
           <table id="table-users">
             <thead>
@@ -399,7 +419,7 @@
           <table id="table-report">
             <thead>
               <tr>
-                <th data-i18n="field.user">Staff member</th>
+                <th data-i18n="field.user">User</th>
                 <th class="num" data-i18n="field.hours">Hours</th>
               </tr>
             </thead>

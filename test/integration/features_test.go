@@ -65,6 +65,142 @@ func TestPrivateProjectsAreInvisibleToOthers(t *testing.T) {
 	}
 }
 
+// Hiding the project record is not the same as hiding the work booked against
+// it, and for a while it was all that happened.
+//
+// Three endpoints reached past the visibility rule the rest of the application
+// applies: the report totalled the hours on any project id it was given, the
+// transfer moved an entry onto any project id, and archiving closed any project
+// id. So somebody else's private category was readable, writable and closable by
+// anyone holding the ordinary reporting, transfer or archiving permission - and
+// each request also confirmed that the id existed.
+func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
+		// A manager, because reading a project report needs reports:read at
+		// all - and this test is about visibility, not about that permission.
+		"name": "Gerda", "email": "gerda@example.com",
+		"role": "manager", "password": "gerda-password-1",
+	}), http.StatusCreated, http.StatusOK)
+
+	gerda := a.newClient()
+	gerda.signIn("gerda@example.com", "gerda-password-1")
+
+	var hers projectResponse
+	gerda.must(gerda.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Gerda's own", "startDate": "2026-08-01", "private": true,
+	}), http.StatusCreated, http.StatusOK).Data(t, &hers)
+
+	gerda.must(gerda.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-04", "durationHours": 2, "projectId": hers.ID,
+	}), http.StatusCreated, http.StatusOK)
+
+	// The built-in administrator holds every permission, which makes it the
+	// strongest caller there is - and the right one to prove the rule with,
+	// because a rule that only holds against an employee is not a rule.
+	if got := admin.api(http.MethodGet,
+		path("/projects/", hers.ID)+"/report", nil).Status; got != http.StatusNotFound {
+		t.Errorf("a report on somebody else's private project answered %d, want 404", got)
+	}
+
+	// A shared project to move an entry onto, and an entry of the caller's own
+	// to try moving - so the refusal can only be about the target's visibility.
+	var shared projectResponse
+	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Shared", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
+
+	var own timesheetResponse
+	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-04", "durationHours": 1, "projectId": shared.ID,
+	}), http.StatusCreated, http.StatusOK).Data(t, &own)
+
+	if got := admin.api(http.MethodPost, path("/timesheets/", own.ID)+"/transfer",
+		map[string]any{"projectId": hers.ID}).Status; got != http.StatusNotFound {
+		t.Errorf("transferring onto somebody else's private project answered %d, want 404", got)
+	}
+
+	// Archiving would take her own project away from her.
+	if got := admin.api(http.MethodPost,
+		path("/projects/", hers.ID)+"/archive", nil).Status; got != http.StatusNotFound {
+		t.Errorf("archiving somebody else's private project answered %d, want 404", got)
+	}
+
+	// And the owner is unaffected: the rule is about who is asking, not about a
+	// private project becoming unreachable.
+	//
+	// Checked through the project itself rather than through its report, because
+	// nobody but the built-in administrator may read a project report at all -
+	// reports:read is deliberately withheld from both default roles, so the owner
+	// asking for her own report is refused for that reason and not this one.
+	gerda.must(gerda.api(http.MethodGet, path("/projects/", hers.ID), nil), http.StatusOK)
+
+	var stillThere listOf[timesheetResponse]
+
+	gerda.must(gerda.api(http.MethodGet, path("/timesheets?projectId=", hers.ID), nil),
+		http.StatusOK).Data(t, &stillThere)
+
+	if len(stillThere.Items) != 1 {
+		t.Errorf("the owner sees %d of her own entries, want 1", len(stillThere.Items))
+	}
+}
+
+// An entry created "approved" would have skipped the review that approving is,
+// and landed on the one status that refuses every later edit, transfer and
+// deletion - reachable by anyone who could write a time entry at all.
+func TestATimeEntryCannotBeCreatedAlreadyApproved(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	for _, status := range []string{"approved", "submitted", "rejected"} {
+		response := admin.api(http.MethodPost, "/timesheets", map[string]any{
+			"date": "2026-08-05", "durationHours": 1, "status": status,
+		})
+
+		if response.Status == http.StatusCreated || response.Status == http.StatusOK {
+			t.Errorf("an entry was created as %q: %s", status, truncate(string(response.Body), 200))
+		}
+	}
+
+	// Asking for the status it gets anyway is not an error - a client that fills
+	// the field in with "open" is saying nothing unusual.
+	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-05", "durationHours": 1, "status": "open",
+	}), http.StatusCreated, http.StatusOK)
+}
+
+// Recording time means recording the time that was worked. The form used to
+// carry step="0.25", which did not round anything - it made the browser refuse
+// the submit - while the API accepted any duration from a token client.
+func TestAnyDurationCanBeBookedNotOnlyQuarterHours(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	for _, hours := range []float64{1.37, 0.1167, 7.99, 0.01} {
+		var entry timesheetResponse
+
+		admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+			"date": "2026-08-06", "durationHours": hours,
+		}), http.StatusCreated, http.StatusOK).Data(t, &entry)
+
+		// Stored as given: a double column and plain addition all the way, so
+		// what comes back is what went in rather than a rounded neighbour.
+		if entry.DurationHours != hours {
+			t.Errorf("booked %v and got back %v", hours, entry.DurationHours)
+		}
+	}
+
+	// And a duration below the published floor is refused rather than stored as
+	// something nobody meant.
+	if got := admin.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-06", "durationHours": 0.001,
+	}).Status; got == http.StatusCreated || got == http.StatusOK {
+		t.Error("a duration below the documented minimum was accepted")
+	}
+}
+
 func TestTimeCanBeBookedWithoutAProjectAndCategorisedLater(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")

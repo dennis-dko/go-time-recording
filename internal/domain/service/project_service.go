@@ -27,12 +27,23 @@ func NewProjectDomainService(
 
 // ArchiveProject archives the project once it is completed and has no open
 // time entries left.
-func (s *ProjectDomainService) ArchiveProject(ctx context.Context, projectID uint) (*model.Project, error) {
+// viewerID is who is asking: archiving somebody else's private category would
+// take their own project away from them, and the request would also confirm that
+// it exists.
+func (s *ProjectDomainService) ArchiveProject(
+	ctx context.Context,
+	projectID uint,
+	viewerID uint,
+) (*model.Project, error) {
 	// Repository errors are already classified, so they are returned as-is
 	// rather than flattened into a generic message, which would cost the
 	// caller its 404.
 	project, err := s.projectRepository.GetByID(ctx, projectID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := requireVisible(project, viewerID); err != nil {
 		return nil, err
 	}
 

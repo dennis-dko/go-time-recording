@@ -339,12 +339,33 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   align-items: center;
   background: var(--bg);
   display: flex;
+  /* A column, so the maintenance notice sits above the card rather than beside
+   * it. The gap collapses to nothing while the notice is hidden. */
+  flex-direction: column;
+  gap: 16px;
   inset: 0;
   justify-content: center;
   padding: 20px;
   position: fixed;
   z-index: 30;
 }
+
+/* Bounded to the card's width so a long notice does not stretch across a wide
+ * screen into a single unreadable line. */
+#login-maintenance {
+  max-width: 420px;
+  width: 100%;
+}
+
+/* While the session is still being checked the cover is up but empty.
+ *
+ * Without this the sign-in form is what the markup shows on load, so a user who
+ * is already signed in sees it for as long as the first few requests take and
+ * then has it taken away - a flash that reads as having been signed out. */
+.login-screen.checking > *:not(.session-check) { display: none; }
+
+.session-check { display: none; }
+.login-screen.checking .session-check { display: block; }
 
 .login-card {
   background: var(--surface);
@@ -612,7 +633,22 @@ input[type="file"] { border: none; background: none; padding: 6px 0; }
 .method-patch { background: #8e44ad; }
 .method-delete { background: #c0392b; }
 
-.topbar a.tab { text-decoration: none; }
+/* A link wearing .tab, wherever it sits.
+ *
+ * This was scoped to .topbar, and the only such link is in a card heading - so
+ * the rule matched nothing and the link rendered underlined, in the browser's
+ * own link colour where .tab had not overridden it, next to a heading. The
+ * accent colour is what makes it read as something to click rather than as a
+ * disabled tab, which is what muted grey with a border-less box looks like. */
+a.tab {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.tab:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
 
 /* ------------------------------------------------------------ setup wizard */
 

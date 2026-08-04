@@ -259,7 +259,8 @@ func (h *ProjectHandler) requireMayDelete(
 // Archive handles POST /api/v1/projects/{id}/archive, delegating to the domain
 // service that owns the archiving preconditions.
 func (h *ProjectHandler) Archive(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermProjectArchive); err != nil {
+	principal, err := h.authz.Require(c, model.PermProjectArchive)
+	if err != nil {
 		return nil, err
 	}
 
@@ -268,7 +269,7 @@ func (h *ProjectHandler) Archive(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	project, err := h.domain.ArchiveProject(c, id)
+	project, err := h.domain.ArchiveProject(c, id, h.viewerID(principal))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

@@ -142,6 +142,15 @@ const (
 	// has cannot be worked in one.
 	HoursPerDay = 24
 
+	// MinBookableHours is the shortest entry worth storing, and deliberately not
+	// a quarter of an hour: time recording records the time that was worked, so
+	// nothing here rounds to a grid. It exists only to separate a short booking
+	// from a mistyped one - below half a minute, nobody meant it.
+	//
+	// The same floor is published in the OpenAPI document and set on the form, so
+	// all three agree about what the API will take.
+	MinBookableHours = 0.01
+
 	// Below this the limiter would turn away ordinary use, including the
 	// administrator's own sign-in.
 	MinRateLimit = 5

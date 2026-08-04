@@ -511,10 +511,10 @@ const TRANSLATIONS = {
     'field.role': 'Rolle',
     'field.targetPerDay': 'Soll/Tag',
     'field.to': 'Bis',
-    'field.user': 'Mitarbeiter',
+    'field.user': 'Benutzer',
     'filter.allProjects': 'Alle Projekte',
     'filter.allStatus': 'Alle Status',
-    'filter.allUsers': 'Alle Mitarbeiter',
+    'filter.allUsers': 'Alle Benutzer',
     'footer.versionTitle': 'Laufende Version dieser Installation',
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
@@ -568,8 +568,8 @@ const TRANSLATIONS = {
     'msg.roleDeleted': 'Rolle gelöscht',
     'msg.roleSaved': 'Rolle gespeichert',
     'msg.submitted': 'Eingereicht',
-    'msg.userCreated': 'Mitarbeiter angelegt',
-    'msg.userDeleted': 'Mitarbeiter gelöscht',
+    'msg.userCreated': 'Benutzer angelegt',
+    'msg.userDeleted': 'Benutzer gelöscht',
     'msg.workingTimesSaved': 'Arbeitszeiten gespeichert',
     'nav.admin': 'Einstellungen',
     'nav.calendar': 'Kalender',
@@ -580,7 +580,7 @@ const TRANSLATIONS = {
     'nav.roles': 'Rollen',
     'nav.settings': 'Mein Konto',
     'nav.timesheets': 'Zeiteinträge',
-    'nav.users': 'Mitarbeiter',
+    'nav.users': 'Benutzer',
     'ot.balance': 'Saldo',
     'ot.booked': 'Gebucht',
     'ot.empty': 'Keine Buchungen in diesem Zeitraum.',
@@ -654,8 +654,8 @@ const TRANSLATIONS = {
     'ts.empty': 'Keine Einträge für diesen Filter.',
     'ts.entries': 'Einträge',
     'ts.noProject': 'ohne Projekt',
-    'user.create': 'Mitarbeiter anlegen',
-    'user.empty': 'Noch keine Mitarbeiter angelegt.',
+    'user.create': 'Benutzer anlegen',
+    'user.empty': 'Noch keine Benutzer angelegt.',
     'user.initialPassword': 'leer = Initialpasswort',
     'user.deleteConfirm': 'Trotzdem löschen? Die erfassten Zeiten sind danach unwiederbringlich verloren.',
     'user.systemAccount': 'Systemkonto',
@@ -801,7 +801,7 @@ async function loadUsers() {
   }
 
   fillSelect($('#form-timesheet select[name=userId]'), cache.users);
-  fillSelect($('#filter-ts-user'), cache.users, { placeholder: t('filter.allUsers', 'All staff') });
+  fillSelect($('#filter-ts-user'), cache.users, { placeholder: t('filter.allUsers', 'All users') });
   fillSelect($('#form-overtime select[name=userId]'), cache.users);
   fillSelect($('#calendar-user'), cache.users);
 
@@ -866,7 +866,7 @@ async function loadUsers() {
     );
   });
 
-  fillTable($('#table-users tbody'), rows, 6, t('user.empty', 'No staff members yet.'));
+  fillTable($('#table-users tbody'), rows, 6, t('user.empty', 'No users yet.'));
 }
 
 async function loadRoles() {
@@ -1009,6 +1009,18 @@ async function loadProjects() {
   fillTable($('#table-projects tbody'), rows, 5, t('project.empty', 'No projects yet.'));
 }
 
+/**
+ * Reloads everything that shows time entries.
+ *
+ * The list and the calendar render the same records from two requests, so a
+ * change that refreshes only one of them leaves the other showing yesterday -
+ * which is what booking an entry and switching to the calendar used to do.
+ */
+async function reloadTimeViews() {
+  await loadTimesheets();
+  await loadCalendar();
+}
+
 async function loadTimesheets() {
   if (!can('timesheets:read:own', 'timesheets:read:all')) return;
 
@@ -1035,7 +1047,7 @@ async function loadTimesheets() {
         class: 'link',
         text: t('action.submit', 'submit'),
         onclick: () => patch(`/timesheets/${entry.id}`, { status: 'submitted' },
-          t('msg.submitted', 'Submitted'), loadTimesheets),
+          t('msg.submitted', 'Submitted'), reloadTimeViews),
       }));
     }
 
@@ -1044,13 +1056,13 @@ async function loadTimesheets() {
         class: 'link',
         text: t('action.approve', 'approve'),
         onclick: () => patch(`/timesheets/${entry.id}`, { status: 'approved' },
-          t('msg.approved', 'Approved'), loadTimesheets),
+          t('msg.approved', 'Approved'), reloadTimeViews),
       }));
       actions.append(el('button', {
         class: 'link danger',
         text: t('action.reject', 'reject'),
         onclick: () => patch(`/timesheets/${entry.id}`, { status: 'rejected' },
-          t('msg.rejected', 'Rejected'), loadTimesheets),
+          t('msg.rejected', 'Rejected'), reloadTimeViews),
       }));
     }
 
@@ -1059,7 +1071,7 @@ async function loadTimesheets() {
         class: 'link danger',
         text: t('action.delete', 'delete'),
         onclick: () => remove(`/timesheets/${entry.id}`,
-          t('msg.entryDeleted', 'Entry deleted'), loadTimesheets),
+          t('msg.entryDeleted', 'Entry deleted'), reloadTimeViews),
       }));
     }
 
@@ -1623,7 +1635,7 @@ const remove = (path, msg, after) => mutate(
   () => api(path, { method: 'DELETE' }), msg, after);
 
 /**
- * Deletes a staff member, asking first when it would destroy recorded time.
+ * Deletes a user, asking first when it would destroy recorded time.
  *
  * The server refuses that deletion rather than performing it, and its refusal
  * carries the number of entries. So the question put to the administrator has
@@ -1666,13 +1678,19 @@ async function deleteStaffMember(user) {
 
 /** Shows the sign-in overlay and hides the application behind it. */
 function showLogin(message) {
-  $('#login-screen').hidden = false;
+  const screen = $('#login-screen');
+  screen.hidden = false;
+  // The check is over, whatever it concluded: show the form rather than the
+  // spinner that stood in for it.
+  screen.classList.remove('checking');
+
   const error = $('#login-error');
   error.textContent = message ?? '';
   error.hidden = !message;
 }
 
 function hideLogin() {
+  $('#login-screen').classList.remove('checking');
   $('#login-screen').hidden = true;
   $('#login-error').hidden = true;
   $('#login-totp-field').hidden = true;
@@ -3346,10 +3364,21 @@ async function loadMaintenance() {
     return false;
   }
 
-  banner.textContent = state.enabled
+  const notice = state.enabled
     ? (state.message || t('maint.default', 'This installation is temporarily unavailable for maintenance.'))
     : '';
+
+  banner.textContent = notice;
   banner.hidden = !state.enabled;
+
+  // And again inside the sign-in screen, which covers the banner above: it is
+  // fixed over the whole viewport with an opaque background, so somebody who is
+  // not signed in would never see the one at the top of the page.
+  const onLogin = $('#login-maintenance');
+  if (onLogin) {
+    onLogin.textContent = notice;
+    onLogin.hidden = !state.enabled;
+  }
 
   // The form, for the administrator who is looking at it.
   const form = $('#form-maintenance');
@@ -3565,10 +3594,38 @@ function switchView(name) {
   $$('.tab').forEach((tab) => tab.setAttribute('aria-current', String(tab.dataset.view === name)));
   $$('.view').forEach((view) => { view.hidden = view.id !== `view-${name}`; });
 
+  // In the address bar, so a reload comes back to the same screen and a link to
+  // one can be sent to somebody. replaceState rather than assigning to
+  // location.hash: assigning pushes an entry, and Back would then walk through
+  // every tab that was looked at instead of leaving the page.
+  if (currentHashView() !== name) {
+    history.replaceState(null, '', `#${name}`);
+  }
+
   // The log viewer polls, so it follows the screen it lives on rather than
   // running for as long as the tab is open.
   if (logViewerActive()) schedulePoll({ immediate: true });
   else stopLogPolling();
+}
+
+/** The view named in the address bar, if it names one. */
+function currentHashView() {
+  return decodeURIComponent(window.location.hash.replace(/^#/, ''));
+}
+
+/**
+ * The view to open: the one in the address bar when it is real and permitted,
+ * otherwise the first tab this user may see.
+ *
+ * Checked against the tabs rather than trusted, because the hash is whatever was
+ * typed or bookmarked - including a tab this user is not allowed, or one that
+ * stopped existing between releases.
+ */
+function startingView() {
+  const wanted = currentHashView();
+  const permitted = $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === wanted);
+
+  return permitted ? wanted : firstVisibleView();
 }
 
 /** Picks the first tab the user is actually allowed to see. */
@@ -3681,7 +3738,7 @@ function wireForms() {
         // Keep user/project/date so booking several entries in a row is quick.
         e.target.elements.durationHours.value = '';
         e.target.elements.description.value = '';
-        await loadTimesheets();
+        await reloadTimeViews();
       });
   });
 
@@ -3774,6 +3831,16 @@ function wireForms() {
     const tab = e.target.closest('.tab');
     if (tab) switchView(tab.dataset.view);
   });
+
+  // Following a link to #calendar, or editing the address bar, moves the screen
+  // rather than leaving the address disagreeing with what is shown.
+  window.addEventListener('hashchange', () => {
+    // Only once there is a session; before that the sign-in screen is the whole
+    // interface and switching underneath it would change what appears after it.
+    if (!$('#login-screen').hidden) return;
+
+    switchView(startingView());
+  });
 }
 
 async function loadTeamOvertime(suffix) {
@@ -3849,7 +3916,7 @@ async function init() {
   try {
     await refreshAll();
     hideLogin();
-    switchView(firstVisibleView());
+    switchView(startingView());
 
     // After the first view is up, so the tour highlights something that is
     // actually on screen.

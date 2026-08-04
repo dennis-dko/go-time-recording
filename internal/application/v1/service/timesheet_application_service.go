@@ -59,10 +59,25 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 	ctx context.Context,
 	cmd command.CreateTimesheetCommand,
 ) (*command.CreateTimesheetCommandResult, error) {
-	status := cmd.Status
-	if status == "" {
-		status = model.TimesheetStatusOpen
+	// A new entry is open, and may only be created open.
+	//
+	// The status used to be taken from the request, which meant anybody who could
+	// write a time entry could create one already "approved" - skipping the
+	// review that approval is, and landing on the one status that refuses every
+	// later edit, transfer and deletion. Approving is timesheets:approve, and it
+	// stays that way by going through the update path where the transition rules
+	// and that permission are both enforced.
+	//
+	// Refused rather than quietly overwritten: a client that asked for a status
+	// it cannot have should hear so, not be told the entry was created as it
+	// asked.
+	if cmd.Status != "" && cmd.Status != model.TimesheetStatusOpen {
+		return nil, apperror.Invalidf(
+			"a new time entry is always %q; submit or approve it afterwards",
+			model.TimesheetStatusOpen)
 	}
+
+	status := model.TimesheetStatusOpen
 
 	if err := validateTimesheet(cmd.Date, cmd.DurationHours, status, cmd.Description); err != nil {
 		return nil, err
@@ -373,9 +388,14 @@ func validateTimesheet(date time.Time, hours float64, status string, description
 		invalid = append(invalid, "date")
 	}
 
-	// An entry of zero hours carries no information, and a full day is the
-	// most that can be booked on one entry.
-	if hours <= 0 || hours > 24 {
+	// Any duration that was actually worked, to the minute or finer: nothing here
+	// rounds to a quarter of an hour, and nothing should - the column is a double
+	// and every sum along the way is plain addition.
+	//
+	// The floor is the one the OpenAPI document publishes rather than a bare
+	// "greater than zero", so the form, the document and this check agree. Below
+	// it a booking is not a short entry, it is a mistyped one.
+	if hours < model.MinBookableHours || hours > model.HoursPerDay {
 		invalid = append(invalid, "durationHours")
 	}
 
