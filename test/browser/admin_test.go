@@ -573,3 +573,66 @@ func (p *page) browserTimezone() string {
 
 	return zone
 }
+
+// ------------------------------------------------------------------- toasts
+
+// A notice raised while the sign-in screen is up used to be invisible.
+//
+// The toast sat at z-index 20 and the sign-in screen at 30, with an opaque
+// background - so a failure during start-up, which is exactly when the sign-in
+// screen is still covering the application, was painted behind it. The message
+// explaining why nothing worked was the one message nobody could read.
+//
+// A sign-in that is merely refused is not this case: that message goes into the
+// form, next to the field it is about, which is where it belongs.
+func TestANoticeIsVisibleOverTheSignInScreen(t *testing.T) {
+	p := open(t)
+
+	p.run("wait for the form", chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	if !p.visible("#login-screen") {
+		t.Fatal("the sign-in screen is not up, so this proves nothing")
+	}
+
+	p.run("raise a notice", chromedp.Evaluate(`toast('something went wrong', 'error')`, nil))
+
+	// Visible as the browser sees it, which is the whole point: it was present in
+	// the markup before this change too, and painted underneath.
+	if !p.visible("#toast .toast-note") {
+		t.Error("a notice raised while the sign-in screen is up cannot be seen")
+	}
+
+	if !strings.Contains(p.text("#toast"), "something went wrong") {
+		t.Errorf("the notice says %q", p.text("#toast"))
+	}
+}
+
+// Two failures in a row used to show only the second, which is the case where
+// the first one mattered.
+func TestTwoNoticesAreBothShown(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// Cleared first: signing in and changing the password raises notices of its
+	// own, and they now linger long enough to still be there.
+	p.run("raise two notices", chromedp.Evaluate(`
+		document.querySelector('#toast').replaceChildren();
+		toast('first notice', 'error');
+		toast('second notice', 'error');`, nil))
+
+	var count int
+
+	p.run("count the notices",
+		chromedp.Evaluate(`document.querySelectorAll('#toast .toast-note').length`, &count))
+
+	if count != 2 {
+		t.Errorf("%d notice(s) on screen, want 2", count)
+	}
+
+	shown := p.text("#toast")
+	for _, want := range []string{"first notice", "second notice"} {
+		if !strings.Contains(shown, want) {
+			t.Errorf("%q is not shown; the stack says %q", want, shown)
+		}
+	}
+}

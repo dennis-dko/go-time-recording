@@ -264,22 +264,66 @@ tbody tr:last-child td { border-bottom: none; }
 .status-completed { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .status-archived { background: var(--bg); }
 
-.toast {
-  border-radius: var(--radius);
+/* Notices stack downwards from the top.
+ *
+ * z-index above the sign-in screen (30) and the overlays (25), because the one
+ * notice nobody could see was the one that mattered most: a failure during
+ * start-up was painted behind the sign-in screen that was still up. */
+.toast-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   left: 50%;
-  max-width: 90vw;
-  padding: 11px 18px;
+  max-width: min(560px, 92vw);
   position: fixed;
   top: 74px;
   transform: translateX(-50%);
-  z-index: 20;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  width: max-content;
+  z-index: 40;
 }
 
-.toast.error { border-color: var(--danger); color: var(--danger); }
-.toast.ok { border-color: #2e9e5b; }
+.toast-note {
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* The stripe carries the meaning. A 1px border in a slightly different colour
+   * was the only thing separating a failure from a success. */
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  display: flex;
+  gap: 12px;
+  padding: 11px 12px 11px 16px;
+}
+
+/* Long values - a path, a URL, a token - have to wrap rather than run out of
+ * the box, which is what an unbroken token used to do. */
+.toast-text { overflow-wrap: anywhere; }
+
+.toast-note.error {
+  border-color: var(--danger);
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+
+.toast-note.ok {
+  border-color: color-mix(in srgb, #2e9e5b 45%, var(--border));
+  border-left-color: #2e9e5b;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  opacity: .6;
+  padding: 0 2px;
+  width: auto;
+}
+
+.toast-close:hover { filter: none; opacity: 1; }
 
 /* --- added with role administration, overtime and account settings --- */
 

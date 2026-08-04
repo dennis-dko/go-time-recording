@@ -116,15 +116,46 @@ function can(...permissions) {
   return permissions.some((p) => me.permissions.includes(p));
 }
 
-let toastTimer;
 function toast(message, kind = 'ok') {
-  const el = $('#toast');
-  el.textContent = message;
-  el.className = `toast ${kind}`;
-  el.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
+  const stack = $('#toast');
+  if (!stack) return;
+
+  const note = el('div', { class: `toast-note ${kind}` });
+
+  // Errors are announced assertively and successes politely: an error is worth
+  // interrupting whatever a screen reader was saying, and "Saved" is not.
+  note.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+
+  note.append(el('span', { class: 'toast-text', text: message }));
+
+  const dismiss = el('button', {
+    class: 'toast-close',
+    type: 'button',
+    'aria-label': t('action.dismiss', 'Dismiss'),
+    text: '×',
+    onclick: () => note.remove(),
+  });
+
+  note.append(dismiss);
+  stack.append(note);
+
+  // Stacked rather than replaced. A single slot meant two failures in a row
+  // showed only the second, which is the case where the first one mattered.
+  // Bounded, because a loop of failures should not fill the screen.
+  while (stack.children.length > TOAST_LIMIT) stack.firstElementChild.remove();
+
+  // Long enough to read what is there. A fixed five seconds is fine for "Saved"
+  // and not for a sentence explaining why a directory refused a bind.
+  const linger = Math.min(TOAST_MAX_MS, TOAST_MIN_MS + message.length * TOAST_MS_PER_CHAR);
+
+  setTimeout(() => note.remove(), linger);
 }
+
+/** How many notices may be on screen, and how long each one stays. */
+const TOAST_LIMIT = 4;
+const TOAST_MIN_MS = 4000;
+const TOAST_MAX_MS = 20000;
+const TOAST_MS_PER_CHAR = 60;
 
 /** Builds an element; text is assigned via textContent, never innerHTML. */
 function el(tag, props = {}, ...children) {
@@ -451,6 +482,7 @@ const TRANSLATIONS = {
     'action.reject': 'ablehnen',
     'action.save': 'Speichern',
     'action.submit': 'einreichen',
+    'action.dismiss': 'Schließen',
     'admin.activeConnection': 'Aktuell verbunden über',
     'admin.banner': 'Banner-Text (leer = ausgeblendet)',
     'admin.bindPassword': 'Bind-Passwort',

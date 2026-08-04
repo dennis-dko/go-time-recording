@@ -35,7 +35,11 @@
     <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
   </header>
 
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <!-- A stack rather than one slot: two failures in a row used to show only the
+       second, which is the case where the first one mattered. Each notice
+       carries its own role, so an error interrupts a screen reader and a
+       "Saved" does not. -->
+  <div id="toast" class="toast-stack" aria-live="polite"></div>
 
   <!-- Shown while the installation is out of service. Separate from the
        announcement banner because it is not news, it is the state the
