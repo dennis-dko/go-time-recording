@@ -169,6 +169,50 @@ func TestTheSettingsScreenFillsTheTelemetryCardAndTheOnesAfterIt(t *testing.T) {
 	}
 }
 
+// ------------------------------------------------------ revealing a password
+
+// The button is added by the script, to fields written in the markup, so
+// whether it exists at all is a question only a browser can answer - and what it
+// does is a change to an attribute that no API test can see.
+func TestAPasswordCanBeRevealedAndHiddenAgain(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+
+	const field = `#form-datasource input[name="password"]`
+
+	// Every password field gets one, so this one stands for the rest.
+	if !p.visible(`#form-datasource .password-toggle`) {
+		t.Fatal("the database password has no reveal button")
+	}
+
+	p.run("type a password", chromedp.SendKeys(field, "not-a-real-password", chromedp.ByQuery))
+
+	if got := p.attr(field, "type"); got != "password" {
+		t.Errorf("the field starts as %q, want it hidden", got)
+	}
+
+	p.run("reveal", p.click(`#form-datasource .password-toggle`))
+
+	if got := p.attr(field, "type"); got != "text" {
+		t.Errorf("after pressing the button the field is %q, so nothing was revealed", got)
+	}
+
+	// The value survived the type change; a reveal that emptied the field would
+	// be worse than none.
+	if got := p.value(field); got != "not-a-real-password" {
+		t.Errorf("revealing changed the value to %q", got)
+	}
+
+	p.run("hide again", p.click(`#form-datasource .password-toggle`))
+
+	if got := p.attr(field, "type"); got != "password" {
+		t.Errorf("the field stayed %q after pressing the button a second time", got)
+	}
+}
+
 // ------------------------------------------------- passkeys and two-factor
 
 // This pins a decision rather than checking a rule, which is why it is worth

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
 
 // append is a shorthand for the tests, which care about level and message and
@@ -359,5 +361,36 @@ func TestRestorePutsTheOriginalFilesBack(t *testing.T) {
 
 	if os.Stdout != stdout || os.Stderr != stderr {
 		t.Error("restore did not put the original files back")
+	}
+}
+
+// The viewer's filter and the log level setting describe the same six levels
+// from two different places: this one, which is what the process can emit, and
+// model.SupportedLogLevels, which is what an administrator may choose.
+//
+// They are kept apart on purpose - the domain must not reach into infrastructure
+// for a list - so something has to hold them together, or the Settings screen
+// ends up offering a level that never appears in the viewer beneath it.
+func TestTheLevelsOfferedAndTheLevelsEmittedAreTheSame(t *testing.T) {
+	emitted := map[string]bool{}
+	for _, level := range Levels {
+		emitted[level] = true
+	}
+
+	offered := map[string]bool{}
+	for _, level := range model.SupportedLogLevels() {
+		offered[level] = true
+	}
+
+	for level := range emitted {
+		if !offered[level] {
+			t.Errorf("%q can be emitted but cannot be chosen under Settings", level)
+		}
+	}
+
+	for level := range offered {
+		if !emitted[level] {
+			t.Errorf("%q can be chosen under Settings but is not a level the viewer knows", level)
+		}
 	}
 }

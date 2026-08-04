@@ -41,6 +41,17 @@ type Datasource struct {
 	SSLMode  string `json:"sslMode,omitempty"`
 }
 
+// SupportedDialects are the databases this application can open, in the order
+// they are offered.
+//
+// One list rather than a set of literals repeated per switch, because the same
+// three names also have to appear in two dropdowns - the installer's and the
+// Settings screen's - and nothing about a fourth being added would make anyone
+// remember all four places. A test compares the markup against this.
+func SupportedDialects() []string {
+	return []string{"sqlite", "postgres", "mysql"}
+}
+
 // Validate reports why the connection cannot be used, if it cannot.
 func (d Datasource) Validate() error {
 	switch strings.ToLower(d.Dialect) {
@@ -77,7 +88,8 @@ func (d Datasource) Validate() error {
 
 		return nil
 	default:
-		return fmt.Errorf("unsupported dialect %q; use sqlite, postgres or mysql", d.Dialect)
+		return fmt.Errorf("unsupported dialect %q; use %s",
+			d.Dialect, strings.Join(SupportedDialects(), ", "))
 	}
 }
 

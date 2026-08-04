@@ -636,11 +636,22 @@
       </form>
 
       <form id="form-telemetry" class="card form">
-        <h2 data-i18n="tel.title">Metrics and tracing</h2>
+        <h2 data-i18n="tel.title">Logging, metrics and tracing</h2>
         <p class="muted" id="telemetry-active"></p>
-        <p class="muted" data-i18n="tel.hint">Saved here and applied the next time the application starts. Neither can be switched over while it runs: the metrics port is bound and the trace exporter is built during start-up. A field left following the configuration file keeps its value from there.</p>
+        <p class="muted" data-i18n="tel.hint">Saved here and applied the next time the application starts. None of it can be switched over while the application runs: the log level is read, the metrics port is bound and the trace exporter is built while it starts. A field left following the configuration file keeps its value from there.</p>
         <p class="muted minus" data-i18n="tel.warn">The metrics port asks for no sign-in, is not covered by TLS, and serves Go's profiling endpoints beside the metrics — anywhere it is reachable, so is a heap dump. Expose it to your monitoring only.</p>
         <div class="grid">
+          <label data-i18n="tel.logLevel">Log level
+            <select name="logLevel">
+              <option value="" data-i18n="tel.follow">Follow the configuration file</option>
+              <option value="DEBUG">DEBUG</option>
+              <option value="INFO">INFO</option>
+              <option value="NOTICE">NOTICE</option>
+              <option value="WARN">WARN</option>
+              <option value="ERROR">ERROR</option>
+              <option value="FATAL">FATAL</option>
+            </select>
+          </label>
           <label data-i18n="tel.metrics">Metrics endpoint
             <select name="metricsOff">
               <option value="" data-i18n="tel.follow">Follow the configuration file</option>
@@ -727,7 +738,7 @@
            what you scroll to when something already went wrong. -->
       <div class="card" id="log-card">
         <h2 data-i18n="log.title">Live log</h2>
-        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what LOG_LEVEL admits reaches here, so ticking a level below it shows nothing. Held in memory only: the view is empty after a restart, and this is no substitute for collecting logs.</p>
+        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what the log level admits reaches here, so ticking a level below it shows nothing — the level is under "Logging, metrics and tracing" above, and takes effect at the next start. Held in memory only: the view is empty after a restart, and this is no substitute for collecting logs.</p>
 
         <div class="log-controls">
           <div class="log-levels" id="log-levels" role="group" aria-label="Log levels"></div>

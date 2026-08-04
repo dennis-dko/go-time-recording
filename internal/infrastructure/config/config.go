@@ -8,9 +8,12 @@ package config
 
 import (
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
 
 // Provider is the subset of GoFr's config.Config this package needs, kept
@@ -93,6 +96,11 @@ type Config struct {
 // rules rather than sensible ones, because a screen that shows what should have
 // happened instead of what did is worse than no screen.
 type Telemetry struct {
+	// LogLevel is how much this process is writing. Resolved the way GoFr does
+	// it, which means anything it could not read shows as INFO - because that is
+	// what it silently became.
+	LogLevel string
+
 	// MetricsPort is where /metrics is served, or 0 when the endpoint is off.
 	MetricsPort int
 
@@ -124,6 +132,21 @@ func (t Telemetry) TracingEnabled() bool { return t.TraceExporter != "" }
 // unreadable. Kept here so the screen can name the port without waiting for GoFr
 // to log it.
 const defaultMetricsPort = 2121
+
+// logLevel resolves LOG_LEVEL the way GoFr's GetLevelFromString does: any name
+// it does not recognise, including an empty one, becomes INFO.
+//
+// Reported rather than corrected, because that is what the process is actually
+// doing. An administrator who typed "verbose" and sees INFO here has been told
+// something true; showing "verbose" back would not be.
+func logLevel(raw string) string {
+	level := strings.ToUpper(strings.TrimSpace(raw))
+	if slices.Contains(model.SupportedLogLevels(), level) {
+		return level
+	}
+
+	return "INFO"
+}
 
 // metricsPort resolves METRICS_PORT exactly as GoFr's initMetricsServer does:
 // the literal "0" switches the endpoint off, anything it cannot read as a
@@ -250,6 +273,7 @@ func Load(p Provider) Config {
 		MaxDailyHours:      floatOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),
 
 		Telemetry: Telemetry{
+			LogLevel:      logLevel(p.Get("LOG_LEVEL")),
 			MetricsPort:   metricsPort(p.Get("METRICS_PORT")),
 			TraceExporter: strings.ToLower(strings.TrimSpace(p.Get("TRACE_EXPORTER"))),
 			TracerURL:     strings.TrimSpace(p.Get("TRACER_URL")),

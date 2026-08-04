@@ -123,6 +123,12 @@ func ApplyTelemetry(telemetry model.Telemetry) error {
 		values["TRACER_URL"] = strings.TrimSpace(*telemetry.TracerURL)
 	}
 
+	// An empty level would be read by GoFr as INFO rather than as "not set", so
+	// it is treated here as the absence it means and the file keeps deciding.
+	if telemetry.LogLevel != nil && *telemetry.LogLevel != "" {
+		values["LOG_LEVEL"] = *telemetry.LogLevel
+	}
+
 	if telemetry.TracerRatio != nil {
 		// 'f' with the shortest exact precision: GoFr parses this with
 		// ParseFloat, which reads "1e-05" but not the comma a German locale would

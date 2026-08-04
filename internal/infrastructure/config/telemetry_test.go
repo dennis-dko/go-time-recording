@@ -23,6 +23,7 @@ func ptr[T any](v T) *T { return &v }
 func givenEnvironment(t *testing.T) {
 	t.Helper()
 
+	t.Setenv("LOG_LEVEL", "INFO")
 	t.Setenv("METRICS_PORT", "2121")
 	t.Setenv("TRACE_EXPORTER", "jaeger")
 	t.Setenv("TRACER_URL", "from-the-file:4317")
@@ -40,6 +41,7 @@ func TestApplyingNothingLeavesTheFileAlone(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
+		"LOG_LEVEL":      "INFO",
 		"METRICS_PORT":   "2121",
 		"TRACE_EXPORTER": "jaeger",
 		"TRACER_URL":     "from-the-file:4317",
@@ -160,6 +162,31 @@ func TestTheSamplingRatioIsWrittenInAFormGoFrCanParse(t *testing.T) {
 		if strings.ContainsAny(got, ",eE") {
 			t.Errorf("a ratio of %v was written as %q, which ParseFloat may not read as intended", given, got)
 		}
+	}
+}
+
+// An administered level replaces the file's; an empty one is the absence it
+// means, and must not be exported as a blank - GoFr reads a blank as INFO, so a
+// cleared field would quietly set a level rather than stop setting one.
+func TestTheLogLevelIsExportedOnlyWhenItSaysSomething(t *testing.T) {
+	givenEnvironment(t)
+
+	if err := config.ApplyTelemetry(model.Telemetry{LogLevel: ptr("debug")}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	if got := os.Getenv("LOG_LEVEL"); got != "DEBUG" {
+		t.Errorf("LOG_LEVEL is %q, want it upper-cased to DEBUG", got)
+	}
+
+	givenEnvironment(t)
+
+	if err := config.ApplyTelemetry(model.Telemetry{LogLevel: ptr("")}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	if got := os.Getenv("LOG_LEVEL"); got != "INFO" {
+		t.Errorf("an empty level changed LOG_LEVEL to %q; it must leave the file's value alone", got)
 	}
 }
 

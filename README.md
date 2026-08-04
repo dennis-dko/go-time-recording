@@ -93,9 +93,11 @@ yanked away on the next refresh.
 
 It shows the framework's own output too — the request log, a failing statement,
 what happened during the migrations — because it captures the process output
-rather than wrapping a logger. Two things worth knowing: only what `LOG_LEVEL`
+rather than wrapping a logger. Two things worth knowing: only what the log level
 admits reaches it, so ticking `DEBUG` on an installation running at `WARN` shows
-nothing and is not a fault; and it is held in memory in a fixed-size ring, so it
+nothing and is not a fault — the level is set under *Settings → Logging, metrics
+and tracing* and applies from the next start; and it is held in memory in a
+fixed-size ring, so it
 starts empty after a restart and is no substitute for collecting logs. The
 capture makes the console output JSON even on a terminal, which is what a log
 collector wants anyway — `task dev` renders readable lines back for the console.
@@ -421,8 +423,8 @@ silently apply to everyone.
 **Bootstrap** settings can only be set in layers 1–3. They decide how the
 process starts, so an application that has not started cannot administer them —
 and getting one wrong must not be fixable only from a screen it takes away:
-ports, `LOG_LEVEL`, `TLS_*`, `AUTH_ENABLED`, `UI_ENABLED`, the `*_SCHEDULE`
-cron expressions, and the `DB_*` connection everything else is stored in.
+ports, `TLS_*`, `AUTH_ENABLED`, `UI_ENABLED`, and the `*_SCHEDULE` cron
+expressions.
 
 **Starting values** are what a fresh installation begins with; the setup wizard
 and *Settings* administer them at run time and what is stored there wins:
@@ -430,9 +432,9 @@ and *Settings* administer them at run time and what is stored there wins:
 `AUTO_CLOSE_AFTER_DAYS`, `LDAP_SYNC_MAX_DELETE_RATIO`, `APP_NAME`.
 
 **At the next start** are administered too, but stored rather than applied,
-because GoFr reads them while it starts up: the `DB_*` connection, and
-`TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What is stored wins from the
-next start onwards.
+because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
+and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What is stored wins from
+the next start onwards.
 
 The **timezone and the LDAP connection appear in no file at all**. Both are
 administered entirely in the application — a second place to write them would
@@ -461,6 +463,7 @@ only disagree with the first.
 | `AUTO_CLOSE_SCHEDULE` | `0 2 * * *` | cron for the sweep; empty disables it |
 | `AUTO_CLOSE_AFTER_DAYS` | `14` | when an open entry gets submitted |
 | `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day |
+| `LOG_LEVEL` | `INFO` | `DEBUG`…`FATAL`; anything else is read as `INFO` |
 | `TRACE_EXPORTER` | empty | `otlp` or `jaeger`; empty exports nothing |
 | `TRACER_URL` | – | the collector as `host:port`, **without** a scheme |
 | `TRACER_RATIO` | `1` | share of traces recorded, `0`–`1` |
@@ -510,9 +513,12 @@ button probes them before you commit. A connection saved there is written to
 `configs/datasource.json` and applied on the next restart; switching a live
 database under running requests is not safe, so it is deliberately not done.
 
-*Settings → Metrics and tracing* works the same way, and for the same kind of
-reason: GoFr binds the metrics port and builds the trace exporter inside
-`gofr.New()`, so nothing administered afterwards could reach either. What is
+*Settings → Logging, metrics and tracing* works the same way, and for the same
+kind of reason: GoFr reads the log level, binds the metrics port and builds the
+trace exporter inside `gofr.New()`, so nothing administered afterwards could
+reach any of them. GoFr can change a running logger's level, but it does so by
+assigning to a field every request goroutine reads without synchronisation — a
+data race is not a reasonable price for saving a restart. What is
 saved there is stored in the database and read back out of it on the way into the
 next start, before GoFr reads its own configuration — which is what lets a stored
 value win over the file, including a stored *off*. A field left following the

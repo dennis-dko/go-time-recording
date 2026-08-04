@@ -374,8 +374,10 @@ const TRANSLATIONS = {
     'ops.autoShort': 'Auto-Einreichen',
     'ops.ratioShort': 'Löschgrenze',
 
-    'tel.title': 'Metriken und Traces',
-    'tel.hint': 'Wird gespeichert und beim nächsten Start der Anwendung übernommen. Im laufenden Betrieb ist beides nicht umschaltbar: der Metrik-Port wird beim Start gebunden und der Trace-Exporter beim Start gebaut. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
+    'tel.title': 'Protokoll, Metriken und Traces',
+    'tel.logLevel': 'Protokollstufe',
+    'tel.activeLog': 'Protokollstufe',
+    'tel.hint': 'Wird gespeichert und beim nächsten Start der Anwendung übernommen. Im laufenden Betrieb ist nichts davon umschaltbar: die Protokollstufe wird beim Start gelesen, der Metrik-Port beim Start gebunden und der Trace-Exporter beim Start gebaut. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
     'tel.warn': 'Der Metrik-Port fragt nicht nach einer Anmeldung, ist nicht durch TLS geschützt und liefert neben den Metriken auch Go-Profiling-Endpunkte — wo er erreichbar ist, ist es auch ein Heap-Dump. Nur für die eigene Überwachung freigeben.',
     'tel.metrics': 'Metrik-Endpunkt',
     'tel.metricsOff': 'Nicht ausliefern',
@@ -390,6 +392,9 @@ const TRANSLATIONS = {
     'tel.activeMetricsOff': 'werden nicht ausgeliefert',
     'tel.activeTraces': 'Traces',
     'tel.activeTracesOff': 'werden nicht exportiert',
+
+    'password.reveal': 'Passwort anzeigen',
+    'password.hide': 'Passwort verbergen',
 
     'user.directoryAccount': 'aus dem Verzeichnis',
     'user.directoryHint': 'Wird im LDAP verwaltet. Das Passwort liegt dort, und das Entfernen des Eintrags dort entfernt auch dieses Konto.',
@@ -505,7 +510,7 @@ const TRANSLATIONS = {
     'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
-    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was LOG_LEVEL zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
+    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
     'log.paused': 'Angehalten.',
@@ -2448,6 +2453,121 @@ async function loadOperational() {
   fillOperationalForm(await api('/settings/operational'));
 }
 
+// ------------------------------------------------------ revealing a password
+
+/**
+ * Draws the eye, with a slash that is shown only while the password is readable.
+ *
+ * Built here rather than written into the markup because the button itself is,
+ * and inline rather than fetched because the Content-Security-Policy allows no
+ * external origin at all. createElementNS, not createElement: an <svg> built in
+ * the HTML namespace parses without complaint and renders nothing.
+ */
+function passwordToggleIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  // The button already carries the label; the drawing would only repeat it.
+  svg.setAttribute('aria-hidden', 'true');
+
+  const outline = document.createElementNS(ns, 'path');
+  outline.setAttribute('d', 'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z');
+
+  const pupil = document.createElementNS(ns, 'circle');
+  pupil.setAttribute('cx', '12');
+  pupil.setAttribute('cy', '12');
+  pupil.setAttribute('r', '3');
+
+  const slash = document.createElementNS(ns, 'path');
+  slash.setAttribute('d', 'M3 3l18 18');
+  slash.setAttribute('class', 'password-slash');
+
+  svg.append(outline, pupil, slash);
+
+  return svg;
+}
+
+/**
+ * Labels the button for what pressing it will do.
+ *
+ * The key is kept on the element as well as applied, so switching language
+ * re-labels it through applyLanguage instead of leaving the last language's
+ * word on a button nobody looks at twice.
+ */
+function labelPasswordToggle(button, revealed) {
+  const key = revealed ? 'password.hide' : 'password.reveal';
+  const label = revealed
+    ? t('password.hide', 'Hide the password')
+    : t('password.reveal', 'Show the password');
+
+  button.dataset.i18nAria = key;
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.setAttribute('aria-pressed', String(revealed));
+  button.classList.toggle('revealed', revealed);
+}
+
+/**
+ * Gives every password field a button that reveals what was typed.
+ *
+ * Every field, found by selector rather than listed, so the next one added gets
+ * this without anyone remembering to ask. It matters most where the value is not
+ * a password being recalled but one being transcribed - a database or bind
+ * password copied from somewhere else, where a silent typo is answered minutes
+ * later by "connection refused" and nothing on screen says which character was
+ * wrong.
+ *
+ * The field goes back to being hidden when the form is submitted or the page is
+ * left, because the browser is where it stays visible otherwise: nothing here
+ * re-renders these inputs.
+ */
+function wirePasswordReveal(root = document) {
+  for (const input of root.querySelectorAll('input[type="password"]')) {
+    // Running twice would nest a second wrapper and a second button.
+    if (input.parentElement?.classList.contains('password-field')) continue;
+
+    const field = document.createElement('span');
+    field.className = 'password-field';
+
+    input.replaceWith(field);
+    field.append(input);
+
+    const button = document.createElement('button');
+    // Not a submit: inside a form, a button with no type submits it, so the
+    // first attempt to look at a password would send the form instead.
+    button.type = 'button';
+    button.className = 'password-toggle';
+    button.append(passwordToggleIcon());
+    labelPasswordToggle(button, false);
+
+    button.addEventListener('click', () => {
+      const revealed = input.type === 'password';
+      input.type = revealed ? 'text' : 'password';
+      labelPasswordToggle(button, revealed);
+
+      // The caret goes back where it was: the type change moves focus off the
+      // field in some browsers, and continuing to type is the normal next act.
+      input.focus();
+    });
+
+    // Submitting is the end of looking at it. Left revealed, the value would
+    // still be on screen behind whatever the save put there.
+    input.form?.addEventListener('submit', () => {
+      input.type = 'password';
+      labelPasswordToggle(button, false);
+    });
+
+    field.append(button);
+  }
+}
+
 // ------------------------------------------------------- metrics and tracing
 
 /**
@@ -2465,6 +2585,7 @@ function fillTelemetryForm(data) {
   const form = $('#form-telemetry');
   const configured = data.configured ?? {};
 
+  form.elements.logLevel.value = configured.logLevel ?? '';
   form.elements.metricsOff.value = configured.metricsOff ? TELEMETRY_OFF : '';
 
   // Three states in one control: absent, administered off, or an exporter.
@@ -2499,7 +2620,9 @@ function describeActiveTelemetry(active) {
     ? `${active.traceExporter} → ${active.tracerUrl} (${active.tracerRatio})`
     : t('tel.activeTracesOff', 'not exported');
 
-  return `${t('tel.activeMetrics', 'Metrics')}: ${metrics} · ${t('tel.activeTraces', 'Traces')}: ${traces}`;
+  return `${t('tel.activeLog', 'Log level')}: ${active.logLevel} · `
+    + `${t('tel.activeMetrics', 'Metrics')}: ${metrics} · `
+    + `${t('tel.activeTraces', 'Traces')}: ${traces}`;
 }
 
 /**
@@ -2512,6 +2635,9 @@ function describeActiveTelemetry(active) {
 function telemetryPayload() {
   const form = $('#form-telemetry');
   const body = {};
+
+  const level = form.elements.logLevel.value;
+  if (level !== '') body.logLevel = level;
 
   if (form.elements.metricsOff.value === TELEMETRY_OFF) body.metricsOff = true;
 
@@ -3552,6 +3678,9 @@ async function init() {
     wireTimezones();
     wireOperational();
     wireTelemetry();
+    // After the forms are wired, so a submit handler registered here runs
+    // beside theirs rather than instead of one.
+    wirePasswordReveal();
     wireSetup();
     wireTour();
     wirePasskeys();

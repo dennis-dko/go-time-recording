@@ -3,6 +3,7 @@ package model
 import (
 	"math"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -54,6 +55,27 @@ type Telemetry struct {
 
 	// TracerRatio is the share of traces sampled, between 0 and 1.
 	TracerRatio *float64 `json:"tracerRatio,omitempty"`
+
+	// LogLevel is how much the process writes, from DEBUG to FATAL.
+	//
+	// Here rather than left in the file because it is the one of these three an
+	// administrator needs while something is wrong, and the log viewer already
+	// in this application can only show what the process was started willing to
+	// write. Applied at the next start like the rest: GoFr can change a level
+	// while running, but it does so by assigning to a field that every request
+	// goroutine reads without synchronisation, and a data race is not a
+	// reasonable price for saving a restart.
+	LogLevel *string `json:"logLevel,omitempty"`
+}
+
+// SupportedLogLevels are the levels GoFr emits, least to most severe.
+//
+// Anything else is not refused by GoFr but silently read as INFO, which is the
+// worst of both: an administrator who typed "verbose" gets no more logging and
+// no complaint. logsink.Levels lists the same six for the viewer's filter, and a
+// test holds the two together.
+func SupportedLogLevels() []string {
+	return []string{"DEBUG", "INFO", "NOTICE", "WARN", "ERROR", "FATAL"}
 }
 
 // The exporters offered.
@@ -71,6 +93,17 @@ const (
 // TracingOff is the stored exporter that means "export nowhere", as opposed to a
 // nil exporter, which means the configuration file still decides.
 const TracingOff = ""
+
+// SupportedTraceExporters are the exporters offered, in the order they appear on
+// the screen.
+//
+// A list rather than literals in a switch, because the same names also have to
+// appear as options in the markup, and a test compares the two - an exporter the
+// screen offers and the server refuses is a 400 nobody can act on, and one the
+// server accepts but the screen never offers cannot be chosen at all.
+func SupportedTraceExporters() []string {
+	return []string{TraceExporterOTLP, TraceExporterJaeger}
+}
 
 // Normalise trims the collector address and drops what an exporter of "off"
 // makes meaningless.
@@ -93,6 +126,14 @@ func (t Telemetry) Normalise() Telemetry {
 		}
 	}
 
+	// Upper-cased rather than rejected for its case: GoFr reads the level
+	// case-insensitively, so "debug" is not a mistake, and storing it as it will
+	// be read keeps the screen and the process saying the same word.
+	if t.LogLevel != nil {
+		level := strings.ToUpper(strings.TrimSpace(*t.LogLevel))
+		t.LogLevel = &level
+	}
+
 	return t
 }
 
@@ -110,7 +151,7 @@ func (t Telemetry) TracingAdministered() bool {
 // a screen showing settings the process is not running on, which is worth saying
 // out loud.
 func (t Telemetry) Administered() bool {
-	return t.MetricsOff ||
+	return t.MetricsOff || t.LogLevel != nil ||
 		t.TraceExporter != nil || t.TracerURL != nil || t.TracerRatio != nil
 }
 
@@ -126,12 +167,10 @@ func (t Telemetry) Administered() bool {
 func (t Telemetry) InvalidTelemetryFields() []string {
 	var invalid []string
 
-	if t.TraceExporter != nil {
-		switch *t.TraceExporter {
-		case TracingOff, TraceExporterOTLP, TraceExporterJaeger:
-		default:
-			invalid = append(invalid, "traceExporter")
-		}
+	if t.TraceExporter != nil &&
+		*t.TraceExporter != TracingOff &&
+		!slices.Contains(SupportedTraceExporters(), *t.TraceExporter) {
+		invalid = append(invalid, "traceExporter")
 	}
 
 	// Required rather than optional once an exporter is chosen: GoFr refuses the
@@ -150,6 +189,14 @@ func (t Telemetry) InvalidTelemetryFields() []string {
 	if t.TracerRatio != nil &&
 		(math.IsNaN(*t.TracerRatio) || *t.TracerRatio < 0 || *t.TracerRatio > 1) {
 		invalid = append(invalid, "tracerRatio")
+	}
+
+	// An empty level is allowed and means the same as an absent one, so that
+	// clearing the field on the screen goes back to following the file rather
+	// than storing a blank GoFr would read as INFO.
+	if t.LogLevel != nil && *t.LogLevel != "" &&
+		!slices.Contains(SupportedLogLevels(), *t.LogLevel) {
+		invalid = append(invalid, "logLevel")
 	}
 
 	return invalid

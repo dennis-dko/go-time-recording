@@ -289,6 +289,19 @@ func (p *page) text(selector string) string {
 	return strings.TrimSpace(out)
 }
 
+// attr reads an attribute as the browser currently has it, which is not always
+// what the markup said: the reveal button changes an input's type in place.
+func (p *page) attr(selector, name string) string {
+	p.t.Helper()
+
+	var out string
+
+	p.run(fmt.Sprintf("read %s of %s", name, selector), chromedp.Evaluate(fmt.Sprintf(
+		`document.querySelector(%q)?.getAttribute(%q) ?? ""`, selector, name), &out))
+
+	return strings.TrimSpace(out)
+}
+
 // value reads what a form field holds, which text cannot: an input's content is
 // its value, and textContent sees nothing there.
 func (p *page) value(selector string) string {

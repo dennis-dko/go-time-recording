@@ -91,7 +91,14 @@ func TestNormaliseTrimsAndAcceptsAnExporterInAnyCase(t *testing.T) {
 	got := model.Telemetry{
 		TraceExporter: ptr("  OTLP "),
 		TracerURL:     ptr("  jaeger:4317  "),
+		LogLevel:      ptr(" debug "),
 	}.Normalise()
+
+	// Stored the way GoFr will read it, so the screen and the process say the
+	// same word.
+	if *got.LogLevel != "DEBUG" {
+		t.Errorf("expected the level upper-cased and trimmed, got %q", *got.LogLevel)
+	}
 
 	if *got.TraceExporter != model.TraceExporterOTLP {
 		t.Errorf("expected %q, got %q", model.TraceExporterOTLP, *got.TraceExporter)
@@ -195,6 +202,14 @@ func TestValidationRejectsWhatWouldSilentlyDropEverySpan(t *testing.T) {
 			model.Telemetry{TracerRatio: ptr(math.Inf(1))},
 			"tracerRatio",
 		},
+		{
+			// GoFr does not refuse this, it reads it as INFO - so an
+			// administrator who asked for more logging would get none and no
+			// word about why.
+			"a log level GoFr would silently read as INFO",
+			model.Telemetry{LogLevel: ptr("verbose")},
+			"logLevel",
+		},
 	}
 
 	for _, tc := range cases {
@@ -236,6 +251,16 @@ func TestValidationAcceptsWhatGoFrCanActuallyUse(t *testing.T) {
 		},
 		"metrics switched off on their own": {
 			MetricsOff: true,
+		},
+		// GoFr reads the level case-insensitively, so this is not a mistake to
+		// refuse - Normalise stores it the way it will be read.
+		"a log level in any case": {
+			LogLevel: ptr("debug"),
+		},
+		// Clearing the field on the screen means "follow the file" rather than
+		// "store a blank", which GoFr would read as INFO.
+		"an empty log level": {
+			LogLevel: ptr(""),
 		},
 	}
 

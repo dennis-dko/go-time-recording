@@ -657,6 +657,8 @@ type TelemetryResponse struct {
 
 // ActiveTelemetry is the telemetry in force in this process, on the wire.
 type ActiveTelemetry struct {
+	LogLevel string `json:"logLevel"`
+
 	MetricsServed bool   `json:"metricsServed"`
 	MetricsPort   int    `json:"metricsPort"`
 	MetricsPath   string `json:"metricsPath"`
@@ -669,6 +671,7 @@ type ActiveTelemetry struct {
 
 func newActiveTelemetry(t appconfig.Telemetry) ActiveTelemetry {
 	return ActiveTelemetry{
+		LogLevel:      t.LogLevel,
 		MetricsServed: t.MetricsServed(),
 		MetricsPort:   t.MetricsPort,
 		MetricsPath:   appconfig.MetricsPath,
