@@ -773,6 +773,84 @@ function t(key, fallback) {
   return TRANSLATIONS[activeLanguage()]?.[key] ?? fallback;
 }
 
+/**
+ * Remembers, per account and per browser, that the defaults have been offered.
+ *
+ * An empty stored zone means "follow the instance", which is a real choice - so
+ * adopting the browser's zone every time the page loaded would make that choice
+ * impossible to keep. The marker is what makes it a one-time suggestion rather
+ * than a standing override.
+ */
+function adoptionMarker(userID) {
+  return `gtr.adopted.${userID}`;
+}
+
+/**
+ * Writes the browser's zone and language into the account, once.
+ *
+ * The browser knows two things the server cannot: which zone the person is
+ * actually in, and which language they read. Until now the language was detected
+ * for the current page and thrown away on every load, and the zone was not
+ * detected at all - so somebody in Vancouver saw their evening bookings land on
+ * the instance's tomorrow until they found the setting.
+ *
+ * Two deliberate limits. It happens once per account per browser, so "follow the
+ * instance setting" stays choosable. And the zone is only written when it differs
+ * from the instance's, because writing the same value would take that choice away
+ * to no effect at all.
+ *
+ * Returns whether anything was written, so the caller can read the account back.
+ */
+async function adoptBrowserDefaults() {
+  if (!me.user) return false;
+
+  const marker = adoptionMarker(me.user.id);
+
+  try {
+    if (window.localStorage.getItem(marker)) return false;
+  } catch {
+    // Private browsing, or storage switched off. Suggesting once per load is
+    // worse than never suggesting, so this stops here.
+    return false;
+  }
+
+  let adopted = false;
+
+  // The zone, when the browser's differs from what this account currently
+  // resolves to. effectiveTimezone is the instance's while nothing is stored.
+  const zone = guessTimezone();
+  if (!me.user.timezone && zone && zone !== me.user.effectiveTimezone) {
+    try {
+      await api('/me/timezone', { method: 'PUT', body: JSON.stringify({ timezone: zone }) });
+      adopted = true;
+    } catch {
+      // A zone this server does not know is not worth a message: the account
+      // keeps following the instance, which is what it did before.
+    }
+  }
+
+  // The language, when the browser asks for one this interface actually speaks.
+  const language = detectBrowserLanguage();
+  if (!me.user.language && language) {
+    try {
+      await api('/me/language', { method: 'PUT', body: JSON.stringify({ language }) });
+      adopted = true;
+    } catch {
+      // Same reasoning: it keeps rendering in the detected language for this
+      // session, it is simply not remembered.
+    }
+  }
+
+  try {
+    window.localStorage.setItem(marker, '1');
+  } catch {
+    // Nothing to do. Worst case it is suggested again on the next load, and the
+    // conditions above make that a no-op.
+  }
+
+  return adopted;
+}
+
 // -------------------------------------------------------------------- views
 
 async function loadMe() {
@@ -3670,6 +3748,10 @@ function firstVisibleView() {
 
 async function refreshAll() {
   await loadMe();
+
+  // Before the booking date is worked out, because that depends on the zone -
+  // and on a first sign-in the zone is the thing being adopted.
+  if (await adoptBrowserDefaults()) await loadMe();
 
   // Only now is the applicable zone known, so the booking date is set here
   // rather than at start-up, where it would still be the browser's guess.
