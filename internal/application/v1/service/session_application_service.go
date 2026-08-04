@@ -58,6 +58,16 @@ type SessionService struct {
 
 	// defaultRole is given to accounts provisioned from the directory.
 	defaultRole string
+
+	metrics
+}
+
+// WithMetrics attaches the recorder. Optional: without it sign-in works and
+// records nothing.
+func (s *SessionService) WithMetrics(recorder Recorder) *SessionService {
+	s.recorder = recorder
+
+	return s
 }
 
 // NewSessionService creates new instance.
@@ -122,15 +132,30 @@ type LoginResult struct {
 func (s *SessionService) Login(ctx context.Context, email, password, totpCode string) (*LoginResult, error) {
 	user, err := s.resolveUser(ctx, email, password)
 	if err != nil {
+		// Counted apart, because they mean different things to whoever is
+		// looking: a rising "credentials" is somebody working through a password
+		// list, and a rising "directory" is a directory that has stopped
+		// answering - which turns away people whose passwords are perfectly good.
+		reason := SignInFailureCredentials
+		if apperror.KindOf(err) == apperror.KindInternal {
+			reason = SignInFailureDirectory
+		}
+
+		s.count(ctx, MetricSignInFailures, "reason", reason)
+
 		return nil, err
 	}
 
 	if user.TOTPEnabled {
+		// Not a failure: the password was right and the client is being asked
+		// for the second factor it was always going to be asked for.
 		if totpCode == "" {
 			return nil, ErrTOTPRequired
 		}
 
 		if !security.VerifyTOTP(user.TOTPSecret, totpCode) {
+			s.count(ctx, MetricSignInFailures, "reason", SignInFailureTOTP)
+
 			return nil, apperror.Invalidf("the two-factor code is not valid")
 		}
 	}

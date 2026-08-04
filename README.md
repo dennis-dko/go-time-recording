@@ -567,6 +567,35 @@ The full reference is at `/api-docs`; the highlights:
 | `POST` | `/api/v1/timesheets/{id}/transfer` | Move to another project |
 | `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP, metrics and tracing |
 
+### What the metrics endpoint carries
+
+GoFr measures the machinery on its own — a histogram per HTTP request
+(`app_http_response`), one per SQL query (`app_sql_stats`), a goroutine gauge —
+and it does so without a line of instrumentation in this repository. Spans are
+the same: every request is traced by the framework's middleware, which is why
+tracing works here with no span code anywhere.
+
+What it cannot know is whether the application is doing its job. A deployment can
+serve every request in milliseconds while nobody has been able to book time since
+the directory changed. So four more are recorded here, each because somebody
+would act on it:
+
+| Metric | Says |
+| --- | --- |
+| `gtr_timesheet_hours_booked` | hours per entry — the sum is what was recorded, the count in how many pieces |
+| `gtr_timesheet_transitions_total` | entries entering a state, by state — a queue of submitted entries nobody approves is invisible otherwise |
+| `gtr_signin_failures_total` | refused sign-ins, by reason — `credentials` is somebody guessing, `directory` is a directory that stopped answering |
+| `gtr_directory_accounts_total` | accounts the synchronisation created or deleted — the one operation that removes people together with their hours |
+
+None of them carries a user, an address or a project name as a label. A label is
+a time series: one per person is both a memory leak in the collector and a list
+of who works here, published on a port that asks for no password.
+
+**Before writing an alert:** a metric is published only once it has a value, so
+an installation that has had no refused sign-in publishes no
+`gtr_signin_failures_total` at all rather than publishing it as zero. Treat an
+absent series as absent — `absent()` — rather than as a healthy zero.
+
 Operations: `/.well-known/health`, `/.well-known/alive`, and `/metrics` on port
 2121 — a port of its own, outside the middleware chain, which therefore asks for
 no sign-in, is not covered by TLS, and serves Go's profiling endpoints under

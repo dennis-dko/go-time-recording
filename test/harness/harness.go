@@ -56,10 +56,18 @@ type App struct {
 	dir     string
 	cmd     *exec.Cmd
 	logs    *bytes.Buffer
+
+	// metricsPort is the one this instance was given. Its own listener, on its
+	// own port, outside the middleware chain - so a test that wants to read what
+	// the application publishes cannot get there through BaseURL.
+	metricsPort int
 }
 
 // BaseURL is where the instance answers, e.g. http://localhost:54321
 func (a *App) BaseURL() string { return a.baseURL }
+
+// MetricsPort is where this instance serves /metrics.
+func (a *App) MetricsPort() int { return a.metricsPort }
 
 // Log returns what the instance has written so far, for a failure message.
 func (a *App) Log() string { return a.logs.String() }
@@ -151,13 +159,14 @@ func start(t *testing.T, withDatabase bool, env ...string) *App {
 	copyConfigs(t, filepath.Join(RepoRoot(), "cmd", "configs"), filepath.Join(dir, "configs"))
 
 	port := FreePort(t)
+	metricsPort := FreePort(t)
 
 	cmd := exec.Command(*path)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"APP_ENV=", // only .env, so a stray .local.env cannot change the outcome
 		fmt.Sprintf("HTTP_PORT=%d", port),
-		fmt.Sprintf("METRICS_PORT=%d", FreePort(t)),
+		fmt.Sprintf("METRICS_PORT=%d", metricsPort),
 		"LOG_LEVEL=WARN",
 	)
 
@@ -194,10 +203,11 @@ func start(t *testing.T, withDatabase bool, env ...string) *App {
 		// identifier - "SecurityError: This is an invalid domain". Passkey
 		// tests would fail for a reason that has nothing to do with the code
 		// under test.
-		baseURL: fmt.Sprintf("http://localhost:%d", port),
-		dir:     dir,
-		cmd:     cmd,
-		logs:    logs,
+		baseURL:     fmt.Sprintf("http://localhost:%d", port),
+		metricsPort: metricsPort,
+		dir:         dir,
+		cmd:         cmd,
+		logs:        logs,
 	}
 
 	t.Cleanup(a.stop)

@@ -337,20 +337,28 @@ func main() {
 		LDAPSyncMaxDeleteRatio: cfg.LDAPSyncMaxDeleteRatio,
 	})
 
+	// The framework already measures the machinery; these measure the work. See
+	// the service package for why each one is here and why none of them carries
+	// a person's name as a label.
+	registerBusinessMetrics(app)
+
 	sessions := appservice.NewSessionService(userRepo, roleRepo, sessionRepo, auth, cfg.SessionLifetime).
 		WithExternalAuth(ldapClient, model.RoleEmployee).
-		WithLimits(limits)
+		WithLimits(limits).
+		WithMetrics(app.Metrics())
 
 	ldapSync := appservice.NewLDAPSyncService(ldapClient, userRepo, roleRepo, timesheetRepo,
 		userRepo, cfg.LDAPSyncMaxDeleteRatio, model.RoleEmployee).
-		WithLimits(limits)
+		WithLimits(limits).
+		WithMetrics(app.Metrics())
 
 	users := appservice.NewUserApplicationService(userRepo, roleRepo, timesheetRepo, userRepo)
 	roles := appservice.NewRoleApplicationService(roleRepo)
 	projects := appservice.NewProjectApplicationService(projectRepo, timesheetRepo)
 	timesheets := appservice.NewTimesheetApplicationService(
 		timesheetRepo, userRepo, projectRepo, cfg.MaxDailyHours).
-		WithLimits(limits)
+		WithLimits(limits).
+		WithMetrics(app.Metrics())
 	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo)
 
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
@@ -566,6 +574,35 @@ func main() {
 	}
 
 	app.Run()
+}
+
+// registerBusinessMetrics declares the ones this application records itself.
+//
+// Declaring is not publishing, which is worth knowing before writing an alert
+// against one of these. The registration creates the instrument; the exporter
+// emits a series only once it has a value, so a fresh installation that has had
+// no refused sign-in publishes no gtr_signin_failures_total at all rather than
+// publishing it as zero.
+//
+// So "nothing has gone wrong yet" and "this metric does not exist" are the same
+// empty query result here. An alert has to treat an absent series as absent
+// rather than as a healthy zero - absent() in Prometheus - and a dashboard panel
+// is empty until the first event rather than flat at zero.
+func registerBusinessMetrics(app *gofr.App) {
+	m := app.Metrics()
+
+	// Buckets in hours, over the range a single entry can hold: the quarter and
+	// half hours people actually book, then the working day, then the rest.
+	m.NewHistogram(appservice.MetricHoursBooked,
+		"Hours recorded per time entry.",
+		0.25, 0.5, 1, 2, 4, 6, 8, 10, 12, 24)
+
+	m.NewCounter(appservice.MetricEntryTransitions,
+		"Time entries entering a state, by that state.")
+	m.NewCounter(appservice.MetricSignInFailures,
+		"Refused sign-ins, by reason.")
+	m.NewCounter(appservice.MetricDirectoryAccounts,
+		"Accounts the directory synchronisation created or deleted.")
 }
 
 // tlsShutdownGrace bounds how long the HTTPS listener is given to drain.
