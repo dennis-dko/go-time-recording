@@ -138,6 +138,7 @@ tasks:
         vars: { DB: '{{.DB}}' }
       - task: test:browser
       - echo "All suites passed."
+      - echo "Tracing against a real collector is not included; that is 'task test:traces'."
 
   test:
     desc: 'Verify: run the unit tests.'
@@ -185,6 +186,34 @@ tasks:
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
       - go test -tags integration -count=1 -timeout 15m ./test/integration/
+
+  test:traces:
+    desc: 'Verify: export spans to a real Jaeger and read them back.'
+    summary: |
+      The one thing the rest of the tracing tests cannot show: that a span
+      exported by this application actually arrives somewhere. Every way that
+      fails is silent - an exporter GoFr does not recognise drops each batch
+      after logging once, a collector address it cannot dial fails inside the
+      exporter, and a sampler that records nothing looks exactly like a
+      collector with nothing to show.
+
+      Starts Jaeger, runs the tracing tests against it, and leaves it running so
+      a failure can be looked at in the trace browser on http://localhost:51686.
+      `task env:down` stops it.
+    env:
+      GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
+      GTR_TEST_JAEGER: 'localhost:54317'
+    cmds:
+      - task: env:up
+        vars: { PROFILE: traces }
+      - mkdir -p {{.TMP_DIR}}
+      - defer: rm -rf {{.TMP_DIR}}
+      # Only the tracing cases: the rest of the integration suite is `task
+      # test:integration`, and running it twice for these two is minutes wasted.
+      # Both tracing cases carry "Tracing" in their name; the rest of the
+      # integration suite is `task test:integration`, and running it again for
+      # these two is minutes wasted.
+      - go test -tags integration -count=1 -timeout 10m -run Tracing ./test/integration/
 
   test:browser:
     desc: 'Verify: drive the real interface in a real browser.'
@@ -259,7 +288,7 @@ tasks:
       - go run ./test/probe {{.CLI_ARGS}}
 
   env:up:
-    desc: 'Verify: start the backing services on their own. Usage: task env:up PROFILE=dev|postgres|mysql|ldap|all'
+    desc: 'Verify: start the backing services on their own. Usage: task env:up PROFILE=dev|postgres|mysql|ldap|traces|all'
     vars:
       PROFILE: '{{.PROFILE | default "all"}}'
     dir: test
