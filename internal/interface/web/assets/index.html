@@ -635,6 +635,39 @@
         <p class="muted" id="datasource-test-result"></p>
       </form>
 
+      <form id="form-telemetry" class="card form">
+        <h2 data-i18n="tel.title">Metrics and tracing</h2>
+        <p class="muted" id="telemetry-active"></p>
+        <p class="muted" data-i18n="tel.hint">Saved here and applied the next time the application starts. Neither can be switched over while it runs: the metrics port is bound and the trace exporter is built during start-up. A field left following the configuration file keeps its value from there.</p>
+        <p class="muted minus" data-i18n="tel.warn">The metrics port asks for no sign-in, is not covered by TLS, and serves Go's profiling endpoints beside the metrics — anywhere it is reachable, so is a heap dump. Expose it to your monitoring only.</p>
+        <div class="grid">
+          <label data-i18n="tel.metrics">Metrics endpoint
+            <select name="metricsOff">
+              <option value="" data-i18n="tel.follow">Follow the configuration file</option>
+              <option value="off" data-i18n="tel.metricsOff">Do not serve it</option>
+            </select>
+          </label>
+          <label data-i18n="tel.exporter">Trace exporter
+            <select name="traceExporter">
+              <option value="" data-i18n="tel.follow">Follow the configuration file</option>
+              <option value="off" data-i18n="tel.tracesOff">Export nowhere</option>
+              <option value="otlp">OTLP</option>
+              <option value="jaeger">Jaeger</option>
+            </select>
+          </label>
+          <label data-i18n="tel.url">Collector as host:port, without http://
+            <input type="text" name="tracerUrl" placeholder="jaeger:4317">
+          </label>
+          <label data-i18n="tel.ratio">Share of traces recorded (0–1)
+            <input type="number" name="tracerRatio" step="0.05" min="0" max="1">
+          </label>
+        </div>
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="telemetry-reset" data-i18n="tel.reset">Reset all to the configuration file</button>
+        </div>
+      </form>
+
       <form id="form-ldap" class="card form">
         <h2 data-i18n="admin.ldap">LDAP connection</h2>
         <p class="muted" data-i18n="admin.ldapHint">When enabled, passwords are checked against the directory. Unknown users are created locally on their first successful sign-in.</p>

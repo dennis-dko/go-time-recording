@@ -289,6 +289,19 @@ func (p *page) text(selector string) string {
 	return strings.TrimSpace(out)
 }
 
+// value reads what a form field holds, which text cannot: an input's content is
+// its value, and textContent sees nothing there.
+func (p *page) value(selector string) string {
+	p.t.Helper()
+
+	var out string
+
+	p.run("read the value of "+selector, chromedp.Evaluate(fmt.Sprintf(
+		`document.querySelector(%q)?.value ?? ""`, selector), &out))
+
+	return strings.TrimSpace(out)
+}
+
 // consoleErrors returns anything the page logged as an error. A page that
 // throws on load still renders, so this is the only way to notice.
 func (p *page) jsBroken() bool {

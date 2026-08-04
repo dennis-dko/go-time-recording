@@ -72,6 +72,8 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/settings/datasource", h.Settings.Datasource)
 	app.PUT(base+"/settings/datasource", h.Settings.SaveDatasource)
 	app.POST(base+"/settings/datasource/test", h.Settings.TestDatasource)
+	app.GET(base+"/settings/telemetry", h.Settings.Telemetry)
+	app.PUT(base+"/settings/telemetry", h.Settings.SaveTelemetry)
 
 	// The process log. Under /admin rather than /settings because it changes
 	// nothing - and behind the built-in administrator, because it carries

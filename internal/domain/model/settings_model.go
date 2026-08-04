@@ -25,6 +25,11 @@ const (
 	// to be restored or moved.
 	SettingMaintenance = "instance.maintenance"
 
+	// SettingTelemetry holds the metrics and tracing settings. Read before
+	// gofr.New(), because that is where GoFr decides both, and therefore applied
+	// at the next start rather than at once.
+	SettingTelemetry = "instance.telemetry"
+
 	// SettingSetupCompleted records that the first-run wizard was dismissed.
 	// Only that: which steps are done is worked out from what is configured.
 	SettingSetupCompleted = "instance.setupCompleted"

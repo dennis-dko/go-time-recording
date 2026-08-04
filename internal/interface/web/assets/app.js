@@ -374,6 +374,23 @@ const TRANSLATIONS = {
     'ops.autoShort': 'Auto-Einreichen',
     'ops.ratioShort': 'Löschgrenze',
 
+    'tel.title': 'Metriken und Traces',
+    'tel.hint': 'Wird gespeichert und beim nächsten Start der Anwendung übernommen. Im laufenden Betrieb ist beides nicht umschaltbar: der Metrik-Port wird beim Start gebunden und der Trace-Exporter beim Start gebaut. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
+    'tel.warn': 'Der Metrik-Port fragt nicht nach einer Anmeldung, ist nicht durch TLS geschützt und liefert neben den Metriken auch Go-Profiling-Endpunkte — wo er erreichbar ist, ist es auch ein Heap-Dump. Nur für die eigene Überwachung freigeben.',
+    'tel.metrics': 'Metrik-Endpunkt',
+    'tel.metricsOff': 'Nicht ausliefern',
+    'tel.exporter': 'Trace-Exporter',
+    'tel.tracesOff': 'Nirgendwohin exportieren',
+    'tel.follow': 'Der Konfigurationsdatei folgen',
+    'tel.url': 'Collector als host:port, ohne http://',
+    'tel.ratio': 'Anteil aufgezeichneter Traces (0–1)',
+    'tel.reset': 'Alles auf die Konfigurationsdatei zurücksetzen',
+    'tel.resetDone': 'Metriken und Traces folgen wieder der Konfigurationsdatei',
+    'tel.activeMetrics': 'Metriken',
+    'tel.activeMetricsOff': 'werden nicht ausgeliefert',
+    'tel.activeTraces': 'Traces',
+    'tel.activeTracesOff': 'werden nicht exportiert',
+
     'user.directoryAccount': 'aus dem Verzeichnis',
     'user.directoryHint': 'Wird im LDAP verwaltet. Das Passwort liegt dort, und das Entfernen des Eintrags dort entfernt auch dieses Konto.',
 
@@ -1359,6 +1376,8 @@ async function loadAdmin() {
 
   $('#datasource-active').textContent =
     `${t('admin.activeConnection', 'Currently connected via')}: ${ds.active}`;
+
+  await loadTelemetry();
 
   const ldap = await api('/settings/ldap');
   const ldapForm = $('#form-ldap');
@@ -2429,6 +2448,109 @@ async function loadOperational() {
   fillOperationalForm(await api('/settings/operational'));
 }
 
+// ------------------------------------------------------- metrics and tracing
+
+/**
+ * The value that means "administered off", as opposed to the empty value, which
+ * means "nothing is administered here and the configuration file decides".
+ *
+ * Two distinct things that a single empty option would conflate, and the
+ * difference is what the server stores: an empty exporter it has been told about
+ * overrides a configured one, while an absent field leaves it alone.
+ */
+const TELEMETRY_OFF = 'off';
+
+/** Fills the metrics and tracing form from the server's answer. */
+function fillTelemetryForm(data) {
+  const form = $('#form-telemetry');
+  const configured = data.configured ?? {};
+
+  form.elements.metricsOff.value = configured.metricsOff ? TELEMETRY_OFF : '';
+
+  // Three states in one control: absent, administered off, or an exporter.
+  if (configured.traceExporter === undefined || configured.traceExporter === null) {
+    form.elements.traceExporter.value = '';
+  } else {
+    form.elements.traceExporter.value = configured.traceExporter || TELEMETRY_OFF;
+  }
+
+  form.elements.tracerUrl.value = configured.tracerUrl ?? '';
+  form.elements.tracerRatio.value = configured.tracerRatio ?? '';
+
+  $('#telemetry-active').textContent = describeActiveTelemetry(data.active ?? {});
+}
+
+/**
+ * Says what this process is actually serving and exporting.
+ *
+ * Worth a sentence of its own rather than leaving the form to imply it: until the
+ * next restart the stored settings and the running ones disagree, and the
+ * metrics URL is the one thing on this screen somebody wants to copy.
+ */
+function describeActiveTelemetry(active) {
+  const metrics = active.metricsServed
+    // The host comes from the browser rather than the server, which cannot know
+    // the name this installation is reached under. The port is a different one,
+    // so it has to be spelled out in full to be usable.
+    ? `${window.location.protocol}//${window.location.hostname}:${active.metricsPort}${active.metricsPath}`
+    : t('tel.activeMetricsOff', 'not served');
+
+  const traces = active.traceExporter
+    ? `${active.traceExporter} → ${active.tracerUrl} (${active.tracerRatio})`
+    : t('tel.activeTracesOff', 'not exported');
+
+  return `${t('tel.activeMetrics', 'Metrics')}: ${metrics} · ${t('tel.activeTraces', 'Traces')}: ${traces}`;
+}
+
+/**
+ * Reads the form, omitting anything left following the configuration file.
+ *
+ * An omitted field is not the same as an empty one here, which is why this is
+ * assembled by hand rather than by formData: sending tracerUrl: "" would store a
+ * deliberate blank where the intent was to leave the file's value in place.
+ */
+function telemetryPayload() {
+  const form = $('#form-telemetry');
+  const body = {};
+
+  if (form.elements.metricsOff.value === TELEMETRY_OFF) body.metricsOff = true;
+
+  const exporter = form.elements.traceExporter.value;
+  if (exporter === TELEMETRY_OFF) body.traceExporter = '';
+  else if (exporter !== '') body.traceExporter = exporter;
+
+  const url = form.elements.tracerUrl.value.trim();
+  if (url !== '') body.tracerUrl = url;
+
+  const ratio = form.elements.tracerRatio.value.trim();
+  if (ratio !== '') body.tracerRatio = Number(ratio);
+
+  return body;
+}
+
+function wireTelemetry() {
+  $('#form-telemetry').addEventListener('submit', (e) => {
+    e.preventDefault();
+    mutate(
+      () => api('/settings/telemetry', {
+        method: 'PUT', body: JSON.stringify(telemetryPayload()),
+      }),
+      t('admin.restartNeeded', 'Saved. Applied on the next start.'),
+      loadTelemetry);
+  });
+
+  $('#telemetry-reset').addEventListener('click', () => {
+    mutate(
+      () => api('/settings/telemetry', { method: 'PUT', body: JSON.stringify({}) }),
+      t('tel.resetDone', 'Metrics and tracing follow the configuration file again'),
+      loadTelemetry);
+  });
+}
+
+async function loadTelemetry() {
+  fillTelemetryForm(await api('/settings/telemetry'));
+}
+
 // ---------------------------------------------------------------- passkeys
 
 /**
@@ -3429,6 +3551,7 @@ async function init() {
     wireDirectorySync();
     wireTimezones();
     wireOperational();
+    wireTelemetry();
     wireSetup();
     wireTour();
     wirePasskeys();

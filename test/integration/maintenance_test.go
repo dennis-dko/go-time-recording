@@ -86,6 +86,7 @@ func TestTheAdministratorCanStillEndMaintenanceMode(t *testing.T) {
 		"/settings/datasource",
 		"/settings/timezone",
 		"/settings/operational",
+		"/settings/telemetry",
 		"/admin/logs",
 	} {
 		if got := admin.api(http.MethodGet, path, nil).Status; got != http.StatusOK {

@@ -171,6 +171,45 @@ func (s *SettingsService) SaveMaintenance(ctx context.Context, maintenance model
 	return s.settings.Set(ctx, model.SettingMaintenance, string(encoded))
 }
 
+// Telemetry returns the administered metrics and tracing settings, unresolved: a
+// nil field means the configuration file's value still applies.
+func (s *SettingsService) Telemetry(ctx context.Context) (model.Telemetry, error) {
+	raw, err := s.settings.Get(ctx, model.SettingTelemetry)
+	if err != nil {
+		return model.Telemetry{}, err
+	}
+
+	var telemetry model.Telemetry
+
+	if raw == "" {
+		return telemetry, nil
+	}
+
+	if err := json.Unmarshal([]byte(raw), &telemetry); err != nil {
+		// A corrupt entry falls back to the configuration file rather than
+		// locking the administrator out of the screen that would repair it.
+		return model.Telemetry{}, nil
+	}
+
+	return telemetry, nil
+}
+
+// SaveTelemetry stores the metrics and tracing settings for the next start.
+func (s *SettingsService) SaveTelemetry(ctx context.Context, telemetry model.Telemetry) error {
+	telemetry = telemetry.Normalise()
+
+	if invalid := telemetry.InvalidTelemetryFields(); len(invalid) > 0 {
+		return apperror.InvalidFields(invalid...)
+	}
+
+	raw, err := json.Marshal(telemetry)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	return s.settings.Set(ctx, model.SettingTelemetry, string(raw))
+}
+
 // SaveOperational stores the administered limits.
 func (s *SettingsService) SaveOperational(ctx context.Context, operational model.Operational) error {
 	if invalid := operational.InvalidOperationalFields(); len(invalid) > 0 {

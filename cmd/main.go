@@ -247,7 +247,32 @@ func main() {
 		die(restoreOutput, "cannot apply the configured datasource: %v", err)
 	}
 
+	// The administered metrics and tracing settings, read out of the database
+	// before GoFr opens it: GoFr binds the metrics port and builds the trace
+	// exporter inside gofr.New(), so this is the last moment either can be
+	// influenced. See the config package for why an empty value overrides a
+	// configured one.
+	//
+	// The error is carried rather than reported: there is nowhere to report it yet,
+	// because the logger belongs to the application that does not exist until the
+	// next line.
+	telemetry, telemetryErr := appconfig.StoredTelemetry(context.Background(), ds)
+	if telemetryErr == nil {
+		if err := appconfig.ApplyTelemetry(telemetry); err != nil {
+			die(restoreOutput, "cannot apply the administered telemetry settings: %v", err)
+		}
+	}
+
 	app := gofr.New()
+
+	if telemetryErr != nil {
+		// Debug rather than a warning, because the ordinary cause is a first
+		// start: the settings table is created by the migrations below, so there
+		// is nothing to read yet. A database that is genuinely unreachable was
+		// refused above, by a message that says so.
+		app.Logger().Debugf("no administered metrics or tracing settings were read (%v); "+
+			"the configuration file's values apply", telemetryErr)
+	}
 
 	cfg := appconfig.Load(app.Config)
 	app.Logger().Infof("go-time-recording %s starting (dialect=%s)", version, cfg.Dialect)
@@ -361,6 +386,28 @@ func main() {
 			ctx.Logger.Infof("LDAP authentication enabled against %s:%d", ldapConfig.Host, ldapConfig.Port)
 		}
 
+		// The metrics and tracing settings were read before this application
+		// existed, and that read is allowed to fail: on a first start the table
+		// below has only just been created, which says nothing and deserves no
+		// mention. What must not pass silently is a failure with something
+		// actually stored - the screen would then show settings this process is
+		// not running on, and nothing anywhere would say why.
+		//
+		// Read again here, through GoFr's own connection and after the
+		// migrations, which is what tells the two cases apart.
+		if telemetryErr != nil {
+			stored, err := settingsService.Telemetry(ctx)
+			if err == nil && stored.Administered() {
+				// The reason is carried through rather than summarised: it says
+				// whether this is worth a restart or needs the settings corrected
+				// first, and the two have different remedies.
+				ctx.Logger.Warnf(
+					"the administered metrics and tracing settings were not applied to this process "+
+						"(%v), which is therefore running on the configuration file's values",
+					telemetryErr)
+			}
+		}
+
 		return nil
 	})
 
@@ -443,7 +490,8 @@ func main() {
 
 				return branding.Title
 			}),
-		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits, cfg.Dialect, version,
+		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
+			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
 				return ldapClient.TestConnection(ctx, config)

@@ -27,29 +27,14 @@ a failure, so the transaction work had to come first. It has.
 - Multi-statement writes are transactional, and three bugs in deleting an account
   are fixed — see the commit, which explains what each one did
 - Maintenance mode
+- Metrics and traces in the settings. Stored, and applied at the next start by a
+  read that happens before `gofr.New()`. The metrics **port** stayed in the file
+  on purpose, which the investigation had not foreseen: GoFr calls `Fatalf` when
+  something already holds it, so a port saved from the screen could stop the next
+  start and take that screen with it. Only switching the endpoint off is
+  administered, because that cannot fail.
 
 ## Remaining
-
-### Metrics and traces in the settings
-
-Investigated, not built. What the investigation found, so it is not repeated:
-
-- **Metrics cannot be switched at runtime.** GoFr binds `METRICS_PORT` at
-  start-up on a port of its own, which never reaches the middleware chain.
-- **Traces cannot either, honestly.** GoFr reads `TRACE_EXPORTER`, `TRACER_URL`
-  and `TRACER_RATIO` inside `gofr.New()`. It does call the global
-  `otel.SetTracerProvider`, so a replacement provider *could* be installed later —
-  but that means reimplementing GoFr's exporter construction and mutating a
-  global in a running process, for a convenience nobody asked for.
-
-So: administer them, store them, apply them at the next start. That pattern is
-already here — `appconfig.ApplyDatasource` exports the administered database into
-the environment before `gofr.New()`, and the database screen says plainly that it
-takes effect after a restart. Traces follow it. The metrics endpoint gets shown
-with its URL rather than left hidden in a config file.
-
-Supported exporters in this GoFr version are `otlp`/`jaeger`; `zipkin` is
-deprecated upstream and should not be offered.
 
 ### Excel export and import of time entries
 

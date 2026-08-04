@@ -24,6 +24,11 @@ type SettingsHandler struct {
 	// from the stored settings until the next restart.
 	activeDialect string
 
+	// activeTelemetry is the metrics and tracing configuration this process
+	// started with, for the same reason: what is stored takes effect at the next
+	// start, and only this says what is happening now.
+	activeTelemetry appconfig.Telemetry
+
 	// version is the build this process was compiled from, reported alongside
 	// the branding because the footer renders both and one request is better
 	// than two for something on every page.
@@ -58,17 +63,19 @@ func NewSettingsHandler(
 	authz *Authorizer,
 	limits *service.LimitsProvider,
 	activeDialect string,
+	activeTelemetry appconfig.Telemetry,
 	version string,
 	configure func(model.LDAPConfig),
 	test func(*gofr.Context, model.LDAPConfig) error,
 ) *SettingsHandler {
 	return &SettingsHandler{
-		settings:      settings,
-		authz:         authz,
-		limits:        limits,
-		activeDialect: activeDialect,
-		version:       version,
-		ldap:          &ldapAdmin{configure: configure, test: test},
+		settings:        settings,
+		authz:           authz,
+		limits:          limits,
+		activeDialect:   activeDialect,
+		activeTelemetry: activeTelemetry,
+		version:         version,
+		ldap:            &ldapAdmin{configure: configure, test: test},
 	}
 }
 
@@ -627,4 +634,99 @@ func (h *SettingsHandler) SaveMaintenance(c *gofr.Context) (any, error) {
 	}
 
 	return MaintenanceResponse{Enabled: stored.Enabled, Message: stored.Message}, nil
+}
+
+// TelemetryResponse carries the administered metrics and tracing settings
+// together with what this process is actually doing.
+//
+// Both, because they disagree until the next restart, and a screen that showed
+// only the stored values would report tracing as configured while no span had
+// been exported since it was saved.
+type TelemetryResponse struct {
+	// Configured holds only what has been administered; an absent field follows
+	// the configuration file.
+	Configured model.Telemetry `json:"configured"`
+
+	// Active is what this process is serving and exporting right now.
+	Active ActiveTelemetry `json:"active"`
+
+	// RestartRequired is true on a save: GoFr binds the metrics port and builds
+	// the trace exporter at start-up, so nothing here can take effect sooner.
+	RestartRequired bool `json:"restartRequired"`
+}
+
+// ActiveTelemetry is the telemetry in force in this process, on the wire.
+type ActiveTelemetry struct {
+	MetricsServed bool   `json:"metricsServed"`
+	MetricsPort   int    `json:"metricsPort"`
+	MetricsPath   string `json:"metricsPath"`
+
+	// TraceExporter is empty when spans go nowhere, which is the default.
+	TraceExporter string  `json:"traceExporter"`
+	TracerURL     string  `json:"tracerUrl"`
+	TracerRatio   float64 `json:"tracerRatio"`
+}
+
+func newActiveTelemetry(t appconfig.Telemetry) ActiveTelemetry {
+	return ActiveTelemetry{
+		MetricsServed: t.MetricsServed(),
+		MetricsPort:   t.MetricsPort,
+		MetricsPath:   appconfig.MetricsPath,
+		TraceExporter: t.TraceExporter,
+		TracerURL:     t.TracerURL,
+		TracerRatio:   t.TracerRatio,
+	}
+}
+
+// Telemetry handles GET /api/v1/settings/telemetry.
+func (h *SettingsHandler) Telemetry(c *gofr.Context) (any, error) {
+	if err := h.requireAdmin(c); err != nil {
+		return nil, err
+	}
+
+	configured, err := h.settings.Telemetry(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return TelemetryResponse{
+		Configured: configured,
+		Active:     newActiveTelemetry(h.activeTelemetry),
+	}, nil
+}
+
+// SaveTelemetry handles PUT /api/v1/settings/telemetry.
+//
+// The settings are written to the database and read back out of it before
+// gofr.New() on the next start; they are deliberately not applied to the running
+// process. Switching the metrics listener or replacing the trace provider under
+// live requests would mean reimplementing what GoFr does at start-up and mutating
+// a global while it is in use, for a convenience nobody asked for.
+func (h *SettingsHandler) SaveTelemetry(c *gofr.Context) (any, error) {
+	if err := h.requireAdmin(c); err != nil {
+		return nil, err
+	}
+
+	var req model.Telemetry
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.settings.SaveTelemetry(c, req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	// Read back rather than echo: the collector address is trimmed on the way in,
+	// and an exporter of "off" clears it, so echoing the request would show a
+	// setting the next start is not going to use.
+	stored, err := h.settings.Telemetry(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return TelemetryResponse{
+		Configured:      stored,
+		Active:          newActiveTelemetry(h.activeTelemetry),
+		RestartRequired: true,
+	}, nil
 }
