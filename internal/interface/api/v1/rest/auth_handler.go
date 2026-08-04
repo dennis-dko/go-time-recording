@@ -65,6 +65,18 @@ func (h *AuthHandler) Login(c *gofr.Context) (any, error) {
 			return LoginResponse{TOTPRequired: true}, nil
 		}
 
+		// The answer stays deliberately vague - somebody who is not signed in
+		// learns nothing about why - but the reason must not vanish with it.
+		// Without this line an unreachable directory, a database that has gone
+		// away and a mistyped password are the same event to whoever has to work
+		// out why nobody can sign in: a 401 and nothing else.
+		//
+		// Only the internal ones. Wrong credentials are the ordinary case and
+		// would bury the rest under every typo anybody makes.
+		if apperror.KindOf(err) == apperror.KindInternal {
+			c.Logger.Errorf("sign-in for %q could not be completed: %v", req.Email, err)
+		}
+
 		return nil, unauthorizedError{}
 	}
 

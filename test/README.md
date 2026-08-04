@@ -134,8 +134,28 @@ once, a collector address it cannot dial fails inside the exporter, and a
 sampler that records nothing looks exactly like a collector with nothing to
 show.
 
-It is deliberately not part of `task test:all`, because it needs a container.
-Without `GTR_TEST_JAEGER` set the cases skip rather than fail.
+Without `GTR_TEST_JAEGER` set the cases skip rather than fail, so
+`task test:integration` on its own is unaffected.
+
+## Check that the directory really works
+
+```bash
+task test:ldap
+```
+
+`internal/infrastructure/directory` is the one package here that talks to
+something this project does not control, and the synchronisation tests drive a
+fake — which proves the rules and nothing about the LDAP: not the bind, not the
+filter substitution, not the attribute names.
+
+The case that matters most is the one the seed was built for. An entry that can
+sign in but does **not** appear in the directory listing produces a local account
+the next synchronisation reads as a departure, and deletes together with every
+hour recorded against it. A fake cannot show that, because it returns whatever
+the test told it to. A real directory did, the first time it was asked.
+
+Both suites are part of `task test:all`, which therefore needs Docker.
+`task test` on its own stays containerless.
 
 ## The seeded accounts, and why each one is there
 
