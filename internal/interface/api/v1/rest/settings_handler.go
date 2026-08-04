@@ -299,6 +299,11 @@ type LDAPRequest struct {
 	IDAttribute string `json:"idAttribute"`
 
 	DefaultRole string `json:"defaultRole"`
+
+	// SyncSchedule is the cron expression for the automatic reconciliation, or
+	// empty for manual only. Unlike the rest of this payload it applies at the
+	// next start.
+	SyncSchedule string `json:"syncSchedule"`
 }
 
 // LDAPResponse is the stored configuration without the password.
@@ -393,6 +398,7 @@ func (h *SettingsHandler) bindLDAP(c *gofr.Context) (model.LDAPConfig, error) {
 		EmailAttribute: req.EmailAttribute,
 		IDAttribute:    req.IDAttribute,
 		DefaultRole:    req.DefaultRole,
+		SyncSchedule:   req.SyncSchedule,
 	}
 
 	if config.BindPassword == "" {
@@ -578,6 +584,7 @@ func newLDAPResponse(c model.LDAPConfig) LDAPResponse {
 			EmailAttribute: c.EmailAttribute,
 			IDAttribute:    c.IDAttribute,
 			DefaultRole:    c.DefaultRole,
+			SyncSchedule:   c.SyncSchedule,
 		},
 		HasPassword: c.BindPassword != "",
 	}

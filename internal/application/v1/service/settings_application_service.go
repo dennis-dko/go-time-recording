@@ -280,6 +280,16 @@ func (s *SettingsService) LDAP(ctx context.Context) (model.LDAPConfig, error) {
 
 // SaveLDAP stores the directory configuration.
 func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig) error {
+	config.SyncSchedule = strings.TrimSpace(config.SyncSchedule)
+
+	// Checked whether or not the directory is enabled, because the schedule is
+	// stored either way and the scheduler's own answer to an expression it cannot
+	// read is a line in the log and no job at all. An administrator would be told
+	// their nightly reconciliation was saved and it would simply never run.
+	if !model.ValidSchedule(config.SyncSchedule) {
+		return apperror.InvalidFields("syncSchedule")
+	}
+
 	if config.Enabled {
 		var invalid []string
 

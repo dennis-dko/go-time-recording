@@ -320,6 +320,22 @@ func main() {
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
 	passkeys := appservice.NewPasskeyService(passkeyRepo, userRepo, auth)
 	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName)
+
+	// The administered directory schedule wins over the configuration file, the
+	// same way the administered database connection and log level do.
+	//
+	// Resolved into cfg here, before anything reads it: a cron job is registered
+	// while the application starts and cannot be added to a scheduler that is
+	// already running - which is why changing it needs a restart - and the restart
+	// card compares what is stored against what cfg says this process is running.
+	if stored, err := settingsService.LDAP(context.Background()); err != nil {
+		// Not fatal, and not loud: on a first start the settings table has only
+		// just been created by the migrations, so there is nothing to read yet.
+		app.Logger().Debugf("could not read the administered directory schedule (%v); "+
+			"the configuration file's value applies", err)
+	} else if stored.SyncSchedule != "" {
+		cfg.LDAPSyncSchedule = stored.SyncSchedule
+	}
 	setup := appservice.NewSetupService(settingsService, userRepo)
 
 	// The directory starts unconfigured and is loaded from the settings once
@@ -525,6 +541,8 @@ func main() {
 	// run deletes accounts the directory no longer holds together with their
 	// recorded hours.
 	if cfg.LDAPSyncSchedule != "" {
+		app.Logger().Infof("directory reconciliation scheduled at %q", cfg.LDAPSyncSchedule)
+
 		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", func(ctx *gofr.Context) {
 			report, err := ldapSync.Sync(ctx)
 			if err != nil {

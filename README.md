@@ -433,8 +433,9 @@ and *Settings* administer them at run time and what is stored there wins:
 
 **At the next start** are administered too, but stored rather than applied,
 because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
-and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What is stored wins from
-the next start onwards.
+`LDAP_SYNC_SCHEDULE`, and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What
+is stored wins from the next start onwards, and *Settings → Restart* lists what is
+still waiting.
 
 The **timezone and the LDAP connection appear in no file at all**. Both are
 administered entirely in the application — a second place to write them would
@@ -458,7 +459,7 @@ only disagree with the first.
 | `TLS_STAGING` | `false` | Let's Encrypt test authority |
 | `HSTS_MAX_AGE` | `8760h` | only sent over HTTPS |
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client |
-| `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only |
+| `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only. Administered under *Settings* as well, where what is saved wins from the next start |
 | `LDAP_SYNC_MAX_DELETE_RATIO` | `0.5` | refuse a run removing more than this share of directory accounts |
 | `AUTO_CLOSE_SCHEDULE` | `0 2 * * *` | cron for the sweep; empty disables it |
 | `AUTO_CLOSE_AFTER_DAYS` | `14` | when an open entry gets submitted |

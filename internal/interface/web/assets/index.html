@@ -753,6 +753,18 @@
         <h2 data-i18n="sync.title">Directory synchronisation</h2>
         <p class="muted" data-i18n="sync.hint">Reconciles the users with the directory. LDAP is only ever read, never changed.</p>
         <p class="muted minus" data-i18n="sync.warning">Careful: accounts missing from the directory are deleted here, together with their recorded time, own projects and tokens. This cannot be undone. Always run the preview first.</p>
+
+        <form id="form-sync-schedule" class="form">
+          <div class="grid">
+            <label class="wide" data-i18n="sync.schedule">Run automatically (cron, five fields — empty means only by hand)
+              <input type="text" name="syncSchedule" maxlength="120" placeholder="0 4 * * *" spellcheck="false">
+            </label>
+          </div>
+          <p class="muted" data-i18n="sync.scheduleHint">Empty by default, and worth leaving empty until a preview has been read: an automatic run deletes without anybody looking. Applied at the next start — the scheduler is built while the application starts.</p>
+          <p class="muted" id="sync-schedule-active"></p>
+          <button type="submit" data-i18n="action.save">Save</button>
+        </form>
+
         <div class="row">
           <button type="button" class="secondary" id="sync-preview" data-i18n="sync.preview">Preview</button>
           <button type="button" id="sync-run" data-i18n="sync.run">Run synchronisation</button>

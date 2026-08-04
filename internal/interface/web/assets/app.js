@@ -615,6 +615,11 @@ const TRANSLATIONS = {
     'sync.deleted': 'Gelöscht',
     'sync.directoryUsers': 'Im Verzeichnis',
     'sync.entries': 'Zeiteinträge',
+    'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
+    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut.',
+    'sync.scheduleStored': 'Gespeichert',
+    'sync.scheduleManual': 'Läuft nur, wenn der Knopf unten gedrückt wird.',
+    'sync.scheduleShort': 'Verzeichnis-Zeitplan',
     'sync.hint': 'Gleicht die Benutzer mit dem Verzeichnis ab. Das LDAP wird ausschließlich gelesen und nie verändert.',
     'sync.localExternal': 'Lokal aus dem Verzeichnis',
     'sync.none': 'Keine Konten fehlen im Verzeichnis.',
@@ -1424,6 +1429,17 @@ async function loadAdmin() {
 
   fillSelect(ldapForm.elements.defaultRole, cache.roles, { labelKey: 'name', valueKey: 'name' });
   ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'employee';
+
+  const schedule = $('#form-sync-schedule');
+  if (schedule) {
+    schedule.elements.syncSchedule.value = ldap.syncSchedule ?? '';
+
+    // What this process is actually scheduled to do, which is not the stored
+    // value until the next start - and the restart card is what says so.
+    $('#sync-schedule-active').textContent = ldap.syncSchedule
+      ? `${t('sync.scheduleStored', 'Saved')}: ${ldap.syncSchedule}`
+      : t('sync.scheduleManual', 'Runs only when the button below is pressed.');
+  }
 }
 
 /** The logo travels as a data URI, so it needs no upload endpoint. */
@@ -1483,6 +1499,16 @@ function wireAdmin() {
     mutate(() => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
       t('admin.saved', 'Settings saved'),
       loadAdmin);
+  });
+
+  $('#form-sync-schedule').addEventListener('submit', (e) => {
+    e.preventDefault();
+    mutate(
+      () => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
+      t('admin.restartNeeded', 'Saved. Applied on the next start.'),
+      // The restart card too: the schedule is the one directory setting that
+      // waits, because a scheduler is built while the application starts.
+      async () => { await loadAdmin(); });
   });
 
   $('#datasource-test').addEventListener('click', () => {
@@ -1608,6 +1634,13 @@ function ldapPayload() {
   for (const flag of ['enabled', 'startTls', 'useTls', 'skipVerify']) {
     body[flag] = form.elements[flag].checked;
   }
+
+  // The schedule lives in its own card, next to the buttons that run the thing
+  // it schedules, but it is stored with the rest of the directory settings and
+  // travels on the same request - so it has to be in every payload or saving the
+  // connection would clear it.
+  const schedule = $('#form-sync-schedule');
+  body.syncSchedule = schedule ? schedule.elements.syncSchedule.value.trim() : '';
 
   return body;
 }
@@ -2499,6 +2532,7 @@ function pendingLabel(setting) {
     case 'traceExporter': return t('tel.exporter', 'Trace exporter');
     case 'tracerUrl': return t('tel.url', 'Collector');
     case 'database': return t('admin.database', 'Database connection');
+    case 'directorySchedule': return t('sync.scheduleShort', 'Directory schedule');
     default: return setting;
   }
 }
