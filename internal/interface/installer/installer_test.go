@@ -1,0 +1,62 @@
+package installer
+
+import (
+	"regexp"
+	"testing"
+
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
+)
+
+// The installer is the one screen that cannot be corrected from inside the
+// application, because it is what runs when there is no application yet. A
+// database it fails to offer is one nobody can choose without editing a file by
+// hand - which is exactly the situation this screen exists to avoid.
+//
+// So the list it shows is checked against the list the server accepts, the same
+// way the Settings screen's is. Read out of the embedded filesystem rather than
+// from disk, so it is the markup that actually ships.
+
+func TestTheInstallerOffersEveryDatabaseTheServerAccepts(t *testing.T) {
+	page, err := assets.ReadFile("assets/install.html")
+	if err != nil {
+		t.Fatalf("the installer page is not embedded: %v", err)
+	}
+
+	block := regexp.MustCompile(`(?s)<select[^>]*id="dialect"[^>]*>(.*?)</select>`).
+		FindStringSubmatch(string(page))
+	if block == nil {
+		t.Fatal(`no <select id="dialect"> in the installer page`)
+	}
+
+	var offered []string
+
+	for _, m := range regexp.MustCompile(`value="([^"]*)"`).FindAllStringSubmatch(block[1], -1) {
+		offered = append(offered, m[1])
+	}
+
+	supported := config.SupportedDialects()
+
+	for _, want := range supported {
+		if !contains(offered, want) {
+			t.Errorf("the installer offers no option for %q, so a supported database cannot be "+
+				"chosen on a first start", want)
+		}
+	}
+
+	for _, value := range offered {
+		if !contains(supported, value) {
+			t.Errorf("the installer offers %q, which the server refuses - and refuses at the one "+
+				"moment there is no other way in", value)
+		}
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+
+	return false
+}

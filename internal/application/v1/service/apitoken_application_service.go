@@ -54,7 +54,7 @@ func (s *APITokenService) Create(
 	expiresInDays int,
 ) (*IssuedToken, error) {
 	name = strings.TrimSpace(name)
-	if name == "" {
+	if name == "" || model.TooLong(name, model.MaxTokenLabelLength) {
 		return nil, apperror.InvalidFields("name")
 	}
 

@@ -374,6 +374,39 @@ const TRANSLATIONS = {
     'ops.autoShort': 'Auto-Einreichen',
     'ops.ratioShort': 'Löschgrenze',
 
+    'tel.title': 'Protokoll, Metriken und Traces',
+    'tel.logLevel': 'Protokollstufe',
+    'tel.activeLog': 'Protokollstufe',
+    'tel.hint': 'Wird gespeichert und beim nächsten Start der Anwendung übernommen. Im laufenden Betrieb ist nichts davon umschaltbar: die Protokollstufe wird beim Start gelesen, der Metrik-Port beim Start gebunden und der Trace-Exporter beim Start gebaut. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
+    'tel.warn': 'Der Metrik-Port fragt nicht nach einer Anmeldung, ist nicht durch TLS geschützt und liefert neben den Metriken auch Go-Profiling-Endpunkte — wo er erreichbar ist, ist es auch ein Heap-Dump. Nur für die eigene Überwachung freigeben.',
+    'tel.metrics': 'Metrik-Endpunkt',
+    'tel.metricsOff': 'Nicht ausliefern',
+    'tel.exporter': 'Trace-Exporter',
+    'tel.tracesOff': 'Nirgendwohin exportieren',
+    'tel.follow': 'Der Konfigurationsdatei folgen',
+    'tel.url': 'Collector als host:port, ohne http://',
+    'tel.ratio': 'Anteil aufgezeichneter Traces (0–1)',
+    'tel.reset': 'Alles auf die Konfigurationsdatei zurücksetzen',
+    'tel.resetDone': 'Metriken und Traces folgen wieder der Konfigurationsdatei',
+    'tel.activeMetrics': 'Metriken',
+    'tel.activeMetricsOff': 'werden nicht ausgeliefert',
+    'tel.activeTraces': 'Traces',
+    'tel.activeTracesOff': 'werden nicht exportiert',
+
+    'password.reveal': 'Passwort anzeigen',
+    'password.hide': 'Passwort verbergen',
+
+    'restart.title': 'Neustart',
+    'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
+    'restart.now': 'Jetzt neu starten',
+    'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
+    'restart.waiting': 'Neustart läuft',
+    'restart.waitingHint': 'Es wird gewartet, bis die Anwendung wieder erreichbar ist …',
+    'restart.done': 'Die Anwendung wurde neu gestartet, die Einstellungen sind jetzt wirksam.',
+    'restart.failed': 'Der Neustart konnte nicht gestartet werden',
+    'restart.slow': 'Die Anwendung antwortet noch nicht. Möglicherweise startet sie noch — bitte die Seite gleich neu laden.',
+    'restart.none': 'nichts',
+
     'user.directoryAccount': 'aus dem Verzeichnis',
     'user.directoryHint': 'Wird im LDAP verwaltet. Das Passwort liegt dort, und das Entfernen des Eintrags dort entfernt auch dieses Konto.',
 
@@ -488,7 +521,7 @@ const TRANSLATIONS = {
     'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
-    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was LOG_LEVEL zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
+    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
     'log.paused': 'Angehalten.',
@@ -1360,6 +1393,9 @@ async function loadAdmin() {
   $('#datasource-active').textContent =
     `${t('admin.activeConnection', 'Currently connected via')}: ${ds.active}`;
 
+  await loadTelemetry();
+  await loadRestart();
+
   const ldap = await api('/settings/ldap');
   const ldapForm = $('#form-ldap');
   const ldapFields = [
@@ -1427,7 +1463,7 @@ function wireAdmin() {
     mutate(async () => {
       const result = await api('/settings/datasource', { method: 'PUT', body: JSON.stringify(body) });
       toast(result.message ?? t('admin.restartNeeded', 'Saved. Applied on the next start.'), 'ok');
-    }, null, loadAdmin);
+    }, null, loadAdmin); // loadAdmin ends with loadRestart, so the card follows.
   });
 
   $('#form-ldap').addEventListener('submit', (e) => {
@@ -2427,6 +2463,366 @@ function wireOperational() {
 
 async function loadOperational() {
   fillOperationalForm(await api('/settings/operational'));
+}
+
+// ----------------------------------------------------------------- restart
+
+/**
+ * What each pending setting is called on screen.
+ *
+ * The server names the setting and leaves the wording here, so the list is
+ * translated like everything else rather than arriving as a sentence in one
+ * language.
+ */
+function pendingLabel(setting) {
+  switch (setting) {
+    case 'logLevel': return t('tel.logLevel', 'Log level');
+    case 'metrics': return t('tel.metrics', 'Metrics endpoint');
+    case 'traceExporter': return t('tel.exporter', 'Trace exporter');
+    case 'tracerUrl': return t('tel.url', 'Collector');
+    case 'database': return t('admin.database', 'Database connection');
+    default: return setting;
+  }
+}
+
+/** What an empty value reads as - "" would look like a rendering fault. */
+function pendingValue(value) {
+  return value === '' ? t('restart.none', 'none') : value;
+}
+
+/**
+ * Shows what is waiting for a restart, and offers one.
+ *
+ * The comparison is the server's: it knows what this process started with and
+ * what is stored, and working it out again here would be a second place for the
+ * answer to be wrong in.
+ */
+async function loadRestart() {
+  const card = $('#restart-card');
+  if (!card) return;
+
+  const state = await api('/settings/restart');
+  restartStartedAt = state.startedAt ?? '';
+
+  const pending = state.pending ?? [];
+  card.hidden = pending.length === 0;
+
+  const list = $('#restart-pending');
+  list.replaceChildren(...pending.map((change) => el('li', {},
+    el('strong', { text: pendingLabel(change.setting) }),
+    el('span', { class: 'from', text: `: ${pendingValue(change.running)} → ` }),
+    el('strong', { text: pendingValue(change.stored) }))));
+
+  // Offered only where pressing it would actually work. Where it would not, the
+  // reason is shown instead of a button that fails on click.
+  $('#restart-now').hidden = !state.supported;
+  $('#restart-unsupported').hidden = state.supported;
+  $('#restart-unsupported').textContent = state.supported ? '' : (state.reason ?? '');
+}
+
+/** The identity of the running process, to tell a restart from a hiccup. */
+let restartStartedAt = '';
+
+/** How long to wait for the application to come back before giving up on it. */
+const RESTART_TIMEOUT_MS = 60000;
+
+/**
+ * Waits for a different process to answer.
+ *
+ * Polling for "does it respond" is not enough: replacing the process image takes
+ * milliseconds, and a poll that misses that gap would report success without
+ * anything having happened. The start time changing is what proves it.
+ */
+async function waitForRestart(previousStartedAt) {
+  const deadline = Date.now() + RESTART_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 1000); });
+
+    try {
+      const state = await api('/settings/restart');
+      if (state.startedAt && state.startedAt !== previousStartedAt) return true;
+    } catch {
+      // Expected while it is down: the connection is refused, or the session
+      // has not been read back out of the database yet.
+    }
+  }
+
+  return false;
+}
+
+function wireRestart() {
+  const button = $('#restart-now');
+  if (!button) return;
+
+  button.addEventListener('click', async () => {
+    const question = t('restart.confirm',
+      'Restart the application? Anyone working in it will have to reload the page.');
+    if (!window.confirm(question)) return;
+
+    const overlay = $('#restart-overlay');
+    const status = $('#restart-status');
+    const previous = restartStartedAt;
+
+    overlay.hidden = false;
+    status.textContent = t('restart.waitingHint', 'Waiting for the application to come back …');
+
+    try {
+      await api('/settings/restart', { method: 'POST' });
+    } catch (err) {
+      overlay.hidden = true;
+      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`, 'error');
+
+      return;
+    }
+
+    if (await waitForRestart(previous)) {
+      overlay.hidden = true;
+      toast(t('restart.done', 'The application has restarted and the settings are in force.'), 'ok');
+      await refreshAll();
+
+      return;
+    }
+
+    // Not an error as such: it may still be coming back. Saying that is more
+    // use than a spinner that never stops.
+    overlay.hidden = true;
+    toast(t('restart.slow',
+      'The application has not answered yet. It may still be starting — reload the page in a moment.'),
+    'error');
+  });
+}
+
+// ------------------------------------------------------ revealing a password
+
+/**
+ * Draws the eye, with a slash that is shown only while the password is readable.
+ *
+ * Built here rather than written into the markup because the button itself is,
+ * and inline rather than fetched because the Content-Security-Policy allows no
+ * external origin at all. createElementNS, not createElement: an <svg> built in
+ * the HTML namespace parses without complaint and renders nothing.
+ */
+function passwordToggleIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  // The button already carries the label; the drawing would only repeat it.
+  svg.setAttribute('aria-hidden', 'true');
+
+  const outline = document.createElementNS(ns, 'path');
+  outline.setAttribute('d', 'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z');
+
+  const pupil = document.createElementNS(ns, 'circle');
+  pupil.setAttribute('cx', '12');
+  pupil.setAttribute('cy', '12');
+  pupil.setAttribute('r', '3');
+
+  const slash = document.createElementNS(ns, 'path');
+  slash.setAttribute('d', 'M3 3l18 18');
+  slash.setAttribute('class', 'password-slash');
+
+  svg.append(outline, pupil, slash);
+
+  return svg;
+}
+
+/**
+ * Labels the button for what pressing it will do.
+ *
+ * The key is kept on the element as well as applied, so switching language
+ * re-labels it through applyLanguage instead of leaving the last language's
+ * word on a button nobody looks at twice.
+ */
+function labelPasswordToggle(button, revealed) {
+  const key = revealed ? 'password.hide' : 'password.reveal';
+  const label = revealed
+    ? t('password.hide', 'Hide the password')
+    : t('password.reveal', 'Show the password');
+
+  button.dataset.i18nAria = key;
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.setAttribute('aria-pressed', String(revealed));
+  button.classList.toggle('revealed', revealed);
+}
+
+/**
+ * Gives every password field a button that reveals what was typed.
+ *
+ * Every field, found by selector rather than listed, so the next one added gets
+ * this without anyone remembering to ask. It matters most where the value is not
+ * a password being recalled but one being transcribed - a database or bind
+ * password copied from somewhere else, where a silent typo is answered minutes
+ * later by "connection refused" and nothing on screen says which character was
+ * wrong.
+ *
+ * The field goes back to being hidden when the form is submitted or the page is
+ * left, because the browser is where it stays visible otherwise: nothing here
+ * re-renders these inputs.
+ */
+function wirePasswordReveal(root = document) {
+  for (const input of root.querySelectorAll('input[type="password"]')) {
+    // Running twice would nest a second wrapper and a second button.
+    if (input.parentElement?.classList.contains('password-field')) continue;
+
+    const field = document.createElement('span');
+    field.className = 'password-field';
+
+    input.replaceWith(field);
+    field.append(input);
+
+    const button = document.createElement('button');
+    // Not a submit: inside a form, a button with no type submits it, so the
+    // first attempt to look at a password would send the form instead.
+    button.type = 'button';
+    button.className = 'password-toggle';
+    button.append(passwordToggleIcon());
+    labelPasswordToggle(button, false);
+
+    button.addEventListener('click', () => {
+      const revealed = input.type === 'password';
+      input.type = revealed ? 'text' : 'password';
+      labelPasswordToggle(button, revealed);
+
+      // The caret goes back where it was: the type change moves focus off the
+      // field in some browsers, and continuing to type is the normal next act.
+      input.focus();
+    });
+
+    // Submitting is the end of looking at it. Left revealed, the value would
+    // still be on screen behind whatever the save put there.
+    input.form?.addEventListener('submit', () => {
+      input.type = 'password';
+      labelPasswordToggle(button, false);
+    });
+
+    field.append(button);
+  }
+}
+
+// ------------------------------------------------------- metrics and tracing
+
+/**
+ * The value that means "administered off", as opposed to the empty value, which
+ * means "nothing is administered here and the configuration file decides".
+ *
+ * Two distinct things that a single empty option would conflate, and the
+ * difference is what the server stores: an empty exporter it has been told about
+ * overrides a configured one, while an absent field leaves it alone.
+ */
+const TELEMETRY_OFF = 'off';
+
+/** Fills the metrics and tracing form from the server's answer. */
+function fillTelemetryForm(data) {
+  const form = $('#form-telemetry');
+  const configured = data.configured ?? {};
+
+  form.elements.logLevel.value = configured.logLevel ?? '';
+  form.elements.metricsOff.value = configured.metricsOff ? TELEMETRY_OFF : '';
+
+  // Three states in one control: absent, administered off, or an exporter.
+  if (configured.traceExporter === undefined || configured.traceExporter === null) {
+    form.elements.traceExporter.value = '';
+  } else {
+    form.elements.traceExporter.value = configured.traceExporter || TELEMETRY_OFF;
+  }
+
+  form.elements.tracerUrl.value = configured.tracerUrl ?? '';
+  form.elements.tracerRatio.value = configured.tracerRatio ?? '';
+
+  $('#telemetry-active').textContent = describeActiveTelemetry(data.active ?? {});
+}
+
+/**
+ * Says what this process is actually serving and exporting.
+ *
+ * Worth a sentence of its own rather than leaving the form to imply it: until the
+ * next restart the stored settings and the running ones disagree, and the
+ * metrics URL is the one thing on this screen somebody wants to copy.
+ */
+function describeActiveTelemetry(active) {
+  const metrics = active.metricsServed
+    // The host comes from the browser rather than the server, which cannot know
+    // the name this installation is reached under. The port is a different one,
+    // so it has to be spelled out in full to be usable.
+    ? `${window.location.protocol}//${window.location.hostname}:${active.metricsPort}${active.metricsPath}`
+    : t('tel.activeMetricsOff', 'not served');
+
+  const traces = active.traceExporter
+    ? `${active.traceExporter} → ${active.tracerUrl} (${active.tracerRatio})`
+    : t('tel.activeTracesOff', 'not exported');
+
+  return `${t('tel.activeLog', 'Log level')}: ${active.logLevel} · `
+    + `${t('tel.activeMetrics', 'Metrics')}: ${metrics} · `
+    + `${t('tel.activeTraces', 'Traces')}: ${traces}`;
+}
+
+/**
+ * Reads the form, omitting anything left following the configuration file.
+ *
+ * An omitted field is not the same as an empty one here, which is why this is
+ * assembled by hand rather than by formData: sending tracerUrl: "" would store a
+ * deliberate blank where the intent was to leave the file's value in place.
+ */
+function telemetryPayload() {
+  const form = $('#form-telemetry');
+  const body = {};
+
+  const level = form.elements.logLevel.value;
+  if (level !== '') body.logLevel = level;
+
+  if (form.elements.metricsOff.value === TELEMETRY_OFF) body.metricsOff = true;
+
+  const exporter = form.elements.traceExporter.value;
+  if (exporter === TELEMETRY_OFF) body.traceExporter = '';
+  else if (exporter !== '') body.traceExporter = exporter;
+
+  const url = form.elements.tracerUrl.value.trim();
+  if (url !== '') body.tracerUrl = url;
+
+  const ratio = form.elements.tracerRatio.value.trim();
+  if (ratio !== '') body.tracerRatio = Number(ratio);
+
+  return body;
+}
+
+function wireTelemetry() {
+  $('#form-telemetry').addEventListener('submit', (e) => {
+    e.preventDefault();
+    mutate(
+      () => api('/settings/telemetry', {
+        method: 'PUT', body: JSON.stringify(telemetryPayload()),
+      }),
+      t('admin.restartNeeded', 'Saved. Applied on the next start.'),
+      // The restart card too, so what was just saved appears in the list of
+      // what is waiting rather than only in a toast that fades.
+      afterTelemetrySaved);
+  });
+
+  $('#telemetry-reset').addEventListener('click', () => {
+    mutate(
+      () => api('/settings/telemetry', { method: 'PUT', body: JSON.stringify({}) }),
+      t('tel.resetDone', 'Metrics and tracing follow the configuration file again'),
+      afterTelemetrySaved);
+  });
+}
+
+async function loadTelemetry() {
+  fillTelemetryForm(await api('/settings/telemetry'));
+}
+
+/** Both cards, because saving one of these changes what the other has to say. */
+async function afterTelemetrySaved() {
+  await loadTelemetry();
+  await loadRestart();
 }
 
 // ---------------------------------------------------------------- passkeys
@@ -3429,6 +3825,11 @@ async function init() {
     wireDirectorySync();
     wireTimezones();
     wireOperational();
+    wireTelemetry();
+    wireRestart();
+    // After the forms are wired, so a submit handler registered here runs
+    // beside theirs rather than instead of one.
+    wirePasswordReveal();
     wireSetup();
     wireTour();
     wirePasskeys();

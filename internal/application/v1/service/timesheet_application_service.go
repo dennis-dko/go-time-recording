@@ -33,6 +33,8 @@ type TimesheetApplicationService struct {
 	// with what an administrator set from the Settings screen.
 	maxDailyHours float64
 	limits        *LimitsProvider
+
+	metrics
 }
 
 // NewTimesheetApplicationService creates new instance
@@ -62,7 +64,7 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 		status = model.TimesheetStatusOpen
 	}
 
-	if err := validateTimesheet(cmd.Date, cmd.DurationHours, status); err != nil {
+	if err := validateTimesheet(cmd.Date, cmd.DurationHours, status, cmd.Description); err != nil {
 		return nil, err
 	}
 
@@ -85,6 +87,11 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 	if err != nil {
 		return nil, err
 	}
+
+	// After the write, so the number counts hours that are actually recorded
+	// rather than hours somebody tried to record.
+	s.record(ctx, MetricHoursBooked, createdTimesheet.DurationHours)
+	s.count(ctx, MetricEntryTransitions, "status", createdTimesheet.Status)
 
 	return &command.CreateTimesheetCommandResult{
 		Result: common.NewTimesheetResultFromModel(createdTimesheet)[0],
@@ -186,15 +193,21 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 		existingTimesheet.Description = cmd.Description
 	}
 
+	// Noted before the field is overwritten, so only a real change is counted -
+	// a save that left the status alone is not a transition.
+	statusChanged := false
+
 	if cmd.Status != nil {
 		if err := validateStatusChange(existingTimesheet.Status, *cmd.Status); err != nil {
 			return nil, err
 		}
 
+		statusChanged = existingTimesheet.Status != *cmd.Status
 		existingTimesheet.Status = *cmd.Status
 	}
 
-	err = validateTimesheet(existingTimesheet.Date, existingTimesheet.DurationHours, existingTimesheet.Status)
+	err = validateTimesheet(existingTimesheet.Date, existingTimesheet.DurationHours,
+		existingTimesheet.Status, existingTimesheet.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -208,6 +221,10 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 	updatedTimesheet, err := s.timesheetRepository.Update(ctx, existingTimesheet)
 	if err != nil {
 		return nil, err
+	}
+
+	if statusChanged {
+		s.count(ctx, MetricEntryTransitions, "status", updatedTimesheet.Status)
 	}
 
 	return &command.UpdateTimesheetCommandResult{
@@ -349,7 +366,7 @@ func validateStatusChange(current, next string) error {
 	return apperror.Conflictf("cannot change timesheet status from %q to %q", current, next)
 }
 
-func validateTimesheet(date time.Time, hours float64, status string) error {
+func validateTimesheet(date time.Time, hours float64, status string, description *string) error {
 	var invalid []string
 
 	if date.IsZero() {
@@ -360,6 +377,12 @@ func validateTimesheet(date time.Time, hours float64, status string) error {
 	// most that can be booked on one entry.
 	if hours <= 0 || hours > 24 {
 		invalid = append(invalid, "durationHours")
+	}
+
+	// The column is TEXT and would take anything; a description large enough to
+	// slow every listing that renders it is still not one.
+	if description != nil && model.TooLong(*description, model.MaxDescriptionLength) {
+		invalid = append(invalid, "description")
 	}
 
 	switch status {
@@ -389,6 +412,14 @@ func (s *TimesheetApplicationService) dailyCap(ctx context.Context) float64 {
 // applies without a restart.
 func (s *TimesheetApplicationService) WithLimits(limits *LimitsProvider) *TimesheetApplicationService {
 	s.limits = limits
+
+	return s
+}
+
+// WithMetrics attaches the recorder. Optional: without it the service works and
+// records nothing, which is what every unit test wants.
+func (s *TimesheetApplicationService) WithMetrics(recorder Recorder) *TimesheetApplicationService {
+	s.recorder = recorder
 
 	return s
 }

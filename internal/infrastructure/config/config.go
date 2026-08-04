@@ -1,12 +1,19 @@
 // Package config exposes the application-specific settings that sit on top of
 // the configuration GoFr already reads for itself (ports, database, log level,
-// tracing). Only settings this application acts on belong here.
+// tracing). Only settings this application acts on belong here - or, for the
+// metrics endpoint and the trace exporter, reports on: those two are GoFr's to
+// act on, and are read here so the Settings screen can show what this process is
+// actually doing rather than leaving it to be guessed from a file.
 package config
 
 import (
+	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
 
 // Provider is the subset of GoFr's config.Config this package needs, kept
@@ -77,6 +84,111 @@ type Config struct {
 
 	// MaxDailyHours caps the total hours a user may book on a single day.
 	MaxDailyHours float64
+
+	// Telemetry is what GoFr read for the metrics endpoint and the trace
+	// exporter, and therefore what this process is serving and exporting.
+	Telemetry Telemetry
+}
+
+// Telemetry is the metrics and tracing configuration in force in this process.
+//
+// Reported, not acted on: GoFr owns both. The values are resolved with GoFr's own
+// rules rather than sensible ones, because a screen that shows what should have
+// happened instead of what did is worse than no screen.
+type Telemetry struct {
+	// LogLevel is how much this process is writing. Resolved the way GoFr does
+	// it, which means anything it could not read shows as INFO - because that is
+	// what it silently became.
+	LogLevel string
+
+	// MetricsPort is where /metrics is served, or 0 when the endpoint is off.
+	MetricsPort int
+
+	// TraceExporter is empty when spans go nowhere.
+	TraceExporter string
+
+	// TracerURL is the collector address, as host:port.
+	TracerURL string
+
+	// TracerRatio is the share of traces sampled.
+	TracerRatio float64
+}
+
+// MetricsPath is where GoFr serves the metrics on the metrics port.
+//
+// Beside them, on the same port, it serves Go's profiling endpoints under
+// /debug/pprof/ - with no authentication and outside the middleware chain, so
+// none of this application's own protections apply to either. Anywhere that port
+// is reachable, so is a heap dump.
+const MetricsPath = "/metrics"
+
+// MetricsServed reports whether this process serves the metrics endpoint.
+func (t Telemetry) MetricsServed() bool { return t.MetricsPort > 0 }
+
+// TracingEnabled reports whether spans are being exported.
+func (t Telemetry) TracingEnabled() bool { return t.TraceExporter != "" }
+
+// defaultMetricsPort is GoFr's own, used when METRICS_PORT is absent or
+// unreadable. Kept here so the screen can name the port without waiting for GoFr
+// to log it.
+const defaultMetricsPort = 2121
+
+// logLevel resolves LOG_LEVEL the way GoFr's GetLevelFromString does: any name
+// it does not recognise, including an empty one, becomes INFO.
+//
+// Reported rather than corrected, because that is what the process is actually
+// doing. An administrator who typed "verbose" and sees INFO here has been told
+// something true; showing "verbose" back would not be.
+func logLevel(raw string) string {
+	level := strings.ToUpper(strings.TrimSpace(raw))
+	if slices.Contains(model.SupportedLogLevels(), level) {
+		return level
+	}
+
+	return "INFO"
+}
+
+// metricsPort resolves METRICS_PORT exactly as GoFr's initMetricsServer does:
+// the literal "0" switches the endpoint off, anything it cannot read as a
+// positive number falls back to the default, and 0 is returned for "off".
+func metricsPort(raw string) int {
+	if raw == "0" {
+		return 0
+	}
+
+	port, err := strconv.Atoi(raw)
+	if err != nil || port <= 0 {
+		return defaultMetricsPort
+	}
+
+	return port
+}
+
+// traceRatio resolves TRACER_RATIO the way GoFr does, which is worth spelling
+// out because the failure is silent: GoFr reports a parse error and then carries
+// on with the zero value, so an unreadable ratio samples nothing rather than
+// falling back to everything. The sampler then clamps whatever is left into
+// 0..1.
+func traceRatio(raw string) float64 {
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0
+	}
+
+	// ParseFloat reads "NaN" happily, and a sampler compares false against it and
+	// records nothing - so nothing is the honest report. It also has to be caught
+	// before the bounds below, which NaN passes both of: this value is encoded
+	// into the settings response, and JSON has no way to write it, so one hand-
+	// edited configuration file would leave the screen unable to render at all.
+	if math.IsNaN(value) || value < 0 {
+		return 0
+	}
+
+	if value > 1 {
+		return 1
+	}
+
+	return value
 }
 
 const (
@@ -159,6 +271,15 @@ func Load(p Provider) Config {
 		AutoCloseSchedule:  p.GetOrDefault("AUTO_CLOSE_SCHEDULE", defaultAutoCloseSchedule),
 		AutoCloseAfterDays: intOr(p.GetOrDefault("AUTO_CLOSE_AFTER_DAYS", ""), defaultAutoCloseAfterDays),
 		MaxDailyHours:      floatOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),
+
+		Telemetry: Telemetry{
+			LogLevel:      logLevel(p.Get("LOG_LEVEL")),
+			MetricsPort:   metricsPort(p.Get("METRICS_PORT")),
+			TraceExporter: strings.ToLower(strings.TrimSpace(p.Get("TRACE_EXPORTER"))),
+			TracerURL:     strings.TrimSpace(p.Get("TRACER_URL")),
+			// GoFr's own default, which it applies whenever the value is absent.
+			TracerRatio: traceRatio(p.GetOrDefault("TRACER_RATIO", "1")),
+		},
 	}
 }
 

@@ -1206,6 +1206,32 @@
         }
       }
     },
+    "/settings/telemetry": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read the logging, metrics and tracing settings",
+        "description": "Returns what has been administered under \"configured\" and what this process is actually writing, serving and exporting under \"active\". The two disagree until the next restart. An absent field under \"configured\" follows the configuration file; \"traceExporter\": \"\" is an administered off, which is a different thing. Administrator only.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Set the logging, metrics and tracing settings; applied on the next restart",
+        "description": "Send only the fields to administer; an empty object makes everything follow the configuration file again. \"logLevel\" is DEBUG, INFO, NOTICE, WARN, ERROR or FATAL. \"traceExporter\" is \"otlp\", \"jaeger\" or \"\" for off, and needs \"tracerUrl\" as a bare host:port when it names an exporter - a scheme is read as part of the host name and exports nothing. \"metricsOff\": true stops the metrics endpoint being served; the port itself stays in the configuration file, because GoFr refuses to start when something already holds it. Applied when the application is restarted: GoFr reads the level, binds the port and builds the exporter while starting up. Administrator only.",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
+    },
     "/settings/datasource/test": {
       "post": {
         "tags": [

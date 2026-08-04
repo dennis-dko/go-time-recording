@@ -51,6 +51,14 @@
        once is a list to skim, and the point is that nothing gets skimmed past.
        Shown only to the built-in administrator, and only while something is
        outstanding. -->
+  <div id="restart-overlay" class="overlay" hidden>
+    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="restart-waiting-title">
+      <h2 id="restart-waiting-title" data-i18n="restart.waiting">Restarting</h2>
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="muted" id="restart-status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+
   <div id="setup-wizard" class="overlay" hidden>
     <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="setup-title">
       <div class="setup-head">
@@ -128,7 +136,7 @@
           </label>
           <label data-i18n="field.hours">Hours<input type="number" name="durationHours" step="0.25" min="0.25" max="24" required>
           </label>
-          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
         <button type="submit" data-i18n="action.book">Book</button>
@@ -262,8 +270,8 @@
         <h2 data-i18n="cat.create">Create your own project</h2>
         <p class="muted" data-i18n="cat.hint">Your own projects are private and visible only to you. Use them to split up a day when no shared project fits.</p>
         <div class="grid">
-          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
-          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional">
+          <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
         <button type="submit" data-i18n="action.create">Create</button>
@@ -272,10 +280,10 @@
       <form id="form-project" class="card form" data-perm="projects:write">
         <h2 data-i18n="project.create">Create project</h2>
         <div class="grid">
-          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
+          <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <label data-i18n="field.start">Start<input type="date" name="startDate" required></label>
           <label data-i18n="field.end">End<input type="date" name="endDate"></label>
-          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
         <button type="submit" data-i18n="action.create">Create</button>
       </form>
@@ -304,7 +312,7 @@
       <form id="form-user" class="card form" data-perm="users:write">
         <h2 data-i18n="user.create">Add staff member</h2>
         <div class="grid">
-          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
+          <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <label data-i18n="field.email">Email<input type="email" name="email" required></label>
           <label data-i18n="field.role">Role<select name="role" required></select></label>
           <label data-i18n="field.password">Password<input type="password" name="password" minlength="8"
@@ -342,8 +350,8 @@
         <h2 id="role-form-title" data-i18n="role.create">Create role</h2>
         <input type="hidden" name="id">
         <div class="grid">
-          <label data-i18n="field.name">Name<input type="text" name="name" required></label>
-          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <label data-i18n="field.name">Name<input type="text" name="name" maxlength="64" required></label>
+          <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
         <fieldset class="perms">
           <legend data-i18n="role.permissions">Permissions</legend>
@@ -524,6 +532,16 @@
     </section>
     <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
+      <div id="restart-card" class="card" hidden>
+        <h2 data-i18n="restart.title">Restart</h2>
+        <p class="muted" data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>
+        <ul id="restart-pending" class="pending-list"></ul>
+        <div class="row">
+          <button type="button" id="restart-now" data-i18n="restart.now">Restart now</button>
+        </div>
+        <p class="muted minus" id="restart-unsupported" hidden></p>
+      </div>
+
       <form id="form-maintenance" class="card form">
         <h2 data-i18n="maint.title">Maintenance mode</h2>
         <p class="muted" data-i18n="maint.hint">Turns everyone else away with a notice while the installation stays running. Use it before restoring or moving the database: time recorded during that window is lost when the snapshot goes back, and whoever recorded it has no way to know.</p>
@@ -635,6 +653,50 @@
         <p class="muted" id="datasource-test-result"></p>
       </form>
 
+      <form id="form-telemetry" class="card form">
+        <h2 data-i18n="tel.title">Logging, metrics and tracing</h2>
+        <p class="muted" id="telemetry-active"></p>
+        <p class="muted" data-i18n="tel.hint">Saved here and applied the next time the application starts. None of it can be switched over while the application runs: the log level is read, the metrics port is bound and the trace exporter is built while it starts. A field left following the configuration file keeps its value from there.</p>
+        <p class="muted minus" data-i18n="tel.warn">The metrics port asks for no sign-in, is not covered by TLS, and serves Go's profiling endpoints beside the metrics — anywhere it is reachable, so is a heap dump. Expose it to your monitoring only.</p>
+        <div class="grid">
+          <label data-i18n="tel.logLevel">Log level
+            <select name="logLevel">
+              <option value="" data-i18n="tel.follow">Follow the configuration file</option>
+              <option value="DEBUG">DEBUG</option>
+              <option value="INFO">INFO</option>
+              <option value="NOTICE">NOTICE</option>
+              <option value="WARN">WARN</option>
+              <option value="ERROR">ERROR</option>
+              <option value="FATAL">FATAL</option>
+            </select>
+          </label>
+          <label data-i18n="tel.metrics">Metrics endpoint
+            <select name="metricsOff">
+              <option value="" data-i18n="tel.follow">Follow the configuration file</option>
+              <option value="off" data-i18n="tel.metricsOff">Do not serve it</option>
+            </select>
+          </label>
+          <label data-i18n="tel.exporter">Trace exporter
+            <select name="traceExporter">
+              <option value="" data-i18n="tel.follow">Follow the configuration file</option>
+              <option value="off" data-i18n="tel.tracesOff">Export nowhere</option>
+              <option value="otlp">OTLP</option>
+              <option value="jaeger">Jaeger</option>
+            </select>
+          </label>
+          <label data-i18n="tel.url">Collector as host:port, without http://
+            <input type="text" name="tracerUrl" placeholder="jaeger:4317">
+          </label>
+          <label data-i18n="tel.ratio">Share of traces recorded (0–1)
+            <input type="number" name="tracerRatio" step="0.05" min="0" max="1">
+          </label>
+        </div>
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="telemetry-reset" data-i18n="tel.reset">Reset all to the configuration file</button>
+        </div>
+      </form>
+
       <form id="form-ldap" class="card form">
         <h2 data-i18n="admin.ldap">LDAP connection</h2>
         <p class="muted" data-i18n="admin.ldapHint">When enabled, passwords are checked against the directory. Unknown users are created locally on their first successful sign-in.</p>
@@ -694,7 +756,7 @@
            what you scroll to when something already went wrong. -->
       <div class="card" id="log-card">
         <h2 data-i18n="log.title">Live log</h2>
-        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what LOG_LEVEL admits reaches here, so ticking a level below it shows nothing. Held in memory only: the view is empty after a restart, and this is no substitute for collecting logs.</p>
+        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what the log level admits reaches here, so ticking a level below it shows nothing — the level is under "Logging, metrics and tracing" above, and takes effect at the next start. Held in memory only: the view is empty after a restart, and this is no substitute for collecting logs.</p>
 
         <div class="log-controls">
           <div class="log-levels" id="log-levels" role="group" aria-label="Log levels"></div>

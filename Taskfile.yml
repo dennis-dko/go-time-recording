@@ -111,18 +111,30 @@ tasks:
   # ------------------------------------------------------------------ verify
 
   test:all:
-    desc: 'Verify: run every test suite - unit, integration and browser. Usage: task test:all DB=postgres'
+    desc: 'Verify: every suite - unit, integration, directory, traces, browser. Usage: task test:all DB=postgres'
     summary: |
-      Runs all three suites in the order that fails fastest: the unit tests
-      first, because a compile error or a broken rule should not be found after
-      twenty minutes of browser automation.
+      Runs every suite in the order that fails fastest: the unit tests first,
+      because a compile error or a broken rule should not be found after twenty
+      minutes of browser automation.
 
       Each suite is also a task of its own, and running one directly is the
       normal thing to do while working:
 
         task test               the rules, in memory, seconds
         task test:integration   the real binary over HTTP
+        task test:ldap          against a real directory        (docker)
+        task test:traces        against a real collector        (docker)
         task test:browser       the real interface in a real browser
+
+      The last two need containers, and are here rather than on the side because
+      the two things they cover fail silently by nature. A directory entry that
+      cannot be keyed on produces an account the synchronisation later deletes
+      together with its recorded hours; an exporter GoFr cannot build drops every
+      span after one log line. Neither shows up in a suite that stubs them out,
+      which is how both went unnoticed until something ran them for real.
+
+      Docker is therefore required. `task test` on its own stays containerless
+      and is the one to run while working.
 
       Linting is deliberately not part of this. It is not a test, it needs the
       version pinned in .golangci-lint-version to mean the same thing here as
@@ -136,8 +148,10 @@ tasks:
       - task: test
       - task: test:integration
         vars: { DB: '{{.DB}}' }
+      - task: test:ldap
+      - task: test:traces
       - task: test:browser
-      - echo "All suites passed."
+      - echo "All suites passed, including the directory and the trace collector."
 
   test:
     desc: 'Verify: run the unit tests.'
@@ -185,6 +199,61 @@ tasks:
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
       - go test -tags integration -count=1 -timeout 15m ./test/integration/
+
+  test:ldap:
+    desc: 'Verify: sign in against a real directory, and check nobody gets deleted for it.'
+    summary: |
+      internal/infrastructure/directory is the one package here that talks to
+      something this project does not control, and the synchronisation tests
+      drive a fake - which proves the rules and nothing about the LDAP: not the
+      bind, not the filter substitution, not the attribute names.
+
+      The case that matters most is the last one: an entry that can sign in but
+      does not appear in the directory listing produces an account the next
+      synchronisation reads as a departure, and deletes together with every hour
+      recorded against it. That cannot be checked against a fake, because a fake
+      returns whatever the test told it to.
+
+      Starts the directory and leaves it running; test/README.md documents the
+      seeded accounts, and phpLDAPadmin is on http://localhost:5080 for looking
+      at one by hand. `task env:down` stops it.
+    env:
+      GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
+      GTR_TEST_LDAP: 'localhost:5389'
+    cmds:
+      - task: env:up
+        vars: { PROFILE: ldap }
+      - mkdir -p {{.TMP_DIR}}
+      - defer: rm -rf {{.TMP_DIR}}
+      - go test -tags integration -count=1 -timeout 10m -run 'Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed' ./test/integration/
+
+  test:traces:
+    desc: 'Verify: export spans to a real Jaeger and read them back.'
+    summary: |
+      The one thing the rest of the tracing tests cannot show: that a span
+      exported by this application actually arrives somewhere. Every way that
+      fails is silent - an exporter GoFr does not recognise drops each batch
+      after logging once, a collector address it cannot dial fails inside the
+      exporter, and a sampler that records nothing looks exactly like a
+      collector with nothing to show.
+
+      Starts Jaeger, runs the tracing tests against it, and leaves it running so
+      a failure can be looked at in the trace browser on http://localhost:51686.
+      `task env:down` stops it.
+    env:
+      GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
+      GTR_TEST_JAEGER: 'localhost:54317'
+    cmds:
+      - task: env:up
+        vars: { PROFILE: traces }
+      - mkdir -p {{.TMP_DIR}}
+      - defer: rm -rf {{.TMP_DIR}}
+      # Only the tracing cases: the rest of the integration suite is `task
+      # test:integration`, and running it twice for these two is minutes wasted.
+      # Both tracing cases carry "Tracing" in their name; the rest of the
+      # integration suite is `task test:integration`, and running it again for
+      # these two is minutes wasted.
+      - go test -tags integration -count=1 -timeout 10m -run Tracing ./test/integration/
 
   test:browser:
     desc: 'Verify: drive the real interface in a real browser.'
@@ -259,7 +328,7 @@ tasks:
       - go run ./test/probe {{.CLI_ARGS}}
 
   env:up:
-    desc: 'Verify: start the backing services on their own. Usage: task env:up PROFILE=dev|postgres|mysql|ldap|all'
+    desc: 'Verify: start the backing services on their own. Usage: task env:up PROFILE=dev|postgres|mysql|ldap|traces|all'
     vars:
       PROFILE: '{{.PROFILE | default "all"}}'
     dir: test

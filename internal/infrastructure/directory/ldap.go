@@ -105,9 +105,30 @@ func (l *LDAP) Authenticate(
 
 	email := entry.GetAttributeValue(config.EmailAttribute)
 	if email == "" {
-		// Without a mail address there is no stable local identifier, so the
-		// login is used instead.
-		email = login
+		// Refused rather than filled in with the login name, which is what this
+		// used to do - and which created an account the synchronisation could
+		// not account for.
+		//
+		// The two are one decision: ListUsers skips an entry with no mail
+		// address, because it cannot be matched to a local account. So a login
+		// that invented one produced an account that signed in perfectly well,
+		// did not appear in the directory listing, and was therefore read by the
+		// next synchronisation as "this person left" - deleting it together with
+		// every hour recorded against it, silently.
+		//
+		// Refusing here is the lesser harm by a wide margin: somebody cannot sign
+		// in, which they will say so about, rather than losing their records
+		// months later with nobody able to explain it.
+		//
+		// The message names the entry and the attribute because only somebody
+		// who already proved the password can reach this line - the bind above
+		// is what fails for everybody else - so it tells the one person who can
+		// act on it exactly what to tell their administrator, and tells an
+		// attacker nothing they did not already have the credentials for.
+		return nil, false, fmt.Errorf(
+			"the directory entry for %q has no %s attribute, so no account can be keyed on it; "+
+				"set the mail attribute under Settings to one this directory actually fills",
+			login, config.EmailAttribute)
 	}
 
 	return &appservice.ExternalUser{

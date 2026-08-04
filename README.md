@@ -93,9 +93,11 @@ yanked away on the next refresh.
 
 It shows the framework's own output too — the request log, a failing statement,
 what happened during the migrations — because it captures the process output
-rather than wrapping a logger. Two things worth knowing: only what `LOG_LEVEL`
+rather than wrapping a logger. Two things worth knowing: only what the log level
 admits reaches it, so ticking `DEBUG` on an installation running at `WARN` shows
-nothing and is not a fault; and it is held in memory in a fixed-size ring, so it
+nothing and is not a fault — the level is set under *Settings → Logging, metrics
+and tracing* and applies from the next start; and it is held in memory in a
+fixed-size ring, so it
 starts empty after a restart and is no substitute for collecting logs. The
 capture makes the console output JSON even on a terminal, which is what a log
 collector wants anyway — `task dev` renders readable lines back for the console.
@@ -129,7 +131,7 @@ missing. That is why "Finish later" is safe to offer.
 | Calendar | Month view of where hours were booked |
 | Background job | Cron sweep that submits time entries left open too long |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
-| Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr) |
+| Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |
 
 ## Access control
 
@@ -421,13 +423,18 @@ silently apply to everyone.
 **Bootstrap** settings can only be set in layers 1–3. They decide how the
 process starts, so an application that has not started cannot administer them —
 and getting one wrong must not be fixable only from a screen it takes away:
-ports, `LOG_LEVEL`, `TLS_*`, `AUTH_ENABLED`, `UI_ENABLED`, the `*_SCHEDULE`
-cron expressions, and the `DB_*` connection everything else is stored in.
+ports, `TLS_*`, `AUTH_ENABLED`, `UI_ENABLED`, and the `*_SCHEDULE` cron
+expressions.
 
 **Starting values** are what a fresh installation begins with; the setup wizard
 and *Settings* administer them at run time and what is stored there wins:
 `SESSION_LIFETIME`, `MAX_DAILY_HOURS`, `RATE_LIMIT`, `RATE_LIMIT_WINDOW`,
 `AUTO_CLOSE_AFTER_DAYS`, `LDAP_SYNC_MAX_DELETE_RATIO`, `APP_NAME`.
+
+**At the next start** are administered too, but stored rather than applied,
+because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
+and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What is stored wins from
+the next start onwards.
 
 The **timezone and the LDAP connection appear in no file at all**. Both are
 administered entirely in the application — a second place to write them would
@@ -437,7 +444,7 @@ only disagree with the first.
 | --- | --- | --- |
 | `APP_NAME` | `Time Recording` | instance title, until one is set under Settings |
 | `HTTP_PORT` | `8000` | API and web interface |
-| `METRICS_PORT` | `2121` | Prometheus endpoint |
+| `METRICS_PORT` | `2121` | Prometheus endpoint; `0` switches it off |
 | `DB_DIALECT` | – | `sqlite`, `postgres` or `mysql`. **Empty serves the installer** |
 | `DB_NAME` | – | with SQLite, the file name without `.db` |
 | `SETUP_TOKEN` | generated | what the installer asks for; logged when generated |
@@ -456,6 +463,10 @@ only disagree with the first.
 | `AUTO_CLOSE_SCHEDULE` | `0 2 * * *` | cron for the sweep; empty disables it |
 | `AUTO_CLOSE_AFTER_DAYS` | `14` | when an open entry gets submitted |
 | `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day |
+| `LOG_LEVEL` | `INFO` | `DEBUG`…`FATAL`; anything else is read as `INFO` |
+| `TRACE_EXPORTER` | empty | `otlp` or `jaeger`; empty exports nothing |
+| `TRACER_URL` | – | the collector as `host:port`, **without** a scheme |
+| `TRACER_RATIO` | `1` | share of traces recorded, `0`–`1` |
 
 ### What can be changed from the interface, and what cannot
 
@@ -490,7 +501,7 @@ remove the way back in:
 | `HSTS_MAX_AGE` | a browser told to refuse plain HTTP keeps refusing for as long as the value said, whatever is served later |
 | `DB_*` | it is the connection the settings themselves are read from |
 | `*_SCHEDULE` | cron jobs are registered once at start-up and cannot be re-registered live |
-| `HTTP_PORT`, `METRICS_PORT` | bound at start-up |
+| `HTTP_PORT`, `METRICS_PORT` | bound at start-up — and GoFr refuses to start when something already holds the metrics port, so a port saved from a screen could stop the application together with the screen. *Settings* can only switch the endpoint **off**, which cannot fail |
 
 `APP_NAME` is not administered here either — the instance title under
 *Settings → Appearance* already overrides it, and two fields for one label
@@ -501,6 +512,36 @@ For PostgreSQL also set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` and
 button probes them before you commit. A connection saved there is written to
 `configs/datasource.json` and applied on the next restart; switching a live
 database under running requests is not safe, so it is deliberately not done.
+
+*Settings → Logging, metrics and tracing* works the same way, and for the same
+kind of reason: GoFr reads the log level, binds the metrics port and builds the
+trace exporter inside `gofr.New()`, so nothing administered afterwards could
+reach any of them. GoFr can change a running logger's level, but it does so by
+assigning to a field every request goroutine reads without synchronisation — a
+data race is not a reasonable price for saving a restart. What is
+saved there is stored in the database and read back out of it on the way into the
+next start, before GoFr reads its own configuration — which is what lets a stored
+value win over the file, including a stored *off*. A field left following the
+configuration file keeps coming from there.
+
+The screen shows what the running process is actually doing beside what is
+stored, because until the next restart those disagree, and it names the metrics
+endpoint in full so it can be copied. A *Restart* card lists what is waiting —
+each setting with the value in force and the one that will replace it — and
+offers to restart there and then, with the interface waiting for the application
+to come back rather than leaving anyone to guess.
+
+That restart replaces the process image rather than exiting and hoping something
+starts it again. Exiting works under Docker with a restart policy and under
+systemd with `Restart=`, and turns the button into an off switch everywhere else,
+including a binary started by hand. `execve` needs nothing outside the process,
+so there is no arrangement in which pressing it leaves the installation down.
+Windows has no `execve`, so the button is not offered there and the screen says
+why. Two exporters are offered, `otlp` and
+`jaeger`. Zipkin is not: GoFr still accepts it while warning that it is on its
+way out. Neither is GoFr's hosted exporter, which posts every span to a service
+run by the framework's authors — not a thing to be able to switch on by picking
+an entry from a list.
 
 ## API
 
@@ -524,9 +565,42 @@ The full reference is at `/api-docs`; the highlights:
 | `GET` | `/api/v1/projects/{id}/report` | Report |
 | `GET/POST/PUT/DELETE` | `/api/v1/timesheets`, `/timesheets/{id}` | Time entries |
 | `POST` | `/api/v1/timesheets/{id}/transfer` | Move to another project |
-| `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP |
+| `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP, metrics and tracing |
 
-Operations: `/.well-known/health`, `/.well-known/alive`, metrics on port 2121.
+### What the metrics endpoint carries
+
+GoFr measures the machinery on its own — a histogram per HTTP request
+(`app_http_response`), one per SQL query (`app_sql_stats`), a goroutine gauge —
+and it does so without a line of instrumentation in this repository. Spans are
+the same: every request is traced by the framework's middleware, which is why
+tracing works here with no span code anywhere.
+
+What it cannot know is whether the application is doing its job. A deployment can
+serve every request in milliseconds while nobody has been able to book time since
+the directory changed. So four more are recorded here, each because somebody
+would act on it:
+
+| Metric | Says |
+| --- | --- |
+| `gtr_timesheet_hours_booked` | hours per entry — the sum is what was recorded, the count in how many pieces |
+| `gtr_timesheet_transitions_total` | entries entering a state, by state — a queue of submitted entries nobody approves is invisible otherwise |
+| `gtr_signin_failures_total` | refused sign-ins, by reason — `credentials` is somebody guessing, `directory` is a directory that stopped answering |
+| `gtr_directory_accounts_total` | accounts the synchronisation created or deleted — the one operation that removes people together with their hours |
+
+None of them carries a user, an address or a project name as a label. A label is
+a time series: one per person is both a memory leak in the collector and a list
+of who works here, published on a port that asks for no password.
+
+**Before writing an alert:** a metric is published only once it has a value, so
+an installation that has had no refused sign-in publishes no
+`gtr_signin_failures_total` at all rather than publishing it as zero. Treat an
+absent series as absent — `absent()` — rather than as a healthy zero.
+
+Operations: `/.well-known/health`, `/.well-known/alive`, and `/metrics` on port
+2121 — a port of its own, outside the middleware chain, which therefore asks for
+no sign-in, is not covered by TLS, and serves Go's profiling endpoints under
+`/debug/pprof/` beside the metrics. Reach it from your monitoring, not from the
+internet, or switch it off under *Settings*.
 
 ## Business rules
 

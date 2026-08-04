@@ -45,6 +45,21 @@
     input:focus-visible, select:focus-visible, button:focus-visible {
       outline: 2px solid var(--accent); outline-offset: 2px;
     }
+    /* A password typed here is transcribed from somewhere else, and a typo is
+       answered by "connection refused" with nothing saying which character was
+       wrong. The wrapper is added by the script, so it costs the markup
+       nothing. */
+    .password-field { display: block; position: relative; }
+    .password-field input { padding-right: 42px; }
+    .password-toggle {
+      align-items: center; background: none; border: none; border-radius: 6px;
+      color: var(--muted); cursor: pointer; display: flex; padding: 4px;
+      position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+      width: auto;
+    }
+    .password-toggle:hover { color: var(--text); }
+    .password-slash { display: none; }
+    .password-toggle.revealed .password-slash { display: inline; }
     .grid { display: grid; gap: 0 14px; grid-template-columns: 1fr 1fr; }
     .grid .wide { grid-column: 1 / -1; }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
@@ -204,6 +219,69 @@
   function busy(on) {
     $('test').disabled = on;
     $('save').disabled = on;
+  }
+
+  // Every password field gets a button that reveals what was typed. Found by
+  // selector rather than by id, so a field added later is covered too.
+  //
+  // createElementNS, not createElement: an <svg> built in the HTML namespace
+  // parses without complaint and renders nothing. Inline, because this page is
+  // served before anything else exists and may fetch nothing.
+  for (const input of document.querySelectorAll('input[type="password"]')) {
+    const field = document.createElement('span');
+    field.className = 'password-field';
+    input.replaceWith(field);
+    field.append(input);
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '18');
+    svg.setAttribute('height', '18');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+
+    const outline = document.createElementNS(ns, 'path');
+    outline.setAttribute('d', 'M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z');
+
+    const pupil = document.createElementNS(ns, 'circle');
+    pupil.setAttribute('cx', '12');
+    pupil.setAttribute('cy', '12');
+    pupil.setAttribute('r', '3');
+
+    // Shown while the password is readable, which is the state worth noticing.
+    const slash = document.createElementNS(ns, 'path');
+    slash.setAttribute('d', 'M3 3l18 18');
+    slash.setAttribute('class', 'password-slash');
+
+    svg.append(outline, pupil, slash);
+
+    const toggle = document.createElement('button');
+    // Not a submit: a button with no type inside a form submits it, so the
+    // first attempt to look at the password would send the form instead.
+    toggle.type = 'button';
+    toggle.className = 'password-toggle';
+    toggle.title = 'Show the password';
+    toggle.setAttribute('aria-label', 'Show the password');
+    toggle.setAttribute('aria-pressed', 'false');
+    toggle.append(svg);
+
+    toggle.addEventListener('click', () => {
+      const revealed = input.type === 'password';
+      input.type = revealed ? 'text' : 'password';
+
+      const label = revealed ? 'Hide the password' : 'Show the password';
+      toggle.title = label;
+      toggle.setAttribute('aria-label', label);
+      toggle.setAttribute('aria-pressed', String(revealed));
+      toggle.classList.toggle('revealed', revealed);
+      input.focus();
+    });
+
+    field.append(toggle);
   }
 
   $('dialect').addEventListener('change', syncFields);

@@ -14,10 +14,12 @@ import (
 	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
-// Two things that can only be checked in a browser: the log viewer, which is
-// polling and filtering and nothing a single request would exercise, and how a
-// passkey interacts with two-factor authentication - which needs an actual
-// signature from an actual authenticator.
+// Three things that can only be checked in a browser: the log viewer, which is
+// polling and filtering and nothing a single request would exercise; whether the
+// Settings screen fills every one of its cards, which is a property of the chain
+// that loads them rather than of any request in it; and how a passkey interacts
+// with two-factor authentication - which needs an actual signature from an actual
+// authenticator.
 
 // ---------------------------------------------------------------- live log
 
@@ -128,6 +130,86 @@ func TestAnEmployeeIsNotOfferedTheLog(t *testing.T) {
 
 	if p.visible("#tab-admin") {
 		t.Error("an employee is being offered the Settings tab, which holds the log")
+	}
+}
+
+// ------------------------------------------------------- the Settings cards
+
+// The Settings screen loads its cards in one unbroken chain of awaits, so a card
+// whose request fails does not fail alone: every card after it stays blank while
+// the API answers perfectly and nothing else notices. The metrics and tracing
+// card went into the middle of that chain, which makes the card after it as much
+// the point of this test as the new one is.
+func TestTheSettingsScreenFillsTheTelemetryCardAndTheOnesAfterIt(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-telemetry", chromedp.ByID))
+
+	// This line is written by the same response that fills the fields, so an
+	// empty one means the card never loaded at all.
+	active := p.text("#telemetry-active")
+	if active == "" {
+		t.Error("the telemetry card says nothing about what this process is doing")
+	}
+
+	// The metrics endpoint is the one thing on this screen somebody wants to
+	// copy, so it has to be there in full rather than as a port number to
+	// assemble by hand.
+	if !strings.Contains(active, "/metrics") {
+		t.Errorf("the metrics endpoint is not named in %q", active)
+	}
+
+	// The card after the new one in the chain. Its user filter has a default, so
+	// an empty field here means the telemetry request threw and took the rest of
+	// the screen down with it.
+	if filter := p.value(`#form-ldap input[name="userFilter"]`); filter == "" {
+		t.Error("the LDAP card is empty, so loading the cards stopped before it")
+	}
+}
+
+// ------------------------------------------------------ revealing a password
+
+// The button is added by the script, to fields written in the markup, so
+// whether it exists at all is a question only a browser can answer - and what it
+// does is a change to an attribute that no API test can see.
+func TestAPasswordCanBeRevealedAndHiddenAgain(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+
+	const field = `#form-datasource input[name="password"]`
+
+	// Every password field gets one, so this one stands for the rest.
+	if !p.visible(`#form-datasource .password-toggle`) {
+		t.Fatal("the database password has no reveal button")
+	}
+
+	p.run("type a password", chromedp.SendKeys(field, "not-a-real-password", chromedp.ByQuery))
+
+	if got := p.attr(field, "type"); got != "password" {
+		t.Errorf("the field starts as %q, want it hidden", got)
+	}
+
+	p.run("reveal", p.click(`#form-datasource .password-toggle`))
+
+	if got := p.attr(field, "type"); got != "text" {
+		t.Errorf("after pressing the button the field is %q, so nothing was revealed", got)
+	}
+
+	// The value survived the type change; a reveal that emptied the field would
+	// be worse than none.
+	if got := p.value(field); got != "not-a-real-password" {
+		t.Errorf("revealing changed the value to %q", got)
+	}
+
+	p.run("hide again", p.click(`#form-datasource .password-toggle`))
+
+	if got := p.attr(field, "type"); got != "password" {
+		t.Errorf("the field stayed %q after pressing the button a second time", got)
 	}
 }
 

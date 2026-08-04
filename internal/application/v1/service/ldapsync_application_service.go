@@ -75,6 +75,16 @@ type LDAPSyncService struct {
 	limits *LimitsProvider
 
 	defaultRole string
+
+	metrics
+}
+
+// WithMetrics attaches the recorder. Optional: without it the synchronisation
+// works and records nothing.
+func (s *LDAPSyncService) WithMetrics(recorder Recorder) *LDAPSyncService {
+	s.recorder = recorder
+
+	return s
 }
 
 // UserPurger removes a user together with everything referencing them.
@@ -225,6 +235,12 @@ func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, er
 		}
 
 		report.Deleted = append(report.Deleted, candidate)
+
+		// Counted one at a time, and only after the deletion actually happened.
+		// This is the one operation here that removes people together with the
+		// hours they recorded, so the number that matters is what was done, not
+		// what was planned.
+		s.count(ctx, MetricDirectoryAccounts, "action", "deleted")
 	}
 
 	return report, nil
@@ -322,6 +338,8 @@ func (s *LDAPSyncService) createMissing(
 		if err != nil {
 			return err
 		}
+
+		s.count(ctx, MetricDirectoryAccounts, "action", "created")
 	}
 
 	return nil

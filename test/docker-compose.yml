@@ -6,9 +6,10 @@
 # connection and an LDAP bind can be exercised for real, and it must never be
 # mistaken for a deployment example - see ../Dockerfile for that.
 #
-#   docker compose --profile dev up -d       PostgreSQL + directory
+#   docker compose --profile dev up -d       PostgreSQL + directory + Jaeger
 #   docker compose --profile postgres up -d
 #   docker compose --profile ldap up -d
+#   docker compose --profile traces up -d    Jaeger, for the trace exporter
 #   docker compose --profile stage up -d     ...plus the application image
 #   docker compose --profile all up -d       ...plus MySQL
 #
@@ -67,6 +68,21 @@ services:
       timeout: 5s
       retries: 20
 
+  # Somewhere for exported spans to land. Without it the tracing settings can be
+  # shown to reach GoFr, but not that a single span ever arrives anywhere - and
+  # every way that fails is silent: an exporter GoFr does not recognise, a
+  # collector address it cannot dial, a sampler that records nothing.
+  jaeger:
+    profiles: [traces, dev, all, stage]
+    build: ./jaeger
+    ports:
+      # 4317 is where the application exports to; 51686 serves the query API the
+      # tests read back from, and the trace browser for looking at one by hand.
+      # Unusual on purpose, like the rest here, so a Jaeger already running on
+      # the default ports is left alone.
+      - "54317:4317"
+      - "51686:16686"
+
   # The application itself, built from the image that actually ships.
   #
   # This is the difference between the "stage" profile and everything else
@@ -91,6 +107,13 @@ services:
       DB_USER: gtr
       DB_PASSWORD: gtr-test-password
       DB_SSL_MODE: disable
+      # Exporting for real, because a staging run that traced nothing would
+      # leave the one path nobody can check from a unit test unexercised. The
+      # service name inside the network, and no scheme in front of it - GoFr
+      # hands this to a gRPC dialer, which reads "http://" as part of the host.
+      TRACE_EXPORTER: otlp
+      TRACER_URL: jaeger:4317
+      TRACER_RATIO: "1"
     ports:
       - "8080:8000"
       - "8021:2121"
@@ -98,6 +121,8 @@ services:
       postgres:
         condition: service_healthy
       openldap:
+        condition: service_healthy
+      jaeger:
         condition: service_healthy
 
   # Runs the connection probe from inside the network, where the service names

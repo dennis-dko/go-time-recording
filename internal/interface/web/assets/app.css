@@ -524,6 +524,68 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 /* The file picker is not a text field, so it must not stretch like one. */
 input[type="file"] { border: none; background: none; padding: 6px 0; }
 
+/* --- waiting for a restart --- */
+
+.pending-list { margin: 0 0 14px; padding-left: 18px; }
+.pending-list li { color: var(--text); font-size: 13px; margin-bottom: 4px; }
+
+/* The arrow between the running value and the stored one, dimmed so the two
+ * values are what the eye lands on. */
+.pending-list .from { color: var(--muted); }
+
+.spinner {
+  animation: spin 0.9s linear infinite;
+  border: 3px solid var(--border);
+  border-radius: 50%;
+  border-top-color: var(--accent);
+  height: 32px;
+  margin: 18px auto;
+  width: 32px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Somebody who has asked not to see motion still needs to see that something is
+ * happening, so the ring stays and only stops turning. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+
+/* --- revealing a password ---
+ *
+ * The wrapper is added by the script rather than written into every form, so a
+ * password field added later gets the button without anyone remembering to ask
+ * for it. It is a block, because `label` is a flex column and the field has to
+ * keep filling the row.
+ */
+.password-field { display: block; position: relative; }
+
+/* Room for the button, so a long password does not run underneath it. */
+.password-field input { padding-right: 42px; }
+
+.password-toggle {
+  align-items: center;
+  background: none;
+  border-radius: 6px;
+  color: var(--muted);
+  display: flex;
+  padding: 4px;
+  position: absolute;
+  right: 5px;
+  /* Centred on the input rather than on the wrapper: they are the same height
+   * today, and this stays right if a hint is ever added below the field. */
+  top: 50%;
+  transform: translateY(-50%);
+  width: auto;
+}
+
+.password-toggle:hover { color: var(--text); filter: none; }
+
+/* The slash marks the state the field is *in*, so it shows while the password
+ * is readable - which is the state worth noticing across a shared desk. */
+.password-slash { display: none; }
+.password-toggle.revealed .password-slash { display: inline; }
+
 /* --- API documentation page --- */
 
 .op { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
