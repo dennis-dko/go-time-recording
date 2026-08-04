@@ -526,7 +526,18 @@ configuration file keeps coming from there.
 
 The screen shows what the running process is actually doing beside what is
 stored, because until the next restart those disagree, and it names the metrics
-endpoint in full so it can be copied. Two exporters are offered, `otlp` and
+endpoint in full so it can be copied. A *Restart* card lists what is waiting —
+each setting with the value in force and the one that will replace it — and
+offers to restart there and then, with the interface waiting for the application
+to come back rather than leaving anyone to guess.
+
+That restart replaces the process image rather than exiting and hoping something
+starts it again. Exiting works under Docker with a restart policy and under
+systemd with `Restart=`, and turns the button into an off switch everywhere else,
+including a binary started by hand. `execve` needs nothing outside the process,
+so there is no arrangement in which pressing it leaves the installation down.
+Windows has no `execve`, so the button is not offered there and the screen says
+why. Two exporters are offered, `otlp` and
 `jaeger`. Zipkin is not: GoFr still accepts it while warning that it is on its
 way out. Neither is GoFr's hosted exporter, which posts every span to a service
 run by the framework's authors — not a thing to be able to switch on by picking

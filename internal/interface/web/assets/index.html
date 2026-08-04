@@ -51,6 +51,14 @@
        once is a list to skim, and the point is that nothing gets skimmed past.
        Shown only to the built-in administrator, and only while something is
        outstanding. -->
+  <div id="restart-overlay" class="overlay" hidden>
+    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="restart-waiting-title">
+      <h2 id="restart-waiting-title" data-i18n="restart.waiting">Restarting</h2>
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="muted" id="restart-status" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+
   <div id="setup-wizard" class="overlay" hidden>
     <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="setup-title">
       <div class="setup-head">
@@ -524,6 +532,16 @@
     </section>
     <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
+      <div id="restart-card" class="card" hidden>
+        <h2 data-i18n="restart.title">Restart</h2>
+        <p class="muted" data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>
+        <ul id="restart-pending" class="pending-list"></ul>
+        <div class="row">
+          <button type="button" id="restart-now" data-i18n="restart.now">Restart now</button>
+        </div>
+        <p class="muted minus" id="restart-unsupported" hidden></p>
+      </div>
+
       <form id="form-maintenance" class="card form">
         <h2 data-i18n="maint.title">Maintenance mode</h2>
         <p class="muted" data-i18n="maint.hint">Turns everyone else away with a notice while the installation stays running. Use it before restoring or moving the database: time recorded during that window is lost when the snapshot goes back, and whoever recorded it has no way to know.</p>

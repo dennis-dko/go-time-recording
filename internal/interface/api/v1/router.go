@@ -21,6 +21,7 @@ type Handlers struct {
 	Setup      *rest.SetupHandler
 	Passkeys   *rest.PasskeyHandler
 	Logs       *rest.LogHandler
+	Restart    *rest.RestartHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -74,6 +75,13 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/settings/datasource/test", h.Settings.TestDatasource)
 	app.GET(base+"/settings/telemetry", h.Settings.Telemetry)
 	app.PUT(base+"/settings/telemetry", h.Settings.SaveTelemetry)
+
+	// What is waiting for a restart, and the restart itself. Under /settings/
+	// like the rest, which also keeps it reachable during maintenance mode - the
+	// settings that need a restart are exactly the ones somebody is likely to be
+	// changing while the installation is out of service.
+	app.GET(base+"/settings/restart", h.Restart.State)
+	app.POST(base+"/settings/restart", h.Restart.Restart)
 
 	// The process log. Under /admin rather than /settings because it changes
 	// nothing - and behind the built-in administrator, because it carries

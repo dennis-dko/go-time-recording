@@ -87,6 +87,9 @@ func TestTheAdministratorCanStillEndMaintenanceMode(t *testing.T) {
 		"/settings/timezone",
 		"/settings/operational",
 		"/settings/telemetry",
+		// The settings that need a restart are exactly the ones somebody is
+		// likely to be changing while the installation is out of service.
+		"/settings/restart",
 		"/admin/logs",
 	} {
 		if got := admin.api(http.MethodGet, path, nil).Status; got != http.StatusOK {

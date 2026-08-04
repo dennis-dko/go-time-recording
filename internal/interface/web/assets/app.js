@@ -396,6 +396,17 @@ const TRANSLATIONS = {
     'password.reveal': 'Passwort anzeigen',
     'password.hide': 'Passwort verbergen',
 
+    'restart.title': 'Neustart',
+    'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
+    'restart.now': 'Jetzt neu starten',
+    'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
+    'restart.waiting': 'Neustart läuft',
+    'restart.waitingHint': 'Es wird gewartet, bis die Anwendung wieder erreichbar ist …',
+    'restart.done': 'Die Anwendung wurde neu gestartet, die Einstellungen sind jetzt wirksam.',
+    'restart.failed': 'Der Neustart konnte nicht gestartet werden',
+    'restart.slow': 'Die Anwendung antwortet noch nicht. Möglicherweise startet sie noch — bitte die Seite gleich neu laden.',
+    'restart.none': 'nichts',
+
     'user.directoryAccount': 'aus dem Verzeichnis',
     'user.directoryHint': 'Wird im LDAP verwaltet. Das Passwort liegt dort, und das Entfernen des Eintrags dort entfernt auch dieses Konto.',
 
@@ -1383,6 +1394,7 @@ async function loadAdmin() {
     `${t('admin.activeConnection', 'Currently connected via')}: ${ds.active}`;
 
   await loadTelemetry();
+  await loadRestart();
 
   const ldap = await api('/settings/ldap');
   const ldapForm = $('#form-ldap');
@@ -1451,7 +1463,7 @@ function wireAdmin() {
     mutate(async () => {
       const result = await api('/settings/datasource', { method: 'PUT', body: JSON.stringify(body) });
       toast(result.message ?? t('admin.restartNeeded', 'Saved. Applied on the next start.'), 'ok');
-    }, null, loadAdmin);
+    }, null, loadAdmin); // loadAdmin ends with loadRestart, so the card follows.
   });
 
   $('#form-ldap').addEventListener('submit', (e) => {
@@ -2453,6 +2465,134 @@ async function loadOperational() {
   fillOperationalForm(await api('/settings/operational'));
 }
 
+// ----------------------------------------------------------------- restart
+
+/**
+ * What each pending setting is called on screen.
+ *
+ * The server names the setting and leaves the wording here, so the list is
+ * translated like everything else rather than arriving as a sentence in one
+ * language.
+ */
+function pendingLabel(setting) {
+  switch (setting) {
+    case 'logLevel': return t('tel.logLevel', 'Log level');
+    case 'metrics': return t('tel.metrics', 'Metrics endpoint');
+    case 'traceExporter': return t('tel.exporter', 'Trace exporter');
+    case 'tracerUrl': return t('tel.url', 'Collector');
+    case 'database': return t('admin.database', 'Database connection');
+    default: return setting;
+  }
+}
+
+/** What an empty value reads as - "" would look like a rendering fault. */
+function pendingValue(value) {
+  return value === '' ? t('restart.none', 'none') : value;
+}
+
+/**
+ * Shows what is waiting for a restart, and offers one.
+ *
+ * The comparison is the server's: it knows what this process started with and
+ * what is stored, and working it out again here would be a second place for the
+ * answer to be wrong in.
+ */
+async function loadRestart() {
+  const card = $('#restart-card');
+  if (!card) return;
+
+  const state = await api('/settings/restart');
+  restartStartedAt = state.startedAt ?? '';
+
+  const pending = state.pending ?? [];
+  card.hidden = pending.length === 0;
+
+  const list = $('#restart-pending');
+  list.replaceChildren(...pending.map((change) => el('li', {},
+    el('strong', { text: pendingLabel(change.setting) }),
+    el('span', { class: 'from', text: `: ${pendingValue(change.running)} → ` }),
+    el('strong', { text: pendingValue(change.stored) }))));
+
+  // Offered only where pressing it would actually work. Where it would not, the
+  // reason is shown instead of a button that fails on click.
+  $('#restart-now').hidden = !state.supported;
+  $('#restart-unsupported').hidden = state.supported;
+  $('#restart-unsupported').textContent = state.supported ? '' : (state.reason ?? '');
+}
+
+/** The identity of the running process, to tell a restart from a hiccup. */
+let restartStartedAt = '';
+
+/** How long to wait for the application to come back before giving up on it. */
+const RESTART_TIMEOUT_MS = 60000;
+
+/**
+ * Waits for a different process to answer.
+ *
+ * Polling for "does it respond" is not enough: replacing the process image takes
+ * milliseconds, and a poll that misses that gap would report success without
+ * anything having happened. The start time changing is what proves it.
+ */
+async function waitForRestart(previousStartedAt) {
+  const deadline = Date.now() + RESTART_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => { setTimeout(resolve, 1000); });
+
+    try {
+      const state = await api('/settings/restart');
+      if (state.startedAt && state.startedAt !== previousStartedAt) return true;
+    } catch {
+      // Expected while it is down: the connection is refused, or the session
+      // has not been read back out of the database yet.
+    }
+  }
+
+  return false;
+}
+
+function wireRestart() {
+  const button = $('#restart-now');
+  if (!button) return;
+
+  button.addEventListener('click', async () => {
+    const question = t('restart.confirm',
+      'Restart the application? Anyone working in it will have to reload the page.');
+    if (!window.confirm(question)) return;
+
+    const overlay = $('#restart-overlay');
+    const status = $('#restart-status');
+    const previous = restartStartedAt;
+
+    overlay.hidden = false;
+    status.textContent = t('restart.waitingHint', 'Waiting for the application to come back …');
+
+    try {
+      await api('/settings/restart', { method: 'POST' });
+    } catch (err) {
+      overlay.hidden = true;
+      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`, 'error');
+
+      return;
+    }
+
+    if (await waitForRestart(previous)) {
+      overlay.hidden = true;
+      toast(t('restart.done', 'The application has restarted and the settings are in force.'), 'ok');
+      await refreshAll();
+
+      return;
+    }
+
+    // Not an error as such: it may still be coming back. Saying that is more
+    // use than a spinner that never stops.
+    overlay.hidden = true;
+    toast(t('restart.slow',
+      'The application has not answered yet. It may still be starting — reload the page in a moment.'),
+    'error');
+  });
+}
+
 // ------------------------------------------------------ revealing a password
 
 /**
@@ -2662,19 +2802,27 @@ function wireTelemetry() {
         method: 'PUT', body: JSON.stringify(telemetryPayload()),
       }),
       t('admin.restartNeeded', 'Saved. Applied on the next start.'),
-      loadTelemetry);
+      // The restart card too, so what was just saved appears in the list of
+      // what is waiting rather than only in a toast that fades.
+      afterTelemetrySaved);
   });
 
   $('#telemetry-reset').addEventListener('click', () => {
     mutate(
       () => api('/settings/telemetry', { method: 'PUT', body: JSON.stringify({}) }),
       t('tel.resetDone', 'Metrics and tracing follow the configuration file again'),
-      loadTelemetry);
+      afterTelemetrySaved);
   });
 }
 
 async function loadTelemetry() {
   fillTelemetryForm(await api('/settings/telemetry'));
+}
+
+/** Both cards, because saving one of these changes what the other has to say. */
+async function afterTelemetrySaved() {
+  await loadTelemetry();
+  await loadRestart();
 }
 
 // ---------------------------------------------------------------- passkeys
@@ -3678,6 +3826,7 @@ async function init() {
     wireTimezones();
     wireOperational();
     wireTelemetry();
+    wireRestart();
     // After the forms are wired, so a submit handler registered here runs
     // beside theirs rather than instead of one.
     wirePasswordReveal();

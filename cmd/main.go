@@ -478,6 +478,7 @@ func main() {
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      rest.NewSetupHandler(setup, authorizer),
 		Logs:       rest.NewLogHandler(logs, authorizer),
+		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
 			// What the device's prompt calls this installation. The
 			// administered title if there is one, so a person sees the name
