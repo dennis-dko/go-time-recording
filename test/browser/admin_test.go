@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	page_ "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 
 	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
@@ -390,15 +389,18 @@ func TestTurningMaintenanceModeOnAndOffFromTheInterface(t *testing.T) {
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-maintenance", chromedp.ByID))
 
-	// window.confirm blocks a headless browser forever, so it is answered
-	// automatically. The dialog itself is not what this case is about.
-	p.acceptDialogs()
-
 	p.run("turn it on",
 		chromedp.SendKeys(`#form-maintenance input[name="message"]`, "Restoring a backup", chromedp.ByQuery),
 		p.click(`#form-maintenance input[name="enabled"]`),
 		p.click(`#form-maintenance button[type="submit"]`),
+		// Switching it on asks first. The question is in the page rather than
+		// drawn by the browser, so it can simply be answered - a native dialog
+		// had to be intercepted, because a headless browser has nobody to click
+		// it and an unanswered one blocks every later action.
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery),
 	)
+
+	p.run("confirm", p.click(`.confirm-actions button.danger`))
 
 	p.waitForText("#maintenance-banner", "Restoring a backup")
 
@@ -432,23 +434,6 @@ func TestTurningMaintenanceModeOnAndOffFromTheInterface(t *testing.T) {
 
 	t.Errorf("the notice is still shown after maintenance mode was turned off: %q",
 		p.text("#maintenance-banner"))
-}
-
-// acceptDialogs answers window.confirm and window.alert automatically.
-//
-// A headless browser has nobody to click them, so an unanswered dialog blocks
-// every later action until the test's deadline - which reads as "the click did
-// nothing" rather than "something asked a question".
-func (p *page) acceptDialogs() {
-	p.t.Helper()
-
-	chromedp.ListenTarget(p.ctx, func(event any) {
-		if _, ok := event.(*page_.EventJavascriptDialogOpening); ok {
-			go func() {
-				_ = chromedp.Run(p.ctx, page_.HandleJavaScriptDialog(true))
-			}()
-		}
-	})
 }
 
 // ------------------------------------------------- adopting browser defaults
@@ -634,5 +619,86 @@ func TestTwoNoticesAreBothShown(t *testing.T) {
 		if !strings.Contains(shown, want) {
 			t.Errorf("%q is not shown; the stack says %q", want, shown)
 		}
+	}
+}
+
+// -------------------------------------------------- asking before destroying
+
+// Five delete buttons asked nothing at all - a role, a project, a time entry, a
+// token and a passkey all went straight to DELETE on one click. The four that did
+// ask used window.confirm, which the browser draws itself: unstyled, naming the
+// origin, unreadable in a dark theme and impossible to translate.
+//
+// Only a browser can check either half: that the question appears, and that
+// answering "no" leaves the thing alone.
+func TestDeletingAsksFirstAndCancellingChangesNothing(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// A time entry of the administrator's own, so nothing else has to exist.
+	p.run("book time", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
+		chromedp.SendKeys(`#form-timesheet input[name="durationHours"]`, "1.37", chromedp.ByQuery),
+		p.click(`#form-timesheet button[type="submit"]`))
+
+	p.waitForText("#table-timesheets tbody", "1.37")
+
+	// The delete button is a link button in the row's action cell.
+	p.run("press delete", p.click(`#table-timesheets tbody button.danger`),
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery))
+
+	// The question is ours, not the browser's - so it is in the page and can be
+	// seen, which a native dialog cannot be.
+	if !p.visible(".confirm-card") {
+		t.Fatal("no dialog appeared before deleting")
+	}
+
+	// Cancelling has to leave the entry exactly where it was.
+	p.run("cancel", p.click(`.confirm-actions button.secondary`))
+	p.waitGone(".confirm-overlay")
+
+	if !strings.Contains(p.text("#table-timesheets tbody"), "1.37") {
+		t.Error("cancelling the dialog deleted the entry anyway")
+	}
+
+	// And confirming deletes it, or the dialog is a wall rather than a question.
+	p.run("press delete again", p.click(`#table-timesheets tbody button.danger`),
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery))
+	p.run("confirm", p.click(`.confirm-actions button.danger`))
+	p.waitGone(".confirm-overlay")
+
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if !strings.Contains(p.text("#table-timesheets tbody"), "1.37") {
+			return
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	t.Error("confirming the dialog did not delete the entry")
+}
+
+// Escape is the ambiguous keypress, and a dialog with a destructive option has
+// to read it as "no".
+func TestEscapeCancelsTheConfirmation(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("book time", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
+		chromedp.SendKeys(`#form-timesheet input[name="durationHours"]`, "2.5", chromedp.ByQuery),
+		p.click(`#form-timesheet button[type="submit"]`))
+
+	p.waitForText("#table-timesheets tbody", "2.5")
+
+	p.run("press delete", p.click(`#table-timesheets tbody button.danger`),
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery))
+
+	p.run("press escape", chromedp.KeyEvent("\u001b"))
+	p.waitGone(".confirm-overlay")
+
+	if !strings.Contains(p.text("#table-timesheets tbody"), "2.5") {
+		t.Error("escape deleted the entry")
 	}
 }

@@ -224,6 +224,26 @@ button.link {
 
 button.link.danger { color: var(--danger); }
 
+/* A solid button for the destructive answer in a dialog. .link.danger above is
+ * for the small text buttons in table rows; this one is the one being pressed
+ * on purpose. */
+button.danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+/* --- asking before something is destroyed ---
+ *
+ * Above the sign-in screen (30) so a question is never painted behind it, and
+ * below the notices (40) so a failure raised while answering stays readable. */
+.confirm-overlay { z-index: 35; }
+
+.confirm-card { max-width: 460px; }
+
+/* The destructive answer sits on the right, away from where the pointer lands
+ * when the dialog opens. */
+.confirm-actions { justify-content: flex-end; }
+
 /* Wide tables scroll inside their own container so the page never does. */
 .table-wrap { overflow-x: auto; }
 

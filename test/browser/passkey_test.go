@@ -134,7 +134,12 @@ func TestRemovingAPasskey(t *testing.T) {
 
 	p.waitForText("#table-passkeys tbody", "Doomed device")
 
-	p.run("remove it", p.click(`#table-passkeys tbody button.danger`))
+	// Removing asks first now, like every other deletion here: a passkey is a way
+	// into the account, and one click was all it took.
+	p.run("remove it", p.click(`#table-passkeys tbody button.danger`),
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery))
+
+	p.run("confirm", p.click(`.confirm-actions button.danger`))
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {

@@ -483,6 +483,10 @@ const TRANSLATIONS = {
     'action.save': 'Speichern',
     'action.submit': 'einreichen',
     'action.dismiss': 'Schließen',
+    'action.cancel': 'Abbrechen',
+    'confirm.deleteTitle': 'Endgültig löschen?',
+    'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
+    'sync.confirmTitle': 'Abgleich ausführen?',
     'admin.activeConnection': 'Aktuell verbunden über',
     'admin.banner': 'Banner-Text (leer = ausgeblendet)',
     'admin.bindPassword': 'Bind-Passwort',
@@ -1007,7 +1011,9 @@ async function loadRoles() {
         actions.append(el('button', {
           class: 'link danger',
           text: t('action.delete', 'delete'),
-          onclick: () => remove(`/roles/${role.id}`, t('msg.roleDeleted', 'Role deleted'), refreshAll),
+          onclick: () => removeAfterConfirm(
+            `${t('field.role', 'Role')} "${role.name}"`,
+            `/roles/${role.id}`, t('msg.roleDeleted', 'Role deleted'), refreshAll),
         }));
       }
     }
@@ -1100,7 +1106,9 @@ async function loadProjects() {
       actions.append(el('button', {
         class: 'link danger',
         text: t('action.delete', 'delete'),
-        onclick: () => remove(`/projects/${p.id}`, t('msg.projectDeleted', 'Project deleted'), refreshAll),
+        onclick: () => removeAfterConfirm(
+          `${t('field.project', 'Project')} "${p.name}"`,
+          `/projects/${p.id}`, t('msg.projectDeleted', 'Project deleted'), refreshAll),
       }));
     }
 
@@ -1185,7 +1193,9 @@ async function loadTimesheets() {
       actions.append(el('button', {
         class: 'link danger',
         text: t('action.delete', 'delete'),
-        onclick: () => remove(`/timesheets/${entry.id}`,
+        onclick: () => removeAfterConfirm(
+          `${entry.date}, ${fmtHours(entry.durationHours)} h`,
+          `/timesheets/${entry.id}`,
           t('msg.entryDeleted', 'Entry deleted'), reloadTimeViews),
       }));
     }
@@ -1406,7 +1416,9 @@ async function loadTokens() {
     el('td', { class: 'actions' }, el('button', {
       class: 'link danger',
       text: t('token.revoke', 'revoke'),
-      onclick: () => remove(`/me/tokens/${token.id}`, t('token.revoked', 'Token revoked'), loadTokens),
+      onclick: () => removeAfterConfirm(
+        `${t('token.name', 'Label')} "${token.name}"`,
+        `/me/tokens/${token.id}`, t('token.revoked', 'Token revoked'), loadTokens),
     })),
   ));
 
@@ -1716,7 +1728,13 @@ function wireDirectorySync() {
           .replace('{n}', String(preview.candidates.length))
           .replace('{h}', String(hours));
 
-        if (!window.confirm(question)) return;
+        const proceed = await confirmDialog({
+          title: t('sync.confirmTitle', 'Run the synchronisation?'),
+          text: question,
+          confirmLabel: t('sync.run', 'Run synchronisation'),
+        });
+
+        if (!proceed) return;
       }
 
       show(await api('/settings/ldap/sync', { method: 'POST' }));
@@ -1778,6 +1796,99 @@ const remove = (path, msg, after) => mutate(
   () => api(path, { method: 'DELETE' }), msg, after);
 
 /**
+ * Asks a yes-or-no question, and resolves to the answer.
+ *
+ * Replaces window.confirm, which the browser draws itself: an unstyled box
+ * naming the origin, unreadable in a dark theme, and impossible to translate
+ * beyond the message inside it. It also blocks the whole page, which is why the
+ * old maintenance-mode call had to put the checkbox back by hand afterwards.
+ *
+ * The markup is built rather than written into index.html, because a question
+ * differs only in its words - and reusing .overlay and .overlay-card means this
+ * needs no new styling at all.
+ */
+function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
+  return new Promise((resolve) => {
+    // What had focus before, so it can be given back: a dialog that leaves
+    // focus on nothing strands anybody using a keyboard.
+    const previous = document.activeElement;
+
+    const card = el('div', {
+      class: 'overlay-card confirm-card',
+      role: 'dialog',
+      'aria-modal': 'true',
+    });
+
+    card.append(el('h2', { text: title }));
+    card.append(el('p', { class: 'muted', text }));
+
+    // The server's own words, when there are any - the count of what would be
+    // destroyed usually lives there rather than in the question.
+    if (detail) card.append(el('p', { class: 'muted minus', text: detail }));
+
+    const overlay = el('div', { class: 'overlay confirm-overlay' }, card);
+
+    const close = (answer) => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+
+      if (previous instanceof HTMLElement) previous.focus();
+
+      resolve(answer);
+    };
+
+    // Escape cancels, which is what a dialog with a destructive option should
+    // do with an ambiguous keypress.
+    const onKey = (event) => {
+      if (event.key === 'Escape') close(false);
+    };
+
+    const cancel = el('button', {
+      class: 'secondary',
+      type: 'button',
+      text: t('action.cancel', 'Cancel'),
+      onclick: () => close(false),
+    });
+
+    const proceed = el('button', {
+      class: danger ? 'danger' : '',
+      type: 'button',
+      text: confirmLabel,
+      onclick: () => close(true),
+    });
+
+    card.append(el('div', { class: 'row confirm-actions' }, cancel, proceed));
+
+    document.addEventListener('keydown', onKey);
+    document.body.append(overlay);
+
+    // Cancel takes the focus, not the destructive button: a stray Enter should
+    // not delete anything.
+    cancel.focus();
+  });
+}
+
+/**
+ * The question asked before something is deleted for good.
+ *
+ * One wording for all of them, with the thing being deleted named, so the
+ * question reads the same wherever it comes from - and so that five delete
+ * buttons which asked nothing at all now ask the same thing.
+ */
+function confirmDelete(what) {
+  return confirmDialog({
+    title: t('confirm.deleteTitle', 'Delete for good?'),
+    text: `${what} ${t('confirm.deleteText', 'will be deleted. This cannot be undone.')}`,
+    confirmLabel: t('action.delete', 'delete'),
+  });
+}
+
+/** remove() with the question in front of it. */
+const removeAfterConfirm = async (what, path, msg, after) => {
+  if (await confirmDelete(what)) await remove(path, msg, after);
+};
+
+/**
  * Deletes a user, asking first when it would destroy recorded time.
  *
  * The server refuses that deletion rather than performing it, and its refusal
@@ -1806,9 +1917,17 @@ async function deleteStaffMember(user) {
       return;
     }
 
-    // The refusal explains what is attached, so it becomes the question.
-    const question = t('user.deleteConfirm', 'Delete anyway? The recorded time cannot be recovered.');
-    if (!window.confirm(`${err.message}\n\n${question}`)) return;
+    // The refusal explains what is attached, so it becomes the question - the
+    // server's own sentence as the detail, because it carries the count, and
+    // "42 entries" is a different decision from "some data may be lost".
+    const proceed = await confirmDialog({
+      title: t('confirm.deleteTitle', 'Delete for good?'),
+      text: t('user.deleteConfirm', 'Delete anyway? The recorded time cannot be recovered.'),
+      detail: err.message,
+      confirmLabel: t('action.delete', 'delete'),
+    });
+
+    if (!proceed) return;
   }
 
   mutate(
@@ -2718,9 +2837,14 @@ function wireRestart() {
   if (!button) return;
 
   button.addEventListener('click', async () => {
-    const question = t('restart.confirm',
-      'Restart the application? Anyone working in it will have to reload the page.');
-    if (!window.confirm(question)) return;
+    const proceed = await confirmDialog({
+      title: t('restart.title', 'Restart'),
+      text: t('restart.confirm',
+        'Restart the application? Anyone working in it will have to reload the page.'),
+      confirmLabel: t('restart.now', 'Restart now'),
+    });
+
+    if (!proceed) return;
 
     const overlay = $('#restart-overlay');
     const status = $('#restart-status');
@@ -3143,7 +3267,9 @@ async function loadPasskeys() {
     el('td', { class: 'actions' }, el('button', {
       class: 'link danger',
       text: t('action.delete', 'delete'),
-      onclick: () => remove(`/me/passkeys/${passkey.id}`,
+      onclick: () => removeAfterConfirm(
+        `${t('passkey.name', 'Name')} "${passkey.name}"`,
+        `/me/passkeys/${passkey.id}`,
         t('passkey.removed', 'Passkey removed'), loadPasskeys),
     })),
   ));
@@ -3538,7 +3664,9 @@ function wireMaintenance() {
   const form = $('#form-maintenance');
   if (!form) return;
 
-  form.addEventListener('submit', (event) => {
+  // async, because the question is now a dialog that resolves rather than a
+  // browser box that blocks the page.
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     const enabled = form.elements.enabled.checked;
@@ -3547,9 +3675,16 @@ function wireMaintenance() {
     // confirmation: that is the direction that ends an outage, and a dialog in
     // front of it is a dialog between somebody and fixing their installation.
     if (enabled) {
-      const question = t('maint.confirm',
-        'Turn this installation out of service? Everyone except this account will be turned away.');
-      if (!window.confirm(question)) {
+      const proceed = await confirmDialog({
+        title: t('maint.title', 'Maintenance mode'),
+        text: t('maint.confirm',
+          'Turn this installation out of service? Everyone except this account will be turned away.'),
+        confirmLabel: t('maint.enabled', 'Out of service'),
+      });
+
+      if (!proceed) {
+        // Put back, because the checkbox has already been ticked by the click
+        // that opened this question.
         form.elements.enabled.checked = false;
 
         return;
