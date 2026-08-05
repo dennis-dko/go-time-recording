@@ -407,6 +407,16 @@ const TRANSLATIONS = {
     'tour.back': 'Zurück',
     'tour.end': 'Tour überspringen',
     'tour.finish': 'Fertig',
+    'tour.timer.title': 'Die Stoppuhr',
+    'tour.timer.text': 'Beim Anfangen starten, beim Aufhören stoppen – die gemessene Zeit wird gebucht. Sie läuft weiter, wenn du den Browser schließt, denn sie läuft auf dem Server und nicht in diesem Tab.',
+    'tour.approve.title': 'Einreichen und genehmigen',
+    'tour.approve.text': 'Ein Eintrag geht offen, eingereicht, genehmigt. Du kannst genehmigen, was andere einreichen, oder es zurückgeben – ein abgelehnter Eintrag lässt sich wieder öffnen und korrigieren, statt neu getippt werden zu müssen. Genehmigte Einträge sind abgeschlossene Belege und nicht mehr änderbar.',
+    'tour.stats.title': 'Deine eigenen Zahlen',
+    'tour.stats.text': 'Stunden pro Tag, pro Projekt und nach Status, über einen Zeitraum deiner Wahl. Nur deine eigenen – für die eigene Woche braucht niemand ein Berichtsrecht.',
+    'tour.report.title': 'Projektberichte',
+    'tour.report.text': 'Was ein Projekt zusammen ergibt, pro Person. Dieser Bereich braucht ein Berichtsrecht, denn es sind fremde Stunden und nicht die eigenen.',
+    'tour.tokens.title': 'Token und zweiter Faktor',
+    'tour.tokens.text': 'Mit einem persönlichen Token kann ein Skript in deinem Namen buchen – mit genau den Rechten, die deine Rolle im Moment der Nutzung hat. Die Zwei-Faktor-Anmeldung liegt ebenfalls hier, mit einem Code zum Scannen.',
     'tour.nav.title': 'Alles liegt hier oben',
     'tour.nav.text': 'Diese Reiter sind die ganze Anwendung. Sichtbar ist nur, was deine Rolle erlaubt — bei manchen ist diese Leiste also kürzer als bei anderen.',
     'tour.book.title': 'Zeit buchen',
@@ -414,7 +424,7 @@ const TRANSLATIONS = {
     'tour.entries.title': 'Deine Einträge',
     'tour.entries.text': 'Alles Gebuchte, filterbar nach Person, Projekt und Status. Ein Eintrag bleibt änderbar, bis du ihn zur Genehmigung einreichst.',
     'tour.calendar.title': 'Der Monat auf einen Blick',
-    'tour.calendar.text': 'Welche Tage Stunden haben und wie viele. Ein Klick auf einen Tag zeigt, was dahintersteckt.',
+    'tour.calendar.text': 'Welche Tage Stunden haben und wie viele. Ein Klick auf einen Tag zeigt, was dahintersteckt – und ein Klick auf einen dieser Einträge öffnet ihn zum Korrigieren.',
     'tour.overtime.title': 'Dein Überstundensaldo',
     'tour.overtime.text': 'Gebuchte Stunden gegen dein Tagesziel. Nur Tage mit Buchungen zählen, damit Wochenenden und freie Tage sich nicht stillschweigend als Minus aufsummieren.',
     'tour.projects.title': 'Projekte, auch eigene',
@@ -650,6 +660,20 @@ const TRANSLATIONS = {
     'err.unknownPermissions': 'Unbekannte Rechte: {0}',
     'err.wrongCurrentPassword': 'Das aktuelle Kennwort ist nicht korrekt.',
     'field.action': 'Aktion',
+    'welcome.back': 'Willkommen zurück',
+    'welcome.backName': 'Willkommen zurück, {0}',
+    'welcome.hello': 'Willkommen, {0}',
+    'welcome.helloPlain': 'Willkommen',
+    'welcome.point.account': 'Tagesziel, Zeitzone und einen zweiten Faktor stellst du unter „Mein Konto“ ein.',
+    'welcome.point.approve': 'Prüfe und genehmige, was deine Leute einreichen.',
+    'welcome.point.book': 'Stunden von Hand buchen – oder eine Stoppuhr laufen lassen, die es für dich tut.',
+    'welcome.point.see': 'Den Monat im Kalender sehen und die eigenen Zahlen als Diagramme.',
+    'welcome.skip': 'Später',
+    'welcome.text': 'Hier wird deine Arbeitszeit erfasst. Ein kurzer Rundgang dauert etwa eine Minute; du kannst ihn jederzeit unter „Mein Konto“ erneut starten.',
+    'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Auf diesem Bildschirm stoppen, um die Zeit zu buchen.',
+    'welcome.todayHours': 'Heute bislang {0} h gebucht.',
+    'welcome.todayNothing': 'Heute noch nichts gebucht.',
+    'welcome.tour': 'Rundgang starten',
     'field.autoCloseAfterDays': 'Automatisch abschließen nach (Tagen)',
     'field.baseDn': 'Basis-DN',
     'field.code': 'Code',
@@ -2283,6 +2307,10 @@ async function submitLogin(e) {
   try {
     await refreshAll();
     switchView(firstVisibleView());
+
+    // Here as well as on a page load, or the greeting would only ever appear to
+    // somebody who reloaded after signing in - which is nobody's first sign-in.
+    await greetAfterSignIn();
   } catch (err) {
     // Signed in, but something behind it would not load. Staying on the
     // application with an explanation beats being thrown back to a sign-in
@@ -2407,6 +2435,16 @@ const TOUR_STEPS = [
       + 'so this bar is shorter for some people than for others.'),
   },
   {
+    target: '#timer-card',
+    view: 'timesheets',
+    permission: 'timesheets:write:own',
+    title: () => t('tour.timer.title', 'The stopwatch'),
+    text: () => t('tour.timer.text',
+      'Start it when you start, stop it when you are done, and it books the time it '
+      + 'measured. It keeps running if you close the browser, because it runs on the '
+      + 'server rather than in this tab.'),
+  },
+  {
     target: '#form-timesheet',
     view: 'timesheets',
     permission: 'timesheets:write:own,timesheets:write:all',
@@ -2425,12 +2463,33 @@ const TOUR_STEPS = [
       + 'editable until you submit it for approval.'),
   },
   {
+    target: '#table-timesheets',
+    view: 'timesheets',
+    permission: 'timesheets:approve',
+    title: () => t('tour.approve.title', 'Submitting and approving'),
+    text: () => t('tour.approve.text',
+      'An entry goes open, submitted, approved. You can approve what other people '
+      + 'submit, or send it back — a rejected entry can be opened again and corrected '
+      + 'rather than having to be typed afresh. Approved entries are closed records and '
+      + 'can no longer be changed.'),
+  },
+  {
     target: '#calendar-days',
     view: 'calendar',
     permission: 'timesheets:read:own,timesheets:read:all',
     title: () => t('tour.calendar.title', 'The month at a glance'),
     text: () => t('tour.calendar.text',
-      'Which days have hours on them, and how many. Click a day to see what is behind it.'),
+      'Which days have hours on them, and how many. Click a day to see what is behind '
+      + 'it, and click one of those entries to correct it.'),
+  },
+  {
+    target: '#chart-days',
+    view: 'overtime',
+    permission: 'timesheets:read:own',
+    title: () => t('tour.stats.title', 'Your own figures'),
+    text: () => t('tour.stats.text',
+      'Hours per day, per project and by status, over any period you choose. Yours '
+      + 'alone — nobody needs a reporting permission to see their own week.'),
   },
   {
     target: '#form-overtime',
@@ -2449,6 +2508,24 @@ const TOUR_STEPS = [
     text: () => t('tour.projects.text',
       'Shared projects are set up centrally. You can also create private ones, visible only '
       + 'to you, to split up a day when no shared project fits.'),
+  },
+  {
+    target: '#form-report',
+    view: 'report',
+    permission: 'reports:read',
+    title: () => t('tour.report.title', 'Project reports'),
+    text: () => t('tour.report.text',
+      'What a project totals up to, per person. This one needs a reporting permission, '
+      + 'because it is other people\'s hours rather than your own.'),
+  },
+  {
+    target: '#token-card',
+    view: 'settings',
+    title: () => t('tour.tokens.title', 'Tokens and a second factor'),
+    text: () => t('tour.tokens.text',
+      'A personal token lets a script book time as you, and carries exactly the rights '
+      + 'your role has at the time it is used. Two-factor authentication is here as '
+      + 'well, with a code to scan.'),
   },
   {
     target: '#form-working-times',
@@ -2592,7 +2669,12 @@ async function endTour() {
   $('#tour-spotlight').hidden = true;
   $('#tour-bubble').hidden = true;
 
-  if (me.user?.tourSeen) return;
+  await recordTourSeen();
+}
+
+/** Notes that the introduction has been offered, so it is offered once. */
+async function recordTourSeen() {
+  if (!me.user || me.user.tourSeen) return;
 
   try {
     await api('/me/tour', { method: 'PUT', body: JSON.stringify({ seen: true }) });
@@ -2636,18 +2718,183 @@ function wireTour() {
 }
 
 /**
- * Offers the tour on a first sign-in.
+ * The greeting, whichever kind applies to this person.
+ *
+ * One place rather than two calls at each site: a first sign-in is greeted and
+ * offered the walk through, anybody who has been here before gets the short one,
+ * and never both.
+ */
+async function greetAfterSignIn() {
+  await maybeWelcome();
+  await maybeWelcomeBack();
+}
+
+/**
+ * Whether this person has already been greeted during this visit, marking them as
+ * greeted if not.
+ *
+ * Per tab and gone when the tab is: exactly the lifetime of "this visit". Shared by
+ * both greetings so they cannot both land - somebody who declined the walk through
+ * and then reloaded was being welcomed back to a screen they had just arrived at.
+ *
+ * Private browsing can refuse storage outright. Then a greeting shows again on the
+ * next load, which is a small annoyance and not worth failing over.
+ */
+function greetedThisVisit() {
+  if (!me.user) return true;
+
+  const key = `gtr_greeted_${me.user.id}`;
+
+  try {
+    if (sessionStorage.getItem(key)) return true;
+
+    sessionStorage.setItem(key, '1');
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Greets somebody on their first sign-in, and offers the walk through.
  *
  * Never while the setup wizard is up: being walked through the application by
  * two things at once is worse than either alone, and the wizard is the one
  * that has to happen first.
+ *
+ * Not for the built-in administrator either. That account arrives at the setup
+ * wizard, which is its own introduction and covers the screens it actually uses;
+ * a tour of booking time and reading an overtime balance would be a tour of
+ * somebody else's job. The card under My account still starts it on request.
  */
-async function maybeStartTour() {
+async function maybeWelcome() {
   if (!me.user || me.user.tourSeen) return;
   if (!$('#setup-wizard').hidden) return;
   if (me.user.mustChangePassword) return;
+  if (isSystemAdmin()) return;
+  if (greetedThisVisit()) return;
 
-  await startTour();
+  showWelcome();
+}
+
+/** Fills in the greeting and puts it up. */
+function showWelcome() {
+  const overlay = $('#welcome-overlay');
+  if (!overlay) return;
+
+  $('#welcome-title').textContent = me.user?.name
+    ? t('welcome.hello', 'Welcome, {0}').replace('{0}', me.user.name)
+    : t('welcome.helloPlain', 'Welcome');
+
+  $('#welcome-text').textContent = t('welcome.text',
+    'This is where your working time is recorded. A short walk through it takes '
+    + 'about a minute, and you can start it again at any time under My account.');
+
+  // What the application is for, in the order somebody meets it. Only the points
+  // this person can actually act on: a list that promises approvals to somebody
+  // who cannot approve is worse than a shorter list.
+  const points = [
+    can('timesheets:write:own', 'timesheets:write:all')
+      && t('welcome.point.book', 'Book hours by hand, or run a stopwatch and let it book them.'),
+    can('timesheets:read:own', 'timesheets:read:all')
+      && t('welcome.point.see', 'See your month in a calendar, and your own figures as charts.'),
+    can('timesheets:approve')
+      && t('welcome.point.approve', 'Review and approve what your people submit.'),
+    t('welcome.point.account',
+      'Set your daily target, your timezone and a second factor under My account.'),
+  ].filter(Boolean);
+
+  $('#welcome-points').replaceChildren(...points.map((text) => el('li', { text })));
+
+  overlay.hidden = false;
+  $('#welcome-tour').focus();
+}
+
+/** Takes the greeting down, and records that it has been seen. */
+async function dismissWelcome({ thenTour }) {
+  $('#welcome-overlay').hidden = true;
+
+  if (thenTour) {
+    await startTour();
+
+    return;
+  }
+
+  // Declining counts as seen, the same way skipping the tour does: somebody who
+  // said "not now" made a decision, and asking again next time overrides it.
+  await recordTourSeen();
+}
+
+function wireWelcome() {
+  $('#welcome-tour').addEventListener('click', () => dismissWelcome({ thenTour: true }));
+  $('#welcome-skip').addEventListener('click', () => dismissWelcome({ thenTour: false }));
+
+  // Escape is what people press to get out of a dialog.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#welcome-overlay').hidden) {
+      dismissWelcome({ thenTour: false });
+    }
+  });
+
+  $('#welcome-back-close').addEventListener('click', () => {
+    $('#welcome-back').hidden = true;
+  });
+}
+
+/**
+ * Greets somebody who has been here before, once per browser session.
+ *
+ * Per visit rather than per page load: a reload is not an arrival, and a greeting
+ * that reappears every time is something to close rather than read. Says what they
+ * would otherwise have to go and look up - what today already has on it, and
+ * whether they left a stopwatch running.
+ */
+async function maybeWelcomeBack() {
+  const card = $('#welcome-back');
+  if (!card || !me.user || !me.user.tourSeen) return;
+  if (!$('#setup-wizard').hidden || me.user.mustChangePassword) return;
+  if (!can('timesheets:read:own', 'timesheets:read:all')) return;
+  if (greetedThisVisit()) return;
+
+  $('#welcome-back-title').textContent = me.user.name
+    ? t('welcome.backName', 'Welcome back, {0}').replace('{0}', me.user.name)
+    : t('welcome.back', 'Welcome back');
+
+  $('#welcome-back-text').textContent = await welcomeBackDetail();
+  card.hidden = false;
+}
+
+/** What today looks like, in one sentence. */
+async function welcomeBackDetail() {
+  const today = todayISO();
+
+  try {
+    const running = await api('/me/timer');
+
+    if (running?.running) {
+      return t('welcome.timerRunning',
+        'A stopwatch is still running. Stop it on this screen to book the time.');
+    }
+  } catch {
+    // Not worth a word: the greeting is a courtesy, and the screen below it
+    // reports anything that is actually wrong.
+  }
+
+  try {
+    const entries = (await api(`/timesheets?from=${today}&to=${today}`))?.items ?? [];
+    const mine = entries.filter((entry) => entry.userId === me.user.id);
+    const hours = mine.reduce((sum, entry) => sum + entry.durationHours, 0);
+
+    if (hours > 0) {
+      return t('welcome.todayHours', '{0} h booked today so far.')
+        .replace('{0}', hours.toFixed(2));
+    }
+
+    return t('welcome.todayNothing', 'Nothing booked today yet.');
+  } catch {
+    return '';
+  }
 }
 
 // ------------------------------------------------------------ setup wizard
@@ -3880,6 +4127,7 @@ function wirePasskeys() {
     try {
       await refreshAll();
       switchView(firstVisibleView());
+      await greetAfterSignIn();
     } catch (err) {
       toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
     }
@@ -4776,6 +5024,7 @@ async function init() {
     wirePasswordReveal();
     wireSetup();
     wireTour();
+    wireWelcome();
     wirePasskeys();
     wireLogViewer();
     wireMaintenance();
@@ -4797,7 +5046,7 @@ async function init() {
 
     // After the first view is up, so the tour highlights something that is
     // actually on screen.
-    await maybeStartTour();
+    await greetAfterSignIn();
   } catch {
     // No usable session: the sign-in screen is the whole interface until
     // there is one.

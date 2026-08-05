@@ -76,6 +76,7 @@ func TestRegisteringAPasskeyAndSigningInWithIt(t *testing.T) {
 
 	p.signIn("erika@example.com", "erika-password-1")
 	p.waitGone("#login-screen")
+	p.settleWelcome()
 
 	p.run("open My account", chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#passkey-card", chromedp.ByID))
@@ -125,6 +126,7 @@ func TestRemovingAPasskey(t *testing.T) {
 
 	p.signIn("frank@example.com", "frank-password-1")
 	p.waitGone("#login-screen")
+	p.settleWelcome()
 
 	p.run("register", chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#passkey-card", chromedp.ByID),

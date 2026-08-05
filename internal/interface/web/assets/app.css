@@ -266,6 +266,42 @@ button.danger {
 
 .confirm-card { max-width: 460px; }
 
+/* The greeting on a first sign-in.
+ *
+ * No z-index of its own: it keeps the .overlay layer (25), which puts the sign-in
+ * screen (30) above it. That is the right way round - if the session dies while the
+ * greeting is up, being signed out is the thing that matters, and a courtesy must
+ * not cover the way back in. It cannot collide with the setup wizard on the same
+ * layer because it is never shown while that is up.
+ *
+ * Wider than a confirmation, because it carries a short list rather than one
+ * question. */
+.welcome-card { max-width: 520px; }
+
+.welcome-points {
+  color: var(--muted);
+  display: grid;
+  font-size: 14px;
+  gap: 8px;
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+}
+
+/* A dash rather than a bullet: these are things you can do, not items in a set. */
+.welcome-points li { padding-left: 18px; position: relative; }
+
+.welcome-points li::before {
+  color: var(--accent);
+  content: "–";
+  left: 0;
+  position: absolute;
+}
+
+/* Welcome back, at the top of the screen somebody lands on. Quieter than a card
+   of its own work: it is a greeting, not a heading. */
+.welcome-back h2 { font-size: 16px; }
+
 /* The destructive answer sits on the right, away from where the pointer lands
  * when the dialog opens. */
 .confirm-actions { justify-content: flex-end; }

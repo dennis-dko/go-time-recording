@@ -77,13 +77,30 @@ administrator with the initial password above. An installation that looked
 configured would then be reachable with a password anyone can look up — and
 nobody would expect it, having set a real one minutes earlier.
 
-**Guided tour.** On a first sign-in every user — not just the administrator —
-is walked through the areas of the application: booking time, the calendar, the
-overtime balance, projects, their account. Steps are dropped for anything their
-role cannot reach, so nobody is shown a tab they do not have, and the highlight
-points at the real control rather than a picture of one. It runs once and can
-be restarted any time from *My account*; skipping counts as seen. "Seen" is
-stored on the user, so a second device does not mean a second introduction.
+**Welcome, and the guided tour.** A first sign-in is greeted by name, told in a
+sentence what the application is for, and offered a walk through it. The list of
+what you can do here is built from your own permissions, so nobody is promised
+approvals they cannot give.
+
+The walk itself covers booking time by hand and by stopwatch, the entry list and
+the submit-and-approve path, the calendar and correcting an entry from it, your
+own figures as charts, the overtime balance, projects including private ones,
+reports, tokens and the second factor, and appearance and language. Steps are
+dropped for anything your role cannot reach, so nobody is shown a tab they do not
+have, and the highlight points at the real control rather than a picture of one.
+
+It is offered once. Declining counts, the same way skipping does, and it can be
+restarted any time from *My account*. "Seen" is stored on the user, so a second
+device does not mean a second introduction.
+
+The **built-in administrator is not greeted**: that account arrives at the setup
+wizard, which is its own introduction, and a walk through booking time and reading
+an overtime balance would be a walk through somebody else's job. The card under
+*My account* still starts it on request.
+
+On later visits there is a short **welcome back** instead, at the top of the first
+screen: what today already has booked on it, or a warning that you left a stopwatch
+running. Once per visit rather than per page load — a reload is not an arrival.
 
 **Live log.** The built-in administrator can read what the process has written,
 under *Settings*: filter by level, search the text, and set how often it
@@ -264,6 +281,13 @@ Implemented, and verified against a running instance:
   sign — possession of the device plus verification of the person, which is
   already two factors. Google, Microsoft and Apple treat passkeys the same way:
   they *satisfy* multi-factor rather than needing another one stacked on top.
+
+  Concurrency note, because it bit: every write to an account used to go through
+  an update of the whole row, so two settings changed at once meant the second
+  reverted the first — recording the guided tour as seen erased a two-factor secret
+  issued a moment earlier. The settings a person changes in passing now write their
+  own column, and the two two-factor columns are written together as the one fact
+  they are.
 
   The consequence to be aware of: turning two-factor on does **not** force a
   second factor on somebody who has a passkey, because their passkey is a way in

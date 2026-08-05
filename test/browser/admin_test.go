@@ -127,6 +127,7 @@ func TestAnEmployeeIsNotOfferedTheLog(t *testing.T) {
 
 	p.signIn("gerd@example.com", "gerd-password-1")
 	p.waitGone("#login-screen")
+	p.settleWelcome()
 
 	if p.visible("#tab-admin") {
 		t.Error("an employee is being offered the Settings tab, which holds the log")
@@ -243,6 +244,7 @@ func TestAPasskeySignsInWithoutATwoFactorCodeEvenWhenTOTPIsOn(t *testing.T) {
 
 	p.signIn("hanna@example.com", "hanna-password-1")
 	p.waitGone("#login-screen")
+	p.settleWelcome()
 
 	secret := p.enableTOTP(t)
 
@@ -473,6 +475,7 @@ func TestAFirstSignInAdoptsTheBrowsersZoneAndLanguage(t *testing.T) {
 
 	p.signIn("ingrid@example.com", "ingrid-password-1")
 	p.waitGone("#login-screen")
+	p.settleWelcome()
 
 	// Read back from the server rather than from the form: the point is that it
 	// was written to the database, not that a select was filled in.
@@ -1043,5 +1046,178 @@ func TestTheTwoFactorQRCodeIsShown(t *testing.T) {
 
 	if secret := p.text("#totp-secret"); secret != "" {
 		t.Errorf("the secret is still on screen after leaving: %q", secret)
+	}
+}
+
+// A first sign-in is greeted, and the greeting offers the walk through.
+//
+// Somebody arriving in an application nobody has introduced is the moment they
+// decide it is complicated. The greeting is also the only place the tour is offered
+// automatically, so if it fails to appear the walk through is effectively gone.
+func TestAFirstSignInIsGreetedAndOfferedTheTour(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// An ordinary employee, because the built-in administrator is deliberately not
+	// greeted: it arrives at the setup wizard, and a walk through booking time
+	// would be a walk through somebody else's job.
+	p.run("create an employee",
+		chromedp.Click(`.tab[data-view="users"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#form-user", chromedp.ByID),
+		chromedp.SendKeys(`#form-user input[name="name"]`, "Rieke", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="email"]`, "rieke@example.com", chromedp.ByQuery),
+		chromedp.SetValue(`#form-user select[name="role"]`, "employee", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="password"]`, "rieke-password-1", chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`),
+	)
+
+	time.Sleep(500 * time.Millisecond)
+
+	// The administrator was not greeted, which is half the requirement.
+	if p.visible("#welcome-overlay") {
+		t.Error("the built-in administrator was greeted with the tour")
+	}
+
+	p.run("sign out", p.click("#logout"), chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("rieke@example.com", "rieke-password-1")
+	p.waitGone("#login-screen")
+
+	p.run("wait for the greeting",
+		chromedp.WaitVisible("#welcome-overlay", chromedp.ByID))
+
+	if title := p.text("#welcome-title"); !strings.Contains(title, "Rieke") {
+		t.Errorf("the greeting does not name the person: %q", title)
+	}
+
+	// The points offered are the ones this person can act on. An employee cannot
+	// approve, so that line has no business being there.
+	if points := p.text("#welcome-points"); strings.Contains(points, "genehmige") {
+		t.Errorf("an employee is promised approvals: %q", points)
+	}
+
+	p.run("take the tour", p.click("#welcome-tour"),
+		chromedp.WaitVisible("#tour-bubble", chromedp.ByQuery))
+
+	if p.visible("#welcome-overlay") {
+		t.Error("the greeting is still up behind the tour")
+	}
+
+	// The walk has to be a walk: the first step counts itself, and Next moves on.
+	first := p.text("#tour-title")
+
+	if first == "" {
+		t.Error("the first step has no title")
+	}
+
+	if count := p.text("#tour-count"); count == "" {
+		t.Error("the tour does not say where in it you are")
+	}
+
+	p.run("next step", p.click("#tour-next"))
+	time.Sleep(400 * time.Millisecond)
+
+	if second := p.text("#tour-title"); second == first {
+		t.Errorf("Next did not move on; still on %q", first)
+	}
+
+	p.run("leave the tour", p.click("#tour-end"))
+	time.Sleep(400 * time.Millisecond)
+
+	if p.visible("#tour-bubble") {
+		t.Error("skipping did not end the tour")
+	}
+
+	// Seen once: a reload must not greet them again, or "not now" would mean
+	// nothing.
+	p.run("reload", chromedp.Reload())
+	p.waitGone("#login-screen")
+
+	time.Sleep(800 * time.Millisecond)
+
+	if p.visible("#welcome-overlay") {
+		t.Error("the greeting came back after being answered")
+	}
+}
+
+// Somebody who has been here before is greeted differently: once per visit, with
+// what they would otherwise have to go and look up.
+func TestAReturningSignInIsGreetedOncePerVisit(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("create an employee",
+		chromedp.Click(`.tab[data-view="users"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#form-user", chromedp.ByID),
+		chromedp.SendKeys(`#form-user input[name="name"]`, "Sven", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="email"]`, "sven@example.com", chromedp.ByQuery),
+		chromedp.SetValue(`#form-user select[name="role"]`, "employee", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="password"]`, "sven-password-1", chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`),
+	)
+
+	time.Sleep(500 * time.Millisecond)
+
+	p.run("sign out", p.click("#logout"), chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("sven@example.com", "sven-password-1")
+	p.waitGone("#login-screen")
+
+	// Answer the first-sign-in greeting, which is what makes the next one a
+	// return rather than an arrival.
+	p.run("decline the tour",
+		chromedp.WaitVisible("#welcome-overlay", chromedp.ByID),
+		p.click("#welcome-skip"),
+	)
+
+	time.Sleep(600 * time.Millisecond)
+
+	// A reload in the same tab is not an arrival, so no welcome back either.
+	p.run("reload", chromedp.Reload())
+	p.waitGone("#login-screen")
+
+	time.Sleep(800 * time.Millisecond)
+
+	if p.visible("#welcome-back") {
+		t.Error("a reload was greeted; the greeting is per visit, not per page load")
+	}
+
+	// A fresh session is. Simulated by clearing the per-tab marker, which is what
+	// opening the application in a new tab does.
+	p.run("come back later",
+		chromedp.Evaluate(`sessionStorage.clear()`, nil),
+		chromedp.Reload(),
+	)
+
+	p.waitGone("#login-screen")
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if p.visible("#welcome-back") {
+			break
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if !p.visible("#welcome-back") {
+		t.Fatalf("a returning visit was not greeted\n\napplication log:\n%s", p.app.Log())
+	}
+
+	if title := p.text("#welcome-back-title"); !strings.Contains(title, "Sven") {
+		t.Errorf("the greeting does not name the person: %q", title)
+	}
+
+	// And it says something about today rather than only hello.
+	if detail := p.text("#welcome-back-text"); detail == "" {
+		t.Error("the greeting says nothing about today")
+	}
+
+	// Closable, and it stays closed.
+	p.run("close it", p.click("#welcome-back-close"))
+	time.Sleep(200 * time.Millisecond)
+
+	if p.visible("#welcome-back") {
+		t.Error("the greeting could not be dismissed")
 	}
 }

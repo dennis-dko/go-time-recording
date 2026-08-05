@@ -178,6 +178,36 @@ func (p *page) settleWizard() {
 	}
 }
 
+// settleWelcome dismisses the first-sign-in greeting if it is up.
+//
+// It has to go, not merely be ignored: it is a modal across the whole page, so
+// everything behind it receives no clicks - the same trap the setup wizard sets,
+// and the reason three passkey tests started timing out on "sign out" the moment
+// the greeting was added. The built-in administrator is never greeted, so this
+// matters for the ordinary accounts the tests create.
+//
+// Declining rather than taking the walk: the tour has its own test, and every
+// other test wants the screen to itself.
+func (p *page) settleWelcome() {
+	p.t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if p.visible("#welcome-overlay") {
+			p.run("decline the greeting", p.click("#welcome-skip"))
+			p.waitGone("#welcome-overlay")
+
+			return
+		}
+
+		time.Sleep(150 * time.Millisecond)
+	}
+
+	// Not an error: an account that has already been greeted, or one the greeting
+	// does not apply to, is a perfectly ordinary state to be in.
+}
+
 // awaitPromise makes chromedp wait for an async evaluation to resolve instead
 // of handing back the pending promise.
 func awaitPromise(ep *runtime.EvaluateParams) *runtime.EvaluateParams {

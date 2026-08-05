@@ -22,6 +22,7 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
+	"modernc.org/sqlite"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -128,6 +129,45 @@ func hostSuffix(ds appconfig.Datasource) string {
 	return fmt.Sprintf(", host %s, user %q", where, ds.User)
 }
 
+// sqliteBusyTimeout is how long a writer waits for another writer to finish
+// before giving up.
+//
+// Five seconds is far longer than any statement this application runs and far
+// shorter than a person's patience. The alternative to waiting is the request
+// failing, so the only way to be wrong here is to be too short.
+const sqliteBusyTimeout = 5 * time.Second
+
+// makeSQLiteWait gives every SQLite connection a busy timeout.
+//
+// SQLite serialises writers. Without a timeout the second one is refused outright
+// with "database is locked (5) (SQLITE_BUSY)", which surfaces as a 500 for
+// somebody whose only mistake was saving while somebody else saved - and, worse,
+// as a failed session lookup that reads as "not signed in".
+//
+// A busy timeout is normally set in the connection string, and GoFr builds that
+// itself - "file:name.db", with nowhere to put one. The driver's connection hook
+// is the way in: it runs after every connection the pool opens, which is what
+// matters, because a pragma belongs to one connection and the pool makes more of
+// them whenever it needs to. Registered before gofr.New(), which is when the first
+// connection is opened.
+//
+// Costs nothing on the other dialects: the hook belongs to the SQLite driver and
+// is never called if nothing opens a SQLite connection.
+func makeSQLiteWait() {
+	pragma := fmt.Sprintf("PRAGMA busy_timeout = %d", sqliteBusyTimeout.Milliseconds())
+
+	sqlite.RegisterConnectionHook(func(conn sqlite.ExecQuerierContext, _ string) error {
+		if _, err := conn.ExecContext(context.Background(), pragma, nil); err != nil {
+			// Returned rather than swallowed: it fails the connection that could
+			// not be configured, which is visible, instead of leaving a pool of
+			// connections that quietly differ from each other.
+			return fmt.Errorf("setting the SQLite busy timeout: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // tuneSQLite puts a SQLite database into write-ahead logging.
 //
 // SQLite's default journal makes a reader and a writer exclude each other, and
@@ -143,10 +183,8 @@ func hostSuffix(ds appconfig.Datasource) string {
 //
 // WAL lets readers and the writer proceed at once, and it persists in the
 // database file rather than in the connection, so setting it once is enough.
-// Concurrent *writers* still serialise, and GoFr builds the connection string
-// itself - "file:name.db", with nowhere to add a busy timeout - so that narrower
-// window remains. It is the right trade for an installation small enough to be
-// on SQLite; anything busier belongs on PostgreSQL, which the installer offers.
+// Concurrent *writers* still serialise, and that is what makeSQLiteWait covers:
+// they now queue instead of one of them being refused.
 func tuneSQLite(app *gofr.App, db container.DB, dialect string) {
 	if dialect != "sqlite" || unavailable(db) {
 		return
@@ -262,6 +300,10 @@ func main() {
 			die(restoreOutput, "cannot apply the administered telemetry settings: %v", err)
 		}
 	}
+
+	// Before gofr.New(), which opens the first connection: the hook has to be in
+	// place before there is anything to configure.
+	makeSQLiteWait()
 
 	app := gofr.New()
 

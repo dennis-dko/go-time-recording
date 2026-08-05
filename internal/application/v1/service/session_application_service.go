@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -401,9 +402,10 @@ func (s *SessionService) BeginTOTPEnrolment(
 		return "", "", apperror.Internal(err)
 	}
 
-	user.TOTPSecret = secret
-
-	if _, err := s.users.Update(ctx, user); err != nil {
+	// The secret alone, with the flag left off: an enrolment that is pending, not
+	// one that is in force. Only these two columns, so a preference somebody
+	// changes while enrolling is not reverted by this.
+	if err := s.users.SetTOTP(ctx, user.ID, secret, false); err != nil {
 		return "", "", err
 	}
 
@@ -426,11 +428,8 @@ func (s *SessionService) ConfirmTOTP(ctx context.Context, userID uint, code stri
 		return apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
 	}
 
-	user.TOTPEnabled = true
-
-	_, err = s.users.Update(ctx, user)
-
-	return err
+	// The same secret, now in force.
+	return s.users.SetTOTP(ctx, user.ID, user.TOTPSecret, true)
 }
 
 // DisableTOTP turns two-factor authentication off again. The current code is
@@ -449,12 +448,9 @@ func (s *SessionService) DisableTOTP(ctx context.Context, userID uint, code stri
 		return apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
 	}
 
-	user.TOTPEnabled = false
-	user.TOTPSecret = ""
-
-	_, err = s.users.Update(ctx, user)
-
-	return err
+	// Off, and the secret gone with it: a secret left behind would sign somebody
+	// in again the moment the flag was flipped back.
+	return s.users.SetTOTP(ctx, user.ID, "", false)
 }
 
 // SetLanguage stores the user's interface language.
@@ -463,16 +459,7 @@ func (s *SessionService) SetLanguage(ctx context.Context, userID uint, language 
 		return apperror.InvalidFields("language")
 	}
 
-	user, err := s.users.GetByID(ctx, userID)
-	if err != nil {
-		return err
-	}
-
-	user.Language = language
-
-	_, err = s.users.Update(ctx, user)
-
-	return err
+	return s.users.SetPreference(ctx, userID, repository.PreferenceLanguage, language)
 }
 
 // SetTourSeen records whether this person has been shown the guided tour.
@@ -480,16 +467,11 @@ func (s *SessionService) SetLanguage(ctx context.Context, userID uint, language 
 // Settable both ways: someone who wants to see it again should be able to ask,
 // rather than being told they have already had their chance.
 func (s *SessionService) SetTourSeen(ctx context.Context, userID uint, seen bool) error {
-	user, err := s.users.GetByID(ctx, userID)
-	if err != nil {
-		return err
-	}
-
-	user.TourSeen = seen
-
-	_, err = s.users.Update(ctx, user)
-
-	return err
+	// One column, not the whole row: this is written the moment somebody signs in,
+	// while they are already doing something else. Writing the row back would take
+	// whatever that something else changed with it.
+	return s.users.SetPreference(ctx, userID, repository.PreferenceTourSeen,
+		strconv.FormatBool(seen))
 }
 
 // SetTimezone stores the user's own zone, or clears it so they follow the
@@ -505,14 +487,7 @@ func (s *SessionService) SetTimezone(ctx context.Context, userID uint, timezone 
 		return apperror.InvalidFields("timezone")
 	}
 
-	user, err := s.users.GetByID(ctx, userID)
-	if err != nil {
-		return err
-	}
-
-	user.Timezone = timezone
-
-	_, err = s.users.Update(ctx, user)
+	err := s.users.SetPreference(ctx, userID, repository.PreferenceTimezone, timezone)
 
 	return err
 }
