@@ -232,6 +232,23 @@ button.danger {
   color: #ffffff;
 }
 
+/* --- hand-drawn charts ---
+ *
+ * No chart library: the Content-Security-Policy allows no external origin, so
+ * anything from a CDN would be blocked. These are the few rules the SVG needs. */
+.chart-title { font-size: 13px; color: var(--muted); margin: 18px 0 8px; }
+
+/* Scrolls inside itself on a narrow screen rather than widening the page. */
+.chart-wrap { overflow-x: auto; }
+
+.chart-label { fill: var(--muted); font-size: 11px; }
+.chart-value { fill: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* The track keeps an empty day as a row rather than nothing at all, which is what
+ * makes a gap in the week visible. */
+.chart-track { fill: var(--bg); }
+.chart-bar { fill: var(--accent); }
+
 /* The elapsed time, big enough to read across a desk and monospaced so the
  * digits do not shuffle sideways every second. */
 .timer-elapsed {
@@ -299,6 +316,14 @@ tbody tr:last-child td { border-bottom: none; }
  * notice nobody could see was the one that mattered most: a failure during
  * start-up was painted behind the sign-in screen that was still up. */
 .toast-stack {
+  /* The stack must never swallow a click. It is fixed above everything, and on a
+   * narrow window the top bar wraps to two rows and puts the navigation tabs
+   * directly underneath it - so a notice that was still on screen made a tab
+   * unclickable. Found by a browser test whose click on a tab did nothing at all.
+   *
+   * The notices themselves take pointer events back, so the dismiss button still
+   * works. */
+  pointer-events: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -312,6 +337,16 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 .toast-note {
+  /* Transparent to the pointer, like the stack around it. On a narrow window the
+   * top bar wraps to two rows and the navigation tabs end up directly beneath the
+   * notices - so a notice still on screen made a tab unclickable, which a browser
+   * test found by clicking one and watching nothing happen.
+   *
+   * The cost is that the text cannot be selected while it is up, which is the
+   * lesser loss: a notice is on screen for seconds, and one that swallows a click
+   * is worse than one that cannot be copied. The dismiss button takes pointer
+   * events back below. */
+  pointer-events: none;
   align-items: flex-start;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -341,6 +376,8 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 .toast-close {
+  /* The one part of a notice that has to be clickable. */
+  pointer-events: auto;
   background: none;
   border: none;
   color: inherit;

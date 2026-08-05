@@ -484,6 +484,13 @@ const TRANSLATIONS = {
     'action.submit': 'einreichen',
     'action.dismiss': 'Schließen',
     'action.cancel': 'Abbrechen',
+    'stats.title': 'Meine Stunden',
+    'stats.perDay': 'Stunden pro Tag',
+    'stats.perProject': 'Stunden pro Projekt',
+    'stats.total': 'Gesamt',
+    'stats.noProject': 'kein Projekt',
+    'stats.deletedProject': 'gelöschtes Projekt',
+    'stats.empty': 'In diesem Zeitraum wurde nichts erfasst.',
     'timer.title': 'Stoppuhr',
     'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in Ihrer eigenen Zeitzone.',
     'timer.start': 'Starten',
@@ -3005,6 +3012,167 @@ function wirePasswordReveal(root = document) {
   }
 }
 
+// ------------------------------------------------------------------ charts
+
+/**
+ * Draws a bar chart, by hand.
+ *
+ * No chart library, and not for want of one: the Content-Security-Policy allows
+ * no external origin at all and the assets are embedded, so anything fetched from
+ * a CDN would simply be blocked. That leaves SVG built in the page - and
+ * createElementNS rather than createElement, because an <svg> built in the HTML
+ * namespace parses without complaint and renders nothing.
+ *
+ * Horizontal bars with the label beside each one, which is what survives a long
+ * project name and a narrow phone. A vertical chart with rotated labels reads
+ * badly at both ends.
+ */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svg(tag, attributes = {}) {
+  const node = document.createElementNS(SVG_NS, tag);
+
+  for (const [name, value] of Object.entries(attributes)) {
+    node.setAttribute(name, String(value));
+  }
+
+  return node;
+}
+
+/**
+ * Renders bars into a container.
+ *
+ * bars is [{label, value, title}]. The scale runs from zero to the largest value,
+ * because a bar chart that starts anywhere else exaggerates every difference on
+ * it - and these are hours, where twice as long should look twice as long.
+ */
+function drawBarChart(container, bars, formatValue) {
+  container.replaceChildren();
+
+  if (bars.length === 0) return;
+
+  const rowHeight = 22;
+  const gap = 4;
+  const labelWidth = 118;
+  const valueWidth = 62;
+  const width = 640;
+  const height = bars.length * (rowHeight + gap);
+  const trackWidth = width - labelWidth - valueWidth;
+
+  const chart = svg('svg', {
+    viewBox: `0 0 ${width} ${height}`,
+    // Scales to its container's width while keeping the row height readable.
+    width: '100%',
+    height,
+    role: 'img',
+  });
+
+  const largest = Math.max(...bars.map((bar) => bar.value), 0);
+
+  bars.forEach((bar, index) => {
+    const y = index * (rowHeight + gap);
+
+    const label = svg('text', {
+      x: 0,
+      y: y + rowHeight * 0.72,
+      class: 'chart-label',
+    });
+    label.textContent = bar.label;
+    chart.append(label);
+
+    // The track, so an empty day is still a row rather than nothing at all.
+    chart.append(svg('rect', {
+      x: labelWidth, y, width: trackWidth, height: rowHeight, rx: 4, class: 'chart-track',
+    }));
+
+    if (bar.value > 0 && largest > 0) {
+      // Zero-based, and at least a sliver wide so a very small value is visible
+      // rather than looking like nothing was recorded.
+      const barWidth = Math.max(2, (bar.value / largest) * trackWidth);
+
+      const rect = svg('rect', {
+        x: labelWidth, y, width: barWidth, height: rowHeight, rx: 4, class: 'chart-bar',
+      });
+
+      // The exact figure on hover, since the bar is a comparison and not a
+      // readout.
+      const title = svg('title');
+      title.textContent = bar.title ?? `${bar.label}: ${formatValue(bar.value)}`;
+      rect.append(title);
+
+      chart.append(rect);
+    }
+
+    const value = svg('text', {
+      x: width,
+      y: y + rowHeight * 0.72,
+      class: 'chart-value',
+      'text-anchor': 'end',
+    });
+    value.textContent = formatValue(bar.value);
+    chart.append(value);
+  });
+
+  container.append(chart);
+}
+
+/** The default range: the current month, in whatever zone applies to the user. */
+function defaultStatisticsRange() {
+  const today = todayISO();
+  const firstOfMonth = `${today.slice(0, 7)}-01`;
+
+  return { from: firstOfMonth, to: today };
+}
+
+async function loadStatistics() {
+  const card = $('#statistics-card');
+  if (!card || !can('timesheets:read:own', 'timesheets:read:all')) return;
+
+  const range = defaultStatisticsRange();
+
+  if (!$('#statistics-from').value) $('#statistics-from').value = range.from;
+  if (!$('#statistics-to').value) $('#statistics-to').value = range.to;
+
+  const params = new URLSearchParams({
+    from: $('#statistics-from').value,
+    to: $('#statistics-to').value,
+  });
+
+  const stats = await api(`/me/statistics?${params}`);
+
+  $('#statistics-total').textContent =
+    `${t('stats.total', 'Total')}: ${fmtHours(stats.totalHours ?? 0)}`;
+
+  const days = stats.days ?? [];
+  const projects = stats.projects ?? [];
+
+  // Empty days are drawn as empty rows on purpose - a chart of only the days that
+  // have entries shows a full week where there were two working days.
+  drawBarChart($('#chart-days'),
+    days.map((day) => ({ label: day.date, value: day.hours })),
+    fmtHours);
+
+  drawBarChart($('#chart-projects'),
+    projects.map((project) => ({
+      // A project with no name is one that has been deleted since; the hours it
+      // holds still count, so it is shown rather than dropped.
+      label: project.projectId
+        ? (project.name || t('stats.deletedProject', 'deleted project'))
+        : t('stats.noProject', 'no project'),
+      value: project.hours,
+    })),
+    fmtHours);
+
+  $('#statistics-empty').hidden = (stats.totalHours ?? 0) > 0;
+}
+
+function wireStatistics() {
+  const button = $('#statistics-load');
+  if (!button) return;
+
+  button.addEventListener('click', () => mutate(loadStatistics, null, null));
+}
+
 // ------------------------------------------------------------------ stopwatch
 
 /** The running clock, or null. Kept so the display can tick without asking. */
@@ -4078,6 +4246,7 @@ async function refreshAll() {
   // After users and projects, so the calendar can resolve names.
   await loadCalendar();
   await loadTimer();
+  await loadStatistics();
   await loadAdmin();
   await loadTokens();
   await loadPasskeys();
@@ -4308,6 +4477,7 @@ async function init() {
     wireTelemetry();
     wireRestart();
     wireTimer();
+    wireStatistics();
     // After the forms are wired, so a submit handler registered here runs
     // beside theirs rather than instead of one.
     wirePasswordReveal();

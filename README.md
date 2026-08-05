@@ -128,6 +128,7 @@ missing. That is why "Finish later" is safe to offer.
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
 | Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second |
+| Own statistics | Hours per day and per project, drawn as charts, for everybody rather than administrators |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
 | Background job | Cron sweep that submits time entries left open too long |
@@ -568,6 +569,7 @@ The full reference is at `/api-docs`; the highlights:
 | `GET/POST/PUT/DELETE` | `/api/v1/timesheets`, `/timesheets/{id}` | Time entries |
 | `GET/POST/DELETE` | `/api/v1/me/timer` | Own stopwatch: read, start, discard |
 | `POST` | `/api/v1/me/timer/stop` | Stop it and book the measured time |
+| `GET` | `/api/v1/me/statistics` | Own hours per day, per project and per state |
 | `POST` | `/api/v1/timesheets/{id}/transfer` | Move to another project |
 | `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP, metrics and tracing |
 

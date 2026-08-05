@@ -1339,6 +1339,20 @@
           }
         }
       }
+    },
+    "/me/statistics": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "What your own recorded time adds up to",
+        "description": "Totals the caller's own entries: per day, per project, and per workflow state, with the overall total. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD, inclusive at both ends; the default is the first of the current month to today, worked out in the caller's own timezone.\n\nDeliberately not the project report. That one is keyed on a project id, needs reports:read - which both default roles are without, so only the built-in administrator can see what other people total up to - and cannot express \"every project\" or \"no project\". This one is keyed on the caller and needs only timesheets:read:own.\n\nTwo details a chart depends on. Every day in the range is present, including the ones with nothing on them: a chart drawn only from the days that have entries shows a full week where there were two working days. And the entries with no project are their own row with projectId null, because \"not categorised\" is an answer worth seeing the size of rather than a gap. Rejected entries are left out, the same reading the overtime balance takes.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   },
   "components": {

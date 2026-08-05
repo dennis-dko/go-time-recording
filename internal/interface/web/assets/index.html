@@ -264,6 +264,32 @@
 
     <!-- Overtime -->
     <section id="view-overtime" class="view" hidden>
+      <!-- Your own hours, drawn. Here rather than under Reports because that
+           screen needs reports:read, which both default roles are deliberately
+           without - so an employee could never have seen a chart of their own
+           week through it. This one is keyed on the caller. -->
+      <div class="card" id="statistics-card">
+        <div class="card-head">
+          <h2 data-i18n="stats.title">My hours</h2>
+          <span class="muted" id="statistics-total"></span>
+        </div>
+        <div class="grid">
+          <label data-i18n="field.from">From<input type="date" id="statistics-from"></label>
+          <label data-i18n="field.to">To<input type="date" id="statistics-to"></label>
+        </div>
+        <div class="row">
+          <button type="button" id="statistics-load" data-i18n="action.evaluate">Evaluate</button>
+        </div>
+
+        <h3 class="chart-title" data-i18n="stats.perDay">Hours per day</h3>
+        <div class="chart-wrap"><div id="chart-days"></div></div>
+
+        <h3 class="chart-title" data-i18n="stats.perProject">Hours per project</h3>
+        <div class="chart-wrap"><div id="chart-projects"></div></div>
+
+        <p class="muted" id="statistics-empty" hidden data-i18n="stats.empty">Nothing was recorded in this period.</p>
+      </div>
+
       <form id="form-overtime" class="card form">
         <h2 data-i18n="nav.overtime">Overtime</h2>
         <div class="grid">

@@ -23,6 +23,7 @@ type Handlers struct {
 	Logs       *rest.LogHandler
 	Restart    *rest.RestartHandler
 	Timers     *rest.TimerHandler
+	Statistics *rest.StatisticsHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -97,6 +98,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// The clock, always the caller's own: starting somebody else's would record
 	// time nobody asked them about, so there is no user id in these routes and no
 	// permission for "other people's timers" to get wrong.
+	// What your own time adds up to, for charting it. Keyed on the caller, so it
+	// needs nothing beyond reading your own entries - unlike the project report,
+	// which needs reports:read and is the built-in administrator's alone.
+	app.GET(base+"/me/statistics", h.Statistics.Own)
+
 	app.GET(base+"/me/timer", h.Timers.Running)
 	app.POST(base+"/me/timer", h.Timers.Start)
 	app.POST(base+"/me/timer/stop", h.Timers.Stop)

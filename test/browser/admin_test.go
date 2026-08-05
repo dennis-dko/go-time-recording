@@ -769,3 +769,94 @@ func TestTheStopwatchRunsAndBooksWhatItMeasured(t *testing.T) {
 		t.Error("after stopping, the clock does not offer to start again")
 	}
 }
+
+// --------------------------------------------------------------------- charts
+
+// The charts are SVG built in the page, because the Content-Security-Policy
+// allows no external origin and a chart library from a CDN would simply be
+// blocked. That makes them a browser question twice over: whether the elements
+// exist, and whether they render - an <svg> built in the HTML namespace parses
+// without complaint and draws nothing at all.
+func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// Two entries on one day and none on the next, so an empty day has something
+	// to be empty about.
+	p.run("book time", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
+		chromedp.SendKeys(`#form-timesheet input[name="durationHours"]`, "3.25", chromedp.ByQuery),
+		p.click(`#form-timesheet button[type="submit"]`))
+
+	p.waitForText("#table-timesheets tbody", "3.25")
+
+	p.run("open overtime", p.click(`.tab[data-view="overtime"]`))
+
+	// Worth asserting rather than assuming: the click that opens this view landed
+	// on a notice instead of the tab until the notices were made transparent to
+	// the pointer, and the symptom was a view that simply never opened.
+	if !p.visible("#view-overtime") {
+		t.Fatal("the overtime view did not open - something is covering the tab")
+	}
+
+	if !p.visible("#statistics-card") {
+		t.Fatal("the overtime view is open but the statistics card is not visible")
+	}
+
+	// An explicit range, so the number of rows below is a fixed expectation. The
+	// default is the first of the month to today, which is a different length
+	// every day.
+	p.run("evaluate",
+		chromedp.SetValue("#statistics-from", "2026-08-01", chromedp.ByID),
+		chromedp.SetValue("#statistics-to", "2026-08-31", chromedp.ByID),
+		p.click("#statistics-load"))
+
+	// A bar exists, and the SVG is in the right namespace - an HTML-namespace
+	// <svg> would be found by a selector and occupy no space.
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if p.visible("#chart-days svg .chart-bar") {
+			break
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if !p.visible("#chart-days svg .chart-bar") {
+		t.Fatalf("no bar was drawn for the day chart; the container holds %q",
+			truncateText(p.text("#chart-days"), 200))
+	}
+
+	var namespace string
+
+	p.run("read the namespace", chromedp.Evaluate(
+		`document.querySelector('#chart-days svg')?.namespaceURI ?? ''`, &namespace))
+
+	if namespace != "http://www.w3.org/2000/svg" {
+		t.Errorf("the chart is in the %q namespace, so it would render nothing", namespace)
+	}
+
+	// The total is on screen, and the figure is the one that was booked.
+	if total := p.text("#statistics-total"); !strings.Contains(total, "3.25") {
+		t.Errorf("the total says %q, want it to mention 3.25", total)
+	}
+
+	// Every day of the month is a row, including the ones with nothing on them:
+	// a chart of only the days that have entries reads as a full week.
+	var rows int
+
+	p.run("count the rows",
+		chromedp.Evaluate(`document.querySelectorAll('#chart-days .chart-track').length`, &rows))
+
+	if rows != 31 {
+		t.Errorf("the day chart has %d rows, want 31 - one for every day of August, "+
+			"including the empty ones", rows)
+	}
+
+	// And the project chart drew the uncategorised bucket, since the entry has no
+	// project - which is an answer rather than a gap.
+	if !strings.Contains(p.text("#chart-projects"), "3.25") {
+		t.Errorf("the project chart does not show the hours: %q",
+			truncateText(p.text("#chart-projects"), 200))
+	}
+}

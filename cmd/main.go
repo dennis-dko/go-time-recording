@@ -381,6 +381,7 @@ func main() {
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
 	timers := appservice.NewTimerService(timerRepo, timesheets)
+	statistics := appservice.NewStatisticsService(timesheetRepo, projectRepo)
 
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
 	projectDomain := domainservice.NewProjectDomainService(projectRepo, timesheetRepo)
@@ -509,6 +510,7 @@ func main() {
 		Logs:       rest.NewLogHandler(logs, authorizer),
 		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
+		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
 			// What the device's prompt calls this installation. The
 			// administered title if there is one, so a person sees the name
