@@ -24,6 +24,7 @@ type Handlers struct {
 	Restart    *rest.RestartHandler
 	Timers     *rest.TimerHandler
 	Statistics *rest.StatisticsHandler
+	Workbook   *rest.WorkbookHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -144,10 +145,16 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/projects/{id}/archive", h.Projects.Archive)
 	app.GET(base+"/projects/{id}/report", h.Timesheets.Report)
 
+	// Ahead of the {id} routes, which this router would otherwise match first:
+	// "export" is not an id, and the answer was 400 for a parameter nobody sent.
+	app.GET(base+"/timesheets/export", h.Workbook.Export)
+	app.POST(base+"/timesheets/import", h.Workbook.Import)
+
 	app.GET(base+"/timesheets", h.Timesheets.List)
 	app.GET(base+"/timesheets/{id}", h.Timesheets.Get)
 	app.POST(base+"/timesheets", h.Timesheets.Create)
 	app.PUT(base+"/timesheets/{id}", h.Timesheets.Update)
 	app.DELETE(base+"/timesheets/{id}", h.Timesheets.Delete)
 	app.POST(base+"/timesheets/{id}/transfer", h.Timesheets.Transfer)
+
 }

@@ -660,6 +660,29 @@ const TRANSLATIONS = {
     'err.unknownPermissions': 'Unbekannte Rechte: {0}',
     'err.wrongCurrentPassword': 'Das aktuelle Kennwort ist nicht korrekt.',
     'field.action': 'Aktion',
+    'err.importEmpty': 'Die Datei enthält nichts zu importieren.',
+    'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
+    'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
+    'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
+    'err.uploadUnreadable': 'Die übermittelte Datei konnte nicht gelesen werden.',
+    'field.actor': 'Aufrufer',
+    'wb.allReady': 'Alle {0} Zeilen können importiert werden.',
+    'wb.choose': 'Datei wählen…',
+    'wb.chosen': 'Zum Prüfen auf „Datei prüfen“ klicken.',
+    'wb.empty': 'Die Datei enthält keine Einträge.',
+    'wb.export': 'Als .xlsx exportieren',
+    'wb.exported': 'Export gespeichert',
+    'wb.filename': 'zeiteintraege',
+    'wb.import': 'Importieren',
+    'wb.imported': 'Die Datei wurde importiert',
+    'wb.importedCount': '{0} Einträge angelegt.',
+    'wb.noFile': 'Bitte zuerst eine Datei wählen.',
+    'wb.preview': 'Datei prüfen',
+    'wb.problem': 'Problem',
+    'wb.row': 'Zeile',
+    'wb.someRejected': '{0} von {1} Zeilen können importiert werden. Solange eine Zeile abgelehnt wird, wird nichts geschrieben.',
+    'wb.text': 'Exportiert, was die Filter oben zeigen. Ein Import legt Einträge an; vorhandene werden nie geändert oder ersetzt.',
+    'wb.title': 'Tabelle',
     'welcome.back': 'Willkommen zurück',
     'welcome.backName': 'Willkommen zurück, {0}',
     'welcome.hello': 'Willkommen, {0}',
@@ -2079,9 +2102,12 @@ function ldapPayload() {
 /** Wraps a mutating call so every failure surfaces as a toast, not a crash. */
 async function mutate(fn, successMessage, after) {
   try {
-    await fn();
+    // Handed to `after`, so a caller that needs what the call answered does not
+    // have to make the call again or smuggle it out through a closure. Every
+    // existing caller ignores it, which is what makes this safe to add.
+    const result = await fn();
     if (successMessage) toast(successMessage, 'ok');
-    if (after) await after();
+    if (after) await after(result);
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -3691,6 +3717,185 @@ async function loadStatistics() {
   $('#statistics-empty').hidden = (stats.totalHours ?? 0) > 0;
 }
 
+/**
+ * The spreadsheet card: exporting what is on screen, and importing a file.
+ *
+ * The import is deliberately two steps. A file assembled by hand is wrong more
+ * often than it is right, and the first thing somebody needs is to be shown what
+ * their file would do - which rows would be written, which would not, and why -
+ * before anything is.
+ */
+
+/** The filters the entry list is showing, so the export matches the screen. */
+function timesheetFilterQuery() {
+  const params = new URLSearchParams();
+
+  const userId = $('#filter-ts-user')?.value;
+  const projectId = $('#filter-ts-project')?.value;
+  const status = $('#filter-ts-status')?.value;
+
+  if (userId) params.set('userId', userId);
+  if (projectId) params.set('projectId', projectId);
+  if (status) params.set('status', status);
+
+  return params.toString() ? `?${params}` : '';
+}
+
+/**
+ * Downloads the export.
+ *
+ * Through fetch and a blob rather than by pointing the browser at the URL: the
+ * request needs the session cookie and a sensible filename, and the server cannot
+ * set Content-Disposition - GoFr owns the response headers. Naming it here is
+ * better anyway, because this is where the period being looked at is known.
+ */
+async function exportWorkbook() {
+  const res = await fetch(`${API}/timesheets/export${timesheetFilterQuery()}`, {
+    credentials: 'same-origin',
+  });
+
+  if (!res.ok) {
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      // An error page rather than JSON; the status carries the meaning.
+    }
+
+    throw new Error(errorMessage(body) || `${t('msg.error', 'Error')} ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+
+  const link = el('a', { href: url, download: `${t('wb.filename', 'time-entries')}-${todayISO()}.xlsx` });
+  document.body.append(link);
+  link.click();
+  link.remove();
+
+  // Released once the browser has taken it; a blob left behind holds the whole
+  // file in memory for as long as the page is open.
+  URL.revokeObjectURL(url);
+}
+
+/** Sends the chosen file, either to look or to write. */
+async function sendWorkbook(dryRun) {
+  const input = $('#wb-file');
+  const file = input?.files?.[0];
+
+  if (!file) {
+    throw new Error(t('wb.noFile', 'Choose a file first.'));
+  }
+
+  const body = new FormData();
+  body.append('file', file);
+  body.append('dryRun', dryRun ? 'true' : 'false');
+
+  // No Content-Type of our own: the browser has to set it, because only it knows
+  // the multipart boundary it generated.
+  const res = await fetch(`${API}/timesheets/import`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': readCookie('gtr_csrf') },
+    body,
+  });
+
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // Falls through to the status below.
+  }
+
+  if (!res.ok) {
+    const err = new Error(errorMessage(payload) || `${t('msg.error', 'Error')} ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  return payload?.data ?? null;
+}
+
+/** Shows what the file would do, row by row. */
+function renderWorkbookPreview(result) {
+  const rows = (result?.rows ?? []).map((row) => el('tr', { class: row.problem ? 'rejected' : '' },
+    el('td', { class: 'num', text: String(row.row) }),
+    el('td', { text: row.date ? fmtDate(row.date) : '–' }),
+    el('td', { text: row.user || '–' }),
+    el('td', { text: row.project || t('ts.noProject', 'no project') }),
+    el('td', { class: 'num', text: row.hours ? row.hours.toFixed(2) : '–' }),
+    el('td', { text: row.description || '–' }),
+    el('td', { class: row.problem ? 'minus' : 'muted', text: row.problem || '✓' }),
+  ));
+
+  fillTable($('#table-workbook tbody'), rows, 7, t('wb.empty', 'The file has no entries in it.'));
+  $('#wb-preview-wrap').hidden = false;
+
+  const writable = result?.writable ?? 0;
+  const rejected = result?.rejected ?? 0;
+
+  $('#wb-summary').textContent = rejected > 0
+    ? t('wb.someRejected', '{0} of {1} rows can be imported. Nothing is written while any row is refused.')
+      .replace('{0}', String(writable)).replace('{1}', String(writable + rejected))
+    : t('wb.allReady', 'All {0} rows can be imported.').replace('{0}', String(writable));
+
+  // The import button only where it would do something: offering it for a file
+  // that would be refused is offering a failure.
+  $('#wb-import').hidden = rejected > 0 || writable === 0;
+}
+
+/** Puts the card back to its resting state. */
+function resetWorkbookCard() {
+  const input = $('#wb-file');
+  if (input) input.value = '';
+
+  $('#wb-preview').hidden = true;
+  $('#wb-import').hidden = true;
+  $('#wb-clear').hidden = true;
+  $('#wb-preview-wrap').hidden = true;
+  $('#wb-summary').textContent = '';
+  $('#table-workbook tbody').replaceChildren();
+}
+
+function wireWorkbook() {
+  const card = $('#workbook-card');
+  if (!card) return;
+
+  $('#wb-export').addEventListener('click', () => mutate(
+    exportWorkbook, t('wb.exported', 'Export saved'), null));
+
+  $('#wb-file').addEventListener('change', () => {
+    const chosen = Boolean($('#wb-file').files?.length);
+
+    $('#wb-preview').hidden = !chosen;
+    $('#wb-clear').hidden = !chosen;
+    $('#wb-import').hidden = true;
+    $('#wb-preview-wrap').hidden = true;
+    $('#wb-summary').textContent = chosen
+      ? t('wb.chosen', 'Check the file to see what it would do.')
+      : '';
+  });
+
+  $('#wb-preview').addEventListener('click', () => mutate(
+    () => sendWorkbook(true), null,
+    (result) => renderWorkbookPreview(result)));
+
+  $('#wb-import').addEventListener('click', () => mutate(
+    () => sendWorkbook(false),
+    t('wb.imported', 'The file was imported'),
+    async (result) => {
+      resetWorkbookCard();
+      await reloadTimeViews();
+
+      if (result?.imported) {
+        toast(t('wb.importedCount', '{0} entries created.')
+          .replace('{0}', String(result.imported)), 'ok');
+      }
+    }));
+
+  $('#wb-clear').addEventListener('click', resetWorkbookCard);
+}
+
 function wireStatistics() {
   const button = $('#statistics-load');
   if (!button) return;
@@ -5019,6 +5224,7 @@ async function init() {
     wireRestart();
     wireTimer();
     wireStatistics();
+    wireWorkbook();
     // After the forms are wired, so a submit handler registered here runs
     // beside theirs rather than instead of one.
     wirePasswordReveal();

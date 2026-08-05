@@ -256,6 +256,38 @@
     </section>
 
     <!-- Calendar -->
+      <div class="card" id="workbook-card" data-perm="timesheets:read:own,timesheets:read:all">
+        <h2 data-i18n="wb.title">Spreadsheet</h2>
+        <p class="muted" data-i18n="wb.text">Exports what the filters above are showing. An import creates entries; it never changes or replaces the ones that are already there.</p>
+        <div class="row">
+          <button type="button" class="secondary" id="wb-export" data-i18n="wb.export">Export as .xlsx</button>
+          <label class="file-pick" data-perm="timesheets:write:own,timesheets:write:all">
+            <span data-i18n="wb.choose">Choose a file…</span>
+            <input type="file" id="wb-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          </label>
+          <button type="button" class="secondary" id="wb-preview" hidden data-i18n="wb.preview">Check the file</button>
+          <button type="button" id="wb-import" hidden data-i18n="wb.import">Import</button>
+          <button type="button" class="link" id="wb-clear" hidden data-i18n="action.cancelEdit">cancel</button>
+        </div>
+        <p class="muted" id="wb-summary"></p>
+        <div class="table-wrap" id="wb-preview-wrap" hidden>
+          <table id="table-workbook">
+            <thead>
+              <tr>
+                <th data-i18n="wb.row">Row</th>
+                <th data-i18n="field.date">Date</th>
+                <th data-i18n="field.user">User</th>
+                <th data-i18n="field.project">Project</th>
+                <th class="num" data-i18n="field.hours">Hours</th>
+                <th data-i18n="field.description">Description</th>
+                <th data-i18n="wb.problem">Problem</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
     <section id="view-calendar" class="view" hidden>
       <div class="card">
         <div class="card-head">

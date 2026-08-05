@@ -425,6 +425,11 @@ func main() {
 	timers := appservice.NewTimerService(timerRepo, timesheets)
 	statistics := appservice.NewStatisticsService(timesheetRepo, projectRepo)
 
+	// The timesheet service is passed in rather than reimplemented: the import has
+	// to enforce the rules the API enforces, and the only way to be sure of that is
+	// to call them.
+	workbook := appservice.NewWorkbookService(timesheetRepo, userRepo, projectRepo, timesheets)
+
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
 	projectDomain := domainservice.NewProjectDomainService(projectRepo, timesheetRepo)
 	timesheetDomain := domainservice.NewTimesheetDomainService(timesheetRepo, projectRepo, userRepo)
@@ -553,6 +558,7 @@ func main() {
 		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
+		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
 			// What the device's prompt calls this installation. The
 			// administered title if there is one, so a person sees the name

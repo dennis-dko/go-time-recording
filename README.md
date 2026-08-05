@@ -409,6 +409,40 @@ visible only to its owner — not to managers, and not to the administrator.
 Creating one needs only `projects:write:own`, which every default role holds;
 creating a *shared* project still needs `projects:write`.
 
+## Spreadsheets
+
+Time entries go out and come back as a real **.xlsx** workbook — one row per entry,
+with the date, the person, the project, the hours, the description and the status.
+Names rather than identifiers, because a column of user ids is not something anybody
+can fill in by hand; hours as a number, so the column can be totalled in Excel.
+
+Not comma-separated text. A CSV is what Excel mangles: the separator depends on the
+machine's locale, dates are re-interpreted on opening, and a description containing
+a semicolon quietly becomes two columns — none of it recoverable once somebody has
+saved over the file.
+
+The export follows the filters on screen and the same scoping the entry list uses,
+so it can never show more than the screen did.
+
+The import is **two steps, and all or nothing**:
+
+1. *Check the file* reads it and shows every row — which would be written, which
+   would not, and why, named by its line in the sheet so you know where to look. It
+   writes nothing.
+2. *Import* is only offered when every row can be written, and runs in one
+   transaction.
+
+A file half-imported leaves nobody able to say which half, or which entries came
+from it, which is why a single refused row refuses the file. Every row goes through
+the rules the API enforces — by calling them, not by restating them: the same
+validation, the same daily ceiling (counting the file against itself, so forty rows
+on one day are checked together), the same project visibility. A status other than
+`open` is refused rather than ignored, or an import would be a way around the review
+path, and a row naming somebody else needs the right to book for others.
+
+An import **creates**; it never updates or replaces. There is no way for it to know
+which existing entry a row was meant to be.
+
 ## Architecture
 
 Four layers; dependencies point inwards only.

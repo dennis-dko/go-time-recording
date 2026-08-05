@@ -339,6 +339,38 @@ tbody tr.clickable:focus-visible {
 /* Submit and cancel on one line, cancel reading as secondary. */
 .form-actions { align-items: center; display: flex; gap: 12px; }
 
+/* The file picker, dressed as a button.
+   The browser's own control is a button and a filename with no styling worth
+   keeping, and it cannot be restyled directly - so the input is hidden inside a
+   label that looks like the secondary buttons beside it. Clicking the label opens
+   the picker, which is what a label does for its input. */
+.file-pick {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: row;
+  font-size: 15px;
+  padding: 9px 16px;
+}
+
+.file-pick:hover { border-color: var(--accent); }
+
+.file-pick input[type="file"] {
+  height: 0;
+  opacity: 0;
+  position: absolute;
+  width: 0;
+}
+
+/* A row of an import that would not be written. Marked by its left edge rather
+   than by a colour wash, which on the dark theme turns the text unreadable. */
+tbody tr.rejected td { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+
 .empty { color: var(--muted); font-style: italic; }
 
 .pill {

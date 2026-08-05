@@ -258,6 +258,21 @@ func (r *UserRepository) Delete(_ context.Context, id uint) error {
 	return r.store.delete(id)
 }
 
+// SaveMany writes several entries.
+//
+// Not atomic, and it cannot be: this store has no transaction to roll back to.
+// The guarantee belongs to the SQL repository, and the integration tests are where
+// it is checked - a unit test against this would be checking nothing.
+func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Timesheet) error {
+	for _, entry := range entries {
+		if _, err := r.Save(ctx, entry); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // RoleRepository is an in-memory repository.RoleRepository.
 type RoleRepository struct {
 	store *store[model.Role]
