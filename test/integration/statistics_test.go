@@ -59,8 +59,13 @@ func TestAnEmployeeCanReadTheirOwnStatistics(t *testing.T) {
 		"role": "employee", "password": "hanne-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
+	// The shared project comes from a manager: keeping the projects everybody
+	// books against is running the work, which the built-in administrator is
+	// deliberately no part of.
+	manager := a.signInAsManager(admin, "Mira", "mira@example.com")
+
 	var shared projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	manager.must(manager.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Shared work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
 
@@ -173,26 +178,29 @@ func TestOwnStatisticsAreOnlyYourOwn(t *testing.T) {
 
 // A rejected entry is not work anybody is counting, which is the reading the
 // overtime balance already takes.
+// A manager, on their own hours: rejecting needs timesheets:approve, which is a
+// right over somebody's work and therefore not the administrator's.
 func TestRejectedTimeIsLeftOutOfTheTotals(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
+	manager := a.signInAsManager(admin, "Malte", "malte@example.com")
 
 	var entry timesheetResponse
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	manager.must(manager.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-03", "durationHours": 5,
 	}), http.StatusCreated, http.StatusOK).Data(t, &entry)
 
-	if stats := ownStatistics(t, admin, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 5 {
+	if stats := ownStatistics(t, manager, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 5 {
 		t.Fatalf("the entry totals %v before being rejected, want 5", stats.TotalHours)
 	}
 
 	// open -> submitted -> rejected, which is the only way to reach it.
-	admin.must(admin.api(http.MethodPut, path("/timesheets/", entry.ID),
+	manager.must(manager.api(http.MethodPut, path("/timesheets/", entry.ID),
 		map[string]any{"status": "submitted"}), http.StatusOK)
-	admin.must(admin.api(http.MethodPut, path("/timesheets/", entry.ID),
+	manager.must(manager.api(http.MethodPut, path("/timesheets/", entry.ID),
 		map[string]any{"status": "rejected"}), http.StatusOK)
 
-	if stats := ownStatistics(t, admin, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 0 {
+	if stats := ownStatistics(t, manager, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 0 {
 		t.Errorf("a rejected entry still counts %v hours", stats.TotalHours)
 	}
 }

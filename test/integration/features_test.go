@@ -21,8 +21,11 @@ func TestPrivateProjectsAreInvisibleToOthers(t *testing.T) {
 		}), http.StatusCreated, http.StatusOK)
 	}
 
-	// A shared project, set up centrally.
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	// A shared project, set up centrally - by a manager, because managing the
+	// projects everybody books against is running the work rather than running
+	// the installation, and the administrator holds none of that.
+	manager := a.signInAsManager(admin, "Mila", "mila@example.com")
+	manager.must(manager.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Shared work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK)
 
@@ -78,15 +81,12 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		// A manager, because reading a project report needs reports:read at
-		// all - and this test is about visibility, not about that permission.
-		"name": "Gerda", "email": "gerda@example.com",
-		"role": "manager", "password": "gerda-password-1",
-	}), http.StatusCreated, http.StatusOK)
-
-	gerda := a.newClient()
-	gerda.signIn("gerda@example.com", "gerda-password-1")
+	// Both managers. Reading a project report needs reports:read, and moving or
+	// archiving somebody's project needs rights over the work - none of which the
+	// built-in administrator holds any more, so it can no longer be the caller
+	// this rule is proved against: it would be refused for the wrong reason.
+	gerda := a.signInAsManager(admin, "Gerda", "gerda@example.com")
+	heiko := a.signInAsManager(admin, "Heiko", "heiko@example.com")
 
 	var hers projectResponse
 	gerda.must(gerda.api(http.MethodPost, "/projects", map[string]any{
@@ -97,10 +97,10 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 		"date": "2026-08-04", "durationHours": 2, "projectId": hers.ID,
 	}), http.StatusCreated, http.StatusOK)
 
-	// The built-in administrator holds every permission, which makes it the
-	// strongest caller there is - and the right one to prove the rule with,
+	// A manager is now the strongest caller there is - every right over the work,
+	// including the report - which makes it the right one to prove the rule with,
 	// because a rule that only holds against an employee is not a rule.
-	if got := admin.api(http.MethodGet,
+	if got := heiko.api(http.MethodGet,
 		path("/projects/", hers.ID)+"/report", nil).Status; got != http.StatusNotFound {
 		t.Errorf("a report on somebody else's private project answered %d, want 404", got)
 	}
@@ -108,34 +108,33 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	// A shared project to move an entry onto, and an entry of the caller's own
 	// to try moving - so the refusal can only be about the target's visibility.
 	var shared projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	heiko.must(heiko.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Shared", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
 
 	var own timesheetResponse
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	heiko.must(heiko.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-04", "durationHours": 1, "projectId": shared.ID,
 	}), http.StatusCreated, http.StatusOK).Data(t, &own)
 
-	if got := admin.api(http.MethodPost, path("/timesheets/", own.ID)+"/transfer",
+	if got := heiko.api(http.MethodPost, path("/timesheets/", own.ID)+"/transfer",
 		map[string]any{"projectId": hers.ID}).Status; got != http.StatusNotFound {
 		t.Errorf("transferring onto somebody else's private project answered %d, want 404", got)
 	}
 
 	// Archiving would take her own project away from her.
-	if got := admin.api(http.MethodPost,
+	if got := heiko.api(http.MethodPost,
 		path("/projects/", hers.ID)+"/archive", nil).Status; got != http.StatusNotFound {
 		t.Errorf("archiving somebody else's private project answered %d, want 404", got)
 	}
 
 	// And the owner is unaffected: the rule is about who is asking, not about a
-	// private project becoming unreachable.
-	//
-	// Checked through the project itself rather than through its report, because
-	// nobody but the built-in administrator may read a project report at all -
-	// reports:read is deliberately withheld from both default roles, so the owner
-	// asking for her own report is refused for that reason and not this one.
+	// private project becoming unreachable. Through the report itself, which the
+	// manager role now holds the right to read - the same request that answered 404
+	// for Heiko a moment ago.
 	gerda.must(gerda.api(http.MethodGet, path("/projects/", hers.ID), nil), http.StatusOK)
+	gerda.must(gerda.api(http.MethodGet, path("/projects/", hers.ID)+"/report", nil),
+		http.StatusOK)
 
 	var stillThere listOf[timesheetResponse]
 
@@ -214,9 +213,12 @@ func TestTimeCanBeBookedWithoutAProjectAndCategorisedLater(t *testing.T) {
 		t.Fatal("a project must be optional on a booking")
 	}
 
+	// Private, because what is being tested is categorising an entry afterwards -
+	// and a private project is one the administrator may create, where a shared one
+	// belongs to whoever runs the work.
 	var project projectResponse
 	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Found a home", "startDate": "2026-08-01",
+		"name": "Found a home", "startDate": "2026-08-01", "private": true,
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	var updated timesheetResponse
@@ -452,10 +454,11 @@ func TestSavingWithoutChangingAnythingIsNotAnError(t *testing.T) {
 		}
 	}
 
-	// The same for the other tables that are saved whole.
+	// The same for the other tables that are saved whole. Private, so this stays
+	// about saving rather than about who may keep the shared projects.
 	var project projectResponse
 	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Unchanged", "startDate": "2026-08-01",
+		"name": "Unchanged", "startDate": "2026-08-01", "private": true,
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	for attempt := 1; attempt <= 2; attempt++ {

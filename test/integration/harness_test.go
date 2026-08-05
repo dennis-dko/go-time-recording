@@ -259,6 +259,28 @@ func (a *app) signInAsAdmin(newPassword string) *client {
 	return fresh
 }
 
+// signInAsManager creates a manager and signs in as them.
+//
+// Needed because the built-in administrator deliberately holds none of the rights
+// over other people's work: no approving, no reading or editing somebody else's
+// entries, no managing the shared projects. Those belong to whoever the
+// organisation puts in charge of the work, which on a default installation is the
+// manager role. A test that needs any of it needs one of these.
+func (a *app) signInAsManager(admin *client, name, email string) *client {
+	a.t.Helper()
+
+	const password = "manager-password-1"
+
+	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
+		"name": name, "email": email, "role": "manager", "password": password,
+	}), http.StatusCreated, http.StatusOK)
+
+	manager := a.newClient()
+	manager.signIn(email, password)
+
+	return manager
+}
+
 // ------------------------------------------------------------------- types
 
 type userResponse struct {

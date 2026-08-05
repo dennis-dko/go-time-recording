@@ -61,7 +61,80 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260805010000: {UP: func(d migration.Datasource) error {
 			return createRunningTimers(d, dialect)
 		}},
+		20260805020000: {UP: func(d migration.Datasource) error {
+			return separateSystemAdministration(d, dialect)
+		}},
 	}
+}
+
+// separateSystemAdministration narrows the administrator role to the installation.
+//
+// The role was seeded holding every permission, which made the one account that
+// exists on every installation also the account that could read, edit and approve
+// everybody's recorded hours. Administering the installation and reading what
+// people recorded in it are different jobs; see model.SystemAdminPermissions.
+//
+// Changing the seed only helps installations yet to be created, so the rights are
+// revoked here for the ones that already ran it. The report right moves to the
+// manager role in the same step, or it would be held by nobody at all.
+//
+// Only the permissions this migration is about are touched. An installation that
+// has since added its own to either role keeps them: this is a correction of what
+// was seeded, not a reset to what the seed says today.
+func separateSystemAdministration(d migration.Datasource, dialect string) error {
+	revoke := sqldb.Rebind(dialect, `DELETE FROM role_permissions
+		WHERE permission = ?
+		  AND role_id IN (SELECT id FROM roles WHERE name = ?)`)
+
+	// What running the work is, as opposed to running the installation.
+	for _, permission := range []string{
+		model.PermTimesheetReadAll,
+		model.PermTimesheetWriteAll,
+		model.PermTimesheetApprove,
+		model.PermTimesheetTransfer,
+		model.PermReportRead,
+		model.PermProjectWrite,
+		model.PermProjectDelete,
+		model.PermProjectArchive,
+	} {
+		if _, err := d.SQL.Exec(revoke, permission, model.RoleAdmin); err != nil {
+			return fmt.Errorf("revoking %q from %q: %w", permission, model.RoleAdmin, err)
+		}
+	}
+
+	// NOT EXISTS rather than a bare insert: an installation that already granted
+	// these to the manager role would otherwise get a duplicate row, and the
+	// pair is the primary key.
+	grant := sqldb.Rebind(dialect, `INSERT INTO role_permissions (role_id, permission)
+		SELECT id, ? FROM roles WHERE name = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM role_permissions rp
+			WHERE rp.role_id = roles.id AND rp.permission = ?)`)
+
+	// PermProjectDelete as well: it was the administrator's alone, and a project
+	// with entries is refused, so what this deletes is an empty project created by
+	// mistake rather than anybody's recorded time.
+	for _, permission := range []string{model.PermReportRead, model.PermProjectDelete} {
+		if _, err := d.SQL.Exec(grant, permission, model.RoleManager, permission); err != nil {
+			return fmt.Errorf("granting %q to %q: %w", permission, model.RoleManager, err)
+		}
+	}
+
+	// The descriptions are on screen in the role list, where "Full administrative
+	// access" would now be describing something the role no longer is.
+	describe := sqldb.Rebind(dialect, "UPDATE roles SET description = ? WHERE name = ?")
+
+	for _, role := range model.DefaultRoles() {
+		if role.Name != model.RoleAdmin && role.Name != model.RoleManager {
+			continue
+		}
+
+		if _, err := d.SQL.Exec(describe, role.Description, role.Name); err != nil {
+			return fmt.Errorf("describing %q: %w", role.Name, err)
+		}
+	}
+
+	return nil
 }
 
 // createRunningTimers holds the clock somebody has started and not yet stopped.

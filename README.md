@@ -143,8 +143,8 @@ interface: create them, set their permissions, delete them.
 
 | Role | Purpose |
 | --- | --- |
-| `admin` | Everything. A system role: it cannot be deleted or stripped of permissions |
-| `manager` | Runs projects, sees and approves everyone's time entries |
+| `admin` | The installation, its accounts and their roles. A system role: it cannot be deleted or stripped of permissions |
+| `manager` | Runs the projects, sees, approves and reports on everyone's time entries |
 | `employee` | Books and submits their own time, reads shared projects |
 
 Permissions are fine grained, for example `timesheets:read:own` against
@@ -157,11 +157,42 @@ specific line of code, and a permission that existed only in the database would
 grant nothing. The role editor therefore offers exactly the permissions that
 are actually enforced.
 
+### The administrator is not a superuser
+
+Running an installation and reading what people recorded in it are two different
+jobs, and the `admin` role does only the first: accounts, roles, the database, the
+directory, the backups, the log. It cannot read, edit, approve or transfer
+somebody else's entries, cannot keep the shared projects, and cannot open a
+report.
+
+That is deliberate. Every installation has the built-in administrator, and nobody
+chose to give it anything — it arrived with the software. An administrator
+restoring a backup has no business in a colleague's week. Running the work is the
+`manager` role's job, or any role you define.
+
+The administrator still books, submits and reads **their own** time like anybody
+who works here, and still sets each account's daily target and ceiling, which is
+administering an account rather than reading it.
+
+It is the seeded default rather than a wall: whoever may manage roles may widen
+the role they hold, and taking that away would take role administration with it.
+What it buys you is that the reach is never there by accident, and that granting
+it is a visible act — the role screen shows the permission.
+
+Existing installations are migrated: the rights are revoked from the `admin` role
+on upgrade, and the report right moves to `manager`, which would otherwise leave
+it with nobody.
+
 ### Reports
 
-Aggregate reports — what other people total up to — are visible **only to the
-built-in administrator**. Everyone else sees only their own figures. This is
-enforced by `reports:read`, which by default no other role holds.
+Aggregate reports — what other people total up to — need `reports:read`, which by
+default only `manager` holds. Everyone else sees only their own figures, through
+**My statistics**, which needs nothing beyond reading your own entries.
+
+`reports:read` sits with `manager` rather than with the administrator because a
+manager already reads every entry one by one in order to approve it, so the total
+of those entries reveals nothing further — while the administrator has no business
+in either.
 
 ## API access with personal tokens
 

@@ -48,9 +48,11 @@ func TestStartingAndReadingBackTheClock(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
+	// Private: the clock is the caller's own, and a private project is what the
+	// administrator may create - the shared ones belong to whoever runs the work.
 	var project projectResponse
 	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Timed work", "startDate": "2026-08-01",
+		"name": "Timed work", "startDate": "2026-08-01", "private": true,
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	description := "Writing the timer"
