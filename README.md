@@ -630,7 +630,7 @@ The server enforces these; the interface merely also hides what is not allowed:
 | `task test` | Unit and integration tests |
 | `task stage` | **Verify.** The shipped container image against real services, on :8080 |
 | `task image` | **Ship.** Build the deployment image |
-| `task release VERSION=v1.2.3` | Tag it; CI does the rest |
+| `task release VERSION=v1.2.0` | **Ship.** Tag a minor or major version by hand; a patch needs no command at all |
 
 `task` on its own lists everything, and `task --summary <name>` explains one.
 
@@ -724,10 +724,28 @@ clean.
 
 ## Deployment
 
-Releases are cut from git tags. `task release VERSION=v1.2.3` tags and pushes;
-[`release.yml`](.github/workflows/release.yml) then runs the tests with `-race`,
-builds the image, and publishes it to GHCR as both `:v1.2.3` and `:latest`,
-along with a GitHub release.
+**Every merge to `main` is a release.** The patch number goes up, the image is
+published to GHCR as both that version and `:latest`, and a GitHub release is
+created with generated notes. The version is not written down anywhere:
+[`release.yml`](.github/workflows/release.yml) reads the newest tag and counts on,
+so there is no file to forget to bump and no way for a tag and a constant to
+disagree. With no tags at all it starts at `v0.1.0`.
+
+For a minor or major bump, tag it by hand: `task release VERSION=v1.2.0` pushes
+the tag and that exact version is released — the next merge then counts on from
+there.
+
+The merge path waits for CI rather than verifying again. CI runs the integration
+suite against SQLite, PostgreSQL and MySQL on every push to `main`, so repeating a
+subset of it would add twenty minutes to every merge to discover nothing — and it
+means only a commit that went green is ever published. The tag path verifies for
+itself, because CI does not run on tags.
+
+Two details worth knowing if you change that file. The tag is created by the
+release action rather than by a `git push`, because a tag pushed with
+`GITHUB_TOKEN` triggers no further workflows — a "tag now, release on the tag"
+arrangement would tag and then sit there. And the commit that gets released is the
+one CI verified, not whatever `main` points at by the time the run finishes.
 
 Nothing has to be built on the server.
 

@@ -1,19 +1,112 @@
 name: Release
 
-# Cuts a release from an annotated version tag (created by `task release
-# VERSION=v1.2.3`, which just tags and pushes - this workflow does the rest).
+# Two ways in, and they mean different things.
+#
+# A merge to main releases the next patch version. The version is not written
+# down anywhere: this reads the newest tag and counts on, so there is no file to
+# forget to bump and no way for the tag and a constant to disagree. With no tags
+# at all it starts at v0.1.0.
+#
+# A tag pushed by hand (`task release VERSION=v1.2.3`) releases exactly that
+# version, and the next merge counts on from it - which is how a minor or major
+# bump is made.
+#
+# The merge path waits for CI rather than verifying again. CI already runs the
+# integration suite against SQLite, PostgreSQL and MySQL on every push to main,
+# and repeating a subset of that would add twenty minutes to every merge to
+# discover nothing. It also means only a green commit is ever published. The tag
+# path verifies for itself, because CI does not run on tags.
 on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
 
+# One release at a time. Two merges landing together would otherwise both read
+# the same newest tag and both try to create the same next one.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    name: Decide the version
+    runs-on: ubuntu-latest
+    # A failed CI run must not publish anything. On the tag path there is no CI
+    # run to look at, so the condition only applies to the other one.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.workflow_run.conclusion == 'success'
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      release: ${{ steps.decide.outputs.release }}
+      sha: ${{ steps.decide.outputs.sha }}
+    steps:
+      # The commit CI actually verified, not whatever main points at now: another
+      # merge may have landed while that run was finishing, and publishing an
+      # unverified commit under a version number is exactly what this guards.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # Every tag, because the next version is computed from them.
+          fetch-depth: 0
+
+      - name: Decide
+        id: decide
+        run: |
+          set -euo pipefail
+
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "Releasing the pushed tag ${{ github.ref_name }}."
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A commit that is already tagged has already been released - by the
+          # tag path, moments ago. Releasing it again would mean two releases and
+          # two images for one commit.
+          if git tag --points-at HEAD | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "This commit is already tagged; nothing to release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The newest version tag by version order, not by date: a patch tagged
+          # late on an older line must not be read as the newest.
+          latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+
+          if [ -z "$latest" ]; then
+            # The first release has to start somewhere, and v0.1.0 says "this has
+            # been released and is not finished", which is true.
+            next="v0.1.0"
+          else
+            major="$(echo "$latest" | cut -d. -f1 | tr -d v)"
+            minor="$(echo "$latest" | cut -d. -f2)"
+            patch="$(echo "$latest" | cut -d. -f3)"
+            next="v${major}.${minor}.$((patch + 1))"
+          fi
+
+          echo "Newest tag is '${latest:-none}'; releasing $next."
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+  # Only on the tag path: CI has not run for a tag, so this is the verification.
+  # On the merge path CI has already done all of it and more.
   verify:
     name: Verify
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: version
     permissions:
       contents: read
 
@@ -78,14 +171,27 @@ jobs:
   publish:
     name: Publish image & GitHub release
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [version, verify]
+    # always(), because verify is skipped on the merge path and a skipped
+    # dependency would otherwise skip this too. The conditions spell out what
+    # has to hold: something to release, and verification that either passed or
+    # was not needed because CI had already done it.
+    if: >-
+      always() &&
+      needs.version.outputs.release == 'true' &&
+      (needs.verify.result == 'success' || needs.verify.result == 'skipped')
     permissions:
       contents: write
       packages: write
     outputs:
       image: ${{ steps.image.outputs.name }}
+      version: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The commit that was verified, which on the merge path is not
+          # necessarily what main points at by now.
+          ref: ${{ needs.version.outputs.sha }}
 
       - uses: docker/setup-buildx-action@v4
 
@@ -107,13 +213,22 @@ jobs:
           # reads it, and a release that calls itself "dev" is worse than no
           # version at all.
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ needs.version.outputs.version }}
           tags: |
-            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            ${{ steps.image.outputs.name }}:${{ needs.version.outputs.version }}
             ${{ steps.image.outputs.name }}:latest
 
+      # The tag is created here rather than by a git push, and deliberately
+      # after the image: a tag with no image behind it is a release that cannot
+      # be deployed, and a failed build should leave nothing behind to explain.
+      #
+      # It also has to be this action that creates it. A tag pushed with
+      # GITHUB_TOKEN triggers no further workflows, so a two-step "tag now,
+      # release on the tag" arrangement would tag and then sit there.
       - uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ needs.version.outputs.version }}
+          target_commitish: ${{ needs.version.outputs.sha }}
           generate_release_notes: true
 
   # Deployment target is intentionally not wired up: this repo has no
@@ -135,7 +250,7 @@ jobs:
           # DB_DIALECT because the image ships without one on purpose - run bare it
           # serves its installer, and a smoke test that only proved the installer
           # answers would say nothing about the application being publishable.
-          docker run -d --name smoke -p 9090:8000             -e DB_DIALECT=sqlite             ${{ needs.publish.outputs.image }}:${{ github.ref_name }}
+          docker run -d --name smoke -p 9090:8000             -e DB_DIALECT=sqlite             ${{ needs.publish.outputs.image }}:${{ needs.publish.outputs.version }}
           ok=0
           for i in $(seq 1 10); do
             # The body, not the status. The installer answers every path with its
@@ -156,6 +271,6 @@ jobs:
 
       - name: Deploy
         run: |
-          echo "${{ needs.publish.outputs.image }}:${{ github.ref_name }} is published to GHCR and smoke-tested."
+          echo "${{ needs.publish.outputs.image }}:${{ needs.publish.outputs.version }} is published to GHCR and smoke-tested."
           echo "No rollout target (Kubernetes/Compose/SSH/PaaS) is configured in this repository yet."
           echo "Wire the actual deploy command in here once the target infrastructure is decided."
