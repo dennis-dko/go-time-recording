@@ -634,6 +634,80 @@ The server enforces these; the interface merely also hides what is not allowed:
 
 `task` on its own lists everything, and `task --summary <name>` explains one.
 
+### The three environments
+
+They differ in three things and nothing else: which database, which
+`configs/.$APP_ENV.env` overlay, and whether the thing being run is a locally
+built binary or the image that ships.
+
+| | Develop | Stage | Production |
+| --- | --- | --- | --- |
+| Command | `task dev` | `task stage` | `docker compose up -d` in `deploy/` |
+| `APP_ENV` | unset, so `.local.env` | `staging` | `prod`, set by the image |
+| Runs | binary built just now | the real image | the published image |
+| Database | SQLite file, or PostgreSQL in a container | PostgreSQL in a container | yours, in the environment |
+| Port | 8000 | 8080 | 8000, behind whatever you put in front |
+| Data | thrown away by `task env:down` | thrown away by `task stage:down` | a volume that outlives the container |
+
+Stage exists because it is the only one that exercises what is actually shipped:
+the multi-stage build, the embedded assets, the non-root user, the healthcheck.
+`task dev` is faster and skips all of it. A change that works in develop and
+fails in stage has failed in the image, which is the artifact anybody deploys.
+
+Production configuration is [`deploy/`](deploy/) — two compose files and an
+environment template, and nothing from the source tree. See
+[Deployment](#deployment).
+
+### Trying the installer
+
+`task dev` sets `DB_DIALECT`, so development never meets the installer. To see
+what a first-time operator sees, start the binary with no database configured
+anywhere:
+
+```bash
+task build
+cd bin
+rm -f configs/datasource.json          # if a previous run wrote one
+DB_DIALECT= DB_NAME= ./go-time-recording
+```
+
+Both variables have to be **empty rather than absent**: the process inherits your
+shell, and a `DB_DIALECT` left over from something else would send it straight
+into the application. The log then prints the setup token and the URL. Choosing
+SQLite there writes `configs/datasource.json` and the application takes over the
+same port in the same process, with no restart.
+
+The integration suite covers this path as well - see
+[`install_test.go`](test/integration/install_test.go), which drives it through
+`harness.StartUnconfigured`.
+
+### Surviving a network that misbehaves
+
+Multi-statement writes are transactional, so a connection lost half way through
+leaves the database describing something nobody asked for: see
+[`sqldb.base.withTx`](internal/infrastructure/persistence/sqldb/sqldb.go) and the
+commit that introduced it. The directory dials with a bounded timeout, so an
+unreachable LDAP server delays one sign-in rather than holding a request open.
+
+GoFr's **circuit breaker** does not apply here, which is worth stating rather than
+leaving somebody to look for it. It lives in `pkg/gofr/service` and guards
+*outgoing HTTP calls* registered with `AddHTTPService` — it takes a `HealthURL`
+and polls it. This application makes no outgoing HTTP calls at all: it talks to a
+SQL database and an LDAP server, neither of which is HTTP, and the optional trace
+exporter is gRPC and managed by the framework. Wiring one in would add a
+configuration surface that protects nothing.
+
+**Caching** is likewise deliberate rather than absent. Two things are cached, both
+because they are read on nearly every request and both with the staleness written
+down: the maintenance state for two seconds
+([`maintenance.go`](internal/interface/api/v1/rest/maintenance.go)) and the
+operational limits ([`limits_provider.go`](internal/application/v1/service/limits_provider.go)),
+each invalidated on save so a change takes effect on the next request rather than
+at the end of an interval. GoFr can bring Redis, and for an installation the size
+this is built for that would mean one more service to run, back up and keep
+reachable in exchange for queries that already answer in under a millisecond
+against a local file.
+
 ### Develop
 
 ```bash
