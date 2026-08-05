@@ -190,7 +190,8 @@ func scanUser(s scanner) (*model.User, error) {
 // expose a shared typed error, so the check is on the message text.
 func translateUserErr(err error, email string) error {
 	if isUniqueViolation(err) {
-		return apperror.Conflictf("a user with email %q already exists", email)
+		return apperror.Conflictf("a user with email %q already exists", email).
+			WithCode("emailTaken", email)
 	}
 
 	return apperror.Internal(err)

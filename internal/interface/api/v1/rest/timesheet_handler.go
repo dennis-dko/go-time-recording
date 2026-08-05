@@ -324,7 +324,7 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 	}
 
 	if to.Before(*from) {
-		return nil, toHTTPError(apperror.Invalidf("'to' must not be before 'from'"))
+		return nil, toHTTPError(apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted"))
 	}
 
 	perUser, err := h.domain.GenerateProjectTimeReport(c, projectID, *from, *to, h.viewerID(principal))

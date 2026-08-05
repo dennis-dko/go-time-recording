@@ -92,7 +92,7 @@ func (s *TimerService) Stop(
 	}
 
 	if timer == nil {
-		return nil, apperror.Conflictf("no timer is running")
+		return nil, apperror.Conflictf("no timer is running").WithCode("noTimerRunning")
 	}
 
 	now := time.Now().UTC()
@@ -103,7 +103,8 @@ func (s *TimerService) Stop(
 	if timer.TimerTooShort(now) {
 		return nil, apperror.Invalidf(
 			"the timer has been running for less than the smallest bookable duration; " +
-				"discard it instead")
+				"discard it instead").
+			WithCode("timerTooShort")
 	}
 
 	// Almost always a clock somebody forgot rather than a shift somebody worked,
@@ -113,7 +114,8 @@ func (s *TimerService) Stop(
 	if timer.TimerTooLong(now) {
 		return nil, apperror.Invalidf(
 			"the timer has been running for %.1f hours, which is more than one entry can hold; "+
-				"book it by hand and discard the timer", timer.HoursElapsed(now))
+				"book it by hand and discard the timer", timer.HoursElapsed(now)).
+			WithCode("timerTooLong", timer.HoursElapsed(now))
 	}
 
 	// The command carries 0 for "no project", which is how a typed booking says

@@ -334,11 +334,13 @@ func validateLogo(dataURI string) error {
 	}
 
 	if !strings.HasPrefix(dataURI, "data:image/") {
-		return apperror.Invalidf("the logo must be an inline image (data:image/...)")
+		return apperror.Invalidf("the logo must be an inline image (data:image/...)").
+			WithCode("logoNotInline")
 	}
 
 	if len(dataURI) > maxLogoBytes {
-		return apperror.Invalidf("the logo must be smaller than %d KB", maxLogoBytes/1024)
+		return apperror.Invalidf("the logo must be smaller than %d KB", maxLogoBytes/1024).
+			WithCode("logoTooLarge", maxLogoBytes/1024)
 	}
 
 	return nil

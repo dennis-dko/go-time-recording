@@ -14,7 +14,7 @@ import (
 // ErrTOTPRequired tells the caller that the password was right but a
 // second factor is still missing, so the UI can ask for the code instead of
 // reporting a failed sign-in.
-var ErrTOTPRequired = apperror.Conflictf("a two-factor code is required")
+var ErrTOTPRequired = apperror.Conflictf("a two-factor code is required").WithCode("twoFactorRequired")
 
 // ExternalAuthenticator checks credentials against a directory such as LDAP.
 // It is an interface so the session service does not depend on the LDAP
@@ -156,7 +156,7 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 		if !security.VerifyTOTP(user.TOTPSecret, totpCode) {
 			s.count(ctx, MetricSignInFailures, "reason", SignInFailureTOTP)
 
-			return nil, apperror.Invalidf("the two-factor code is not valid")
+			return nil, apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
 		}
 	}
 
@@ -202,7 +202,7 @@ func (s *SessionService) OpenSession(ctx context.Context, user *model.User) (*Lo
 // resolveUser finds the account behind the credentials, consulting the
 // directory first when one is configured.
 func (s *SessionService) resolveUser(ctx context.Context, email, password string) (*model.User, error) {
-	invalid := apperror.Invalidf("invalid credentials")
+	invalid := apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 
 	local, localErr := s.users.GetByEmail(ctx, normalizeEmail(email))
 
@@ -266,7 +266,7 @@ func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *E
 	// existence, or the account meant as the way back in would be one the
 	// directory controls.
 	if email == SystemUserEmail {
-		return nil, apperror.Invalidf("invalid credentials")
+		return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 	}
 
 	role, err := s.roles.GetByName(ctx, s.defaultRole)
@@ -302,7 +302,7 @@ func (s *SessionService) reconcileExternal(
 	// reachable through the normal sign-in path, which never consults the
 	// directory for it, but a stored identifier could still lead here.
 	if existing.IsSystem {
-		return nil, apperror.Invalidf("invalid credentials")
+		return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 	}
 
 	changed := false
@@ -332,12 +332,12 @@ func (s *SessionService) reconcileExternal(
 // Resolve turns a session token from a cookie into its principal.
 func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal, error) {
 	if token == "" {
-		return nil, apperror.Invalidf("no session")
+		return nil, apperror.Invalidf("no session").WithCode("noSession")
 	}
 
 	session, err := s.sessions.Get(ctx, security.HashToken(token))
 	if err != nil {
-		return nil, apperror.Invalidf("no session")
+		return nil, apperror.Invalidf("no session").WithCode("noSession")
 	}
 
 	if session.Expired(time.Now()) {
@@ -345,12 +345,12 @@ func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal,
 		// disappear the moment someone tries to use them.
 		_ = s.sessions.Delete(ctx, session.TokenHash)
 
-		return nil, apperror.Invalidf("session expired")
+		return nil, apperror.Invalidf("session expired").WithCode("sessionExpired")
 	}
 
 	user, err := s.users.GetByID(ctx, session.UserID)
 	if err != nil {
-		return nil, apperror.Invalidf("no session")
+		return nil, apperror.Invalidf("no session").WithCode("noSession")
 	}
 
 	return s.auth.principalFor(ctx, user)
@@ -392,7 +392,8 @@ func (s *SessionService) BeginTOTPEnrolment(
 	}
 
 	if user.TOTPEnabled {
-		return "", "", apperror.Conflictf("two-factor authentication is already enabled")
+		return "", "", apperror.Conflictf("two-factor authentication is already enabled").
+			WithCode("twoFactorAlreadyOn")
 	}
 
 	secret, err = security.NewTOTPSecret()
@@ -418,11 +419,11 @@ func (s *SessionService) ConfirmTOTP(ctx context.Context, userID uint, code stri
 	}
 
 	if user.TOTPSecret == "" {
-		return apperror.Conflictf("start the two-factor setup first")
+		return apperror.Conflictf("start the two-factor setup first").WithCode("twoFactorNotStarted")
 	}
 
 	if !security.VerifyTOTP(user.TOTPSecret, code) {
-		return apperror.Invalidf("the two-factor code is not valid")
+		return apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
 	}
 
 	user.TOTPEnabled = true
@@ -441,11 +442,11 @@ func (s *SessionService) DisableTOTP(ctx context.Context, userID uint, code stri
 	}
 
 	if !user.TOTPEnabled {
-		return apperror.Conflictf("two-factor authentication is not enabled")
+		return apperror.Conflictf("two-factor authentication is not enabled").WithCode("twoFactorNotOn")
 	}
 
 	if !security.VerifyTOTP(user.TOTPSecret, code) {
-		return apperror.Invalidf("the two-factor code is not valid")
+		return apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
 	}
 
 	user.TOTPEnabled = false

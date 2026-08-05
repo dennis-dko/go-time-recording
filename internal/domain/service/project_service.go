@@ -49,7 +49,8 @@ func (s *ProjectDomainService) ArchiveProject(
 
 	if project.Status != model.ProjectStatusCompleted {
 		return nil, apperror.Conflictf("a project can only be archived once its status is %q",
-			model.ProjectStatusCompleted)
+			model.ProjectStatusCompleted).
+			WithCode("archiveNeedsCompleted", model.ProjectStatusCompleted)
 	}
 
 	// Open entries still expect edits, so archiving would strand them.
@@ -62,7 +63,8 @@ func (s *ProjectDomainService) ArchiveProject(
 	}
 
 	if len(openEntries) > 0 {
-		return nil, apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries))
+		return nil, apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries)).
+			WithCode("archiveHasOpenEntries", len(openEntries))
 	}
 
 	project.Status = model.ProjectStatusArchived

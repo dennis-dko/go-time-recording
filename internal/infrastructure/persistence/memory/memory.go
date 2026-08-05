@@ -136,7 +136,8 @@ func (r *UserRepository) Save(_ context.Context, user *model.User) (*model.User,
 		if existing.Email == user.Email {
 			r.store.mu.RUnlock()
 
-			return nil, apperror.Conflictf("a user with email %q already exists", user.Email)
+			return nil, apperror.Conflictf("a user with email %q already exists", user.Email).
+				WithCode("emailTaken", user.Email)
 		}
 	}
 	r.store.mu.RUnlock()

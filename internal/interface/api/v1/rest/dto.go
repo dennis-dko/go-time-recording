@@ -44,7 +44,7 @@ func (d *Date) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	return apperror.Invalidf("date %q must be YYYY-MM-DD or RFC 3339", raw)
+	return apperror.Invalidf("date %q must be YYYY-MM-DD or RFC 3339", raw).WithCode("dateFormat", raw)
 }
 
 func (d Date) MarshalJSON() ([]byte, error) {
@@ -116,7 +116,7 @@ func parseUint(raw, field string) (uint, error) {
 // rather than letting it surface as an unexplained 500.
 func bind(c *gofr.Context, target any) error {
 	if err := c.Bind(target); err != nil {
-		return apperror.Invalidf("request body is not valid JSON: %v", err)
+		return apperror.Invalidf("request body is not valid JSON: %v", err).WithCode("bodyNotJSON")
 	}
 
 	return nil

@@ -83,7 +83,7 @@ func (s *StatisticsService) Own(
 	}
 
 	if to.Before(from) {
-		return nil, apperror.Invalidf("'to' must not be before 'from'")
+		return nil, apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted")
 	}
 
 	entries, err := s.timesheets.GetByFilter(ctx, repository.TimesheetFilter{

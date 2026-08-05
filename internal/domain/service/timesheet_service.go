@@ -66,7 +66,8 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 	// An approved entry is a signed-off record; moving its hours to another
 	// project would silently rewrite an already-reported total.
 	if timesheet.Status == model.TimesheetStatusApproved {
-		return nil, apperror.Conflictf("an approved timesheet can no longer be transferred")
+		return nil, apperror.Conflictf("an approved timesheet can no longer be transferred").
+			WithCode("approvedEntryUntransferable")
 	}
 
 	newProject, err := s.projectRepository.GetByID(ctx, newProjectID)
@@ -79,12 +80,14 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 	}
 
 	if timesheet.HasProject() && *timesheet.ProjectID == newProject.ID {
-		return nil, apperror.Conflictf("the timesheet is already booked on project %q", newProject.Name)
+		return nil, apperror.Conflictf("the timesheet is already booked on project %q", newProject.Name).
+			WithCode("entryAlreadyOnProject", newProject.Name)
 	}
 
 	if newProject.Status != model.ProjectStatusActive {
 		return nil, apperror.Conflictf("project %q is %s and no longer accepts time entries",
-			newProject.Name, newProject.Status)
+			newProject.Name, newProject.Status).
+			WithCode("projectClosedForBooking", newProject.Name, newProject.Status)
 	}
 
 	// Transferring is also how an uncategorised entry gets its first project.

@@ -80,12 +80,14 @@ func (s *RoleApplicationService) UpdateRole(
 	// leave the installation unadministrable.
 	if role.IsSystem {
 		if name != nil && *name != role.Name {
-			return nil, apperror.Conflictf("the system role %q cannot be renamed", role.Name)
+			return nil, apperror.Conflictf("the system role %q cannot be renamed", role.Name).
+				WithCode("systemRoleUnrenamable", role.Name)
 		}
 
 		if permissions != nil && !grantsAtLeast(permissions, role.Permissions) {
 			return nil, apperror.Conflictf(
-				"permissions cannot be removed from the system role %q", role.Name)
+				"permissions cannot be removed from the system role %q", role.Name).
+				WithCode("systemRoleUnweakenable", role.Name)
 		}
 	}
 
@@ -124,7 +126,8 @@ func (s *RoleApplicationService) DeleteRole(ctx context.Context, id uint) error 
 	}
 
 	if role.IsSystem {
-		return apperror.Conflictf("the system role %q cannot be deleted", role.Name)
+		return apperror.Conflictf("the system role %q cannot be deleted", role.Name).
+			WithCode("systemRoleUndeletable", role.Name)
 	}
 
 	inUse, err := s.roles.CountUsers(ctx, id)
@@ -133,7 +136,8 @@ func (s *RoleApplicationService) DeleteRole(ctx context.Context, id uint) error 
 	}
 
 	if inUse > 0 {
-		return apperror.Conflictf("role %q is still assigned to %d user(s)", role.Name, inUse)
+		return apperror.Conflictf("role %q is still assigned to %d user(s)", role.Name, inUse).
+			WithCode("roleStillAssigned", role.Name, inUse)
 	}
 
 	return s.roles.Delete(ctx, id)
@@ -170,7 +174,8 @@ func validateRole(name string, permissions []string) ([]string, error) {
 	}
 
 	if len(unknown) > 0 {
-		return nil, apperror.Invalidf("unknown permission(s): %s", strings.Join(unknown, ", "))
+		return nil, apperror.Invalidf("unknown permission(s): %s", strings.Join(unknown, ", ")).
+			WithCode("unknownPermissions", strings.Join(unknown, ", "))
 	}
 
 	return clean, nil

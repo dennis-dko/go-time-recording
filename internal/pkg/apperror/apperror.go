@@ -31,6 +31,35 @@ type Error struct {
 	Fields []string // offending field names, for KindInvalid
 	Msg    string
 	Err    error
+
+	// Code names the reason in a way something other than an English reader can
+	// act on, and Values carries what the message interpolated.
+	//
+	// Msg is written in English at the point the rule is enforced, which is right
+	// for a log and wrong for the person who tripped over it: the interface showed
+	// them "an approved timesheet can no longer be edited" whatever language they
+	// had chosen. Translating the prose is not possible - by the time it exists the
+	// numbers are already in it - so the reason travels as a code with its values
+	// beside it, and whoever displays it looks the sentence up in the reader's own
+	// language.
+	//
+	// Optional. Without a code the English message is shown, which is what happened
+	// everywhere before and is still better than nothing.
+	Code   string
+	Values []any
+}
+
+// WithCode names the reason, and records the values the message interpolated so a
+// translation can put them back in its own word order.
+//
+// Returns the same error so it can be attached where the error is built:
+//
+//	apperror.Conflictf("cannot delete a project that still has %d time entries", n).
+//		WithCode("projectHasEntries", n)
+func (e *Error) WithCode(code string, values ...any) *Error {
+	e.Code, e.Values = code, values
+
+	return e
 }
 
 func (e *Error) Error() string {

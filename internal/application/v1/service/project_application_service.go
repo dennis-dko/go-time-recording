@@ -222,7 +222,8 @@ func (s *ProjectApplicationService) validateStatusTransition(
 
 	if project.Status != model.ProjectStatusCompleted {
 		return apperror.Conflictf("a project can only be archived once its status is %q",
-			model.ProjectStatusCompleted)
+			model.ProjectStatusCompleted).
+			WithCode("archiveNeedsCompleted", model.ProjectStatusCompleted)
 	}
 
 	openEntries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
@@ -234,7 +235,8 @@ func (s *ProjectApplicationService) validateStatusTransition(
 	}
 
 	if len(openEntries) > 0 {
-		return apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries))
+		return apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries)).
+			WithCode("archiveHasOpenEntries", len(openEntries))
 	}
 
 	return nil
@@ -262,7 +264,8 @@ func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd comma
 	}
 
 	if len(entries) > 0 {
-		return apperror.Conflictf("cannot delete a project that still has %d time entries", len(entries))
+		return apperror.Conflictf("cannot delete a project that still has %d time entries", len(entries)).
+			WithCode("projectHasEntries", len(entries))
 	}
 
 	return s.projectRepository.Delete(ctx, cmd.ID)

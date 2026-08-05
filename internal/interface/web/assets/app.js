@@ -96,13 +96,58 @@ async function api(path, options = {}) {
 }
 
 /** Pulls a readable message out of GoFr's error shape. */
+/**
+ * The message to show for a failed request, in the reader's language where the
+ * server said which rule was broken.
+ *
+ * The server writes its refusals in English at the point the rule is enforced,
+ * which is right for the log and wrong for the person who tripped over it. Errors
+ * that name themselves carry a code and the values the sentence interpolated, so
+ * the sentence is looked up here and the values put back in German word order.
+ * Anything without a code falls back to the server's own wording, which is what
+ * every error did before.
+ */
 function errorMessage(body) {
   const err = body && body.error;
   if (!err) return '';
   if (typeof err === 'string') return err;
+
+  if (err.code) {
+    const translated = t(`err.${err.code}`, err.message ?? '');
+    if (translated) return fillIn(translated, err.values);
+  }
+
+  // Before the message, which for these is GoFr's "'1' invalid parameter(s):
+  // dailyTargetHours" - a count nobody asked for and a column name rather than the
+  // label above the field.
+  if (Array.isArray(err.param) && err.param.length) {
+    const named = err.param.map((field) => t(`field.${field}`, field));
+
+    return `${t('msg.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
+  }
+
   if (err.message) return err.message;
-  if (Array.isArray(err.param)) return `${t('msg.invalidFields', 'Invalid field(s)')}: ${err.param.join(', ')}`;
+
   return JSON.stringify(err);
+}
+
+/**
+ * Puts {0}, {1} ... back into a translated sentence.
+ *
+ * A fractional number is shown to two places, which is how hours are written
+ * everywhere else on screen - a refusal saying 6.5 next to a table saying 6.50
+ * would read as two different figures.
+ */
+function fillIn(text, values) {
+  if (!Array.isArray(values) || !values.length) return text;
+
+  return text.replace(/\{(\d+)\}/g, (whole, index) => {
+    const value = values[Number(index)];
+    if (value === undefined || value === null) return whole;
+    if (typeof value !== 'number') return String(value);
+
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  });
 }
 
 // -------------------------------------------------------------------- utils
@@ -550,7 +595,89 @@ const TRANSLATIONS = {
     'cat.badge': 'privat',
     'cat.create': 'Eigenes Projekt anlegen',
     'cat.hint': 'Eigene Projekte sind privat und nur für Sie sichtbar. Damit lässt sich Zeit innerhalb eines Tages aufteilen, wenn kein gemeinsames Projekt passt.',
+    'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
+    'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',
+    'err.adminUndeletable': 'Der eingebaute Administrator kann nicht gelöscht werden.',
+    'err.approvedEntryLocked': 'Ein genehmigter Zeiteintrag kann nicht mehr bearbeitet werden.',
+    'err.approvedEntryUndeletable': 'Ein genehmigter Zeiteintrag kann nicht mehr gelöscht werden.',
+    'err.approvedEntryUntransferable': 'Ein genehmigter Zeiteintrag kann nicht mehr verschoben werden.',
+    'err.archiveHasOpenEntries': 'Das Projekt hat noch {0} offene Zeiteinträge und kann nicht archiviert werden.',
+    'err.archiveNeedsCompleted': 'Ein Projekt kann erst archiviert werden, wenn sein Status „{0}“ ist.',
+    'err.attemptExpired': 'Dieser Versuch ist abgelaufen. Bitte erneut versuchen.',
+    'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
+    'err.credentialUnreadable': 'Der Anmeldeschlüssel konnte nicht gelesen werden.',
+    'err.dateFormat': 'Das Datum „{0}“ muss YYYY-MM-DD oder RFC 3339 sein.',
+    'err.deletionNeedsConfirming': '„{0}“ hat {1} erfasste Zeiteinträge. Sie würden mit dem Konto gelöscht und sind nicht wiederherstellbar – zum Fortfahren bitte bestätigen.',
+    'err.emailTaken': 'Es gibt bereits einen Benutzer mit der E-Mail-Adresse „{0}“.',
+    'err.entryAlreadyOnProject': 'Der Zeiteintrag ist bereits auf Projekt „{0}“ gebucht.',
+    'err.initialPasswordPending': 'Das Anfangskennwort muss geändert werden, bevor die Anwendung genutzt werden kann.',
+    'err.invalidCredentials': 'E-Mail-Adresse oder Kennwort ist falsch.',
+    'err.invalidToken': 'Ungültiges Token.',
+    'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
+    'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
+    'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
+    'err.newEntryIsAlwaysOpen': 'Ein neuer Zeiteintrag ist immer „{0}“. Einreichen oder genehmigen geht danach.',
+    'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
+    'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
+    'err.noSession': 'Keine Sitzung.',
+    'err.noTimerRunning': 'Es läuft keine Stoppuhr.',
+    'err.overDailyLimit': '{0} h würden am {2} zusammen {1} h ergeben und damit das Tagesmaximum von {3} h überschreiten.',
+    'err.passkeyKnown': 'Dieser Anmeldeschlüssel ist bereits registriert.',
+    'err.passkeyRejected': 'Der Anmeldeschlüssel wurde nicht akzeptiert.',
+    'err.passkeyUnverified': 'Der Anmeldeschlüssel konnte nicht geprüft werden.',
+    'err.passkeyWrongSession': 'Diese Registrierung gehört zu einer anderen Anmeldung.',
+    'err.passwordTooShort': 'Das Kennwort muss mindestens {0} Zeichen lang sein.',
+    'err.passwordUnchanged': 'Das neue Kennwort muss sich vom aktuellen unterscheiden.',
+    'err.projectClosedForBooking': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
+    'err.projectHasEntries': 'Das Projekt hat noch {0} Zeiteinträge und kann nicht gelöscht werden.',
+    'err.rangeInverted': '„bis“ darf nicht vor „von“ liegen.',
+    'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',
+    'err.roleStillAssigned': 'Rolle „{0}“ ist noch {1} Benutzer(n) zugewiesen.',
+    'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
+    'err.statusTransitionRefused': 'Der Status kann nicht von „{0}“ auf „{1}“ geändert werden.',
+    'err.systemRoleUndeletable': 'Die Systemrolle „{0}“ kann nicht gelöscht werden.',
+    'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
+    'err.systemRoleUnweakenable': 'Der Systemrolle „{0}“ können keine Rechte entzogen werden.',
+    'err.targetOverMaximum': 'Das Tagesziel ({0} h) darf das Tagesmaximum ({1} h) nicht überschreiten.',
+    'err.timerTooLong': 'Die Stoppuhr läuft seit {0} Stunden, mehr als ein Eintrag aufnehmen kann. Bitte von Hand buchen und die Stoppuhr verwerfen.',
+    'err.timerTooShort': 'Die Stoppuhr läuft kürzer als die kleinste buchbare Dauer. Bitte stattdessen verwerfen.',
+    'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
+    'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
+    'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
+    'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
+    'err.twoFactorNotStarted': 'Bitte zuerst die Zwei-Faktor-Einrichtung starten.',
+    'err.twoFactorRequired': 'Ein Zwei-Faktor-Code ist erforderlich.',
+    'err.unknownPermissions': 'Unbekannte Rechte: {0}',
+    'err.wrongCurrentPassword': 'Das aktuelle Kennwort ist nicht korrekt.',
     'field.action': 'Aktion',
+    'field.autoCloseAfterDays': 'Automatisch abschließen nach (Tagen)',
+    'field.baseDn': 'Basis-DN',
+    'field.code': 'Code',
+    'field.companyUrl': 'Firmen-Adresse',
+    'field.dailyTargetHours': 'Soll/Tag',
+    'field.defaultRole': 'Standardrolle',
+    'field.durationHours': 'Stunden',
+    'field.endDate': 'Ende',
+    'field.expiresInDays': 'Läuft ab in (Tagen)',
+    'field.host': 'Host',
+    'field.id': 'Kennung',
+    'field.language': 'Sprache',
+    'field.ldapSyncMaxDeleteRatio': 'Höchstanteil gelöschter Konten',
+    'field.logLevel': 'Protokollstufe',
+    'field.maxDailyHours': 'Max/Tag',
+    'field.port': 'Port',
+    'field.projectId': 'Projekt',
+    'field.rateLimit': 'Anfragegrenze',
+    'field.rateLimitWindowSeconds': 'Zeitfenster der Anfragegrenze (Sekunden)',
+    'field.sessionLifetimeHours': 'Sitzungsdauer (Stunden)',
+    'field.startDate': 'Start',
+    'field.syncSchedule': 'Zeitplan',
+    'field.timezone': 'Zeitzone',
+    'field.traceExporter': 'Trace-Exporter',
+    'field.tracerRatio': 'Trace-Anteil',
+    'field.tracerUrl': 'Trace-Adresse',
+    'field.userFilter': 'Benutzerfilter',
+    'field.userId': 'Benutzer',
     'field.date': 'Datum',
     'field.default': 'Standard',
     'field.description': 'Beschreibung',

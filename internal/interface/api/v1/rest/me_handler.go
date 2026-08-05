@@ -62,7 +62,8 @@ func (h *MeHandler) ChangePassword(c *gofr.Context) (any, error) {
 
 	if !h.authz.Enabled() {
 		return nil, toHTTPError(apperror.Conflictf(
-			"this instance runs without authentication, so there is no password to change"))
+			"this instance runs without authentication, so there is no password to change").
+			WithCode("noAuthNoPassword"))
 	}
 
 	var req ChangePasswordRequest

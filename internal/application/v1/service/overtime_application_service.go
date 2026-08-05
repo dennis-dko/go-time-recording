@@ -66,7 +66,7 @@ func (s *OvertimeService) Balance(
 	}
 
 	if to.Before(from) {
-		return nil, apperror.Invalidf("'to' must not be before 'from'")
+		return nil, apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted")
 	}
 
 	user, err := s.users.GetByID(ctx, userID)

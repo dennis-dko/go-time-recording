@@ -74,7 +74,8 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 	if cmd.Status != "" && cmd.Status != model.TimesheetStatusOpen {
 		return nil, apperror.Invalidf(
 			"a new time entry is always %q; submit or approve it afterwards",
-			model.TimesheetStatusOpen)
+			model.TimesheetStatusOpen).
+			WithCode("newEntryIsAlwaysOpen", model.TimesheetStatusOpen)
 	}
 
 	status := model.TimesheetStatusOpen
@@ -171,7 +172,8 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 	// An approved entry is a signed-off record; changing its figures would
 	// silently rewrite history, so only a status change is allowed.
 	if existingTimesheet.Status == model.TimesheetStatusApproved && touchesFigures(cmd) {
-		return nil, apperror.Conflictf("an approved timesheet can no longer be edited")
+		return nil, apperror.Conflictf("an approved timesheet can no longer be edited").
+			WithCode("approvedEntryLocked")
 	}
 
 	if cmd.UserID != nil {
@@ -259,7 +261,8 @@ func (s *TimesheetApplicationService) DeleteTimesheet(ctx context.Context, cmd c
 	}
 
 	if existing.Status == model.TimesheetStatusApproved {
-		return apperror.Conflictf("an approved timesheet can no longer be deleted")
+		return apperror.Conflictf("an approved timesheet can no longer be deleted").
+			WithCode("approvedEntryUndeletable")
 	}
 
 	return s.timesheetRepository.Delete(ctx, cmd.ID)
@@ -290,7 +293,8 @@ func (s *TimesheetApplicationService) requireUserAndProject(ctx context.Context,
 	// Booking onto a finished project would corrupt its final figures.
 	if project.Status != model.ProjectStatusActive {
 		return apperror.Conflictf("project %q is %s and no longer accepts time entries",
-			project.Name, project.Status)
+			project.Name, project.Status).
+			WithCode("projectClosedForBooking", project.Name, project.Status)
 	}
 
 	return nil
@@ -345,7 +349,8 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 
 	if total > limit {
 		return apperror.Conflictf("booking %.2fh would total %.2fh on %s, over the %.2fh daily limit",
-			hours, total, from.Format(time.DateOnly), limit)
+			hours, total, from.Format(time.DateOnly), limit).
+			WithCode("overDailyLimit", hours, total, from.Format(time.DateOnly), limit)
 	}
 
 	return nil
@@ -378,7 +383,8 @@ func validateStatusChange(current, next string) error {
 		}
 	}
 
-	return apperror.Conflictf("cannot change timesheet status from %q to %q", current, next)
+	return apperror.Conflictf("cannot change timesheet status from %q to %q", current, next).
+		WithCode("statusTransitionRefused", current, next)
 }
 
 func validateTimesheet(date time.Time, hours float64, status string, description *string) error {
