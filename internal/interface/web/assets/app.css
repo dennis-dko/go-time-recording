@@ -289,6 +289,20 @@ td.actions, th.actions { text-align: right; }
 
 tbody tr:last-child td { border-bottom: none; }
 
+/* A row that opens its entry for editing. The pointer and the hover are the only
+   sign it is more than text, since a table row cannot carry the cue a button has. */
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: var(--bg); }
+
+tbody tr.clickable:focus-visible {
+  background: var(--bg);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Submit and cancel on one line, cancel reading as secondary. */
+.form-actions { align-items: center; display: flex; gap: 12px; }
+
 .empty { color: var(--muted); font-style: italic; }
 
 .pill {

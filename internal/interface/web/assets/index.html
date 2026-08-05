@@ -169,7 +169,8 @@
       </div>
 
       <form id="form-timesheet" class="card form" data-perm="timesheets:write:own,timesheets:write:all">
-        <h2 data-i18n="ts.book">Book time</h2>
+        <h2 id="timesheet-form-title" data-i18n="ts.book">Book time</h2>
+        <input type="hidden" name="id">
         <div class="grid">
           <label data-i18n="field.user">User<select name="userId" required></select>
           </label>
@@ -187,7 +188,10 @@
           <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
-        <button type="submit" data-i18n="action.book">Book</button>
+        <div class="form-actions">
+          <button type="submit" id="timesheet-submit" data-i18n="action.book">Book</button>
+          <button type="button" class="link" id="timesheet-cancel" data-i18n="action.cancelEdit" hidden>cancel editing</button>
+        </div>
       </form>
 
       <div class="card">
@@ -254,11 +258,13 @@
                 <th class="num" data-i18n="field.hours">Hours</th>
                 <th data-i18n="field.description">Description</th>
                 <th data-i18n="field.status">Status</th>
+                <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
+        <p class="muted" data-i18n="cal.clickToEdit">Click an entry to edit it.</p>
       </div>
     </section>
 

@@ -473,12 +473,14 @@ const TRANSLATIONS = {
     'action.archive': 'archivieren',
     'action.book': 'Buchen',
     'action.calculate': 'Berechnen',
+    'action.cancelEdit': 'Bearbeiten abbrechen',
     'action.complete': 'abschließen',
     'action.create': 'Anlegen',
     'action.delete': 'löschen',
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
     'action.new': 'Neu',
+    'action.reopen': 'wieder öffnen',
     'action.reject': 'ablehnen',
     'action.save': 'Speichern',
     'action.submit': 'einreichen',
@@ -539,6 +541,7 @@ const TRANSLATIONS = {
     'app.language': 'Sprache',
     'banner.password': 'Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleibt die übrige Anwendung gesperrt.',
     'cal.close': 'schließen',
+    'cal.clickToEdit': 'Zum Bearbeiten auf einen Eintrag klicken.',
     'cal.monthTotal': 'Gesamt im Monat',
     'cal.months': 'Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember',
     'cal.title': 'Kalender',
@@ -595,6 +598,7 @@ const TRANSLATIONS = {
     'msg.booked': 'Zeit gebucht',
     'msg.categoryCreated': 'Projekt angelegt',
     'msg.entryDeleted': 'Eintrag gelöscht',
+    'msg.entrySaved': 'Eintrag gespeichert',
     'maint.confirm': 'Installation außer Betrieb nehmen? Alle außer diesem Konto werden abgewiesen.',
     'maint.default': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
     'maint.enabled': 'Außer Betrieb',
@@ -619,6 +623,7 @@ const TRANSLATIONS = {
     'msg.roleCreated': 'Rolle angelegt',
     'msg.roleDeleted': 'Rolle gelöscht',
     'msg.roleSaved': 'Rolle gespeichert',
+    'msg.reopened': 'Wieder geöffnet',
     'msg.submitted': 'Eingereicht',
     'msg.userCreated': 'Benutzer angelegt',
     'msg.userDeleted': 'Benutzer gelöscht',
@@ -709,6 +714,7 @@ const TRANSLATIONS = {
     'totp.title': 'Zwei-Faktor-Authentifizierung',
     'ts.book': 'Zeit buchen',
     'ts.empty': 'Keine Einträge für diesen Filter.',
+    'ts.edit': 'Eintrag bearbeiten',
     'ts.entries': 'Einträge',
     'ts.noProject': 'ohne Projekt',
     'user.create': 'Benutzer anlegen',
@@ -1157,6 +1163,139 @@ async function loadProjects() {
  * change that refreshes only one of them leaves the other showing yesterday -
  * which is what booking an entry and switching to the calendar used to do.
  */
+/**
+ * Whether this caller may change this entry's figures.
+ *
+ * An approved entry is refused by the API however it is reached, so offering it
+ * would only produce a conflict; the answer lives here so the list, the calendar
+ * and the row click cannot disagree about it.
+ */
+function mayEditTimesheet(entry) {
+  if (entry.status === 'approved') return false;
+
+  const mine = me.user && entry.userId === me.user.id;
+
+  return can('timesheets:write:all') || (mine && can('timesheets:write:own'));
+}
+
+/**
+ * Opens an existing entry in the booking form.
+ *
+ * The API has taken a full update since the beginning, but nothing in the
+ * interface offered one: the only way to correct a typed figure was to delete the
+ * entry and type it again. The form doubles as the editor rather than being
+ * duplicated, so the field rules - step="any", the 24 hour ceiling, the
+ * description bound - hold for a correction exactly as they do for a new booking.
+ */
+function editTimesheet(entry) {
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  form.elements.id.value = String(entry.id);
+  form.elements.userId.value = String(entry.userId);
+  form.elements.projectId.value = entry.projectId ? String(entry.projectId) : '';
+  form.elements.date.value = entry.date;
+  form.elements.durationHours.value = String(entry.durationHours);
+  form.elements.description.value = entry.description ?? '';
+
+  $('#timesheet-form-title').textContent = t('ts.edit', 'Edit entry');
+  $('#timesheet-submit').textContent = t('action.save', 'Save');
+  $('#timesheet-cancel').hidden = false;
+
+  switchView('timesheets');
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.durationHours.focus();
+}
+
+/** Puts the form back to booking a new entry. */
+function resetTimesheetForm() {
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  form.elements.id.value = '';
+  form.elements.durationHours.value = '';
+  form.elements.description.value = '';
+
+  $('#timesheet-form-title').textContent = t('ts.book', 'Book time');
+  $('#timesheet-submit').textContent = t('action.book', 'Book');
+  $('#timesheet-cancel').hidden = true;
+}
+
+/**
+ * The actions one time entry offers, as a table cell.
+ *
+ * Shared between the list and the calendar's day view, which render the same
+ * records: two copies of these rules would be two places for "who may approve
+ * this" to be answered differently, and the copy nobody was looking at would be
+ * the wrong one.
+ *
+ * What is offered depends on the status and on the caller, because the API refuses
+ * the rest anyway - the API is the authority here and this only avoids offering
+ * what it would turn down.
+ */
+function timesheetActions(entry) {
+  const actions = el('td', { class: 'actions' });
+  const mayEdit = mayEditTimesheet(entry);
+
+  if (mayEdit) {
+    actions.append(el('button', {
+      class: 'link',
+      text: t('action.edit', 'edit'),
+      onclick: () => editTimesheet(entry),
+    }));
+  }
+
+  // The API only allows open -> submitted -> approved/rejected.
+  if (mayEdit && entry.status === 'open') {
+    actions.append(el('button', {
+      class: 'link',
+      text: t('action.submit', 'submit'),
+      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'submitted' },
+        t('msg.submitted', 'Submitted'), reloadTimeViews),
+    }));
+  }
+
+  if (can('timesheets:approve') && entry.status === 'submitted') {
+    actions.append(el('button', {
+      class: 'link',
+      text: t('action.approve', 'approve'),
+      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'approved' },
+        t('msg.approved', 'Approved'), reloadTimeViews),
+    }));
+    actions.append(el('button', {
+      class: 'link danger',
+      text: t('action.reject', 'reject'),
+      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'rejected' },
+        t('msg.rejected', 'Rejected'), reloadTimeViews),
+    }));
+  }
+
+  // A rejected entry can go back to open, which the API allows and nothing in the
+  // interface offered - so the only way out of a rejection was to delete the entry
+  // and type it again.
+  if (mayEdit && entry.status === 'rejected') {
+    actions.append(el('button', {
+      class: 'link',
+      text: t('action.reopen', 'reopen'),
+      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'open' },
+        t('msg.reopened', 'Reopened'), reloadTimeViews),
+    }));
+  }
+
+  if (mayEdit && entry.status !== 'approved') {
+    actions.append(el('button', {
+      class: 'link danger',
+      text: t('action.delete', 'delete'),
+      onclick: () => removeAfterConfirm(
+        `${entry.date}, ${fmtHours(entry.durationHours)} h`,
+        `/timesheets/${entry.id}`,
+        t('msg.entryDeleted', 'Entry deleted'), reloadTimeViews),
+    }));
+  }
+
+  return actions;
+}
+
 async function reloadTimeViews() {
   await loadTimesheets();
   await loadCalendar();
@@ -1178,45 +1317,8 @@ async function loadTimesheets() {
 
   // Named `entry` rather than `t`, which would shadow the translation helper.
   const rows = entries.map((entry) => {
-    const actions = el('td', { class: 'actions' });
+    const actions = timesheetActions(entry);
     const mine = me.user && entry.userId === me.user.id;
-    const mayEdit = can('timesheets:write:all') || (mine && can('timesheets:write:own'));
-
-    // The API only allows open -> submitted -> approved/rejected.
-    if (mayEdit && entry.status === 'open') {
-      actions.append(el('button', {
-        class: 'link',
-        text: t('action.submit', 'submit'),
-        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'submitted' },
-          t('msg.submitted', 'Submitted'), reloadTimeViews),
-      }));
-    }
-
-    if (can('timesheets:approve') && entry.status === 'submitted') {
-      actions.append(el('button', {
-        class: 'link',
-        text: t('action.approve', 'approve'),
-        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'approved' },
-          t('msg.approved', 'Approved'), reloadTimeViews),
-      }));
-      actions.append(el('button', {
-        class: 'link danger',
-        text: t('action.reject', 'reject'),
-        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'rejected' },
-          t('msg.rejected', 'Rejected'), reloadTimeViews),
-      }));
-    }
-
-    if (mayEdit && entry.status !== 'approved') {
-      actions.append(el('button', {
-        class: 'link danger',
-        text: t('action.delete', 'delete'),
-        onclick: () => removeAfterConfirm(
-          `${entry.date}, ${fmtHours(entry.durationHours)} h`,
-          `/timesheets/${entry.id}`,
-          t('msg.entryDeleted', 'Entry deleted'), reloadTimeViews),
-      }));
-    }
 
     return el('tr', { class: mine ? 'self' : '' },
       el('td', { text: fmtDate(entry.date) }),
@@ -1384,14 +1486,42 @@ function renderCalendarGrid(first, last, byDay) {
 function showCalendarDay(iso, entries) {
   $('#calendar-day-title').textContent = fmtDate(iso);
 
-  const rows = entries.map((entry) => el('tr', {},
-    el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project') }),
-    el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
-    el('td', { text: entry.description ?? '–' }),
-    el('td', {}, statusBadge(entry.status)),
-  ));
+  const rows = entries.map((entry) => {
+    const row = el('tr', {},
+      el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project') }),
+      el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
+      el('td', { text: entry.description ?? '–' }),
+      el('td', {}, statusBadge(entry.status)),
+      timesheetActions(entry),
+    );
 
-  fillTable($('#table-calendar-day tbody'), rows, 4, t('ot.empty', 'No bookings in this period.'));
+    if (mayEditTimesheet(entry)) {
+      row.classList.add('clickable');
+      row.tabIndex = 0;
+      row.title = t('cal.clickToEdit', 'Click an entry to edit it.');
+
+      // Anywhere on the row, except on the buttons it carries - a click on
+      // "delete" must not also open the entry behind the confirmation.
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+
+        editTimesheet(entry);
+      });
+
+      // Reachable without a mouse, since a row is not a control the browser
+      // would have given a keyboard behaviour to.
+      row.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+
+        e.preventDefault();
+        editTimesheet(entry);
+      });
+    }
+
+    return row;
+  });
+
+  fillTable($('#table-calendar-day tbody'), rows, 5, t('ot.empty', 'No bookings in this period.'));
   $('#calendar-day-card').hidden = false;
 }
 
@@ -4307,22 +4437,29 @@ function wireForms() {
 
   $('#form-timesheet').addEventListener('submit', (e) => {
     e.preventDefault();
-    const raw = formData(e.target);
+    const { id, ...raw } = formData(e.target);
     const body = {
       ...raw,
       userId: Number(raw.userId),
       projectId: Number(raw.projectId),
       durationHours: Number(raw.durationHours),
     };
-    mutate(() => api('/timesheets', { method: 'POST', body: JSON.stringify(body) }),
-      t('msg.booked', 'Time booked'),
+
+    // The same form books and corrects; the id decides which.
+    const editing = Boolean(id);
+    const path = editing ? `/timesheets/${id}` : '/timesheets';
+    const method = editing ? 'PUT' : 'POST';
+
+    mutate(() => api(path, { method, body: JSON.stringify(body) }),
+      editing ? t('msg.entrySaved', 'Entry saved') : t('msg.booked', 'Time booked'),
       async () => {
-        // Keep user/project/date so booking several entries in a row is quick.
-        e.target.elements.durationHours.value = '';
-        e.target.elements.description.value = '';
+        // Keeps user/project/date, so booking several entries in a row stays quick.
+        resetTimesheetForm();
         await reloadTimeViews();
       });
   });
+
+  $('#timesheet-cancel').addEventListener('click', resetTimesheetForm);
 
   $('#form-report').addEventListener('submit', (e) => {
     e.preventDefault();
