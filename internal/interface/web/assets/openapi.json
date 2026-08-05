@@ -1281,6 +1281,64 @@
           }
         }
       }
+    },
+    "/me/timer": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Is a clock running, and since when",
+        "description": "Answers {\"running\": false} when nothing is going. While one runs it carries startedAt, so a client can count up on its own rather than polling, and elapsedHours, which is what the entry would record - a browser with a wrong clock then shows a slightly wrong number and still books the right one.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Start the clock",
+        "description": "Body is optional: {\"projectId\": 3, \"description\": \"...\"}, both of which may be left out and settled later. Starting again replaces a clock already running - somebody who does that has changed their mind about what they are doing, and refusing would leave them to stop a clock measuring the wrong thing. Always the caller's own clock; there is no route for anybody else's.",
+        "responses": {
+          "200": {
+            "description": "Running"
+          },
+          "201": {
+            "description": "Running"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Discard the clock, recording nothing",
+        "description": "The way out of a clock nobody meant to start.",
+        "responses": {
+          "204": {
+            "description": "Discarded"
+          }
+        }
+      }
+    },
+    "/me/timer/stop": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Stop the clock and book what it measured",
+        "description": "Creates an ordinary time entry through the same service a typed booking goes through, so it meets the same rules: the daily cap, the project having to exist, be active and be visible, the description length. The duration is the measured one, to the second and rounded to nothing. The entry lands on the day the clock was *started*, in the caller's own timezone - somebody who starts at half past eleven at night and stops after midnight worked that evening.\n\nRefused when the clock has run for less than the smallest bookable duration (discard it instead) or for more than one entry can hold, which is almost always a clock somebody forgot; the measured hours are in that message so it can be booked by hand. A refusal leaves the clock running, so the time is not lost to it.",
+        "responses": {
+          "200": {
+            "description": "The entry that was created"
+          },
+          "201": {
+            "description": "The entry that was created"
+          }
+        }
+      }
     }
   },
   "components": {

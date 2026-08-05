@@ -58,7 +58,31 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260803010000: {UP: func(d migration.Datasource) error {
 			return createPasskeys(d, dialect)
 		}},
+		20260805010000: {UP: func(d migration.Datasource) error {
+			return createRunningTimers(d, dialect)
+		}},
 	}
+}
+
+// createRunningTimers holds the clock somebody has started and not yet stopped.
+//
+// A table of its own rather than columns on timesheets, because a running timer
+// is not a time entry yet and cannot satisfy what a time entry has to: it has no
+// duration until it stops, no status to be in, and no calendar day until the zone
+// and the stop time are both known. Storing it as a timesheet would mean an entry
+// of zero hours, which validation refuses and every total would have to learn to
+// skip.
+//
+// The user is the primary key, so one person can have exactly one clock running.
+// Two would be a question nobody has an answer for - which of them does the next
+// stop belong to.
+func createRunningTimers(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE running_timers (
+		user_id %s PRIMARY KEY REFERENCES users(id),
+		project_id %s REFERENCES projects(id),
+		description TEXT,
+		started_at %s NOT NULL
+	)`, foreignKeyID(dialect), foreignKeyID(dialect), timestamp(dialect)))
 }
 
 // createPasskeys stores the WebAuthn credentials users register for signing in.

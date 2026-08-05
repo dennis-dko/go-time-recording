@@ -313,6 +313,7 @@ func main() {
 	timesheetRepo := sqldb.NewTimesheetRepository(db, cfg.Dialect)
 	settingsRepo := sqldb.NewSettingsRepository(db, cfg.Dialect)
 
+	timerRepo := sqldb.NewTimerRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 
@@ -376,6 +377,10 @@ func main() {
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
 	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo)
+
+	// Through the timesheet service rather than the repository, so a timer
+	// booking meets exactly the rules a typed one meets.
+	timers := appservice.NewTimerService(timerRepo, timesheets)
 
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
 	projectDomain := domainservice.NewProjectDomainService(projectRepo, timesheetRepo)
@@ -503,6 +508,7 @@ func main() {
 		Setup:      rest.NewSetupHandler(setup, authorizer),
 		Logs:       rest.NewLogHandler(logs, authorizer),
 		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg),
+		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
 			// What the device's prompt calls this installation. The
 			// administered title if there is one, so a person sees the name

@@ -22,6 +22,7 @@ type Handlers struct {
 	Passkeys   *rest.PasskeyHandler
 	Logs       *rest.LogHandler
 	Restart    *rest.RestartHandler
+	Timers     *rest.TimerHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -93,6 +94,14 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/me/language", h.Auth.SetLanguage)
 	app.PUT(base+"/me/timezone", h.Auth.SetTimezone)
 	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
+	// The clock, always the caller's own: starting somebody else's would record
+	// time nobody asked them about, so there is no user id in these routes and no
+	// permission for "other people's timers" to get wrong.
+	app.GET(base+"/me/timer", h.Timers.Running)
+	app.POST(base+"/me/timer", h.Timers.Start)
+	app.POST(base+"/me/timer/stop", h.Timers.Stop)
+	app.DELETE(base+"/me/timer", h.Timers.Discard)
+
 	app.GET(base+"/me/passkeys", h.Passkeys.List)
 	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)
 	app.PUT(base+"/me/passkeys/register", h.Passkeys.FinishRegistration)

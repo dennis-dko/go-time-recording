@@ -144,6 +144,30 @@
   <main>
     <!-- Time entries -->
     <section id="view-timesheets" class="view">
+      <!-- The clock, above the form, because it is the shorter way to record the
+           day you are actually having: press start, work, press stop. The form
+           below is for a day that has already happened. -->
+      <div class="card" id="timer-card" data-perm="timesheets:write:own,timesheets:write:all">
+        <div class="card-head">
+          <h2 data-i18n="timer.title">Stopwatch</h2>
+          <span class="timer-elapsed" id="timer-elapsed" aria-live="off"></span>
+        </div>
+        <p class="muted" data-i18n="timer.hint">Records the time actually measured, to the second — the entry lands on the day the clock was started, in your own timezone.</p>
+        <div class="grid">
+          <label data-i18n="field.projectOptional">Project (optional)
+            <select name="timerProjectId" id="timer-project"></select>
+          </label>
+          <label class="wide" data-i18n="field.description">Description
+            <input type="text" id="timer-description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
+          </label>
+        </div>
+        <div class="row">
+          <button type="button" id="timer-start" data-i18n="timer.start">Start</button>
+          <button type="button" id="timer-stop" hidden data-i18n="timer.stop">Stop and book</button>
+          <button type="button" class="secondary" id="timer-discard" hidden data-i18n="timer.discard">Discard</button>
+        </div>
+      </div>
+
       <form id="form-timesheet" class="card form" data-perm="timesheets:write:own,timesheets:write:all">
         <h2 data-i18n="ts.book">Book time</h2>
         <div class="grid">

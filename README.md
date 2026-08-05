@@ -127,6 +127,7 @@ missing. That is why "Finish later" is safe to offer.
 | Live log | The process log, filterable and searchable, for the built-in administrator |
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
+| Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
 | Background job | Cron sweep that submits time entries left open too long |
@@ -565,6 +566,8 @@ The full reference is at `/api-docs`; the highlights:
 | `POST` | `/api/v1/projects/{id}/archive` | Archive |
 | `GET` | `/api/v1/projects/{id}/report` | Report |
 | `GET/POST/PUT/DELETE` | `/api/v1/timesheets`, `/timesheets/{id}` | Time entries |
+| `GET/POST/DELETE` | `/api/v1/me/timer` | Own stopwatch: read, start, discard |
+| `POST` | `/api/v1/me/timer/stop` | Stop it and book the measured time |
 | `POST` | `/api/v1/timesheets/{id}/transfer` | Move to another project |
 | `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP, metrics and tracing |
 

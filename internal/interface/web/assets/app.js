@@ -484,6 +484,15 @@ const TRANSLATIONS = {
     'action.submit': 'einreichen',
     'action.dismiss': 'Schließen',
     'action.cancel': 'Abbrechen',
+    'timer.title': 'Stoppuhr',
+    'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in Ihrer eigenen Zeitzone.',
+    'timer.start': 'Starten',
+    'timer.stop': 'Stoppen und buchen',
+    'timer.discard': 'Verwerfen',
+    'timer.started': 'Die Uhr läuft',
+    'timer.discarded': 'Die Uhr wurde verworfen',
+    'timer.discardTitle': 'Gemessene Zeit verwerfen?',
+    'timer.discardText': 'Die Uhr wird angehalten und nichts erfasst. Das kann nicht rückgängig gemacht werden.',
     'confirm.deleteTitle': 'Endgültig löschen?',
     'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
     'sync.confirmTitle': 'Abgleich ausführen?',
@@ -1074,6 +1083,8 @@ async function loadProjects() {
 
   const bookable = cache.projects.filter((p) => p.status === 'active');
   // A blank first option is what lets time be booked without a project.
+  fillSelect($('#timer-project'), bookable,
+    { placeholder: t('field.projectOptional', 'Project (optional)') });
   fillSelect($('#form-timesheet select[name=projectId]'), bookable,
     { placeholder: t('ts.noProject', 'no project') });
   fillSelect($('#form-report select[name=projectId]'), cache.projects);
@@ -2994,6 +3005,124 @@ function wirePasswordReveal(root = document) {
   }
 }
 
+// ------------------------------------------------------------------ stopwatch
+
+/** The running clock, or null. Kept so the display can tick without asking. */
+let runningTimer = null;
+
+/** The interval that ticks the display, so it can be stopped when nothing runs. */
+let timerTick = null;
+
+/**
+ * Renders the clock's state.
+ *
+ * The elapsed time is counted here from the start instant rather than polled,
+ * because a request per second to be told the same thing is a request per second.
+ * The server sends its own elapsed figure too, and that is what the entry will
+ * record - so a browser with a wrong clock shows a slightly wrong number here and
+ * still books the right one.
+ */
+function renderTimer() {
+  const card = $('#timer-card');
+  if (!card) return;
+
+  const running = runningTimer !== null;
+
+  $('#timer-start').hidden = running;
+  $('#timer-stop').hidden = !running;
+  $('#timer-discard').hidden = !running;
+  $('#timer-project').disabled = running;
+  $('#timer-description').disabled = running;
+
+  if (!running) {
+    $('#timer-elapsed').textContent = '';
+
+    if (timerTick) {
+      clearInterval(timerTick);
+      timerTick = null;
+    }
+
+    return;
+  }
+
+  const started = new Date(runningTimer.startedAt).getTime();
+
+  const paint = () => {
+    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+    const ss = String(seconds % 60).padStart(2, '0');
+
+    $('#timer-elapsed').textContent = `${hh}:${mm}:${ss}`;
+  };
+
+  paint();
+
+  if (!timerTick) timerTick = setInterval(paint, 1000);
+}
+
+async function loadTimer() {
+  if (!can('timesheets:write:own', 'timesheets:write:all')) return;
+
+  const state = await api('/me/timer');
+  runningTimer = state.running ? state : null;
+
+  // The project it was started with, so stopping books what was chosen - the
+  // select is disabled while it runs, and this is what it shows.
+  if (runningTimer?.projectId) {
+    $('#timer-project').value = String(runningTimer.projectId);
+  }
+
+  if (runningTimer?.description) {
+    $('#timer-description').value = runningTimer.description;
+  }
+
+  renderTimer();
+}
+
+function wireTimer() {
+  const start = $('#timer-start');
+  if (!start) return;
+
+  start.addEventListener('click', () => {
+    const projectId = $('#timer-project').value;
+    const description = $('#timer-description').value.trim();
+
+    const body = {};
+    if (projectId) body.projectId = Number(projectId);
+    if (description) body.description = description;
+
+    mutate(
+      () => api('/me/timer', { method: 'POST', body: JSON.stringify(body) }),
+      t('timer.started', 'The clock is running'),
+      loadTimer);
+  });
+
+  $('#timer-stop').addEventListener('click', () => {
+    mutate(
+      () => api('/me/timer/stop', { method: 'POST' }),
+      t('msg.booked', 'Time booked'),
+      // Both time views as well: a booking has just appeared in each of them.
+      async () => { await loadTimer(); await reloadTimeViews(); });
+  });
+
+  $('#timer-discard').addEventListener('click', async () => {
+    const proceed = await confirmDialog({
+      title: t('timer.discardTitle', 'Discard the measured time?'),
+      text: t('timer.discardText',
+        'The clock is stopped and nothing is recorded. This cannot be undone.'),
+      confirmLabel: t('timer.discard', 'Discard'),
+    });
+
+    if (!proceed) return;
+
+    mutate(
+      () => api('/me/timer', { method: 'DELETE' }),
+      t('timer.discarded', 'The clock was discarded'),
+      loadTimer);
+  });
+}
+
 // ------------------------------------------------------- metrics and tracing
 
 /**
@@ -3948,6 +4077,7 @@ async function refreshAll() {
   await loadTimesheets();
   // After users and projects, so the calendar can resolve names.
   await loadCalendar();
+  await loadTimer();
   await loadAdmin();
   await loadTokens();
   await loadPasskeys();
@@ -4177,6 +4307,7 @@ async function init() {
     wireOperational();
     wireTelemetry();
     wireRestart();
+    wireTimer();
     // After the forms are wired, so a submit handler registered here runs
     // beside theirs rather than instead of one.
     wirePasswordReveal();

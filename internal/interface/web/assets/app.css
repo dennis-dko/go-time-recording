@@ -232,6 +232,15 @@ button.danger {
   color: #ffffff;
 }
 
+/* The elapsed time, big enough to read across a desk and monospaced so the
+ * digits do not shuffle sideways every second. */
+.timer-elapsed {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 /* --- asking before something is destroyed ---
  *
  * Above the sign-in screen (30) so a question is never painted behind it, and
