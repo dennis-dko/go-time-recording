@@ -551,9 +551,13 @@
         <h2 data-i18n="totp.title">Two-factor authentication</h2>
         <p class="muted" id="totp-state"></p>
         <div id="totp-setup" hidden>
-          <p class="muted" data-i18n="totp.instructions">Add this key to your authenticator app and confirm the code it shows:</p>
-          <pre class="secret" id="totp-secret"></pre>
-          <pre class="secret" id="totp-uri"></pre>
+          <p class="muted" data-i18n="totp.instructions">Scan this code with your authenticator app, or add the key by hand, and confirm the code it shows:</p>
+          <img id="totp-qr" class="qr" alt="" hidden>
+          <details id="totp-manual">
+            <summary data-i18n="totp.manual">Enter the key by hand instead</summary>
+            <pre class="secret" id="totp-secret"></pre>
+            <pre class="secret" id="totp-uri"></pre>
+          </details>
         </div>
         <div class="grid">
           <label id="totp-code-field" hidden data-i18n="totp.code">Code<input type="text" id="totp-code" inputmode="numeric" maxlength="6">

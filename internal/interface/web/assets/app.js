@@ -835,8 +835,10 @@ const TRANSLATIONS = {
     'totp.disabled': 'Zwei-Faktor-Authentifizierung deaktiviert',
     'totp.enable': 'Aktivieren',
     'totp.enabled': 'Zwei-Faktor-Authentifizierung aktiviert',
-    'totp.instructions': 'Diesen Schlüssel in der Authenticator-App eintragen und den angezeigten Code bestätigen:',
+    'totp.instructions': 'Diesen Code mit der Authenticator-App scannen oder den Schlüssel von Hand eintragen und den angezeigten Code bestätigen:',
+    'totp.manual': 'Schlüssel stattdessen von Hand eintragen',
     'totp.off': 'Zwei-Faktor-Authentifizierung ist nicht aktiviert.',
+    'totp.qrAlt': 'QR-Code für die Authenticator-App',
     'totp.on': 'Zwei-Faktor-Authentifizierung ist aktiviert.',
     'totp.title': 'Zwei-Faktor-Authentifizierung',
     'ts.book': 'Zeit buchen',
@@ -2318,6 +2320,14 @@ function renderTOTPState() {
   $('#totp-disable').hidden = !enabled;
   $('#totp-confirm').hidden = true;
   $('#totp-setup').hidden = true;
+
+  // The code encodes the secret, so it must not survive the enrolment it belongs
+  // to - neither on screen nor in the markup.
+  const qr = $('#totp-qr');
+  qr.hidden = true;
+  qr.removeAttribute('src');
+  $('#totp-secret').textContent = '';
+  $('#totp-uri').textContent = '';
   // Disabling also needs a current code, so the field stays visible for it.
   $('#totp-code-field').hidden = !enabled;
 }
@@ -2327,6 +2337,17 @@ function wireTOTP() {
     const setup = await api('/me/totp', { method: 'POST' });
     $('#totp-secret').textContent = setup.secret;
     $('#totp-uri').textContent = setup.uri;
+
+    // The picture is the ordinary way in; the typed key stays folded away behind
+    // it for a machine with no camera, and for when a code will not scan.
+    const qr = $('#totp-qr');
+    qr.hidden = !setup.qr;
+    qr.alt = setup.qr ? t('totp.qrAlt', 'QR code for your authenticator app') : '';
+    if (setup.qr) qr.src = setup.qr;
+
+    // Open on the key when there is no picture, or the screen would offer nothing.
+    $('#totp-manual').open = !setup.qr;
+
     $('#totp-setup').hidden = false;
     $('#totp-code-field').hidden = false;
     $('#totp-confirm').hidden = false;
@@ -4439,6 +4460,14 @@ function switchView(name) {
   // running for as long as the tab is open.
   if (logViewerActive()) schedulePoll({ immediate: true });
   else stopLogPolling();
+
+  // An enrolment in progress does not survive leaving the screen. The panel holds a
+  // shared secret and the QR code that encodes it, and neither has any business
+  // sitting on a screen somebody has walked away from. Starting again is what the
+  // Enable button does anyway.
+  if (name !== 'settings' && $('#totp-setup') && !$('#totp-setup').hidden) {
+    renderTOTPState();
+  }
 }
 
 /** The view named in the address bar, if it names one. */

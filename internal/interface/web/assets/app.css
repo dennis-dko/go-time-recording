@@ -510,6 +510,30 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .lang { width: auto; }
 
 /* Secrets are shown for manual entry, so they must wrap rather than overflow. */
+/* The enrolment QR code.
+   A white plate under it rather than the surface colour: the code carries its own
+   light margin, and on the dark theme a code floating on a dark card reads as a
+   white box somebody forgot to style. Capped in size because a phone focuses on
+   a code of a few centimetres far more readily than on a page-wide one. */
+.qr {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: block;
+  height: auto;
+  margin: 12px 0;
+  max-width: 220px;
+  padding: 4px;
+  width: 100%;
+}
+
+/* The typed key, folded away behind the picture. */
+#totp-manual summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
 .secret {
   background: var(--bg);
   border: 1px solid var(--border);

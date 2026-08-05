@@ -987,3 +987,61 @@ func TestARejectedFieldIsNamedNotIdentified(t *testing.T) {
 		t.Errorf("the refusal still carries GoFr's parameter count: %q", shown)
 	}
 }
+
+// The enrolment QR code has to be on screen, and has to be the code the server
+// drew rather than a broken image.
+//
+// A picture that fails to load still occupies its box, so "the element is there"
+// proves nothing: this checks the browser decoded it, which for an SVG data URI
+// means the markup parsed.
+func TestTheTwoFactorQRCodeIsShown(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("start two-factor enrolment",
+		chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#totp-card", chromedp.ByID),
+		p.click("#totp-begin"),
+		chromedp.WaitVisible("#totp-qr", chromedp.ByQuery),
+	)
+
+	var loaded bool
+
+	// naturalWidth is 0 for an image the browser could not decode, whatever the
+	// element's own size is.
+	p.run("check the code decoded", chromedp.Evaluate(`(() => {
+		const img = document.querySelector('#totp-qr');
+		return Boolean(img && img.complete && img.naturalWidth > 0);
+	})()`, &loaded))
+
+	if !loaded {
+		t.Errorf("the QR code did not load\n\nsrc: %.60s\n\napplication log:\n%s",
+			p.attr("#totp-qr", "src"), p.app.Log())
+	}
+
+	if src := p.attr("#totp-qr", "src"); !strings.HasPrefix(src, "data:image/svg+xml") {
+		t.Errorf("the code is not an inline SVG: %.60s", src)
+	}
+
+	// The typed key is still reachable, folded away behind the picture.
+	if p.text("#totp-secret") == "" {
+		t.Error("the key to type is gone; a machine with no camera has no way in")
+	}
+
+	// Leaving the screen and coming back must not leave the secret on it: the code
+	// encodes it, and the enrolment it belonged to is over.
+	p.run("leave and come back",
+		chromedp.Click(`.tab[data-view="timesheets"]`, chromedp.ByQuery),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
+		chromedp.Sleep(400*time.Millisecond),
+	)
+
+	if p.visible("#totp-qr") {
+		t.Error("the QR code survived the enrolment it belonged to")
+	}
+
+	if secret := p.text("#totp-secret"); secret != "" {
+		t.Errorf("the secret is still on screen after leaving: %q", secret)
+	}
+}

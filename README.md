@@ -252,6 +252,12 @@ Implemented, and verified against a running instance:
   implementation is checked against the RFC's published test vectors, so it
   interoperates with real authenticator apps.
 
+  Enrolment shows a **QR code** to scan, with the key to type folded away behind
+  it for a machine with no camera and for when a code will not scan. The code is
+  rendered by the binary as an inline SVG, so it needs no external service — the
+  strict `Content-Security-Policy` already allows `data:` images. It is cleared
+  from the screen when you leave it: the picture encodes the shared secret.
+
   **With both enabled, a passkey sign-in does not ask for a code.** That is
   deliberate rather than an oversight: registration and sign-in both require user
   verification, so the device had to see a fingerprint or a PIN before it would
