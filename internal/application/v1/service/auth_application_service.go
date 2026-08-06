@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -56,11 +57,11 @@ func NewAuthService(users repository.UserRepository, roles repository.RoleReposi
 func (s *AuthService) Authenticate(ctx context.Context, email, password string) (*Principal, error) {
 	user, err := s.users.GetByEmail(ctx, normalizeEmail(email))
 	if err != nil {
-		return nil, apperror.Invalidf("invalid credentials")
+		return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 	}
 
 	if user.PasswordHash == "" || !security.VerifyPassword(user.PasswordHash, password) {
-		return nil, apperror.Invalidf("invalid credentials")
+		return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 	}
 
 	return s.principalFor(ctx, user)
@@ -155,16 +156,17 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, current, 
 	}
 
 	if !security.VerifyPassword(user.PasswordHash, current) {
-		return apperror.Invalidf("the current password is not correct")
+		return apperror.Invalidf("the current password is not correct").WithCode("wrongCurrentPassword")
 	}
 
 	if current == next {
-		return apperror.Invalidf("the new password must differ from the current one")
+		return apperror.Invalidf("the new password must differ from the current one").
+			WithCode("passwordUnchanged")
 	}
 
 	hash, err := security.HashPassword(next)
 	if err != nil {
-		return apperror.Invalidf("%v", err)
+		return passwordError(err)
 	}
 
 	user.PasswordHash = hash
@@ -179,4 +181,20 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, current, 
 
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// passwordError names the one failure hashing a password reports that the person
+// typing it can act on.
+//
+// It reached them as bare prose from a package that knows nothing about who is
+// reading - "password must be at least 12 characters", in English, whatever
+// language they had chosen. Everything else out of bcrypt is a fault rather than
+// an instruction, and stays as it was.
+func passwordError(err error) *apperror.Error {
+	if errors.Is(err, security.ErrPasswordTooShort) {
+		return apperror.Invalidf("%v", err).
+			WithCode("passwordTooShort", security.MinPasswordLength)
+	}
+
+	return apperror.Invalidf("%v", err)
 }

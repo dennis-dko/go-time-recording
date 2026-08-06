@@ -22,6 +22,7 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
+	"modernc.org/sqlite"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -128,6 +129,45 @@ func hostSuffix(ds appconfig.Datasource) string {
 	return fmt.Sprintf(", host %s, user %q", where, ds.User)
 }
 
+// sqliteBusyTimeout is how long a writer waits for another writer to finish
+// before giving up.
+//
+// Five seconds is far longer than any statement this application runs and far
+// shorter than a person's patience. The alternative to waiting is the request
+// failing, so the only way to be wrong here is to be too short.
+const sqliteBusyTimeout = 5 * time.Second
+
+// makeSQLiteWait gives every SQLite connection a busy timeout.
+//
+// SQLite serialises writers. Without a timeout the second one is refused outright
+// with "database is locked (5) (SQLITE_BUSY)", which surfaces as a 500 for
+// somebody whose only mistake was saving while somebody else saved - and, worse,
+// as a failed session lookup that reads as "not signed in".
+//
+// A busy timeout is normally set in the connection string, and GoFr builds that
+// itself - "file:name.db", with nowhere to put one. The driver's connection hook
+// is the way in: it runs after every connection the pool opens, which is what
+// matters, because a pragma belongs to one connection and the pool makes more of
+// them whenever it needs to. Registered before gofr.New(), which is when the first
+// connection is opened.
+//
+// Costs nothing on the other dialects: the hook belongs to the SQLite driver and
+// is never called if nothing opens a SQLite connection.
+func makeSQLiteWait() {
+	pragma := fmt.Sprintf("PRAGMA busy_timeout = %d", sqliteBusyTimeout.Milliseconds())
+
+	sqlite.RegisterConnectionHook(func(conn sqlite.ExecQuerierContext, _ string) error {
+		if _, err := conn.ExecContext(context.Background(), pragma, nil); err != nil {
+			// Returned rather than swallowed: it fails the connection that could
+			// not be configured, which is visible, instead of leaving a pool of
+			// connections that quietly differ from each other.
+			return fmt.Errorf("setting the SQLite busy timeout: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // tuneSQLite puts a SQLite database into write-ahead logging.
 //
 // SQLite's default journal makes a reader and a writer exclude each other, and
@@ -143,10 +183,8 @@ func hostSuffix(ds appconfig.Datasource) string {
 //
 // WAL lets readers and the writer proceed at once, and it persists in the
 // database file rather than in the connection, so setting it once is enough.
-// Concurrent *writers* still serialise, and GoFr builds the connection string
-// itself - "file:name.db", with nowhere to add a busy timeout - so that narrower
-// window remains. It is the right trade for an installation small enough to be
-// on SQLite; anything busier belongs on PostgreSQL, which the installer offers.
+// Concurrent *writers* still serialise, and that is what makeSQLiteWait covers:
+// they now queue instead of one of them being refused.
 func tuneSQLite(app *gofr.App, db container.DB, dialect string) {
 	if dialect != "sqlite" || unavailable(db) {
 		return
@@ -263,6 +301,10 @@ func main() {
 		}
 	}
 
+	// Before gofr.New(), which opens the first connection: the hook has to be in
+	// place before there is anything to configure.
+	makeSQLiteWait()
+
 	app := gofr.New()
 
 	if telemetryErr != nil {
@@ -313,6 +355,7 @@ func main() {
 	timesheetRepo := sqldb.NewTimesheetRepository(db, cfg.Dialect)
 	settingsRepo := sqldb.NewSettingsRepository(db, cfg.Dialect)
 
+	timerRepo := sqldb.NewTimerRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 
@@ -320,6 +363,22 @@ func main() {
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
 	passkeys := appservice.NewPasskeyService(passkeyRepo, userRepo, auth)
 	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName)
+
+	// The administered directory schedule wins over the configuration file, the
+	// same way the administered database connection and log level do.
+	//
+	// Resolved into cfg here, before anything reads it: a cron job is registered
+	// while the application starts and cannot be added to a scheduler that is
+	// already running - which is why changing it needs a restart - and the restart
+	// card compares what is stored against what cfg says this process is running.
+	if stored, err := settingsService.LDAP(context.Background()); err != nil {
+		// Not fatal, and not loud: on a first start the settings table has only
+		// just been created by the migrations, so there is nothing to read yet.
+		app.Logger().Debugf("could not read the administered directory schedule (%v); "+
+			"the configuration file's value applies", err)
+	} else if stored.SyncSchedule != "" {
+		cfg.LDAPSyncSchedule = stored.SyncSchedule
+	}
 	setup := appservice.NewSetupService(settingsService, userRepo)
 
 	// The directory starts unconfigured and is loaded from the settings once
@@ -360,6 +419,16 @@ func main() {
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
 	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo)
+
+	// Through the timesheet service rather than the repository, so a timer
+	// booking meets exactly the rules a typed one meets.
+	timers := appservice.NewTimerService(timerRepo, timesheets)
+	statistics := appservice.NewStatisticsService(timesheetRepo, projectRepo)
+
+	// The timesheet service is passed in rather than reimplemented: the import has
+	// to enforce the rules the API enforces, and the only way to be sure of that is
+	// to call them.
+	workbook := appservice.NewWorkbookService(timesheetRepo, userRepo, projectRepo, timesheets)
 
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
 	projectDomain := domainservice.NewProjectDomainService(projectRepo, timesheetRepo)
@@ -487,6 +556,9 @@ func main() {
 		Setup:      rest.NewSetupHandler(setup, authorizer),
 		Logs:       rest.NewLogHandler(logs, authorizer),
 		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg),
+		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
+		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
+		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
 			// What the device's prompt calls this installation. The
 			// administered title if there is one, so a person sees the name
@@ -525,6 +597,8 @@ func main() {
 	// run deletes accounts the directory no longer holds together with their
 	// recorded hours.
 	if cfg.LDAPSyncSchedule != "" {
+		app.Logger().Infof("directory reconciliation scheduled at %q", cfg.LDAPSyncSchedule)
+
 		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", func(ctx *gofr.Context) {
 			report, err := ldapSync.Sync(ctx)
 			if err != nil {

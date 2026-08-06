@@ -224,6 +224,88 @@ button.link {
 
 button.link.danger { color: var(--danger); }
 
+/* A solid button for the destructive answer in a dialog. .link.danger above is
+ * for the small text buttons in table rows; this one is the one being pressed
+ * on purpose. */
+button.danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+/* --- hand-drawn charts ---
+ *
+ * No chart library: the Content-Security-Policy allows no external origin, so
+ * anything from a CDN would be blocked. These are the few rules the SVG needs. */
+.chart-title { font-size: 13px; color: var(--muted); margin: 18px 0 8px; }
+
+/* Scrolls inside itself on a narrow screen rather than widening the page. */
+.chart-wrap { overflow-x: auto; }
+
+.chart-label { fill: var(--muted); font-size: 11px; }
+.chart-value { fill: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* The track keeps an empty day as a row rather than nothing at all, which is what
+ * makes a gap in the week visible. */
+.chart-track { fill: var(--bg); }
+.chart-bar { fill: var(--accent); }
+
+/* The elapsed time, big enough to read across a desk and monospaced so the
+ * digits do not shuffle sideways every second. */
+.timer-elapsed {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* --- asking before something is destroyed ---
+ *
+ * Above the sign-in screen (30) so a question is never painted behind it, and
+ * below the notices (40) so a failure raised while answering stays readable. */
+.confirm-overlay { z-index: 35; }
+
+.confirm-card { max-width: 460px; }
+
+/* The greeting on a first sign-in.
+ *
+ * No z-index of its own: it keeps the .overlay layer (25), which puts the sign-in
+ * screen (30) above it. That is the right way round - if the session dies while the
+ * greeting is up, being signed out is the thing that matters, and a courtesy must
+ * not cover the way back in. It cannot collide with the setup wizard on the same
+ * layer because it is never shown while that is up.
+ *
+ * Wider than a confirmation, because it carries a short list rather than one
+ * question. */
+.welcome-card { max-width: 520px; }
+
+.welcome-points {
+  color: var(--muted);
+  display: grid;
+  font-size: 14px;
+  gap: 8px;
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+}
+
+/* A dash rather than a bullet: these are things you can do, not items in a set. */
+.welcome-points li { padding-left: 18px; position: relative; }
+
+.welcome-points li::before {
+  color: var(--accent);
+  content: "–";
+  left: 0;
+  position: absolute;
+}
+
+/* Welcome back, at the top of the screen somebody lands on. Quieter than a card
+   of its own work: it is a greeting, not a heading. */
+.welcome-back h2 { font-size: 16px; }
+
+/* The destructive answer sits on the right, away from where the pointer lands
+ * when the dialog opens. */
+.confirm-actions { justify-content: flex-end; }
+
 /* Wide tables scroll inside their own container so the page never does. */
 .table-wrap { overflow-x: auto; }
 
@@ -242,6 +324,52 @@ td.num, th.num { text-align: right; }
 td.actions, th.actions { text-align: right; }
 
 tbody tr:last-child td { border-bottom: none; }
+
+/* A row that opens its entry for editing. The pointer and the hover are the only
+   sign it is more than text, since a table row cannot carry the cue a button has. */
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: var(--bg); }
+
+tbody tr.clickable:focus-visible {
+  background: var(--bg);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Submit and cancel on one line, cancel reading as secondary. */
+.form-actions { align-items: center; display: flex; gap: 12px; }
+
+/* The file picker, dressed as a button.
+   The browser's own control is a button and a filename with no styling worth
+   keeping, and it cannot be restyled directly - so the input is hidden inside a
+   label that looks like the secondary buttons beside it. Clicking the label opens
+   the picker, which is what a label does for its input. */
+.file-pick {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: row;
+  font-size: 15px;
+  padding: 9px 16px;
+}
+
+.file-pick:hover { border-color: var(--accent); }
+
+.file-pick input[type="file"] {
+  height: 0;
+  opacity: 0;
+  position: absolute;
+  width: 0;
+}
+
+/* A row of an import that would not be written. Marked by its left edge rather
+   than by a colour wash, which on the dark theme turns the text unreadable. */
+tbody tr.rejected td { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .empty { color: var(--muted); font-style: italic; }
 
@@ -264,22 +392,86 @@ tbody tr:last-child td { border-bottom: none; }
 .status-completed { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .status-archived { background: var(--bg); }
 
-.toast {
-  border-radius: var(--radius);
+/* Notices stack downwards from the top.
+ *
+ * z-index above the sign-in screen (30) and the overlays (25), because the one
+ * notice nobody could see was the one that mattered most: a failure during
+ * start-up was painted behind the sign-in screen that was still up. */
+.toast-stack {
+  /* The stack must never swallow a click. It is fixed above everything, and on a
+   * narrow window the top bar wraps to two rows and puts the navigation tabs
+   * directly underneath it - so a notice that was still on screen made a tab
+   * unclickable. Found by a browser test whose click on a tab did nothing at all.
+   *
+   * The notices themselves take pointer events back, so the dismiss button still
+   * works. */
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   left: 50%;
-  max-width: 90vw;
-  padding: 11px 18px;
+  max-width: min(560px, 92vw);
   position: fixed;
   top: 74px;
   transform: translateX(-50%);
-  z-index: 20;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  width: max-content;
+  z-index: 40;
 }
 
-.toast.error { border-color: var(--danger); color: var(--danger); }
-.toast.ok { border-color: #2e9e5b; }
+.toast-note {
+  /* Transparent to the pointer, like the stack around it. On a narrow window the
+   * top bar wraps to two rows and the navigation tabs end up directly beneath the
+   * notices - so a notice still on screen made a tab unclickable, which a browser
+   * test found by clicking one and watching nothing happen.
+   *
+   * The cost is that the text cannot be selected while it is up, which is the
+   * lesser loss: a notice is on screen for seconds, and one that swallows a click
+   * is worse than one that cannot be copied. The dismiss button takes pointer
+   * events back below. */
+  pointer-events: none;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* The stripe carries the meaning. A 1px border in a slightly different colour
+   * was the only thing separating a failure from a success. */
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  display: flex;
+  gap: 12px;
+  padding: 11px 12px 11px 16px;
+}
+
+/* Long values - a path, a URL, a token - have to wrap rather than run out of
+ * the box, which is what an unbroken token used to do. */
+.toast-text { overflow-wrap: anywhere; }
+
+.toast-note.error {
+  border-color: var(--danger);
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+
+.toast-note.ok {
+  border-color: color-mix(in srgb, #2e9e5b 45%, var(--border));
+  border-left-color: #2e9e5b;
+}
+
+.toast-close {
+  /* The one part of a notice that has to be clickable. */
+  pointer-events: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  opacity: .6;
+  padding: 0 2px;
+  width: auto;
+}
+
+.toast-close:hover { filter: none; opacity: 1; }
 
 /* --- added with role administration, overtime and account settings --- */
 
@@ -339,12 +531,33 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   align-items: center;
   background: var(--bg);
   display: flex;
+  /* A column, so the maintenance notice sits above the card rather than beside
+   * it. The gap collapses to nothing while the notice is hidden. */
+  flex-direction: column;
+  gap: 16px;
   inset: 0;
   justify-content: center;
   padding: 20px;
   position: fixed;
   z-index: 30;
 }
+
+/* Bounded to the card's width so a long notice does not stretch across a wide
+ * screen into a single unreadable line. */
+#login-maintenance {
+  max-width: 420px;
+  width: 100%;
+}
+
+/* While the session is still being checked the cover is up but empty.
+ *
+ * Without this the sign-in form is what the markup shows on load, so a user who
+ * is already signed in sees it for as long as the first few requests take and
+ * then has it taken away - a flash that reads as having been signed out. */
+.login-screen.checking > *:not(.session-check) { display: none; }
+
+.session-check { display: none; }
+.login-screen.checking .session-check { display: block; }
 
 .login-card {
   background: var(--surface);
@@ -365,6 +578,30 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .lang { width: auto; }
 
 /* Secrets are shown for manual entry, so they must wrap rather than overflow. */
+/* The enrolment QR code.
+   A white plate under it rather than the surface colour: the code carries its own
+   light margin, and on the dark theme a code floating on a dark card reads as a
+   white box somebody forgot to style. Capped in size because a phone focuses on
+   a code of a few centimetres far more readily than on a page-wide one. */
+.qr {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: block;
+  height: auto;
+  margin: 12px 0;
+  max-width: 220px;
+  padding: 4px;
+  width: 100%;
+}
+
+/* The typed key, folded away behind the picture. */
+#totp-manual summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
 .secret {
   background: var(--bg);
   border: 1px solid var(--border);
@@ -612,7 +849,22 @@ input[type="file"] { border: none; background: none; padding: 6px 0; }
 .method-patch { background: #8e44ad; }
 .method-delete { background: #c0392b; }
 
-.topbar a.tab { text-decoration: none; }
+/* A link wearing .tab, wherever it sits.
+ *
+ * This was scoped to .topbar, and the only such link is in a card heading - so
+ * the rule matched nothing and the link rendered underlined, in the browser's
+ * own link colour where .tab had not overridden it, next to a heading. The
+ * accent colour is what makes it read as something to click rather than as a
+ * disabled tab, which is what muted grey with a border-less box looks like. */
+a.tab {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.tab:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
 
 /* ------------------------------------------------------------ setup wizard */
 

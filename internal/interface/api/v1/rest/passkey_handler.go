@@ -269,12 +269,12 @@ func (h *PasskeyHandler) FinishLogin(c *gofr.Context) (any, error) {
 func parseCreation(credential map[string]any) (*protocol.ParsedCredentialCreationData, error) {
 	body, err := json.Marshal(credential)
 	if err != nil {
-		return nil, apperror.Invalidf("the credential could not be read")
+		return nil, apperror.Invalidf("the credential could not be read").WithCode("credentialUnreadable")
 	}
 
 	parsed, err := protocol.ParseCredentialCreationResponseBody(bytes.NewReader(body))
 	if err != nil {
-		return nil, apperror.Invalidf("the credential could not be read")
+		return nil, apperror.Invalidf("the credential could not be read").WithCode("credentialUnreadable")
 	}
 
 	return parsed, nil
@@ -283,12 +283,12 @@ func parseCreation(credential map[string]any) (*protocol.ParsedCredentialCreatio
 func parseAssertion(credential map[string]any) (*protocol.ParsedCredentialAssertionData, error) {
 	body, err := json.Marshal(credential)
 	if err != nil {
-		return nil, apperror.Invalidf("the credential could not be read")
+		return nil, apperror.Invalidf("the credential could not be read").WithCode("credentialUnreadable")
 	}
 
 	parsed, err := protocol.ParseCredentialRequestResponseBody(bytes.NewReader(body))
 	if err != nil {
-		return nil, apperror.Invalidf("the credential could not be read")
+		return nil, apperror.Invalidf("the credential could not be read").WithCode("credentialUnreadable")
 	}
 
 	return parsed, nil

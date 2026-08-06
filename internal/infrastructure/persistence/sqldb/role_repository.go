@@ -215,7 +215,8 @@ func (r *RoleRepository) replacePermissions(ctx context.Context, roleID uint, pe
 
 func translateRoleErr(err error, name string) error {
 	if isUniqueViolation(err) {
-		return apperror.Conflictf("a role named %q already exists", name)
+		return apperror.Conflictf("a role named %q already exists", name).
+			WithCode("roleNameTaken", name)
 	}
 
 	return apperror.Internal(err)

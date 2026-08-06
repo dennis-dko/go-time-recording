@@ -1281,6 +1281,78 @@
           }
         }
       }
+    },
+    "/me/timer": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Is a clock running, and since when",
+        "description": "Answers {\"running\": false} when nothing is going. While one runs it carries startedAt, so a client can count up on its own rather than polling, and elapsedHours, which is what the entry would record - a browser with a wrong clock then shows a slightly wrong number and still books the right one.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Start the clock",
+        "description": "Body is optional: {\"projectId\": 3, \"description\": \"...\"}, both of which may be left out and settled later. Starting again replaces a clock already running - somebody who does that has changed their mind about what they are doing, and refusing would leave them to stop a clock measuring the wrong thing. Always the caller's own clock; there is no route for anybody else's.",
+        "responses": {
+          "200": {
+            "description": "Running"
+          },
+          "201": {
+            "description": "Running"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Discard the clock, recording nothing",
+        "description": "The way out of a clock nobody meant to start.",
+        "responses": {
+          "204": {
+            "description": "Discarded"
+          }
+        }
+      }
+    },
+    "/me/timer/stop": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Stop the clock and book what it measured",
+        "description": "Creates an ordinary time entry through the same service a typed booking goes through, so it meets the same rules: the daily cap, the project having to exist, be active and be visible, the description length. The duration is the measured one, to the second and rounded to nothing. The entry lands on the day the clock was *started*, in the caller's own timezone - somebody who starts at half past eleven at night and stops after midnight worked that evening.\n\nRefused when the clock has run for less than the smallest bookable duration (discard it instead) or for more than one entry can hold, which is almost always a clock somebody forgot; the measured hours are in that message so it can be booked by hand. A refusal leaves the clock running, so the time is not lost to it.",
+        "responses": {
+          "200": {
+            "description": "The entry that was created"
+          },
+          "201": {
+            "description": "The entry that was created"
+          }
+        }
+      }
+    },
+    "/me/statistics": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "What your own recorded time adds up to",
+        "description": "Totals the caller's own entries: per day, per project, and per workflow state, with the overall total. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD, inclusive at both ends; the default is the first of the current month to today, worked out in the caller's own timezone.\n\nDeliberately not the project report. That one is keyed on a project id, needs reports:read - which both default roles are without, so only the built-in administrator can see what other people total up to - and cannot express \"every project\" or \"no project\". This one is keyed on the caller and needs only timesheets:read:own.\n\nTwo details a chart depends on. Every day in the range is present, including the ones with nothing on them: a chart drawn only from the days that have entries shows a full week where there were two working days. And the entries with no project are their own row with projectId null, because \"not categorised\" is an answer worth seeing the size of rather than a gap. Rejected entries are left out, the same reading the overtime balance takes.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   },
   "components": {

@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	neturl "net/url"
@@ -208,6 +209,63 @@ func (c *client) api(method, path string, body any) response {
 	return c.do(method, "/api/v1"+path, body)
 }
 
+// upload posts a file as multipart/form-data, which is how the spreadsheet import
+// arrives.
+//
+// Its own method rather than a flag on do(): the body is built differently, the
+// content type carries a boundary, and putting both shapes in one function would
+// mean a JSON caller could accidentally send a boundary.
+func (c *client) upload(path, field, filename string, content []byte, fields map[string]string) response {
+	c.t.Helper()
+
+	var body bytes.Buffer
+
+	form := multipart.NewWriter(&body)
+
+	part, err := form.CreateFormFile(field, filename)
+	if err != nil {
+		c.t.Fatalf("cannot build the upload: %v", err)
+	}
+
+	if _, err := part.Write(content); err != nil {
+		c.t.Fatalf("cannot write the upload: %v", err)
+	}
+
+	for name, value := range fields {
+		if err := form.WriteField(name, value); err != nil {
+			c.t.Fatalf("cannot write the field %q: %v", name, err)
+		}
+	}
+
+	if err := form.Close(); err != nil {
+		c.t.Fatalf("cannot close the upload: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		c.app.BaseURL()+"/api/v1"+path, &body)
+	if err != nil {
+		c.t.Fatalf("cannot build the request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	req.Header.Set("Origin", c.app.BaseURL())
+	req.Header.Set("X-CSRF-Token", c.csrfToken())
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.t.Fatalf("uploading to %s failed: %v\n%s", path, err, c.app.log())
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.t.Fatalf("cannot read the response: %v", err)
+	}
+
+	return response{Status: resp.StatusCode, Body: data}
+}
+
 // must fails the test unless the call returned one of the expected statuses.
 func (c *client) must(r response, expected ...int) response {
 	c.t.Helper()
@@ -257,6 +315,28 @@ func (a *app) signInAsAdmin(newPassword string) *client {
 	fresh.signIn(adminEmail, newPassword)
 
 	return fresh
+}
+
+// signInAsManager creates a manager and signs in as them.
+//
+// Needed because the built-in administrator deliberately holds none of the rights
+// over other people's work: no approving, no reading or editing somebody else's
+// entries, no managing the shared projects. Those belong to whoever the
+// organisation puts in charge of the work, which on a default installation is the
+// manager role. A test that needs any of it needs one of these.
+func (a *app) signInAsManager(admin *client, name, email string) *client {
+	a.t.Helper()
+
+	const password = "manager-password-1"
+
+	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
+		"name": name, "email": email, "role": "manager", "password": password,
+	}), http.StatusCreated, http.StatusOK)
+
+	manager := a.newClient()
+	manager.signIn(email, password)
+
+	return manager
 }
 
 // ------------------------------------------------------------------- types

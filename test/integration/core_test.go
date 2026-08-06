@@ -206,14 +206,18 @@ func TestSetupWizardIsAdministratorOnly(t *testing.T) {
 
 // --------------------------------------------------------------- timesheets
 
+// Through a manager rather than the administrator: approving is a right over
+// somebody's work, and the built-in administrator deliberately holds none of
+// those.
 func TestBookingSubmittingAndApproving(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
+	manager := a.signInAsManager(admin, "Meike", "meike@example.com")
 
 	today := time.Now().Format("2006-01-02")
 
 	var booked timesheetResponse
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	manager.must(manager.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": today, "durationHours": 6.5, "description": "Integration work",
 	}), http.StatusCreated, http.StatusOK).Data(t, &booked)
 
@@ -229,7 +233,7 @@ func TestBookingSubmittingAndApproving(t *testing.T) {
 	for _, status := range []string{"submitted", "approved"} {
 		var updated timesheetResponse
 
-		admin.must(admin.api(http.MethodPut, path("/timesheets/", booked.ID),
+		manager.must(manager.api(http.MethodPut, path("/timesheets/", booked.ID),
 			map[string]any{"status": status}), http.StatusOK).Data(t, &updated)
 
 		if updated.Status != status {
@@ -238,7 +242,7 @@ func TestBookingSubmittingAndApproving(t *testing.T) {
 	}
 
 	var list listOf[timesheetResponse]
-	admin.must(admin.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
+	manager.must(manager.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
 
 	if list.TotalCount != 1 {
 		t.Errorf("expected one entry, got %d", list.TotalCount)

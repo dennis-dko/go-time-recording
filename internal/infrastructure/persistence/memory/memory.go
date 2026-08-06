@@ -4,6 +4,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,7 +137,8 @@ func (r *UserRepository) Save(_ context.Context, user *model.User) (*model.User,
 		if existing.Email == user.Email {
 			r.store.mu.RUnlock()
 
-			return nil, apperror.Conflictf("a user with email %q already exists", user.Email)
+			return nil, apperror.Conflictf("a user with email %q already exists", user.Email).
+				WithCode("emailTaken", user.Email)
 		}
 	}
 	r.store.mu.RUnlock()
@@ -205,8 +207,70 @@ func (r *UserRepository) Update(_ context.Context, user *model.User) (*model.Use
 	return r.withRoleName(updated), nil
 }
 
+// SetPreference writes one field, which in memory means changing it on the stored
+// record rather than replacing the record.
+//
+// The distinction matters here as much as in SQL: the tests that drive the services
+// through this store are the ones that would otherwise pass while the real
+// repository loses a concurrent change.
+func (r *UserRepository) SetPreference(
+	_ context.Context,
+	id uint,
+	field repository.Preference,
+	value string,
+) error {
+	current, err := r.store.get(id)
+	if err != nil {
+		return err
+	}
+
+	switch field {
+	case repository.PreferenceTourSeen:
+		current.TourSeen = value == "true"
+	case repository.PreferenceLanguage:
+		current.Language = value
+	case repository.PreferenceTimezone:
+		current.Timezone = value
+	default:
+		return fmt.Errorf("unknown user preference %d", field)
+	}
+
+	_, err = r.store.update(id, current)
+
+	return err
+}
+
+// SetTOTP writes the second factor's two fields, leaving the rest as they are.
+func (r *UserRepository) SetTOTP(_ context.Context, id uint, secret string, enabled bool) error {
+	current, err := r.store.get(id)
+	if err != nil {
+		return err
+	}
+
+	current.TOTPSecret, current.TOTPEnabled = secret, enabled
+
+	_, err = r.store.update(id, current)
+
+	return err
+}
+
 func (r *UserRepository) Delete(_ context.Context, id uint) error {
 	return r.store.delete(id)
+}
+
+// SaveMany writes several entries.
+//
+// Not atomic, and it cannot be: this store has no transaction to roll back to.
+// The guarantee belongs to the SQL repository, and the integration tests are where
+// it is checked - a unit test against this would be checking nothing.
+func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Timesheet) error {
+	for _, entry := range entries {
+		if _, err := r.Save(ctx, entry); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // RoleRepository is an in-memory repository.RoleRepository.

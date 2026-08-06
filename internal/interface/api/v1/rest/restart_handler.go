@@ -135,6 +135,21 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 		})
 	}
 
+	// The directory schedule, which is stored with the rest of the LDAP settings
+	// but is the one of them that cannot be applied at once: a cron job is
+	// registered while the application starts.
+	directory, err := h.settings.LDAP(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if directory.SyncSchedule != h.active.LDAPSyncSchedule {
+		pending = append(pending, PendingChange{
+			Setting: "directorySchedule",
+			Running: h.active.LDAPSyncSchedule, Stored: directory.SyncSchedule,
+		})
+	}
+
 	// The database connection lives in a file rather than the settings table,
 	// and only the dialect is worth comparing: a changed host or password is a
 	// change to the same connection, and reporting either would mean reading a

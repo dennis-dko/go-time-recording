@@ -93,7 +93,7 @@ func (s *UserApplicationService) CreateUser(
 
 	hash, err := security.HashPassword(password)
 	if err != nil {
-		return nil, apperror.Invalidf("%v", err)
+		return nil, passwordError(err)
 	}
 
 	createdUser, err := s.userRepository.Save(ctx, &model.User{
@@ -185,7 +185,8 @@ func (s *UserApplicationService) UpdateUser(
 		if existingUser.IsSystem && !role.Has(model.PermRoleWrite) {
 			return nil, apperror.Conflictf(
 				"the built-in administrator cannot be moved to role %q, which lacks %q",
-				role.Name, model.PermRoleWrite)
+				role.Name, model.PermRoleWrite).
+				WithCode("adminRoleMustAdminister", role.Name, model.PermRoleWrite)
 		}
 
 		existingUser.RoleID = role.ID
@@ -267,7 +268,8 @@ func (s *UserApplicationService) DeleteUser(ctx context.Context, cmd command.Del
 	// Deleting the built-in administrator would leave an installation with no
 	// guaranteed way back in.
 	if user.IsSystem {
-		return apperror.Conflictf("the built-in administrator cannot be deleted")
+		return apperror.Conflictf("the built-in administrator cannot be deleted").
+			WithCode("adminUndeletable")
 	}
 
 	// How much of the person's work is about to go with the account.
@@ -281,7 +283,8 @@ func (s *UserApplicationService) DeleteUser(ctx context.Context, cmd command.Del
 		return apperror.Conflictf(
 			"%q has %d recorded time entries, which would be deleted with the account "+
 				"and cannot be recovered; confirm to proceed",
-			user.Email, len(entries))
+			user.Email, len(entries)).
+			WithCode("deletionNeedsConfirming", user.Email, len(entries))
 	}
 
 	return s.purger.PurgeUser(ctx, cmd.ID)
@@ -340,7 +343,8 @@ func validateWorkingTimes(target, maxDaily float64) error {
 
 	if len(invalid) == 0 && target > 0 && maxDaily > 0 && target > maxDaily {
 		return apperror.Invalidf("the daily target (%.2fh) cannot exceed the daily maximum (%.2fh)",
-			target, maxDaily)
+			target, maxDaily).
+			WithCode("targetOverMaximum", target, maxDaily)
 	}
 
 	if len(invalid) > 0 {

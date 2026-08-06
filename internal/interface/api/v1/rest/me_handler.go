@@ -62,7 +62,8 @@ func (h *MeHandler) ChangePassword(c *gofr.Context) (any, error) {
 
 	if !h.authz.Enabled() {
 		return nil, toHTTPError(apperror.Conflictf(
-			"this instance runs without authentication, so there is no password to change"))
+			"this instance runs without authentication, so there is no password to change").
+			WithCode("noAuthNoPassword"))
 	}
 
 	var req ChangePasswordRequest
@@ -101,8 +102,20 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	if principal.User.ID != id && !principal.Can(model.PermReportRead) && h.authz.Enabled() {
-		return nil, forbiddenError{msg: "missing permission: " + model.PermReportRead}
+	if h.authz.Enabled() {
+		// Reading somebody else's balance is the wider permission. Reading your
+		// own is the narrower one - which until now was checked nowhere at all,
+		// so reports:read:own appeared in the role editor and granted nothing.
+		// A permission that exists only in the database is exactly what the
+		// comment on the permission list says must not happen.
+		if principal.User.ID != id && !principal.Can(model.PermReportRead) {
+			return nil, forbiddenError{msg: "missing permission: " + model.PermReportRead}
+		}
+
+		if principal.User.ID == id &&
+			!principal.Can(model.PermReportReadOwn) && !principal.Can(model.PermReportRead) {
+			return nil, forbiddenError{msg: "missing permission: " + model.PermReportReadOwn}
+		}
 	}
 
 	from, to, err := overtimeRange(c, h.locationFor(c, principal.User))

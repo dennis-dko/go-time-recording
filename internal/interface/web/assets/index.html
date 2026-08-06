@@ -19,7 +19,7 @@
       <button class="tab" data-view="calendar" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.calendar">Calendar</button>
       <button class="tab" data-view="overtime" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.overtime">Overtime</button>
       <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects</button>
-      <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Staff</button>
+      <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Users</button>
       <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Roles</button>
       <button class="tab" data-view="report" data-perm="reports:read" data-i18n="nav.report">Reports</button>
       <button class="tab" data-view="settings" data-i18n="nav.settings">My account</button>
@@ -35,7 +35,11 @@
     <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
   </header>
 
-  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <!-- A stack rather than one slot: two failures in a row used to show only the
+       second, which is the case where the first one mattered. Each notice
+       carries its own role, so an error interrupts a screen reader and a
+       "Saved" does not. -->
+  <div id="toast" class="toast-stack" aria-live="polite"></div>
 
   <!-- Shown while the installation is out of service. Separate from the
        announcement banner because it is not news, it is the state the
@@ -84,6 +88,23 @@
     </div>
   </div>
 
+  <!-- The greeting on a first sign-in. Ahead of the tour rather than instead of
+       it: arriving in an application nobody has introduced is the moment people
+       decide it is complicated, and the walk through it should be offered rather
+       than sprung. -->
+  <div id="welcome-overlay" class="overlay welcome-overlay" hidden>
+    <div class="overlay-card welcome-card" role="dialog" aria-modal="true"
+         aria-labelledby="welcome-title">
+      <h2 id="welcome-title"></h2>
+      <p id="welcome-text" class="muted"></p>
+      <ul class="welcome-points" id="welcome-points"></ul>
+      <div class="row welcome-actions">
+        <button type="button" id="welcome-tour" data-i18n="welcome.tour">Show me around</button>
+        <button type="button" class="secondary" id="welcome-skip" data-i18n="welcome.skip">Not now</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Guided tour. The spotlight is a ring drawn around the element being
        described rather than a copy of it, so it always points at the real
        control - one that has moved or been renamed cannot drift out of sync
@@ -100,9 +121,24 @@
     </div>
   </div>
 
-  <!-- Visible until a session is confirmed, so the application never flashes
-       into view before we know whether anyone is signed in. -->
-  <div id="login-screen" class="login-screen">
+  <!-- Covers the application until a session is confirmed, so it never flashes
+       into view before we know whether anyone is signed in.
+       It starts in "checking": the cover is up but the form is not shown, so a
+       returning user with a valid session sees a quiet screen for a moment
+       rather than a sign-in form that is snatched away again. -->
+  <div id="login-screen" class="login-screen checking">
+    <!-- The notice again, inside the sign-in screen.
+         The banner at the top of the page cannot be seen from here: this screen
+         is position:fixed over the whole viewport with an opaque background, so
+         it covers it. Somebody arriving at a closed installation would otherwise
+         type a password and be turned away with no explanation. -->
+    <div id="login-maintenance" class="banner banner-warn" hidden></div>
+
+    <!-- Shown only while the session is being checked, and replaced by whichever
+         answer comes back. No text: it is on screen for a moment and a sentence
+         nobody finishes reading is noise. -->
+    <div class="session-check"><div class="spinner" aria-hidden="true"></div></div>
+
     <form id="form-login" class="login-card">
       <img id="login-logo" class="brand-logo" alt="" hidden>
       <h2 data-i18n="login.title">Sign in</h2>
@@ -125,28 +161,71 @@
   <main>
     <!-- Time entries -->
     <section id="view-timesheets" class="view">
-      <form id="form-timesheet" class="card form" data-perm="timesheets:write:own,timesheets:write:all">
-        <h2 data-i18n="ts.book">Book time</h2>
+      <!-- Welcome back, once per browser session: on every page load it would be
+           nagging, and a reload is not an arrival. -->
+      <div class="card welcome-back" id="welcome-back" hidden>
+        <div class="card-head">
+          <h2 id="welcome-back-title"></h2>
+          <button type="button" class="link" id="welcome-back-close" data-i18n="cal.close">close</button>
+        </div>
+        <p class="muted" id="welcome-back-text"></p>
+      </div>
+
+      <!-- The clock, above the form, because it is the shorter way to record the
+           day you are actually having: press start, work, press stop. The form
+           below is for a day that has already happened. -->
+      <div class="card" id="timer-card" data-perm="timesheets:write:own,timesheets:write:all">
+        <div class="card-head">
+          <h2 data-i18n="timer.title">Stopwatch</h2>
+          <span class="timer-elapsed" id="timer-elapsed" aria-live="off"></span>
+        </div>
+        <p class="muted" data-i18n="timer.hint">Records the time actually measured, to the second — the entry lands on the day the clock was started, in your own timezone.</p>
         <div class="grid">
-          <label data-i18n="field.user">Staff member<select name="userId" required></select>
+          <label data-i18n="field.projectOptional">Project (optional)
+            <select name="timerProjectId" id="timer-project"></select>
+          </label>
+          <label class="wide" data-i18n="field.description">Description
+            <input type="text" id="timer-description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
+          </label>
+        </div>
+        <div class="row">
+          <button type="button" id="timer-start" data-i18n="timer.start">Start</button>
+          <button type="button" id="timer-stop" hidden data-i18n="timer.stop">Stop and book</button>
+          <button type="button" class="secondary" id="timer-discard" hidden data-i18n="timer.discard">Discard</button>
+        </div>
+      </div>
+
+      <form id="form-timesheet" class="card form" data-perm="timesheets:write:own,timesheets:write:all">
+        <h2 id="timesheet-form-title" data-i18n="ts.book">Book time</h2>
+        <input type="hidden" name="id">
+        <div class="grid">
+          <label data-i18n="field.user">User<select name="userId" required></select>
           </label>
           <label data-i18n="field.projectOptional">Project (optional)<select name="projectId"></select>
           </label>
           <label data-i18n="field.date">Date<input type="date" name="date" required>
           </label>
-          <label data-i18n="field.hours">Hours<input type="number" name="durationHours" step="0.25" min="0.25" max="24" required>
+          <!-- step="any", because the point of recording time is recording the
+               time that was worked. step="0.25" did not round anything - it made
+               the browser refuse the submit outright, so 1.37 h could not be
+               entered at all while the API accepted it perfectly well from a
+               token client. min matches the API and the OpenAPI document. -->
+          <label data-i18n="field.hours">Hours<input type="number" name="durationHours" step="any" min="0.01" max="24" required>
           </label>
           <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
           </label>
         </div>
-        <button type="submit" data-i18n="action.book">Book</button>
+        <div class="form-actions">
+          <button type="submit" id="timesheet-submit" data-i18n="action.book">Book</button>
+          <button type="button" class="link" id="timesheet-cancel" data-i18n="action.cancelEdit" hidden>cancel editing</button>
+        </div>
       </form>
 
       <div class="card">
         <div class="card-head">
           <h2 data-i18n="ts.entries">Entries</h2>
           <div class="filters">
-            <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">All staff</option></select>
+            <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">All users</option></select>
             <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">All projects</option></select>
             <select id="filter-ts-status">
               <option value="" data-i18n="filter.allStatus">All statuses</option>
@@ -162,7 +241,7 @@
             <thead>
               <tr>
                 <th data-i18n="field.date">Date</th>
-                <th data-i18n="field.user">Staff member</th>
+                <th data-i18n="field.user">User</th>
                 <th data-i18n="field.project">Project</th>
                 <th class="num" data-i18n="field.hours">Hours</th>
                 <th data-i18n="field.description">Description</th>
@@ -177,6 +256,38 @@
     </section>
 
     <!-- Calendar -->
+      <div class="card" id="workbook-card" data-perm="timesheets:read:own,timesheets:read:all">
+        <h2 data-i18n="wb.title">Spreadsheet</h2>
+        <p class="muted" data-i18n="wb.text">Exports what the filters above are showing. An import creates entries; it never changes or replaces the ones that are already there.</p>
+        <div class="row">
+          <button type="button" class="secondary" id="wb-export" data-i18n="wb.export">Export as .xlsx</button>
+          <label class="file-pick" data-perm="timesheets:write:own,timesheets:write:all">
+            <span data-i18n="wb.choose">Choose a file…</span>
+            <input type="file" id="wb-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          </label>
+          <button type="button" class="secondary" id="wb-preview" hidden data-i18n="wb.preview">Check the file</button>
+          <button type="button" id="wb-import" hidden data-i18n="wb.import">Import</button>
+          <button type="button" class="link" id="wb-clear" hidden data-i18n="action.cancelEdit">cancel</button>
+        </div>
+        <p class="muted" id="wb-summary"></p>
+        <div class="table-wrap" id="wb-preview-wrap" hidden>
+          <table id="table-workbook">
+            <thead>
+              <tr>
+                <th data-i18n="wb.row">Row</th>
+                <th data-i18n="field.date">Date</th>
+                <th data-i18n="field.user">User</th>
+                <th data-i18n="field.project">Project</th>
+                <th class="num" data-i18n="field.hours">Hours</th>
+                <th data-i18n="field.description">Description</th>
+                <th data-i18n="wb.problem">Problem</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
     <section id="view-calendar" class="view" hidden>
       <div class="card">
         <div class="card-head">
@@ -206,20 +317,48 @@
                 <th class="num" data-i18n="field.hours">Hours</th>
                 <th data-i18n="field.description">Description</th>
                 <th data-i18n="field.status">Status</th>
+                <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
+        <p class="muted" data-i18n="cal.clickToEdit">Click an entry to edit it.</p>
       </div>
     </section>
 
     <!-- Overtime -->
     <section id="view-overtime" class="view" hidden>
+      <!-- Your own hours, drawn. Here rather than under Reports because that
+           screen needs reports:read, which both default roles are deliberately
+           without - so an employee could never have seen a chart of their own
+           week through it. This one is keyed on the caller. -->
+      <div class="card" id="statistics-card">
+        <div class="card-head">
+          <h2 data-i18n="stats.title">My hours</h2>
+          <span class="muted" id="statistics-total"></span>
+        </div>
+        <div class="grid">
+          <label data-i18n="field.from">From<input type="date" id="statistics-from"></label>
+          <label data-i18n="field.to">To<input type="date" id="statistics-to"></label>
+        </div>
+        <div class="row">
+          <button type="button" id="statistics-load" data-i18n="action.evaluate">Evaluate</button>
+        </div>
+
+        <h3 class="chart-title" data-i18n="stats.perDay">Hours per day</h3>
+        <div class="chart-wrap"><div id="chart-days"></div></div>
+
+        <h3 class="chart-title" data-i18n="stats.perProject">Hours per project</h3>
+        <div class="chart-wrap"><div id="chart-projects"></div></div>
+
+        <p class="muted" id="statistics-empty" hidden data-i18n="stats.empty">Nothing was recorded in this period.</p>
+      </div>
+
       <form id="form-overtime" class="card form">
         <h2 data-i18n="nav.overtime">Overtime</h2>
         <div class="grid">
-          <label data-i18n="field.user">Staff member<select name="userId"></select></label>
+          <label data-i18n="field.user">User<select name="userId"></select></label>
           <label data-i18n="field.from">From<input type="date" name="from"></label>
           <label data-i18n="field.to">To<input type="date" name="to"></label>
         </div>
@@ -252,7 +391,7 @@
           <table id="table-overtime-team">
             <thead>
               <tr>
-                <th data-i18n="field.user">Staff member</th>
+                <th data-i18n="field.user">User</th>
                 <th class="num" data-i18n="ot.booked">Booked</th>
                 <th class="num" data-i18n="ot.target">Target</th>
                 <th class="num" data-i18n="ot.balance">Balance</th>
@@ -307,10 +446,10 @@
       </div>
     </section>
 
-    <!-- Staff -->
+    <!-- Users -->
     <section id="view-users" class="view" hidden>
       <form id="form-user" class="card form" data-perm="users:write">
-        <h2 data-i18n="user.create">Add staff member</h2>
+        <h2 data-i18n="user.create">Add user</h2>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <label data-i18n="field.email">Email<input type="email" name="email" required></label>
@@ -325,7 +464,7 @@
       </form>
 
       <div class="card">
-        <h2 data-i18n="nav.users">Staff</h2>
+        <h2 data-i18n="nav.users">Users</h2>
         <div class="table-wrap">
           <table id="table-users">
             <thead>
@@ -399,7 +538,7 @@
           <table id="table-report">
             <thead>
               <tr>
-                <th data-i18n="field.user">Staff member</th>
+                <th data-i18n="field.user">User</th>
                 <th class="num" data-i18n="field.hours">Hours</th>
               </tr>
             </thead>
@@ -471,9 +610,13 @@
         <h2 data-i18n="totp.title">Two-factor authentication</h2>
         <p class="muted" id="totp-state"></p>
         <div id="totp-setup" hidden>
-          <p class="muted" data-i18n="totp.instructions">Add this key to your authenticator app and confirm the code it shows:</p>
-          <pre class="secret" id="totp-secret"></pre>
-          <pre class="secret" id="totp-uri"></pre>
+          <p class="muted" data-i18n="totp.instructions">Scan this code with your authenticator app, or add the key by hand, and confirm the code it shows:</p>
+          <img id="totp-qr" class="qr" alt="" hidden>
+          <details id="totp-manual">
+            <summary data-i18n="totp.manual">Enter the key by hand instead</summary>
+            <pre class="secret" id="totp-secret"></pre>
+            <pre class="secret" id="totp-uri"></pre>
+          </details>
         </div>
         <div class="grid">
           <label id="totp-code-field" hidden data-i18n="totp.code">Code<input type="text" id="totp-code" inputmode="numeric" maxlength="6">
@@ -733,6 +876,18 @@
         <h2 data-i18n="sync.title">Directory synchronisation</h2>
         <p class="muted" data-i18n="sync.hint">Reconciles the users with the directory. LDAP is only ever read, never changed.</p>
         <p class="muted minus" data-i18n="sync.warning">Careful: accounts missing from the directory are deleted here, together with their recorded time, own projects and tokens. This cannot be undone. Always run the preview first.</p>
+
+        <form id="form-sync-schedule" class="form">
+          <div class="grid">
+            <label class="wide" data-i18n="sync.schedule">Run automatically (cron, five fields — empty means only by hand)
+              <input type="text" name="syncSchedule" maxlength="120" placeholder="0 4 * * *" spellcheck="false">
+            </label>
+          </div>
+          <p class="muted" data-i18n="sync.scheduleHint">Empty by default, and worth leaving empty until a preview has been read: an automatic run deletes without anybody looking. Applied at the next start — the scheduler is built while the application starts.</p>
+          <p class="muted" id="sync-schedule-active"></p>
+          <button type="submit" data-i18n="action.save">Save</button>
+        </form>
+
         <div class="row">
           <button type="button" class="secondary" id="sync-preview" data-i18n="sync.preview">Preview</button>
           <button type="button" id="sync-run" data-i18n="sync.run">Run synchronisation</button>

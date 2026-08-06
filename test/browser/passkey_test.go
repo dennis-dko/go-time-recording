@@ -76,6 +76,7 @@ func TestRegisteringAPasskeyAndSigningInWithIt(t *testing.T) {
 
 	p.signIn("erika@example.com", "erika-password-1")
 	p.waitGone("#login-screen")
+	p.settleWelcome()
 
 	p.run("open My account", chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#passkey-card", chromedp.ByID))
@@ -125,6 +126,7 @@ func TestRemovingAPasskey(t *testing.T) {
 
 	p.signIn("frank@example.com", "frank-password-1")
 	p.waitGone("#login-screen")
+	p.settleWelcome()
 
 	p.run("register", chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#passkey-card", chromedp.ByID),
@@ -134,7 +136,12 @@ func TestRemovingAPasskey(t *testing.T) {
 
 	p.waitForText("#table-passkeys tbody", "Doomed device")
 
-	p.run("remove it", p.click(`#table-passkeys tbody button.danger`))
+	// Removing asks first now, like every other deletion here: a passkey is a way
+	// into the account, and one click was all it took.
+	p.run("remove it", p.click(`#table-passkeys tbody button.danger`),
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery))
+
+	p.run("confirm", p.click(`.confirm-actions button.danger`))
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {

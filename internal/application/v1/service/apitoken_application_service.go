@@ -68,7 +68,8 @@ func (s *APITokenService) Create(
 	}
 
 	if len(existing) >= maxTokensPerUser {
-		return nil, apperror.Conflictf("at most %d tokens per user; revoke one first", maxTokensPerUser)
+		return nil, apperror.Conflictf("at most %d tokens per user; revoke one first", maxTokensPerUser).
+			WithCode("tooManyTokens", maxTokensPerUser)
 	}
 
 	secret, err := security.NewSessionToken()
@@ -115,7 +116,7 @@ func (s *APITokenService) Revoke(ctx context.Context, id, userID uint) error {
 // change or a revoked permission takes effect on the very next request, and a
 // token can never outrank the person it belongs to.
 func (s *APITokenService) Resolve(ctx context.Context, secret string) (*Principal, error) {
-	invalid := apperror.Invalidf("invalid token")
+	invalid := apperror.Invalidf("invalid token").WithCode("invalidToken")
 
 	if !strings.HasPrefix(secret, APITokenPrefix) {
 		return nil, invalid
@@ -138,7 +139,8 @@ func (s *APITokenService) Resolve(ctx context.Context, secret string) (*Principa
 	// An account still on its initial password must not be usable through a
 	// token either, or the password rule could simply be bypassed.
 	if user.MustChangePassword {
-		return nil, apperror.Conflictf("the account must change its initial password first")
+		return nil, apperror.Conflictf("the account must change its initial password first").
+			WithCode("mustChangePasswordFirst")
 	}
 
 	// Best effort: failing to record usage must not fail the request.

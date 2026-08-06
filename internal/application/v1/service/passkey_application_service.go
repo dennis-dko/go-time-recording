@@ -144,7 +144,8 @@ func (s *PasskeyService) BeginRegistration(
 	if user.IsSystem {
 		return nil, "", apperror.Conflictf(
 			"the built-in administrator signs in with its password, so that an " +
-				"installation is never locked out by a lost device")
+				"installation is never locked out by a lost device").
+			WithCode("adminHasNoPasskey")
 	}
 
 	w, err := s.webAuthnFor(rp)
@@ -214,7 +215,8 @@ func (s *PasskeyService) FinishRegistration(
 	// The challenge was issued to this user; anyone else finishing it would be
 	// registering a credential against somebody else's account.
 	if string(session.UserID) != string(webAuthnID(user.ID)) {
-		return nil, apperror.Invalidf("this registration belongs to a different sign-in")
+		return nil, apperror.Invalidf("this registration belongs to a different sign-in").
+			WithCode("passkeyWrongSession")
 	}
 
 	w, err := s.webAuthnFor(rp)
@@ -224,7 +226,8 @@ func (s *PasskeyService) FinishRegistration(
 
 	credential, err := w.CreateCredential(&webAuthnUser{user: user}, session, response)
 	if err != nil {
-		return nil, apperror.Invalidf("the passkey could not be verified: %v", err)
+		return nil, apperror.Invalidf("the passkey could not be verified: %v", err).
+			WithCode("passkeyUnverified")
 	}
 
 	label := strings.TrimSpace(name)
@@ -294,7 +297,7 @@ func (s *PasskeyService) FinishLogin(
 		return nil, err
 	}
 
-	invalid := apperror.Invalidf("the passkey was not accepted")
+	invalid := apperror.Invalidf("the passkey was not accepted").WithCode("passkeyRejected")
 
 	var matched *model.Passkey
 
@@ -375,7 +378,7 @@ func (s *PasskeyService) storePending(data webauthn.SessionData) (string, error)
 // takePending returns a challenge and removes it, so one can never be used
 // twice.
 func (s *PasskeyService) takePending(token string) (webauthn.SessionData, error) {
-	expired := apperror.Invalidf("this attempt has expired, please try again")
+	expired := apperror.Invalidf("this attempt has expired, please try again").WithCode("attemptExpired")
 
 	value, ok := s.pending.LoadAndDelete(token)
 	if !ok {

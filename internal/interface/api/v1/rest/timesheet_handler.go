@@ -239,8 +239,20 @@ func (h *TimesheetHandler) Delete(c *gofr.Context) (any, error) {
 
 // Transfer handles POST /api/v1/timesheets/{id}/transfer, moving an entry to
 // another project via the domain service.
+// viewerID is who is asking, or 0 when authentication is switched off - the
+// same shape the project handler uses, and 0 means "sees everything", which is
+// what a local trial with AUTH_ENABLED=false is.
+func (h *TimesheetHandler) viewerID(principal *service.Principal) uint {
+	if !h.authz.Enabled() || principal.User == nil {
+		return 0
+	}
+
+	return principal.User.ID
+}
+
 func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermTimesheetTransfer); err != nil {
+	principal, err := h.authz.Require(c, model.PermTimesheetTransfer)
+	if err != nil {
 		return nil, err
 	}
 
@@ -258,7 +270,9 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(apperror.InvalidFields("projectId"))
 	}
 
-	timesheet, err := h.domain.TransferTimesheetToProject(c, id, req.ProjectID)
+	// Who is asking, so a transfer onto somebody else's private category is
+	// refused rather than performed.
+	timesheet, err := h.domain.TransferTimesheetToProject(c, id, req.ProjectID, h.viewerID(principal))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -310,10 +324,10 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 	}
 
 	if to.Before(*from) {
-		return nil, toHTTPError(apperror.Invalidf("'to' must not be before 'from'"))
+		return nil, toHTTPError(apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted"))
 	}
 
-	perUser, err := h.domain.GenerateProjectTimeReport(c, projectID, *from, *to)
+	perUser, err := h.domain.GenerateProjectTimeReport(c, projectID, *from, *to, h.viewerID(principal))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

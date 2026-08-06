@@ -39,7 +39,7 @@ func (r *PasskeyRepository) Save(ctx context.Context, passkey *model.Passkey) (*
 		if isUniqueViolation(err) {
 			// The same authenticator was registered twice. Saying so is safe:
 			// the caller is the owner, signed in, looking at their own list.
-			return nil, apperror.Conflictf("this passkey is already registered")
+			return nil, apperror.Conflictf("this passkey is already registered").WithCode("passkeyKnown")
 		}
 
 		return nil, apperror.Internal(err)

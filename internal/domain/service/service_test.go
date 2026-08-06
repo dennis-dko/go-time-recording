@@ -122,7 +122,7 @@ func TestArchivingACompletedProjectWithNoOpenEntries(t *testing.T) {
 	f := newFixture(t)
 	project := f.project(t, "Finished", model.ProjectStatusCompleted)
 
-	archived, err := f.projectDomain.ArchiveProject(context.Background(), project.ID)
+	archived, err := f.projectDomain.ArchiveProject(context.Background(), project.ID, 0)
 	if err != nil {
 		t.Fatalf("archive: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestOnlyACompletedProjectCanBeArchived(t *testing.T) {
 		f := newFixture(t)
 		project := f.project(t, "Ongoing", status)
 
-		if _, err := f.projectDomain.ArchiveProject(context.Background(), project.ID); err == nil {
+		if _, err := f.projectDomain.ArchiveProject(context.Background(), project.ID, 0); err == nil {
 			t.Errorf("a %q project was archived", status)
 		}
 	}
@@ -151,7 +151,7 @@ func TestAProjectWithOpenEntriesCannotBeArchived(t *testing.T) {
 	project := f.project(t, "Nearly done", model.ProjectStatusCompleted)
 	f.entry(t, project.ID, model.TimesheetStatusOpen)
 
-	_, err := f.projectDomain.ArchiveProject(context.Background(), project.ID)
+	_, err := f.projectDomain.ArchiveProject(context.Background(), project.ID, 0)
 	if err == nil {
 		t.Fatal("a project with an open entry was archived")
 	}
@@ -171,7 +171,7 @@ func TestSettledEntriesDoNotBlockArchiving(t *testing.T) {
 	f.entry(t, project.ID, model.TimesheetStatusApproved)
 	f.entry(t, project.ID, model.TimesheetStatusSubmitted)
 
-	if _, err := f.projectDomain.ArchiveProject(context.Background(), project.ID); err != nil {
+	if _, err := f.projectDomain.ArchiveProject(context.Background(), project.ID, 0); err != nil {
 		t.Errorf("archiving was refused over settled entries: %v", err)
 	}
 }
@@ -179,7 +179,7 @@ func TestSettledEntriesDoNotBlockArchiving(t *testing.T) {
 func TestArchivingAProjectThatIsNotThere(t *testing.T) {
 	f := newFixture(t)
 
-	if _, err := f.projectDomain.ArchiveProject(context.Background(), 9999); err == nil {
+	if _, err := f.projectDomain.ArchiveProject(context.Background(), 9999, 0); err == nil {
 		t.Error("archiving a project that does not exist succeeded")
 	}
 }
@@ -192,7 +192,7 @@ func TestTransferringAnEntryToAnotherProject(t *testing.T) {
 	to := f.project(t, "To", model.ProjectStatusActive)
 	entry := f.entry(t, from.ID, model.TimesheetStatusOpen)
 
-	moved, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, to.ID)
+	moved, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, to.ID, 0)
 	if err != nil {
 		t.Fatalf("transfer: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestAnEntryWithNoProjectCanBeGivenOne(t *testing.T) {
 	target := f.project(t, "Target", model.ProjectStatusActive)
 	entry := f.entry(t, 0, model.TimesheetStatusOpen)
 
-	moved, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, target.ID)
+	moved, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, target.ID, 0)
 	if err != nil {
 		t.Fatalf("transfer: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestAnApprovedEntryCannotBeTransferred(t *testing.T) {
 	entry := f.entry(t, from.ID, model.TimesheetStatusApproved)
 
 	if _, err := f.timesheetDomain.TransferTimesheetToProject(
-		context.Background(), entry.ID, to.ID); err == nil {
+		context.Background(), entry.ID, to.ID, 0); err == nil {
 		t.Error("an approved entry was transferred")
 	}
 }
@@ -242,7 +242,7 @@ func TestAnEntryCannotBeTransferredIntoAClosedProject(t *testing.T) {
 		entry := f.entry(t, from.ID, model.TimesheetStatusOpen)
 
 		if _, err := f.timesheetDomain.TransferTimesheetToProject(
-			context.Background(), entry.ID, to.ID); err == nil {
+			context.Background(), entry.ID, to.ID, 0); err == nil {
 			t.Errorf("an entry was transferred into a %q project", status)
 		}
 	}
@@ -256,7 +256,7 @@ func TestTransferringAnEntryToTheProjectItIsAlreadyOn(t *testing.T) {
 	entry := f.entry(t, project.ID, model.TimesheetStatusOpen)
 
 	if _, err := f.timesheetDomain.TransferTimesheetToProject(
-		context.Background(), entry.ID, project.ID); err == nil {
+		context.Background(), entry.ID, project.ID, 0); err == nil {
 		t.Error("transferring an entry onto its own project succeeded")
 	}
 }
@@ -267,7 +267,7 @@ func TestTransferringToAProjectThatIsNotThere(t *testing.T) {
 	entry := f.entry(t, from.ID, model.TimesheetStatusOpen)
 
 	if _, err := f.timesheetDomain.TransferTimesheetToProject(
-		context.Background(), entry.ID, 9999); err == nil {
+		context.Background(), entry.ID, 9999, 0); err == nil {
 		t.Error("transferring to a project that does not exist succeeded")
 	}
 }
@@ -297,7 +297,7 @@ func TestTheReportTotalsHoursPerPerson(t *testing.T) {
 	seedFor(2, 4, 1)
 
 	report, err := f.timesheetDomain.GenerateProjectTimeReport(context.Background(),
-		project.ID, time.Now().AddDate(0, 0, -7), time.Now())
+		project.ID, time.Now().AddDate(0, 0, -7), time.Now(), 0)
 	if err != nil {
 		t.Fatalf("report: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestAReportOverAPeriodWithNothingInItIsEmpty(t *testing.T) {
 	project := f.project(t, "Quiet", model.ProjectStatusActive)
 
 	report, err := f.timesheetDomain.GenerateProjectTimeReport(context.Background(),
-		project.ID, time.Now().AddDate(-2, 0, 0), time.Now().AddDate(-1, 0, 0))
+		project.ID, time.Now().AddDate(-2, 0, 0), time.Now().AddDate(-1, 0, 0), 0)
 	if err != nil {
 		t.Fatalf("report: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestAReportForAProjectThatIsNotThere(t *testing.T) {
 	f := newFixture(t)
 
 	if _, err := f.timesheetDomain.GenerateProjectTimeReport(context.Background(),
-		9999, time.Now().AddDate(0, 0, -7), time.Now()); err == nil {
+		9999, time.Now().AddDate(0, 0, -7), time.Now(), 0); err == nil {
 		t.Error("a report was produced for a project that does not exist")
 	}
 }

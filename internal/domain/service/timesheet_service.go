@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -29,11 +30,33 @@ func NewTimesheetDomainService(
 	}
 }
 
-// TransferTimesheetToProject moves a time entry from one project to another
+// requireVisible refuses a project the viewer is not allowed to know about.
+//
+// A not-found rather than a refusal, so a private project's existence is not
+// revealed by the difference between the two status codes - the same reading the
+// application layer takes.
+//
+// A viewer id of zero means authentication is switched off, which is the local
+// trial case and sees everything.
+func requireVisible(project *model.Project, viewerID uint) error {
+	if viewerID == 0 || project.VisibleTo(viewerID) {
+		return nil
+	}
+
+	return apperror.NotFound("project", strconv.FormatUint(uint64(project.ID), 10))
+}
+
+// TransferTimesheetToProject moves a time entry from one project to another.
+//
+// viewerID is who is asking, because the target may be somebody else's private
+// category: without this check a timesheets:transfer holder could move an entry
+// onto a project they are not allowed to see, and read its name back out of the
+// response.
 func (s *TimesheetDomainService) TransferTimesheetToProject(
 	ctx context.Context,
 	timesheetID uint,
 	newProjectID uint,
+	viewerID uint,
 ) (*model.Timesheet, error) {
 	timesheet, err := s.timesheetRepository.GetByID(ctx, timesheetID)
 	if err != nil {
@@ -43,7 +66,8 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 	// An approved entry is a signed-off record; moving its hours to another
 	// project would silently rewrite an already-reported total.
 	if timesheet.Status == model.TimesheetStatusApproved {
-		return nil, apperror.Conflictf("an approved timesheet can no longer be transferred")
+		return nil, apperror.Conflictf("an approved timesheet can no longer be transferred").
+			WithCode("approvedEntryUntransferable")
 	}
 
 	newProject, err := s.projectRepository.GetByID(ctx, newProjectID)
@@ -51,13 +75,19 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 		return nil, err
 	}
 
+	if err := requireVisible(newProject, viewerID); err != nil {
+		return nil, err
+	}
+
 	if timesheet.HasProject() && *timesheet.ProjectID == newProject.ID {
-		return nil, apperror.Conflictf("the timesheet is already booked on project %q", newProject.Name)
+		return nil, apperror.Conflictf("the timesheet is already booked on project %q", newProject.Name).
+			WithCode("entryAlreadyOnProject", newProject.Name)
 	}
 
 	if newProject.Status != model.ProjectStatusActive {
 		return nil, apperror.Conflictf("project %q is %s and no longer accepts time entries",
-			newProject.Name, newProject.Status)
+			newProject.Name, newProject.Status).
+			WithCode("projectClosedForBooking", newProject.Name, newProject.Status)
 	}
 
 	// Transferring is also how an uncategorised entry gets its first project.
@@ -79,8 +109,18 @@ func (s *TimesheetDomainService) GenerateProjectTimeReport(
 	projectID uint,
 	startDate time.Time,
 	endDate time.Time,
+	viewerID uint,
 ) (map[uint]float64, error) {
-	if _, err := s.projectRepository.GetByID(ctx, projectID); err != nil {
+	project, err := s.projectRepository.GetByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	// The project record was already hidden from anyone it does not belong to;
+	// the hours booked against it were not. Reading a report was enough to learn
+	// what somebody had recorded against their own private category, and how
+	// much.
+	if err := requireVisible(project, viewerID); err != nil {
 		return nil, err
 	}
 

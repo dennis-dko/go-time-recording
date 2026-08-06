@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -190,7 +191,8 @@ func scanUser(s scanner) (*model.User, error) {
 // expose a shared typed error, so the check is on the message text.
 func translateUserErr(err error, email string) error {
 	if isUniqueViolation(err) {
-		return apperror.Conflictf("a user with email %q already exists", email)
+		return apperror.Conflictf("a user with email %q already exists", email).
+			WithCode("emailTaken", email)
 	}
 
 	return apperror.Internal(err)
@@ -203,4 +205,49 @@ func isUniqueViolation(err error) bool {
 	msg := strings.ToLower(err.Error())
 
 	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate")
+}
+
+// SetPreference writes one column, leaving every other one as it is.
+//
+// See repository.UserRepository.SetPreference for why this exists rather than a
+// read, a change and an Update.
+func (r *UserRepository) SetPreference(
+	ctx context.Context,
+	id uint,
+	field repository.Preference,
+	value string,
+) error {
+	var query string
+
+	switch field {
+	case repository.PreferenceTourSeen:
+		// Stored as a boolean, so the string is turned back into one here rather
+		// than the caller having to know how the column is typed.
+		_, err := r.db.ExecContext(ctx,
+			r.rebind("UPDATE users SET tour_seen = ? WHERE id = ?"), value == "true", id)
+
+		return err
+	case repository.PreferenceLanguage:
+		query = "UPDATE users SET language = ? WHERE id = ?"
+	case repository.PreferenceTimezone:
+		query = "UPDATE users SET timezone = ? WHERE id = ?"
+	default:
+		return fmt.Errorf("unknown user preference %d", field)
+	}
+
+	_, err := r.db.ExecContext(ctx, r.rebind(query), value, id)
+
+	return err
+}
+
+// SetTOTP writes the second factor's two columns and leaves the rest alone.
+//
+// See repository.UserRepository.SetTOTP for why they go together, and
+// SetPreference for why neither goes through Update.
+func (r *UserRepository) SetTOTP(ctx context.Context, id uint, secret string, enabled bool) error {
+	_, err := r.db.ExecContext(ctx,
+		r.rebind("UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?"),
+		secret, enabled, id)
+
+	return err
 }

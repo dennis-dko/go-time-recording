@@ -115,21 +115,35 @@ func TestSkippingTheTourCountsAsSeen(t *testing.T) {
 
 // Two things walking someone through the application at once is worse than
 // either alone, and the setup wizard is the one that has to happen first.
-func TestTheTourYieldsToTheSetupWizard(t *testing.T) {
+//
+// The built-in administrator is left out of it as well. That account arrives at the
+// wizard, which is its own introduction and covers the screens it actually uses; a
+// walk through booking time and reading an overtime balance would be a walk through
+// somebody else's job. The card under My account still starts it on request.
+func TestTheGreetingYieldsToTheWizardAndSkipsTheAdministrator(t *testing.T) {
 	js := asset(t, "/app.js")
 
-	start := strings.Index(js, "async function maybeStartTour()")
+	start := strings.Index(js, "async function maybeWelcome()")
 	if start < 0 {
-		t.Fatal("could not find maybeStartTour in app.js")
+		t.Fatal("could not find maybeWelcome in app.js")
 	}
 
-	body := js[start : start+500]
+	body := js[start : start+600]
 
-	if !strings.Contains(body, "#setup-wizard") {
-		t.Error("the tour must not start while the setup wizard is showing")
+	for _, guard := range []struct{ needle, why string }{
+		{"#setup-wizard", "the greeting must not appear while the setup wizard is showing"},
+		{"tourSeen", "the greeting must only be offered to someone who has not seen it"},
+		{"isSystemAdmin()", "the built-in administrator must not be greeted with the tour"},
+		{"mustChangePassword", "the greeting must wait until the initial password is replaced"},
+	} {
+		if !strings.Contains(body, guard.needle) {
+			t.Error(guard.why)
+		}
 	}
 
-	if !strings.Contains(body, "tourSeen") {
-		t.Error("the tour must only be offered to someone who has not seen it")
+	// Declining has to count, or the greeting returns on the next sign-in and
+	// overrides a decision somebody already made.
+	if !strings.Contains(js, "recordTourSeen()") {
+		t.Error("declining the greeting must record it as seen")
 	}
 }

@@ -42,6 +42,33 @@ func (r *TimesheetRepository) Save(ctx context.Context, timesheet *model.Timeshe
 	return &created, nil
 }
 
+// SaveMany writes several entries inside one transaction.
+//
+// For the spreadsheet import: a file that landed half way would leave nobody able
+// to say which half, or which entries came from it. See base.withTx.
+func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Timesheet) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	return r.withTx(ctx, func(tx base) error {
+		for _, entry := range entries {
+			// Through the transaction's own base, not the repository's: reaching
+			// past it would take a second connection, and on SQLite that means
+			// waiting for a lock this transaction is holding.
+			if _, err := tx.db.ExecContext(ctx, tx.rebind(
+				"INSERT INTO timesheets (user_id, project_id, date, duration_hours, "+
+					"description, status) VALUES (?, ?, ?, ?, ?, ?)"),
+				entry.UserID, entry.ProjectID, entry.Date,
+				entry.DurationHours, entry.Description, entry.Status); err != nil {
+				return apperror.Internal(err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func (r *TimesheetRepository) GetByID(ctx context.Context, id uint) (*model.Timesheet, error) {
 	row := r.db.QueryRowContext(ctx, r.rebind("SELECT "+timesheetColumns+" FROM timesheets WHERE id = ?"), id)
 
