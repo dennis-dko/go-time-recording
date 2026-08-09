@@ -36,8 +36,29 @@ func TestTheFooterShowsTheRunningVersion(t *testing.T) {
 		t.Fatal("the footer is hidden, so the version has nowhere to appear")
 	}
 
-	if version := strings.TrimSpace(p.text("#footer-version")); version == "" {
-		t.Error("the footer shows no version")
+	version := strings.TrimSpace(p.text("#footer-version"))
+	if version == "" {
+		t.Fatal("the footer shows no version")
+	}
+
+	// And the platform beside it, as "v1.2.0 (linux)". The same version is
+	// published for four platforms and they do not all behave alike - restarting
+	// from the interface works here and cannot on Windows - so the version alone
+	// does not say what somebody is looking at.
+	//
+	// The suite runs on Linux, which is what makes the expected value knowable.
+	if !strings.Contains(version, "(") || !strings.Contains(version, ")") {
+		t.Errorf("the footer shows %q, without the platform in brackets", version)
+	}
+
+	if !strings.Contains(version, "(linux)") {
+		t.Errorf("the footer shows %q; this suite runs on Linux", version)
+	}
+
+	// The version itself is still in front of it, rather than having been
+	// replaced by the platform.
+	if strings.HasPrefix(version, "(") {
+		t.Errorf("the footer shows only the platform: %q", version)
 	}
 }
 

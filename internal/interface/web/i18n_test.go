@@ -269,6 +269,15 @@ func TestNoTranslationIsUnused(t *testing.T) {
 				}
 			}
 
+			// Same again for the restart refusals, which are looked up by the code
+			// the server sent. TestEveryRestartRefusalIsExplained checks these
+			// against the restart package in both directions.
+			if code, isRefusal := strings.CutPrefix(key, "restart.unsupported."); isRefusal {
+				if _, known := restartRefusalCodes(t)[code]; known {
+					continue
+				}
+			}
+
 			unused = append(unused, key)
 		}
 
@@ -502,4 +511,106 @@ func rejectedFields(t *testing.T) map[string]struct{} {
 	}
 
 	return fields
+}
+
+// Every refusal the restart package can name has a sentence, and every sentence
+// names a refusal it can still give.
+//
+// There is more than one reason restarting can be impossible - Windows has no
+// execve, and on unix the running binary can fail to be located - and the interface
+// looks the sentence up by the code the server sent. One sentence for all of them
+// told a Linux reader they were on Windows, which is how this guard came to exist.
+func TestEveryRestartRefusalIsExplained(t *testing.T) {
+	codes := restartRefusalCodes(t)
+	if len(codes) == 0 {
+		t.Fatal("no restart refusal codes found; this test is no longer reading the source")
+	}
+
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("app.js has no German dictionary")
+	}
+
+	var unexplained, orphaned []string
+
+	for code := range codes {
+		if _, found := dict["restart.unsupported."+code]; !found {
+			unexplained = append(unexplained, code)
+		}
+	}
+
+	for key := range dict {
+		code, isRefusal := strings.CutPrefix(key, "restart.unsupported.")
+		if !isRefusal {
+			continue
+		}
+
+		// "other" is the interface's own fallback for a code it does not know,
+		// which by definition the server never sends.
+		if code == "other" {
+			continue
+		}
+
+		if _, known := codes[code]; !known {
+			orphaned = append(orphaned, key)
+		}
+	}
+
+	sort.Strings(unexplained)
+	sort.Strings(orphaned)
+
+	if len(unexplained) > 0 {
+		t.Errorf("%d restart refusal(s) have no German sentence, so the reader is shown "+
+			"English: %v", len(unexplained), unexplained)
+	}
+
+	if len(orphaned) > 0 {
+		t.Errorf("%d sentence(s) are for refusals the server no longer gives: %v",
+			len(orphaned), orphaned)
+	}
+}
+
+// restartRefusalCodes reads what restart.Code() can return, out of the source.
+//
+// Both build-tagged files, because only one of them is compiled here and the other
+// is the one that matters for the platform this is about.
+func restartRefusalCodes(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	dir := filepath.Join("..", "..", "..", "internal", "infrastructure", "restart")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the restart package: %v", err)
+	}
+
+	codes := map[string]struct{}{}
+
+	// Up to the first closing brace, which is the end of the one-line body or of
+	// the inner if - both of which have the literal in front of them. Anything
+	// greedier runs into the next function's doc comment and reads prose as a code.
+	body := regexp.MustCompile(`func Code\(\) string \{[^}]*`)
+
+	// Only what is returned, so a comment inside the body cannot contribute one.
+	literal := regexp.MustCompile(`return "([a-zA-Z][a-zA-Z0-9]*)"`)
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") ||
+			strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+
+		source, readErr := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if readErr != nil {
+			t.Fatalf("reading %s: %v", entry.Name(), readErr)
+		}
+
+		for _, fn := range body.FindAll(source, -1) {
+			for _, match := range literal.FindAllSubmatch(fn, -1) {
+				codes[string(match[1])] = struct{}{}
+			}
+		}
+	}
+
+	return codes
 }

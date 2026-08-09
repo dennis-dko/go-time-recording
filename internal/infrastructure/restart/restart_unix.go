@@ -23,6 +23,16 @@ func Supported() bool {
 	return executableErr == nil
 }
 
+// Code names the refusal. Empty when there is none: restarting works here unless
+// the running binary cannot be located.
+func Code() string {
+	if executableErr != nil {
+		return "executableUnknown"
+	}
+
+	return ""
+}
+
 // Why explains a refusal, for a screen that has to say more than "no".
 func Why() string {
 	if executableErr != nil {

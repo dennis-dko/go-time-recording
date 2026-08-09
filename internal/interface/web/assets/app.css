@@ -725,8 +725,10 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   justify-content: center;
   margin-top: 20px;
   /* Room on the right for the version, so long branding text cannot run
-     underneath it. */
-  padding: 16px 96px 16px 20px;
+     underneath it. Widened when the platform moved in beside it: "v1.10.3
+     (windows)" is half again as long as the version alone was, and the reserved
+     strip is what keeps the two from overlapping. */
+  padding: 16px 168px 16px 20px;
   position: relative;
 }
 

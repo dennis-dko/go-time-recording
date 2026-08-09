@@ -15,6 +15,14 @@ package restart
 // Supported reports whether this process can replace itself.
 func Supported() bool { return false }
 
+// Code names the refusal, so a screen can say it in the reader's own language.
+//
+// Why() is written in English at the point the limitation is decided, which is
+// right for a log and wrong for the person reading the screen - and there is more
+// than one refusal, so one translated sentence for all of them would tell a Linux
+// reader they are on Windows.
+func Code() string { return "noExecve" }
+
 // Why explains the refusal, for a screen that has to say more than "no".
 func Why() string {
 	return "restarting from inside the application needs execve, which Windows does not have; " +

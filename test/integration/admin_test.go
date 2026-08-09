@@ -4,6 +4,7 @@ package integration
 
 import (
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -280,4 +281,31 @@ func contains(values []string, want string) bool {
 	}
 
 	return false
+}
+
+// The branding endpoint names the platform beside the version.
+//
+// The same version is published for four platforms and they do not all behave
+// alike - restarting from the interface works on Linux and cannot on Windows - so
+// the version alone does not say what somebody is looking at. Public, like the
+// version it sits next to: it is in the footer of a page anyone can reach.
+func TestBrandingNamesTheVersionAndThePlatform(t *testing.T) {
+	a := start(t)
+	c := a.newClient()
+
+	var instance struct {
+		Version string `json:"version"`
+		OS      string `json:"os"`
+	}
+
+	// No sign-in: the sign-in screen shows the footer before there is a session.
+	c.must(c.api(http.MethodGet, "/branding", nil), http.StatusOK).Data(t, &instance)
+
+	if instance.OS != runtime.GOOS {
+		t.Errorf("the instance reports the platform %q, want %q", instance.OS, runtime.GOOS)
+	}
+
+	if instance.Version == "" {
+		t.Error("the instance reports no version at all")
+	}
 }

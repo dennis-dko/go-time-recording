@@ -634,8 +634,11 @@ starts it again. Exiting works under Docker with a restart policy and under
 systemd with `Restart=`, and turns the button into an off switch everywhere else,
 including a binary started by hand. `execve` needs nothing outside the process,
 so there is no arrangement in which pressing it leaves the installation down.
-Windows has no `execve`, so the button is not offered there and the screen says
-why. Two exporters are offered, `otlp` and
+Windows has no `execve`, so the button is not offered there and the card stays on
+screen to say why — with nothing pending it used to disappear, which left the one
+screen that explains the limitation unreachable on the one platform that has it.
+There, a saved setting takes effect when the application is next started the way
+it was started. Two exporters are offered, `otlp` and
 `jaeger`. Zipkin is not: GoFr still accepts it while warning that it is on its
 way out. Neither is GoFr's hosted exporter, which posts every span to a service
 run by the framework's authors — not a thing to be able to switch on by picking
@@ -896,6 +899,11 @@ release added a check. Keep the locally installed version in step with that
 file — `golangci-lint --version` — or local runs and CI will disagree about
 clean.
 
+**Which build is this?** The footer names the version and the platform it is
+running on — `v1.2.0 (windows)`. The same version is published for four platforms
+and they do not all behave alike, so the version alone does not answer the first
+question of a support conversation.
+
 ## Deployment
 
 **Every merge to `main` is a release.** The patch number goes up, the image is
@@ -908,6 +916,25 @@ disagree. With no tags at all it starts at `v0.1.0`.
 For a minor or major bump, tag it by hand: `task release VERSION=v1.2.0` pushes
 the tag and that exact version is released — the next merge then counts on from
 there.
+
+**What a release carries.** The image on GHCR, and a binary for each of
+
+| | |
+| --- | --- |
+| `linux_amd64` | the usual server |
+| `linux_arm64` | a Raspberry Pi or an ARM instance |
+| `windows_amd64.exe` | a desktop or a Windows server |
+| `darwin_arm64` | an Apple Silicon Mac |
+
+plus `SHA256SUMS` to check a download against. They are one file each: the
+interface, the timezone database and the migrations are all compiled in, so
+downloading one and running it is a complete installation — it serves the
+installer until it has a database.
+
+Cross-compiled from a single runner, which works because there is no cgo anywhere
+in the tree: the SQLite driver is modernc's pure-Go one, so `GOOS` and `GOARCH`
+are all it takes. The same `-ldflags` as the image, so a downloaded binary reports
+the same version in its footer as the container of that release does.
 
 The merge path waits for CI rather than verifying again. CI runs the integration
 suite against SQLite, PostgreSQL and MySQL on every push to `main`, so repeating a
