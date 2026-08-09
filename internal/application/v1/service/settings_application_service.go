@@ -280,6 +280,16 @@ func (s *SettingsService) LDAP(ctx context.Context) (model.LDAPConfig, error) {
 
 // SaveLDAP stores the directory configuration.
 func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig) error {
+	config.SyncSchedule = strings.TrimSpace(config.SyncSchedule)
+
+	// Checked whether or not the directory is enabled, because the schedule is
+	// stored either way and the scheduler's own answer to an expression it cannot
+	// read is a line in the log and no job at all. An administrator would be told
+	// their nightly reconciliation was saved and it would simply never run.
+	if !model.ValidSchedule(config.SyncSchedule) {
+		return apperror.InvalidFields("syncSchedule")
+	}
+
 	if config.Enabled {
 		var invalid []string
 
@@ -324,11 +334,13 @@ func validateLogo(dataURI string) error {
 	}
 
 	if !strings.HasPrefix(dataURI, "data:image/") {
-		return apperror.Invalidf("the logo must be an inline image (data:image/...)")
+		return apperror.Invalidf("the logo must be an inline image (data:image/...)").
+			WithCode("logoNotInline")
 	}
 
 	if len(dataURI) > maxLogoBytes {
-		return apperror.Invalidf("the logo must be smaller than %d KB", maxLogoBytes/1024)
+		return apperror.Invalidf("the logo must be smaller than %d KB", maxLogoBytes/1024).
+			WithCode("logoTooLarge", maxLogoBytes/1024)
 	}
 
 	return nil

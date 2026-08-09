@@ -4,6 +4,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,7 +137,8 @@ func (r *UserRepository) Save(_ context.Context, user *model.User) (*model.User,
 		if existing.Email == user.Email {
 			r.store.mu.RUnlock()
 
-			return nil, apperror.Conflictf("a user with email %q already exists", user.Email)
+			return nil, apperror.Conflictf("a user with email %q already exists", user.Email).
+				WithCode("emailTaken", user.Email)
 		}
 	}
 	r.store.mu.RUnlock()
@@ -205,8 +207,135 @@ func (r *UserRepository) Update(_ context.Context, user *model.User) (*model.Use
 	return r.withRoleName(updated), nil
 }
 
+// SetPreference writes one field, which in memory means changing it on the stored
+// record rather than replacing the record.
+//
+// The distinction matters here as much as in SQL: the tests that drive the services
+// through this store are the ones that would otherwise pass while the real
+// repository loses a concurrent change.
+func (r *UserRepository) SetPreference(
+	_ context.Context,
+	id uint,
+	field repository.Preference,
+	value string,
+) error {
+	current, err := r.store.get(id)
+	if err != nil {
+		return err
+	}
+
+	switch field {
+	case repository.PreferenceTourSeen:
+		current.TourSeen = value == "true"
+	case repository.PreferenceLanguage:
+		current.Language = value
+	case repository.PreferenceTimezone:
+		current.Timezone = value
+	default:
+		return fmt.Errorf("unknown user preference %d", field)
+	}
+
+	_, err = r.store.update(id, current)
+
+	return err
+}
+
+// SetTOTP writes the second factor's two fields, leaving the rest as they are.
+func (r *UserRepository) SetTOTP(_ context.Context, id uint, secret string, enabled bool) error {
+	current, err := r.store.get(id)
+	if err != nil {
+		return err
+	}
+
+	current.TOTPSecret, current.TOTPEnabled = secret, enabled
+
+	_, err = r.store.update(id, current)
+
+	return err
+}
+
 func (r *UserRepository) Delete(_ context.Context, id uint) error {
 	return r.store.delete(id)
+}
+
+// SaveMany writes several entries.
+//
+// Not atomic, and it cannot be: this store has no transaction to roll back to.
+// The guarantee belongs to the SQL repository, and the integration tests are where
+// it is checked - a unit test against this would be checking nothing.
+func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Timesheet) error {
+	for _, entry := range entries {
+		if _, err := r.Save(ctx, entry); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// TimerRepository is an in-memory repository.TimerRepository.
+//
+// Keyed by user rather than by an id of its own, because a person has at most one
+// clock running - which is what the real table says too, with user_id as its
+// primary key.
+type TimerRepository struct {
+	mu     sync.RWMutex
+	timers map[uint]model.RunningTimer
+}
+
+// NewTimerRepository creates an empty one.
+func NewTimerRepository() *TimerRepository {
+	return &TimerRepository{timers: map[uint]model.RunningTimer{}}
+}
+
+var _ repository.TimerRepository = (*TimerRepository)(nil)
+
+func (r *TimerRepository) Get(_ context.Context, userID uint) (*model.RunningTimer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	timer, running := r.timers[userID]
+	if !running {
+		// Nothing running is a normal state, not an error.
+		return nil, nil
+	}
+
+	found := timer
+
+	return &found, nil
+}
+
+func (r *TimerRepository) Start(_ context.Context, timer *model.RunningTimer) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.timers[timer.UserID] = *timer
+
+	return nil
+}
+
+func (r *TimerRepository) Clear(_ context.Context, userID uint) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.timers, userID)
+
+	return nil
+}
+
+func (r *TimerRepository) CountByProject(_ context.Context, projectID uint) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var count int
+
+	for _, timer := range r.timers {
+		if timer.ProjectID != nil && *timer.ProjectID == projectID {
+			count++
+		}
+	}
+
+	return count, nil
 }
 
 // RoleRepository is an in-memory repository.RoleRepository.

@@ -364,7 +364,19 @@ tasks:
       - echo "Built {{.APP_NAME}}:{{.VERSION}}"
 
   release:
-    desc: 'Ship: tag a release; CI builds, verifies and publishes it. Usage: task release VERSION=v1.2.3'
+    desc: 'Ship: tag a minor or major version by hand. Usage: task release VERSION=v1.2.0'
+    summary: |
+      Only needed for a minor or major bump. A patch release happens on its own:
+      every merge to main reads the newest tag, counts the patch number on, and
+      publishes the image and the GitHub release - so there is nothing to run and
+      no version written down anywhere to forget.
+
+      This tags the current commit with the version given and pushes it, which
+      release.yml picks up and releases as exactly that version. The next merge
+      then counts on from it.
+
+      Usage:
+        task release VERSION=v1.2.0
     preconditions:
       - sh: echo "{{.VERSION}}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'
         msg: 'VERSION must be a semantic version, e.g. task release VERSION=v1.2.3'

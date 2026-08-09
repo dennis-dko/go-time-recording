@@ -172,7 +172,7 @@ func TestReportSumsHoursPerUser(t *testing.T) {
 	f.book(t, day(28), 5)
 
 	report, err := f.tsDomain.GenerateProjectTimeReport(
-		context.Background(), f.projectID, day(14), day(20))
+		context.Background(), f.projectID, day(14), day(20), 0)
 	if err != nil {
 		t.Fatalf("report: %v", err)
 	}

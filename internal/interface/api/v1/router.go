@@ -22,6 +22,9 @@ type Handlers struct {
 	Passkeys   *rest.PasskeyHandler
 	Logs       *rest.LogHandler
 	Restart    *rest.RestartHandler
+	Timers     *rest.TimerHandler
+	Statistics *rest.StatisticsHandler
+	Workbook   *rest.WorkbookHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -93,6 +96,19 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/me/language", h.Auth.SetLanguage)
 	app.PUT(base+"/me/timezone", h.Auth.SetTimezone)
 	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
+	// The clock, always the caller's own: starting somebody else's would record
+	// time nobody asked them about, so there is no user id in these routes and no
+	// permission for "other people's timers" to get wrong.
+	// What your own time adds up to, for charting it. Keyed on the caller, so it
+	// needs nothing beyond reading your own entries - unlike the project report,
+	// which needs reports:read and is the built-in administrator's alone.
+	app.GET(base+"/me/statistics", h.Statistics.Own)
+
+	app.GET(base+"/me/timer", h.Timers.Running)
+	app.POST(base+"/me/timer", h.Timers.Start)
+	app.POST(base+"/me/timer/stop", h.Timers.Stop)
+	app.DELETE(base+"/me/timer", h.Timers.Discard)
+
 	app.GET(base+"/me/passkeys", h.Passkeys.List)
 	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)
 	app.PUT(base+"/me/passkeys/register", h.Passkeys.FinishRegistration)
@@ -129,10 +145,16 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/projects/{id}/archive", h.Projects.Archive)
 	app.GET(base+"/projects/{id}/report", h.Timesheets.Report)
 
+	// Ahead of the {id} routes, which this router would otherwise match first:
+	// "export" is not an id, and the answer was 400 for a parameter nobody sent.
+	app.GET(base+"/timesheets/export", h.Workbook.Export)
+	app.POST(base+"/timesheets/import", h.Workbook.Import)
+
 	app.GET(base+"/timesheets", h.Timesheets.List)
 	app.GET(base+"/timesheets/{id}", h.Timesheets.Get)
 	app.POST(base+"/timesheets", h.Timesheets.Create)
 	app.PUT(base+"/timesheets/{id}", h.Timesheets.Update)
 	app.DELETE(base+"/timesheets/{id}", h.Timesheets.Delete)
 	app.POST(base+"/timesheets/{id}/transfer", h.Timesheets.Transfer)
+
 }

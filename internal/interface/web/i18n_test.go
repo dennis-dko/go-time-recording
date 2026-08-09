@@ -1,7 +1,10 @@
 package web_test
 
 import (
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -251,6 +254,21 @@ func TestNoTranslationIsUnused(t *testing.T) {
 				continue
 			}
 
+			// The err.* sentences are looked up by the code the server sent, and the
+			// field.* names by the field it rejected, so no literal mentions either.
+			// Both have stricter guards of their own -
+			// TestEveryServerErrorCodeIsTranslated and TestEveryRejectedFieldIsNamed -
+			// which check them against the Go source in both directions.
+			if strings.HasPrefix(key, "err.") {
+				continue
+			}
+
+			if field, isField := strings.CutPrefix(key, "field."); isField {
+				if _, rejected := rejectedFields(t)[field]; rejected {
+					continue
+				}
+			}
+
 			unused = append(unused, key)
 		}
 
@@ -303,4 +321,185 @@ func TestCodeFallbacksAreEnglish(t *testing.T) {
 				"and therefore has to be English: %s", word, call)
 		}
 	}
+}
+
+// Every reason the server names has a sentence, and every sentence names a reason
+// the server still gives.
+//
+// The interface looks these up as t(`err.${code}`), so no literal key appears in
+// the source and neither the coverage test nor the unused test can see them. That
+// leaves exactly the two ways for this to rot: a rule annotated in Go that nobody
+// translated, which shows the reader English, and a sentence for a code that has
+// since been renamed or deleted, which shows nothing. So this reads the codes out
+// of the Go source and compares the two sets.
+func TestEveryServerErrorCodeIsTranslated(t *testing.T) {
+	codes := serverErrorCodes(t)
+	if len(codes) == 0 {
+		t.Fatal("no WithCode(...) calls found; this test is no longer reading the source")
+	}
+
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("app.js has no German dictionary")
+	}
+
+	var untranslated, orphaned []string
+
+	for code := range codes {
+		if _, found := dict["err."+code]; !found {
+			untranslated = append(untranslated, code)
+		}
+	}
+
+	for key := range dict {
+		code, isError := strings.CutPrefix(key, "err.")
+		if !isError {
+			continue
+		}
+
+		if _, found := codes[code]; !found {
+			orphaned = append(orphaned, key)
+		}
+	}
+
+	sort.Strings(untranslated)
+	sort.Strings(orphaned)
+
+	if len(untranslated) > 0 {
+		t.Errorf("%d error code(s) the server sends have no German sentence, "+
+			"so the reader is shown English: %v", len(untranslated), untranslated)
+	}
+
+	if len(orphaned) > 0 {
+		t.Errorf("%d German sentence(s) are for codes the server no longer sends: %v",
+			len(orphaned), orphaned)
+	}
+}
+
+// serverErrorCodes collects the codes attached with WithCode across the Go source.
+func serverErrorCodes(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	// From this package up to the module root, which is where internal/ lives.
+	root := filepath.Join("..", "..", "..")
+	codes := map[string]struct{}{}
+	pattern := regexp.MustCompile(`WithCode\("([^"]+)"`)
+
+	err := filepath.WalkDir(filepath.Join(root, "internal"),
+		func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+
+			// The doc comment on WithCode itself shows an example, which is not a
+			// call site and would otherwise register as one.
+			if strings.HasSuffix(path, filepath.Join("apperror", "apperror.go")) {
+				return nil
+			}
+
+			source, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+
+			for _, match := range pattern.FindAllSubmatch(source, -1) {
+				codes[string(match[1])] = struct{}{}
+			}
+
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("walking the source: %v", err)
+	}
+
+	return codes
+}
+
+// A field the server can reject is named the way the screen names it.
+//
+// Rejections travel as a list of field names, which are column names:
+// "dailyTargetHours" is not what the label above the box says, in any language.
+// The interface looks each one up as t(`field.${name}`), so nothing in the source
+// mentions the key and the coverage tests cannot see it - which is how a field
+// could be rejected by name and shown as an identifier for good.
+func TestEveryRejectedFieldIsNamed(t *testing.T) {
+	fields := rejectedFields(t)
+	if len(fields) == 0 {
+		t.Fatal("no rejected field names found; this test is no longer reading the source")
+	}
+
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("app.js has no German dictionary")
+	}
+
+	var unnamed []string
+
+	for field := range fields {
+		if _, found := dict["field."+field]; !found {
+			unnamed = append(unnamed, field)
+		}
+	}
+
+	sort.Strings(unnamed)
+
+	if len(unnamed) > 0 {
+		t.Errorf("%d field(s) the server rejects have no German name, so a refusal "+
+			"shows the column name: %v", len(unnamed), unnamed)
+	}
+}
+
+// rejectedFields collects the field names that reach apperror.InvalidFields.
+//
+// Read out of the source rather than listed here, so a field added to a validation
+// cannot quietly arrive without a name. Both shapes are covered: the names passed
+// straight to InvalidFields, and the ones collected in a slice first, which is what
+// the validations with several fields do.
+func rejectedFields(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	root := filepath.Join("..", "..", "..")
+	fields := map[string]struct{}{}
+
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`InvalidFields\(([^)]*)\)`),
+		regexp.MustCompile(`append\((?:invalid|fields), ([^)]*)\)`),
+	}
+	literal := regexp.MustCompile(`"([a-zA-Z][a-zA-Z0-9]*)"`)
+
+	err := filepath.WalkDir(filepath.Join(root, "internal"),
+		func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") ||
+				strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+
+			source, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+
+			for _, pattern := range patterns {
+				for _, call := range pattern.FindAllSubmatch(source, -1) {
+					for _, name := range literal.FindAllSubmatch(call[1], -1) {
+						fields[string(name[1])] = struct{}{}
+					}
+				}
+			}
+
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("walking the source: %v", err)
+	}
+
+	return fields
 }

@@ -77,13 +77,30 @@ administrator with the initial password above. An installation that looked
 configured would then be reachable with a password anyone can look up — and
 nobody would expect it, having set a real one minutes earlier.
 
-**Guided tour.** On a first sign-in every user — not just the administrator —
-is walked through the areas of the application: booking time, the calendar, the
-overtime balance, projects, their account. Steps are dropped for anything their
-role cannot reach, so nobody is shown a tab they do not have, and the highlight
-points at the real control rather than a picture of one. It runs once and can
-be restarted any time from *My account*; skipping counts as seen. "Seen" is
-stored on the user, so a second device does not mean a second introduction.
+**Welcome, and the guided tour.** A first sign-in is greeted by name, told in a
+sentence what the application is for, and offered a walk through it. The list of
+what you can do here is built from your own permissions, so nobody is promised
+approvals they cannot give.
+
+The walk itself covers booking time by hand and by stopwatch, the entry list and
+the submit-and-approve path, the calendar and correcting an entry from it, your
+own figures as charts, the overtime balance, projects including private ones,
+reports, tokens and the second factor, and appearance and language. Steps are
+dropped for anything your role cannot reach, so nobody is shown a tab they do not
+have, and the highlight points at the real control rather than a picture of one.
+
+It is offered once. Declining counts, the same way skipping does, and it can be
+restarted any time from *My account*. "Seen" is stored on the user, so a second
+device does not mean a second introduction.
+
+The **built-in administrator is not greeted**: that account arrives at the setup
+wizard, which is its own introduction, and a walk through booking time and reading
+an overtime balance would be a walk through somebody else's job. The card under
+*My account* still starts it on request.
+
+On later visits there is a short **welcome back** instead, at the top of the first
+screen: what today already has booked on it, or a warning that you left a stopwatch
+running. Once per visit rather than per page load — a reload is not an arrival.
 
 **Live log.** The built-in administrator can read what the process has written,
 under *Settings*: filter by level, search the text, and set how often it
@@ -127,6 +144,8 @@ missing. That is why "Finish later" is safe to offer.
 | Live log | The process log, filterable and searchable, for the built-in administrator |
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
+| Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second |
+| Own statistics | Hours per day and per project, drawn as charts, for everybody rather than administrators |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
 | Background job | Cron sweep that submits time entries left open too long |
@@ -141,8 +160,8 @@ interface: create them, set their permissions, delete them.
 
 | Role | Purpose |
 | --- | --- |
-| `admin` | Everything. A system role: it cannot be deleted or stripped of permissions |
-| `manager` | Runs projects, sees and approves everyone's time entries |
+| `admin` | The installation, its accounts and their roles. A system role: it cannot be deleted or stripped of permissions |
+| `manager` | Runs the projects, sees, approves and reports on everyone's time entries |
 | `employee` | Books and submits their own time, reads shared projects |
 
 Permissions are fine grained, for example `timesheets:read:own` against
@@ -155,11 +174,42 @@ specific line of code, and a permission that existed only in the database would
 grant nothing. The role editor therefore offers exactly the permissions that
 are actually enforced.
 
+### The administrator is not a superuser
+
+Running an installation and reading what people recorded in it are two different
+jobs, and the `admin` role does only the first: accounts, roles, the database, the
+directory, the backups, the log. It cannot read, edit, approve or transfer
+somebody else's entries, cannot keep the shared projects, and cannot open a
+report.
+
+That is deliberate. Every installation has the built-in administrator, and nobody
+chose to give it anything — it arrived with the software. An administrator
+restoring a backup has no business in a colleague's week. Running the work is the
+`manager` role's job, or any role you define.
+
+The administrator still books, submits and reads **their own** time like anybody
+who works here, and still sets each account's daily target and ceiling, which is
+administering an account rather than reading it.
+
+It is the seeded default rather than a wall: whoever may manage roles may widen
+the role they hold, and taking that away would take role administration with it.
+What it buys you is that the reach is never there by accident, and that granting
+it is a visible act — the role screen shows the permission.
+
+Existing installations are migrated: the rights are revoked from the `admin` role
+on upgrade, and the report right moves to `manager`, which would otherwise leave
+it with nobody.
+
 ### Reports
 
-Aggregate reports — what other people total up to — are visible **only to the
-built-in administrator**. Everyone else sees only their own figures. This is
-enforced by `reports:read`, which by default no other role holds.
+Aggregate reports — what other people total up to — need `reports:read`, which by
+default only `manager` holds. Everyone else sees only their own figures, through
+**My statistics**, which needs nothing beyond reading your own entries.
+
+`reports:read` sits with `manager` rather than with the administrator because a
+manager already reads every entry one by one in order to approve it, so the total
+of those entries reveals nothing further — while the administrator has no business
+in either.
 
 ## API access with personal tokens
 
@@ -219,12 +269,25 @@ Implemented, and verified against a running instance:
   implementation is checked against the RFC's published test vectors, so it
   interoperates with real authenticator apps.
 
+  Enrolment shows a **QR code** to scan, with the key to type folded away behind
+  it for a machine with no camera and for when a code will not scan. The code is
+  rendered by the binary as an inline SVG, so it needs no external service — the
+  strict `Content-Security-Policy` already allows `data:` images. It is cleared
+  from the screen when you leave it: the picture encodes the shared secret.
+
   **With both enabled, a passkey sign-in does not ask for a code.** That is
   deliberate rather than an oversight: registration and sign-in both require user
   verification, so the device had to see a fingerprint or a PIN before it would
   sign — possession of the device plus verification of the person, which is
   already two factors. Google, Microsoft and Apple treat passkeys the same way:
   they *satisfy* multi-factor rather than needing another one stacked on top.
+
+  Concurrency note, because it bit: every write to an account used to go through
+  an update of the whole row, so two settings changed at once meant the second
+  reverted the first — recording the guided tour as seen erased a two-factor secret
+  issued a moment earlier. The settings a person changes in passing now write their
+  own column, and the two two-factor columns are written together as the one fact
+  they are.
 
   The consequence to be aware of: turning two-factor on does **not** force a
   second factor on somebody who has a passkey, because their passkey is a way in
@@ -346,6 +409,40 @@ visible only to its owner — not to managers, and not to the administrator.
 Creating one needs only `projects:write:own`, which every default role holds;
 creating a *shared* project still needs `projects:write`.
 
+## Spreadsheets
+
+Time entries go out and come back as a real **.xlsx** workbook — one row per entry,
+with the date, the person, the project, the hours, the description and the status.
+Names rather than identifiers, because a column of user ids is not something anybody
+can fill in by hand; hours as a number, so the column can be totalled in Excel.
+
+Not comma-separated text. A CSV is what Excel mangles: the separator depends on the
+machine's locale, dates are re-interpreted on opening, and a description containing
+a semicolon quietly becomes two columns — none of it recoverable once somebody has
+saved over the file.
+
+The export follows the filters on screen and the same scoping the entry list uses,
+so it can never show more than the screen did.
+
+The import is **two steps, and all or nothing**:
+
+1. *Check the file* reads it and shows every row — which would be written, which
+   would not, and why, named by its line in the sheet so you know where to look. It
+   writes nothing.
+2. *Import* is only offered when every row can be written, and runs in one
+   transaction.
+
+A file half-imported leaves nobody able to say which half, or which entries came
+from it, which is why a single refused row refuses the file. Every row goes through
+the rules the API enforces — by calling them, not by restating them: the same
+validation, the same daily ceiling (counting the file against itself, so forty rows
+on one day are checked together), the same project visibility. A status other than
+`open` is refused rather than ignored, or an import would be a way around the review
+path, and a row naming somebody else needs the right to book for others.
+
+An import **creates**; it never updates or replaces. There is no way for it to know
+which existing entry a row was meant to be.
+
 ## Architecture
 
 Four layers; dependencies point inwards only.
@@ -433,8 +530,9 @@ and *Settings* administer them at run time and what is stored there wins:
 
 **At the next start** are administered too, but stored rather than applied,
 because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
-and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What is stored wins from
-the next start onwards.
+`LDAP_SYNC_SCHEDULE`, and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What
+is stored wins from the next start onwards, and *Settings → Restart* lists what is
+still waiting.
 
 The **timezone and the LDAP connection appear in no file at all**. Both are
 administered entirely in the application — a second place to write them would
@@ -458,7 +556,7 @@ only disagree with the first.
 | `TLS_STAGING` | `false` | Let's Encrypt test authority |
 | `HSTS_MAX_AGE` | `8760h` | only sent over HTTPS |
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client |
-| `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only |
+| `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only. Administered under *Settings* as well, where what is saved wins from the next start |
 | `LDAP_SYNC_MAX_DELETE_RATIO` | `0.5` | refuse a run removing more than this share of directory accounts |
 | `AUTO_CLOSE_SCHEDULE` | `0 2 * * *` | cron for the sweep; empty disables it |
 | `AUTO_CLOSE_AFTER_DAYS` | `14` | when an open entry gets submitted |
@@ -564,6 +662,9 @@ The full reference is at `/api-docs`; the highlights:
 | `POST` | `/api/v1/projects/{id}/archive` | Archive |
 | `GET` | `/api/v1/projects/{id}/report` | Report |
 | `GET/POST/PUT/DELETE` | `/api/v1/timesheets`, `/timesheets/{id}` | Time entries |
+| `GET/POST/DELETE` | `/api/v1/me/timer` | Own stopwatch: read, start, discard |
+| `POST` | `/api/v1/me/timer/stop` | Stop it and book the measured time |
+| `GET` | `/api/v1/me/statistics` | Own hours per day, per project and per state |
 | `POST` | `/api/v1/timesheets/{id}/transfer` | Move to another project |
 | `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP, metrics and tracing |
 
@@ -629,9 +730,83 @@ The server enforces these; the interface merely also hides what is not allowed:
 | `task test` | Unit and integration tests |
 | `task stage` | **Verify.** The shipped container image against real services, on :8080 |
 | `task image` | **Ship.** Build the deployment image |
-| `task release VERSION=v1.2.3` | Tag it; CI does the rest |
+| `task release VERSION=v1.2.0` | **Ship.** Tag a minor or major version by hand; a patch needs no command at all |
 
 `task` on its own lists everything, and `task --summary <name>` explains one.
+
+### The three environments
+
+They differ in three things and nothing else: which database, which
+`configs/.$APP_ENV.env` overlay, and whether the thing being run is a locally
+built binary or the image that ships.
+
+| | Develop | Stage | Production |
+| --- | --- | --- | --- |
+| Command | `task dev` | `task stage` | `docker compose up -d` in `deploy/` |
+| `APP_ENV` | unset, so `.local.env` | `staging` | `prod`, set by the image |
+| Runs | binary built just now | the real image | the published image |
+| Database | SQLite file, or PostgreSQL in a container | PostgreSQL in a container | yours, in the environment |
+| Port | 8000 | 8080 | 8000, behind whatever you put in front |
+| Data | thrown away by `task env:down` | thrown away by `task stage:down` | a volume that outlives the container |
+
+Stage exists because it is the only one that exercises what is actually shipped:
+the multi-stage build, the embedded assets, the non-root user, the healthcheck.
+`task dev` is faster and skips all of it. A change that works in develop and
+fails in stage has failed in the image, which is the artifact anybody deploys.
+
+Production configuration is [`deploy/`](deploy/) — two compose files and an
+environment template, and nothing from the source tree. See
+[Deployment](#deployment).
+
+### Trying the installer
+
+`task dev` sets `DB_DIALECT`, so development never meets the installer. To see
+what a first-time operator sees, start the binary with no database configured
+anywhere:
+
+```bash
+task build
+cd bin
+rm -f configs/datasource.json          # if a previous run wrote one
+DB_DIALECT= DB_NAME= ./go-time-recording
+```
+
+Both variables have to be **empty rather than absent**: the process inherits your
+shell, and a `DB_DIALECT` left over from something else would send it straight
+into the application. The log then prints the setup token and the URL. Choosing
+SQLite there writes `configs/datasource.json` and the application takes over the
+same port in the same process, with no restart.
+
+The integration suite covers this path as well - see
+[`install_test.go`](test/integration/install_test.go), which drives it through
+`harness.StartUnconfigured`.
+
+### Surviving a network that misbehaves
+
+Multi-statement writes are transactional, so a connection lost half way through
+leaves the database describing something nobody asked for: see
+[`sqldb.base.withTx`](internal/infrastructure/persistence/sqldb/sqldb.go) and the
+commit that introduced it. The directory dials with a bounded timeout, so an
+unreachable LDAP server delays one sign-in rather than holding a request open.
+
+GoFr's **circuit breaker** does not apply here, which is worth stating rather than
+leaving somebody to look for it. It lives in `pkg/gofr/service` and guards
+*outgoing HTTP calls* registered with `AddHTTPService` — it takes a `HealthURL`
+and polls it. This application makes no outgoing HTTP calls at all: it talks to a
+SQL database and an LDAP server, neither of which is HTTP, and the optional trace
+exporter is gRPC and managed by the framework. Wiring one in would add a
+configuration surface that protects nothing.
+
+**Caching** is likewise deliberate rather than absent. Two things are cached, both
+because they are read on nearly every request and both with the staleness written
+down: the maintenance state for two seconds
+([`maintenance.go`](internal/interface/api/v1/rest/maintenance.go)) and the
+operational limits ([`limits_provider.go`](internal/application/v1/service/limits_provider.go)),
+each invalidated on save so a change takes effect on the next request rather than
+at the end of an interval. GoFr can bring Redis, and for an installation the size
+this is built for that would mean one more service to run, back up and keep
+reachable in exchange for queries that already answer in under a millisecond
+against a local file.
 
 ### Develop
 
@@ -723,10 +898,28 @@ clean.
 
 ## Deployment
 
-Releases are cut from git tags. `task release VERSION=v1.2.3` tags and pushes;
-[`release.yml`](.github/workflows/release.yml) then runs the tests with `-race`,
-builds the image, and publishes it to GHCR as both `:v1.2.3` and `:latest`,
-along with a GitHub release.
+**Every merge to `main` is a release.** The patch number goes up, the image is
+published to GHCR as both that version and `:latest`, and a GitHub release is
+created with generated notes. The version is not written down anywhere:
+[`release.yml`](.github/workflows/release.yml) reads the newest tag and counts on,
+so there is no file to forget to bump and no way for a tag and a constant to
+disagree. With no tags at all it starts at `v0.1.0`.
+
+For a minor or major bump, tag it by hand: `task release VERSION=v1.2.0` pushes
+the tag and that exact version is released — the next merge then counts on from
+there.
+
+The merge path waits for CI rather than verifying again. CI runs the integration
+suite against SQLite, PostgreSQL and MySQL on every push to `main`, so repeating a
+subset of it would add twenty minutes to every merge to discover nothing — and it
+means only a commit that went green is ever published. The tag path verifies for
+itself, because CI does not run on tags.
+
+Two details worth knowing if you change that file. The tag is created by the
+release action rather than by a `git push`, because a tag pushed with
+`GITHUB_TOKEN` triggers no further workflows — a "tag now, release on the tag"
+arrangement would tag and then sit there. And the commit that gets released is the
+one CI verified, not whatever `main` points at by the time the run finishes.
 
 Nothing has to be built on the server.
 

@@ -24,6 +24,14 @@ type TimesheetFilter struct {
 type TimesheetRepository interface {
 	Save(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error)
 
+	// SaveMany writes several entries as one change: either all of them land or
+	// none do.
+	//
+	// For the spreadsheet import, which writes a whole file. Half a file in the
+	// database is worse than none: nobody can tell which half, or which entries
+	// came from it and which were already there.
+	SaveMany(ctx context.Context, entries []*model.Timesheet) error
+
 	GetByID(ctx context.Context, id uint) (*model.Timesheet, error)
 
 	GetByFilter(ctx context.Context, filter TimesheetFilter) ([]*model.Timesheet, error)

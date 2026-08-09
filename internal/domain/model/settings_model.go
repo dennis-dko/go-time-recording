@@ -112,6 +112,17 @@ type LDAPConfig struct {
 
 	// DefaultRole is given to accounts created on first successful sign-in.
 	DefaultRole string
+
+	// SyncSchedule is when the reconciliation runs on its own, as a five-field
+	// cron expression. Empty means it only runs when somebody presses the button,
+	// which is the default: a run deletes the accounts the directory no longer
+	// holds, together with every hour recorded against them.
+	//
+	// Unlike the rest of this struct it takes effect at the next start, not at
+	// once - cron jobs are registered while the application starts and cannot be
+	// re-registered underneath a running scheduler. The screen says so, and the
+	// restart card lists it while it waits.
+	SyncSchedule string
 }
 
 // DefaultLDAPConfig is a starting point with the usual attribute names.

@@ -23,6 +23,11 @@ import (
 // recorded hours still in the reports, or its passkeys still able to sign in.
 
 // countEntriesFor returns how many time entries the API still reports for a user.
+//
+// Asked as a manager: reading somebody else's entries needs timesheets:read:all,
+// which the built-in administrator deliberately does not hold. The deletions these
+// tests are about are still the administrator's, which is the point - the account
+// goes with one caller and its recorded time is counted by another.
 func countEntriesFor(t *testing.T, c *client, userID uint) int {
 	t.Helper()
 
@@ -46,14 +51,18 @@ func countEntriesFor(t *testing.T, c *client, userID uint) int {
 }
 
 // createEmployeeWithTime adds an account and books an hour for it.
-func createEmployeeWithTime(t *testing.T, c *client, email string) uint {
+//
+// Two callers, because the two halves are now two different rights: the account is
+// the administrator's to create, the entry against it needs timesheets:write:all,
+// which belongs to whoever runs the work.
+func createEmployeeWithTime(t *testing.T, admin, manager *client, email string) uint {
 	t.Helper()
 
 	var created struct {
 		ID uint `json:"id"`
 	}
 
-	c.must(c.api(http.MethodPost, "/users", map[string]any{
+	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Doomed", "email": email,
 		"role": "employee", "password": "doomed-password-1",
 	}), http.StatusCreated, http.StatusOK).Data(t, &created)
@@ -62,12 +71,12 @@ func createEmployeeWithTime(t *testing.T, c *client, email string) uint {
 		t.Fatal("the new account has no id")
 	}
 
-	c.must(c.api(http.MethodPost, "/timesheets", map[string]any{
+	manager.must(manager.api(http.MethodPost, "/timesheets", map[string]any{
 		"userId": created.ID, "date": "2026-08-01",
 		"durationHours": 4, "description": "work that was really done",
 	}), http.StatusCreated, http.StatusOK)
 
-	if got := countEntriesFor(t, c, created.ID); got != 1 {
+	if got := countEntriesFor(t, manager, created.ID); got != 1 {
 		t.Fatalf("the entry was not recorded: %d entries for the new account", got)
 	}
 
@@ -80,7 +89,8 @@ func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	userID := createEmployeeWithTime(t, c, "leaver@example.com")
+	manager := a.signInAsManager(c, "Mona", "mona@example.com")
+	userID := createEmployeeWithTime(t, c, manager, "leaver@example.com")
 
 	response := c.api(http.MethodDelete, path("/users/", userID), nil)
 
@@ -89,7 +99,7 @@ func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
 		// Accepted. Then nothing of the account may be left pointing at an id
 		// that no longer exists - an orphaned entry still counts towards a
 		// project report while belonging to nobody.
-		if got := countEntriesFor(t, c, userID); got != 0 {
+		if got := countEntriesFor(t, manager, userID); got != 0 {
 			t.Errorf("the account was deleted but %d of its time entries remain, "+
 				"pointing at a user that no longer exists", got)
 		}
@@ -109,7 +119,7 @@ func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
 			t.Errorf("the deletion was refused but the account reads as %d, want 200", got)
 		}
 
-		if got := countEntriesFor(t, c, userID); got != 1 {
+		if got := countEntriesFor(t, manager, userID); got != 1 {
 			t.Errorf("the deletion was refused but the account has %d entries, want 1", got)
 		}
 
@@ -192,7 +202,8 @@ func TestConfirmingTheDeletionRemovesTheAccountAndItsTime(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	userID := createEmployeeWithTime(t, c, "confirmed@example.com")
+	manager := a.signInAsManager(c, "Mona", "mona@example.com")
+	userID := createEmployeeWithTime(t, c, manager, "confirmed@example.com")
 
 	// Unconfirmed is refused, and says how much is at stake.
 	refused := c.api(http.MethodDelete, path("/users/", userID), nil)
@@ -212,7 +223,7 @@ func TestConfirmingTheDeletionRemovesTheAccountAndItsTime(t *testing.T) {
 		t.Errorf("the deleted account reads as %d, want 404", got)
 	}
 
-	if got := countEntriesFor(t, c, userID); got != 0 {
+	if got := countEntriesFor(t, manager, userID); got != 0 {
 		t.Errorf("%d time entries survived the confirmed deletion", got)
 	}
 }

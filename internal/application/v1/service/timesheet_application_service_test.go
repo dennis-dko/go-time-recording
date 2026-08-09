@@ -81,7 +81,7 @@ func newFixture(t *testing.T) *fixture {
 		users:         service.NewUserApplicationService(userRepo, roleRepo, timesheetRepo, &memoryPurger{users: userRepo, timesheets: timesheetRepo}),
 		roles:         service.NewRoleApplicationService(roleRepo),
 		auth:          service.NewAuthService(userRepo, roleRepo),
-		projects:      service.NewProjectApplicationService(projectRepo, timesheetRepo),
+		projects:      service.NewProjectApplicationService(projectRepo, timesheetRepo, memory.NewTimerRepository()),
 		timesheets:    service.NewTimesheetApplicationService(timesheetRepo, userRepo, projectRepo, maxDailyHours),
 		tsDomain:      domainservice.NewTimesheetDomainService(timesheetRepo, projectRepo, userRepo),
 		projectDomain: domainservice.NewProjectDomainService(projectRepo, timesheetRepo),

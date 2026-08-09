@@ -26,16 +26,22 @@ type ProjectService interface {
 type ProjectApplicationService struct {
 	projectRepository   repository.ProjectRepository
 	timesheetRepository repository.TimesheetRepository
+
+	// timers is only for the deletion path: a project somebody is timing against
+	// cannot be removed. See DeleteProject.
+	timers repository.TimerRepository
 }
 
 // NewProjectApplicationService creates new instance
 func NewProjectApplicationService(
 	projectRepo repository.ProjectRepository,
 	timesheetRepo repository.TimesheetRepository,
+	timers repository.TimerRepository,
 ) *ProjectApplicationService {
 	return &ProjectApplicationService{
 		projectRepository:   projectRepo,
 		timesheetRepository: timesheetRepo,
+		timers:              timers,
 	}
 }
 
@@ -222,7 +228,8 @@ func (s *ProjectApplicationService) validateStatusTransition(
 
 	if project.Status != model.ProjectStatusCompleted {
 		return apperror.Conflictf("a project can only be archived once its status is %q",
-			model.ProjectStatusCompleted)
+			model.ProjectStatusCompleted).
+			WithCode("archiveNeedsCompleted", model.ProjectStatusCompleted)
 	}
 
 	openEntries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
@@ -234,7 +241,8 @@ func (s *ProjectApplicationService) validateStatusTransition(
 	}
 
 	if len(openEntries) > 0 {
-		return apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries))
+		return apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries)).
+			WithCode("archiveHasOpenEntries", len(openEntries))
 	}
 
 	return nil
@@ -262,7 +270,25 @@ func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd comma
 	}
 
 	if len(entries) > 0 {
-		return apperror.Conflictf("cannot delete a project that still has %d time entries", len(entries))
+		return apperror.Conflictf("cannot delete a project that still has %d time entries", len(entries)).
+			WithCode("projectHasEntries", len(entries))
+	}
+
+	// A clock running against it counts too, for the same reason and one more.
+	// running_timers.project_id is a foreign key with no ON DELETE behaviour: the
+	// delete is refused outright by PostgreSQL and MySQL, and accepted by SQLite,
+	// which leaves somebody with a clock that can never be stopped. Refused here
+	// rather than left to the engine, so the answer is the same everywhere and says
+	// what to do about it.
+	timing, err := s.timers.CountByProject(ctx, cmd.ID)
+	if err != nil {
+		return err
+	}
+
+	if timing > 0 {
+		return apperror.Conflictf(
+			"%d person(s) are timing against this project; it can be deleted once they stop",
+			timing).WithCode("projectIsBeingTimed", timing)
 	}
 
 	return s.projectRepository.Delete(ctx, cmd.ID)

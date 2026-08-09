@@ -6,10 +6,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // internal/infrastructure/directory is the one package here that talks to
@@ -401,5 +404,80 @@ func TestAnAccountThatCanSignInIsNeverProposedForDeletion(t *testing.T) {
 	for _, candidate := range preview.Candidates {
 		t.Errorf("%q signed in from the directory and the next synchronisation would delete it "+
 			"together with %d time entries", candidate.Email, candidate.Timesheets)
+	}
+}
+
+// The schedule is stored with the rest of the directory settings but is the one
+// of them that cannot be applied at once: a cron job is registered while the
+// application starts, and cannot be added to a scheduler that is already
+// running. So it is administered, stored, and picked up by the next start - the
+// same shape as the database connection and the log level.
+//
+// It is checked without a directory, because none of this needs one: the schedule
+// decides whether a job is registered, not whether it can reach anything.
+func TestTheDirectoryScheduleIsAdministeredAndAppliedAtTheNextStart(t *testing.T) {
+	if dsn := os.Getenv(harness.DSNEnv); dsn != "" {
+		t.Skip("this test shares a SQLite file between two instances")
+	}
+
+	shared := filepath.Join(t.TempDir(), "shared")
+
+	// No schedule in the environment, so anything that runs came from the
+	// setting rather than from the file.
+	first := start(t, "DB_NAME="+shared, "LDAP_SYNC_SCHEDULE=")
+	admin := first.signInAsAdmin("a-much-better-password")
+
+	// An expression the scheduler cannot read is refused. Its own answer to one
+	// is a line in the log and no job, so an administrator would be told their
+	// nightly reconciliation was saved and it would simply never run.
+	for _, bad := range []string{"* * *", "0 4 * *", "99 4 * * *", "0 4 * * 9", "every night", "*/0 * * * *"} {
+		settings := ldapSettings("ldap.example.com", 389, ldapBaseDN)
+		settings["enabled"] = false
+		settings["syncSchedule"] = bad
+
+		if got := admin.api(http.MethodPut, "/settings/ldap", settings).Status; got == http.StatusOK {
+			t.Errorf("the schedule %q was accepted", bad)
+		}
+	}
+
+	settings := ldapSettings("ldap.example.com", 389, ldapBaseDN)
+	settings["enabled"] = false
+	settings["syncSchedule"] = "0 4 * * *"
+
+	admin.must(admin.api(http.MethodPut, "/settings/ldap", settings), http.StatusOK)
+
+	// Waiting, because this process built its scheduler before the setting
+	// existed.
+	running, stored, found := restartState(t, admin).pendingFor("directorySchedule")
+	if !found {
+		t.Fatal("a saved directory schedule is not reported as waiting for a restart")
+	}
+
+	if running != "" || stored != "0 4 * * *" {
+		t.Errorf("reported %q -> %q, want \"\" -> \"0 4 * * *\"", running, stored)
+	}
+
+	// The next start registers it, and says so - which is also the only way to
+	// see from outside that a cron job exists at all.
+	second := start(t, "DB_NAME="+shared, "LDAP_SYNC_SCHEDULE=", "LOG_LEVEL=INFO")
+
+	// Two substrings rather than the whole sentence: the log is JSON, so the
+	// quotes around the expression arrive escaped and matching the line verbatim
+	// would fail for a reason that has nothing to do with scheduling.
+	if !eventually(func() bool {
+		log := second.Log()
+
+		return strings.Contains(log, "directory reconciliation scheduled at") &&
+			strings.Contains(log, "0 4 * * *")
+	}) {
+		t.Errorf("the second instance did not schedule the stored expression:\n%s",
+			truncate(second.Log(), 2000))
+	}
+
+	fresh := second.newClient()
+	fresh.signIn(adminEmail, "a-much-better-password")
+
+	if _, _, still := restartState(t, fresh).pendingFor("directorySchedule"); still {
+		t.Error("the schedule is still reported as waiting after the restart that applied it")
 	}
 }

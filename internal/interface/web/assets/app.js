@@ -96,13 +96,58 @@ async function api(path, options = {}) {
 }
 
 /** Pulls a readable message out of GoFr's error shape. */
+/**
+ * The message to show for a failed request, in the reader's language where the
+ * server said which rule was broken.
+ *
+ * The server writes its refusals in English at the point the rule is enforced,
+ * which is right for the log and wrong for the person who tripped over it. Errors
+ * that name themselves carry a code and the values the sentence interpolated, so
+ * the sentence is looked up here and the values put back in German word order.
+ * Anything without a code falls back to the server's own wording, which is what
+ * every error did before.
+ */
 function errorMessage(body) {
   const err = body && body.error;
   if (!err) return '';
   if (typeof err === 'string') return err;
+
+  if (err.code) {
+    const translated = t(`err.${err.code}`, err.message ?? '');
+    if (translated) return fillIn(translated, err.values);
+  }
+
+  // Before the message, which for these is GoFr's "'1' invalid parameter(s):
+  // dailyTargetHours" - a count nobody asked for and a column name rather than the
+  // label above the field.
+  if (Array.isArray(err.param) && err.param.length) {
+    const named = err.param.map((field) => t(`field.${field}`, field));
+
+    return `${t('msg.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
+  }
+
   if (err.message) return err.message;
-  if (Array.isArray(err.param)) return `${t('msg.invalidFields', 'Invalid field(s)')}: ${err.param.join(', ')}`;
+
   return JSON.stringify(err);
+}
+
+/**
+ * Puts {0}, {1} ... back into a translated sentence.
+ *
+ * A fractional number is shown to two places, which is how hours are written
+ * everywhere else on screen - a refusal saying 6.5 next to a table saying 6.50
+ * would read as two different figures.
+ */
+function fillIn(text, values) {
+  if (!Array.isArray(values) || !values.length) return text;
+
+  return text.replace(/\{(\d+)\}/g, (whole, index) => {
+    const value = values[Number(index)];
+    if (value === undefined || value === null) return whole;
+    if (typeof value !== 'number') return String(value);
+
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  });
 }
 
 // -------------------------------------------------------------------- utils
@@ -116,15 +161,46 @@ function can(...permissions) {
   return permissions.some((p) => me.permissions.includes(p));
 }
 
-let toastTimer;
 function toast(message, kind = 'ok') {
-  const el = $('#toast');
-  el.textContent = message;
-  el.className = `toast ${kind}`;
-  el.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 5000);
+  const stack = $('#toast');
+  if (!stack) return;
+
+  const note = el('div', { class: `toast-note ${kind}` });
+
+  // Errors are announced assertively and successes politely: an error is worth
+  // interrupting whatever a screen reader was saying, and "Saved" is not.
+  note.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+
+  note.append(el('span', { class: 'toast-text', text: message }));
+
+  const dismiss = el('button', {
+    class: 'toast-close',
+    type: 'button',
+    'aria-label': t('action.dismiss', 'Dismiss'),
+    text: '×',
+    onclick: () => note.remove(),
+  });
+
+  note.append(dismiss);
+  stack.append(note);
+
+  // Stacked rather than replaced. A single slot meant two failures in a row
+  // showed only the second, which is the case where the first one mattered.
+  // Bounded, because a loop of failures should not fill the screen.
+  while (stack.children.length > TOAST_LIMIT) stack.firstElementChild.remove();
+
+  // Long enough to read what is there. A fixed five seconds is fine for "Saved"
+  // and not for a sentence explaining why a directory refused a bind.
+  const linger = Math.min(TOAST_MAX_MS, TOAST_MIN_MS + message.length * TOAST_MS_PER_CHAR);
+
+  setTimeout(() => note.remove(), linger);
 }
+
+/** How many notices may be on screen, and how long each one stays. */
+const TOAST_LIMIT = 4;
+const TOAST_MIN_MS = 4000;
+const TOAST_MAX_MS = 20000;
+const TOAST_MS_PER_CHAR = 60;
 
 /** Builds an element; text is assigned via textContent, never innerHTML. */
 function el(tag, props = {}, ...children) {
@@ -331,6 +407,16 @@ const TRANSLATIONS = {
     'tour.back': 'Zurück',
     'tour.end': 'Tour überspringen',
     'tour.finish': 'Fertig',
+    'tour.timer.title': 'Die Stoppuhr',
+    'tour.timer.text': 'Beim Anfangen starten, beim Aufhören stoppen – die gemessene Zeit wird gebucht. Sie läuft weiter, wenn du den Browser schließt, denn sie läuft auf dem Server und nicht in diesem Tab.',
+    'tour.approve.title': 'Einreichen und genehmigen',
+    'tour.approve.text': 'Ein Eintrag geht offen, eingereicht, genehmigt. Du kannst genehmigen, was andere einreichen, oder es zurückgeben – ein abgelehnter Eintrag lässt sich wieder öffnen und korrigieren, statt neu getippt werden zu müssen. Genehmigte Einträge sind abgeschlossene Belege und nicht mehr änderbar.',
+    'tour.stats.title': 'Deine eigenen Zahlen',
+    'tour.stats.text': 'Stunden pro Tag, pro Projekt und nach Status, über einen Zeitraum deiner Wahl. Nur deine eigenen – für die eigene Woche braucht niemand ein Berichtsrecht.',
+    'tour.report.title': 'Projektberichte',
+    'tour.report.text': 'Was ein Projekt zusammen ergibt, pro Person. Dieser Bereich braucht ein Berichtsrecht, denn es sind fremde Stunden und nicht die eigenen.',
+    'tour.tokens.title': 'Token und zweiter Faktor',
+    'tour.tokens.text': 'Mit einem persönlichen Token kann ein Skript in deinem Namen buchen – mit genau den Rechten, die deine Rolle im Moment der Nutzung hat. Die Zwei-Faktor-Anmeldung liegt ebenfalls hier, mit einem Code zum Scannen.',
     'tour.nav.title': 'Alles liegt hier oben',
     'tour.nav.text': 'Diese Reiter sind die ganze Anwendung. Sichtbar ist nur, was deine Rolle erlaubt — bei manchen ist diese Leiste also kürzer als bei anderen.',
     'tour.book.title': 'Zeit buchen',
@@ -338,7 +424,7 @@ const TRANSLATIONS = {
     'tour.entries.title': 'Deine Einträge',
     'tour.entries.text': 'Alles Gebuchte, filterbar nach Person, Projekt und Status. Ein Eintrag bleibt änderbar, bis du ihn zur Genehmigung einreichst.',
     'tour.calendar.title': 'Der Monat auf einen Blick',
-    'tour.calendar.text': 'Welche Tage Stunden haben und wie viele. Ein Klick auf einen Tag zeigt, was dahintersteckt.',
+    'tour.calendar.text': 'Welche Tage Stunden haben und wie viele. Ein Klick auf einen Tag zeigt, was dahintersteckt – und ein Klick auf einen dieser Einträge öffnet ihn zum Korrigieren.',
     'tour.overtime.title': 'Dein Überstundensaldo',
     'tour.overtime.text': 'Gebuchte Stunden gegen dein Tagesziel. Nur Tage mit Buchungen zählen, damit Wochenenden und freie Tage sich nicht stillschweigend als Minus aufsummieren.',
     'tour.projects.title': 'Projekte, auch eigene',
@@ -442,15 +528,38 @@ const TRANSLATIONS = {
     'action.archive': 'archivieren',
     'action.book': 'Buchen',
     'action.calculate': 'Berechnen',
+    'action.cancelEdit': 'Bearbeiten abbrechen',
     'action.complete': 'abschließen',
     'action.create': 'Anlegen',
     'action.delete': 'löschen',
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
     'action.new': 'Neu',
+    'action.reopen': 'wieder öffnen',
     'action.reject': 'ablehnen',
     'action.save': 'Speichern',
     'action.submit': 'einreichen',
+    'action.dismiss': 'Schließen',
+    'action.cancel': 'Abbrechen',
+    'stats.title': 'Meine Stunden',
+    'stats.perDay': 'Stunden pro Tag',
+    'stats.perProject': 'Stunden pro Projekt',
+    'stats.total': 'Gesamt',
+    'stats.noProject': 'kein Projekt',
+    'stats.deletedProject': 'gelöschtes Projekt',
+    'stats.empty': 'In diesem Zeitraum wurde nichts erfasst.',
+    'timer.title': 'Stoppuhr',
+    'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in Ihrer eigenen Zeitzone.',
+    'timer.start': 'Starten',
+    'timer.stop': 'Stoppen und buchen',
+    'timer.discard': 'Verwerfen',
+    'timer.started': 'Die Uhr läuft',
+    'timer.discarded': 'Die Uhr wurde verworfen',
+    'timer.discardTitle': 'Gemessene Zeit verwerfen?',
+    'timer.discardText': 'Die Uhr wird angehalten und nichts erfasst. Das kann nicht rückgängig gemacht werden.',
+    'confirm.deleteTitle': 'Endgültig löschen?',
+    'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
+    'sync.confirmTitle': 'Abgleich ausführen?',
     'admin.activeConnection': 'Aktuell verbunden über',
     'admin.banner': 'Banner-Text (leer = ausgeblendet)',
     'admin.bindPassword': 'Bind-Passwort',
@@ -487,6 +596,7 @@ const TRANSLATIONS = {
     'app.language': 'Sprache',
     'banner.password': 'Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleibt die übrige Anwendung gesperrt.',
     'cal.close': 'schließen',
+    'cal.clickToEdit': 'Zum Bearbeiten auf einen Eintrag klicken.',
     'cal.monthTotal': 'Gesamt im Monat',
     'cal.months': 'Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember',
     'cal.title': 'Kalender',
@@ -495,7 +605,127 @@ const TRANSLATIONS = {
     'cat.badge': 'privat',
     'cat.create': 'Eigenes Projekt anlegen',
     'cat.hint': 'Eigene Projekte sind privat und nur für Sie sichtbar. Damit lässt sich Zeit innerhalb eines Tages aufteilen, wenn kein gemeinsames Projekt passt.',
+    'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
+    'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',
+    'err.adminUndeletable': 'Der eingebaute Administrator kann nicht gelöscht werden.',
+    'err.approvedEntryLocked': 'Ein genehmigter Zeiteintrag kann nicht mehr bearbeitet werden.',
+    'err.approvedEntryUndeletable': 'Ein genehmigter Zeiteintrag kann nicht mehr gelöscht werden.',
+    'err.approvedEntryUntransferable': 'Ein genehmigter Zeiteintrag kann nicht mehr verschoben werden.',
+    'err.archiveHasOpenEntries': 'Das Projekt hat noch {0} offene Zeiteinträge und kann nicht archiviert werden.',
+    'err.archiveNeedsCompleted': 'Ein Projekt kann erst archiviert werden, wenn sein Status „{0}“ ist.',
+    'err.attemptExpired': 'Dieser Versuch ist abgelaufen. Bitte erneut versuchen.',
+    'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
+    'err.credentialUnreadable': 'Der Anmeldeschlüssel konnte nicht gelesen werden.',
+    'err.dateFormat': 'Das Datum „{0}“ muss YYYY-MM-DD oder RFC 3339 sein.',
+    'err.deletionNeedsConfirming': '„{0}“ hat {1} erfasste Zeiteinträge. Sie würden mit dem Konto gelöscht und sind nicht wiederherstellbar – zum Fortfahren bitte bestätigen.',
+    'err.emailTaken': 'Es gibt bereits einen Benutzer mit der E-Mail-Adresse „{0}“.',
+    'err.entryAlreadyOnProject': 'Der Zeiteintrag ist bereits auf Projekt „{0}“ gebucht.',
+    'err.initialPasswordPending': 'Das Anfangskennwort muss geändert werden, bevor die Anwendung genutzt werden kann.',
+    'err.invalidCredentials': 'E-Mail-Adresse oder Kennwort ist falsch.',
+    'err.invalidToken': 'Ungültiges Token.',
+    'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
+    'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
+    'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
+    'err.newEntryIsAlwaysOpen': 'Ein neuer Zeiteintrag ist immer „{0}“. Einreichen oder genehmigen geht danach.',
+    'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
+    'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
+    'err.noSession': 'Keine Sitzung.',
+    'err.noTimerRunning': 'Es läuft keine Stoppuhr.',
+    'err.overDailyLimit': '{0} h würden am {2} zusammen {1} h ergeben und damit das Tagesmaximum von {3} h überschreiten.',
+    'err.passkeyKnown': 'Dieser Anmeldeschlüssel ist bereits registriert.',
+    'err.passkeyRejected': 'Der Anmeldeschlüssel wurde nicht akzeptiert.',
+    'err.passkeyUnverified': 'Der Anmeldeschlüssel konnte nicht geprüft werden.',
+    'err.passkeyWrongSession': 'Diese Registrierung gehört zu einer anderen Anmeldung.',
+    'err.passwordTooShort': 'Das Kennwort muss mindestens {0} Zeichen lang sein.',
+    'err.passwordUnchanged': 'Das neue Kennwort muss sich vom aktuellen unterscheiden.',
+    'err.projectClosedForBooking': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
+    'err.projectIsBeingTimed': 'Bei {0} Person(en) läuft gerade eine Stoppuhr auf dieses Projekt. Es kann gelöscht werden, sobald sie gestoppt haben.',
+    'err.projectHasEntries': 'Das Projekt hat noch {0} Zeiteinträge und kann nicht gelöscht werden.',
+    'err.rangeInverted': '„bis“ darf nicht vor „von“ liegen.',
+    'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',
+    'err.roleStillAssigned': 'Rolle „{0}“ ist noch {1} Benutzer(n) zugewiesen.',
+    'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
+    'err.statusTransitionRefused': 'Der Status kann nicht von „{0}“ auf „{1}“ geändert werden.',
+    'err.systemRoleUndeletable': 'Die Systemrolle „{0}“ kann nicht gelöscht werden.',
+    'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
+    'err.systemRoleUnweakenable': 'Der Systemrolle „{0}“ können keine Rechte entzogen werden.',
+    'err.targetOverMaximum': 'Das Tagesziel ({0} h) darf das Tagesmaximum ({1} h) nicht überschreiten.',
+    'err.timerTooLong': 'Die Stoppuhr läuft seit {0} Stunden, mehr als ein Eintrag aufnehmen kann. Bitte von Hand buchen und die Stoppuhr verwerfen.',
+    'err.timerTooShort': 'Die Stoppuhr läuft kürzer als die kleinste buchbare Dauer. Bitte stattdessen verwerfen.',
+    'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
+    'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
+    'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
+    'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
+    'err.twoFactorNotStarted': 'Bitte zuerst die Zwei-Faktor-Einrichtung starten.',
+    'err.twoFactorRequired': 'Ein Zwei-Faktor-Code ist erforderlich.',
+    'err.unknownPermissions': 'Unbekannte Rechte: {0}',
+    'err.wrongCurrentPassword': 'Das aktuelle Kennwort ist nicht korrekt.',
     'field.action': 'Aktion',
+    'err.importEmpty': 'Die Datei enthält nichts zu importieren.',
+    'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
+    'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
+    'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
+    'err.uploadUnreadable': 'Die übermittelte Datei konnte nicht gelesen werden.',
+    'field.actor': 'Aufrufer',
+    'wb.allReady': 'Alle {0} Zeilen können importiert werden.',
+    'wb.choose': 'Datei wählen…',
+    'wb.chosen': 'Zum Prüfen auf „Datei prüfen“ klicken.',
+    'wb.empty': 'Die Datei enthält keine Einträge.',
+    'wb.export': 'Als .xlsx exportieren',
+    'wb.exported': 'Export gespeichert',
+    'wb.filename': 'zeiteintraege',
+    'wb.import': 'Importieren',
+    'wb.imported': 'Die Datei wurde importiert',
+    'wb.importedCount': '{0} Einträge angelegt.',
+    'wb.noFile': 'Bitte zuerst eine Datei wählen.',
+    'wb.preview': 'Datei prüfen',
+    'wb.problem': 'Problem',
+    'wb.row': 'Zeile',
+    'wb.someRejected': '{0} von {1} Zeilen können importiert werden. Solange eine Zeile abgelehnt wird, wird nichts geschrieben.',
+    'wb.text': 'Exportiert, was die Filter oben zeigen. Ein Import legt Einträge an; vorhandene werden nie geändert oder ersetzt.',
+    'wb.title': 'Tabelle',
+    'welcome.back': 'Willkommen zurück',
+    'welcome.backName': 'Willkommen zurück, {0}',
+    'welcome.hello': 'Willkommen, {0}',
+    'welcome.helloPlain': 'Willkommen',
+    'welcome.point.account': 'Tagesziel, Zeitzone und einen zweiten Faktor stellst du unter „Mein Konto“ ein.',
+    'welcome.point.approve': 'Prüfe und genehmige, was deine Leute einreichen.',
+    'welcome.point.book': 'Stunden von Hand buchen – oder eine Stoppuhr laufen lassen, die es für dich tut.',
+    'welcome.point.see': 'Den Monat im Kalender sehen und die eigenen Zahlen als Diagramme.',
+    'welcome.skip': 'Später',
+    'welcome.text': 'Hier wird deine Arbeitszeit erfasst. Ein kurzer Rundgang dauert etwa eine Minute; du kannst ihn jederzeit unter „Mein Konto“ erneut starten.',
+    'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Auf diesem Bildschirm stoppen, um die Zeit zu buchen.',
+    'welcome.todayHours': 'Heute bislang {0} h gebucht.',
+    'welcome.todayNothing': 'Heute noch nichts gebucht.',
+    'welcome.tour': 'Rundgang starten',
+    'field.autoCloseAfterDays': 'Automatisch abschließen nach (Tagen)',
+    'field.baseDn': 'Basis-DN',
+    'field.code': 'Code',
+    'field.companyUrl': 'Firmen-Adresse',
+    'field.dailyTargetHours': 'Soll/Tag',
+    'field.defaultRole': 'Standardrolle',
+    'field.durationHours': 'Stunden',
+    'field.endDate': 'Ende',
+    'field.expiresInDays': 'Läuft ab in (Tagen)',
+    'field.host': 'Host',
+    'field.id': 'Kennung',
+    'field.language': 'Sprache',
+    'field.ldapSyncMaxDeleteRatio': 'Höchstanteil gelöschter Konten',
+    'field.logLevel': 'Protokollstufe',
+    'field.maxDailyHours': 'Max/Tag',
+    'field.port': 'Port',
+    'field.projectId': 'Projekt',
+    'field.rateLimit': 'Anfragegrenze',
+    'field.rateLimitWindowSeconds': 'Zeitfenster der Anfragegrenze (Sekunden)',
+    'field.sessionLifetimeHours': 'Sitzungsdauer (Stunden)',
+    'field.startDate': 'Start',
+    'field.syncSchedule': 'Zeitplan',
+    'field.timezone': 'Zeitzone',
+    'field.traceExporter': 'Trace-Exporter',
+    'field.tracerRatio': 'Trace-Anteil',
+    'field.tracerUrl': 'Trace-Adresse',
+    'field.userFilter': 'Benutzerfilter',
+    'field.userId': 'Benutzer',
     'field.date': 'Datum',
     'field.default': 'Standard',
     'field.description': 'Beschreibung',
@@ -511,10 +741,10 @@ const TRANSLATIONS = {
     'field.role': 'Rolle',
     'field.targetPerDay': 'Soll/Tag',
     'field.to': 'Bis',
-    'field.user': 'Mitarbeiter',
+    'field.user': 'Benutzer',
     'filter.allProjects': 'Alle Projekte',
     'filter.allStatus': 'Alle Status',
-    'filter.allUsers': 'Alle Mitarbeiter',
+    'filter.allUsers': 'Alle Benutzer',
     'footer.versionTitle': 'Laufende Version dieser Installation',
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
@@ -543,6 +773,7 @@ const TRANSLATIONS = {
     'msg.booked': 'Zeit gebucht',
     'msg.categoryCreated': 'Projekt angelegt',
     'msg.entryDeleted': 'Eintrag gelöscht',
+    'msg.entrySaved': 'Eintrag gespeichert',
     'maint.confirm': 'Installation außer Betrieb nehmen? Alle außer diesem Konto werden abgewiesen.',
     'maint.default': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
     'maint.enabled': 'Außer Betrieb',
@@ -567,9 +798,10 @@ const TRANSLATIONS = {
     'msg.roleCreated': 'Rolle angelegt',
     'msg.roleDeleted': 'Rolle gelöscht',
     'msg.roleSaved': 'Rolle gespeichert',
+    'msg.reopened': 'Wieder geöffnet',
     'msg.submitted': 'Eingereicht',
-    'msg.userCreated': 'Mitarbeiter angelegt',
-    'msg.userDeleted': 'Mitarbeiter gelöscht',
+    'msg.userCreated': 'Benutzer angelegt',
+    'msg.userDeleted': 'Benutzer gelöscht',
     'msg.workingTimesSaved': 'Arbeitszeiten gespeichert',
     'nav.admin': 'Einstellungen',
     'nav.calendar': 'Kalender',
@@ -580,7 +812,7 @@ const TRANSLATIONS = {
     'nav.roles': 'Rollen',
     'nav.settings': 'Mein Konto',
     'nav.timesheets': 'Zeiteinträge',
-    'nav.users': 'Mitarbeiter',
+    'nav.users': 'Benutzer',
     'ot.balance': 'Saldo',
     'ot.booked': 'Gebucht',
     'ot.empty': 'Keine Buchungen in diesem Zeitraum.',
@@ -615,6 +847,11 @@ const TRANSLATIONS = {
     'sync.deleted': 'Gelöscht',
     'sync.directoryUsers': 'Im Verzeichnis',
     'sync.entries': 'Zeiteinträge',
+    'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
+    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut.',
+    'sync.scheduleStored': 'Gespeichert',
+    'sync.scheduleManual': 'Läuft nur, wenn der Knopf unten gedrückt wird.',
+    'sync.scheduleShort': 'Verzeichnis-Zeitplan',
     'sync.hint': 'Gleicht die Benutzer mit dem Verzeichnis ab. Das LDAP wird ausschließlich gelesen und nie verändert.',
     'sync.localExternal': 'Lokal aus dem Verzeichnis',
     'sync.none': 'Keine Konten fehlen im Verzeichnis.',
@@ -646,16 +883,19 @@ const TRANSLATIONS = {
     'totp.disabled': 'Zwei-Faktor-Authentifizierung deaktiviert',
     'totp.enable': 'Aktivieren',
     'totp.enabled': 'Zwei-Faktor-Authentifizierung aktiviert',
-    'totp.instructions': 'Diesen Schlüssel in der Authenticator-App eintragen und den angezeigten Code bestätigen:',
+    'totp.instructions': 'Diesen Code mit der Authenticator-App scannen oder den Schlüssel von Hand eintragen und den angezeigten Code bestätigen:',
+    'totp.manual': 'Schlüssel stattdessen von Hand eintragen',
     'totp.off': 'Zwei-Faktor-Authentifizierung ist nicht aktiviert.',
+    'totp.qrAlt': 'QR-Code für die Authenticator-App',
     'totp.on': 'Zwei-Faktor-Authentifizierung ist aktiviert.',
     'totp.title': 'Zwei-Faktor-Authentifizierung',
     'ts.book': 'Zeit buchen',
     'ts.empty': 'Keine Einträge für diesen Filter.',
+    'ts.edit': 'Eintrag bearbeiten',
     'ts.entries': 'Einträge',
     'ts.noProject': 'ohne Projekt',
-    'user.create': 'Mitarbeiter anlegen',
-    'user.empty': 'Noch keine Mitarbeiter angelegt.',
+    'user.create': 'Benutzer anlegen',
+    'user.empty': 'Noch keine Benutzer angelegt.',
     'user.initialPassword': 'leer = Initialpasswort',
     'user.deleteConfirm': 'Trotzdem löschen? Die erfassten Zeiten sind danach unwiederbringlich verloren.',
     'user.systemAccount': 'Systemkonto',
@@ -768,6 +1008,84 @@ function t(key, fallback) {
   return TRANSLATIONS[activeLanguage()]?.[key] ?? fallback;
 }
 
+/**
+ * Remembers, per account and per browser, that the defaults have been offered.
+ *
+ * An empty stored zone means "follow the instance", which is a real choice - so
+ * adopting the browser's zone every time the page loaded would make that choice
+ * impossible to keep. The marker is what makes it a one-time suggestion rather
+ * than a standing override.
+ */
+function adoptionMarker(userID) {
+  return `gtr.adopted.${userID}`;
+}
+
+/**
+ * Writes the browser's zone and language into the account, once.
+ *
+ * The browser knows two things the server cannot: which zone the person is
+ * actually in, and which language they read. Until now the language was detected
+ * for the current page and thrown away on every load, and the zone was not
+ * detected at all - so somebody in Vancouver saw their evening bookings land on
+ * the instance's tomorrow until they found the setting.
+ *
+ * Two deliberate limits. It happens once per account per browser, so "follow the
+ * instance setting" stays choosable. And the zone is only written when it differs
+ * from the instance's, because writing the same value would take that choice away
+ * to no effect at all.
+ *
+ * Returns whether anything was written, so the caller can read the account back.
+ */
+async function adoptBrowserDefaults() {
+  if (!me.user) return false;
+
+  const marker = adoptionMarker(me.user.id);
+
+  try {
+    if (window.localStorage.getItem(marker)) return false;
+  } catch {
+    // Private browsing, or storage switched off. Suggesting once per load is
+    // worse than never suggesting, so this stops here.
+    return false;
+  }
+
+  let adopted = false;
+
+  // The zone, when the browser's differs from what this account currently
+  // resolves to. effectiveTimezone is the instance's while nothing is stored.
+  const zone = guessTimezone();
+  if (!me.user.timezone && zone && zone !== me.user.effectiveTimezone) {
+    try {
+      await api('/me/timezone', { method: 'PUT', body: JSON.stringify({ timezone: zone }) });
+      adopted = true;
+    } catch {
+      // A zone this server does not know is not worth a message: the account
+      // keeps following the instance, which is what it did before.
+    }
+  }
+
+  // The language, when the browser asks for one this interface actually speaks.
+  const language = detectBrowserLanguage();
+  if (!me.user.language && language) {
+    try {
+      await api('/me/language', { method: 'PUT', body: JSON.stringify({ language }) });
+      adopted = true;
+    } catch {
+      // Same reasoning: it keeps rendering in the detected language for this
+      // session, it is simply not remembered.
+    }
+  }
+
+  try {
+    window.localStorage.setItem(marker, '1');
+  } catch {
+    // Nothing to do. Worst case it is suggested again on the next load, and the
+    // conditions above make that a no-op.
+  }
+
+  return adopted;
+}
+
 // -------------------------------------------------------------------- views
 
 async function loadMe() {
@@ -801,7 +1119,7 @@ async function loadUsers() {
   }
 
   fillSelect($('#form-timesheet select[name=userId]'), cache.users);
-  fillSelect($('#filter-ts-user'), cache.users, { placeholder: t('filter.allUsers', 'All staff') });
+  fillSelect($('#filter-ts-user'), cache.users, { placeholder: t('filter.allUsers', 'All users') });
   fillSelect($('#form-overtime select[name=userId]'), cache.users);
   fillSelect($('#calendar-user'), cache.users);
 
@@ -866,7 +1184,7 @@ async function loadUsers() {
     );
   });
 
-  fillTable($('#table-users tbody'), rows, 6, t('user.empty', 'No staff members yet.'));
+  fillTable($('#table-users tbody'), rows, 6, t('user.empty', 'No users yet.'));
 }
 
 async function loadRoles() {
@@ -892,7 +1210,9 @@ async function loadRoles() {
         actions.append(el('button', {
           class: 'link danger',
           text: t('action.delete', 'delete'),
-          onclick: () => remove(`/roles/${role.id}`, t('msg.roleDeleted', 'Role deleted'), refreshAll),
+          onclick: () => removeAfterConfirm(
+            `${t('field.role', 'Role')} "${role.name}"`,
+            `/roles/${role.id}`, t('msg.roleDeleted', 'Role deleted'), refreshAll),
         }));
       }
     }
@@ -953,6 +1273,8 @@ async function loadProjects() {
 
   const bookable = cache.projects.filter((p) => p.status === 'active');
   // A blank first option is what lets time be booked without a project.
+  fillSelect($('#timer-project'), bookable,
+    { placeholder: t('field.projectOptional', 'Project (optional)') });
   fillSelect($('#form-timesheet select[name=projectId]'), bookable,
     { placeholder: t('ts.noProject', 'no project') });
   fillSelect($('#form-report select[name=projectId]'), cache.projects);
@@ -985,7 +1307,9 @@ async function loadProjects() {
       actions.append(el('button', {
         class: 'link danger',
         text: t('action.delete', 'delete'),
-        onclick: () => remove(`/projects/${p.id}`, t('msg.projectDeleted', 'Project deleted'), refreshAll),
+        onclick: () => removeAfterConfirm(
+          `${t('field.project', 'Project')} "${p.name}"`,
+          `/projects/${p.id}`, t('msg.projectDeleted', 'Project deleted'), refreshAll),
       }));
     }
 
@@ -1009,6 +1333,151 @@ async function loadProjects() {
   fillTable($('#table-projects tbody'), rows, 5, t('project.empty', 'No projects yet.'));
 }
 
+/**
+ * Reloads everything that shows time entries.
+ *
+ * The list and the calendar render the same records from two requests, so a
+ * change that refreshes only one of them leaves the other showing yesterday -
+ * which is what booking an entry and switching to the calendar used to do.
+ */
+/**
+ * Whether this caller may change this entry's figures.
+ *
+ * An approved entry is refused by the API however it is reached, so offering it
+ * would only produce a conflict; the answer lives here so the list, the calendar
+ * and the row click cannot disagree about it.
+ */
+function mayEditTimesheet(entry) {
+  if (entry.status === 'approved') return false;
+
+  const mine = me.user && entry.userId === me.user.id;
+
+  return can('timesheets:write:all') || (mine && can('timesheets:write:own'));
+}
+
+/**
+ * Opens an existing entry in the booking form.
+ *
+ * The API has taken a full update since the beginning, but nothing in the
+ * interface offered one: the only way to correct a typed figure was to delete the
+ * entry and type it again. The form doubles as the editor rather than being
+ * duplicated, so the field rules - step="any", the 24 hour ceiling, the
+ * description bound - hold for a correction exactly as they do for a new booking.
+ */
+function editTimesheet(entry) {
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  form.elements.id.value = String(entry.id);
+  form.elements.userId.value = String(entry.userId);
+  form.elements.projectId.value = entry.projectId ? String(entry.projectId) : '';
+  form.elements.date.value = entry.date;
+  form.elements.durationHours.value = String(entry.durationHours);
+  form.elements.description.value = entry.description ?? '';
+
+  $('#timesheet-form-title').textContent = t('ts.edit', 'Edit entry');
+  $('#timesheet-submit').textContent = t('action.save', 'Save');
+  $('#timesheet-cancel').hidden = false;
+
+  switchView('timesheets');
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.durationHours.focus();
+}
+
+/** Puts the form back to booking a new entry. */
+function resetTimesheetForm() {
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  form.elements.id.value = '';
+  form.elements.durationHours.value = '';
+  form.elements.description.value = '';
+
+  $('#timesheet-form-title').textContent = t('ts.book', 'Book time');
+  $('#timesheet-submit').textContent = t('action.book', 'Book');
+  $('#timesheet-cancel').hidden = true;
+}
+
+/**
+ * The actions one time entry offers, as a table cell.
+ *
+ * Shared between the list and the calendar's day view, which render the same
+ * records: two copies of these rules would be two places for "who may approve
+ * this" to be answered differently, and the copy nobody was looking at would be
+ * the wrong one.
+ *
+ * What is offered depends on the status and on the caller, because the API refuses
+ * the rest anyway - the API is the authority here and this only avoids offering
+ * what it would turn down.
+ */
+function timesheetActions(entry) {
+  const actions = el('td', { class: 'actions' });
+  const mayEdit = mayEditTimesheet(entry);
+
+  if (mayEdit) {
+    actions.append(el('button', {
+      class: 'link',
+      text: t('action.edit', 'edit'),
+      onclick: () => editTimesheet(entry),
+    }));
+  }
+
+  // The API only allows open -> submitted -> approved/rejected.
+  if (mayEdit && entry.status === 'open') {
+    actions.append(el('button', {
+      class: 'link',
+      text: t('action.submit', 'submit'),
+      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'submitted' },
+        t('msg.submitted', 'Submitted'), reloadTimeViews),
+    }));
+  }
+
+  if (can('timesheets:approve') && entry.status === 'submitted') {
+    actions.append(el('button', {
+      class: 'link',
+      text: t('action.approve', 'approve'),
+      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'approved' },
+        t('msg.approved', 'Approved'), reloadTimeViews),
+    }));
+    actions.append(el('button', {
+      class: 'link danger',
+      text: t('action.reject', 'reject'),
+      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'rejected' },
+        t('msg.rejected', 'Rejected'), reloadTimeViews),
+    }));
+  }
+
+  // A rejected entry can go back to open, which the API allows and nothing in the
+  // interface offered - so the only way out of a rejection was to delete the entry
+  // and type it again.
+  if (mayEdit && entry.status === 'rejected') {
+    actions.append(el('button', {
+      class: 'link',
+      text: t('action.reopen', 'reopen'),
+      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'open' },
+        t('msg.reopened', 'Reopened'), reloadTimeViews),
+    }));
+  }
+
+  if (mayEdit && entry.status !== 'approved') {
+    actions.append(el('button', {
+      class: 'link danger',
+      text: t('action.delete', 'delete'),
+      onclick: () => removeAfterConfirm(
+        `${entry.date}, ${fmtHours(entry.durationHours)} h`,
+        `/timesheets/${entry.id}`,
+        t('msg.entryDeleted', 'Entry deleted'), reloadTimeViews),
+    }));
+  }
+
+  return actions;
+}
+
+async function reloadTimeViews() {
+  await loadTimesheets();
+  await loadCalendar();
+}
+
 async function loadTimesheets() {
   if (!can('timesheets:read:own', 'timesheets:read:all')) return;
 
@@ -1025,43 +1494,8 @@ async function loadTimesheets() {
 
   // Named `entry` rather than `t`, which would shadow the translation helper.
   const rows = entries.map((entry) => {
-    const actions = el('td', { class: 'actions' });
+    const actions = timesheetActions(entry);
     const mine = me.user && entry.userId === me.user.id;
-    const mayEdit = can('timesheets:write:all') || (mine && can('timesheets:write:own'));
-
-    // The API only allows open -> submitted -> approved/rejected.
-    if (mayEdit && entry.status === 'open') {
-      actions.append(el('button', {
-        class: 'link',
-        text: t('action.submit', 'submit'),
-        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'submitted' },
-          t('msg.submitted', 'Submitted'), loadTimesheets),
-      }));
-    }
-
-    if (can('timesheets:approve') && entry.status === 'submitted') {
-      actions.append(el('button', {
-        class: 'link',
-        text: t('action.approve', 'approve'),
-        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'approved' },
-          t('msg.approved', 'Approved'), loadTimesheets),
-      }));
-      actions.append(el('button', {
-        class: 'link danger',
-        text: t('action.reject', 'reject'),
-        onclick: () => patch(`/timesheets/${entry.id}`, { status: 'rejected' },
-          t('msg.rejected', 'Rejected'), loadTimesheets),
-      }));
-    }
-
-    if (mayEdit && entry.status !== 'approved') {
-      actions.append(el('button', {
-        class: 'link danger',
-        text: t('action.delete', 'delete'),
-        onclick: () => remove(`/timesheets/${entry.id}`,
-          t('msg.entryDeleted', 'Entry deleted'), loadTimesheets),
-      }));
-    }
 
     return el('tr', { class: mine ? 'self' : '' },
       el('td', { text: fmtDate(entry.date) }),
@@ -1229,14 +1663,42 @@ function renderCalendarGrid(first, last, byDay) {
 function showCalendarDay(iso, entries) {
   $('#calendar-day-title').textContent = fmtDate(iso);
 
-  const rows = entries.map((entry) => el('tr', {},
-    el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project') }),
-    el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
-    el('td', { text: entry.description ?? '–' }),
-    el('td', {}, statusBadge(entry.status)),
-  ));
+  const rows = entries.map((entry) => {
+    const row = el('tr', {},
+      el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project') }),
+      el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
+      el('td', { text: entry.description ?? '–' }),
+      el('td', {}, statusBadge(entry.status)),
+      timesheetActions(entry),
+    );
 
-  fillTable($('#table-calendar-day tbody'), rows, 4, t('ot.empty', 'No bookings in this period.'));
+    if (mayEditTimesheet(entry)) {
+      row.classList.add('clickable');
+      row.tabIndex = 0;
+      row.title = t('cal.clickToEdit', 'Click an entry to edit it.');
+
+      // Anywhere on the row, except on the buttons it carries - a click on
+      // "delete" must not also open the entry behind the confirmation.
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+
+        editTimesheet(entry);
+      });
+
+      // Reachable without a mouse, since a row is not a control the browser
+      // would have given a keyboard behaviour to.
+      row.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+
+        e.preventDefault();
+        editTimesheet(entry);
+      });
+    }
+
+    return row;
+  });
+
+  fillTable($('#table-calendar-day tbody'), rows, 5, t('ot.empty', 'No bookings in this period.'));
   $('#calendar-day-card').hidden = false;
 }
 
@@ -1279,7 +1741,9 @@ async function loadTokens() {
     el('td', { class: 'actions' }, el('button', {
       class: 'link danger',
       text: t('token.revoke', 'revoke'),
-      onclick: () => remove(`/me/tokens/${token.id}`, t('token.revoked', 'Token revoked'), loadTokens),
+      onclick: () => removeAfterConfirm(
+        `${t('token.name', 'Label')} "${token.name}"`,
+        `/me/tokens/${token.id}`, t('token.revoked', 'Token revoked'), loadTokens),
     })),
   ));
 
@@ -1412,6 +1876,17 @@ async function loadAdmin() {
 
   fillSelect(ldapForm.elements.defaultRole, cache.roles, { labelKey: 'name', valueKey: 'name' });
   ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'employee';
+
+  const schedule = $('#form-sync-schedule');
+  if (schedule) {
+    schedule.elements.syncSchedule.value = ldap.syncSchedule ?? '';
+
+    // What this process is actually scheduled to do, which is not the stored
+    // value until the next start - and the restart card is what says so.
+    $('#sync-schedule-active').textContent = ldap.syncSchedule
+      ? `${t('sync.scheduleStored', 'Saved')}: ${ldap.syncSchedule}`
+      : t('sync.scheduleManual', 'Runs only when the button below is pressed.');
+  }
 }
 
 /** The logo travels as a data URI, so it needs no upload endpoint. */
@@ -1471,6 +1946,16 @@ function wireAdmin() {
     mutate(() => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
       t('admin.saved', 'Settings saved'),
       loadAdmin);
+  });
+
+  $('#form-sync-schedule').addEventListener('submit', (e) => {
+    e.preventDefault();
+    mutate(
+      () => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
+      t('admin.restartNeeded', 'Saved. Applied on the next start.'),
+      // The restart card too: the schedule is the one directory setting that
+      // waits, because a scheduler is built while the application starts.
+      async () => { await loadAdmin(); });
   });
 
   $('#datasource-test').addEventListener('click', () => {
@@ -1568,7 +2053,13 @@ function wireDirectorySync() {
           .replace('{n}', String(preview.candidates.length))
           .replace('{h}', String(hours));
 
-        if (!window.confirm(question)) return;
+        const proceed = await confirmDialog({
+          title: t('sync.confirmTitle', 'Run the synchronisation?'),
+          text: question,
+          confirmLabel: t('sync.run', 'Run synchronisation'),
+        });
+
+        if (!proceed) return;
       }
 
       show(await api('/settings/ldap/sync', { method: 'POST' }));
@@ -1597,6 +2088,13 @@ function ldapPayload() {
     body[flag] = form.elements[flag].checked;
   }
 
+  // The schedule lives in its own card, next to the buttons that run the thing
+  // it schedules, but it is stored with the rest of the directory settings and
+  // travels on the same request - so it has to be in every payload or saving the
+  // connection would clear it.
+  const schedule = $('#form-sync-schedule');
+  body.syncSchedule = schedule ? schedule.elements.syncSchedule.value.trim() : '';
+
   return body;
 }
 
@@ -1605,9 +2103,12 @@ function ldapPayload() {
 /** Wraps a mutating call so every failure surfaces as a toast, not a crash. */
 async function mutate(fn, successMessage, after) {
   try {
-    await fn();
+    // Handed to `after`, so a caller that needs what the call answered does not
+    // have to make the call again or smuggle it out through a closure. Every
+    // existing caller ignores it, which is what makes this safe to add.
+    const result = await fn();
     if (successMessage) toast(successMessage, 'ok');
-    if (after) await after();
+    if (after) await after(result);
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -1623,7 +2124,100 @@ const remove = (path, msg, after) => mutate(
   () => api(path, { method: 'DELETE' }), msg, after);
 
 /**
- * Deletes a staff member, asking first when it would destroy recorded time.
+ * Asks a yes-or-no question, and resolves to the answer.
+ *
+ * Replaces window.confirm, which the browser draws itself: an unstyled box
+ * naming the origin, unreadable in a dark theme, and impossible to translate
+ * beyond the message inside it. It also blocks the whole page, which is why the
+ * old maintenance-mode call had to put the checkbox back by hand afterwards.
+ *
+ * The markup is built rather than written into index.html, because a question
+ * differs only in its words - and reusing .overlay and .overlay-card means this
+ * needs no new styling at all.
+ */
+function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
+  return new Promise((resolve) => {
+    // What had focus before, so it can be given back: a dialog that leaves
+    // focus on nothing strands anybody using a keyboard.
+    const previous = document.activeElement;
+
+    const card = el('div', {
+      class: 'overlay-card confirm-card',
+      role: 'dialog',
+      'aria-modal': 'true',
+    });
+
+    card.append(el('h2', { text: title }));
+    card.append(el('p', { class: 'muted', text }));
+
+    // The server's own words, when there are any - the count of what would be
+    // destroyed usually lives there rather than in the question.
+    if (detail) card.append(el('p', { class: 'muted minus', text: detail }));
+
+    const overlay = el('div', { class: 'overlay confirm-overlay' }, card);
+
+    const close = (answer) => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+
+      if (previous instanceof HTMLElement) previous.focus();
+
+      resolve(answer);
+    };
+
+    // Escape cancels, which is what a dialog with a destructive option should
+    // do with an ambiguous keypress.
+    const onKey = (event) => {
+      if (event.key === 'Escape') close(false);
+    };
+
+    const cancel = el('button', {
+      class: 'secondary',
+      type: 'button',
+      text: t('action.cancel', 'Cancel'),
+      onclick: () => close(false),
+    });
+
+    const proceed = el('button', {
+      class: danger ? 'danger' : '',
+      type: 'button',
+      text: confirmLabel,
+      onclick: () => close(true),
+    });
+
+    card.append(el('div', { class: 'row confirm-actions' }, cancel, proceed));
+
+    document.addEventListener('keydown', onKey);
+    document.body.append(overlay);
+
+    // Cancel takes the focus, not the destructive button: a stray Enter should
+    // not delete anything.
+    cancel.focus();
+  });
+}
+
+/**
+ * The question asked before something is deleted for good.
+ *
+ * One wording for all of them, with the thing being deleted named, so the
+ * question reads the same wherever it comes from - and so that five delete
+ * buttons which asked nothing at all now ask the same thing.
+ */
+function confirmDelete(what) {
+  return confirmDialog({
+    title: t('confirm.deleteTitle', 'Delete for good?'),
+    text: `${what} ${t('confirm.deleteText', 'will be deleted. This cannot be undone.')}`,
+    confirmLabel: t('action.delete', 'delete'),
+  });
+}
+
+/** remove() with the question in front of it. */
+const removeAfterConfirm = async (what, path, msg, after) => {
+  if (await confirmDelete(what)) await remove(path, msg, after);
+};
+
+/**
+ * Deletes a user, asking first when it would destroy recorded time.
  *
  * The server refuses that deletion rather than performing it, and its refusal
  * carries the number of entries. So the question put to the administrator has
@@ -1651,9 +2245,17 @@ async function deleteStaffMember(user) {
       return;
     }
 
-    // The refusal explains what is attached, so it becomes the question.
-    const question = t('user.deleteConfirm', 'Delete anyway? The recorded time cannot be recovered.');
-    if (!window.confirm(`${err.message}\n\n${question}`)) return;
+    // The refusal explains what is attached, so it becomes the question - the
+    // server's own sentence as the detail, because it carries the count, and
+    // "42 entries" is a different decision from "some data may be lost".
+    const proceed = await confirmDialog({
+      title: t('confirm.deleteTitle', 'Delete for good?'),
+      text: t('user.deleteConfirm', 'Delete anyway? The recorded time cannot be recovered.'),
+      detail: err.message,
+      confirmLabel: t('action.delete', 'delete'),
+    });
+
+    if (!proceed) return;
   }
 
   mutate(
@@ -1666,13 +2268,19 @@ async function deleteStaffMember(user) {
 
 /** Shows the sign-in overlay and hides the application behind it. */
 function showLogin(message) {
-  $('#login-screen').hidden = false;
+  const screen = $('#login-screen');
+  screen.hidden = false;
+  // The check is over, whatever it concluded: show the form rather than the
+  // spinner that stood in for it.
+  screen.classList.remove('checking');
+
   const error = $('#login-error');
   error.textContent = message ?? '';
   error.hidden = !message;
 }
 
 function hideLogin() {
+  $('#login-screen').classList.remove('checking');
   $('#login-screen').hidden = true;
   $('#login-error').hidden = true;
   $('#login-totp-field').hidden = true;
@@ -1726,6 +2334,10 @@ async function submitLogin(e) {
   try {
     await refreshAll();
     switchView(firstVisibleView());
+
+    // Here as well as on a page load, or the greeting would only ever appear to
+    // somebody who reloaded after signing in - which is nobody's first sign-in.
+    await greetAfterSignIn();
   } catch (err) {
     // Signed in, but something behind it would not load. Staying on the
     // application with an explanation beats being thrown back to a sign-in
@@ -1763,6 +2375,14 @@ function renderTOTPState() {
   $('#totp-disable').hidden = !enabled;
   $('#totp-confirm').hidden = true;
   $('#totp-setup').hidden = true;
+
+  // The code encodes the secret, so it must not survive the enrolment it belongs
+  // to - neither on screen nor in the markup.
+  const qr = $('#totp-qr');
+  qr.hidden = true;
+  qr.removeAttribute('src');
+  $('#totp-secret').textContent = '';
+  $('#totp-uri').textContent = '';
   // Disabling also needs a current code, so the field stays visible for it.
   $('#totp-code-field').hidden = !enabled;
 }
@@ -1772,6 +2392,17 @@ function wireTOTP() {
     const setup = await api('/me/totp', { method: 'POST' });
     $('#totp-secret').textContent = setup.secret;
     $('#totp-uri').textContent = setup.uri;
+
+    // The picture is the ordinary way in; the typed key stays folded away behind
+    // it for a machine with no camera, and for when a code will not scan.
+    const qr = $('#totp-qr');
+    qr.hidden = !setup.qr;
+    qr.alt = setup.qr ? t('totp.qrAlt', 'QR code for your authenticator app') : '';
+    if (setup.qr) qr.src = setup.qr;
+
+    // Open on the key when there is no picture, or the screen would offer nothing.
+    $('#totp-manual').open = !setup.qr;
+
     $('#totp-setup').hidden = false;
     $('#totp-code-field').hidden = false;
     $('#totp-confirm').hidden = false;
@@ -1831,6 +2462,16 @@ const TOUR_STEPS = [
       + 'so this bar is shorter for some people than for others.'),
   },
   {
+    target: '#timer-card',
+    view: 'timesheets',
+    permission: 'timesheets:write:own',
+    title: () => t('tour.timer.title', 'The stopwatch'),
+    text: () => t('tour.timer.text',
+      'Start it when you start, stop it when you are done, and it books the time it '
+      + 'measured. It keeps running if you close the browser, because it runs on the '
+      + 'server rather than in this tab.'),
+  },
+  {
     target: '#form-timesheet',
     view: 'timesheets',
     permission: 'timesheets:write:own,timesheets:write:all',
@@ -1849,12 +2490,33 @@ const TOUR_STEPS = [
       + 'editable until you submit it for approval.'),
   },
   {
+    target: '#table-timesheets',
+    view: 'timesheets',
+    permission: 'timesheets:approve',
+    title: () => t('tour.approve.title', 'Submitting and approving'),
+    text: () => t('tour.approve.text',
+      'An entry goes open, submitted, approved. You can approve what other people '
+      + 'submit, or send it back — a rejected entry can be opened again and corrected '
+      + 'rather than having to be typed afresh. Approved entries are closed records and '
+      + 'can no longer be changed.'),
+  },
+  {
     target: '#calendar-days',
     view: 'calendar',
     permission: 'timesheets:read:own,timesheets:read:all',
     title: () => t('tour.calendar.title', 'The month at a glance'),
     text: () => t('tour.calendar.text',
-      'Which days have hours on them, and how many. Click a day to see what is behind it.'),
+      'Which days have hours on them, and how many. Click a day to see what is behind '
+      + 'it, and click one of those entries to correct it.'),
+  },
+  {
+    target: '#chart-days',
+    view: 'overtime',
+    permission: 'timesheets:read:own',
+    title: () => t('tour.stats.title', 'Your own figures'),
+    text: () => t('tour.stats.text',
+      'Hours per day, per project and by status, over any period you choose. Yours '
+      + 'alone — nobody needs a reporting permission to see their own week.'),
   },
   {
     target: '#form-overtime',
@@ -1873,6 +2535,24 @@ const TOUR_STEPS = [
     text: () => t('tour.projects.text',
       'Shared projects are set up centrally. You can also create private ones, visible only '
       + 'to you, to split up a day when no shared project fits.'),
+  },
+  {
+    target: '#form-report',
+    view: 'report',
+    permission: 'reports:read',
+    title: () => t('tour.report.title', 'Project reports'),
+    text: () => t('tour.report.text',
+      'What a project totals up to, per person. This one needs a reporting permission, '
+      + 'because it is other people\'s hours rather than your own.'),
+  },
+  {
+    target: '#token-card',
+    view: 'settings',
+    title: () => t('tour.tokens.title', 'Tokens and a second factor'),
+    text: () => t('tour.tokens.text',
+      'A personal token lets a script book time as you, and carries exactly the rights '
+      + 'your role has at the time it is used. Two-factor authentication is here as '
+      + 'well, with a code to scan.'),
   },
   {
     target: '#form-working-times',
@@ -2016,7 +2696,12 @@ async function endTour() {
   $('#tour-spotlight').hidden = true;
   $('#tour-bubble').hidden = true;
 
-  if (me.user?.tourSeen) return;
+  await recordTourSeen();
+}
+
+/** Notes that the introduction has been offered, so it is offered once. */
+async function recordTourSeen() {
+  if (!me.user || me.user.tourSeen) return;
 
   try {
     await api('/me/tour', { method: 'PUT', body: JSON.stringify({ seen: true }) });
@@ -2060,18 +2745,183 @@ function wireTour() {
 }
 
 /**
- * Offers the tour on a first sign-in.
+ * The greeting, whichever kind applies to this person.
+ *
+ * One place rather than two calls at each site: a first sign-in is greeted and
+ * offered the walk through, anybody who has been here before gets the short one,
+ * and never both.
+ */
+async function greetAfterSignIn() {
+  await maybeWelcome();
+  await maybeWelcomeBack();
+}
+
+/**
+ * Whether this person has already been greeted during this visit, marking them as
+ * greeted if not.
+ *
+ * Per tab and gone when the tab is: exactly the lifetime of "this visit". Shared by
+ * both greetings so they cannot both land - somebody who declined the walk through
+ * and then reloaded was being welcomed back to a screen they had just arrived at.
+ *
+ * Private browsing can refuse storage outright. Then a greeting shows again on the
+ * next load, which is a small annoyance and not worth failing over.
+ */
+function greetedThisVisit() {
+  if (!me.user) return true;
+
+  const key = `gtr_greeted_${me.user.id}`;
+
+  try {
+    if (sessionStorage.getItem(key)) return true;
+
+    sessionStorage.setItem(key, '1');
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Greets somebody on their first sign-in, and offers the walk through.
  *
  * Never while the setup wizard is up: being walked through the application by
  * two things at once is worse than either alone, and the wizard is the one
  * that has to happen first.
+ *
+ * Not for the built-in administrator either. That account arrives at the setup
+ * wizard, which is its own introduction and covers the screens it actually uses;
+ * a tour of booking time and reading an overtime balance would be a tour of
+ * somebody else's job. The card under My account still starts it on request.
  */
-async function maybeStartTour() {
+async function maybeWelcome() {
   if (!me.user || me.user.tourSeen) return;
   if (!$('#setup-wizard').hidden) return;
   if (me.user.mustChangePassword) return;
+  if (isSystemAdmin()) return;
+  if (greetedThisVisit()) return;
 
-  await startTour();
+  showWelcome();
+}
+
+/** Fills in the greeting and puts it up. */
+function showWelcome() {
+  const overlay = $('#welcome-overlay');
+  if (!overlay) return;
+
+  $('#welcome-title').textContent = me.user?.name
+    ? t('welcome.hello', 'Welcome, {0}').replace('{0}', me.user.name)
+    : t('welcome.helloPlain', 'Welcome');
+
+  $('#welcome-text').textContent = t('welcome.text',
+    'This is where your working time is recorded. A short walk through it takes '
+    + 'about a minute, and you can start it again at any time under My account.');
+
+  // What the application is for, in the order somebody meets it. Only the points
+  // this person can actually act on: a list that promises approvals to somebody
+  // who cannot approve is worse than a shorter list.
+  const points = [
+    can('timesheets:write:own', 'timesheets:write:all')
+      && t('welcome.point.book', 'Book hours by hand, or run a stopwatch and let it book them.'),
+    can('timesheets:read:own', 'timesheets:read:all')
+      && t('welcome.point.see', 'See your month in a calendar, and your own figures as charts.'),
+    can('timesheets:approve')
+      && t('welcome.point.approve', 'Review and approve what your people submit.'),
+    t('welcome.point.account',
+      'Set your daily target, your timezone and a second factor under My account.'),
+  ].filter(Boolean);
+
+  $('#welcome-points').replaceChildren(...points.map((text) => el('li', { text })));
+
+  overlay.hidden = false;
+  $('#welcome-tour').focus();
+}
+
+/** Takes the greeting down, and records that it has been seen. */
+async function dismissWelcome({ thenTour }) {
+  $('#welcome-overlay').hidden = true;
+
+  if (thenTour) {
+    await startTour();
+
+    return;
+  }
+
+  // Declining counts as seen, the same way skipping the tour does: somebody who
+  // said "not now" made a decision, and asking again next time overrides it.
+  await recordTourSeen();
+}
+
+function wireWelcome() {
+  $('#welcome-tour').addEventListener('click', () => dismissWelcome({ thenTour: true }));
+  $('#welcome-skip').addEventListener('click', () => dismissWelcome({ thenTour: false }));
+
+  // Escape is what people press to get out of a dialog.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#welcome-overlay').hidden) {
+      dismissWelcome({ thenTour: false });
+    }
+  });
+
+  $('#welcome-back-close').addEventListener('click', () => {
+    $('#welcome-back').hidden = true;
+  });
+}
+
+/**
+ * Greets somebody who has been here before, once per browser session.
+ *
+ * Per visit rather than per page load: a reload is not an arrival, and a greeting
+ * that reappears every time is something to close rather than read. Says what they
+ * would otherwise have to go and look up - what today already has on it, and
+ * whether they left a stopwatch running.
+ */
+async function maybeWelcomeBack() {
+  const card = $('#welcome-back');
+  if (!card || !me.user || !me.user.tourSeen) return;
+  if (!$('#setup-wizard').hidden || me.user.mustChangePassword) return;
+  if (!can('timesheets:read:own', 'timesheets:read:all')) return;
+  if (greetedThisVisit()) return;
+
+  $('#welcome-back-title').textContent = me.user.name
+    ? t('welcome.backName', 'Welcome back, {0}').replace('{0}', me.user.name)
+    : t('welcome.back', 'Welcome back');
+
+  $('#welcome-back-text').textContent = await welcomeBackDetail();
+  card.hidden = false;
+}
+
+/** What today looks like, in one sentence. */
+async function welcomeBackDetail() {
+  const today = todayISO();
+
+  try {
+    const running = await api('/me/timer');
+
+    if (running?.running) {
+      return t('welcome.timerRunning',
+        'A stopwatch is still running. Stop it on this screen to book the time.');
+    }
+  } catch {
+    // Not worth a word: the greeting is a courtesy, and the screen below it
+    // reports anything that is actually wrong.
+  }
+
+  try {
+    const entries = (await api(`/timesheets?from=${today}&to=${today}`))?.items ?? [];
+    const mine = entries.filter((entry) => entry.userId === me.user.id);
+    const hours = mine.reduce((sum, entry) => sum + entry.durationHours, 0);
+
+    if (hours > 0) {
+      return t('welcome.todayHours', '{0} h booked today so far.')
+        .replace('{0}', hours.toFixed(2));
+    }
+
+    return t('welcome.todayNothing', 'Nothing booked today yet.');
+  } catch {
+    return '';
+  }
 }
 
 // ------------------------------------------------------------ setup wizard
@@ -2481,6 +3331,7 @@ function pendingLabel(setting) {
     case 'traceExporter': return t('tel.exporter', 'Trace exporter');
     case 'tracerUrl': return t('tel.url', 'Collector');
     case 'database': return t('admin.database', 'Database connection');
+    case 'directorySchedule': return t('sync.scheduleShort', 'Directory schedule');
     default: return setting;
   }
 }
@@ -2556,9 +3407,14 @@ function wireRestart() {
   if (!button) return;
 
   button.addEventListener('click', async () => {
-    const question = t('restart.confirm',
-      'Restart the application? Anyone working in it will have to reload the page.');
-    if (!window.confirm(question)) return;
+    const proceed = await confirmDialog({
+      title: t('restart.title', 'Restart'),
+      text: t('restart.confirm',
+        'Restart the application? Anyone working in it will have to reload the page.'),
+      confirmLabel: t('restart.now', 'Restart now'),
+    });
+
+    if (!proceed) return;
 
     const overlay = $('#restart-overlay');
     const status = $('#restart-status');
@@ -2706,6 +3562,464 @@ function wirePasswordReveal(root = document) {
 
     field.append(button);
   }
+}
+
+// ------------------------------------------------------------------ charts
+
+/**
+ * Draws a bar chart, by hand.
+ *
+ * No chart library, and not for want of one: the Content-Security-Policy allows
+ * no external origin at all and the assets are embedded, so anything fetched from
+ * a CDN would simply be blocked. That leaves SVG built in the page - and
+ * createElementNS rather than createElement, because an <svg> built in the HTML
+ * namespace parses without complaint and renders nothing.
+ *
+ * Horizontal bars with the label beside each one, which is what survives a long
+ * project name and a narrow phone. A vertical chart with rotated labels reads
+ * badly at both ends.
+ */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svg(tag, attributes = {}) {
+  const node = document.createElementNS(SVG_NS, tag);
+
+  for (const [name, value] of Object.entries(attributes)) {
+    node.setAttribute(name, String(value));
+  }
+
+  return node;
+}
+
+/**
+ * Renders bars into a container.
+ *
+ * bars is [{label, value, title}]. The scale runs from zero to the largest value,
+ * because a bar chart that starts anywhere else exaggerates every difference on
+ * it - and these are hours, where twice as long should look twice as long.
+ */
+function drawBarChart(container, bars, formatValue) {
+  container.replaceChildren();
+
+  if (bars.length === 0) return;
+
+  const rowHeight = 22;
+  const gap = 4;
+  const labelWidth = 118;
+  const valueWidth = 62;
+  const width = 640;
+  const height = bars.length * (rowHeight + gap);
+  const trackWidth = width - labelWidth - valueWidth;
+
+  const chart = svg('svg', {
+    viewBox: `0 0 ${width} ${height}`,
+    // Scales to its container's width while keeping the row height readable.
+    width: '100%',
+    height,
+    role: 'img',
+  });
+
+  const largest = Math.max(...bars.map((bar) => bar.value), 0);
+
+  bars.forEach((bar, index) => {
+    const y = index * (rowHeight + gap);
+
+    const label = svg('text', {
+      x: 0,
+      y: y + rowHeight * 0.72,
+      class: 'chart-label',
+    });
+    label.textContent = bar.label;
+    chart.append(label);
+
+    // The track, so an empty day is still a row rather than nothing at all.
+    chart.append(svg('rect', {
+      x: labelWidth, y, width: trackWidth, height: rowHeight, rx: 4, class: 'chart-track',
+    }));
+
+    if (bar.value > 0 && largest > 0) {
+      // Zero-based, and at least a sliver wide so a very small value is visible
+      // rather than looking like nothing was recorded.
+      const barWidth = Math.max(2, (bar.value / largest) * trackWidth);
+
+      const rect = svg('rect', {
+        x: labelWidth, y, width: barWidth, height: rowHeight, rx: 4, class: 'chart-bar',
+      });
+
+      // The exact figure on hover, since the bar is a comparison and not a
+      // readout.
+      const title = svg('title');
+      title.textContent = bar.title ?? `${bar.label}: ${formatValue(bar.value)}`;
+      rect.append(title);
+
+      chart.append(rect);
+    }
+
+    const value = svg('text', {
+      x: width,
+      y: y + rowHeight * 0.72,
+      class: 'chart-value',
+      'text-anchor': 'end',
+    });
+    value.textContent = formatValue(bar.value);
+    chart.append(value);
+  });
+
+  container.append(chart);
+}
+
+/** The default range: the current month, in whatever zone applies to the user. */
+function defaultStatisticsRange() {
+  const today = todayISO();
+  const firstOfMonth = `${today.slice(0, 7)}-01`;
+
+  return { from: firstOfMonth, to: today };
+}
+
+async function loadStatistics() {
+  const card = $('#statistics-card');
+  if (!card || !can('timesheets:read:own', 'timesheets:read:all')) return;
+
+  const range = defaultStatisticsRange();
+
+  if (!$('#statistics-from').value) $('#statistics-from').value = range.from;
+  if (!$('#statistics-to').value) $('#statistics-to').value = range.to;
+
+  const params = new URLSearchParams({
+    from: $('#statistics-from').value,
+    to: $('#statistics-to').value,
+  });
+
+  const stats = await api(`/me/statistics?${params}`);
+
+  $('#statistics-total').textContent =
+    `${t('stats.total', 'Total')}: ${fmtHours(stats.totalHours ?? 0)}`;
+
+  const days = stats.days ?? [];
+  const projects = stats.projects ?? [];
+
+  // Empty days are drawn as empty rows on purpose - a chart of only the days that
+  // have entries shows a full week where there were two working days.
+  drawBarChart($('#chart-days'),
+    days.map((day) => ({ label: day.date, value: day.hours })),
+    fmtHours);
+
+  drawBarChart($('#chart-projects'),
+    projects.map((project) => ({
+      // A project with no name is one that has been deleted since; the hours it
+      // holds still count, so it is shown rather than dropped.
+      label: project.projectId
+        ? (project.name || t('stats.deletedProject', 'deleted project'))
+        : t('stats.noProject', 'no project'),
+      value: project.hours,
+    })),
+    fmtHours);
+
+  $('#statistics-empty').hidden = (stats.totalHours ?? 0) > 0;
+}
+
+/**
+ * The spreadsheet card: exporting what is on screen, and importing a file.
+ *
+ * The import is deliberately two steps. A file assembled by hand is wrong more
+ * often than it is right, and the first thing somebody needs is to be shown what
+ * their file would do - which rows would be written, which would not, and why -
+ * before anything is.
+ */
+
+/** The filters the entry list is showing, so the export matches the screen. */
+function timesheetFilterQuery() {
+  const params = new URLSearchParams();
+
+  const userId = $('#filter-ts-user')?.value;
+  const projectId = $('#filter-ts-project')?.value;
+  const status = $('#filter-ts-status')?.value;
+
+  if (userId) params.set('userId', userId);
+  if (projectId) params.set('projectId', projectId);
+  if (status) params.set('status', status);
+
+  return params.toString() ? `?${params}` : '';
+}
+
+/**
+ * Downloads the export.
+ *
+ * Through fetch and a blob rather than by pointing the browser at the URL: the
+ * request needs the session cookie and a sensible filename, and the server cannot
+ * set Content-Disposition - GoFr owns the response headers. Naming it here is
+ * better anyway, because this is where the period being looked at is known.
+ */
+async function exportWorkbook() {
+  const res = await fetch(`${API}/timesheets/export${timesheetFilterQuery()}`, {
+    credentials: 'same-origin',
+  });
+
+  if (!res.ok) {
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      // An error page rather than JSON; the status carries the meaning.
+    }
+
+    throw new Error(errorMessage(body) || `${t('msg.error', 'Error')} ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+
+  const link = el('a', { href: url, download: `${t('wb.filename', 'time-entries')}-${todayISO()}.xlsx` });
+  document.body.append(link);
+  link.click();
+  link.remove();
+
+  // Released once the browser has taken it; a blob left behind holds the whole
+  // file in memory for as long as the page is open.
+  URL.revokeObjectURL(url);
+}
+
+/** Sends the chosen file, either to look or to write. */
+async function sendWorkbook(dryRun) {
+  const input = $('#wb-file');
+  const file = input?.files?.[0];
+
+  if (!file) {
+    throw new Error(t('wb.noFile', 'Choose a file first.'));
+  }
+
+  const body = new FormData();
+  body.append('file', file);
+  body.append('dryRun', dryRun ? 'true' : 'false');
+
+  // No Content-Type of our own: the browser has to set it, because only it knows
+  // the multipart boundary it generated.
+  const res = await fetch(`${API}/timesheets/import`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': readCookie('gtr_csrf') },
+    body,
+  });
+
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // Falls through to the status below.
+  }
+
+  if (!res.ok) {
+    const err = new Error(errorMessage(payload) || `${t('msg.error', 'Error')} ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  return payload?.data ?? null;
+}
+
+/** Shows what the file would do, row by row. */
+function renderWorkbookPreview(result) {
+  const rows = (result?.rows ?? []).map((row) => el('tr', { class: row.problem ? 'rejected' : '' },
+    el('td', { class: 'num', text: String(row.row) }),
+    el('td', { text: row.date ? fmtDate(row.date) : '–' }),
+    el('td', { text: row.user || '–' }),
+    el('td', { text: row.project || t('ts.noProject', 'no project') }),
+    el('td', { class: 'num', text: row.hours ? row.hours.toFixed(2) : '–' }),
+    el('td', { text: row.description || '–' }),
+    el('td', { class: row.problem ? 'minus' : 'muted', text: row.problem || '✓' }),
+  ));
+
+  fillTable($('#table-workbook tbody'), rows, 7, t('wb.empty', 'The file has no entries in it.'));
+  $('#wb-preview-wrap').hidden = false;
+
+  const writable = result?.writable ?? 0;
+  const rejected = result?.rejected ?? 0;
+
+  $('#wb-summary').textContent = rejected > 0
+    ? t('wb.someRejected', '{0} of {1} rows can be imported. Nothing is written while any row is refused.')
+      .replace('{0}', String(writable)).replace('{1}', String(writable + rejected))
+    : t('wb.allReady', 'All {0} rows can be imported.').replace('{0}', String(writable));
+
+  // The import button only where it would do something: offering it for a file
+  // that would be refused is offering a failure.
+  $('#wb-import').hidden = rejected > 0 || writable === 0;
+}
+
+/** Puts the card back to its resting state. */
+function resetWorkbookCard() {
+  const input = $('#wb-file');
+  if (input) input.value = '';
+
+  $('#wb-preview').hidden = true;
+  $('#wb-import').hidden = true;
+  $('#wb-clear').hidden = true;
+  $('#wb-preview-wrap').hidden = true;
+  $('#wb-summary').textContent = '';
+  $('#table-workbook tbody').replaceChildren();
+}
+
+function wireWorkbook() {
+  const card = $('#workbook-card');
+  if (!card) return;
+
+  $('#wb-export').addEventListener('click', () => mutate(
+    exportWorkbook, t('wb.exported', 'Export saved'), null));
+
+  $('#wb-file').addEventListener('change', () => {
+    const chosen = Boolean($('#wb-file').files?.length);
+
+    $('#wb-preview').hidden = !chosen;
+    $('#wb-clear').hidden = !chosen;
+    $('#wb-import').hidden = true;
+    $('#wb-preview-wrap').hidden = true;
+    $('#wb-summary').textContent = chosen
+      ? t('wb.chosen', 'Check the file to see what it would do.')
+      : '';
+  });
+
+  $('#wb-preview').addEventListener('click', () => mutate(
+    () => sendWorkbook(true), null,
+    (result) => renderWorkbookPreview(result)));
+
+  $('#wb-import').addEventListener('click', () => mutate(
+    () => sendWorkbook(false),
+    t('wb.imported', 'The file was imported'),
+    async (result) => {
+      resetWorkbookCard();
+      await reloadTimeViews();
+
+      if (result?.imported) {
+        toast(t('wb.importedCount', '{0} entries created.')
+          .replace('{0}', String(result.imported)), 'ok');
+      }
+    }));
+
+  $('#wb-clear').addEventListener('click', resetWorkbookCard);
+}
+
+function wireStatistics() {
+  const button = $('#statistics-load');
+  if (!button) return;
+
+  button.addEventListener('click', () => mutate(loadStatistics, null, null));
+}
+
+// ------------------------------------------------------------------ stopwatch
+
+/** The running clock, or null. Kept so the display can tick without asking. */
+let runningTimer = null;
+
+/** The interval that ticks the display, so it can be stopped when nothing runs. */
+let timerTick = null;
+
+/**
+ * Renders the clock's state.
+ *
+ * The elapsed time is counted here from the start instant rather than polled,
+ * because a request per second to be told the same thing is a request per second.
+ * The server sends its own elapsed figure too, and that is what the entry will
+ * record - so a browser with a wrong clock shows a slightly wrong number here and
+ * still books the right one.
+ */
+function renderTimer() {
+  const card = $('#timer-card');
+  if (!card) return;
+
+  const running = runningTimer !== null;
+
+  $('#timer-start').hidden = running;
+  $('#timer-stop').hidden = !running;
+  $('#timer-discard').hidden = !running;
+  $('#timer-project').disabled = running;
+  $('#timer-description').disabled = running;
+
+  if (!running) {
+    $('#timer-elapsed').textContent = '';
+
+    if (timerTick) {
+      clearInterval(timerTick);
+      timerTick = null;
+    }
+
+    return;
+  }
+
+  const started = new Date(runningTimer.startedAt).getTime();
+
+  const paint = () => {
+    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+    const ss = String(seconds % 60).padStart(2, '0');
+
+    $('#timer-elapsed').textContent = `${hh}:${mm}:${ss}`;
+  };
+
+  paint();
+
+  if (!timerTick) timerTick = setInterval(paint, 1000);
+}
+
+async function loadTimer() {
+  if (!can('timesheets:write:own', 'timesheets:write:all')) return;
+
+  const state = await api('/me/timer');
+  runningTimer = state.running ? state : null;
+
+  // The project it was started with, so stopping books what was chosen - the
+  // select is disabled while it runs, and this is what it shows.
+  if (runningTimer?.projectId) {
+    $('#timer-project').value = String(runningTimer.projectId);
+  }
+
+  if (runningTimer?.description) {
+    $('#timer-description').value = runningTimer.description;
+  }
+
+  renderTimer();
+}
+
+function wireTimer() {
+  const start = $('#timer-start');
+  if (!start) return;
+
+  start.addEventListener('click', () => {
+    const projectId = $('#timer-project').value;
+    const description = $('#timer-description').value.trim();
+
+    const body = {};
+    if (projectId) body.projectId = Number(projectId);
+    if (description) body.description = description;
+
+    mutate(
+      () => api('/me/timer', { method: 'POST', body: JSON.stringify(body) }),
+      t('timer.started', 'The clock is running'),
+      loadTimer);
+  });
+
+  $('#timer-stop').addEventListener('click', () => {
+    mutate(
+      () => api('/me/timer/stop', { method: 'POST' }),
+      t('msg.booked', 'Time booked'),
+      // Both time views as well: a booking has just appeared in each of them.
+      async () => { await loadTimer(); await reloadTimeViews(); });
+  });
+
+  $('#timer-discard').addEventListener('click', async () => {
+    const proceed = await confirmDialog({
+      title: t('timer.discardTitle', 'Discard the measured time?'),
+      text: t('timer.discardText',
+        'The clock is stopped and nothing is recorded. This cannot be undone.'),
+      confirmLabel: t('timer.discard', 'Discard'),
+    });
+
+    if (!proceed) return;
+
+    mutate(
+      () => api('/me/timer', { method: 'DELETE' }),
+      t('timer.discarded', 'The clock was discarded'),
+      loadTimer);
+  });
 }
 
 // ------------------------------------------------------- metrics and tracing
@@ -2981,7 +4295,9 @@ async function loadPasskeys() {
     el('td', { class: 'actions' }, el('button', {
       class: 'link danger',
       text: t('action.delete', 'delete'),
-      onclick: () => remove(`/me/passkeys/${passkey.id}`,
+      onclick: () => removeAfterConfirm(
+        `${t('passkey.name', 'Name')} "${passkey.name}"`,
+        `/me/passkeys/${passkey.id}`,
         t('passkey.removed', 'Passkey removed'), loadPasskeys),
     })),
   ));
@@ -3017,6 +4333,7 @@ function wirePasskeys() {
     try {
       await refreshAll();
       switchView(firstVisibleView());
+      await greetAfterSignIn();
     } catch (err) {
       toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
     }
@@ -3346,10 +4663,21 @@ async function loadMaintenance() {
     return false;
   }
 
-  banner.textContent = state.enabled
+  const notice = state.enabled
     ? (state.message || t('maint.default', 'This installation is temporarily unavailable for maintenance.'))
     : '';
+
+  banner.textContent = notice;
   banner.hidden = !state.enabled;
+
+  // And again inside the sign-in screen, which covers the banner above: it is
+  // fixed over the whole viewport with an opaque background, so somebody who is
+  // not signed in would never see the one at the top of the page.
+  const onLogin = $('#login-maintenance');
+  if (onLogin) {
+    onLogin.textContent = notice;
+    onLogin.hidden = !state.enabled;
+  }
 
   // The form, for the administrator who is looking at it.
   const form = $('#form-maintenance');
@@ -3365,7 +4693,9 @@ function wireMaintenance() {
   const form = $('#form-maintenance');
   if (!form) return;
 
-  form.addEventListener('submit', (event) => {
+  // async, because the question is now a dialog that resolves rather than a
+  // browser box that blocks the page.
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     const enabled = form.elements.enabled.checked;
@@ -3374,9 +4704,16 @@ function wireMaintenance() {
     // confirmation: that is the direction that ends an outage, and a dialog in
     // front of it is a dialog between somebody and fixing their installation.
     if (enabled) {
-      const question = t('maint.confirm',
-        'Turn this installation out of service? Everyone except this account will be turned away.');
-      if (!window.confirm(question)) {
+      const proceed = await confirmDialog({
+        title: t('maint.title', 'Maintenance mode'),
+        text: t('maint.confirm',
+          'Turn this installation out of service? Everyone except this account will be turned away.'),
+        confirmLabel: t('maint.enabled', 'Out of service'),
+      });
+
+      if (!proceed) {
+        // Put back, because the checkbox has already been ticked by the click
+        // that opened this question.
         form.elements.enabled.checked = false;
 
         return;
@@ -3565,10 +4902,46 @@ function switchView(name) {
   $$('.tab').forEach((tab) => tab.setAttribute('aria-current', String(tab.dataset.view === name)));
   $$('.view').forEach((view) => { view.hidden = view.id !== `view-${name}`; });
 
+  // In the address bar, so a reload comes back to the same screen and a link to
+  // one can be sent to somebody. replaceState rather than assigning to
+  // location.hash: assigning pushes an entry, and Back would then walk through
+  // every tab that was looked at instead of leaving the page.
+  if (currentHashView() !== name) {
+    history.replaceState(null, '', `#${name}`);
+  }
+
   // The log viewer polls, so it follows the screen it lives on rather than
   // running for as long as the tab is open.
   if (logViewerActive()) schedulePoll({ immediate: true });
   else stopLogPolling();
+
+  // An enrolment in progress does not survive leaving the screen. The panel holds a
+  // shared secret and the QR code that encodes it, and neither has any business
+  // sitting on a screen somebody has walked away from. Starting again is what the
+  // Enable button does anyway.
+  if (name !== 'settings' && $('#totp-setup') && !$('#totp-setup').hidden) {
+    renderTOTPState();
+  }
+}
+
+/** The view named in the address bar, if it names one. */
+function currentHashView() {
+  return decodeURIComponent(window.location.hash.replace(/^#/, ''));
+}
+
+/**
+ * The view to open: the one in the address bar when it is real and permitted,
+ * otherwise the first tab this user may see.
+ *
+ * Checked against the tabs rather than trusted, because the hash is whatever was
+ * typed or bookmarked - including a tab this user is not allowed, or one that
+ * stopped existing between releases.
+ */
+function startingView() {
+  const wanted = currentHashView();
+  const permitted = $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === wanted);
+
+  return permitted ? wanted : firstVisibleView();
 }
 
 /** Picks the first tab the user is actually allowed to see. */
@@ -3579,6 +4952,10 @@ function firstVisibleView() {
 
 async function refreshAll() {
   await loadMe();
+
+  // Before the booking date is worked out, because that depends on the zone -
+  // and on a first sign-in the zone is the thing being adopted.
+  if (await adoptBrowserDefaults()) await loadMe();
 
   // Only now is the applicable zone known, so the booking date is set here
   // rather than at start-up, where it would still be the browser's guess.
@@ -3608,6 +4985,8 @@ async function refreshAll() {
   await loadTimesheets();
   // After users and projects, so the calendar can resolve names.
   await loadCalendar();
+  await loadTimer();
+  await loadStatistics();
   await loadAdmin();
   await loadTokens();
   await loadPasskeys();
@@ -3668,22 +5047,29 @@ function wireForms() {
 
   $('#form-timesheet').addEventListener('submit', (e) => {
     e.preventDefault();
-    const raw = formData(e.target);
+    const { id, ...raw } = formData(e.target);
     const body = {
       ...raw,
       userId: Number(raw.userId),
       projectId: Number(raw.projectId),
       durationHours: Number(raw.durationHours),
     };
-    mutate(() => api('/timesheets', { method: 'POST', body: JSON.stringify(body) }),
-      t('msg.booked', 'Time booked'),
+
+    // The same form books and corrects; the id decides which.
+    const editing = Boolean(id);
+    const path = editing ? `/timesheets/${id}` : '/timesheets';
+    const method = editing ? 'PUT' : 'POST';
+
+    mutate(() => api(path, { method, body: JSON.stringify(body) }),
+      editing ? t('msg.entrySaved', 'Entry saved') : t('msg.booked', 'Time booked'),
       async () => {
-        // Keep user/project/date so booking several entries in a row is quick.
-        e.target.elements.durationHours.value = '';
-        e.target.elements.description.value = '';
-        await loadTimesheets();
+        // Keeps user/project/date, so booking several entries in a row stays quick.
+        resetTimesheetForm();
+        await reloadTimeViews();
       });
   });
+
+  $('#timesheet-cancel').addEventListener('click', resetTimesheetForm);
 
   $('#form-report').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -3774,6 +5160,16 @@ function wireForms() {
     const tab = e.target.closest('.tab');
     if (tab) switchView(tab.dataset.view);
   });
+
+  // Following a link to #calendar, or editing the address bar, moves the screen
+  // rather than leaving the address disagreeing with what is shown.
+  window.addEventListener('hashchange', () => {
+    // Only once there is a session; before that the sign-in screen is the whole
+    // interface and switching underneath it would change what appears after it.
+    if (!$('#login-screen').hidden) return;
+
+    switchView(startingView());
+  });
 }
 
 async function loadTeamOvertime(suffix) {
@@ -3827,11 +5223,15 @@ async function init() {
     wireOperational();
     wireTelemetry();
     wireRestart();
+    wireTimer();
+    wireStatistics();
+    wireWorkbook();
     // After the forms are wired, so a submit handler registered here runs
     // beside theirs rather than instead of one.
     wirePasswordReveal();
     wireSetup();
     wireTour();
+    wireWelcome();
     wirePasskeys();
     wireLogViewer();
     wireMaintenance();
@@ -3849,11 +5249,11 @@ async function init() {
   try {
     await refreshAll();
     hideLogin();
-    switchView(firstVisibleView());
+    switchView(startingView());
 
     // After the first view is up, so the tour highlights something that is
     // actually on screen.
-    await maybeStartTour();
+    await greetAfterSignIn();
   } catch {
     // No usable session: the sign-in screen is the whole interface until
     // there is one.

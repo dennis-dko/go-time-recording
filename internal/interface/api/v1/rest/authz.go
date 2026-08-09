@@ -204,7 +204,8 @@ func (a *Authorizer) requireOwnerOrAll(principal *service.Principal, ownerID uin
 // while an initial password is still in place.
 func mustChangePassword(principal *service.Principal) error {
 	if principal.User != nil && principal.User.MustChangePassword {
-		return apperror.Conflictf("the initial password must be changed before using the application")
+		return apperror.Conflictf("the initial password must be changed before using the application").
+			WithCode("initialPasswordPending")
 	}
 
 	return nil

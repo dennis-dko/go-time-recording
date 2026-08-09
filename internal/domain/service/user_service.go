@@ -46,7 +46,8 @@ func (s *UserDomainService) AssignRoleToUser(
 	if user.IsSystem && !role.Has(model.PermRoleWrite) {
 		return nil, apperror.Conflictf(
 			"the built-in administrator cannot be moved to role %q, which lacks %q",
-			role.Name, model.PermRoleWrite)
+			role.Name, model.PermRoleWrite).
+			WithCode("adminRoleMustAdminister", role.Name, model.PermRoleWrite)
 	}
 
 	user.RoleID = role.ID

@@ -136,7 +136,7 @@ func (s *LDAPSyncService) Sync(ctx context.Context) (*SyncReport, error) {
 //nolint:cyclop // the guards are the point of this function; splitting them
 func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, error) {
 	if !s.directory.Enabled() {
-		return nil, apperror.Conflictf("no directory is configured")
+		return nil, apperror.Conflictf("no directory is configured").WithCode("noDirectory")
 	}
 
 	directoryUsers, err := s.directory.ListUsers(ctx)

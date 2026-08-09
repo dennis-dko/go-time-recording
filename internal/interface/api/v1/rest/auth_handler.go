@@ -8,6 +8,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/qrcode"
 )
 
 // AuthHandler serves sign-in, sign-out and two-factor enrolment.
@@ -125,10 +126,26 @@ func (h *AuthHandler) BeginTOTP(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	// The secret is returned as text rather than a QR image: rendering a QR
-	// code would mean pulling in a dependency, and every authenticator app
-	// also accepts a manually entered secret.
-	return map[string]string{"secret": secret, "uri": uri}, nil
+	// The secret and the URI stay: an authenticator app takes a typed key, which is
+	// the way in on a machine with no camera and the fallback when a code will not
+	// scan. The QR code is what everybody else does - reading sixteen characters off
+	// one screen into another is where enrolment goes wrong.
+	//
+	// Rendered here rather than in the browser because the alternative was a QR
+	// encoder in JavaScript, and a picture whose only purpose is to be read by a
+	// machine is not something to hand-roll on either side.
+	response := map[string]string{"secret": secret, "uri": uri}
+
+	// A code that failed to render must not stop the enrolment: the key is on
+	// screen either way, and refusing the request would take the working path down
+	// with the decorative one.
+	if code, err := qrcode.SVGDataURI(uri); err == nil {
+		response["qr"] = code
+	} else {
+		c.Logger.Errorf("could not render the two-factor QR code: %v", err)
+	}
+
+	return response, nil
 }
 
 // ConfirmTOTP handles PUT /api/v1/me/totp, activating the second factor.
