@@ -413,7 +413,7 @@ func main() {
 
 	users := appservice.NewUserApplicationService(userRepo, roleRepo, timesheetRepo, userRepo)
 	roles := appservice.NewRoleApplicationService(roleRepo)
-	projects := appservice.NewProjectApplicationService(projectRepo, timesheetRepo)
+	projects := appservice.NewProjectApplicationService(projectRepo, timesheetRepo, timerRepo)
 	timesheets := appservice.NewTimesheetApplicationService(
 		timesheetRepo, userRepo, projectRepo, cfg.MaxDailyHours).
 		WithLimits(limits).

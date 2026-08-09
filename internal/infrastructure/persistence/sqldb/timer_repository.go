@@ -88,3 +88,17 @@ func (r *TimerRepository) Clear(ctx context.Context, userID uint) error {
 
 	return nil
 }
+
+// CountByProject is how many running clocks point at a project.
+func (r *TimerRepository) CountByProject(ctx context.Context, projectID uint) (int, error) {
+	var count int
+
+	err := r.db.QueryRowContext(ctx,
+		r.rebind("SELECT COUNT(*) FROM running_timers WHERE project_id = ?"),
+		projectID).Scan(&count)
+	if err != nil {
+		return 0, apperror.Internal(err)
+	}
+
+	return count, nil
+}

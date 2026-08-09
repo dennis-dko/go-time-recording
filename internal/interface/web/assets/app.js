@@ -639,6 +639,7 @@ const TRANSLATIONS = {
     'err.passwordTooShort': 'Das Kennwort muss mindestens {0} Zeichen lang sein.',
     'err.passwordUnchanged': 'Das neue Kennwort muss sich vom aktuellen unterscheiden.',
     'err.projectClosedForBooking': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
+    'err.projectIsBeingTimed': 'Bei {0} Person(en) läuft gerade eine Stoppuhr auf dieses Projekt. Es kann gelöscht werden, sobald sie gestoppt haben.',
     'err.projectHasEntries': 'Das Projekt hat noch {0} Zeiteinträge und kann nicht gelöscht werden.',
     'err.rangeInverted': '„bis“ darf nicht vor „von“ liegen.',
     'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',

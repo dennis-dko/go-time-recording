@@ -20,4 +20,12 @@ type TimerRepository interface {
 
 	// Clear removes it, whether it was booked or discarded.
 	Clear(ctx context.Context, userID uint) error
+
+	// CountByProject is how many clocks are running against a project.
+	//
+	// For the deletion path: the column is a foreign key with no ON DELETE
+	// behaviour, so a project removed while somebody is timing against it is a
+	// constraint violation on PostgreSQL and MySQL, and on SQLite a clock that can
+	// never be stopped.
+	CountByProject(ctx context.Context, projectID uint) (int, error)
 }

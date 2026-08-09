@@ -55,6 +55,27 @@ func (s *TimerService) Start(
 		return nil, apperror.InvalidFields("description")
 	}
 
+	// The project is checked here, at the start, and not only when the clock is
+	// stopped. Three reasons, and the middle one is why this was a bug rather than
+	// a preference:
+	//
+	// Told now, somebody can pick a different project before spending an afternoon
+	// measuring time against one that will not take it.
+	//
+	// The column is a foreign key. SQLite does not enforce those by default, so a
+	// projectId that does not exist was stored happily and left a clock that could
+	// never be stopped; PostgreSQL refuses the insert and the person gets a 500 for
+	// a mistyped number. Found by the integration suite's PostgreSQL leg, which is
+	// the only place the two behaviours differ visibly.
+	//
+	// And it is the same check the booking path makes, called rather than restated -
+	// so a project somebody may not see is "not found" here exactly as it is there.
+	if projectID != nil {
+		if err := s.timesheets.requireUserAndProject(ctx, userID, *projectID); err != nil {
+			return nil, err
+		}
+	}
+
 	timer := &model.RunningTimer{
 		UserID:      userID,
 		ProjectID:   projectID,

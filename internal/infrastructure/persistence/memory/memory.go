@@ -273,6 +273,71 @@ func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Tim
 	return nil
 }
 
+// TimerRepository is an in-memory repository.TimerRepository.
+//
+// Keyed by user rather than by an id of its own, because a person has at most one
+// clock running - which is what the real table says too, with user_id as its
+// primary key.
+type TimerRepository struct {
+	mu     sync.RWMutex
+	timers map[uint]model.RunningTimer
+}
+
+// NewTimerRepository creates an empty one.
+func NewTimerRepository() *TimerRepository {
+	return &TimerRepository{timers: map[uint]model.RunningTimer{}}
+}
+
+var _ repository.TimerRepository = (*TimerRepository)(nil)
+
+func (r *TimerRepository) Get(_ context.Context, userID uint) (*model.RunningTimer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	timer, running := r.timers[userID]
+	if !running {
+		// Nothing running is a normal state, not an error.
+		return nil, nil
+	}
+
+	found := timer
+
+	return &found, nil
+}
+
+func (r *TimerRepository) Start(_ context.Context, timer *model.RunningTimer) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.timers[timer.UserID] = *timer
+
+	return nil
+}
+
+func (r *TimerRepository) Clear(_ context.Context, userID uint) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.timers, userID)
+
+	return nil
+}
+
+func (r *TimerRepository) CountByProject(_ context.Context, projectID uint) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var count int
+
+	for _, timer := range r.timers {
+		if timer.ProjectID != nil && *timer.ProjectID == projectID {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
 // RoleRepository is an in-memory repository.RoleRepository.
 type RoleRepository struct {
 	store *store[model.Role]
