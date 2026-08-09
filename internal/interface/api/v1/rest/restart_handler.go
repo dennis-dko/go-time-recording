@@ -66,9 +66,17 @@ type PendingChange struct {
 // RestartResponse describes whether a restart is possible and what it would do.
 type RestartResponse struct {
 	// Supported is false where the process cannot replace itself, in which case
-	// Reason says so in a sentence.
-	Supported bool   `json:"supported"`
-	Reason    string `json:"reason,omitempty"`
+	// Reason says so in a sentence and ReasonCode names which refusal it is.
+	//
+	// Both, because they are for different readers. Reason is English prose written
+	// where the limitation is decided, which is what a log wants and what a client
+	// with no translation for the code falls back to. ReasonCode is what lets the
+	// interface say the same thing in the reader's own language - and there is more
+	// than one refusal, so a single sentence for all of them would tell somebody on
+	// Linux that they are on Windows.
+	Supported  bool   `json:"supported"`
+	Reason     string `json:"reason,omitempty"`
+	ReasonCode string `json:"reasonCode,omitempty"`
 
 	// Pending is empty when the running process already matches what is stored.
 	Pending []PendingChange `json:"pending"`
@@ -90,10 +98,11 @@ func (h *RestartHandler) State(c *gofr.Context) (any, error) {
 	}
 
 	return RestartResponse{
-		Supported: restart.Supported(),
-		Reason:    restart.Why(),
-		Pending:   pending,
-		StartedAt: h.startedAt,
+		Supported:  restart.Supported(),
+		Reason:     restart.Why(),
+		ReasonCode: restart.Code(),
+		Pending:    pending,
+		StartedAt:  h.startedAt,
 	}, nil
 }
 

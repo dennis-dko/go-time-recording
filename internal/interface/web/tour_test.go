@@ -147,3 +147,53 @@ func TestTheGreetingYieldsToTheWizardAndSkipsTheAdministrator(t *testing.T) {
 		t.Error("declining the greeting must record it as seen")
 	}
 }
+
+// The restart card stays on screen where restarting is not possible at all.
+//
+// Normally it appears only when a setting is waiting for one. On Windows there is
+// no execve, so the button can never work - and with nothing pending the card was
+// hidden, which meant the one screen that explains the limitation was the one
+// nobody could reach. Finding out by pressing a button that never appears is not
+// finding out.
+//
+// Checked in the asset rather than in a browser because the browser suite runs on
+// Linux, where restarting is supported and this branch is never taken.
+func TestTheRestartCardSurvivesWhenRestartingIsUnsupported(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	if !strings.Contains(js, "card.hidden = pending.length === 0 && state.supported") {
+		t.Error("the restart card is hidden on an empty pending list regardless of " +
+			"whether restarting is possible, which hides the explanation on Windows")
+	}
+
+	// And the explanation is translated rather than shown as the server wrote it,
+	// keyed on which refusal it is - see TestEveryRestartRefusalIsExplained.
+	if !strings.Contains(js, "restart.unsupported.${state.reasonCode") {
+		t.Error("the limitation is shown in the server's English wording, or is not " +
+			"keyed on which refusal it is")
+	}
+
+	// The hint above the list promises saved changes, so it goes when there are
+	// none: on Windows the card is permanent, and a standing promise above an
+	// empty list reads as a rendering fault.
+	if !strings.Contains(js, "$('#restart-hint').hidden = !waiting") {
+		t.Error("the card promises a list of pending changes even when there are none")
+	}
+}
+
+// The footer says which platform the build is running on, beside the version.
+//
+// The same version is published for four platforms and they do not all behave
+// alike, so "v1.0" alone does not say what somebody is looking at - which is the
+// first question of a support conversation.
+func TestTheFooterNamesThePlatformBesideTheVersion(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	if !strings.Contains(js, "branding.os") {
+		t.Error("the footer never reads the platform the server reports")
+	}
+
+	if !strings.Contains(js, "${version} (${platform})") {
+		t.Error(`the footer does not render the platform as "version (platform)"`)
+	}
+}

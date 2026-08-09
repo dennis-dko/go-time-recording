@@ -205,6 +205,73 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The binaries, for the people who are not running a container.
+      #
+      # This application is a single self-contained file - the interface, the
+      # timezone database and the migrations are all compiled in - so "download it
+      # and run it" is a real way to use it, and a release that offered only an
+      # image left that promise unkept.
+      #
+      # Cross-compiled from one runner rather than on a matrix of them: there is no
+      # cgo anywhere in the tree (the SQLite driver is modernc's pure-Go one), so
+      # GOOS and GOARCH are all it takes. A matrix would cost four runners and four
+      # module downloads to produce the same bytes.
+      #
+      # Before the image is pushed, which is the whole point of where it sits. No
+      # CI job compiles for windows, darwin or arm64 - every one of them runs on
+      # ubuntu - so this step is the first place a platform-specific break can
+      # appear, and it appears after a merge. Pushing the image first would leave
+      # ghcr:<version> and :latest published under a version that never got tagged,
+      # and the next merge would compute the same number again and overwrite it:
+      # two builds answering to one version, which is exactly the identity the
+      # footer now reports.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the binaries
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          # The same flags the image is built with, including the version: a
+          # download that calls itself "dev" is worse than no version at all, and
+          # the footer reads exactly this variable.
+          flags="-s -w -X main.version=${VERSION}"
+
+          build() {
+            os="$1"; arch="$2"; ext="${3:-}"
+            name="go-time-recording_${VERSION}_${os}_${arch}${ext}"
+
+            echo "==> ${name}"
+            # -buildvcs=false because dist/ is inside the work tree: Go derives
+            # the stamp from `git status --porcelain`, so the first binary would
+            # be recorded as built from a clean tree and every one after it as
+            # dirty - purely because its predecessor was sitting there untracked.
+            # One consistent answer beats three files claiming something untrue.
+            CGO_ENABLED=0 GOOS="${os}" GOARCH="${arch}" \
+              go build -trimpath -buildvcs=false -ldflags "${flags}" \
+              -o "dist/${name}" ./cmd
+
+            # Proof it is the platform it claims to be, and that it is not empty -
+            # a cross-compile that silently produced a host binary would otherwise
+            # be published as an arm64 file nobody can run.
+            file "dist/${name}"
+          }
+
+          build linux   amd64
+          build linux   arm64
+          build windows amd64 .exe
+          build darwin  arm64
+
+          # Checksums, so a download can be checked against something the release
+          # itself carries.
+          ( cd dist && sha256sum * > SHA256SUMS )
+          cat dist/SHA256SUMS
+
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -218,9 +285,9 @@ jobs:
             ${{ steps.image.outputs.name }}:${{ needs.version.outputs.version }}
             ${{ steps.image.outputs.name }}:latest
 
-      # The tag is created here rather than by a git push, and deliberately
-      # after the image: a tag with no image behind it is a release that cannot
-      # be deployed, and a failed build should leave nothing behind to explain.
+      # Last, because this step creates the tag: everything a release consists of -
+      # the binaries and the image - already exists by now, and a tag with nothing
+      # behind it is a release that cannot be used.
       #
       # It also has to be this action that creates it. A tag pushed with
       # GITHUB_TOKEN triggers no further workflows, so a two-step "tag now,
@@ -230,6 +297,9 @@ jobs:
           tag_name: ${{ needs.version.outputs.version }}
           target_commitish: ${{ needs.version.outputs.sha }}
           generate_release_notes: true
+          files: |
+            dist/go-time-recording_*
+            dist/SHA256SUMS
 
   # Deployment target is intentionally not wired up: this repo has no
   # Kubernetes manifests, docker-compose file, or SSH/PaaS target defined

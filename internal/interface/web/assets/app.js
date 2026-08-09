@@ -483,6 +483,8 @@ const TRANSLATIONS = {
     'password.hide': 'Passwort verbergen',
 
     'restart.title': 'Neustart',
+    'restart.unsupported.noExecve': 'Ein Neustart aus der Anwendung heraus ist unter Windows nicht möglich: dafür wird execve gebraucht, das es dort nicht gibt. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
+    'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.now': 'Jetzt neu starten',
     'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
@@ -1816,8 +1818,14 @@ async function loadBranding() {
   // conversation, and guessing it from a container tag is not an answer.
   const versionEl = $('#footer-version');
   if (versionEl) {
+    // The platform beside the version, as "v1.0 (windows)". The same version is
+    // published for four of them and they do not all behave alike - restarting
+    // from the interface works on Linux and cannot on Windows - so the version
+    // alone does not say what somebody is looking at.
     const version = branding.version || '';
-    versionEl.textContent = version;
+    const platform = branding.os || '';
+
+    versionEl.textContent = version && platform ? `${version} (${platform})` : version;
     versionEl.title = version
       ? t('footer.versionTitle', 'Running version of this installation')
       : '';
@@ -3356,7 +3364,11 @@ async function loadRestart() {
   restartStartedAt = state.startedAt ?? '';
 
   const pending = state.pending ?? [];
-  card.hidden = pending.length === 0;
+  // Normally the card is only there when something is waiting for a restart.
+  // Where restarting is not possible at all it stays, whether anything is pending
+  // or not: that is a standing property of this installation, and finding it out
+  // by pressing a button that never appears is not finding it out.
+  card.hidden = pending.length === 0 && state.supported;
 
   const list = $('#restart-pending');
   list.replaceChildren(...pending.map((change) => el('li', {},
@@ -3366,9 +3378,30 @@ async function loadRestart() {
 
   // Offered only where pressing it would actually work. Where it would not, the
   // reason is shown instead of a button that fails on click.
+  // The hint promises a list of saved changes and the list follows it, so both go
+  // when there are none. Where restarting is impossible the card is on screen
+  // permanently, and a standing "these are saved and waiting:" above nothing reads
+  // as a rendering fault rather than as the explanation it sits above.
+  const waiting = pending.length > 0;
+  $('#restart-hint').hidden = !waiting;
+  $('#restart-pending').hidden = !waiting;
+
   $('#restart-now').hidden = !state.supported;
   $('#restart-unsupported').hidden = state.supported;
-  $('#restart-unsupported').textContent = state.supported ? '' : (state.reason ?? '');
+
+  // Translated here rather than shown as it arrives: the server writes this in
+  // English at the point the limitation is decided, which is right for a log and
+  // wrong for the person reading the screen.
+  //
+  // Keyed on the code rather than on one sentence for every refusal. There is more
+  // than one: Windows has no execve, and on unix the running binary can fail to be
+  // located. A single translated sentence would tell a Linux reader they are on
+  // Windows and throw away the diagnostic that named the real fault. The server's
+  // own wording is the fallback, so a reason nobody has translated still says
+  // something true.
+  $('#restart-unsupported').textContent = state.supported
+    ? ''
+    : t(`restart.unsupported.${state.reasonCode || 'other'}`, state.reason ?? '');
 }
 
 /** The identity of the running process, to tell a restart from a hiccup. */

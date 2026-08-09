@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"runtime"
+
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
@@ -185,6 +187,15 @@ type InstanceResponse struct {
 	// of the branding: it is in the footer of a page anyone can reach, and a
 	// version number is not what keeps an installation safe.
 	Version string `json:"version"`
+
+	// OS is what this build runs on, shown beside the version as "v1.0 (windows)".
+	//
+	// The same version is published for four platforms and they do not all behave
+	// alike - restarting from the interface works on Linux and cannot on Windows -
+	// so "which version" is only half of what a support conversation needs. Public
+	// for the same reason the version is: it is on a page anyone can reach, and an
+	// installation that depends on nobody knowing its platform was not safe anyway.
+	OS string `json:"os"`
 }
 
 // Branding handles GET /api/v1/branding.
@@ -200,6 +211,7 @@ func (h *SettingsHandler) Branding(c *gofr.Context) (any, error) {
 	return InstanceResponse{
 		BrandingResponse: newBrandingResponse(branding),
 		Version:          h.version,
+		OS:               runtime.GOOS,
 	}, nil
 }
 
@@ -237,6 +249,7 @@ func (h *SettingsHandler) SaveBranding(c *gofr.Context) (any, error) {
 	return InstanceResponse{
 		BrandingResponse: newBrandingResponse(branding),
 		Version:          h.version,
+		OS:               runtime.GOOS,
 	}, nil
 }
 

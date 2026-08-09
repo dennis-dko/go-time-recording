@@ -23,3 +23,6 @@ deploy/.env
 # and the wrong thing to commit, because it silently applies to everyone.
 cmd/configs/.local.env
 bin/configs/.local.env
+
+# Release binaries, built into the work tree by the release workflow.
+dist/
