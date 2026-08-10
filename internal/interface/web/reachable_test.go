@@ -251,3 +251,51 @@ func TestEveryPermissionTheInterfaceNamesExists(t *testing.T) {
 			len(unknown), unknown)
 	}
 }
+
+// Every role the application ships says what it is for, in the reader's language.
+//
+// A role is chosen from a dropdown by somebody deciding what a colleague may do, and
+// "employee-admin" against "employee" is a difference you can only infer from the
+// name - the difference being whether that person can administer the installation.
+// The description carries it, and for the roles that ship it is translated rather
+// than left as the English sentence the seed wrote into the database.
+//
+// Read from the model rather than restated here, so a fourth role cannot arrive with
+// nothing to explain it.
+func TestEverySeededRoleSaysWhatItIsFor(t *testing.T) {
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("no German dictionary")
+	}
+
+	shipped := map[string]bool{}
+
+	for _, role := range model.DefaultRoles() {
+		shipped[role.Name] = true
+
+		// The seed writes an English sentence into the database, which is the fallback
+		// and has to be there too: a custom role has nothing else.
+		if strings.TrimSpace(role.Description) == "" {
+			t.Errorf("the seeded role %q has no description at all, so a custom-role "+
+				"reader would see an empty explanation", role.Name)
+		}
+
+		if _, translated := dict["role.desc."+role.Name]; !translated {
+			t.Errorf("the seeded role %q has no German description, so a German reader "+
+				"chooses it from the dropdown by guessing", role.Name)
+		}
+	}
+
+	// And nothing left over: a role that was removed leaves its sentence behind, and a
+	// sentence nobody shows is a sentence nobody notices is wrong.
+	for key := range dict {
+		name, isRole := strings.CutPrefix(key, "role.desc.")
+		if !isRole {
+			continue
+		}
+
+		if !shipped[name] {
+			t.Errorf("%q explains a role this application does not ship", key)
+		}
+	}
+}

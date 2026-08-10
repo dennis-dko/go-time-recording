@@ -288,6 +288,13 @@ func TestNoTranslationIsUnused(t *testing.T) {
 				}
 			}
 
+			// What a role is for, looked up as t(`role.desc.${name}`) from whatever the
+			// server sent. TestEverySeededRoleSaysWhatItIsFor checks these against the
+			// roles the application ships, in both directions.
+			if _, isRole := strings.CutPrefix(key, "role.desc."); isRole {
+				continue
+			}
+
 			// The per-table spreadsheet cards, looked up as t(`sheet.${key}.text`)
 			// from the table being built. TestEverySheetCardIsNamed checks these
 			// against the card list in both directions.
