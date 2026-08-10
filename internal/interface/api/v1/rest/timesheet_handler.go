@@ -298,10 +298,16 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 	}, nil
 }
 
-// Report handles GET /api/v1/projects/{id}/report, totalling booked hours per
-// user over a date range. The range defaults to the last 30 days.
+// Report handles GET /api/v1/projects/{id}/report, totalling booked hours over a
+// date range. The range defaults to the last 30 days.
+//
+// The caller's own hours, unless they hold the right to read everybody's. It used to
+// be everybody's for anyone who could open it at all, gated on a right that no role
+// held - so the screen was unreachable and, had anyone granted it, would have shown
+// what each colleague had booked. Nobody sees what anybody else has.
 func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
-	principal, err := h.authz.Require(c, model.PermReportRead)
+	principal, err := h.authz.RequireAny(c,
+		model.PermReportReadOwn, model.PermTimesheetReadAll)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +343,8 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted"))
 	}
 
-	perUser, err := h.domain.GenerateProjectTimeReport(c, projectID, *from, *to, h.viewerID(principal))
+	perUser, err := h.domain.GenerateProjectTimeReport(c, projectID, *from, *to,
+		h.viewerID(principal), h.authz.reportScope(principal))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

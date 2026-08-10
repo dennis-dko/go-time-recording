@@ -70,7 +70,35 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260810020000: {UP: func(d migration.Datasource) error {
 			return repairAccountsWithoutARole(d, dialect)
 		}},
+		20260810030000: {UP: func(d migration.Datasource) error {
+			return retireTheSeparateReportRight(d, dialect)
+		}},
 	}
+}
+
+// retireTheSeparateReportRight withdraws reports:read from every role.
+//
+// Whether somebody may see another person's recorded time is one question, and
+// timesheets:read:all is the one right that answers it. reports:read was a second
+// answer to the same question, asked of a total rather than of a list, and it
+// belonged to the role that reviewed other people's hours. That role is gone.
+//
+// What it left behind was worse than untidy: no role held it, and a whole screen was
+// gated on it, so the project report was unreachable on every installation - while
+// anybody who did grant it would have got a per-colleague breakdown of hours, which
+// is exactly what nobody is meant to see. The report now covers the caller's own
+// hours, and only the one right widens that.
+//
+// Nothing replaces it. A role that held it keeps timesheets:read:all if it had that,
+// and an installation that wants somebody to see everybody's time grants that one.
+func retireTheSeparateReportRight(d migration.Datasource, dialect string) error {
+	if _, err := d.SQL.Exec(
+		sqldb.Rebind(dialect, "DELETE FROM role_permissions WHERE permission = ?"),
+		"reports:read"); err != nil {
+		return fmt.Errorf("withdrawing the separate report right: %w", err)
+	}
+
+	return nil
 }
 
 // repairAccountsWithoutARole puts back a role for every account left without one,
@@ -244,8 +272,8 @@ func separateSystemAdministration(d migration.Datasource, dialect string) error 
 		// along with the review path and the role. Referring to them would tie a
 		// finished migration to a definition that is allowed to change.
 		"timesheets:approve",
+		"reports:read",
 		model.PermTimesheetTransfer,
-		model.PermReportRead,
 		model.PermProjectWrite,
 		model.PermProjectDelete,
 		model.PermProjectArchive,
@@ -267,7 +295,7 @@ func separateSystemAdministration(d migration.Datasource, dialect string) error 
 	// PermProjectDelete as well: it was the administrator's alone, and a project
 	// with entries is refused, so what this deletes is an empty project created by
 	// mistake rather than anybody's recorded time.
-	for _, permission := range []string{model.PermReportRead, model.PermProjectDelete} {
+	for _, permission := range []string{"reports:read", model.PermProjectDelete} {
 		if _, err := d.SQL.Exec(grant, permission, "manager", permission); err != nil {
 			return fmt.Errorf("granting %q to %q: %w", permission, "manager", err)
 		}
@@ -588,7 +616,7 @@ func addSessionsAndPreferences(d migration.Datasource, dialect string) error {
 	return execAll(d, fmt.Sprintf(
 		"DELETE FROM role_permissions WHERE permission = '%s' "+
 			"AND role_id <> (SELECT id FROM roles WHERE name = '%s')",
-		model.PermReportRead, model.RoleAdmin))
+		"reports:read", model.RoleAdmin))
 }
 
 // addRoleBasedAccess introduces roles, credentials and per-user working times.

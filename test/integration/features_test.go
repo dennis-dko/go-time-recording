@@ -81,13 +81,13 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	// Two ordinary accounts. Reading a project report needs reports:read, and moving
-	// archiving somebody's project needs rights over the work - none of which the
-	// built-in administrator holds any more, so it can no longer be the caller
-	// this rule is proved against: it would be refused for the wrong reason.
+	// Two ordinary accounts. Archiving somebody's project needs rights over the work,
+	// which the built-in administrator does not hold any more - so it can no longer be
+	// the caller this rule is proved against: it would be refused for the wrong
+	// reason.
 	gerda := a.signInAsUser(admin, "Gerda", "gerda@example.com")
-	// An auditor: reading a project report needs reports:read, which no default
-	// role holds any more. Building the role is what an administrator can still do.
+	// An auditor: a role that may read everybody's time, which no default role is.
+	// Building one is what an administrator can still do.
 	heiko := a.signInAsAuditor(admin, "Heiko", "heiko@example.com")
 
 	var hers projectResponse
@@ -133,10 +133,10 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	// And the owner is unaffected: the rule is about who is asking, not about a
 	// private project becoming unreachable.
 	//
-	// Checked through the project rather than through its report, because a project
-	// report needs reports:read and no default role holds that any more - everyone
-	// reads their own figures through /me/statistics instead. Her own project is
-	// the same request that answered 404 for the auditor a moment ago.
+	// Checked through the project rather than through its report: a report over her
+	// private category would total her own hours, which proves nothing about whether
+	// somebody else may see it. Her own project is the same request that answered 404
+	// for the auditor a moment ago.
 	gerda.must(gerda.api(http.MethodGet, path("/projects/", hers.ID), nil), http.StatusOK)
 
 	var stillThere listOf[timesheetResponse]

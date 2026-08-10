@@ -409,11 +409,10 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   padding: 2px 10px;
 }
 
+/* A project's state. There were four more of these, for a time entry travelling
+   open -> submitted -> approved -> rejected; an entry has no state any more, and a
+   colour nothing can wear is a colour nobody maintains. */
 .status { border-radius: 999px; font-size: 12px; padding: 2px 9px; border: 1px solid var(--border); }
-.status-open { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-.status-submitted { background: color-mix(in srgb, #d68910 22%, transparent); }
-.status-approved { background: color-mix(in srgb, #2e9e5b 22%, transparent); }
-.status-rejected { background: color-mix(in srgb, var(--danger) 20%, transparent); }
 .status-active { background: color-mix(in srgb, #2e9e5b 20%, transparent); }
 .status-completed { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .status-archived { background: var(--bg); }

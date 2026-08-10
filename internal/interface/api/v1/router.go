@@ -120,7 +120,6 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/tokens", h.Tokens.List)
 	app.POST(base+"/me/tokens", h.Tokens.Create)
 	app.DELETE(base+"/me/tokens/{id}", h.Tokens.Revoke)
-	app.GET(base+"/overtime", h.Me.TeamOvertime)
 
 	// Ahead of the {id} routes for the same reason the timesheet pair below is:
 	// "export" is not an id, and this router matches the first pattern that fits.

@@ -39,10 +39,22 @@ func TestDefaultRolesAreSeeded(t *testing.T) {
 	// reviewer any more, and the rights over other people's work are what the
 	// administrator was deliberately stripped of.
 	for _, forbidden := range []string{
-		model.PermTimesheetReadAll, model.PermTimesheetWriteAll, model.PermReportRead,
+		model.PermTimesheetReadAll, model.PermTimesheetWriteAll,
 	} {
 		if byName[model.RoleEmployee].Has(forbidden) {
 			t.Errorf("an ordinary account must not hold %q", forbidden)
+		}
+	}
+
+	// And there is only one right that answers "may this person see somebody
+	// else's time". reports:read was a second one, for a total rather than a list,
+	// and it belonged to the role that reviewed other people's hours. Two rights
+	// for one question is how the two come to disagree - and this one had drifted
+	// to where no role held it while a whole screen was gated on it.
+	for _, permission := range model.AllPermissions() {
+		if permission == "reports:read" {
+			t.Error(`reports:read is back in AllPermissions(); whether somebody may see ` +
+				`another person's time is timesheets:read:all, and one question takes one right`)
 		}
 	}
 

@@ -97,7 +97,18 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 	return updatedTimesheet, nil
 }
 
-// GenerateProjectTimeReport totals the hours each user booked on a project
+// GenerateProjectTimeReport totals the hours booked on a project, per user.
+//
+// onlyUserID narrows it to one person; zero means everybody. Everybody is not
+// something a default role may ask for. The report used to total what every
+// colleague had booked on the project, for anyone who could open it at all - which
+// is precisely what nobody is meant to see. Whether the caller may is decided by the
+// handler and arrives here as this parameter, so the rule is applied in one place
+// rather than assumed in two.
+//
+// viewerID is a different question, and both are needed: it decides whether the
+// project may be seen at all, which is what keeps somebody's private category
+// private.
 // within the given range. The range is inclusive on both ends.
 func (s *TimesheetDomainService) GenerateProjectTimeReport(
 	ctx context.Context,
@@ -105,6 +116,7 @@ func (s *TimesheetDomainService) GenerateProjectTimeReport(
 	startDate time.Time,
 	endDate time.Time,
 	viewerID uint,
+	onlyUserID uint,
 ) (map[uint]float64, error) {
 	project, err := s.projectRepository.GetByID(ctx, projectID)
 	if err != nil {
@@ -125,6 +137,9 @@ func (s *TimesheetDomainService) GenerateProjectTimeReport(
 		ProjectID: projectID,
 		StartDate: &startDate,
 		EndDate:   &endDate,
+		// Narrowed in the query rather than after it, so the rows for other people
+		// are never read at all.
+		UserID: onlyUserID,
 	})
 	if err != nil {
 		return nil, err

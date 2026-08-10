@@ -25,7 +25,7 @@
       <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects</button>
       <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Users</button>
       <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Roles</button>
-      <button class="tab" data-view="report" data-perm="reports:read" data-i18n="nav.report">Reports</button>
+      <button class="tab" data-view="report" data-perm="reports:read:own" data-i18n="nav.report">Reports</button>
       <button class="tab" data-view="settings" data-i18n="nav.settings">My account</button>
       <button class="tab" data-view="admin" id="tab-admin" hidden data-i18n="nav.admin">Settings</button>
     </nav>
@@ -249,9 +249,6 @@
           </table>
         </div>
       </div>
-    </section>
-
-    <!-- Calendar -->
       <div class="card" id="workbook-card" data-perm="timesheets:read:own,timesheets:read:all">
         <h2 data-i18n="wb.title">Spreadsheet</h2>
         <p class="muted" data-i18n="wb.text">Exports what the filters above are showing. An import creates entries; it never changes or replaces the ones that are already there.</p>
@@ -283,7 +280,9 @@
           </table>
         </div>
       </div>
+    </section>
 
+    <!-- Calendar -->
     <section id="view-calendar" class="view" hidden>
       <div class="card">
         <div class="card-head">
@@ -380,22 +379,6 @@
         </div>
       </div>
 
-      <div class="card" id="overtime-team-card" data-perm="reports:read" hidden>
-        <h2 data-i18n="ot.team">Team balance (same period)</h2>
-        <div class="table-wrap">
-          <table id="table-overtime-team">
-            <thead>
-              <tr>
-                <th data-i18n="field.user">User</th>
-                <th class="num" data-i18n="ot.booked">Booked</th>
-                <th class="num" data-i18n="ot.target">Target</th>
-                <th class="num" data-i18n="ot.balance">Balance</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
     </section>
 
     <!-- Projects -->

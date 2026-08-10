@@ -664,8 +664,6 @@ func registerBusinessMetrics(app *gofr.App) {
 		"Hours recorded per time entry.",
 		0.25, 0.5, 1, 2, 4, 6, 8, 10, 12, 24)
 
-	m.NewCounter(appservice.MetricEntryTransitions,
-		"Time entries entering a state, by that state.")
 	m.NewCounter(appservice.MetricSignInFailures,
 		"Refused sign-ins, by reason.")
 	m.NewCounter(appservice.MetricDirectoryAccounts,
