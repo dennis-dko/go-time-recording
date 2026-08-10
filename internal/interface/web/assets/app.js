@@ -4289,10 +4289,14 @@ function wireWorkbook() {
  * the whole point: a single pair of buttons somewhere general would have meant
  * guessing which table somebody had in mind.
  *
- * Roles, tokens and passkeys are deliberately absent. A token's secret exists once,
- * at the moment it is created, and is not in the database to export; a passkey is
- * bound to the device that holds it and means nothing anywhere else. Neither is a
- * table a spreadsheet can carry.
+ * Three tables are deliberately absent, for three different reasons. A token's
+ * secret exists once, at the moment it is created, and is not in the database to
+ * export. A passkey is bound to the device holding it and means nothing anywhere
+ * else. A role is a set of permissions, and one spreadsheet cell holding
+ * "projects:read,projects:write,..." is a list that has to be exactly right - a typo
+ * in it removes a right silently rather than failing, where the role screen shows
+ * every permission there is as a checkbox. None of the three is a table a
+ * spreadsheet can carry honestly.
  */
 const SHEET_CARDS = [
   {
