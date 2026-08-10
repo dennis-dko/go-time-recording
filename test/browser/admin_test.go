@@ -1374,59 +1374,62 @@ func TestTheLoadingStripAppearsAndGoesAgain(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
-	// At rest: nothing in flight, so nothing on screen.
-	if p.visible("#progress") {
-		t.Error("the loading strip is showing with no request in flight")
+	// The screen has just been filled, so the page is given until it is actually at
+	// rest. Checking "nothing on screen" the instant readyAdmin returns checked it
+	// against a page that was still loading, and passed or failed on how fast the
+	// last request happened to be - which is how CI came to report a strip that was
+	// showing because a request really was in flight.
+	p.atRest()
+
+	// Through api(), which is what counts requests. This used raw fetch, at a path
+	// that does not exist - so it never touched the counter and the strip could not
+	// have appeared for it. The one time it reported "showing" was the leak below
+	// being caught, not the strip working.
+	var counted struct {
+		Peak    int  `json:"peak"`
+		Showing bool `json:"showing"`
 	}
 
-	// Held open on the server side so the strip has time to appear: the delay
-	// before it shows is deliberate, and a fast request must show nothing.
-	var appeared bool
+	p.run("watch a counted request", chromedp.Evaluate(`(async () => {
+		// The log endpoint is the administrator's and always answers, which is all
+		// this needs. Through api(), so progressStart and progressDone run.
+		const inFlight = api('/admin/logs?limit=1');
 
-	p.run("watch a slow request", chromedp.Evaluate(`(async () => {
-		// A request that takes long enough to be worth mentioning. The log
-		// endpoint is admin-only and always answers, which is all this needs.
-		const inFlight = fetch('/api/v1/logs?limit=1', { credentials: 'same-origin' });
+		// Read at once: whether the strip is drawn depends on the request outliving
+		// a deliberate delay, and a fast one correctly shows nothing. What must be
+		// true either way is that the request was counted while it was open.
+		const peak = progress.inFlight;
 
-		// Past the delay the strip waits out before it shows itself.
 		await new Promise((r) => setTimeout(r, 400));
 
 		const bar = document.querySelector('#progress');
 		const showing = Boolean(bar) && !bar.hidden;
 
 		await inFlight.catch(() => {});
-		return showing;
-	})()`, &appeared, awaitPromise))
 
-	// Not asserted as a failure: on a fast local server the request can finish
-	// inside the delay, which is the strip behaving correctly.
-	t.Logf("the strip was showing during the request: %v", appeared)
+		return { peak, showing };
+	})()`, &counted, awaitPromise))
 
-	// What must hold either way: it is gone once nothing is in flight.
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if !p.visible("#progress") {
-			break
-		}
-
-		time.Sleep(200 * time.Millisecond)
+	if counted.Peak < 1 {
+		t.Error("a request through api() was never counted, so the strip has nothing " +
+			"to go on")
 	}
 
-	if p.visible("#progress") {
-		t.Error("the loading strip stayed on screen after the request finished")
-	}
+	// Not asserted: on a fast local server the request can finish inside the delay,
+	// which is the strip behaving correctly.
+	t.Logf("the strip was drawn during the request: %v", counted.Showing)
 
-	// And a failed request leaves it clean too - the counter has to come back
-	// down in a finally, not on the success path.
-	p.run("make a request that fails", chromedp.Evaluate(`(async () => {
-		try { await fetch('/api/v1/does-not-exist', { credentials: 'same-origin' }); } catch {}
+	// What must hold either way: nothing outstanding, nothing on screen.
+	p.atRest()
+
+	// And a request that fails leaves it clean too - the counter has to come down in
+	// a finally, not on the success path. Through api() again, and api() throws for a
+	// 404, which is the point.
+	p.run("make a counted request that fails", chromedp.Evaluate(`(async () => {
+		try { await api('/does-not-exist'); } catch {}
 	})()`, nil, awaitPromise))
 
-	time.Sleep(900 * time.Millisecond)
-
-	if p.visible("#progress") {
-		t.Error("the loading strip stayed on screen after a failed request")
-	}
+	p.atRest()
 }
 
 // The strip goes away when a request starts during its fade and finishes quickly.
@@ -1447,6 +1450,10 @@ func TestTheLoadingStripAppearsAndGoesAgain(t *testing.T) {
 func TestTheStripGoesAwayWhenARequestLandsDuringItsFade(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
+
+	// The counter has to start at zero, or progressStart sees a request already in
+	// flight, never arms the show timer, and the sequence below proves nothing.
+	p.atRest()
 
 	var hidden bool
 
