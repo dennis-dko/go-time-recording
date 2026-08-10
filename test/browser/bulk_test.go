@@ -223,3 +223,58 @@ func TestARowThatCannotBeDeletedHasNoCheckboxButKeepsItsPlace(t *testing.T) {
 			"want %d", head, cells, head*2)
 	}
 }
+
+// The role dropdown says what each role is for.
+//
+// Somebody deciding what a colleague may do picks from this list, and "employee-admin"
+// against "employee" is a difference you can only infer from the name - the difference
+// being whether that person can administer the installation. Only a browser can check
+// it: the labels are built at render time from what the server sent, so reading app.js
+// proves nothing about what is on screen.
+func TestTheRoleDropdownExplainsEachRole(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open the people screen", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible(`#form-user select[name="role"]`, chromedp.ByQuery))
+
+	var labels []string
+
+	p.run("read the choices", chromedp.Evaluate(
+		`[...document.querySelectorAll('#form-user select[name="role"] option')]
+			.map((o) => o.textContent)`, &labels))
+
+	if len(labels) < 3 {
+		t.Fatalf("the dropdown offers %d role(s), want the three that ship: %v",
+			len(labels), labels)
+	}
+
+	// Each one carries more than its name. The separator is what the label builder
+	// puts between the two, so its absence means the description never arrived.
+	for _, label := range labels {
+		if !strings.Contains(label, "—") {
+			t.Errorf("the choice %q says only its name, so it has to be guessed at", label)
+		}
+	}
+
+	// And the one whose name is least self-explanatory says the thing that matters:
+	// that it administers as well.
+	both := ""
+
+	for _, label := range labels {
+		if strings.HasPrefix(label, "employee-admin") {
+			both = label
+		}
+	}
+
+	if both == "" {
+		t.Fatalf("the combined role is not offered at all: %v", labels)
+	}
+
+	// German, because readyAdmin leaves the interface in whatever the browser asked
+	// for and CI runs it in English - so this checks the word that is in both.
+	if !strings.Contains(strings.ToLower(both), "administ") &&
+		!strings.Contains(strings.ToLower(both), "verwalt") {
+		t.Errorf("the combined role does not say that it administers: %q", both)
+	}
+}

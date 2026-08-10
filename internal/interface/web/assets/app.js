@@ -692,6 +692,34 @@ function fillSelect(select, items, { placeholder, labelKey = 'name', valueKey = 
   }
 }
 
+/**
+ * What a role is for, in the reader's language.
+ *
+ * The description lives in the database, in English, because an administrator writes
+ * their own there. The three that ship with the application are translated instead,
+ * keyed on the name - a custom role falls through to whatever was typed, which is the
+ * only sensible answer for words this application has never seen.
+ */
+function roleDescription(role) {
+  return t(`role.desc.${role.name}`, role.description || '');
+}
+
+/**
+ * The roles as something to choose from, each with what it is for.
+ *
+ * A dropdown of bare names asks somebody to guess: "employee-admin" against
+ * "employee" is a difference you can only infer, and the difference is whether that
+ * person can administer the installation. The list on the Roles screen has always
+ * shown the descriptions; the place where the choice is actually made did not.
+ */
+function roleChoices() {
+  return cache.roles.map((role) => {
+    const purpose = roleDescription(role);
+
+    return { name: role.name, label: purpose ? `${role.name} — ${purpose}` : role.name };
+  });
+}
+
 /** Reads a form into a plain object, dropping empty optional fields. */
 function formData(form) {
   const out = {};
@@ -1260,6 +1288,9 @@ const TRANSLATIONS = {
     'role.permissions': 'Berechtigungen',
     'role.rights': 'Rechte',
     'role.systemRole': 'Systemrolle',
+    'role.desc.admin': 'Verwaltet die Installation, ihre Konten und deren Rollen – und erfasst selbst keine Zeit.',
+    'role.desc.employee': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
+    'role.desc.employee-admin': 'Beides: arbeitet hier und verwaltet zusätzlich die Installation.',
     'settings.changePassword': 'Passwort ändern',
     'settings.currentPassword': 'Aktuelles Passwort',
     'settings.maxHours': 'Maximale Stunden pro Tag',
@@ -1637,7 +1668,7 @@ async function loadUsers() {
         onchange: (e) => patch(`/users/${u.id}/role`, { role: e.target.value },
           t('msg.roleChanged', 'Role changed'), refreshAll),
       });
-      fillSelect(select, cache.roles, { labelKey: 'name', valueKey: 'name' });
+      fillSelect(select, roleChoices(), { labelKey: 'label', valueKey: 'name' });
       select.value = u.role;
       roleCell.append(select);
     } else {
@@ -1663,7 +1694,8 @@ async function loadRoles() {
   cache.roles = (await api('/roles'))?.items ?? [];
   cache.permissions = (await api('/permissions'))?.permissions ?? [];
 
-  fillSelect($('#form-user select[name=role]'), cache.roles, { labelKey: 'name', valueKey: 'name' });
+  fillSelect($('#form-user select[name=role]'), roleChoices(),
+    { labelKey: 'label', valueKey: 'name' });
   renderPermissionCheckboxes();
 
   const rows = cache.roles.map((role) => {
@@ -1690,7 +1722,7 @@ async function loadRoles() {
 
     return el('tr', {},
       el('td', { text: role.name }),
-      el('td', { text: role.description || '–' }),
+      el('td', { text: roleDescription(role) || '–' }),
       el('td', { class: 'num', text: String(role.permissions.length) }),
       actions,
     );
@@ -2308,7 +2340,8 @@ async function loadAdmin() {
     ldapForm.elements[flag].checked = Boolean(ldap[flag]);
   }
 
-  fillSelect(ldapForm.elements.defaultRole, cache.roles, { labelKey: 'name', valueKey: 'name' });
+  fillSelect(ldapForm.elements.defaultRole, roleChoices(),
+    { labelKey: 'label', valueKey: 'name' });
   ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'employee';
 
   const schedule = $('#form-sync-schedule');

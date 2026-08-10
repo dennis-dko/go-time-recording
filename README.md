@@ -168,6 +168,13 @@ handed out by the built-in administrator, so holding both jobs is a decision som
 made rather than something an account arrived with — and it is an ordinary account
 gaining administration, never the built-in account gaining a working day.
 
+Each role's description travels with it into the dropdown where somebody assigns it,
+because the difference between `employee` and `employee-admin` is a difference you can
+only infer from the name — and what it decides is whether that person can administer
+the installation. The three that ship are translated; a role an installation writes for
+itself shows whatever was typed, which is the only sensible answer for words this
+application has never seen.
+
 Permissions are fine grained, for example `timesheets:read:own` against
 `timesheets:read:all`, and reading separately from writing.
 Someone holding only the `:own` variant is restricted to their own data
