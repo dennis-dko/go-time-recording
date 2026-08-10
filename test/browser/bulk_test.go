@@ -20,6 +20,12 @@ import (
 //
 // What would go wrong quietly: a column that appears but ticks nothing, or a bar
 // that deletes one row while claiming three.
+//
+// The time list is the table used here because it is the one an administrator can
+// fill without anything else existing. The mechanism is the same everywhere - the
+// calendar day, projects, people, roles, tokens and passkeys all get it from their
+// own delete buttons, and a report or an import preview gets nothing, because there
+// is nothing in it to delete.
 func TestSeveralRowsAreDeletedAtOnce(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()

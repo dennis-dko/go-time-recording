@@ -388,10 +388,12 @@ function bulkBarOf(table) {
  * Gives a table a leading column of checkboxes, when any of its rows offers
  * deletion, plus the bar that acts on them.
  *
- * Driven entirely by what the rows contain, so there is no list anywhere of
- * which tables have this. A table of rows nobody may delete - the calendar day,
- * the import preview, a report - is left exactly as it was, and a table that
- * grows a delete button later gets this without being told.
+ * Driven entirely by what the rows contain, so there is no list anywhere of which
+ * tables have this. A table of rows nobody may delete - a report, an overtime
+ * balance, the preview of a file about to be imported - is left exactly as it was,
+ * and a table that grows a delete button later gets this without being told. The
+ * calendar day gets it, without being mentioned anywhere, because its rows are time
+ * entries and carry the same delete button the list does.
  *
  * Returns whether the column is there, because the empty row's colspan has to
  * know.
