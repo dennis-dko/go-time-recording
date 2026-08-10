@@ -560,7 +560,6 @@ const TRANSLATIONS = {
     'ops.sessionShort': 'Sitzung',
     'ops.maxShort': 'max./Tag',
     'ops.rateShort': 'Rate',
-    'ops.autoShort': 'Auto-Einreichen',
     'ops.ratioShort': 'Löschgrenze',
 
     'tel.title': 'Protokoll, Metriken und Traces',
@@ -3307,7 +3306,7 @@ function wireSetup() {
 /** The fields of the operational form, in the order they appear. */
 const OPERATIONAL_FIELDS = [
   'sessionLifetimeHours', 'maxDailyHours', 'rateLimit',
-  'rateLimitWindowSeconds', 'autoCloseAfterDays', 'ldapSyncMaxDeleteRatio',
+  'rateLimitWindowSeconds', 'ldapSyncMaxDeleteRatio',
 ];
 
 /**
@@ -3323,6 +3322,17 @@ function fillOperationalForm(data) {
 
   for (const field of OPERATIONAL_FIELDS) {
     const input = form.elements[field];
+
+    // A field this list names and the markup does not is a mistake, but it must
+    // not be a silent one that takes the rest of the screen with it: this loop
+    // runs while the administration screen is being built, and a throw here left
+    // the telemetry and directory cards empty with nothing said about why.
+    if (!input) {
+      console.warn(`operational field ${field} is not in the form`);
+
+      continue;
+    }
+
     const override = data.configured?.[field];
 
     input.value = override ?? '';
@@ -3334,7 +3344,6 @@ function fillOperationalForm(data) {
     + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
     + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
     + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.autoShort', 'auto-submit')} ${effective.autoCloseAfterDays} d, `
     + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
 }
 
@@ -3344,7 +3353,10 @@ function operationalPayload() {
   const body = {};
 
   for (const field of OPERATIONAL_FIELDS) {
-    const raw = form.elements[field].value.trim();
+    const input = form.elements[field];
+    if (!input) continue;
+
+    const raw = input.value.trim();
     if (raw !== '') body[field] = Number(raw);
   }
 
