@@ -100,6 +100,77 @@ func TestSeveralRowsAreDeletedAtOnce(t *testing.T) {
 		"application log:\n%s", p.text("#table-timesheets tbody"), p.app.Log())
 }
 
+// Deleting some of the rows leaves the bar telling the truth about the rest.
+//
+// This is the case that was wrong. The bar reads how many checkboxes are ticked out
+// of the table, and it was refreshed before the new rows were in the document - so
+// it counted the previous render. Delete two of three and the bar stayed up saying
+// "2 selected" over a table where nothing was ticked, with a delete button that
+// would have done nothing.
+//
+// Deleting all of them hid it by luck: with no rows left there is nothing to delete,
+// so the whole column goes and the bar with it.
+func TestTheBarStandsDownWhenOnlySomeRowsWereDeleted(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	hours := []string{"4.11", "5.22", "6.33"}
+
+	p.run("open the time view", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID))
+
+	for _, figure := range hours {
+		p.run("book "+figure,
+			chromedp.SetValue(`#form-timesheet input[name="durationHours"]`, figure,
+				chromedp.ByQuery),
+			p.click(`#form-timesheet button[type="submit"]`))
+
+		p.waitForText("#table-timesheets tbody", figure)
+	}
+
+	// Two of the three, by ticking them one at a time rather than select-all.
+	p.run("tick the first two",
+		p.click(`#table-timesheets tbody tr:nth-child(1) input.row-pick`),
+		p.click(`#table-timesheets tbody tr:nth-child(2) input.row-pick`),
+		chromedp.WaitVisible(".bulk-bar.shown", chromedp.ByQuery))
+
+	if got := p.count("#table-timesheets tbody input.row-pick:checked"); got != 2 {
+		t.Fatalf("%d rows are ticked, want 2", got)
+	}
+
+	p.run("delete them", p.click(`.bulk-bar.shown button.danger`),
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery),
+		p.click(`.confirm-actions button.danger`))
+
+	p.waitGone(".confirm-overlay")
+
+	// One row is left, so the column stays - and the bar must have stood down,
+	// because nothing in the new table is ticked.
+	deadline := time.Now().Add(20 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if p.count("#table-timesheets tbody input.row-pick") == 1 {
+			if p.visible(".bulk-bar.shown") {
+				t.Errorf("one row is left and nothing is ticked, but the bar is still up "+
+					"saying %q", p.text(".bulk-bar.shown .bulk-count"))
+			}
+
+			if got := p.count("#table-timesheets tbody input.row-pick:checked"); got != 0 {
+				t.Errorf("%d checkbox(es) survived the reload, so a second delete would "+
+					"act on a selection nobody made", got)
+			}
+
+			return
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	t.Errorf("the table does not hold exactly one deletable row after deleting two of "+
+		"three; it says:\n%s\n\napplication log:\n%s",
+		p.text("#table-timesheets tbody"), p.app.Log())
+}
+
 // A row nobody may delete gets no checkbox, and the ones beside it still line up.
 //
 // The cell is still there for such a row - it just has nothing in it to tick -

@@ -361,11 +361,15 @@ function fillTable(tbody, rows, columnCount, emptyText) {
   if (rows.length === 0) {
     tbody.append(el('tr', {},
       el('td', { class: 'empty', colspan: columnCount + (picking ? 1 : 0), text: emptyText })));
-
-    return;
+  } else {
+    tbody.append(...rows);
   }
 
-  tbody.append(...rows);
+  // Only now, with the new rows in the document. The bar reads how many checkboxes
+  // are ticked out of the table, so refreshing it before this line counted the rows
+  // of the previous render: delete two of three, and the bar stayed up saying
+  // "3 selected" over a table where nothing was ticked at all.
+  if (picking) refreshBulkBar(tbody.closest('table'));
 }
 
 /**
@@ -465,11 +469,10 @@ function prepareBulkDelete(tbody, rows) {
 
   ensureBulkBar(table);
 
-  // The rows are new, so nothing is ticked: the count goes back to zero and the
-  // bar hides itself. Carrying a selection across a reload would be worse than
-  // losing it - the rows underneath it may not be the same rows.
-  refreshBulkBar(table);
-
+  // The bar is left to fillTable to refresh, once the rows are actually in the
+  // document. The rows are new, so nothing is ticked and the bar hides itself:
+  // carrying a selection across a reload would be worse than losing it, because
+  // the rows underneath it need not be the same rows.
   return true;
 }
 
