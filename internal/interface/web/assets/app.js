@@ -892,7 +892,9 @@ const TRANSLATIONS = {
     'bulk.refused': '{n} konnten nicht gelöscht werden',
     'sheet.projects.text': 'Exportiert die Projekte und Kategorien, die Sie sehen. Ein Import '
       + 'ordnet Zeilen über den Namen zu: ein vorhandener Name wird aktualisiert, ein neuer '
-      + 'angelegt. Als Kategorie markierte Zeilen werden Ihre eigenen privaten.',
+      + 'angelegt. Als Kategorie markierte Zeilen werden Ihre eigenen privaten. Eine leere '
+      + 'Zelle lässt den Wert unverändert, es geht also nichts verloren, wenn eine Spalte '
+      + 'fehlt.',
     'sheet.projects.file': 'projekte',
     'sheet.projects.done': '{0} Zeilen geschrieben.',
     'sheet.users.text': 'Exportiert alle Konten. Ein Import ändert vorhandene Konten, '
@@ -4492,7 +4494,8 @@ function buildSheetCard(spec) {
 const SHEET_TEXTS = {
   projects: 'Exports the projects and categories you can see. An import matches rows '
     + 'by name: a name that already exists is updated, a new one is created. Rows '
-    + 'marked as a category become your own private ones.',
+    + 'marked as a category become your own private ones. An empty cell leaves that '
+    + 'value alone, so nothing is lost by a column somebody deleted.',
   users: 'Exports every account. An import changes existing accounts, matched on the '
     + 'email address, and does not create them - a new account needs a password, which '
     + 'does not belong in a spreadsheet. An empty cell leaves that setting alone.',

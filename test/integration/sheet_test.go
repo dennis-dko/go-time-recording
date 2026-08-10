@@ -4,7 +4,9 @@ package integration
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
@@ -138,6 +140,94 @@ func TestProjectsRoundTripThroughASpreadsheet(t *testing.T) {
 	if len(projects.Items) != 2 {
 		t.Errorf("there are %d projects after re-importing the export, want 2; names: %v",
 			len(projects.Items), projects.Items)
+	}
+}
+
+// An archived project survives being exported and imported again.
+//
+// It did not. Archiving is only allowed from "completed", and the rule reads the
+// status the project has now - so a row saying "archived" about a project that is
+// already archived was refused, for a change nobody had asked for. The status is
+// only sent where it differs now, which is both correct and sidesteps the rule.
+func TestAnArchivedProjectCanBeImportedBack(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	worker := a.signInAsUser(admin, "Mika", "mika@example.com")
+
+	var project projectResponse
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Finished roof", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &project)
+
+	// Completed first, because that is the only status archiving is allowed from.
+	for _, status := range []string{"completed", "archived"} {
+		worker.must(worker.api(http.MethodPut, fmt.Sprintf("/projects/%d", project.ID),
+			map[string]any{"status": status}), http.StatusOK)
+	}
+
+	exported := worker.must(worker.api(http.MethodGet, "/projects/export", nil), http.StatusOK)
+
+	result, r := importSheet(t, worker, "/projects/import", exported.Body, "false")
+	if !accepted(r.Status) {
+		t.Fatalf("importing an export holding an archived project: status %d, body %.300q",
+			r.Status, r.Body)
+	}
+
+	if result.Rejected != 0 {
+		t.Errorf("the export was refused on re-import: %+v", result.Rows)
+	}
+
+	// And it is still archived rather than having been moved anywhere.
+	listed := worker.must(worker.api(http.MethodGet, "/projects", nil), http.StatusOK)
+
+	var projects struct {
+		Items []projectResponse `json:"items"`
+	}
+
+	listed.Data(t, &projects)
+
+	for _, item := range projects.Items {
+		if item.ID == project.ID && item.Status != "archived" {
+			t.Errorf("the project is %q after a round trip, want archived", item.Status)
+		}
+	}
+}
+
+// Asking for archiving where the rule forbids it is refused in the preview, not at
+// the write.
+//
+// A preview that promised a row the write would refuse would be worse than no
+// preview: nothing is written when any row is refused, so the whole file would fail
+// after being shown as fine.
+func TestArchivingAProjectThatIsNotCompletedIsRefusedInThePreview(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	worker := a.signInAsUser(admin, "Mika", "mika@example.com")
+
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Busy roof", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK)
+
+	// The same project, asked to jump straight to archived.
+	book, err := spreadsheet.WriteProjects("", []spreadsheet.ProjectRow{
+		{Name: "Busy roof", StartDate: mustDay(t, "2026-08-01"), Status: "archived"},
+	})
+	if err != nil {
+		t.Fatalf("building the workbook: %v", err)
+	}
+
+	preview, r := importSheet(t, worker, "/projects/import", book, "true")
+	if !accepted(r.Status) {
+		t.Fatalf("previewing: status %d, body %.200q", r.Status, r.Body)
+	}
+
+	if preview.Rejected != 1 || preview.Writable != 0 {
+		t.Fatalf("preview says %d writable and %d refused, want 0 and 1: %+v",
+			preview.Writable, preview.Rejected, preview.Rows)
+	}
+
+	if len(preview.Rows) != 1 || !strings.Contains(preview.Rows[0].Problem, "completed") {
+		t.Errorf("the reason given does not mention the rule: %+v", preview.Rows)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/query"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
@@ -160,6 +161,10 @@ type plannedProject struct {
 
 	// existingID is zero for a row that would create a project.
 	existingID uint
+
+	// existingStatus is what that project's status is now, so a row that does not
+	// change it can say nothing about it.
+	existingStatus string
 }
 
 // ProjectPlan is a file of projects, understood.
@@ -203,14 +208,14 @@ func (s *ProjectWorkbookService) PlanProjects(
 
 	// Two indexes, because a private category and a shared project may have the
 	// same name without being the same thing.
-	shared := map[string]uint{}
-	own := map[string]uint{}
+	shared := map[string]*common.ProjectResult{}
+	own := map[string]*common.ProjectResult{}
 
 	for _, project := range existing.Result {
 		if project.OwnerID != nil {
-			own[strings.ToLower(project.Name)] = project.ID
+			own[strings.ToLower(project.Name)] = project
 		} else {
-			shared[strings.ToLower(project.Name)] = project.ID
+			shared[strings.ToLower(project.Name)] = project
 		}
 	}
 
@@ -246,10 +251,24 @@ func (s *ProjectWorkbookService) PlanProjects(
 			index = own
 		}
 
-		plan.writable = append(plan.writable, plannedProject{
-			row:        row,
-			existingID: index[strings.ToLower(row.Name)],
-		})
+		planned := plannedProject{row: row}
+
+		if found := index[strings.ToLower(row.Name)]; found != nil {
+			planned.existingID = found.ID
+			planned.existingStatus = found.Status
+		}
+
+		// Archiving is only allowed from "completed", and that is about the status
+		// the project has now - so a row asking for it has to be refused here
+		// rather than at the write, where it would be a promise the preview had
+		// already made.
+		if err := checkArchiving(planned); err != nil {
+			plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: err.Error()})
+
+			continue
+		}
+
+		plan.writable = append(plan.writable, planned)
 
 		plan.add(SheetRow{Number: row.Number, Cells: cells})
 	}
@@ -270,6 +289,35 @@ func checkProjectStatus(status string) error {
 
 	return fmt.Errorf("%q is not a status; use %s, %s or %s", status,
 		model.ProjectStatusActive, model.ProjectStatusArchived, model.ProjectStatusCompleted)
+}
+
+// checkArchiving applies the archiving rule to a planned row.
+//
+// Only where the row would actually change the status. Without that, exporting an
+// archived project and importing the file again was refused: the row says
+// "archived", the project is already archived, and the rule reads a status that is
+// not "completed" and says no - to a change that was not being asked for.
+func checkArchiving(planned plannedProject) error {
+	if planned.existingID == 0 || !planned.changesStatus() {
+		return nil
+	}
+
+	if planned.row.Status != model.ProjectStatusArchived {
+		return nil
+	}
+
+	if planned.existingStatus != model.ProjectStatusCompleted {
+		return fmt.Errorf("a project can only be archived once its status is %q; %q is %q",
+			model.ProjectStatusCompleted, planned.row.Name, planned.existingStatus)
+	}
+
+	return nil
+}
+
+// changesStatus reports whether the row asks for a different status than the
+// project already has.
+func (p plannedProject) changesStatus() bool {
+	return p.row.Status != "" && p.row.Status != p.existingStatus
 }
 
 func projectCells(language string, row spreadsheet.ProjectRow) []string {
@@ -354,11 +402,20 @@ func (s *ProjectWorkbookService) write(
 	}
 
 	if planned.existingID != 0 {
-		name, status := row.Name, row.Status
+		name := row.Name
+
+		// The status only where it changes. Sending the one it already has walks
+		// into the archiving rule, which reads the current status and refuses a
+		// change nobody asked for.
+		var status *string
+		if planned.changesStatus() {
+			asked := row.Status
+			status = &asked
+		}
 
 		_, err := s.projects.UpdateProject(ctx, command.UpdateProjectCommand{
 			ID: planned.existingID, Name: &name, Description: description,
-			StartDate: &row.StartDate, EndDate: end, Status: statusOrNil(&status),
+			StartDate: &row.StartDate, EndDate: end, Status: status,
 			ActorID: actor.ID,
 		})
 
@@ -379,16 +436,6 @@ func (s *ProjectWorkbookService) write(
 	})
 
 	return err
-}
-
-// statusOrNil leaves the status alone when the column was empty, rather than
-// moving an archived project back to active because a cell was blank.
-func statusOrNil(status *string) *string {
-	if status == nil || *status == "" {
-		return nil
-	}
-
-	return status
 }
 
 // ------------------------------------------------------------------- people

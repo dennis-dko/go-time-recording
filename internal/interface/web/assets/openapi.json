@@ -1471,7 +1471,7 @@
           "projects"
         ],
         "summary": "Import projects from .xlsx",
-        "description": "Rows are matched by name: a name that exists is updated, a new one is created, so importing the same file twice changes nothing the second time. Rows marked as a category become private to the caller; creating a shared project needs `projects:write`. Every row is reported either way: the ones that would be written and the ones that cannot, with the reason. Nothing is written while any row is refused - a file half imported leaves somebody looking for which half.",
+        "description": "Rows are matched by name: a name that exists is updated, a new one is created, so importing the same file twice changes nothing the second time. Rows marked as a category become private to the caller; creating a shared project needs `projects:write`. An empty cell leaves that value as it is. The status is only written where it differs, so re-importing an export holding an archived project does not walk into the rule that archiving is only allowed from `completed`; asking for a status change the rule forbids is refused in the preview. Every row is reported either way: the ones that would be written and the ones that cannot, with the reason. Nothing is written while any row is refused - a file half imported leaves somebody looking for which half.",
         "parameters": [
           {
             "name": "lang",
