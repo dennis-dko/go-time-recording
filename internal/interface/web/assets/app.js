@@ -501,7 +501,6 @@ const TRANSLATIONS = {
     'setup.finish': 'Fertigstellen',
     'setup.done': 'Einrichtung abgeschlossen.',
     'setup.stillRequired': 'Diese Schritte müssen zuerst erledigt werden; bis dahin erscheint der Assistent immer wieder.',
-    'setup.passwordChanged': 'Passwort geändert. Bitte erneut anmelden.',
     'setup.password.title': 'Administrator-Passwort ändern',
     'setup.password.text': 'Dieses Konto hat noch das Passwort aus der Dokumentation, das jeder nachlesen kann. Bis zur Änderung lässt sich nichts anderes nutzen.',
     'setup.timezone.title': 'Zeitzone wählen',
@@ -3205,17 +3204,11 @@ async function advanceSetup() {
 
   if (!step.done && definition.submit) {
     try {
-      const result = await definition.submit(setupValues());
-
-      if (result?.signOut) {
-        // Changing the password invalidates this session, so the only correct
-        // next screen is the sign-in one.
-        toast(t('setup.passwordChanged', 'Password changed. Please sign in again.'), 'ok');
-        $('#setup-wizard').hidden = true;
-        await doLogout();
-
-        return;
-      }
+      // No step signs the person out any more. The password step used to: the
+      // server ended every session on a change, so the wizard had nowhere to go
+      // but the sign-in screen, half way through setting the installation up. It
+      // keeps this session now, so the password step advances like every other.
+      await definition.submit(setupValues());
     } catch (err) {
       setupError(err.message);
 
@@ -5229,15 +5222,16 @@ function wireForms() {
     e.preventDefault();
     const body = formData(e.target);
     mutate(() => api('/me/password', { method: 'PUT', body: JSON.stringify(body) }),
-      t('msg.passwordChanged', 'Password changed. Please sign in again.'),
+      t('msg.passwordChanged',
+        'Password changed. Your other devices have been signed out.'),
       async () => {
         e.target.reset();
 
-        // The server ends every session of this user on a password change, so
-        // reloading would only produce 401s and leave a dead screen. The
-        // message already says to sign in again; this is what takes them
-        // there.
-        await doLogout();
+        // Deliberately not signed out. The server ends this account's other
+        // sessions and keeps this one, because this is the device that just
+        // proved it knew the old password - so there is nothing to sign back
+        // into, and dropping somebody at a sign-in screen achieves only a second
+        // sign-in.
       });
   });
 
