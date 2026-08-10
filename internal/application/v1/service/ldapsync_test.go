@@ -229,10 +229,13 @@ func TestPreviewChangesNothingAndCountsTheDamage(t *testing.T) {
 	leaving := externalUser(t, f.fixture, "leaving@example.com")
 	externalUser(t, f.fixture, "staying@example.com")
 
-	// Two recorded entries that a real run would destroy.
+	// Two recorded entries that a real run would destroy. Without a project: the
+	// fixture's belongs to somebody else, and a project belongs to one person now, so
+	// booking a departing colleague's hours onto it is refused - correctly. What this
+	// case is about is that the hours exist and would be counted.
 	for _, d := range []int{15, 16} {
 		if _, err := f.timesheets.CreateTimesheet(context.Background(), command.CreateTimesheetCommand{
-			UserID: leaving, ProjectID: f.projectID, Date: day(d), DurationHours: 4,
+			UserID: leaving, Date: day(d), DurationHours: 4,
 		}); err != nil {
 			t.Fatalf("book: %v", err)
 		}

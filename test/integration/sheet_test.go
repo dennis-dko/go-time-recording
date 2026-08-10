@@ -389,34 +389,55 @@ func TestThePeopleSheetCarriesNoWorkingTimes(t *testing.T) {
 // account. TestThePeopleSheetCarriesNoWorkingTimes is what replaced them: it checks
 // the column is absent rather than that a value in it is validated.
 
-// The system administrator can keep private categories and cannot create shared
-// projects, by import as by any other route.
+// An import creates projects of the importer's own, and nobody else sees them.
 //
-// That separation is deliberate: everybody manages their own projects, and the
-// system administrator administers the installation. An import that ignored it
-// would be a way round it - which is exactly what a bulk route is at risk of
-// being, since it is the one nobody looks at row by row.
-func TestAnImportCannotReachPastTheScreenItSitsOn(t *testing.T) {
+// This case used to be about two kinds of project: it checked that somebody who could
+// only keep private categories was refused a row asking for a shared project. There is
+// one kind now, so the question moved - what a bulk route must not become is a way to
+// put something where somebody else can see it, since it is the one route nobody reads
+// row by row.
+func TestAnImportedProjectBelongsToWhoeverImportedIt(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
+	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
+	bert := a.signInAsUser(admin, "Bert", "bert@example.com")
 
 	book, err := spreadsheet.WriteProjects("", []spreadsheet.ProjectRow{
-		{Name: "Everybody's roof", StartDate: mustDay(t, "2026-08-01"), Status: "active"},
-		{Name: "My own admin", StartDate: mustDay(t, "2026-08-01"), Status: "active",
-			Category: true},
+		{Name: "Roof", StartDate: mustDay(t, "2026-08-01"), Status: "active"},
+		{Name: "Cellar", StartDate: mustDay(t, "2026-08-01"), Status: "active"},
 	})
 	if err != nil {
 		t.Fatalf("building the workbook: %v", err)
 	}
 
-	preview, r := importSheet(t, admin, "/projects/import", book, "true")
+	written, r := importSheet(t, anna, "/projects/import", book, "false")
 	if !accepted(r.Status) {
-		t.Fatalf("previewing as the administrator: status %d, body %.200q", r.Status, r.Body)
+		t.Fatalf("importing: status %d, body %.200q", r.Status, r.Body)
 	}
 
-	// The category is theirs to keep; the shared project is not theirs to create.
-	if preview.Writable != 1 || preview.Rejected != 1 {
-		t.Errorf("preview says %d writable and %d refused, want 1 and 1: %+v",
-			preview.Writable, preview.Rejected, preview.Rows)
+	if written.Imported != 2 {
+		t.Fatalf("wrote %d rows, want 2: %+v", written.Imported, written.Rows)
+	}
+
+	// Anna's, both of them.
+	var hers struct {
+		Items []projectResponse `json:"items"`
+	}
+
+	anna.must(anna.api(http.MethodGet, "/projects", nil), http.StatusOK).Data(t, &hers)
+
+	if len(hers.Items) != 2 {
+		t.Errorf("the importer sees %d project(s), want 2", len(hers.Items))
+	}
+
+	// And Bert sees neither, which is the thing the bulk route must not get around.
+	var his struct {
+		Items []projectResponse `json:"items"`
+	}
+
+	bert.must(bert.api(http.MethodGet, "/projects", nil), http.StatusOK).Data(t, &his)
+
+	if len(his.Items) != 0 {
+		t.Errorf("a colleague sees %d of the imported projects: %+v", len(his.Items), his.Items)
 	}
 }

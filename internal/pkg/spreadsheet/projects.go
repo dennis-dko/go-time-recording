@@ -10,8 +10,8 @@ import (
 // projects is the sheet of projects.
 var projects = Table{
 	Key:      "Projects",
-	Headings: []string{"Name", "Description", "Start", "End", "Status", "Category"},
-	Widths:   []float64{28, 48, 12, 12, 14, 10},
+	Headings: []string{"Name", "Description", "Start", "End", "Status"},
+	Widths:   []float64{28, 48, 12, 12, 14},
 }
 
 // ProjectRow is one project as the workbook holds it.
@@ -33,13 +33,13 @@ type ProjectRow struct {
 	EndDate time.Time
 
 	Status string
-
-	// Category marks a private project: a personal heading for splitting up a
-	// day rather than something shared. On import it belongs to whoever imported
-	// it, because a private thing cannot be given to somebody else by filling in
-	// a cell.
-	Category bool
 }
+
+// There was a Category column here, marking a private project as against a shared
+// one. Every project belongs to one person now, so it would have been "yes" on every
+// row - and a column that always says the same thing is a column somebody edits
+// expecting something to happen. An imported project belongs to whoever imported it,
+// which is the only answer there is.
 
 // ProjectColumns are the project headings in one language.
 func ProjectColumns(language string) []string { return headingsIn(language, projects) }
@@ -60,7 +60,6 @@ func WriteProjects(language string, rows []ProjectRow) ([]byte, error) {
 			Text(row.StartDate.Format(dateFormat)),
 			Text(end),
 			Text(translate(language, row.Status)),
-			Text(translate(language, yesNo(row.Category))),
 		})
 	}
 
@@ -109,14 +108,9 @@ func parseProjectRow(number int, cells []string) (ProjectRow, error) {
 		return ProjectRow{}, errors.New("the name is missing")
 	}
 
-	category, err := parseYesNo(value(5))
-	if err != nil {
-		return ProjectRow{}, err
-	}
-
-	// A category has no meaningful period, so an empty start is allowed for one
-	// and filled in by the service. For a project it is required: a project
-	// without a start cannot be checked against the period of anything.
+	// An empty start is allowed and filled in by the service: a project is one
+	// person's way of organising their own hours, not a plan somebody signed off, so
+	// it does not need a date to begin with.
 	start := time.Time{}
 
 	if raw := value(2); raw != "" {
@@ -127,8 +121,6 @@ func parseProjectRow(number int, cells []string) (ProjectRow, error) {
 		}
 
 		start = parsed
-	} else if !category {
-		return ProjectRow{}, errors.New("the start date is missing")
 	}
 
 	end := time.Time{}
@@ -151,8 +143,7 @@ func parseProjectRow(number int, cells []string) (ProjectRow, error) {
 		EndDate:     end,
 		// Back to the English word the application works in, whichever language
 		// the file was written in.
-		Status:   untranslate(value(4)),
-		Category: category,
+		Status: untranslate(value(4)),
 	}, nil
 }
 
@@ -167,18 +158,7 @@ func yesNo(on bool) string {
 	return "no"
 }
 
-// parseYesNo reads a flag column, in either language and either convention.
-//
-// Empty is "no" rather than a complaint: a column somebody deleted from a
-// hand-made file should not stop the import, and the safer reading of a missing
-// "is this private" is that it is not.
-func parseYesNo(raw string) (bool, error) {
-	switch untranslate(raw) {
-	case "", "no", "false", "0":
-		return false, nil
-	case "yes", "true", "1":
-		return true, nil
-	}
-
-	return false, fmt.Errorf("%q is not yes or no", raw)
-}
+// parseYesNo was here, reading the Category column in either language and either
+// convention. That column is gone: every project belongs to one person, so the answer
+// would have been the same on every row. yesNo, which writes the word, is still used -
+// the people sheet says whether a password lives in the directory.

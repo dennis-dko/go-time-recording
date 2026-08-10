@@ -94,8 +94,17 @@ func TestPrivateProjectIsInvisibleToOthers(t *testing.T) {
 	requireKind(t, err, apperror.KindNotFound)
 }
 
-// Shared projects stay visible to everyone, which is what NULL owner means.
-func TestSharedProjectsRemainVisible(t *testing.T) {
+// Nobody else's projects are in your list, and that is the whole list.
+//
+// This case was the reverse: it asserted that a project with no owner was visible to
+// everybody, which is what a shared project was. There are none - a project belongs to
+// one person - so the same fixture now proves the opposite, and the list a colleague
+// gets is empty rather than containing somebody else's work.
+//
+// TestOnlyOwnNarrowsToPrivateCategories was here too, checking a parameter that
+// narrowed everybody's shared projects down to your own categories. There is nothing
+// left to narrow.
+func TestSomebodyElsesProjectsAreNotInYourList(t *testing.T) {
 	f := newFixture(t)
 	otherID := secondUser(t, f)
 
@@ -105,24 +114,23 @@ func TestSharedProjectsRemainVisible(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 
-	// The fixture seeds one shared project.
-	if !containsProject(result.Result, f.projectID) {
-		t.Error("a shared project must be visible to every user")
+	if containsProject(result.Result, f.projectID) {
+		t.Error("a colleague's project is in this user's list")
 	}
-}
 
-func TestOnlyOwnNarrowsToPrivateCategories(t *testing.T) {
-	f := newFixture(t)
-	projectID := privateProject(t, f, f.userID, "Meetings")
+	if len(result.Result) != 0 {
+		t.Errorf("a user who has created nothing sees %d project(s)", len(result.Result))
+	}
 
-	result, err := f.projects.ListProjects(context.Background(),
-		query.ListProjectsQuery{ViewerID: f.userID, OnlyOwn: true})
+	// And the owner does see it, so this cannot pass by the list being broken.
+	own, err := f.projects.ListProjects(context.Background(),
+		query.ListProjectsQuery{ViewerID: f.userID})
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
 
-	if len(result.Result) != 1 || result.Result[0].ID != projectID {
-		t.Fatalf("expected only the private category, got %d project(s)", len(result.Result))
+	if !containsProject(own.Result, f.projectID) {
+		t.Error("the owner cannot see their own project")
 	}
 }
 
@@ -177,14 +185,17 @@ func TestCannotEditOrDeleteAnotherUsersPrivateProject(t *testing.T) {
 	}
 }
 
-// Every default role must be able to keep personal categories.
-func TestAllDefaultRolesMayKeepOwnCategories(t *testing.T) {
+// Every default role must be able to keep projects of its own.
+//
+// The right used to be projects:write:own, beside projects:write for the shared kind.
+// One kind of project takes one right, and this is the one it takes.
+func TestAllDefaultRolesMayKeepTheirOwnProjects(t *testing.T) {
 	f := newFixture(t)
 
 	for _, roleName := range []string{model.RoleAdmin, model.RoleEmployee} {
 		role := roleNamed(t, f, roleName)
-		if !role.Has(model.PermProjectWriteOwn) {
-			t.Errorf("role %q must hold %q", roleName, model.PermProjectWriteOwn)
+		if !role.Has(model.PermProjectWrite) {
+			t.Errorf("role %q must hold %q", roleName, model.PermProjectWrite)
 		}
 	}
 }

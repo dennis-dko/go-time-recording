@@ -1041,9 +1041,6 @@ const TRANSLATIONS = {
     'cal.title': 'Kalender',
     'cal.today': 'Heute',
     'cal.weekdays': 'Mo,Di,Mi,Do,Fr,Sa,So',
-    'cat.badge': 'privat',
-    'cat.create': 'Eigenes Projekt anlegen',
-    'cat.hint': 'Eigene Projekte sind privat und nur für Sie sichtbar. Damit lässt sich Zeit innerhalb eines Tages aufteilen, wenn kein gemeinsames Projekt passt.',
     'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
     'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',
     'err.adminUndeletable': 'Der eingebaute Administrator kann nicht gelöscht werden.',
@@ -1205,7 +1202,6 @@ const TRANSLATIONS = {
     'login.totp': 'Code der Authenticator-App',
     'login.totpNeeded': 'Bitte den Code aus der Authenticator-App eingeben.',
     'msg.booked': 'Zeit gebucht',
-    'msg.categoryCreated': 'Projekt angelegt',
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.entrySaved': 'Eintrag gespeichert',
     'maint.confirm': 'Installation außer Betrieb nehmen? Alle außer diesem Konto werden abgewiesen.',
@@ -1249,6 +1245,7 @@ const TRANSLATIONS = {
     'ot.empty': 'Keine Buchungen in diesem Zeitraum.',
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
+    'project.hint': 'Ihre Projekte sind Ihre: nur Sie sehen sie, und nur Sie buchen darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
     'pw.hide': 'Passwort verbergen',
@@ -1744,7 +1741,7 @@ async function loadProjects() {
 
     // A private category belongs to the signed-in user, so they may manage it
     // whatever their project permissions are.
-    const mine = p.private && me.user && p.ownerId === me.user.id;
+    const mine = me.user && p.ownerId === me.user.id;
 
     if (can('projects:write') && p.status === 'active') {
       actions.append(el('button', {
@@ -1774,14 +1771,11 @@ async function loadProjects() {
     const period = `${fmtDate(p.startDate)} – ${p.endDate ? fmtDate(p.endDate) : t('project.open', 'open')}`;
 
     const name = el('td', { text: p.name });
-    if (p.private) {
-      name.append(' ', el('span', { class: 'pill', text: t('cat.badge', 'private') }));
-    }
-
     return el('tr', { class: mine ? 'self' : '' },
       name,
-      // A category has no meaningful period, so the column stays quiet for it.
-      el('td', { class: p.private ? 'empty' : '', text: p.private ? '–' : period }),
+      // A project needs no period, so the column stays quiet when there is none:
+      // it is one person's way of organising their hours, not a plan.
+      el('td', { class: p.startDate ? '' : 'empty', text: p.startDate ? period : '–' }),
       el('td', { text: p.description ?? '–' }),
       el('td', {}, statusBadge(p.status)),
       actions,
@@ -2954,11 +2948,11 @@ const TOUR_STEPS = [
   {
     target: '#form-project',
     view: 'projects',
-    permission: 'projects:write:own,projects:write',
-    title: () => t('tour.projects.title', 'Projects, including your own'),
+    permission: 'projects:write',
+    title: () => t('tour.projects.title', 'Your projects'),
     text: () => t('tour.projects.text',
-      'Shared projects are set up centrally. You can also create private ones, visible only '
-      + 'to you, to split up a day when no shared project fits.'),
+      'Somewhere to put your hours, and yours alone: only you see them and only you book '
+      + 'on them. Two people on the same job keep a project each.'),
   },
   {
     target: '#form-report',
@@ -4397,7 +4391,7 @@ const SHEET_CARDS = [
     path: '/projects',
     view: '#view-projects',
     read: 'projects:read',
-    write: 'projects:write,projects:write:own',
+    write: 'projects:write',
     reload: () => refreshAll(),
   },
   {
@@ -5743,16 +5737,6 @@ function wireForms() {
     const body = formData(e.target);
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.projectCreated', 'Project created'),
-      async () => { e.target.reset(); await refreshAll(); });
-  });
-
-  // A personal category is the same endpoint with "private", which is what
-  // makes the caller its owner.
-  $('#form-category').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const body = { ...formData(e.target), private: true };
-    mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
-      t('msg.categoryCreated', 'Project created'),
       async () => { e.target.reset(); await refreshAll(); });
   });
 

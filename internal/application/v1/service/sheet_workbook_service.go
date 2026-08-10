@@ -131,7 +131,6 @@ func (s *ProjectWorkbookService) Export(
 			Name:      project.Name,
 			StartDate: project.StartDate,
 			Status:    project.Status,
-			Category:  project.OwnerID != nil,
 		}
 
 		if project.Description != nil {
@@ -184,17 +183,15 @@ type ProjectPlan struct {
 // project - so importing the same file twice changes nothing the second time, which
 // is what makes a half-finished import recoverable by simply importing again.
 //
-// mayShare says whether the actor may touch shared projects at all; without it
-// every row has to be a private category of their own. Checked here rather than
-// left to the write, because a preview that promised rows the write would refuse
-// would be worse than no preview.
+// Every row becomes a project of the actor's own, because that is the only kind there
+// is. There was a mayShare beside this, deciding whether they were allowed to touch
+// the shared sort at all - a question with nothing left on either side of it.
 func (s *ProjectWorkbookService) PlanProjects(
 	ctx context.Context,
 	language string,
 	rows []spreadsheet.ProjectRow,
 	problems []spreadsheet.RowError,
 	actor *model.User,
-	mayShare bool,
 ) (*ProjectPlan, error) {
 	if actor == nil {
 		return nil, apperror.InvalidFields("actor")
@@ -205,17 +202,13 @@ func (s *ProjectWorkbookService) PlanProjects(
 		return nil, err
 	}
 
-	// Two indexes, because a private category and a shared project may have the
-	// same name without being the same thing.
-	shared := map[string]*common.ProjectResult{}
-	own := map[string]*common.ProjectResult{}
+	// One index: the list is already only this person's projects, so a name in it can
+	// mean one thing. There were two, because a private category and a shared project
+	// could share a name without being the same project.
+	byName := map[string]*common.ProjectResult{}
 
 	for _, project := range existing.Result {
-		if project.OwnerID != nil {
-			own[strings.ToLower(project.Name)] = project
-		} else {
-			shared[strings.ToLower(project.Name)] = project
-		}
+		byName[strings.ToLower(project.Name)] = project
 	}
 
 	plan := &ProjectPlan{}
@@ -237,22 +230,9 @@ func (s *ProjectWorkbookService) PlanProjects(
 			continue
 		}
 
-		if !row.Category && !mayShare {
-			plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: "this row is a " +
-				"shared project, and you may only keep private categories; mark it as " +
-				"a category or ask somebody who may"})
-
-			continue
-		}
-
-		index := shared
-		if row.Category {
-			index = own
-		}
-
 		planned := plannedProject{row: row}
 
-		if found := index[strings.ToLower(row.Name)]; found != nil {
+		if found := byName[strings.ToLower(row.Name)]; found != nil {
 			planned.existingID = found.ID
 			planned.existingStatus = found.Status
 		}
@@ -330,15 +310,9 @@ func projectCells(language string, row spreadsheet.ProjectRow) []string {
 		start = row.StartDate.Format("2006-01-02")
 	}
 
-	category := "no"
-	if row.Category {
-		category = "yes"
-	}
-
 	return []string{
 		row.Name, row.Description, start, end,
 		spreadsheet.Translate(language, row.Status),
-		spreadsheet.Translate(language, category),
 	}
 }
 
@@ -421,17 +395,13 @@ func (s *ProjectWorkbookService) write(
 		return err
 	}
 
-	// A category belongs to whoever imported it. Private is private: it cannot be
-	// handed to somebody else by filling in a cell.
-	var owner *uint
-	if row.Category {
-		id := actor.ID
-		owner = &id
-	}
+	// It belongs to whoever imported it, which is the only answer: a project is one
+	// person's, and no cell can hand it to somebody else.
+	owner := actor.ID
 
 	_, err := s.projects.CreateProject(ctx, command.CreateProjectCommand{
 		Name: row.Name, Description: description, StartDate: row.StartDate,
-		EndDate: end, Status: row.Status, OwnerID: owner,
+		EndDate: end, Status: row.Status, OwnerID: &owner,
 	})
 
 	return err

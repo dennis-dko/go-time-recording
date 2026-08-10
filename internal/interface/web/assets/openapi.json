@@ -32,7 +32,7 @@
     },
     {
       "name": "projects",
-      "description": "Shared projects and your own private projects"
+      "description": "Your own projects"
     },
     {
       "name": "users",
@@ -565,7 +565,7 @@
           "projects"
         ],
         "summary": "List projects",
-        "description": "Returns the shared projects plus the caller's own private ones. Other people's private projects are never included.",
+        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Needs `projects:read`.",
         "parameters": [
           {
             "name": "status",
@@ -573,17 +573,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "private",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true"
-              ]
-            },
-            "description": "Narrow the result to the caller's own private projects."
           }
         ],
         "responses": {
@@ -597,7 +586,7 @@
           "projects"
         ],
         "summary": "Create a project",
-        "description": "`private: true` creates a personal project owned by the caller and needs only `projects:write:own`. A shared project needs `projects:write`.",
+        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. Needs `projects:write`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -639,7 +628,7 @@
             "description": "Project"
           },
           "404": {
-            "description": "Unknown, or someone else's private project"
+            "description": "Unknown, or not yours - which answers the same way, so asking cannot tell you what colleagues have"
           }
         }
       },
@@ -1414,7 +1403,7 @@
           "projects"
         ],
         "summary": "Export projects as .xlsx",
-        "description": "The shared projects the caller can see plus their own private categories - the same scoping as the list, so an export can never show more than the screen.",
+        "description": "Your own projects, the same scoping as the list, so an export can never show more than the screen.",
         "parameters": [
           {
             "name": "lang",
@@ -1446,7 +1435,7 @@
           "projects"
         ],
         "summary": "Import projects from .xlsx",
-        "description": "Rows are matched by name: a name that exists is updated, a new one is created, so importing the same file twice changes nothing the second time. Rows marked as a category become private to the caller; creating a shared project needs `projects:write`. An empty cell leaves that value as it is. The status is only written where it differs, so re-importing an export holding an archived project does not walk into the rule that archiving is only allowed from `completed`; asking for a status change the rule forbids is refused in the preview. Every row is reported either way: the ones that would be written and the ones that cannot, with the reason. Nothing is written while any row is refused - a file half imported leaves somebody looking for which half.",
+        "description": "Rows are matched by name: a name that exists is updated, a new one is created, so importing the same file twice changes nothing the second time. Every row becomes a project of the importer’s own, which no colleague can see - there was a Category column and a shared kind, and neither remains. An empty cell leaves that value as it is. The status is only written where it differs, so re-importing an export holding an archived project does not walk into the rule that archiving is only allowed from `completed`; asking for a status change the rule forbids is refused in the preview. Every row is reported either way: the ones that would be written and the ones that cannot, with the reason. Nothing is written while any row is refused - a file half imported leaves somebody looking for which half.",
         "parameters": [
           {
             "name": "lang",
@@ -1835,10 +1824,6 @@
               "completed",
               "archived"
             ]
-          },
-          "private": {
-            "type": "boolean",
-            "description": "Creates a personal project owned by the caller."
           }
         }
       }

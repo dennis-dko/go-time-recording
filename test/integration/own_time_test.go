@@ -17,27 +17,54 @@ import (
 // other people's work; when that role went, that right was left gating a screen
 // nobody could reach.
 
-// A project total covers the caller's own hours and nobody else's.
+// A project total covers the caller's own hours, and there is no way for anybody
+// else's to be in it.
+//
+// This case used to have two colleagues booking on one project and checked that the
+// total showed only one of them. They cannot: a project belongs to one person, so two
+// people working on the same thing keep a project each, with the same name if they
+// like. What is checked now is both halves of that - each total holds its owner's hours
+// and the other project is not reachable at all.
 func TestAProjectTotalCoversOnlyYourOwnHours(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
 	bert := a.signInAsUser(admin, "Bert", "bert@example.com")
 
-	var shared projectResponse
+	// One name, two projects, one each.
+	var hers, his projectResponse
+
 	anna.must(anna.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Roof", "startDate": "2026-08-01",
-	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
+	}), http.StatusCreated, http.StatusOK).Data(t, &hers)
 
-	// Both book on it: three hours each, on the same day.
-	for _, who := range []*client{anna, bert} {
-		who.must(who.api(http.MethodPost, "/timesheets", map[string]any{
-			"date": "2026-08-04", "durationHours": 3, "projectId": shared.ID,
+	bert.must(bert.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Roof", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &his)
+
+	if hers.ID == his.ID {
+		t.Fatal("both accounts were given the same project")
+	}
+
+	// Three hours each, on the same day, each on their own.
+	for _, who := range []struct {
+		client  *client
+		project uint
+	}{{anna, hers.ID}, {bert, his.ID}} {
+		who.client.must(who.client.api(http.MethodPost, "/timesheets", map[string]any{
+			"date": "2026-08-04", "durationHours": 3, "projectId": who.project,
 		}), http.StatusCreated, http.StatusOK)
 	}
 
+	// Bert's project is not even reachable for Anna, which is the stronger half: the
+	// total cannot hold somebody else's hours because the project cannot be shared.
+	if got := anna.api(http.MethodGet,
+		path("/projects/", his.ID)+"/report", nil).Status; got != http.StatusNotFound {
+		t.Errorf("a colleague's project report answered %d, want 404", got)
+	}
+
 	report := anna.must(anna.api(http.MethodGet,
-		path("/projects/", shared.ID)+"/report?from=2026-08-01&to=2026-08-31", nil),
+		path("/projects/", hers.ID)+"/report?from=2026-08-01&to=2026-08-31", nil),
 		http.StatusOK)
 
 	var out struct {
@@ -81,9 +108,15 @@ func TestTheProjectReportIsReachableByAnOrdinaryAccount(t *testing.T) {
 	anna.must(anna.api(http.MethodGet, path("/projects/", project.ID)+"/report", nil),
 		http.StatusOK)
 
-	// And by the administrator, for its own hours: it configures the installation
-	// and records its own time like anybody else.
-	admin.must(admin.api(http.MethodGet, path("/projects/", project.ID)+"/report", nil),
+	// And by the administrator, for a project of its own: it configures the
+	// installation and records its own time like anybody else. Anna's is not its
+	// business, which the case above covers.
+	var mine projectResponse
+	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Administration", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &mine)
+
+	admin.must(admin.api(http.MethodGet, path("/projects/", mine.ID)+"/report", nil),
 		http.StatusOK)
 }
 

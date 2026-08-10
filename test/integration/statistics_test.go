@@ -54,18 +54,15 @@ func TestAnEmployeeCanReadTheirOwnStatistics(t *testing.T) {
 		"role": "employee", "password": "hanne-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
-	// The shared project comes from another account: everybody keeps the projects
-	// books against is running the work, which the built-in administrator is
-	// deliberately no part of.
-	other := a.signInAsUser(admin, "Mira", "mira@example.com")
-
-	var shared projectResponse
-	other.must(other.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Shared work", "startDate": "2026-08-01",
-	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
-
 	hanne := a.newClient()
 	hanne.signIn("hanne@example.com", "hanne-password-1")
+
+	// Her own project. It used to come from another account, as the shared kind did;
+	// a project belongs to one person now, so hers is the only one she can book on.
+	var shared projectResponse
+	hanne.must(hanne.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Her work", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
 
 	// Two entries on one project, one on none, on two different days.
 	for _, entry := range []map[string]any{
@@ -105,8 +102,8 @@ func TestAnEmployeeCanReadTheirOwnStatistics(t *testing.T) {
 		byName[project.Name] = project.Hours
 	}
 
-	if byName["Shared work"] != 3.75 {
-		t.Errorf("the project totals %v hours, want 3.75", byName["Shared work"])
+	if byName["Her work"] != 3.75 {
+		t.Errorf("the project totals %v hours, want 3.75", byName["Her work"])
 	}
 
 	if uncategorised != 3 {

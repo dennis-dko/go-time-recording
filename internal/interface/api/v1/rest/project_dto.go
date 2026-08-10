@@ -11,8 +11,9 @@ type ProjectResponse struct {
 	EndDate     *Date   `json:"endDate"`
 	Status      string  `json:"status"`
 
-	// Private marks a personal category, visible only to its owner.
-	Private bool  `json:"private"`
+	// OwnerID is whose project it is. There was a "private" beside it, true for a
+	// personal category and false for a shared project; there is one kind now, so it
+	// would always be true and would tell a reader nothing.
 	OwnerID *uint `json:"ownerId"`
 }
 
@@ -23,10 +24,6 @@ type CreateProjectRequest struct {
 	StartDate   Date    `json:"startDate"`
 	EndDate     *Date   `json:"endDate"`
 	Status      string  `json:"status"`
-
-	// Private creates a personal category owned by the caller instead of a
-	// shared project. It needs only the own-project permission.
-	Private bool `json:"private"`
 }
 
 // UpdateProjectRequest is the payload for a partial update.
@@ -45,7 +42,6 @@ func newProjectResponse(r *common.ProjectResult) ProjectResponse {
 		Description: r.Description,
 		StartDate:   Date{Time: r.StartDate},
 		Status:      r.Status,
-		Private:     r.OwnerID != nil,
 		OwnerID:     r.OwnerID,
 	}
 

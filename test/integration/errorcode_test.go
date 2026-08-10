@@ -51,7 +51,7 @@ func TestAConflictCarriesItsReasonAndValues(t *testing.T) {
 	// many entries are in the way - the number the German sentence needs.
 	var project projectResponse
 	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Busy", "startDate": "2026-08-01", "private": true,
+		"name": "Busy", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{

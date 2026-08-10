@@ -10,7 +10,7 @@ import (
 
 // ---------------------------------------------------------------- projects
 
-func TestPrivateProjectsAreInvisibleToOthers(t *testing.T) {
+func TestAProjectIsInvisibleToEverybodyButItsOwner(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -21,12 +21,12 @@ func TestPrivateProjectsAreInvisibleToOthers(t *testing.T) {
 		}), http.StatusCreated, http.StatusOK)
 	}
 
-	// A shared project, set up centrally - by a other, because managing the
-	// projects everybody books against is running the work rather than running
-	// the installation, and the administrator holds none of that.
+	// Somebody else's project. There used to be a shared kind here, visible to
+	// everybody; every project belongs to one person now, so this one is Mila's and
+	// nobody else's business.
 	other := a.signInAsUser(admin, "Mila", "mila@example.com")
 	other.must(other.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Shared work", "startDate": "2026-08-01",
+		"name": "Mila's work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK)
 
 	erika := a.newClient()
@@ -34,19 +34,19 @@ func TestPrivateProjectsAreInvisibleToOthers(t *testing.T) {
 
 	var private projectResponse
 	erika.must(erika.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Erika's own", "startDate": "2026-08-01", "private": true,
+		"name": "Erika's own", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &private)
 
-	if !private.Private {
-		t.Fatal("the project should have been created as private")
+	if private.OwnerID == nil {
+		t.Fatal("the project was created without an owner, so nobody can see it")
 	}
 
-	// Erika sees both; Frank sees only the shared one.
+	// Hers, and only hers: Mila's is not in her list either.
 	var hers listOf[projectResponse]
 	erika.must(erika.api(http.MethodGet, "/projects", nil), http.StatusOK).Data(t, &hers)
 
-	if len(hers.Items) != 2 {
-		t.Errorf("the owner should see both projects, got %d", len(hers.Items))
+	if len(hers.Items) != 1 {
+		t.Errorf("she should see her own project and no other, got %d", len(hers.Items))
 	}
 
 	frank := a.newClient()
@@ -55,10 +55,9 @@ func TestPrivateProjectsAreInvisibleToOthers(t *testing.T) {
 	var his listOf[projectResponse]
 	frank.must(frank.api(http.MethodGet, "/projects", nil), http.StatusOK).Data(t, &his)
 
-	for _, project := range his.Items {
-		if project.Private {
-			t.Errorf("someone else's private project is visible: %q", project.Name)
-		}
+	// Frank has created nothing, so he sees nothing - not Erika's, not Mila's.
+	if len(his.Items) != 0 {
+		t.Errorf("somebody who has created no project sees %d: %+v", len(his.Items), his.Items)
 	}
 
 	// Fetching it by id answers 404 rather than 403 - confirming the id exists
@@ -92,7 +91,7 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 
 	var hers projectResponse
 	gerda.must(gerda.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Gerda's own", "startDate": "2026-08-01", "private": true,
+		"name": "Gerda's own", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &hers)
 
 	gerda.must(gerda.api(http.MethodPost, "/timesheets", map[string]any{
@@ -197,7 +196,7 @@ func TestTimeCanBeBookedWithoutAProjectAndCategorisedLater(t *testing.T) {
 	// belongs to whoever runs the work.
 	var project projectResponse
 	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Found a home", "startDate": "2026-08-01", "private": true,
+		"name": "Found a home", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	var updated timesheetResponse
@@ -437,7 +436,7 @@ func TestSavingWithoutChangingAnythingIsNotAnError(t *testing.T) {
 	// about saving rather than about who may keep the shared projects.
 	var project projectResponse
 	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Unchanged", "startDate": "2026-08-01", "private": true,
+		"name": "Unchanged", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	for attempt := 1; attempt <= 2; attempt++ {
