@@ -317,6 +317,43 @@ func (a *app) signInAsAdmin(newPassword string) *client {
 	return fresh
 }
 
+// startWithWorker starts an instance and signs in both an administrator and somebody
+// who works here.
+//
+// The pair almost every case needs. The built-in administrator does not record time:
+// it exists on every installation before anybody has chosen anything, so it is how you
+// get in rather than somebody's working day. A case about booking, a timer, a limit or
+// a project therefore needs an account of its own to do it with, and the
+// administrator only to create that account.
+func startWithWorker(t *testing.T) (*app, *client, *client) {
+	t.Helper()
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	return a, admin, a.signInAsUser(admin, "Wera", "wera@example.com")
+}
+
+// signInAsWorkingAdmin creates an account that both works here and administers.
+//
+// The one arrangement that spans the two jobs, and it is granted rather than assumed:
+// an ordinary account is given the combined role. The built-in administrator is not
+// that account and never becomes it - it administers, and nothing else.
+func (a *app) signInAsWorkingAdmin(admin *client, name, email string) *client {
+	a.t.Helper()
+
+	const password = "both-jobs-password-1"
+
+	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
+		"name": name, "email": email, "role": "employee-admin", "password": password,
+	}), http.StatusCreated, http.StatusOK)
+
+	user := a.newClient()
+	user.signIn(email, password)
+
+	return user
+}
+
 // signInAsUser creates an ordinary account and signs in as it.
 //
 // There is no second role any more. Everyone keeps their own time, projects and

@@ -58,6 +58,10 @@ func readTelemetry(t *testing.T, c *client) TelemetryOnTheWire {
 // A fresh installation has administered nothing, and the screen has to say what
 // the process is actually doing rather than leaving it to be guessed from a file
 // nobody can read from there.
+//
+// Read as the built-in administrator, because the metrics port and the collector
+// address are part of running the installation rather than anybody's working day,
+// and nobody else may see them - which the next test is about.
 func TestTelemetryReportsWhatTheProcessIsActuallyDoing(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")

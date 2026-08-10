@@ -286,3 +286,146 @@ func TestWhoeverCouldKeepACategoryCanStillKeepAProject(t *testing.T) {
 		t.Errorf("%d role(s) still hold projects:write:own, which grants nothing", old)
 	}
 }
+
+// theSeparation is the migration that takes the working day off the built-in account.
+const theSeparation = int64(20260810060000)
+
+// The built-in administrator comes out of the upgrade administering and nothing more,
+// and there is a role for whoever needs both jobs.
+//
+// It used to book and read its own hours "like anybody else who works here". The
+// account exists on every installation before anybody has chosen anything - it is how
+// you get in, not somebody's working day. Whoever does work here has an account of
+// their own, and if that person also administers they are given a role that says so.
+func TestTheUpgradeSeparatesAdministeringFromWorking(t *testing.T) {
+	t.Parallel()
+
+	db := freshDB(t)
+	migrate(t, db, 0, theSeparation-1)
+
+	// The state an older binary left behind, set up by hand.
+	//
+	// It cannot be produced by replaying the chain: the migration that seeds the roles
+	// reads DefaultRoles(), so a fresh run already lands on today's sets and there
+	// would be nothing to take away. Which is correct - and it means this case has to
+	// write the history it is about, or it would prove nothing while passing.
+	for _, permission := range []string{
+		"projects:read", "projects:write", "projects:archive", "projects:delete",
+		"timesheets:read:own", "timesheets:write:own",
+		"reports:read:own", "settings:write:own",
+	} {
+		if _, err := db.Exec(`INSERT INTO role_permissions (role_id, permission)
+			SELECT id, ? FROM roles WHERE name = 'admin'
+			  AND NOT EXISTS (SELECT 1 FROM role_permissions rp
+			    WHERE rp.role_id = roles.id AND rp.permission = ?)`,
+			permission, permission); err != nil {
+			t.Fatalf("granting %s to the old administrator: %v", permission, err)
+		}
+	}
+
+	var before int
+
+	err := db.QueryRow(`SELECT COUNT(*) FROM role_permissions
+		WHERE permission = 'timesheets:write:own'
+		  AND role_id = (SELECT id FROM roles WHERE name = 'admin')`).Scan(&before)
+	if err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+
+	if before == 0 {
+		t.Fatal("the built-in administrator had no working day to take away, so this " +
+			"case proves nothing")
+	}
+
+	migrate(t, db, theSeparation-1, latest(t))
+
+	// Nothing about a working day left on it.
+	for _, permission := range []string{
+		"projects:read", "projects:write", "projects:archive", "projects:delete",
+		"timesheets:read:own", "timesheets:write:own",
+		"reports:read:own", "settings:write:own",
+	} {
+		var held int
+
+		err := db.QueryRow(`SELECT COUNT(*) FROM role_permissions
+			WHERE permission = ? AND role_id = (SELECT id FROM roles WHERE name = 'admin')`,
+			permission).Scan(&held)
+		if err != nil {
+			t.Fatalf("counting %s: %v", permission, err)
+		}
+
+		if held != 0 {
+			t.Errorf("the built-in administrator still holds %q", permission)
+		}
+	}
+
+	// And it still administers, or the installation is left unadministrable.
+	for _, permission := range []string{"users:write", "roles:write"} {
+		var held int
+
+		err := db.QueryRow(`SELECT COUNT(*) FROM role_permissions
+			WHERE permission = ? AND role_id = (SELECT id FROM roles WHERE name = 'admin')`,
+			permission).Scan(&held)
+		if err != nil {
+			t.Fatalf("counting %s: %v", permission, err)
+		}
+
+		if held != 1 {
+			t.Errorf("the built-in administrator no longer holds %q, so nobody can "+
+				"administer this installation", permission)
+		}
+	}
+
+	// The role for both jobs exists, with both sets in it.
+	var spans int
+
+	err = db.QueryRow(`SELECT COUNT(*) FROM role_permissions
+		WHERE role_id = (SELECT id FROM roles WHERE name = 'employee-admin')
+		  AND permission IN ('timesheets:write:own', 'users:write')`).Scan(&spans)
+	if err != nil {
+		t.Fatalf("counting the combined role: %v", err)
+	}
+
+	if spans != 2 {
+		t.Errorf("the combined role holds %d of the two rights that define it, want 2", spans)
+	}
+}
+
+// A role an installation built for itself is left alone.
+//
+// The separation is about what arrives with the software. Somebody who deliberately
+// gave a role both jobs made a decision, and a migration that undid it would be
+// overruling them - quietly, at start-up.
+func TestARoleSomebodyBuiltThemselvesKeepsItsRights(t *testing.T) {
+	t.Parallel()
+
+	db := freshDB(t)
+	migrate(t, db, 0, theSeparation-1)
+
+	if _, err := db.Exec(`INSERT INTO roles (name, description, is_system)
+		VALUES ('our-own-admin', 'we decided this', 0)`); err != nil {
+		t.Fatalf("creating the role: %v", err)
+	}
+
+	for _, permission := range []string{"users:write", "timesheets:write:own"} {
+		if _, err := db.Exec(`INSERT INTO role_permissions (role_id, permission)
+			SELECT id, ? FROM roles WHERE name = 'our-own-admin'`, permission); err != nil {
+			t.Fatalf("granting %s: %v", permission, err)
+		}
+	}
+
+	migrate(t, db, theSeparation-1, latest(t))
+
+	var kept int
+
+	err := db.QueryRow(`SELECT COUNT(*) FROM role_permissions
+		WHERE role_id = (SELECT id FROM roles WHERE name = 'our-own-admin')
+		  AND permission IN ('users:write', 'timesheets:write:own')`).Scan(&kept)
+	if err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+
+	if kept != 2 {
+		t.Errorf("a role an installation built for itself lost %d of its rights", 2-kept)
+	}
+}

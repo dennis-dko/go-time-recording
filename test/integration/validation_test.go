@@ -111,10 +111,9 @@ func TestCreatingAnAccountRefusesWhatCannotBeStored(t *testing.T) {
 }
 
 func TestBookingTimeRefusesWhatCannotBeStored(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	checkRefusals(t, admin, []badRequest{
+	checkRefusals(t, worker, []badRequest{
 		{"no date at all", http.MethodPost, "/timesheets",
 			map[string]any{"durationHours": 2}},
 		{"a date the American way", http.MethodPost, "/timesheets",
@@ -135,10 +134,9 @@ func TestBookingTimeRefusesWhatCannotBeStored(t *testing.T) {
 }
 
 func TestCreatingAProjectRefusesWhatCannotBeStored(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	checkRefusals(t, admin, []badRequest{
+	checkRefusals(t, worker, []badRequest{
 		{"a project with no name", http.MethodPost, "/projects",
 			map[string]any{"name": "", "startDate": "2026-01-01"}},
 		{"a name longer than any column", http.MethodPost, "/projects",
@@ -151,10 +149,9 @@ func TestCreatingAProjectRefusesWhatCannotBeStored(t *testing.T) {
 }
 
 func TestChangingOwnSettingsRefusesWhatCannotBeStored(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	checkRefusals(t, admin, []badRequest{
+	checkRefusals(t, worker, []badRequest{
 		{"a new password too short to be one", http.MethodPut, "/me/password",
 			map[string]any{"currentPassword": "a-much-better-password", "newPassword": "x"}},
 		{"a language nobody speaks here", http.MethodPut, "/me/language",

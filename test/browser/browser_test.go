@@ -269,6 +269,47 @@ func (p *page) readyAdmin() {
 	p.settleWizard()
 }
 
+// workerEmail and workerPassword are the account readyWorker signs in as.
+const (
+	workerEmail    = "wera@example.com"
+	workerPassword = "wera-password-1"
+)
+
+// readyWorker signs in as somebody who works here.
+//
+// The built-in administrator records no time: it exists on every installation before
+// anybody has chosen anything, so it is how you get in rather than somebody's working
+// day. A case about booking, a calendar, a stopwatch, a chart or a project therefore
+// cannot be driven by it - every one of those screens is gated on a right it does not
+// hold, and the case would be testing an empty page.
+//
+// The administrator is still needed first: the initial password has to be replaced
+// before anything else answers, and only it can create an account.
+func (p *page) readyWorker() {
+	p.t.Helper()
+
+	p.readyAdmin()
+	p.becomeWorker()
+}
+
+// becomeWorker creates an ordinary account and signs in as it, from a page that is
+// already signed in as the administrator.
+//
+// Its own step, because a case sometimes needs both in order: something set on the
+// administration screen, and then the working day it applies to.
+func (p *page) becomeWorker() {
+	p.t.Helper()
+
+	p.createEmployee(p.t, workerEmail, workerPassword)
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn(workerEmail, workerPassword)
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+}
+
 // visible reports whether an element is on screen, as the browser sees it -
 // not whether it exists in the markup.
 func (p *page) visible(selector string) bool {
@@ -687,7 +728,7 @@ func TestBookingTimeThroughTheInterface(t *testing.T) {
 // instead of booking a second one.
 func TestACalendarEntryOpensForEditing(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
+	p.readyWorker()
 
 	// On today, so it lands in the month the calendar opens on - the date field
 	// already points there.

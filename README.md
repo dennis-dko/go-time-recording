@@ -159,8 +159,14 @@ interface: create them, set their permissions, delete them.
 
 | Role | Purpose |
 | --- | --- |
-| `admin` | The installation, its accounts and their roles. A system role: it cannot be deleted or stripped of permissions |
+| `admin` | The installation, its accounts and their roles — and nothing else. A system role: it cannot be deleted or stripped of permissions |
 | `employee` | Keeps their own time, projects and calendar |
+| `employee-admin` | Both: somebody who works here and also administers |
+
+The third one is the answer to "somebody here needs to administer as well". It is
+handed out by the built-in administrator, so holding both jobs is a decision somebody
+made rather than something an account arrived with — and it is an ordinary account
+gaining administration, never the built-in account gaining a working day.
 
 Permissions are fine grained, for example `timesheets:read:own` against
 `timesheets:read:all`, and reading separately from writing.
@@ -172,33 +178,38 @@ specific line of code, and a permission that existed only in the database would
 grant nothing. The role editor therefore offers exactly the permissions that
 are actually enforced.
 
-### The administrator is not a superuser
+### The administrator does not work here
 
-Running an installation and reading what people recorded in it are two different
-jobs, and the `admin` role does only the first: accounts, roles, the database, the
-directory, the backups, the log. It cannot read, edit or transfer somebody
-else's entries, and cannot open a report over them.
+Running an installation and recording time in it are two different jobs, and the
+`admin` role does only the first: accounts, roles, the database, the directory, the
+backups, the log. It has **no** working day at all — it cannot book an hour, keep a
+project, read a figure or set a daily target, its own included.
 
-That is deliberate. Every installation has the built-in administrator, and nobody
-chose to give it anything — it arrived with the software. An administrator
-restoring a backup has no business in a colleague's week. Running the work is the
-everybody's own job: each account keeps its own time, its own projects and its
-own calendar.
+That is deliberate, and the reason is the account itself. Every installation has the
+built-in administrator before anybody has chosen anything: it is how you get in, not
+somebody's working day. Whoever does work here has an account of their own, and if
+that person also administers, they are given the `employee-admin` role rather than
+made to sign in twice.
 
-The administrator still books and reads **their own** time like anybody who works
-here — and nobody else's daily target or ceiling either. Those are time figures, the
-only thing that reads them is an overtime balance nobody but its owner may see, and an
-account that cannot look at the effect has no business setting the cause. What it does
-own is the instance-wide default under *Settings*, which is what a new account starts
-on.
+It used to book and read its own hours "like anybody who works here", and that was
+the wrong shape — an account nobody chose, quietly holding a working day nobody asked
+it to have.
+
+What it does own is the instance-wide default under *Settings*, which is what a new
+account starts on. Each person changes their own from there, and nobody changes
+anybody else's.
+
+On upgrade, the working day is taken off the `admin` role and the `employee-admin`
+role is created first, so an installation that had been using the built-in account for
+both jobs has somewhere to move that person. Nobody is moved automatically: who works
+here is not something a database can work out, and guessing would either invent a
+colleague or take an administrator's hours away. The entries stay in the tables and
+become reachable again the moment the combined role is assigned.
 
 It is the seeded default rather than a wall: whoever may manage roles may widen
 the role they hold, and taking that away would take role administration with it.
 What it buys you is that the reach is never there by accident, and that granting
 it is a visible act — the role screen shows the permission.
-
-Existing installations are migrated: the rights are revoked from the `admin` role
-on upgrade.
 
 ### Reports
 

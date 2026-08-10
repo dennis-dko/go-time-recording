@@ -231,12 +231,13 @@ func TestSetupWizardIsAdministratorOnly(t *testing.T) {
 
 // --------------------------------------------------------------- timesheets
 
-// Through a manager rather than the administrator: approving is a right over
-// somebody's work, and the built-in administrator deliberately holds none of
-// those.
-func TestBookingSubmittingAndApproving(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+// Through somebody who works here, because the built-in administrator does not.
+//
+// The name said "submitting and approving", from when an entry travelled through a
+// review that no longer exists - and it never did either of those things, even then.
+// What it checks is that a booking is recorded, read back, corrected and removed.
+func TestBookingCorrectingAndRemovingAnEntry(t *testing.T) {
+	a, admin, _ := startWithWorker(t)
 	other := a.signInAsUser(admin, "Meike", "meike@example.com")
 
 	today := time.Now().Format("2006-01-02")
@@ -258,9 +259,13 @@ func TestBookingSubmittingAndApproving(t *testing.T) {
 	}
 }
 
+// The cap takes two accounts, because it is two different jobs meeting.
+//
+// The ceiling is the installation's, so the administrator sets it from Settings. The
+// day it stops belongs to somebody who works here, and the administrator no longer
+// has one - so the bookings go through Wera.
 func TestBookingIsRefusedOverTheDailyCap(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, admin, worker := startWithWorker(t)
 
 	// Administered from the Settings screen, and in force immediately.
 	admin.must(admin.api(http.MethodPut, "/settings/operational",
@@ -268,12 +273,12 @@ func TestBookingIsRefusedOverTheDailyCap(t *testing.T) {
 
 	today := time.Now().Format("2006-01-02")
 
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": today, "durationHours": 6,
 	}), http.StatusCreated, http.StatusOK)
 
 	// 6 + 4 is over 8: the cap counts the day, not the single booking.
-	over := admin.api(http.MethodPost, "/timesheets", map[string]any{
+	over := worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": today, "durationHours": 4,
 	})
 
@@ -286,16 +291,18 @@ func TestBookingIsRefusedOverTheDailyCap(t *testing.T) {
 	}
 
 	// And the limit is a limit, not a wall: 2 more hours still fit.
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": today, "durationHours": 2,
 	}), http.StatusCreated, http.StatusOK)
 }
 
+// Entirely one person's own time: the target, the booking and the balance it produces
+// are all Wera's, and the administrator appears only to open the account. It has no
+// daily target of its own to compare against and no entries to total.
 func TestOvertimeCountsOnlyDaysWithBookings(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	me := admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK)
+	me := worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK)
 
 	var meResult struct {
 		User userResponse `json:"user"`
@@ -305,11 +312,11 @@ func TestOvertimeCountsOnlyDaysWithBookings(t *testing.T) {
 
 	// An 8 hour target, one day of 10: two hours over, and the untouched days
 	// in between must not accumulate as a deficit.
-	admin.must(admin.api(http.MethodPut, path("/users/", meResult.User.ID, "/working-times"),
+	worker.must(worker.api(http.MethodPut, path("/users/", meResult.User.ID, "/working-times"),
 		map[string]any{"dailyTargetHours": 8}), http.StatusOK)
 
 	day := time.Now().Format("2006-01-02")
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": day, "durationHours": 10,
 	}), http.StatusCreated, http.StatusOK)
 
@@ -330,7 +337,7 @@ func TestOvertimeCountsOnlyDaysWithBookings(t *testing.T) {
 	// Which zone applies is covered by its own tests.
 	window := path("?from=", day, "&to=", day)
 
-	admin.must(admin.api(http.MethodGet, path("/users/", meResult.User.ID, "/overtime", window), nil),
+	worker.must(worker.api(http.MethodGet, path("/users/", meResult.User.ID, "/overtime", window), nil),
 		http.StatusOK).Data(t, &balance)
 
 	if balance.TotalBooked != 10 {

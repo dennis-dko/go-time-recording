@@ -26,8 +26,7 @@ import (
 // like. What is checked now is both halves of that - each total holds its owner's hours
 // and the other project is not reachable at all.
 func TestAProjectTotalCoversOnlyYourOwnHours(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, _ := startWithWorker(t)
 	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
 	bert := a.signInAsUser(admin, "Bert", "bert@example.com")
 
@@ -96,8 +95,7 @@ func TestAProjectTotalCoversOnlyYourOwnHours(t *testing.T) {
 // It was gated on a right no seeded role held, so the screen was hidden and the
 // endpoint refused everybody - on every installation there is.
 func TestTheProjectReportIsReachableByAnOrdinaryAccount(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, worker := startWithWorker(t)
 	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
 
 	var project projectResponse
@@ -112,11 +110,11 @@ func TestTheProjectReportIsReachableByAnOrdinaryAccount(t *testing.T) {
 	// installation and records its own time like anybody else. Anna's is not its
 	// business, which the case above covers.
 	var mine projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Administration", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &mine)
 
-	admin.must(admin.api(http.MethodGet, path("/projects/", mine.ID)+"/report", nil),
+	worker.must(worker.api(http.MethodGet, path("/projects/", mine.ID)+"/report", nil),
 		http.StatusOK)
 }
 
@@ -169,10 +167,9 @@ func TestSomebodyElsesOvertimeIsRefused(t *testing.T) {
 // nobody does. A route left in place for a screen nobody may open is a route
 // somebody finds later.
 func TestThereIsNoTeamWideOvertimeEndpoint(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	if got := admin.api(http.MethodGet, "/overtime", nil).Status; got != http.StatusNotFound {
+	if got := worker.api(http.MethodGet, "/overtime", nil).Status; got != http.StatusNotFound {
 		t.Errorf("GET /overtime answered %d, want 404 - the team-wide balance was removed", got)
 	}
 }

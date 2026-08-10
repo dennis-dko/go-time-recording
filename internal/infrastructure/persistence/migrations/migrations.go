@@ -5,6 +5,7 @@ package migrations
 
 import (
 	"fmt"
+	"strings"
 
 	"gofr.dev/pkg/gofr/migration"
 
@@ -79,6 +80,88 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260810050000: {UP: func(d migration.Datasource) error {
 			return giveEveryProjectAnOwner(d, dialect)
 		}},
+		20260810060000: {UP: func(d migration.Datasource) error {
+			return separateAdministeringFromWorking(d, dialect)
+		}},
+	}
+}
+
+// separateAdministeringFromWorking takes the working day off the built-in account and
+// offers it as a role instead.
+//
+// The account that exists on every installation before anybody has chosen anything is
+// how you get in, not somebody's working day. It used to book and read its own hours
+// "like anybody else who works here"; whoever does work here has an account of their
+// own, and if that person also administers, they get a role that says so rather than a
+// second sign-in.
+//
+// Two halves, in this order. The role is seeded first, so an installation that had
+// somebody using the built-in account for both jobs has somewhere to move them before
+// the rights come off it - and this migration deliberately does not move anybody. Who
+// works here is not something a database can work out, and guessing would either
+// invent a colleague or take an administrator's hours away.
+//
+// What it does instead: the built-in administrator keeps its recorded entries, its
+// projects and its figures in the tables. They stop being reachable through the
+// interface, because the rights that reach them are gone - and they come back the
+// moment somebody assigns it the combined role, which is the honest way to undo this
+// if an installation wants the old arrangement.
+func separateAdministeringFromWorking(d migration.Datasource, dialect string) error {
+	// The role that spans both jobs, so there is somewhere to put whoever needs it.
+	var existing int
+
+	if err := d.SQL.QueryRow(
+		sqldb.Rebind(dialect, "SELECT COUNT(*) FROM roles WHERE name = ?"),
+		model.RoleEmployeeAdmin).Scan(&existing); err != nil {
+		return fmt.Errorf("looking for the %q role: %w", model.RoleEmployeeAdmin, err)
+	}
+
+	if existing == 0 {
+		if err := seedRole(d, dialect, employeeAdminRole()); err != nil {
+			return err
+		}
+	}
+
+	// And the working day comes off the built-in administrator's own role. Only that
+	// one: a role somebody built for themselves is their business, and this is about
+	// what arrives with the software.
+	revoke := sqldb.Rebind(dialect,
+		`DELETE FROM role_permissions
+		  WHERE permission = ?
+		    AND role_id = (SELECT id FROM roles WHERE name = ? AND is_system = TRUE)`)
+
+	// TRUE is spelled differently on SQLite, which stores it as 1.
+	if dialect == sqldb.DialectSQLite {
+		revoke = strings.Replace(revoke, "is_system = TRUE", "is_system = 1", 1)
+	}
+
+	for _, permission := range []string{
+		"projects:read", "projects:write", "projects:archive", "projects:delete",
+		"timesheets:read:own", "timesheets:write:own",
+		"reports:read:own", "settings:write:own",
+	} {
+		if _, err := d.SQL.Exec(revoke, permission, model.RoleAdmin); err != nil {
+			return fmt.Errorf("taking %q off the built-in administrator: %w", permission, err)
+		}
+	}
+
+	return nil
+}
+
+// employeeAdminRole is the seeded role for somebody who works here and administers.
+func employeeAdminRole() model.Role {
+	for _, role := range model.DefaultRoles() {
+		if role.Name == model.RoleEmployeeAdmin {
+			return role
+		}
+	}
+
+	// Unreachable while RoleEmployeeAdmin is one of the defaults, and a compile-time
+	// constant is not enough to promise that at run time.
+	return model.Role{
+		Name:        model.RoleEmployeeAdmin,
+		Description: "Keeps their own time and administers the installation",
+		Permissions: model.EmployeeAdminPermissions(),
 	}
 }
 

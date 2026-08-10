@@ -153,17 +153,17 @@ func TestTheNoticeIsReadableWithoutSigningIn(t *testing.T) {
 // An ordinary administrator is turned away like everyone else. Not because they
 // are less trusted, but because "nothing is writing to this database" is the
 // point, and every exception is a way for that to be untrue.
+//
+// The exemption is the built-in administrator account itself, not the rights it
+// holds, so the account that proves the rule has to be somebody who could do the
+// work if maintenance mode let them. That is exactly the person who works here and
+// administers as well: without their own time rights the refusal would be a 403
+// about permissions and would say nothing about maintenance mode.
 func TestAnOrdinaryAdministratorIsAlsoTurnedAway(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": "Second admin", "email": "admin2@example.com",
-		"role": "admin", "password": "admin2-password-1",
-	}), http.StatusCreated, http.StatusOK)
-
-	other := a.newClient()
-	other.signIn("admin2@example.com", "admin2-password-1")
+	other := a.signInAsWorkingAdmin(admin, "Second admin", "admin2@example.com")
 	other.must(other.api(http.MethodGet, "/timesheets", nil), http.StatusOK)
 
 	setMaintenance(t, admin, true, "maintenance")

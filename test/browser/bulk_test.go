@@ -28,7 +28,7 @@ import (
 // is nothing in it to delete.
 func TestSeveralRowsAreDeletedAtOnce(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
+	p.readyWorker()
 
 	// Three entries of the administrator's own, so nothing else has to exist.
 	hours := []string{"1.11", "2.22", "3.33"}
@@ -118,7 +118,7 @@ func TestSeveralRowsAreDeletedAtOnce(t *testing.T) {
 // so the whole column goes and the bar with it.
 func TestTheBarStandsDownWhenOnlySomeRowsWereDeleted(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
+	p.readyWorker()
 
 	hours := []string{"4.11", "5.22", "6.33"}
 

@@ -185,17 +185,36 @@ func TestCannotEditOrDeleteAnotherUsersPrivateProject(t *testing.T) {
 	}
 }
 
-// Every default role must be able to keep projects of its own.
+// Whoever works here can keep projects of their own, and the account that only
+// administers cannot.
 //
-// The right used to be projects:write:own, beside projects:write for the shared kind.
-// One kind of project takes one right, and this is the one it takes.
-func TestAllDefaultRolesMayKeepTheirOwnProjects(t *testing.T) {
+// The right used to be projects:write:own, beside projects:write for the shared kind;
+// one kind of project takes one right. And the built-in administrator used to be on
+// this list: it does not record time, so it has no projects either - it sets the
+// installation up and keeps the accounts, and that is the whole job.
+func TestWhoeverWorksHereMayKeepTheirOwnProjects(t *testing.T) {
 	f := newFixture(t)
 
-	for _, roleName := range []string{model.RoleAdmin, model.RoleEmployee} {
+	for _, roleName := range []string{model.RoleEmployee, model.RoleEmployeeAdmin} {
 		role := roleNamed(t, f, roleName)
 		if !role.Has(model.PermProjectWrite) {
 			t.Errorf("role %q must hold %q", roleName, model.PermProjectWrite)
+		}
+	}
+
+	// And the other half, which is the point of the separation: administering is not
+	// working here.
+	admin := roleNamed(t, f, model.RoleAdmin)
+
+	for _, permission := range []string{
+		model.PermProjectRead, model.PermProjectWrite,
+		model.PermProjectArchive, model.PermProjectDelete,
+		model.PermTimesheetReadOwn, model.PermTimesheetWriteOwn,
+		model.PermReportReadOwn, model.PermSettingsWriteOwn,
+	} {
+		if admin.Has(permission) {
+			t.Errorf("the built-in administrator holds %q, which is somebody's working "+
+				"day rather than the administration of this installation", permission)
 		}
 	}
 }

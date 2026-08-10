@@ -191,3 +191,63 @@ func goSourceOutside(t *testing.T, except string) string {
 
 	return all.String()
 }
+
+// Every permission the interface names is one the application enforces.
+//
+// The other direction from TestEveryPermissionIsCheckedSomewhere, and it catches the
+// opposite mistake: a right that was removed from the application but left behind in a
+// can() call or a data-perm. That reads as "nobody may do this" for ever, silently -
+// which is what happened to a step of the guided tour. It asked for reports:read after
+// that right was withdrawn, so the step was dropped for everybody and the walk simply
+// got shorter, with nothing to say it had.
+func TestEveryPermissionTheInterfaceNamesExists(t *testing.T) {
+	js := asset(t, "/app.js")
+	html := asset(t, "/")
+
+	enforced := map[string]bool{}
+	for _, permission := range model.AllPermissions() {
+		enforced[permission] = true
+	}
+
+	// Only live references: what can() is asked, what a tour step or a spreadsheet card
+	// declares, and what data-perm gates on. Prose is left alone deliberately - a
+	// comment explaining why a right was removed has to be able to name it, and a guard
+	// that forbade that would fight the way this codebase explains itself.
+	live := []*regexp.Regexp{
+		regexp.MustCompile(`can\(\s*'([a-z:,' ]+)'`),
+		regexp.MustCompile(`(?:permission|read|write):\s*'([a-z:,]+)'`),
+		regexp.MustCompile(`data-perm="([a-z:,]+)"`),
+	}
+
+	var unknown []string
+	seen := map[string]bool{}
+
+	for _, source := range []string{js, html} {
+		for _, pattern := range live {
+			for _, match := range pattern.FindAllStringSubmatch(source, -1) {
+				// A comma-separated list is "any of these", so every name in it counts.
+				// can() also takes them as separate arguments, which the pattern above
+				// catches together - hence the quotes and spaces in the split set.
+				for _, name := range strings.FieldsFunc(match[1], func(r rune) bool {
+					return r == ',' || r == '\'' || r == ' '
+				}) {
+					if enforced[name] || seen[name] {
+						continue
+					}
+
+					seen[name] = true
+					unknown = append(unknown, name)
+				}
+			}
+		}
+	}
+
+	sort.Strings(unknown)
+
+	if len(unknown) > 0 {
+		t.Errorf("%d name(s) in the interface look like permissions the application does "+
+			"not enforce, so whatever depends on them is off for everybody: %v\n\n"+
+			"Either the name is stale and should go with what it gated, or it is a typo",
+			len(unknown), unknown)
+	}
+}
