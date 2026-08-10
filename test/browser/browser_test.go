@@ -577,6 +577,12 @@ func TestTheSetupWizardAppearsAndAdvances(t *testing.T) {
 
 // Switching tabs has to switch what is on screen. A tab that highlights but
 // changes nothing is a broken application with a healthy API.
+//
+// The built-in administrator's own tabs, which are the four it has: it does not record
+// time, so the calendar, the entries and the projects are not on its screen at all.
+// Deliberately still the plain sign-in rather than readyWorker - what this checks is
+// that clicking a tab shows its panel, and it should stay the cheapest case in the
+// suite rather than growing a password change and a second account.
 func TestTabsSwitchTheVisiblePanel(t *testing.T) {
 	p := open(t)
 
@@ -587,10 +593,10 @@ func TestTabsSwitchTheVisiblePanel(t *testing.T) {
 	p.settleWizard()
 
 	for _, view := range []struct{ tab, panel string }{
-		{`.tab[data-view="calendar"]`, "#view-calendar"},
-		{`.tab[data-view="projects"]`, "#view-projects"},
+		{`.tab[data-view="roles"]`, "#view-roles"},
+		{`.tab[data-view="admin"]`, "#view-admin"},
 		{`.tab[data-view="settings"]`, "#view-settings"},
-		{`.tab[data-view="timesheets"]`, "#view-timesheets"},
+		{`.tab[data-view="users"]`, "#view-users"},
 	} {
 		p.run("switch to "+view.panel, chromedp.Click(view.tab, chromedp.ByQuery))
 
@@ -692,6 +698,11 @@ func TestBookingTimeThroughTheInterface(t *testing.T) {
 	}
 
 	p.settleWizard()
+
+	// And now as somebody who works here. The administrator got this far because the
+	// initial password has to be replaced before anything answers and only it can open
+	// an account - but it records no time, so the booking below is not its to make.
+	p.becomeWorker()
 
 	p.run("book time",
 		chromedp.Click(`.tab[data-view="timesheets"]`, chromedp.ByQuery),

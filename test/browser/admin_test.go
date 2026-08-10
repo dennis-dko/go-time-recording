@@ -1064,8 +1064,11 @@ func TestTheTwoFactorQRCodeIsShown(t *testing.T) {
 
 	// Leaving the screen and coming back must not leave the secret on it: the code
 	// encodes it, and the enrolment it belonged to is over.
+	//
+	// Away via Users, because this is the built-in administrator and the time screens
+	// are not its. Any other screen would do; the point is only to leave this one.
 	p.run("leave and come back",
-		chromedp.Click(`.tab[data-view="timesheets"]`, chromedp.ByQuery),
+		chromedp.Click(`.tab[data-view="users"]`, chromedp.ByQuery),
 		chromedp.Sleep(200*time.Millisecond),
 		chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
 		chromedp.Sleep(400*time.Millisecond),
