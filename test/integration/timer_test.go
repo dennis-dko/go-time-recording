@@ -52,7 +52,7 @@ func TestStartingAndReadingBackTheClock(t *testing.T) {
 	// administrator may create - the shared ones belong to whoever runs the work.
 	var project projectResponse
 	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Timed work", "startDate": "2026-08-01", "private": true,
+		"name": "Timed work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	description := "Writing the timer"
@@ -278,7 +278,7 @@ func TestStartingTheClockOnSomebodyElsesPrivateProjectIsRefused(t *testing.T) {
 
 	var hers projectResponse
 	ove.must(ove.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Ove's own", "startDate": "2026-08-01", "private": true,
+		"name": "Ove's own", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &hers)
 
 	if got := admin.api(http.MethodPost, "/me/timer",

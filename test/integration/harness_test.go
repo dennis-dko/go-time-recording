@@ -403,7 +403,6 @@ type projectResponse struct {
 	ID      uint   `json:"id"`
 	Name    string `json:"name"`
 	Status  string `json:"status"`
-	Private bool   `json:"private"`
 	OwnerID *uint  `json:"ownerId"`
 }
 

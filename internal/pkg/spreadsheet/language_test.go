@@ -128,7 +128,7 @@ func TestProjectsSurviveTranslationOfTheirValues(t *testing.T) {
 			written, err := spreadsheet.WriteProjects(language, []spreadsheet.ProjectRow{
 				{Name: "Roof", Description: "tiles", StartDate: start, EndDate: end,
 					Status: "archived"},
-				{Name: "Admin", StartDate: start, Status: "active", Category: true},
+				{Name: "Admin", StartDate: start, Status: "active"},
 			})
 			if err != nil {
 				t.Fatalf("writing projects in %q: %v", language, err)
@@ -156,14 +156,10 @@ func TestProjectsSurviveTranslationOfTheirValues(t *testing.T) {
 				t.Errorf("end date came back as %v, want %v", rows[0].EndDate, end)
 			}
 
-			if rows[0].Category {
-				t.Error("a shared project came back marked as a private category")
-			}
-
-			if !rows[1].Category {
-				t.Error("a private category came back as a shared project")
-			}
-
+			// There were two assertions here about a Category column, telling a shared
+			// project from a private one. Every project belongs to one person now, so
+			// the column would have said the same thing on every row and the import
+			// would have had to ignore it.
 			// The one with no end date has an empty cell, not the first of January
 			// in year one.
 			if !rows[1].EndDate.IsZero() {

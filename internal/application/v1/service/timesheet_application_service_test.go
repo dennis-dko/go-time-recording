@@ -100,8 +100,11 @@ func newFixture(t *testing.T) *fixture {
 
 	f.userID = user.Result.ID
 
+	// Owned, because every project is: one without an owner is a row nobody can see,
+	// which is what the fixture's project used to be when there were shared ones.
 	project, err := f.projects.CreateProject(context.Background(), command.CreateProjectCommand{
 		Name: "Website", StartDate: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		OwnerID: &f.userID,
 	})
 	if err != nil {
 		t.Fatalf("seed project: %v", err)

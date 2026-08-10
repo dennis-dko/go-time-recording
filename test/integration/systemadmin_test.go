@@ -108,14 +108,15 @@ func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 
 	var shared projectResponse
 	other.must(other.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Everyone's work", "startDate": "2026-08-01",
+		"name": "Momo's work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
 
-	if got := admin.api(http.MethodPost, "/projects", map[string]any{
+	// It may make one of its own - there is no other kind, and this used to check
+	// that it could not make the shared sort. What it may not do is touch somebody
+	// else's, which is the list below.
+	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Mine to make", "startDate": "2026-08-01",
-	}).Status; got == http.StatusCreated || got == http.StatusOK {
-		t.Error("the administrator created a shared project")
-	}
+	}), http.StatusCreated, http.StatusOK)
 
 	for _, attempt := range []struct {
 		what   string
@@ -134,13 +135,22 @@ func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 		}
 	}
 
-	// The report is a different matter now, and worth stating rather than leaving
-	// out: the administrator may open it, and what it shows is its own hours. It used
-	// to break down what every colleague had booked, gated on a right no role held -
-	// so this list refused it for the right reason by accident. Opening a report that
-	// is empty because you booked nothing reveals nothing about anybody.
+	// Its report is not its business either, and answers as though it were not there:
+	// confirming the id exists would be a way to find out what colleagues have.
+	if got := admin.api(http.MethodGet,
+		path("/projects/", shared.ID)+"/report", nil).Status; got != http.StatusNotFound {
+		t.Errorf("the administrator read a colleague's project report: %d, want 404", got)
+	}
+
+	// Its own report, which is empty because it booked nothing - worth stating, so
+	// this cannot pass by reports being broken for everybody.
+	var mine projectResponse
+	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Administration", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &mine)
+
 	report := admin.must(admin.api(http.MethodGet,
-		path("/projects/", shared.ID)+"/report", nil), http.StatusOK)
+		path("/projects/", mine.ID)+"/report", nil), http.StatusOK)
 
 	var totals struct {
 		Entries []struct {
@@ -159,19 +169,22 @@ func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 
 	// Reading the list is still allowed: time has to be bookable against
 	// something, and that list is what every employee sees anyway.
+	// And the list holds its own and nothing else. This used to check the opposite -
+	// that it could see the shared project to book against - because time had to be
+	// bookable against something everybody could reach. A project belongs to one
+	// person now, so what it books against is its own.
 	var visible listOf[projectResponse]
 	admin.must(admin.api(http.MethodGet, "/projects", nil), http.StatusOK).Data(t, &visible)
 
-	found := false
-
 	for _, project := range visible.Items {
 		if project.ID == shared.ID {
-			found = true
+			t.Error("a colleague's project is in the administrator's list")
 		}
 	}
 
-	if !found {
-		t.Error("the administrator cannot see the shared project to book against")
+	if len(visible.Items) == 0 {
+		t.Error("the administrator sees none of its own projects, so it has nothing to " +
+			"book against")
 	}
 }
 
@@ -226,7 +239,7 @@ func TestTheAdministratorStillAdministersAndStillWorks(t *testing.T) {
 	// And their own time, like anybody who works here.
 	var mine projectResponse
 	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Administration", "startDate": "2026-08-01", "private": true,
+		"name": "Administration", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &mine)
 
 	var entry timesheetResponse
@@ -303,7 +316,6 @@ func TestTheSeparationIsTheDefaultRatherThanAWall(t *testing.T) {
 		// Gone from the application entirely; listed so a reintroduction is noticed.
 		"timesheets:approve",
 		"timesheets:transfer",
-		"projects:write", "projects:archive", "projects:delete",
 	} {
 		for _, has := range held {
 			if has == permission {

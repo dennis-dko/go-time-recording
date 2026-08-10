@@ -190,7 +190,7 @@ func TestEditingCannotMoveAnEntryWhereBookingCouldNot(t *testing.T) {
 	// Bert's own category, which Anna may not even know about.
 	var bertsCategory projectResponse
 	bert.must(bert.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Bert's own", "startDate": "2026-08-01", "private": true,
+		"name": "Bert's own", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &bertsCategory)
 
 	// And a shared project that has been finished.

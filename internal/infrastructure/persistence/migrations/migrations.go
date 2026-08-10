@@ -76,7 +76,213 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260810040000: {UP: func(d migration.Datasource) error {
 			return handWorkingTimesToTheirOwners(d, dialect)
 		}},
+		20260810050000: {UP: func(d migration.Datasource) error {
+			return giveEveryProjectAnOwner(d, dialect)
+		}},
 	}
+}
+
+// giveEveryProjectAnOwner turns the shared projects into personal ones.
+//
+// There were two kinds: a shared project everybody could see and book on, and a
+// private category for organising your own day. Each account is its own world now, so
+// the second is the only kind - which leaves the question of who owns the first.
+//
+// Copied rather than handed to one person. A shared project two colleagues booked on
+// becomes a project each, keeping the name, and each person's entries move to their
+// own copy. Nobody loses an hour and nobody loses sight of one, which handing the
+// project to the largest booker would have done to everybody else: their entries would
+// have stayed attached to a project they could no longer see.
+//
+// The cost is duplicate names, and it is the honest one: two people who worked on the
+// same thing now each have their own record of it, which is exactly what "no view
+// across accounts" means.
+//
+// A shared project with no bookings at all is deleted. Nobody has a claim on it, and
+// leaving it without an owner would leave a row no reader can reach - which is worse
+// than removing it, because it would sit in the table failing the promise that every
+// project belongs to somebody. What is lost is a name and a date range that nothing
+// was ever recorded against.
+//
+// projects:write:own goes at the same time, into projects:write. Two rights told the
+// two kinds apart; with one kind, one of them would grant nothing.
+func giveEveryProjectAnOwner(d migration.Datasource, dialect string) error {
+	shared, err := sharedProjectIDs(d)
+	if err != nil {
+		return err
+	}
+
+	for _, projectID := range shared {
+		if err := splitProjectPerBooker(d, dialect, projectID); err != nil {
+			return err
+		}
+	}
+
+	// Whoever could keep a private category may now keep a project, because that is
+	// the same thing - and keeping one means finishing it and removing it as well,
+	// which the own-project right already allowed for your own. Granted before the old
+	// right is withdrawn, so nobody is left holding neither.
+	for _, permission := range []string{
+		model.PermProjectWrite, model.PermProjectArchive, model.PermProjectDelete,
+	} {
+		if err := grantToAllRolesHolding(d, dialect, "projects:write:own", permission); err != nil {
+			return err
+		}
+	}
+
+	if _, err := d.SQL.Exec(
+		sqldb.Rebind(dialect, "DELETE FROM role_permissions WHERE permission = ?"),
+		"projects:write:own"); err != nil {
+		return fmt.Errorf("withdrawing the own-project right: %w", err)
+	}
+
+	return nil
+}
+
+// sharedProjectIDs lists the projects that belong to nobody.
+func sharedProjectIDs(d migration.Datasource) ([]uint, error) {
+	rows, err := d.SQL.Query("SELECT id FROM projects WHERE owner_id IS NULL ORDER BY id")
+	if err != nil {
+		return nil, fmt.Errorf("looking for projects without an owner: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var ids []uint
+
+	for rows.Next() {
+		var id uint
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("reading a project id: %w", err)
+		}
+
+		ids = append(ids, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading the projects without an owner: %w", err)
+	}
+
+	return ids, nil
+}
+
+// splitProjectPerBooker gives one shared project to each person who booked on it.
+func splitProjectPerBooker(d migration.Datasource, dialect string, projectID uint) error {
+	bookers, err := bookersOf(d, dialect, projectID)
+	if err != nil {
+		return err
+	}
+
+	if len(bookers) == 0 {
+		// Nobody's, and nothing recorded against it.
+		if _, err := d.SQL.Exec(
+			sqldb.Rebind(dialect, "DELETE FROM projects WHERE id = ?"), projectID); err != nil {
+			return fmt.Errorf("removing an unclaimed project: %w", err)
+		}
+
+		return nil
+	}
+
+	// The first becomes the owner of the original, so one person's entries need not
+	// move at all and the id they already point at stays valid.
+	if _, err := d.SQL.Exec(
+		sqldb.Rebind(dialect, "UPDATE projects SET owner_id = ? WHERE id = ?"),
+		bookers[0], projectID); err != nil {
+		return fmt.Errorf("giving project %d an owner: %w", projectID, err)
+	}
+
+	for _, booker := range bookers[1:] {
+		copyID, err := copyProjectTo(d, dialect, projectID, booker)
+		if err != nil {
+			return err
+		}
+
+		if _, err := d.SQL.Exec(sqldb.Rebind(dialect,
+			"UPDATE timesheets SET project_id = ? WHERE project_id = ? AND user_id = ?"),
+			copyID, projectID, booker); err != nil {
+			return fmt.Errorf("moving the entries of user %d: %w", booker, err)
+		}
+	}
+
+	return nil
+}
+
+// bookersOf lists everybody who recorded time against a project, oldest account
+// first so the choice of who keeps the original is not left to the engine.
+func bookersOf(d migration.Datasource, dialect string, projectID uint) ([]uint, error) {
+	rows, err := d.SQL.Query(sqldb.Rebind(dialect,
+		"SELECT DISTINCT user_id FROM timesheets WHERE project_id = ? ORDER BY user_id"),
+		projectID)
+	if err != nil {
+		return nil, fmt.Errorf("looking for who booked on project %d: %w", projectID, err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var ids []uint
+
+	for rows.Next() {
+		var id uint
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("reading a user id: %w", err)
+		}
+
+		ids = append(ids, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading who booked on project %d: %w", projectID, err)
+	}
+
+	return ids, nil
+}
+
+// copyProjectTo duplicates a project for one person and returns the copy's id.
+//
+// Inserted from a select so every column comes along without this having to name them
+// twice, then read back by owner and name rather than by a last-inserted id: that is
+// available on two of the three engines this runs on and not on the third.
+func copyProjectTo(
+	d migration.Datasource,
+	dialect string,
+	projectID uint,
+	owner uint,
+) (uint, error) {
+	if _, err := d.SQL.Exec(sqldb.Rebind(dialect,
+		`INSERT INTO projects (name, description, start_date, end_date, status, owner_id)
+		 SELECT name, description, start_date, end_date, status, ? FROM projects WHERE id = ?`),
+		owner, projectID); err != nil {
+		return 0, fmt.Errorf("copying project %d for user %d: %w", projectID, owner, err)
+	}
+
+	var copyID uint
+
+	err := d.SQL.QueryRow(sqldb.Rebind(dialect,
+		`SELECT id FROM projects WHERE owner_id = ?
+		   AND name = (SELECT name FROM projects WHERE id = ?)
+		 ORDER BY id DESC`), owner, projectID).Scan(&copyID)
+	if err != nil {
+		return 0, fmt.Errorf("finding the copy of project %d for user %d: %w",
+			projectID, owner, err)
+	}
+
+	return copyID, nil
+}
+
+// grantToAllRolesHolding gives a permission to every role that holds another one.
+func grantToAllRolesHolding(d migration.Datasource, dialect, holds, grant string) error {
+	if _, err := d.SQL.Exec(sqldb.Rebind(dialect,
+		`INSERT INTO role_permissions (role_id, permission)
+		 SELECT DISTINCT rp.role_id, ? FROM role_permissions rp
+		  WHERE rp.permission = ?
+		    AND NOT EXISTS (
+			  SELECT 1 FROM role_permissions other
+			   WHERE other.role_id = rp.role_id AND other.permission = ?)`),
+		grant, holds, grant); err != nil {
+		return fmt.Errorf("granting %q to every role holding %q: %w", grant, holds, err)
+	}
+
+	return nil
 }
 
 // handWorkingTimesToTheirOwners withdraws settings:write:other from every role.
@@ -499,7 +705,12 @@ func addPrivateProjects(d migration.Datasource, dialect string) error {
 
 	// Grant the new permission to every existing role, so upgrading an
 	// installation does not silently take the feature away from its users.
-	return grantToAllRoles(d, dialect, model.PermProjectWriteOwn)
+	//
+	// A literal, because the constant is gone: projects:write:own and projects:write
+	// collapsed into one when every project became somebody's own. A finished
+	// migration says what it did at the time, and must not be tied to a definition
+	// that is allowed to change under it.
+	return grantToAllRoles(d, dialect, "projects:write:own")
 }
 
 // grantToAllRoles adds a permission to every role that does not have it yet.

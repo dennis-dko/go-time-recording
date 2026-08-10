@@ -59,9 +59,11 @@ func (s *ProjectApplicationService) CreateProject(
 
 	startDate := cmd.StartDate
 
-	// A personal category is not a project plan, so it does not need a start
-	// date; defaulting it keeps the form down to just a name.
-	if startDate.IsZero() && cmd.OwnerID != nil {
+	// A project is one person's way of organising their own hours, not a plan
+	// somebody signed off, so it does not need a start date: defaulting it keeps the
+	// form down to just a name. This used to apply only to a private category, which
+	// is what every project is now.
+	if startDate.IsZero() {
 		startDate = startOfDay(time.Now())
 	}
 
@@ -133,13 +135,10 @@ func (s *ProjectApplicationService) ListProjects(
 	matching := make([]*model.Project, 0, len(allProjects))
 
 	for _, project := range allProjects {
-		// Private projects belong to one person; nobody else gets to see that
-		// they exist, let alone what they are called.
+		// A project belongs to one person; nobody else gets to see that it exists,
+		// let alone what it is called. A viewer of zero is enforcement switched off,
+		// which every other read takes the same way.
 		if q.ViewerID != 0 && !project.VisibleTo(q.ViewerID) {
-			continue
-		}
-
-		if q.OnlyOwn && (!project.IsPrivate() || *project.OwnerID != q.ViewerID) {
 			continue
 		}
 

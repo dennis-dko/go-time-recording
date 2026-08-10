@@ -314,8 +314,8 @@ Implemented, and verified against a running instance:
 - **Secrets are never returned.** Database and LDAP passwords, and API tokens,
   are write-only over the API; clients get a `hasPassword` flag instead.
 - **Enumeration is avoided**: a wrong password and an unknown account fail
-  identically, and someone else's private project answers `404` rather than
-  `403`, which would confirm the id exists.
+  identically, and somebody else's project answers `404` rather than `403`, which
+  would confirm the id exists.
 - **Passwords** are bcrypt hashes; session and API tokens are 256 bits of
   randomness stored only as SHA-256.
 
@@ -351,7 +351,7 @@ reconciled with the local accounts:
 
 - Accounts the directory has and this installation does not are **created**.
 - Accounts the directory no longer holds are **deleted**, together with their
-  time entries, private projects, API tokens and sessions.
+  time entries, projects, API tokens and sessions.
 
 **The directory is only ever read.** Nothing is written back to LDAP.
 
@@ -418,19 +418,27 @@ own.
 Projects are optional on a time entry: hours can be recorded first and
 categorised later, or left uncategorised.
 
-Beyond the shared projects, **every user can create their own private
-projects** to split up a day when no shared project fits. A private project is
-visible only to its owner — not to anybody else, and not to the administrator.
-Creating one needs only `projects:write:own`, which every default role holds;
-creating a *shared* project still needs `projects:write`.
+**A project belongs to one person.** Only its owner sees it, only its owner books
+on it, and that includes the administrator — whose own projects are equally its own
+and nobody else's. Two people working on the same thing therefore keep a project
+each, with the same name if they like, and nothing adds them together, because
+nothing is meant to.
+
+There were two kinds until recently: a shared project everybody could see, and a
+private category for organising your own day. The second is the only kind now, and
+with it went the second right — `projects:write:own` and `projects:write` were two
+rights for two kinds of project, so one of them would have granted nothing. Whoever
+held the old one holds `projects:write`, which an upgrade takes care of.
+
+A start date is optional, for the same reason: a project is one person's way of
+organising their hours, not a plan somebody signed off.
 
 ## Spreadsheets
 
 Every table that holds something goes out and comes back as a real **.xlsx**
 workbook, from the tab it belongs to: time entries with the date, the person, the
-project, the hours and the description; projects with their period, status and
-whether they are a private category; accounts with their role, working times and
-zone. Names rather than identifiers, because a column of user ids is not something
+project, the hours and the description; projects with their period and status;
+accounts with their role and whether the password lives in the directory. Names rather than identifiers, because a column of user ids is not something
 anybody can fill in by hand; hours as a number, so the column can be totalled in
 Excel.
 
@@ -746,7 +754,8 @@ The server enforces these; the interface merely also hides what is not allowed:
 - The built-in administrator cannot be deleted or stripped of administration.
 - System roles cannot be deleted, renamed or weakened.
 - A role still assigned to someone cannot be deleted.
-- A private project is invisible to everyone but its owner.
+- A project is invisible to everyone but its owner, and asking for one that is not
+  yours answers `404` rather than `403`.
 
 ## Development
 
@@ -865,8 +874,8 @@ Nothing is stubbed, so the middleware order, the CSRF check, the session
 cookie, the migrations and the embedded assets are all in the path — which is
 where every bug found by *running* this application rather than testing it has
 lived. They cover sign-in, the setup wizard, booking, the daily cap, overtime,
-private projects, RBAC, API tokens, timezones, deleting several rows at once and the
-guided tour.
+projects belonging to one person, RBAC, API tokens, timezones, deleting several rows
+at once and the guided tour.
 
 ```bash
 task test:integration              # against SQLite, one file per test

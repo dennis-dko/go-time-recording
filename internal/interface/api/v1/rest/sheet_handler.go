@@ -117,11 +117,12 @@ func (h *SheetHandler) viewerID(principal *service.Principal) uint {
 
 // ImportProjects handles POST /api/v1/projects/import.
 //
-// Creating a shared project needs the wider right. Somebody who may only keep
-// private categories can import those, and a row of theirs that would create a
-// shared project is refused by name in the preview rather than at the write.
+// Every row becomes a project of the importer's own, because that is the only kind
+// there is. There used to be two, and a row asking for the shared kind was refused by
+// name in the preview when the caller could only keep private ones - a distinction
+// with nothing left on either side of it.
 func (h *SheetHandler) ImportProjects(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c, model.PermProjectWrite, model.PermProjectWriteOwn)
+	principal, err := h.authz.Require(c, model.PermProjectWrite)
 	if err != nil {
 		return nil, err
 	}
@@ -138,10 +139,7 @@ func (h *SheetHandler) ImportProjects(c *gofr.Context) (any, error) {
 		return nil, unreadableWorkbook(err)
 	}
 
-	maySharePlan := !h.authz.Enabled() || principal.Can(model.PermProjectWrite)
-
-	plan, err := h.projects.PlanProjects(c, language(c), rows, problems, principal.User,
-		maySharePlan)
+	plan, err := h.projects.PlanProjects(c, language(c), rows, problems, principal.User)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

@@ -16,9 +16,13 @@ const (
 	PermProjectDelete  = "projects:delete"
 	PermProjectArchive = "projects:archive"
 
-	// PermProjectWriteOwn allows creating and managing private projects,
-	// which act as personal categories and are visible only to their owner.
-	PermProjectWriteOwn = "projects:write:own"
+	// There is no projects:write:own. It allowed creating and managing a private
+	// category, as opposed to projects:write for a shared project - two rights for two
+	// kinds of project.
+	//
+	// There is one kind now: every project belongs to one person, so every project is
+	// what the "own" right used to be about. Keeping both would have meant one of them
+	// granting nothing, and which one would have depended on where you looked.
 
 	// Own vs. all separates "my time sheet" from "everyone's".
 	PermTimesheetReadOwn  = "timesheets:read:own"
@@ -68,7 +72,6 @@ func AllPermissions() []string {
 		PermUserRead, PermUserWrite, PermUserDelete,
 		PermRoleRead, PermRoleWrite,
 		PermProjectRead, PermProjectWrite, PermProjectDelete, PermProjectArchive,
-		PermProjectWriteOwn,
 		PermTimesheetReadOwn, PermTimesheetReadAll,
 		PermTimesheetWriteOwn, PermTimesheetWriteAll,
 		PermTimesheetTransfer,
@@ -97,10 +100,13 @@ func SystemAdminPermissions() []string {
 		PermUserRead, PermUserWrite, PermUserDelete,
 		PermRoleRead, PermRoleWrite,
 
-		// Reading the shared projects, not managing them: time has to be bookable
-		// against something, and that list is what every employee sees anyway.
-		// Creating and archiving projects is running the work.
-		PermProjectRead, PermProjectWriteOwn,
+		// Its own projects, whole: there is one kind of project now and it belongs to
+		// one person, so keeping one means being able to finish it and remove it too.
+		// This used to read "the shared projects, not managing them", from when there
+		// were two kinds - and the own-project right it held then already allowed
+		// removing your own, so this is the same reach said in the new vocabulary.
+		PermProjectRead, PermProjectWrite,
+		PermProjectArchive, PermProjectDelete,
 
 		// An administrator is also a person who works here.
 		PermTimesheetReadOwn, PermTimesheetWriteOwn, PermReportReadOwn,
@@ -151,7 +157,7 @@ func DefaultRoles() []Role {
 			// creating, completing, archiving and deleting one is theirs to do;
 			// PermProjectRead still only shows what they may see.
 			Permissions: []string{
-				PermProjectRead, PermProjectWrite, PermProjectWriteOwn,
+				PermProjectRead, PermProjectWrite,
 				PermProjectArchive, PermProjectDelete,
 				PermTimesheetReadOwn, PermTimesheetWriteOwn, PermTimesheetTransfer,
 				PermReportReadOwn, PermSettingsWriteOwn,
