@@ -660,7 +660,7 @@ func TestTwoNoticesAreBothShown(t *testing.T) {
 // answering "no" leaves the thing alone.
 func TestDeletingAsksFirstAndCancellingChangesNothing(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
+	p.readyWorker()
 
 	// A time entry of the administrator's own, so nothing else has to exist.
 	p.run("book time", p.click(`.tab[data-view="timesheets"]`),
@@ -710,7 +710,7 @@ func TestDeletingAsksFirstAndCancellingChangesNothing(t *testing.T) {
 // to read it as "no".
 func TestEscapeCancelsTheConfirmation(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
+	p.readyWorker()
 
 	p.run("book time", p.click(`.tab[data-view="timesheets"]`),
 		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
@@ -737,7 +737,7 @@ func TestEscapeCancelsTheConfirmation(t *testing.T) {
 // ticking display, and the buttons swapping over when it starts.
 func TestTheStopwatchRunsAndBooksWhatItMeasured(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
+	p.readyWorker()
 
 	p.run("open time entries", p.click(`.tab[data-view="timesheets"]`),
 		chromedp.WaitVisible("#timer-card", chromedp.ByID))
@@ -806,7 +806,7 @@ func TestTheStopwatchRunsAndBooksWhatItMeasured(t *testing.T) {
 // without complaint and draws nothing at all.
 func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
+	p.readyWorker()
 
 	// Two entries on one day and none on the next, so an empty day has something
 	// to be empty about.
@@ -903,18 +903,11 @@ func TestAServerRefusalIsShownInTheReadersLanguage(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
-	// German, which is the only other language shipped.
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
-
-	time.Sleep(300 * time.Millisecond)
-
-	// A daily ceiling, then a booking over it: a refusal with four values in it,
-	// which is the case that would fall apart if the values were dropped.
-	// The instance-wide ceiling lives on the administration screen, not under
-	// My account, which holds the per-account one.
+	// Two accounts in order, because the two halves belong to different jobs. The
+	// instance-wide ceiling is configuration and only the built-in administrator may
+	// set it; the booking that runs into it is a working day, which that account does
+	// not have. Under My account there is a per-account ceiling, and that is not the
+	// one this case is about.
 	p.run("set a daily ceiling",
 		chromedp.Click(`.tab[data-view="admin"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#form-operational input[name="maxDailyHours"]`, chromedp.ByQuery),
@@ -924,9 +917,23 @@ func TestAServerRefusalIsShownInTheReadersLanguage(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
+	p.becomeWorker()
+
+	// German after the change of account, not before: the language is a preference of
+	// whoever is signed in, so choosing it as the administrator would have set it for
+	// the wrong person and left this reader in English.
+	p.run("switch to German",
+		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
+		chromedp.Evaluate(
+			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+
+	time.Sleep(300 * time.Millisecond)
+
 	p.run("clear the notices", chromedp.Evaluate(
 		`document.querySelector('#toast').replaceChildren()`, nil))
 
+	// A booking over the ceiling: a refusal with four values in it, which is the case
+	// that would fall apart if the values were dropped.
 	p.run("book over the ceiling",
 		chromedp.Click(`.tab[data-view="timesheets"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
@@ -1057,8 +1064,11 @@ func TestTheTwoFactorQRCodeIsShown(t *testing.T) {
 
 	// Leaving the screen and coming back must not leave the secret on it: the code
 	// encodes it, and the enrolment it belonged to is over.
+	//
+	// Away via Users, because this is the built-in administrator and the time screens
+	// are not its. Any other screen would do; the point is only to leave this one.
 	p.run("leave and come back",
-		chromedp.Click(`.tab[data-view="timesheets"]`, chromedp.ByQuery),
+		chromedp.Click(`.tab[data-view="users"]`, chromedp.ByQuery),
 		chromedp.Sleep(200*time.Millisecond),
 		chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
 		chromedp.Sleep(400*time.Millisecond),
@@ -1267,7 +1277,7 @@ func TestAReturningSignInIsGreetedOncePerVisit(t *testing.T) {
 // the file is clean.
 func TestTheImportShowsWhatAFileWouldDoBeforeDoingIt(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
+	p.readyWorker()
 
 	// A file with one good row and one that no ceiling allows, written through the
 	// same writer the export uses.

@@ -17,31 +17,29 @@ import (
 // ------------------------------------------------------------------- CSRF
 
 func TestCSRFRejectsARequestFromAnotherSite(t *testing.T) {
-	a := start(t)
-	c := a.signInAsAdmin("a-much-better-password")
+	a, _, worker := startWithWorker(t)
 
 	// A real session and a real token - the only thing wrong is where the
 	// request claims to come from, which is exactly the attack.
 	req := rawRequest(t, http.MethodPost, a.BaseURL()+"/api/v1/projects",
 		`{"name":"Pwned","startDate":"2026-08-02"}`)
 	req.Header.Set("Origin", "http://evil.example.net")
-	req.Header.Set("X-CSRF-Token", c.csrfToken())
+	req.Header.Set("X-CSRF-Token", worker.csrfToken())
 
-	resp := send(t, c, req)
+	resp := send(t, worker, req)
 	if resp.Status != http.StatusForbidden {
 		t.Fatalf("a cross-site write must be refused, got %d: %s", resp.Status, resp.Body)
 	}
 }
 
 func TestCSRFRejectsAMissingToken(t *testing.T) {
-	a := start(t)
-	c := a.signInAsAdmin("a-much-better-password")
+	a, _, worker := startWithWorker(t)
 
 	req := rawRequest(t, http.MethodPost, a.BaseURL()+"/api/v1/projects",
 		`{"name":"No token","startDate":"2026-08-02"}`)
 	req.Header.Set("Origin", a.BaseURL())
 
-	if resp := send(t, c, req); resp.Status != http.StatusForbidden {
+	if resp := send(t, worker, req); resp.Status != http.StatusForbidden {
 		t.Fatalf("a write without the header must be refused, got %d", resp.Status)
 	}
 }
@@ -67,12 +65,11 @@ func TestCSRFTokenIsRotatedOnSignIn(t *testing.T) {
 }
 
 func TestReadsNeedNoToken(t *testing.T) {
-	a := start(t)
-	c := a.signInAsAdmin("a-much-better-password")
+	a, _, worker := startWithWorker(t)
 
 	req := rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/timesheets", "")
 
-	if resp := send(t, c, req); resp.Status != http.StatusOK {
+	if resp := send(t, worker, req); resp.Status != http.StatusOK {
 		t.Errorf("a read must not require a CSRF token, got %d", resp.Status)
 	}
 }
@@ -107,12 +104,11 @@ func TestSecurityHeadersAreSet(t *testing.T) {
 }
 
 func TestAPIResponsesAreNotCached(t *testing.T) {
-	a := start(t)
-	c := a.signInAsAdmin("a-much-better-password")
+	a, _, worker := startWithWorker(t)
 
 	req := rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/me", "")
 
-	resp, err := c.http.Do(req)
+	resp, err := worker.http.Do(req)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -129,20 +125,26 @@ func TestAPIResponsesAreNotCached(t *testing.T) {
 // -------------------------------------------------------------------- RBAC
 
 func TestAnEmployeeSeesOnlyTheirOwnEntries(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, colleague := startWithWorker(t)
 
-	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": "Erika", "email": "erika@example.com",
-		"role": "employee", "password": "erika-password-1",
-	}), http.StatusCreated, http.StatusOK)
+	// Somebody else's hours have to be recorded for "only their own" to mean
+	// anything, and the administrator can no longer record them: it administers the
+	// accounts and holds nothing about time. So a colleague books them, and the
+	// administrator only opens the second account.
+	var theirs timesheetResponse
+	colleague.must(colleague.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-02", "durationHours": 4, "description": "A colleague's work",
+	}), http.StatusCreated, http.StatusOK).Data(t, &theirs)
 
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
-		"date": "2026-08-02", "durationHours": 4, "description": "Admin work",
-	}), http.StatusCreated, http.StatusOK)
+	employee := a.signInAsUser(admin, "Erika", "erika@example.com")
 
-	employee := a.newClient()
-	me := employee.signIn("erika@example.com", "erika-password-1")
+	// Who the session belongs to, asked of the server rather than taken from the
+	// entry below - otherwise the check further down compares an answer with itself.
+	var me struct {
+		User userResponse `json:"user"`
+	}
+
+	employee.must(employee.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
 
 	employee.must(employee.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-02", "durationHours": 3, "description": "My work",
@@ -155,15 +157,18 @@ func TestAnEmployeeSeesOnlyTheirOwnEntries(t *testing.T) {
 		t.Fatalf("an employee should see only their own entry, got %d", len(list.Items))
 	}
 
-	if list.Items[0].UserID != me.ID {
-		t.Errorf("the visible entry belongs to %d, not to them (%d)", list.Items[0].UserID, me.ID)
+	if list.Items[0].UserID != me.User.ID {
+		t.Errorf("the visible entry belongs to %d, not to them (%d)",
+			list.Items[0].UserID, me.User.ID)
 	}
 
 	// Asking for somebody else's is refused outright rather than filtered down
 	// to nothing. The stricter answer is the better one: an empty list would be
 	// indistinguishable from "that person has booked nothing", and would invite
-	// building a client that quietly relies on the filter being honoured.
-	refused := employee.api(http.MethodGet, "/timesheets?userId=1", nil)
+	// building a client that quietly relies on the filter being honoured. The id
+	// named is the colleague who really does have an entry, so a filter that was
+	// merely honoured instead of refused would be visible as the wrong answer.
+	refused := employee.api(http.MethodGet, path("/timesheets?userId=", theirs.UserID), nil)
 	if refused.Status != http.StatusForbidden {
 		t.Errorf("a filter naming someone else must be refused, got %d", refused.Status)
 	}
@@ -294,19 +299,18 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 }
 
 func TestTokenValueIsNeverReturnedAgain(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	var created struct {
 		Secret string `json:"secret"`
 		Prefix string `json:"prefix"`
 	}
 
-	admin.must(admin.api(http.MethodPost, "/me/tokens",
+	worker.must(worker.api(http.MethodPost, "/me/tokens",
 		map[string]any{"name": "once", "expiresInDays": 0}),
 		http.StatusCreated, http.StatusOK).Data(t, &created)
 
-	listed := admin.must(admin.api(http.MethodGet, "/me/tokens", nil), http.StatusOK)
+	listed := worker.must(worker.api(http.MethodGet, "/me/tokens", nil), http.StatusOK)
 
 	if created.Secret == "" {
 		t.Fatal("nothing was created, so the check below would pass vacuously")

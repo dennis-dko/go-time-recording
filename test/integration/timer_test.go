@@ -34,10 +34,9 @@ func runningTimer(t *testing.T, c *client) TimerOnTheWire {
 
 // Nothing is running on a fresh account, and asking is not an error.
 func TestNoTimerIsRunningToBeginWith(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	if timer := runningTimer(t, admin); timer.Running {
+	if timer := runningTimer(t, worker); timer.Running {
 		t.Errorf("a timer is already running: %+v", timer)
 	}
 }
@@ -45,20 +44,19 @@ func TestNoTimerIsRunningToBeginWith(t *testing.T) {
 // Starting records the clock and says when it started, so the interface can count
 // up on its own rather than asking every second to be told the same thing.
 func TestStartingAndReadingBackTheClock(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	// Private: the clock is the caller's own, and a private project is what the
 	// administrator may create - the shared ones belong to whoever runs the work.
 	var project projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Timed work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	description := "Writing the timer"
 
 	var started TimerOnTheWire
-	admin.must(admin.api(http.MethodPost, "/me/timer", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/me/timer", map[string]any{
 		"projectId": project.ID, "description": description,
 	}), http.StatusCreated, http.StatusOK).Data(t, &started)
 
@@ -70,7 +68,7 @@ func TestStartingAndReadingBackTheClock(t *testing.T) {
 		t.Error("the response does not say when it started")
 	}
 
-	timer := runningTimer(t, admin)
+	timer := runningTimer(t, worker)
 
 	if !timer.Running {
 		t.Fatal("the timer is not running when read back")
@@ -89,15 +87,14 @@ func TestStartingAndReadingBackTheClock(t *testing.T) {
 // their mind about what they are doing, and refusing would leave them to stop a
 // clock that is measuring the wrong thing.
 func TestStartingAgainReplacesTheRunningClock(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	admin.must(admin.api(http.MethodPost, "/me/timer",
+	worker.must(worker.api(http.MethodPost, "/me/timer",
 		map[string]any{"description": "first"}), http.StatusCreated, http.StatusOK)
-	admin.must(admin.api(http.MethodPost, "/me/timer",
+	worker.must(worker.api(http.MethodPost, "/me/timer",
 		map[string]any{"description": "second"}), http.StatusCreated, http.StatusOK)
 
-	timer := runningTimer(t, admin)
+	timer := runningTimer(t, worker)
 
 	if timer.Description == nil || *timer.Description != "second" {
 		t.Errorf("the running clock says %v, want the second one", timer.Description)
@@ -107,20 +104,19 @@ func TestStartingAgainReplacesTheRunningClock(t *testing.T) {
 // Discarding leaves no record at all, which is the way out of a clock nobody
 // meant to start.
 func TestDiscardingATimerRecordsNothing(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	before := timesheetCount(t, admin)
+	before := timesheetCount(t, worker)
 
-	admin.must(admin.api(http.MethodPost, "/me/timer", nil), http.StatusCreated, http.StatusOK)
-	admin.must(admin.api(http.MethodDelete, "/me/timer", nil),
+	worker.must(worker.api(http.MethodPost, "/me/timer", nil), http.StatusCreated, http.StatusOK)
+	worker.must(worker.api(http.MethodDelete, "/me/timer", nil),
 		http.StatusNoContent, http.StatusOK)
 
-	if timer := runningTimer(t, admin); timer.Running {
+	if timer := runningTimer(t, worker); timer.Running {
 		t.Error("the timer is still running after being discarded")
 	}
 
-	if after := timesheetCount(t, admin); after != before {
+	if after := timesheetCount(t, worker); after != before {
 		t.Errorf("discarding created %d entr(y/ies)", after-before)
 	}
 }
@@ -129,14 +125,13 @@ func TestDiscardingATimerRecordsNothing(t *testing.T) {
 // to the smallest bookable duration would record work nobody did. Refused, with
 // the way out in the message.
 func TestStoppingImmediatelyIsRefusedRatherThanRoundedUp(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	before := timesheetCount(t, admin)
+	before := timesheetCount(t, worker)
 
-	admin.must(admin.api(http.MethodPost, "/me/timer", nil), http.StatusCreated, http.StatusOK)
+	worker.must(worker.api(http.MethodPost, "/me/timer", nil), http.StatusCreated, http.StatusOK)
 
-	response := admin.api(http.MethodPost, "/me/timer/stop", nil)
+	response := worker.api(http.MethodPost, "/me/timer/stop", nil)
 	if response.Status == http.StatusOK || response.Status == http.StatusCreated {
 		t.Fatalf("a timer running for milliseconds was booked: %s", response.Body)
 	}
@@ -145,12 +140,12 @@ func TestStoppingImmediatelyIsRefusedRatherThanRoundedUp(t *testing.T) {
 		t.Error("the refusal says nothing about what to do instead")
 	}
 
-	if after := timesheetCount(t, admin); after != before {
+	if after := timesheetCount(t, worker); after != before {
 		t.Errorf("the refused stop created %d entr(y/ies)", after-before)
 	}
 
 	// And the clock is still there, so the time is not lost to the refusal.
-	if timer := runningTimer(t, admin); !timer.Running {
+	if timer := runningTimer(t, worker); !timer.Running {
 		t.Error("the refused stop threw the clock away")
 	}
 }
@@ -158,10 +153,9 @@ func TestStoppingImmediatelyIsRefusedRatherThanRoundedUp(t *testing.T) {
 // The one that matters: a clock that has run long enough becomes an ordinary time
 // entry, with the measured duration and not a rounded one.
 func TestStoppingBooksTheMeasuredTime(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	admin.must(admin.api(http.MethodPost, "/me/timer",
+	worker.must(worker.api(http.MethodPost, "/me/timer",
 		map[string]any{"description": "measured"}), http.StatusCreated, http.StatusOK)
 
 	// Past the smallest bookable duration, which is what stops a clock started by
@@ -169,7 +163,7 @@ func TestStoppingBooksTheMeasuredTime(t *testing.T) {
 	time.Sleep(40 * time.Second)
 
 	var entry timesheetResponse
-	admin.must(admin.api(http.MethodPost, "/me/timer/stop", nil),
+	worker.must(worker.api(http.MethodPost, "/me/timer/stop", nil),
 		http.StatusCreated, http.StatusOK).Data(t, &entry)
 
 	// Around forty seconds, and emphatically not a quarter of an hour.
@@ -182,11 +176,11 @@ func TestStoppingBooksTheMeasuredTime(t *testing.T) {
 	}
 
 	// The clock is gone, so stopping twice cannot double-count.
-	if timer := runningTimer(t, admin); timer.Running {
+	if timer := runningTimer(t, worker); timer.Running {
 		t.Error("the clock survived being stopped")
 	}
 
-	if got := admin.api(http.MethodPost, "/me/timer/stop", nil).Status; got == http.StatusOK ||
+	if got := worker.api(http.MethodPost, "/me/timer/stop", nil).Status; got == http.StatusOK ||
 		got == http.StatusCreated {
 		t.Error("stopping again booked a second entry")
 	}
@@ -204,8 +198,7 @@ func TestStoppingBooksTheMeasuredTime(t *testing.T) {
 // it. Reached here through a project that is completed while the clock runs, which
 // is a thing that really happens.
 func TestStoppingIsRefusedWhenTheEntryWouldBe(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, _ := startWithWorker(t)
 	other := a.signInAsUser(admin, "Nils", "nils@example.com")
 
 	var project projectResponse
@@ -245,10 +238,9 @@ func TestStoppingIsRefusedWhenTheEntryWouldBe(t *testing.T) {
 // the insert and answered 500 for what is a mistyped number. Now it is a 404 on
 // every engine, and nothing is stored.
 func TestStartingTheClockOnAProjectThatDoesNotExistIsRefused(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	refused := admin.api(http.MethodPost, "/me/timer", map[string]any{"projectId": 999999})
+	refused := worker.api(http.MethodPost, "/me/timer", map[string]any{"projectId": 999999})
 
 	if refused.Status != http.StatusNotFound {
 		t.Errorf("starting a clock on a project that does not exist answered %d, want 404: %s",
@@ -256,7 +248,7 @@ func TestStartingTheClockOnAProjectThatDoesNotExistIsRefused(t *testing.T) {
 	}
 
 	// And no clock was left behind, which is the half SQLite used to allow.
-	if timer := runningTimer(t, admin); timer.Running {
+	if timer := runningTimer(t, worker); timer.Running {
 		t.Error("a clock was started against a project that does not exist")
 	}
 }
@@ -265,28 +257,23 @@ func TestStartingTheClockOnAProjectThatDoesNotExistIsRefused(t *testing.T) {
 // reported the same way it is everywhere else: not found, so its existence stays
 // private.
 func TestStartingTheClockOnSomebodyElsesPrivateProjectIsRefused(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, worker := startWithWorker(t)
 
-	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": "Ove", "email": "ove@example.com",
-		"role": "employee", "password": "ove-password-1",
-	}), http.StatusCreated, http.StatusOK)
-
-	ove := a.newClient()
-	ove.signIn("ove@example.com", "ove-password-1")
+	// Creating the second account is the administrator's job; timing against a
+	// project is not.
+	ove := a.signInAsUser(admin, "Ove", "ove@example.com")
 
 	var hers projectResponse
 	ove.must(ove.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Ove's own", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &hers)
 
-	if got := admin.api(http.MethodPost, "/me/timer",
+	if got := worker.api(http.MethodPost, "/me/timer",
 		map[string]any{"projectId": hers.ID}).Status; got != http.StatusNotFound {
 		t.Errorf("timing against somebody else's private project answered %d, want 404", got)
 	}
 
-	if timer := runningTimer(t, admin); timer.Running {
+	if timer := runningTimer(t, worker); timer.Running {
 		t.Error("a clock was started against somebody else's private project")
 	}
 }
@@ -313,13 +300,16 @@ func timesheetCount(t *testing.T, c *client) int {
 // as timing against a project that never existed, reached from the other end.
 
 func TestDeletingAnAccountWithAClockRunning(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, _ := startWithWorker(t)
 
 	var created struct {
 		ID uint `json:"id"`
 	}
 
+	// Creating the account and removing it again are the administrator's job;
+	// running a clock is not, so Pia signs in and starts her own. That split is the
+	// situation being described: the clock belongs to the account that is going,
+	// and somebody else does the deleting.
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Pia", "email": "pia@example.com",
 		"role": "employee", "password": "pia-password-1",
@@ -346,8 +336,7 @@ func TestDeletingAnAccountWithAClockRunning(t *testing.T) {
 }
 
 func TestDeletingAProjectSomebodyIsTimingAgainst(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, _ := startWithWorker(t)
 	other := a.signInAsUser(admin, "Rolf", "rolf@example.com")
 
 	var project projectResponse

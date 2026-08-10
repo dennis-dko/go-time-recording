@@ -78,8 +78,7 @@ func importFile(t *testing.T, c *client, book []byte, dryRun string) (importResu
 }
 
 func TestExportingAndImportingRoundTrips(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, _ := startWithWorker(t)
 	other := a.signInAsUser(admin, "Mika", "mika@example.com")
 
 	var shared projectResponse
@@ -157,14 +156,13 @@ func TestExportingAndImportingRoundTrips(t *testing.T) {
 // The preview writes nothing. That is the whole point of it: somebody with a file
 // of eighty rows should see what it would do before it does it.
 func TestThePreviewWritesNothing(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	book := workbookOf(t, spreadsheet.Row{
 		Date: mustDay(t, "2026-08-03"), Hours: 3, Description: "Only a look",
 	})
 
-	result, r := importFile(t, admin, book, "true")
+	result, r := importFile(t, worker, book, "true")
 	if r.Status != http.StatusOK && r.Status != http.StatusCreated {
 		t.Fatalf("the preview answered %d: %s", r.Status, r.Body)
 	}
@@ -197,7 +195,7 @@ func TestThePreviewWritesNothing(t *testing.T) {
 	}
 
 	var listed listOf[timesheetResponse]
-	admin.must(admin.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &listed)
+	worker.must(worker.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &listed)
 
 	if len(listed.Items) != 0 {
 		t.Errorf("the preview created %d entries", len(listed.Items))
@@ -207,8 +205,7 @@ func TestThePreviewWritesNothing(t *testing.T) {
 // One bad row and nothing is written. A file half-imported leaves nobody able to
 // say which half, or which entries came from it.
 func TestAFileWithABadRowImportsNothing(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	book := workbookOf(t,
 		spreadsheet.Row{Date: mustDay(t, "2026-08-03"), Hours: 2, Description: "fine"},
@@ -218,7 +215,7 @@ func TestAFileWithABadRowImportsNothing(t *testing.T) {
 		spreadsheet.Row{Date: mustDay(t, "2026-08-05"), Hours: 2, Description: "also fine"},
 	)
 
-	result, r := importFile(t, admin, book, "false")
+	result, r := importFile(t, worker, book, "false")
 	if r.Status != http.StatusConflict {
 		t.Fatalf("a file with a bad row answered %d, want 409: %s", r.Status, r.Body)
 	}
@@ -227,14 +224,14 @@ func TestAFileWithABadRowImportsNothing(t *testing.T) {
 
 	// Nothing at all, including the two rows that were perfectly good.
 	var listed listOf[timesheetResponse]
-	admin.must(admin.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &listed)
+	worker.must(worker.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &listed)
 
 	if len(listed.Items) != 0 {
 		t.Errorf("%d entries were written from a file that was refused", len(listed.Items))
 	}
 
 	// The preview says which row, so it can be fixed.
-	preview, _ := importFile(t, admin, book, "true")
+	preview, _ := importFile(t, worker, book, "true")
 
 	if preview.Rejected != 1 || preview.Writable != 2 {
 		t.Fatalf("the preview counts %d rejected and %d writable, want 1 and 2",
@@ -327,10 +324,9 @@ func TestImportingForSomebodyElseNeedsTheWiderRight(t *testing.T) {
 // Something that is not a workbook is refused as a whole, with a reason - as
 // opposed to a workbook with bad rows, which is refused row by row.
 func TestSomethingThatIsNotAWorkbookIsRefusedOutright(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	r := admin.upload("/timesheets/import", "file", "entries.xlsx",
+	r := worker.upload("/timesheets/import", "file", "entries.xlsx",
 		[]byte("Date;User;Hours\n2026-08-03;Admin;2\n"), map[string]string{"dryRun": "true"})
 
 	if r.Status != http.StatusBadRequest {

@@ -141,41 +141,37 @@ func TestAnEmployeeCanReadTheirOwnStatistics(t *testing.T) {
 
 // Somebody else's hours are never in your own figures, whatever role you have.
 func TestOwnStatisticsAreOnlyYourOwn(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, wera := startWithWorker(t)
 
-	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": "Ilka", "email": "ilka@example.com",
-		"role": "employee", "password": "ilka-password-1",
-	}), http.StatusCreated, http.StatusOK)
-
-	ilka := a.newClient()
-	ilka.signIn("ilka@example.com", "ilka-password-1")
-
-	ilka.must(ilka.api(http.MethodPost, "/timesheets", map[string]any{
+	wera.must(wera.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-03", "durationHours": 4,
 	}), http.StatusCreated, http.StatusOK)
 
-	// The administrator holds every permission, including reading everyone's
-	// entries - and still sees only their own here, because this endpoint is
+	// The built-in administrator used to be the caller that made this point, on the
+	// grounds that it held every permission there was. It holds nothing over time now
+	// - it administers the installation and the accounts - so it cannot even ask this
+	// question, and the claim moves to the role that genuinely can see everybody:
+	// somebody who may read all the entries there are.
+	ilka := a.signInAsAuditor(admin, "Ilka", "ilka@example.com")
+
+	// And that account still sees only its own hours here, because this endpoint is
 	// keyed on the caller rather than filtered by one.
-	if stats := ownStatistics(t, admin, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 0 {
-		t.Errorf("the administrator's own statistics include %v hours of somebody else's",
+	if stats := ownStatistics(t, ilka, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 0 {
+		t.Errorf("the statistics of somebody who may read everybody's entries include %v hours of somebody else's",
 			stats.TotalHours)
 	}
 
-	if stats := ownStatistics(t, ilka, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 4 {
-		t.Errorf("Ilka's own statistics total %v, want 4", stats.TotalHours)
+	if stats := ownStatistics(t, wera, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 4 {
+		t.Errorf("Wera's own statistics total %v, want 4", stats.TotalHours)
 	}
 }
 
 // A range the wrong way round is a mistake worth reporting rather than an empty
 // chart to puzzle over.
 func TestAnInvertedRangeIsRefused(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	if got := admin.api(http.MethodGet,
+	if got := worker.api(http.MethodGet,
 		"/me/statistics?from=2026-08-31&to=2026-08-01", nil).Status; got == http.StatusOK {
 		t.Error("a range ending before it starts was accepted")
 	}

@@ -1123,10 +1123,13 @@ const TRANSLATIONS = {
     'welcome.backName': 'Willkommen zurück, {0}',
     'welcome.hello': 'Willkommen, {0}',
     'welcome.helloPlain': 'Willkommen',
-    'welcome.point.account': 'Tagesziel, Zeitzone und einen zweiten Faktor stellst du unter „Mein Konto“ ein.',
+    'welcome.point.account': 'Zeitzone, Sprache und einen zweiten Faktor stellst du unter „Mein Konto“ ein.',
+    'welcome.point.target': 'Dein eigenes Tagessoll und Tagesmaximum stellst du unter „Mein Konto“ ein.',
+    'welcome.point.administer': 'Lege die Menschen an, die hier arbeiten, und entscheide, was jede und jeder darf.',
     'welcome.point.book': 'Stunden von Hand buchen – oder eine Stoppuhr laufen lassen, die es für dich tut.',
     'welcome.point.see': 'Den Monat im Kalender sehen und die eigenen Zahlen als Diagramme.',
     'welcome.skip': 'Später',
+    'welcome.begin': 'Los geht’s',
     'welcome.text': 'Hier wird deine Arbeitszeit erfasst. Ein kurzer Rundgang dauert etwa eine Minute; du kannst ihn jederzeit unter „Mein Konto“ erneut starten.',
     'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Auf diesem Bildschirm stoppen, um die Zeit zu buchen.',
     'welcome.todayHours': 'Heute bislang {0} h gebucht.',
@@ -1533,6 +1536,16 @@ async function loadMe() {
 
   applyLanguage(activeLanguage());
   applyPermissionVisibility();
+
+  // Here rather than in loadAdmin, which is where it used to be: that runs at the end
+  // of a chain of requests, so a single refusal earlier in the chain left the tab
+  // hidden and the Settings screen unreachable. While the initial password still
+  // stands the server refuses most of the API, which is exactly when an administrator
+  // is most likely to be looking for it.
+  //
+  // Not a data-perm, because it is not a permission: the Settings screen belongs to
+  // the built-in account rather than to a right somebody can be granted.
+  $('#tab-admin').hidden = !isSystemAdmin();
   renderTOTPState();
 }
 
@@ -2247,7 +2260,8 @@ async function loadBranding() {
 }
 
 async function loadAdmin() {
-  $('#tab-admin').hidden = !isSystemAdmin();
+  // The tab is shown as soon as who is signed in is known, which is not here - see
+  // refreshMe. This only decides whether there is anything to load.
   if (!isSystemAdmin()) return;
 
   await loadMaintenance();
@@ -2957,7 +2971,7 @@ const TOUR_STEPS = [
   {
     target: '#form-report',
     view: 'report',
-    permission: 'reports:read',
+    permission: 'reports:read:own',
     title: () => t('tour.report.title', 'Project reports'),
     text: () => t('tour.report.text',
       'What a project totals up to, per person. This one needs a reporting permission, '
@@ -3249,14 +3263,39 @@ function showWelcome() {
       && t('welcome.point.book', 'Book hours by hand, or run a stopwatch and let it book them.'),
     can('timesheets:read:own', 'timesheets:read:all')
       && t('welcome.point.see', 'See your month in a calendar, and your own figures as charts.'),
+    // The daily target is the one part of "My account" that only somebody who works
+    // here has, so it is named separately. The greeting used to promise it to
+    // everybody, including the account that records no time at all.
+    can('settings:write:own')
+      && t('welcome.point.target', 'Set your own daily target and ceiling under My account.'),
+    can('users:write')
+      && t('welcome.point.administer',
+        'Add the people who work here, and decide what each of them may do.'),
     t('welcome.point.account',
-      'Set your daily target, your timezone and a second factor under My account.'),
+      'Choose your timezone, your language and a second factor under My account.'),
   ].filter(Boolean);
 
   $('#welcome-points').replaceChildren(...points.map((text) => el('li', { text })));
 
+  // Every step of the walk points at a control, and a step whose control this person
+  // cannot reach is dropped - so for an account that only administers there is nothing
+  // left to walk through. Offering it anyway would open an empty tour, which is a
+  // worse first impression than not offering one.
+  const walkable = applicableTourSteps().length > 0;
+  const tourButton = $('#welcome-tour');
+  const skipButton = $('#welcome-skip');
+
+  tourButton.hidden = !walkable;
+
+  // With nothing to show, the remaining button is the only way out, so it stops being
+  // the quiet second choice and says what it does.
+  skipButton.classList.toggle('secondary', walkable);
+  setLeadingText(skipButton, walkable
+    ? t('welcome.skip', 'Not now')
+    : t('welcome.begin', 'Get started'));
+
   overlay.hidden = false;
-  $('#welcome-tour').focus();
+  (walkable ? tourButton : skipButton).focus();
 }
 
 /** Takes the greeting down, and records that it has been seen. */

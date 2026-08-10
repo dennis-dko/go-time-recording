@@ -69,10 +69,9 @@ func TestAMetricIsPublishedOnlyOnceItHasAValue(t *testing.T) {
 
 // The one the installation exists to record.
 func TestBookingTimeIsCounted(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, _, worker := startWithWorker(t)
 
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-03", "durationHours": 6,
 	}), http.StatusCreated, http.StatusOK)
 

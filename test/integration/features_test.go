@@ -77,8 +77,7 @@ func TestAProjectIsInvisibleToEverybodyButItsOwner(t *testing.T) {
 // anyone holding the ordinary reporting, transfer or archiving permission - and
 // each request also confirmed that the id existed.
 func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, _ := startWithWorker(t)
 
 	// Two ordinary accounts. Archiving somebody's project needs rights over the work,
 	// which the built-in administrator does not hold any more - so it can no longer be
@@ -152,13 +151,12 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 // carry step="0.25", which did not round anything - it made the browser refuse
 // the submit - while the API accepted any duration from a token client.
 func TestAnyDurationCanBeBookedNotOnlyQuarterHours(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	for _, hours := range []float64{1.37, 0.1167, 7.99, 0.01} {
 		var entry timesheetResponse
 
-		admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+		worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 			"date": "2026-08-06", "durationHours": hours,
 		}), http.StatusCreated, http.StatusOK).Data(t, &entry)
 
@@ -171,7 +169,7 @@ func TestAnyDurationCanBeBookedNotOnlyQuarterHours(t *testing.T) {
 
 	// And a duration below the published floor is refused rather than stored as
 	// something nobody meant.
-	if got := admin.api(http.MethodPost, "/timesheets", map[string]any{
+	if got := worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-06", "durationHours": 0.001,
 	}).Status; got == http.StatusCreated || got == http.StatusOK {
 		t.Error("a duration below the documented minimum was accepted")
@@ -179,11 +177,10 @@ func TestAnyDurationCanBeBookedNotOnlyQuarterHours(t *testing.T) {
 }
 
 func TestTimeCanBeBookedWithoutAProjectAndCategorisedLater(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	var entry timesheetResponse
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-02", "durationHours": 3, "description": "Sort this out later",
 	}), http.StatusCreated, http.StatusOK).Data(t, &entry)
 
@@ -195,12 +192,12 @@ func TestTimeCanBeBookedWithoutAProjectAndCategorisedLater(t *testing.T) {
 	// and a private project is one the administrator may create, where a shared one
 	// belongs to whoever runs the work.
 	var project projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Found a home", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	var updated timesheetResponse
-	admin.must(admin.api(http.MethodPut, path("/timesheets/", entry.ID),
+	worker.must(worker.api(http.MethodPut, path("/timesheets/", entry.ID),
 		map[string]any{"projectId": project.ID}), http.StatusOK).Data(t, &updated)
 
 	if updated.ProjectID == nil || *updated.ProjectID != project.ID {
@@ -275,8 +272,11 @@ func TestAnUnknownTimezoneIsRefused(t *testing.T) {
 // ------------------------------------------------------- operational limits
 
 func TestOperationalLimitsApplyWithoutARestart(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	// The two halves of this belong to two different jobs, so it takes two accounts.
+	// The installation's ceiling is a setting, which the administrator owns; the
+	// booking that proves the new ceiling is already in force is a working day, which
+	// only somebody who works here has.
+	_, admin, worker := startWithWorker(t)
 
 	var before struct {
 		Configured map[string]any `json:"configured"`
@@ -301,9 +301,11 @@ func TestOperationalLimitsApplyWithoutARestart(t *testing.T) {
 	admin.must(admin.api(http.MethodPut, "/settings/operational",
 		map[string]any{"maxDailyHours": 9}), http.StatusOK)
 
-	// In force immediately: 10 hours must now be refused.
+	// In force immediately: 10 hours must now be refused. A new account carries no
+	// personal ceiling of its own, so the number the booking meets is the one that was
+	// just administered.
 	today := time.Now().Format("2006-01-02")
-	if r := admin.api(http.MethodPost, "/timesheets", map[string]any{
+	if r := worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": today, "durationHours": 10,
 	}); r.Status != http.StatusConflict {
 		t.Errorf("the new cap should apply at once, got %d", r.Status)
@@ -312,7 +314,7 @@ func TestOperationalLimitsApplyWithoutARestart(t *testing.T) {
 	// Resetting returns to the environment's value.
 	admin.must(admin.api(http.MethodPut, "/settings/operational", map[string]any{}), http.StatusOK)
 
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": today, "durationHours": 10,
 	}), http.StatusCreated, http.StatusOK)
 }
@@ -340,21 +342,20 @@ func TestOperationalLimitsRejectValuesThatWouldLockTheInstance(t *testing.T) {
 // ------------------------------------------------------------- guided tour
 
 func TestTourIsOfferedOnceAndCanBeRestarted(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	var me struct {
 		User userResponse `json:"user"`
 	}
 
-	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
 
 	if me.User.TourSeen {
 		t.Fatal("a new account should be offered the tour")
 	}
 
-	admin.must(admin.api(http.MethodPut, "/me/tour", map[string]any{"seen": true}), http.StatusOK)
-	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+	worker.must(worker.api(http.MethodPut, "/me/tour", map[string]any{"seen": true}), http.StatusOK)
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
 
 	if !me.User.TourSeen {
 		t.Error("the tour should be recorded as seen")
@@ -362,8 +363,8 @@ func TestTourIsOfferedOnceAndCanBeRestarted(t *testing.T) {
 
 	// Asking to see it again is allowed: being told you already had your chance
 	// would be a strange way to treat someone who wants to look again.
-	admin.must(admin.api(http.MethodPut, "/me/tour", map[string]any{"seen": false}), http.StatusOK)
-	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+	worker.must(worker.api(http.MethodPut, "/me/tour", map[string]any{"seen": false}), http.StatusOK)
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
 
 	if me.User.TourSeen {
 		t.Error("the tour should be on offer again")
@@ -412,18 +413,21 @@ func lower(s string) string {
 // on MySQL, and only when nothing changed, which is why it went unnoticed until
 // the suite was pointed at MySQL.
 func TestSavingWithoutChangingAnythingIsNotAnError(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	// Every record saved here belongs to whoever it is about - their working times,
+	// their project, their time entry - so the account doing the saving is somebody who
+	// works here. The administrator holds no rights over any of the three, and a 403
+	// would prove nothing about how many rows an UPDATE reported.
+	_, _, worker := startWithWorker(t)
 
 	var me struct {
 		User userResponse `json:"user"`
 	}
 
-	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
 
 	// Twice with the same values. The second is the one that used to 404.
 	for attempt := 1; attempt <= 2; attempt++ {
-		r := admin.api(http.MethodPut, path("/users/", me.User.ID, "/working-times"),
+		r := worker.api(http.MethodPut, path("/users/", me.User.ID, "/working-times"),
 			map[string]any{"dailyTargetHours": 8})
 
 		if r.Status != http.StatusOK {
@@ -432,27 +436,27 @@ func TestSavingWithoutChangingAnythingIsNotAnError(t *testing.T) {
 		}
 	}
 
-	// The same for the other tables that are saved whole. Private, so this stays
-	// about saving rather than about who may keep the shared projects.
+	// The same for the other tables that are saved whole: a project and an entry of the
+	// caller's own, which is the only kind of either there is.
 	var project projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Unchanged", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
 	for attempt := 1; attempt <= 2; attempt++ {
-		if r := admin.api(http.MethodPut, path("/projects/", project.ID),
+		if r := worker.api(http.MethodPut, path("/projects/", project.ID),
 			map[string]any{"name": "Unchanged", "startDate": "2026-08-01"}); r.Status != http.StatusOK {
 			t.Errorf("project attempt %d: got %d: %s", attempt, r.Status, r.Body)
 		}
 	}
 
 	var entry timesheetResponse
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-01", "durationHours": 4,
 	}), http.StatusCreated, http.StatusOK).Data(t, &entry)
 
 	for attempt := 1; attempt <= 2; attempt++ {
-		if r := admin.api(http.MethodPut, path("/timesheets/", entry.ID),
+		if r := worker.api(http.MethodPut, path("/timesheets/", entry.ID),
 			map[string]any{"durationHours": 4}); r.Status != http.StatusOK {
 			t.Errorf("timesheet attempt %d: got %d: %s", attempt, r.Status, r.Body)
 		}

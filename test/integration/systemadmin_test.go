@@ -45,20 +45,15 @@ func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
 
 	owner, entry := employeeWithTime(t, a, admin)
 
-	// The listing is scoped to the caller rather than refused outright: the
-	// administrator has their own entries to read, and somebody else's are simply
-	// not among them.
-	var listed listOf[timesheetResponse]
-	admin.must(admin.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &listed)
-
-	for _, item := range listed.Items {
-		if item.ID == entry.ID {
-			t.Error("the administrator's own listing contains somebody else's entry")
-		}
+	// The listing is refused outright now, where it used to be scoped to the caller:
+	// the administrator had its own entries to read and somebody else's were simply
+	// not among them. It has none, because it does not record time - so there is
+	// nothing to scope and the right to read a list at all is gone.
+	if got := admin.api(http.MethodGet, "/timesheets", nil).Status; got == http.StatusOK {
+		t.Error("the administrator read a list of time entries; it records none")
 	}
 
-	// And asking for hers by name is refused rather than quietly answered with
-	// the administrator's own.
+	// Asking for hers by name is refused the same way.
 	if got := admin.api(http.MethodGet,
 		path("/timesheets?userId=", entry.UserID), nil).Status; got == http.StatusOK {
 		t.Error("the administrator read another user's entries by filtering for them")
@@ -83,8 +78,8 @@ func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
 		}
 	}
 
-	// Everybody's overtime balance in one list is the same reading by another
-	// route, and hangs on the report right the administrator no longer holds.
+	// The team-wide overtime route was here, and it is gone rather than refused:
+	// comparing colleagues is the one thing this arrangement says nobody does.
 	if got := admin.api(http.MethodGet, "/overtime", nil).Status; got == http.StatusOK {
 		t.Error("the administrator read the overtime balance of every account")
 	}
@@ -111,12 +106,14 @@ func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 		"name": "Momo's work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
 
-	// It may make one of its own - there is no other kind, and this used to check
-	// that it could not make the shared sort. What it may not do is touch somebody
-	// else's, which is the list below.
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	// It may not make one at all. This checked twice before that it could not make a
+	// shared project, and then that it could make its own - a project is somewhere to
+	// put hours, and the administrator records none.
+	if got := admin.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Mine to make", "startDate": "2026-08-01",
-	}), http.StatusCreated, http.StatusOK)
+	}).Status; got == http.StatusCreated || got == http.StatusOK {
+		t.Error("the administrator created a project; it has no hours to put in one")
+	}
 
 	for _, attempt := range []struct {
 		what   string
@@ -135,62 +132,36 @@ func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 		}
 	}
 
-	// Its report is not its business either, and answers as though it were not there:
-	// confirming the id exists would be a way to find out what colleagues have.
+	// A report is refused too, and the same way: as though the project were not there.
+	// Confirming the id exists would be a way to find out what colleagues have.
 	if got := admin.api(http.MethodGet,
-		path("/projects/", shared.ID)+"/report", nil).Status; got != http.StatusNotFound {
-		t.Errorf("the administrator read a colleague's project report: %d, want 404", got)
+		path("/projects/", shared.ID)+"/report", nil).Status; got == http.StatusOK {
+		t.Errorf("the administrator read a colleague's project report: %d", got)
 	}
 
-	// Its own report, which is empty because it booked nothing - worth stating, so
-	// this cannot pass by reports being broken for everybody.
-	var mine projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Administration", "startDate": "2026-08-01",
-	}), http.StatusCreated, http.StatusOK).Data(t, &mine)
-
-	report := admin.must(admin.api(http.MethodGet,
-		path("/projects/", mine.ID)+"/report", nil), http.StatusOK)
-
-	var totals struct {
-		Entries []struct {
-			UserID uint    `json:"userId"`
-			Hours  float64 `json:"hours"`
-		} `json:"entries"`
-		TotalHours float64 `json:"totalHours"`
-	}
-
-	report.Data(t, &totals)
-
-	if len(totals.Entries) != 0 || totals.TotalHours != 0 {
-		t.Errorf("the administrator's report over somebody else's project is not empty: %+v",
-			totals)
-	}
+	// And the owner still can, so none of this passes by reports being broken.
+	other.must(other.api(http.MethodGet, path("/projects/", shared.ID)+"/report", nil),
+		http.StatusOK)
 
 	// Reading the list is still allowed: time has to be bookable against
 	// something, and that list is what every employee sees anyway.
-	// And the list holds its own and nothing else. This used to check the opposite -
-	// that it could see the shared project to book against - because time had to be
-	// bookable against something everybody could reach. A project belongs to one
-	// person now, so what it books against is its own.
-	var visible listOf[projectResponse]
-	admin.must(admin.api(http.MethodGet, "/projects", nil), http.StatusOK).Data(t, &visible)
-
-	for _, project := range visible.Items {
-		if project.ID == shared.ID {
-			t.Error("a colleague's project is in the administrator's list")
-		}
-	}
-
-	if len(visible.Items) == 0 {
-		t.Error("the administrator sees none of its own projects, so it has nothing to " +
-			"book against")
+	// The list is refused as well. This checked twice before: first that the shared
+	// project was visible so there was something to book against, then that only its
+	// own was. It has none and books nothing, so the right to read the list is gone
+	// with the rest.
+	if got := admin.api(http.MethodGet, "/projects", nil).Status; got == http.StatusOK {
+		t.Error("the administrator read the project list; it keeps no projects")
 	}
 }
 
-// The other half: what was taken away has to be exactly the work, or an
-// installation is left unadministrable.
-func TestTheAdministratorStillAdministersAndStillWorks(t *testing.T) {
+// The other half: what was taken away has to be exactly the work, or an installation
+// is left unadministrable.
+//
+// It was called "still administers and still works". It does not work here - the
+// account exists on every installation before anybody has chosen anything, so it is
+// how you get in rather than somebody's working day. Whoever does work here has an
+// account of their own, and the role below is for the person who does both.
+func TestTheAdministratorStillAdministersAndNothingElse(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -221,53 +192,78 @@ func TestTheAdministratorStillAdministersAndStillWorks(t *testing.T) {
 		t.Errorf("the administrator set somebody else's working times: %d, want 403", got)
 	}
 
-	// Its own, though: it works here like anybody else. Its id comes from /me further
-	// down, where this test already reads it.
+	// Not even its own, which is the difference from before: it has no working day for
+	// a daily target to be about.
 	var self struct {
 		User userResponse `json:"user"`
 	}
 
 	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &self)
-	admin.must(admin.api(http.MethodPut, path("/users/", self.User.ID, "/working-times"),
-		map[string]any{"dailyTargetHours": 7}), http.StatusOK)
+
+	if got := admin.api(http.MethodPut, path("/users/", self.User.ID, "/working-times"),
+		map[string]any{"dailyTargetHours": 7}).Status; got != http.StatusForbidden {
+		t.Errorf("the administrator set working times for itself: %d, want 403", got)
+	}
 
 	// The installation itself.
 	admin.must(admin.api(http.MethodGet, "/setup", nil), http.StatusOK)
 	admin.must(admin.api(http.MethodPut, "/settings/operational",
 		map[string]any{"maxDailyHours": 10}), http.StatusOK)
 
-	// And their own time, like anybody who works here.
-	var mine projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
-		"name": "Administration", "startDate": "2026-08-01",
-	}), http.StatusCreated, http.StatusOK).Data(t, &mine)
-
-	var entry timesheetResponse
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
-		"date": "2026-08-03", "durationHours": 2, "projectId": mine.ID,
-	}), http.StatusCreated, http.StatusOK).Data(t, &entry)
-
-	admin.must(admin.api(http.MethodPut, path("/timesheets/", entry.ID),
-		map[string]any{"status": "submitted"}), http.StatusOK)
-
-	admin.must(admin.api(http.MethodGet, "/me/statistics?from=2026-08-01&to=2026-08-31", nil),
-		http.StatusOK)
-
-	var me struct {
-		User userResponse `json:"user"`
+	// And no working day of its own. Every one of these was here as something it
+	// could do "like anybody who works here", and that was the wrong shape: the
+	// account exists before anybody has chosen anything.
+	for _, attempt := range []struct {
+		what   string
+		method string
+		route  string
+		body   map[string]any
+	}{
+		{"create a project", http.MethodPost, "/projects",
+			map[string]any{"name": "Administration", "startDate": "2026-08-01"}},
+		{"book time", http.MethodPost, "/timesheets",
+			map[string]any{"date": "2026-08-03", "durationHours": 2}},
+		{"read its own figures", http.MethodGet,
+			"/me/statistics?from=2026-08-01&to=2026-08-31", nil},
+		{"read its own overtime", http.MethodGet,
+			path("/users/", self.User.ID, "/overtime"), nil},
+	} {
+		got := admin.api(attempt.method, attempt.route, attempt.body).Status
+		if got == http.StatusOK || got == http.StatusCreated {
+			t.Errorf("the administrator could %s; it does not record time", attempt.what)
+		}
 	}
 
-	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
-	admin.must(admin.api(http.MethodGet, path("/users/", me.User.ID, "/overtime"), nil),
+	// What replaced it, and the reason none of the above is a loss: an account can be
+	// given both jobs, and the administrator is who hands that out. Somebody who works
+	// here and also administers keeps their own hours and administers the accounts -
+	// which is the whole arrangement said in one test.
+	both := a.signInAsWorkingAdmin(admin, "Bothe", "bothe@example.com")
+
+	var theirs projectResponse
+	both.must(both.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Both jobs", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &theirs)
+
+	both.must(both.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-03", "durationHours": 2, "projectId": theirs.ID,
+	}), http.StatusCreated, http.StatusOK)
+
+	both.must(both.api(http.MethodGet, "/me/statistics?from=2026-08-01&to=2026-08-31", nil),
 		http.StatusOK)
+
+	// And the administration, which is what makes it the combined role rather than an
+	// ordinary account.
+	both.must(both.api(http.MethodPost, "/users", map[string]any{
+		"name": "Hired", "email": "hired@example.com",
+		"role": "employee", "password": "hired-password-1",
+	}), http.StatusCreated, http.StatusOK)
 }
 
 // What the guarantee is, exactly.
 //
-// It is the seeded default, not a wall: whoever may manage roles may widen the
-// role they hold, and taking that away would take role administration with it. A
-// user holds one role, so a wall would also mean a two-person team needed two
-// accounts to approve an hour.
+// It is the seeded default, not a wall: whoever may manage roles may widen the role
+// they hold, and taking that away would take role administration with it.
 //
 // Recorded as a test because the difference matters to anybody relying on it: the
 // administrator cannot reach somebody else's hours by accident or by pointing a

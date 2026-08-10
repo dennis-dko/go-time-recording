@@ -192,12 +192,21 @@ func TestSearchingTheLog(t *testing.T) {
 	// ever show what LOG_LEVEL admits, so ticking DEBUG on an installation
 	// running at WARN shows nothing and is not a bug.
 	a := start(t, "LOG_LEVEL=INFO")
-	c := a.signInAsAdmin("a-much-better-password")
+	admin := a.signInAsAdmin("a-much-better-password")
 
-	// A request whose path is distinctive enough to search for.
-	c.must(c.api(http.MethodGet, "/projects", nil), http.StatusOK)
+	// Not startWithWorker, because this case needs LOG_LEVEL on the instance and that
+	// helper starts a plain one.
+	worker := a.signInAsUser(admin, "Wera", "wera@example.com")
 
-	page := c.logs(t, "?search=/api/v1/projects&limit=500")
+	// A request whose path is distinctive enough to search for, made by somebody who
+	// works here: the built-in administrator holds nothing about projects, so it could
+	// only produce a refusal, and a refused request is a weaker thing to search for
+	// than one that was actually served.
+	worker.must(worker.api(http.MethodGet, "/projects", nil), http.StatusOK)
+
+	// The log stays the administrator's to read, so the search is made from the other
+	// session.
+	page := admin.logs(t, "?search=/api/v1/projects&limit=500")
 
 	if len(page.Records) == 0 {
 		t.Fatal("searching for a path that was definitely requested found nothing")

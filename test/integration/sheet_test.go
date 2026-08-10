@@ -63,17 +63,30 @@ func accepted(status int) bool {
 // The export routes are reachable, which is not a given: they sit beside
 // /projects/{id} and /users/{id} and the router matches the first pattern that
 // fits, so "export" read as an id is the failure to watch for.
+//
+// One caller per route, because the two sheets belong to the two jobs: a project
+// sheet is somebody's own work, so it is asked for by somebody who works here, and
+// the people sheet is the installation's accounts, so it is asked for by the
+// administrator. Neither account can stand in for the other - the administrator
+// holds nothing about projects, and an ordinary account holds nothing about
+// accounts - so a single caller could only ever prove half of this.
 func TestTheExportRoutesAreNotReadAsIdentifiers(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, admin, worker := startWithWorker(t)
 
-	for _, path := range []string{"/projects/export", "/users/export"} {
-		exported := admin.must(admin.api(http.MethodGet, path, nil), http.StatusOK)
+	for _, sheet := range []struct {
+		route  string
+		caller *client
+	}{
+		{"/projects/export", worker},
+		{"/users/export", admin},
+	} {
+		exported := sheet.caller.must(sheet.caller.api(http.MethodGet, sheet.route, nil),
+			http.StatusOK)
 
 		// An .xlsx is a zip. A 400 about a parameter nobody sent is what this
 		// catches.
 		if !bytes.HasPrefix(exported.Body, []byte("PK")) {
-			t.Errorf("%s did not answer with a workbook: %.40q", path, exported.Body)
+			t.Errorf("%s did not answer with a workbook: %.40q", sheet.route, exported.Body)
 		}
 	}
 }
@@ -81,14 +94,10 @@ func TestTheExportRoutesAreNotReadAsIdentifiers(t *testing.T) {
 // A project sheet round-trips: exported, read back, imported again, and the second
 // import changes nothing rather than creating everything twice.
 func TestProjectsRoundTripThroughASpreadsheet(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
-	// As an employee, not as the administrator: projects belong to the people doing
-	// the work, and the system administrator administers. The administrator cannot
-	// create a shared project at all, which the last test here pins down.
-	worker := a.signInAsUser(admin, "Mika", "mika@example.com")
-
+	// The work is done by somebody who works here; the administrator only creates
+	// that account. It holds no project rights of its own at all.
 	for _, project := range []map[string]any{
 		{"name": "Roof", "startDate": "2026-08-01", "description": "tiles"},
 		{"name": "Cellar", "startDate": "2026-08-02", "endDate": "2026-09-30"},
@@ -150,9 +159,7 @@ func TestProjectsRoundTripThroughASpreadsheet(t *testing.T) {
 // already archived was refused, for a change nobody had asked for. The status is
 // only sent where it differs now, which is both correct and sidesteps the rule.
 func TestAnArchivedProjectCanBeImportedBack(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
-	worker := a.signInAsUser(admin, "Mika", "mika@example.com")
+	_, _, worker := startWithWorker(t)
 
 	var project projectResponse
 	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
@@ -200,9 +207,7 @@ func TestAnArchivedProjectCanBeImportedBack(t *testing.T) {
 // preview: nothing is written when any row is refused, so the whole file would fail
 // after being shown as fine.
 func TestArchivingAProjectThatIsNotCompletedIsRefusedInThePreview(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
-	worker := a.signInAsUser(admin, "Mika", "mika@example.com")
+	_, _, worker := startWithWorker(t)
 
 	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Busy roof", "startDate": "2026-08-01",
@@ -234,9 +239,7 @@ func TestArchivingAProjectThatIsNotCompletedIsRefusedInThePreview(t *testing.T) 
 // The headings are translated and the values with them, and the preview says the
 // same words as the file.
 func TestTheProjectPreviewSpeaksTheLanguageAsked(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
-	worker := a.signInAsUser(admin, "Mika", "mika@example.com")
+	_, _, worker := startWithWorker(t)
 
 	book, err := spreadsheet.WriteProjects("de", []spreadsheet.ProjectRow{
 		{Name: "Dach", StartDate: mustDay(t, "2026-08-01"), Status: "archived"},
@@ -397,8 +400,7 @@ func TestThePeopleSheetCarriesNoWorkingTimes(t *testing.T) {
 // put something where somebody else can see it, since it is the one route nobody reads
 // row by row.
 func TestAnImportedProjectBelongsToWhoeverImportedIt(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	a, admin, _ := startWithWorker(t)
 	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
 	bert := a.signInAsUser(admin, "Bert", "bert@example.com")
 

@@ -323,10 +323,10 @@
 
     <!-- Overtime -->
     <section id="view-overtime" class="view" hidden>
-      <!-- Your own hours, drawn. Here rather than under Reports because that
-           screen needs reports:read, which both default roles are deliberately
-           without - so an employee could never have seen a chart of their own
-           week through it. This one is keyed on the caller. -->
+      <!-- Your own hours, drawn. Here rather than under Reports because that screen
+           is keyed on one project id and cannot say "every project" or "no project" -
+           and because a chart of your own week should not depend on picking a project
+           first. Both are the caller's own either way. -->
       <div class="card" id="statistics-card">
         <div class="card-head">
           <h2 data-i18n="stats.title">My hours</h2>

@@ -44,21 +44,20 @@ func refusalOf(t *testing.T, r response) refusal {
 
 // A conflict, which GoFr renders through a local error type.
 func TestAConflictCarriesItsReasonAndValues(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	// A project with an entry on it cannot be deleted, and the refusal says how
 	// many entries are in the way - the number the German sentence needs.
 	var project projectResponse
-	admin.must(admin.api(http.MethodPost, "/projects", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Busy", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-03", "durationHours": 2, "projectId": project.ID,
 	}), http.StatusCreated, http.StatusOK)
 
-	refused := admin.api(http.MethodDelete, path("/projects/", project.ID), nil)
+	refused := worker.api(http.MethodDelete, path("/projects/", project.ID), nil)
 	if refused.Status != http.StatusConflict {
 		t.Fatalf("deleting a project with entries answered %d, want 409: %s",
 			refused.Status, refused.Body)
@@ -89,17 +88,19 @@ func TestAConflictCarriesItsReasonAndValues(t *testing.T) {
 // Invalid input, which is the other rendering path - and the one that used to
 // wrap the sentence in GoFr's "'1' invalid parameter(s):".
 func TestInvalidInputCarriesItsReasonAndValues(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	// Somebody who works here, because the two figures are a time figure each and
+	// belong to the person they are about. The administrator is refused this route
+	// before the request is even read, so it could never reach the rule under test.
+	_, _, worker := startWithWorker(t)
 
 	var me struct {
 		User userResponse `json:"user"`
 	}
 
-	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
 
 	// A daily target above the daily maximum, which is refused with both figures.
-	refused := admin.api(http.MethodPut, path("/users/", me.User.ID, "/working-times"),
+	refused := worker.api(http.MethodPut, path("/users/", me.User.ID, "/working-times"),
 		map[string]any{"dailyTargetHours": 9, "maxDailyHours": 8})
 
 	if refused.Status != http.StatusBadRequest {
@@ -138,12 +139,11 @@ func TestInvalidInputCarriesItsReasonAndValues(t *testing.T) {
 // An error nobody has annotated keeps exactly the body it had, so adding the
 // mechanism cannot have changed what an unannotated refusal looks like.
 func TestAnUnannotatedRefusalIsUnchanged(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
+	_, _, worker := startWithWorker(t)
 
 	// A field-level rejection, which travels as a list of field names rather than
 	// as a coded sentence.
-	refused := admin.api(http.MethodPost, "/timesheets", map[string]any{
+	refused := worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-03", "durationHours": -1,
 	})
 

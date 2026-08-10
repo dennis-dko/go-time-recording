@@ -82,38 +82,45 @@ func AllPermissions() []string {
 
 // SystemAdminPermissions is what the built-in administrator holds.
 //
-// Deliberately not AllPermissions(). Administering an installation and reading
-// what people recorded in it are two different jobs, and the account that exists
-// on every installation is the one least entitled to the second: nobody chose to
-// give it that reach, it arrived with the software. An administrator restoring a
-// backup or repointing the directory has no business in a colleague's week.
+// Administration, and nothing else. It sets up the installation and it keeps the
+// accounts and their roles - that is the whole job, and it does not record time.
 //
-// So it manages the installation, its users and their roles, and books its own
-// time like anybody else. Nobody else's hours, and no total over them either:
-// everyone keeps their own, and nobody sees what anybody else has. That is the whole
-// arrangement now that there is no role between this one and an ordinary account.
+// It used to book and read its own hours "like anybody else who works here", and that
+// was the wrong shape. The account exists on every installation before anybody has
+// chosen anything: it is how you get in, not somebody's working day. Whoever does work
+// here has an account of their own, and if that person also administers, they are given
+// the role below rather than made to sign in twice.
 //
-// This is not a hint. The rights are enforced per endpoint, so the administrator
-// is refused these by the same code that refuses an employee.
+// So no time, no projects, no figures, no working times. This is not a hint - the
+// rights are enforced per endpoint, so the administrator is refused these by the same
+// code that refuses anybody else.
 func SystemAdminPermissions() []string {
 	return []string{
 		PermUserRead, PermUserWrite, PermUserDelete,
 		PermRoleRead, PermRoleWrite,
+	}
+}
 
-		// Its own projects, whole: there is one kind of project now and it belongs to
-		// one person, so keeping one means being able to finish it and remove it too.
-		// This used to read "the shared projects, not managing them", from when there
-		// were two kinds - and the own-project right it held then already allowed
-		// removing your own, so this is the same reach said in the new vocabulary.
-		PermProjectRead, PermProjectWrite,
-		PermProjectArchive, PermProjectDelete,
+// EmployeeAdminPermissions is what somebody who works here and also administers holds.
+//
+// The one arrangement that reaches across the two jobs, and it is granted rather than
+// assumed: the built-in administrator hands it out. It is an employee's rights plus the
+// administration, which means an ordinary account gaining a second job - not the
+// built-in account gaining a working day.
+//
+// Assembled from the two lists rather than written out, so a right added to either one
+// cannot be forgotten here.
+func EmployeeAdminPermissions() []string {
+	return append(EmployeePermissions(), SystemAdminPermissions()...)
+}
 
-		// An administrator is also a person who works here.
-		PermTimesheetReadOwn, PermTimesheetWriteOwn, PermReportReadOwn,
-
-		// Their own preferences, and nobody else's: the daily target and the ceiling
-		// belong to whoever they are about.
-		PermSettingsWriteOwn,
+// EmployeePermissions is what an ordinary account holds: everything about its own work
+// and nothing about anybody else's.
+func EmployeePermissions() []string {
+	return []string{
+		PermProjectRead, PermProjectWrite, PermProjectArchive, PermProjectDelete,
+		PermTimesheetReadOwn, PermTimesheetWriteOwn, PermTimesheetTransfer,
+		PermReportReadOwn, PermSettingsWriteOwn,
 	}
 }
 
@@ -132,6 +139,14 @@ func IsPermission(name string) bool {
 const (
 	RoleAdmin    = "admin"
 	RoleEmployee = "employee"
+
+	// RoleEmployeeAdmin is somebody who works here and also administers.
+	//
+	// Seeded rather than left to be assembled by hand, because the alternative is an
+	// administrator building a role out of two lists of rights and getting one of them
+	// slightly wrong - which nobody notices until somebody is refused something, or
+	// allowed something.
+	RoleEmployeeAdmin = "employee-admin"
 )
 
 // DefaultRoles is the role set seeded on first start. Admin is marked as a
@@ -148,20 +163,25 @@ func DefaultRoles() []Role {
 		{
 			Name:        RoleEmployee,
 			Description: "Keeps their own time, projects and calendar",
-			// Everything about their own work, and nothing about anybody else's.
-			// There is no third role between this one and the administrator: a
-			// manager who approved other people's hours needed a review path, and
-			// there is none - everyone keeps their own.
+			// Everything about their own work, and nothing about anybody else's -
+			// there is no role that reads across accounts, because there is nothing
+			// to read across. Projects included: one belongs to this person, so
+			// creating, finishing, archiving and removing it is theirs to do.
+			Permissions: EmployeePermissions(),
+		},
+		{
+			Name: RoleEmployeeAdmin,
+			Description: "Keeps their own time and projects, and administers the " +
+				"installation",
+			// The one role that spans both jobs, and the answer to "somebody here
+			// needs to administer as well". Given out by the built-in administrator,
+			// which is what makes it a decision rather than an accident.
 			//
-			// That includes the projects. They are the person's own categories, so
-			// creating, completing, archiving and deleting one is theirs to do;
-			// PermProjectRead still only shows what they may see.
-			Permissions: []string{
-				PermProjectRead, PermProjectWrite,
-				PermProjectArchive, PermProjectDelete,
-				PermTimesheetReadOwn, PermTimesheetWriteOwn, PermTimesheetTransfer,
-				PermReportReadOwn, PermSettingsWriteOwn,
-			},
+			// Not a system role: an installation that does not want it can remove it,
+			// and its rights are visible in the role editor like any other. What must
+			// not be removable is the built-in administrator's own role, and that one
+			// is marked above.
+			Permissions: EmployeeAdminPermissions(),
 		},
 	}
 }
