@@ -76,15 +76,20 @@ func (h *MeHandler) ChangePassword(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	// Every existing session is ended, so a session opened with the old
-	// password on another device stops working immediately.
-	if err := h.sessions.LogoutAll(c, principal.User.ID); err != nil {
+	// Every other session is ended, so one opened with the old password on another
+	// device stops working immediately - and this one is not, because it is the
+	// device that just proved it knew the old password. Ending it as well signed
+	// somebody out of the setup wizard between two of its steps.
+	var token string
+	if cookie, err := requestOf(c).Cookie(SessionCookieName); err == nil {
+		token = cookie.Value
+	}
+
+	if err := h.sessions.LogoutOthers(c, principal.User.ID, token); err != nil {
 		return nil, toHTTPError(err)
 	}
 
-	setCookie(c, expiredCookie(requestOf(c)))
-
-	return map[string]string{"status": "password changed, please sign in again"}, nil
+	return map[string]string{"status": "password changed"}, nil
 }
 
 // Overtime handles GET /api/v1/users/{id}/overtime.

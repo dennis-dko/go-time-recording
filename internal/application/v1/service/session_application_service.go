@@ -366,10 +366,25 @@ func (s *SessionService) Logout(ctx context.Context, token string) error {
 	return s.sessions.Delete(ctx, security.HashToken(token))
 }
 
-// LogoutAll ends every session of a user, used after a password change or
-// when their rights are altered.
+// LogoutAll ends every session of a user, used when their rights are altered or
+// their account is taken over by somebody else.
 func (s *SessionService) LogoutAll(ctx context.Context, userID uint) error {
 	return s.sessions.DeleteForUser(ctx, userID)
+}
+
+// LogoutOthers ends every session of a user but the one the token belongs to.
+//
+// For somebody changing their own password: the other devices lose access, which
+// is the point, and the one they are holding does not - it just proved it knows
+// the old password, and signing it out mid-wizard achieves nothing but a second
+// sign-in.
+func (s *SessionService) LogoutOthers(ctx context.Context, userID uint, token string) error {
+	if token == "" {
+		// No session to keep - a token client, say. Then this is LogoutAll.
+		return s.sessions.DeleteForUser(ctx, userID)
+	}
+
+	return s.sessions.DeleteForUserExcept(ctx, userID, security.HashToken(token))
 }
 
 // PruneExpired removes timed-out sessions.

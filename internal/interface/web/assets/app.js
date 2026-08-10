@@ -293,10 +293,48 @@ function statusBadge(status) {
   return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
 }
 
+/**
+ * A date in the reader's own language.
+ *
+ * Was hard-coded to d.m.Y, which is right in German and wrong everywhere else -
+ * an English reader saw 03.08.2026 and had to work out which number was the
+ * month. Intl knows every locale's order, and the date is built in UTC so a zone
+ * behind the line cannot shift it to the previous day: the string is a calendar
+ * day, not a moment.
+ */
+/** The built-in mark: a stopwatch, drawn rather than fetched. */
+const DEFAULT_FAVICON =
+  "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+  + "<text y='14' font-size='14'>&#9201;</text></svg>";
+
+/**
+ * Points the browser tab at the instance's logo.
+ *
+ * The logo is stored as a data URI, so it needs no request and cannot be blocked
+ * by the Content-Security-Policy - which allows data: images for exactly this
+ * reason. Anything else is refused rather than set: a logo that is a link to
+ * somewhere else would make the tab icon a request to that somewhere.
+ */
+function applyFavicon(logo) {
+  const link = document.querySelector('link[rel="icon"]');
+  if (!link) return;
+
+  const usable = typeof logo === 'string' && logo.startsWith('data:image/');
+
+  link.href = usable ? logo : DEFAULT_FAVICON;
+}
+
 function fmtDate(iso) {
   if (!iso) return '–';
-  const [y, m, d] = iso.split('-');
-  return `${d}.${m}.${y}`;
+
+  const [y, m, d] = iso.split('-').map(Number);
+  const at = new Date(Date.UTC(y, m - 1, d));
+
+  if (Number.isNaN(at.getTime())) return iso;
+
+  return new Intl.DateTimeFormat(activeLanguage(), {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
+  }).format(at);
 }
 
 const fmtHours = (n) => `${n.toFixed(2)} h`;
@@ -906,6 +944,9 @@ const TRANSLATIONS = {
     'sync.preview': 'Vorschau',
     'sync.run': 'Abgleich ausführen',
     'sync.running': 'Wird geprüft …',
+    'status.active': 'aktiv',
+    'status.archived': 'archiviert',
+    'status.completed': 'abgeschlossen',
     'sync.title': 'Verzeichnis-Abgleich',
     'sync.warning': 'Achtung: Konten, die im Verzeichnis fehlen, werden hier gelöscht — mitsamt ihren erfassten Zeiten, eigenen Projekten und Tokens. Das lässt sich nicht rückgängig machen. Bitte immer zuerst die Vorschau ansehen.',
     'sync.wouldCreate': 'Würden angelegt',
@@ -1207,7 +1248,14 @@ async function loadUsers() {
     }
 
     const roleCell = el('td', {});
-    if (can('users:write') && can('roles:read')) {
+
+    // The built-in account's role is shown as text rather than as a control that
+    // cannot be used. A disabled dropdown still looks like something to click,
+    // and the answer to clicking it is "no" - which is worse than not offering it.
+    // Its role is fixed anyway: it must keep one that can still administer.
+    if (u.isSystem) {
+      roleCell.append(el('span', { text: u.role }));
+    } else if (can('users:write') && can('roles:read')) {
       // Changing a role is a select rather than a form: it is the one field
       // that is changed on its own often enough to deserve it.
       const select = el('select', {
@@ -1216,7 +1264,6 @@ async function loadUsers() {
       });
       fillSelect(select, cache.roles, { labelKey: 'name', valueKey: 'name' });
       select.value = u.role;
-      if (u.isSystem) select.disabled = true;
       roleCell.append(select);
     } else {
       roleCell.textContent = u.role || '–';
@@ -1819,6 +1866,11 @@ async function loadBranding() {
   // which is why the footer is no longer hidden when the branding is empty:
   // "which version is actually running" is the first question of every support
   // conversation, and guessing it from a container tag is not an answer.
+  // The instance's own logo in the browser tab, where somebody with several
+  // installations open tells them apart. Falls back to the built-in mark, so an
+  // instance with no logo looks as it always did.
+  applyFavicon(branding.logo);
+
   const versionEl = $('#footer-version');
   if (versionEl) {
     // The platform beside the version, as "v1.0 (windows)". The same version is
@@ -2045,7 +2097,16 @@ function wireDirectorySync() {
     status.textContent = t('sync.running', 'Checking …');
     status.className = 'muted';
 
-    mutate(async () => show(await api('/settings/ldap/sync/preview', { method: 'POST' })), null, null);
+    // Cleared on the way out, not only on the way through: a failure raises its
+    // own notice, and "Checking …" left standing underneath it says the check is
+    // still running when it has already finished badly.
+    mutate(
+      async () => show(await api('/settings/ldap/sync/preview', { method: 'POST' })),
+      null,
+      null,
+    ).finally(() => {
+      if (status.textContent === t('sync.running', 'Checking …')) status.textContent = '';
+    });
   });
 
   $('#sync-run').addEventListener('click', () => {
@@ -2957,9 +3018,10 @@ const SETUP_STEPS = {
         }),
       });
 
-      // The server ends every session on a password change, so staying on the
-      // wizard would only produce 401s on the next step.
-      return { signOut: true };
+      // The session survives now: the server ends the other devices and keeps
+      // this one, so the wizard carries straight on to its next step instead of
+      // dropping the person at a sign-in screen half way through setting up.
+      return {};
     },
   },
 
@@ -3093,6 +3155,10 @@ function renderSetup() {
   const fields = el('div', {});
   if (!step.done && definition.fields) fields.append(...definition.fields());
   $('#setup-step-fields').replaceChildren(fields);
+
+  // The wizard builds its fields as it goes, so the one-off pass at start-up has
+  // already been and gone by the time a password field of its own exists.
+  enhancePasswordFields($('#setup-step-fields'));
 
   $('#setup-back').disabled = index === 0;
 

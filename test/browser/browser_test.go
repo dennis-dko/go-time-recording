@@ -255,12 +255,17 @@ func (p *page) readyAdmin() {
 		chromedp.SendKeys(`#form-password input[name="newPassword"]`,
 			adminPassword, chromedp.ByQuery),
 		p.click(`#form-password button[type="submit"]`),
-		// The change ends the session, so the sign-in screen comes back.
-		chromedp.WaitVisible("#form-login", chromedp.ByID),
 	)
 
-	p.signIn(harness.AdminEmail, adminPassword)
-	p.waitGone("#login-screen")
+	// The session survives the change now: the server ends the other devices and
+	// keeps this one, because this is the device that just proved it knew the old
+	// password. Waiting for a sign-in screen here would wait for ever.
+	time.Sleep(600 * time.Millisecond)
+
+	if p.visible("#login-screen") {
+		p.t.Fatalf("changing the password signed the administrator out; the session was meant to survive it")
+	}
+
 	p.settleWizard()
 }
 
@@ -567,12 +572,14 @@ func TestBookingTimeThroughTheInterface(t *testing.T) {
 		p.click(`#form-password button[type="submit"]`),
 	)
 
-	// Changing it ends the session, so the sign-in screen comes back.
-	p.run("wait for the sign-in screen",
-		chromedp.WaitVisible("#form-login", chromedp.ByID))
+	// The session survives the change now: the server ends the other devices and
+	// keeps this one, because this is the device that just proved it knew the old
+	// password. Waiting for a sign-in screen here would wait for ever.
+	time.Sleep(600 * time.Millisecond)
 
-	p.signIn(harness.AdminEmail, "a-much-better-password")
-	p.waitGone("#login-screen")
+	if p.visible("#login-screen") {
+		p.t.Fatalf("changing the password signed the administrator out; the session was meant to survive it")
+	}
 
 	p.settleWizard()
 

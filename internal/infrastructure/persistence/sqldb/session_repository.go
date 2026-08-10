@@ -84,3 +84,18 @@ func (r *SessionRepository) DeleteExpired(ctx context.Context) (int64, error) {
 
 	return removed, nil
 }
+
+// DeleteForUserExcept ends every session of a user but the one named.
+func (r *SessionRepository) DeleteForUserExcept(
+	ctx context.Context,
+	userID uint,
+	keepTokenHash string,
+) error {
+	if _, err := r.exec(ctx,
+		"DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?",
+		userID, keepTokenHash); err != nil {
+		return apperror.Internal(err)
+	}
+
+	return nil
+}
