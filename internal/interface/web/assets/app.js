@@ -1589,28 +1589,33 @@ async function loadMe() {
 }
 
 async function loadUsers() {
-  // Everyone can see themselves, but listing all users is a permission.
+  // Listing accounts is a permission, and administering them is the only thing this
+  // list is for now.
+  //
+  // It used to be loaded for everybody, including whoever may not list accounts - who
+  // got a list of exactly one entry, themselves. That was to fill four dropdowns of
+  // colleagues: the booking form, the entry filter, the calendar and the overtime
+  // form. They were built when a role could hold timesheets:read:all, and they never
+  // worked as they read - the built-in administrator administers accounts and does not
+  // read what people recorded in them, so it was offered every colleague and every
+  // choice but itself came back 403. The filter was worse: "All users" quietly showed
+  // only your own entries, because the server pins the scope and the label did not
+  // know.
+  //
+  // A dropdown holding a single name is a question with one answer, so all four are
+  // gone, and with them the two rights they existed to use. Whose time it is is not a
+  // choice any more, it is who is signed in.
+  //
+  // Emptied rather than left alone on the way out: a session that loses the right -
+  // its role changed while it was signed in - must not go on showing the accounts it
+  // read a moment ago.
   if (!can('users:read')) {
-    cache.users = me.user ? [me.user] : [];
-  } else {
-    cache.users = (await api('/users'))?.items ?? [];
+    cache.users = [];
+
+    return;
   }
 
-  // There is nobody to pick.
-  //
-  // Four controls used to ask which person: the booking form, the entry filter, the
-  // calendar and the overtime form. They were built when a role could hold
-  // timesheets:read:all, and they never worked as they read - the built-in
-  // administrator administers accounts and does not read what people recorded in
-  // them, so it was offered every colleague and every choice but itself came back
-  // 403. The filter was worse: "All users" quietly showed only your own entries,
-  // because the server pins the scope and the label did not know.
-  //
-  // Narrowing them to whoever the caller may ask about left every one of them
-  // holding a single name - a dropdown with one entry, asking a question with one
-  // answer. So they are gone, and with them the two rights they existed to use.
-  // Whose time it is is not a choice any more, it is who is signed in.
-  if (!can('users:read')) return;
+  cache.users = (await api('/users'))?.items ?? [];
 
   const rows = cache.users.map((u) => {
     const actions = el('td', { class: 'actions' });

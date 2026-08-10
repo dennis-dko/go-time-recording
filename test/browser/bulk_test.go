@@ -322,7 +322,12 @@ func TestASystemRolesRightsCannotBeTicked(t *testing.T) {
 	}
 
 	// The name too, which was already the case - checked here so the two stay together.
-	if p.attr(`#form-role input[name="name"]`, "readonly") == "" {
+	//
+	// Asked as a property. The first version asked for the readonly attribute and
+	// failed against an interface that was doing the right thing - a boolean attribute
+	// present in the markup has the empty string as its value, so comparing it against
+	// "" answers the same either way.
+	if !p.locked(`#form-role input[name="name"]`) {
 		t.Error("the name of a system role can be edited")
 	}
 }

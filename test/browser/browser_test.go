@@ -447,6 +447,31 @@ func (p *page) attr(selector, name string) string {
 	return strings.TrimSpace(out)
 }
 
+// locked reports whether a field refuses typing.
+//
+// Asked as a property, because the attribute cannot answer it. readonly and disabled
+// are boolean attributes: present means true and their value is the empty string, so
+// getAttribute returns "" whether the field is locked or wide open. The first version
+// of this check compared that string against "" and therefore reported every field as
+// editable - including one the interface had correctly locked, which is the expensive
+// kind of wrong, because it sends somebody looking for a bug that is not there.
+//
+// Both mechanisms count. The question is whether anybody can type in the field; which
+// of the two achieves that is the interface's business.
+func (p *page) locked(selector string) bool {
+	p.t.Helper()
+
+	var out bool
+
+	p.run("check whether "+selector+" refuses typing", chromedp.Evaluate(fmt.Sprintf(`
+		(() => {
+			const el = document.querySelector(%q);
+			return Boolean(el && (el.readOnly || el.disabled));
+		})()`, selector), &out))
+
+	return out
+}
+
 // value reads what a form field holds, which text cannot: an input's content is
 // its value, and textContent sees nothing there.
 func (p *page) value(selector string) string {
