@@ -59,12 +59,12 @@ func TestSeveralRowsAreDeletedAtOnce(t *testing.T) {
 	}
 
 	// And the bar counts what is ticked rather than guessing.
-	if count := p.text(".bulk-bar .bulk-count"); !strings.Contains(count, "3") {
+	if count := p.text(".bulk-bar.shown .bulk-count"); !strings.Contains(count, "3") {
 		t.Errorf("the bar says %q, which does not mention 3 selected rows", count)
 	}
 
 	// Deleting asks once for the batch, not once per row.
-	p.run("press delete", p.click(`.bulk-bar button.danger`),
+	p.run("press delete", p.click(`.bulk-bar.shown button.danger`),
 		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery))
 
 	p.run("confirm", p.click(`.confirm-actions button.danger`))
