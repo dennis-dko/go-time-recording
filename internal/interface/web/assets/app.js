@@ -5232,6 +5232,12 @@ function wireForms() {
         // proved it knew the old password - so there is nothing to sign back
         // into, and dropping somebody at a sign-in screen achieves only a second
         // sign-in.
+        //
+        // Refreshed, though. Until the change the server refuses most of the API
+        // and the interface knows it; the flag that says so lives on the account,
+        // and this screen is still holding the copy it was given at sign-in. The
+        // re-login used to do this refresh as a side effect.
+        await refreshAll();
       });
   });
 
