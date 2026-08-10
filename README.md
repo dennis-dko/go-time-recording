@@ -185,9 +185,12 @@ restoring a backup has no business in a colleague's week. Running the work is th
 everybody's own job: each account keeps its own time, its own projects and its
 own calendar.
 
-The administrator still books and reads **their own** time like anybody
-who works here, and still sets each account's daily target and ceiling, which is
-administering an account rather than reading it.
+The administrator still books and reads **their own** time like anybody who works
+here — and nobody else's daily target or ceiling either. Those are time figures, the
+only thing that reads them is an overtime balance nobody but its owner may see, and an
+account that cannot look at the effect has no business setting the cause. What it does
+own is the instance-wide default under *Settings*, which is what a new account starts
+on.
 
 It is the seeded default rather than a wall: whoever may manage roles may widen
 the role they hold, and taking that away would take role administration with it.
@@ -373,9 +376,15 @@ page has left".
 
 ## Overtime
 
-Every user has a **daily target** (the basis for overtime) and a **daily
-maximum** (the booking limit); both are set under *My account*. Without a
-personal setting, 8 h target and the instance-wide `MAX_DAILY_HOURS` apply.
+Every user has a **daily target** (the basis for overtime) and a **daily maximum**
+(the booking limit); both are set under *My account*, by the person they are about and
+by nobody else. Without a personal setting, 8 h target and the instance-wide
+`MAX_DAILY_HOURS` apply.
+
+The two ceilings are not alternatives: the **stricter** one holds. You may hold your
+own day shorter than the installation allows, because that is your time; you cannot
+raise it past what the installation allows, because that ceiling is configuration and
+configuration is the administrator's.
 
 The balance is the sum of `booked − target` over the days that **have
 bookings**. Days without bookings deliberately do not count: without a holiday
@@ -670,8 +679,9 @@ The full reference is at `/api-docs`; the highlights:
 | `POST/PUT/DELETE` | `/api/v1/me/totp` | Two-factor enrolment |
 | `GET/POST` | `/api/v1/me/tokens` | Personal API tokens |
 | `GET/POST/PUT/DELETE` | `/api/v1/users`, `/users/{id}` | User administration |
-| `PUT` | `/api/v1/users/{id}/role`, `/working-times` | Role, daily target and maximum |
-| `GET` | `/api/v1/users/{id}/overtime`, `/overtime` | Own and team overtime |
+| `PUT` | `/api/v1/users/{id}/role` | Role |
+| `PUT` | `/api/v1/users/{id}/working-times` | Your own daily target and maximum |
+| `GET` | `/api/v1/users/{id}/overtime` | An overtime balance — your own, unless you may read everybody's |
 | `GET/POST/PUT/DELETE` | `/api/v1/roles`, `/roles/{id}` | Roles |
 | `GET` | `/api/v1/permissions` | Every enforced permission |
 | `GET/POST/PUT/DELETE` | `/api/v1/projects`, `/projects/{id}` | Projects |

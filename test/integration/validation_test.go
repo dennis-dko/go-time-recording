@@ -85,12 +85,28 @@ func TestCreatingAnAccountRefusesWhatCannotBeStored(t *testing.T) {
 			map[string]any{"name": "A", "email": "c@example.com", "role": "employee", "password": "x"}},
 		{"a name longer than any column", http.MethodPost, "/users",
 			map[string]any{"name": tooLong, "email": "d@example.com", "role": "employee", "password": "a-password-1"}},
-		{"a negative daily target", http.MethodPost, "/users",
-			map[string]any{"name": "A", "email": "e@example.com", "role": "employee",
-				"password": "a-password-1", "dailyTargetHours": -8}},
-		{"a daily target longer than a day", http.MethodPost, "/users",
-			map[string]any{"name": "A", "email": "f@example.com", "role": "employee",
-				"password": "a-password-1", "dailyTargetHours": 48}},
+	})
+
+	// The working times moved out of account creation: they belong to the person they
+	// are about, so they are no longer part of the body that creates an account and
+	// sending them there changes nothing. The rule that a target must be a possible
+	// number of hours did not move - it lives at the door that still sets them, and
+	// this is where it is checked.
+	var me struct {
+		User userResponse `json:"user"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+
+	own := path("/users/", me.User.ID, "/working-times")
+
+	checkRefusals(t, admin, []badRequest{
+		{"a negative daily target", http.MethodPut, own,
+			map[string]any{"dailyTargetHours": -8}},
+		{"a daily target longer than a day", http.MethodPut, own,
+			map[string]any{"dailyTargetHours": 48}},
+		{"a negative daily maximum", http.MethodPut, own,
+			map[string]any{"maxDailyHours": -1}},
 	})
 }
 

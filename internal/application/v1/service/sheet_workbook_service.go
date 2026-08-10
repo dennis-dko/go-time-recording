@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -474,13 +473,10 @@ func (s *UserWorkbookService) Export(ctx context.Context, language string) ([]by
 
 	for _, user := range listed.Result {
 		rows = append(rows, spreadsheet.UserRow{
-			Name:             user.Name,
-			Email:            user.Email,
-			Role:             user.Role,
-			DailyTargetHours: user.DailyTargetHours,
-			MaxDailyHours:    user.MaxDailyHours,
-			Timezone:         user.Timezone,
-			Directory:        user.IsExternal,
+			Name:      user.Name,
+			Email:     user.Email,
+			Role:      user.Role,
+			Directory: user.IsExternal,
 		})
 	}
 
@@ -550,20 +546,6 @@ func (s *UserWorkbookService) PlanUsers(
 			continue
 		}
 
-		// The time zone is checked here rather than at the write for the same reason
-		// everything else is: nothing is written while any row is refused, so a bad
-		// zone found halfway through would fail the whole file after the preview had
-		// shown it as fine.
-		if zone := strings.TrimSpace(row.Timezone); zone != "" {
-			if _, err := time.LoadLocation(zone); err != nil {
-				plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: fmt.Sprintf(
-					"%q is not a time zone; use an IANA name such as Europe/Berlin",
-					zone)})
-
-				continue
-			}
-		}
-
 		plan.writable = append(plan.writable, plannedUser{row: row, id: person.ID})
 		plan.add(SheetRow{Number: row.Number, Cells: cells})
 	}
@@ -594,29 +576,21 @@ func userCells(language string, row spreadsheet.UserRow) []string {
 	}
 
 	return []string{
-		row.Name, row.Email, row.Role,
-		hoursCell(row.DailyTargetHours), hoursCell(row.MaxDailyHours),
-		row.Timezone, spreadsheet.Translate(language, directory),
+		row.Name, row.Email, row.Role, spreadsheet.Translate(language, directory),
 	}
-}
-
-// hoursCell shows an empty cell as empty rather than as 0.00, because empty means
-// "leave this as it is" and 0 would read as a target of no hours at all.
-func hoursCell(hours float64) string {
-	if hours == 0 {
-		return ""
-	}
-
-	return strconv.FormatFloat(hours, 'f', 2, 64)
 }
 
 // ApplyUsers writes a planned file of accounts.
 //
 // Through UpdateUser, so the built-in administrator keeps a role that can still
 // administer and every account still passes validation - the same checks the form
-// goes through. Setting a field to the value it already has is what makes this
-// safe to run twice, so a run that stopped part way is finished by running it
-// again.
+// goes through. Setting a field to the value it already has is what makes this safe
+// to run twice, so a run that stopped part way is finished by running it again.
+//
+// The name and the role, and nothing else. The daily target, the ceiling and the time
+// zone are time figures: they belong to the person they are about, who sets them
+// under My account. This wrote all three, which made a spreadsheet the widest way
+// into the very settings a single right was supposed to guard.
 func (s *UserWorkbookService) ApplyUsers(ctx context.Context, plan *UserPlan) (int, error) {
 	if plan == nil {
 		return 0, apperror.Invalidf("there is nothing to import").WithCode("importEmpty")
@@ -642,21 +616,7 @@ func (s *UserWorkbookService) ApplyUsers(ctx context.Context, plan *UserPlan) (i
 			cmd.Role = &role
 		}
 
-		if hours := planned.row.DailyTargetHours; hours != 0 {
-			cmd.DailyTargetHours = &hours
-		}
-
-		if hours := planned.row.MaxDailyHours; hours != 0 {
-			cmd.MaxDailyHours = &hours
-		}
-
 		if _, err := s.accounts.UpdateUser(ctx, cmd); err != nil {
-			return written, apperror.Conflictf("row %d: %v; %d rows were written before it",
-				planned.row.Number, err, written).
-				WithCode("importStoppedAtRow", planned.row.Number, written)
-		}
-
-		if err := s.setTimezone(ctx, planned); err != nil {
 			return written, apperror.Conflictf("row %d: %v; %d rows were written before it",
 				planned.row.Number, err, written).
 				WithCode("importStoppedAtRow", planned.row.Number, written)
@@ -666,20 +626,4 @@ func (s *UserWorkbookService) ApplyUsers(ctx context.Context, plan *UserPlan) (i
 	}
 
 	return written, nil
-}
-
-// setTimezone writes the time zone, which UpdateUser does not carry.
-//
-// Targeted rather than through a whole-row update: writing the row back would race
-// with whatever else that account is doing and could undo it. Getting a time zone
-// wrong moves hours between days rather than merely displaying them oddly, which is
-// why it is worth having in the sheet at all - and why the name is checked in the
-// plan rather than here.
-func (s *UserWorkbookService) setTimezone(ctx context.Context, planned plannedUser) error {
-	zone := strings.TrimSpace(planned.row.Timezone)
-	if zone == "" {
-		return nil
-	}
-
-	return s.users.SetPreference(ctx, planned.id, repository.PreferenceTimezone, zone)
 }

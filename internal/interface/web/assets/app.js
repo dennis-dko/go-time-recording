@@ -967,10 +967,11 @@ const TRANSLATIONS = {
       + 'fehlt.',
     'sheet.projects.file': 'projekte',
     'sheet.projects.done': '{0} Zeilen geschrieben.',
-    'sheet.users.text': 'Exportiert alle Konten. Ein Import ändert vorhandene Konten, '
-      + 'zugeordnet über die E-Mail-Adresse, und legt keine an – ein neues Konto braucht ein '
-      + 'Kennwort, und das gehört nicht in eine Tabelle. Eine leere Zelle lässt die '
-      + 'Einstellung unverändert.',
+    'sheet.users.text': 'Exportiert alle Konten: Name, E-Mail, Rolle und ob das Kennwort '
+      + 'im Verzeichnis liegt. Ein Import ändert Name und Rolle, zugeordnet über die '
+      + 'E-Mail-Adresse, und legt keine Konten an – ein neues braucht ein Kennwort, und das '
+      + 'gehört nicht in eine Tabelle. Arbeitszeiten und Zeitzonen stehen nicht darin: sie '
+      + 'gehören der Person, die sie unter „Mein Konto“ selbst setzt.',
     'sheet.users.file': 'benutzer',
     'sheet.users.done': '{0} Zeilen geschrieben.',
     'action.edit': 'bearbeiten',
@@ -4592,9 +4593,11 @@ const SHEET_TEXTS = {
     + 'by name: a name that already exists is updated, a new one is created. Rows '
     + 'marked as a category become your own private ones. An empty cell leaves that '
     + 'value alone, so nothing is lost by a column somebody deleted.',
-  users: 'Exports every account. An import changes existing accounts, matched on the '
-    + 'email address, and does not create them - a new account needs a password, which '
-    + 'does not belong in a spreadsheet. An empty cell leaves that setting alone.',
+  users: 'Exports every account: name, email, role, and whether its password lives in '
+    + 'the directory. An import changes the name and the role, matched on the email '
+    + 'address, and does not create accounts - a new one needs a password, which does '
+    + 'not belong in a spreadsheet. Working times and time zones are not here: they '
+    + 'belong to whoever they are about, who sets them under My account.',
 };
 
 function wireSheetCards() {
@@ -5703,11 +5706,12 @@ async function refreshAll() {
 function wireForms() {
   $('#form-user').addEventListener('submit', (e) => {
     e.preventDefault();
-    const raw = formData(e.target);
-    const body = { ...raw };
-    for (const key of ['dailyTargetHours', 'maxDailyHours']) {
-      if (body[key] !== undefined) body[key] = Number(body[key]);
-    }
+    // No working times here. A new account starts on the instance default under
+    // Settings and its owner changes it under My account - a daily target is a time
+    // figure, and administering an installation is not the same job as recording time
+    // in it.
+    const body = formData(e.target);
+
     mutate(() => api('/users', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.userCreated', 'Staff member created'),
       async () => { e.target.reset(); await refreshAll(); });
