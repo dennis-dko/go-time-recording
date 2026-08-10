@@ -58,14 +58,39 @@ func TestTheInitialPasswordMustBeChangedBeforeAnythingElse(t *testing.T) {
 		"newPassword":     "a-much-better-password",
 	}), http.StatusOK)
 
-	// Changing a password ends every session of that user.
-	if r := c.api(http.MethodGet, "/me", nil); r.Status == http.StatusOK {
-		t.Error("the old session must not survive a password change")
+	// The session that made the change survives it, which is the point: this is the
+	// device that just proved it knew the old password, and signing it out drops
+	// somebody at a sign-in screen in the middle of setting the installation up.
+	c.must(c.api(http.MethodGet, "/me", nil), http.StatusOK)
+
+	// And the lock is lifted for it, without a second sign-in.
+	c.must(c.api(http.MethodGet, "/roles", nil), http.StatusOK)
+}
+
+// Every OTHER session of that account does end, which is the half that protects
+// something: a session opened with the old password somewhere else must stop
+// working the moment the password changes.
+func TestOtherSessionsDoNotSurviveAPasswordChange(t *testing.T) {
+	a := start(t)
+
+	// Two sessions of the same account, both signed in with the initial password.
+	first := a.newClient()
+	first.signIn(adminEmail, adminPassword)
+
+	second := a.newClient()
+	second.signIn(adminEmail, adminPassword)
+
+	first.must(first.api(http.MethodPut, "/me/password", map[string]string{
+		"currentPassword": adminPassword,
+		"newPassword":     "a-much-better-password",
+	}), http.StatusOK)
+
+	if r := second.api(http.MethodGet, "/me", nil); r.Status == http.StatusOK {
+		t.Error("a session opened with the old password still works")
 	}
 
-	fresh := a.newClient()
-	fresh.signIn(adminEmail, "a-much-better-password")
-	fresh.must(fresh.api(http.MethodGet, "/roles", nil), http.StatusOK)
+	// The one that changed it is untouched.
+	first.must(first.api(http.MethodGet, "/me", nil), http.StatusOK)
 }
 
 func TestTheOldPasswordStopsWorking(t *testing.T) {
@@ -212,37 +237,21 @@ func TestSetupWizardIsAdministratorOnly(t *testing.T) {
 func TestBookingSubmittingAndApproving(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
-	manager := a.signInAsManager(admin, "Meike", "meike@example.com")
+	other := a.signInAsUser(admin, "Meike", "meike@example.com")
 
 	today := time.Now().Format("2006-01-02")
 
 	var booked timesheetResponse
-	manager.must(manager.api(http.MethodPost, "/timesheets", map[string]any{
+	other.must(other.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": today, "durationHours": 6.5, "description": "Integration work",
 	}), http.StatusCreated, http.StatusOK).Data(t, &booked)
-
-	if booked.Status != "open" {
-		t.Errorf("a new entry should start open, got %q", booked.Status)
-	}
 
 	if booked.DurationHours != 6.5 {
 		t.Errorf("expected 6.5 hours, got %v", booked.DurationHours)
 	}
 
-	// open -> submitted -> approved, the whole review path.
-	for _, status := range []string{"submitted", "approved"} {
-		var updated timesheetResponse
-
-		manager.must(manager.api(http.MethodPut, path("/timesheets/", booked.ID),
-			map[string]any{"status": status}), http.StatusOK).Data(t, &updated)
-
-		if updated.Status != status {
-			t.Fatalf("expected %q, got %q", status, updated.Status)
-		}
-	}
-
 	var list listOf[timesheetResponse]
-	manager.must(manager.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
+	other.must(other.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
 
 	if list.TotalCount != 1 {
 		t.Errorf("expected one entry, got %d", list.TotalCount)

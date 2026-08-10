@@ -181,7 +181,7 @@ func TestCannotEditOrDeleteAnotherUsersPrivateProject(t *testing.T) {
 func TestAllDefaultRolesMayKeepOwnCategories(t *testing.T) {
 	f := newFixture(t)
 
-	for _, roleName := range []string{model.RoleAdmin, model.RoleManager, model.RoleEmployee} {
+	for _, roleName := range []string{model.RoleAdmin, model.RoleEmployee} {
 		role := roleNamed(t, f, roleName)
 		if !role.Has(model.PermProjectWriteOwn) {
 			t.Errorf("role %q must hold %q", roleName, model.PermProjectWriteOwn)

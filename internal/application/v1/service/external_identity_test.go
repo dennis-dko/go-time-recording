@@ -180,6 +180,25 @@ func (s *stubSessions) Delete(_ context.Context, tokenHash string) error {
 	return nil
 }
 
+// DeleteForUserExcept keeps one session and drops the rest, which is what a
+// self-initiated password change does.
+func (s *stubSessions) DeleteForUserExcept(
+	_ context.Context,
+	userID uint,
+	keepTokenHash string,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for hash, session := range s.items {
+		if session.UserID == userID && hash != keepTokenHash {
+			delete(s.items, hash)
+		}
+	}
+
+	return nil
+}
+
 func (s *stubSessions) DeleteForUser(_ context.Context, userID uint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

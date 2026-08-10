@@ -53,19 +53,12 @@ func (s *ProjectDomainService) ArchiveProject(
 			WithCode("archiveNeedsCompleted", model.ProjectStatusCompleted)
 	}
 
-	// Open entries still expect edits, so archiving would strand them.
-	openEntries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
-		ProjectID: projectID,
-		Status:    model.TimesheetStatusOpen,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(openEntries) > 0 {
-		return nil, apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries)).
-			WithCode("archiveHasOpenEntries", len(openEntries))
-	}
+	// Entries are no longer checked here. The rule was that open ones still expected
+	// edits and archiving would strand them - but an entry has no state any more, so
+	// "open" would mean every entry there is, and refusing to archive a finished
+	// project because time was booked against it is backwards: that is what
+	// archiving is for. The entries stay readable, and deleting a project still
+	// refuses while any exist.
 
 	project.Status = model.ProjectStatusArchived
 

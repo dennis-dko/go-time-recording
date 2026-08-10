@@ -103,7 +103,6 @@ type OperationalLimits struct {
 	MaxDailyHours          float64 `json:"maxDailyHours"`
 	RateLimit              int     `json:"rateLimit"`
 	RateLimitWindowSeconds int     `json:"rateLimitWindowSeconds"`
-	AutoCloseAfterDays     int     `json:"autoCloseAfterDays"`
 	LDAPSyncMaxDeleteRatio float64 `json:"ldapSyncMaxDeleteRatio"`
 }
 
@@ -113,7 +112,6 @@ func newOperationalLimits(l model.Limits) OperationalLimits {
 		MaxDailyHours:          l.MaxDailyHours,
 		RateLimit:              l.RateLimit,
 		RateLimitWindowSeconds: l.RateLimitWindowSeconds,
-		AutoCloseAfterDays:     l.AutoCloseAfterDays,
 		LDAPSyncMaxDeleteRatio: l.LDAPSyncMaxDeleteRatio,
 	}
 }

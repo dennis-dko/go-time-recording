@@ -92,35 +92,6 @@ func TestOvertimeIgnoresDaysWithoutBookings(t *testing.T) {
 	}
 }
 
-// A rejected entry is work that was not accepted, so counting it would
-// overstate the balance.
-func TestOvertimeExcludesRejectedEntries(t *testing.T) {
-	f := newFixture(t)
-	id := f.book(t, day(15), 8)
-	f.book(t, day(16), 8)
-
-	for _, status := range []string{model.TimesheetStatusSubmitted, model.TimesheetStatusRejected} {
-		s := status
-		if _, err := f.timesheets.UpdateTimesheet(context.Background(),
-			command.UpdateTimesheetCommand{ID: id, Status: &s}); err != nil {
-			t.Fatalf("advancing to %q: %v", status, err)
-		}
-	}
-
-	balance, err := overtimeFor(f).Balance(context.Background(), f.userID, day(1), day(28))
-	if err != nil {
-		t.Fatalf("balance: %v", err)
-	}
-
-	if len(balance.Days) != 1 {
-		t.Fatalf("expected the rejected day to drop out, got %d day(s)", len(balance.Days))
-	}
-
-	if balance.TotalBooked != 8 {
-		t.Errorf("expected 8h booked, got %.2f", balance.TotalBooked)
-	}
-}
-
 func TestOvertimeRejectsInvertedRange(t *testing.T) {
 	f := newFixture(t)
 

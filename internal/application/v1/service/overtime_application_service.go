@@ -5,7 +5,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
@@ -91,10 +90,6 @@ func (s *OvertimeService) Balance(
 	bookedPerDay := make(map[time.Time]float64)
 
 	for _, entry := range entries {
-		if entry.Status == model.TimesheetStatusRejected {
-			continue
-		}
-
 		bookedPerDay[startOfDay(entry.Date)] += entry.DurationHours
 	}
 

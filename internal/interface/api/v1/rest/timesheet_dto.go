@@ -13,7 +13,6 @@ type TimesheetResponse struct {
 	Date          Date    `json:"date"`
 	DurationHours float64 `json:"durationHours"`
 	Description   *string `json:"description"`
-	Status        string  `json:"status"`
 }
 
 // CreateTimesheetRequest is the payload for booking time.
@@ -23,7 +22,6 @@ type CreateTimesheetRequest struct {
 	Date          Date    `json:"date"`
 	DurationHours float64 `json:"durationHours"`
 	Description   *string `json:"description"`
-	Status        string  `json:"status"`
 }
 
 // UpdateTimesheetRequest is the payload for a partial update.
@@ -33,7 +31,6 @@ type UpdateTimesheetRequest struct {
 	Date          *Date    `json:"date"`
 	DurationHours *float64 `json:"durationHours"`
 	Description   *string  `json:"description"`
-	Status        *string  `json:"status"`
 }
 
 // ReportEntry is one row of a per-project time report.
@@ -64,7 +61,6 @@ func newTimesheetResponse(r *common.TimesheetResult) TimesheetResponse {
 		Date:          Date{Time: r.Date},
 		DurationHours: r.DurationHours,
 		Description:   r.Description,
-		Status:        r.Status,
 	}
 }
 

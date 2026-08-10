@@ -43,13 +43,12 @@ type Row struct {
 	Project     string
 	Hours       float64
 	Description string
-	Status      string
 }
 
 // Columns are the headings, in order. Exported because the interface shows the
 // same names in its preview, and two lists would drift.
 func Columns() []string {
-	return []string{"Date", "User", "Project", "Hours", "Description", "Status"}
+	return []string{"Date", "User", "Project", "Hours", "Description"}
 }
 
 // dateFormat is how a date is written and read.
@@ -99,7 +98,7 @@ func Write(rows []Row) ([]byte, error) {
 	// the long ones and get the most room; nothing is truncated either way, this
 	// only decides what is visible on opening.
 	for column, width := range map[string]float64{
-		"A": 12, "B": 22, "C": 22, "D": 9, "E": 48, "F": 12,
+		"A": 12, "B": 22, "C": 22, "D": 9, "E": 48,
 	} {
 		if err := book.SetColWidth(sheetName, column, column, width); err != nil {
 			return nil, fmt.Errorf("setting the width of column %s: %w", column, err)
@@ -160,7 +159,6 @@ func writeRow(book *excelize.File, number int, row Row) error {
 		{text: row.Project},
 		{number: &row.Hours},
 		{text: row.Description},
-		{text: row.Status},
 	}
 
 	for i, value := range values {
@@ -291,10 +289,9 @@ func parseRow(number int, cells []string) (Row, error) {
 	}
 
 	date, user, project := value(0), value(1), value(2)
-	hours, description, status := value(3), value(4), value(5)
+	hours, description := value(3), value(4)
 
-	if date == "" && user == "" && project == "" && hours == "" &&
-		description == "" && status == "" {
+	if date == "" && user == "" && project == "" && hours == "" && description == "" {
 		return Row{}, errBlankRow
 	}
 
@@ -315,7 +312,6 @@ func parseRow(number int, cells []string) (Row, error) {
 		Project:     project,
 		Hours:       parsedHours,
 		Description: description,
-		Status:      status,
 	}, nil
 }
 

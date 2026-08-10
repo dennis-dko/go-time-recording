@@ -493,8 +493,6 @@ func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool 
 		return false
 	case filter.WithoutProject && ts.HasProject():
 		return false
-	case filter.Status != "" && ts.Status != filter.Status:
-		return false
 	case filter.StartDate != nil && ts.Date.Before(*filter.StartDate):
 		return false
 	case filter.EndDate != nil && ts.Date.After(*filter.EndDate):

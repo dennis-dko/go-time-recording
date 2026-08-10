@@ -85,10 +85,9 @@ func (s *WorkbookService) Export(
 
 	for _, entry := range entries {
 		row := spreadsheet.Row{
-			Date:   entry.Date,
-			User:   names[entry.UserID],
-			Hours:  entry.DurationHours,
-			Status: entry.Status,
+			Date:  entry.Date,
+			User:  names[entry.UserID],
+			Hours: entry.DurationHours,
 		}
 
 		if entry.HasProject() {
@@ -274,19 +273,10 @@ func (s *WorkbookService) planRow(
 		out.ProjectID, out.ProjectName = &id, project.Name
 	}
 
-	// A status other than open is refused rather than ignored: an import that
-	// quietly created approved entries would be a way around the review path.
-	if status := strings.ToLower(strings.TrimSpace(row.Status)); status != "" &&
-		status != model.TimesheetStatusOpen {
-		return refuse("a new entry is always %q; this row says %q",
-			model.TimesheetStatusOpen, row.Status)
-	}
-
 	// The rules the API enforces, called rather than restated.
 	description := descriptionOrNil(out.Description)
 
-	if err := validateTimesheet(row.Date, row.Hours,
-		model.TimesheetStatusOpen, description); err != nil {
+	if err := validateTimesheet(row.Date, row.Hours, description); err != nil {
 		return refuse("%v", err)
 	}
 
@@ -330,7 +320,6 @@ func (s *WorkbookService) Apply(ctx context.Context, plan *ImportPlan) (int, err
 			Date:          row.Date,
 			DurationHours: row.Hours,
 			Description:   descriptionOrNil(row.Description),
-			Status:        model.TimesheetStatusOpen,
 		})
 	}
 

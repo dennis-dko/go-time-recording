@@ -59,28 +59,7 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 	ctx context.Context,
 	cmd command.CreateTimesheetCommand,
 ) (*command.CreateTimesheetCommandResult, error) {
-	// A new entry is open, and may only be created open.
-	//
-	// The status used to be taken from the request, which meant anybody who could
-	// write a time entry could create one already "approved" - skipping the
-	// review that approval is, and landing on the one status that refuses every
-	// later edit, transfer and deletion. Approving is timesheets:approve, and it
-	// stays that way by going through the update path where the transition rules
-	// and that permission are both enforced.
-	//
-	// Refused rather than quietly overwritten: a client that asked for a status
-	// it cannot have should hear so, not be told the entry was created as it
-	// asked.
-	if cmd.Status != "" && cmd.Status != model.TimesheetStatusOpen {
-		return nil, apperror.Invalidf(
-			"a new time entry is always %q; submit or approve it afterwards",
-			model.TimesheetStatusOpen).
-			WithCode("newEntryIsAlwaysOpen", model.TimesheetStatusOpen)
-	}
-
-	status := model.TimesheetStatusOpen
-
-	if err := validateTimesheet(cmd.Date, cmd.DurationHours, status, cmd.Description); err != nil {
+	if err := validateTimesheet(cmd.Date, cmd.DurationHours, cmd.Description); err != nil {
 		return nil, err
 	}
 
@@ -98,7 +77,6 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 		Date:          cmd.Date,
 		DurationHours: cmd.DurationHours,
 		Description:   cmd.Description,
-		Status:        status,
 	})
 	if err != nil {
 		return nil, err
@@ -107,7 +85,6 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 	// After the write, so the number counts hours that are actually recorded
 	// rather than hours somebody tried to record.
 	s.record(ctx, MetricHoursBooked, createdTimesheet.DurationHours)
-	s.count(ctx, MetricEntryTransitions, "status", createdTimesheet.Status)
 
 	return &command.CreateTimesheetCommandResult{
 		Result: common.NewTimesheetResultFromModel(createdTimesheet)[0],
@@ -141,7 +118,6 @@ func (s *TimesheetApplicationService) ListTimesheets(
 	allTimesheets, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
 		UserID:    q.UserID,
 		ProjectID: q.ProjectID,
-		Status:    q.Status,
 		StartDate: q.StartDate,
 		EndDate:   q.EndDate,
 	})
@@ -167,13 +143,6 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 	existingTimesheet, err := s.timesheetRepository.GetByID(ctx, cmd.ID)
 	if err != nil {
 		return nil, err
-	}
-
-	// An approved entry is a signed-off record; changing its figures would
-	// silently rewrite history, so only a status change is allowed.
-	if existingTimesheet.Status == model.TimesheetStatusApproved && touchesFigures(cmd) {
-		return nil, apperror.Conflictf("an approved timesheet can no longer be edited").
-			WithCode("approvedEntryLocked")
 	}
 
 	if cmd.UserID != nil {
@@ -210,21 +179,8 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 		existingTimesheet.Description = cmd.Description
 	}
 
-	// Noted before the field is overwritten, so only a real change is counted -
-	// a save that left the status alone is not a transition.
-	statusChanged := false
-
-	if cmd.Status != nil {
-		if err := validateStatusChange(existingTimesheet.Status, *cmd.Status); err != nil {
-			return nil, err
-		}
-
-		statusChanged = existingTimesheet.Status != *cmd.Status
-		existingTimesheet.Status = *cmd.Status
-	}
-
 	err = validateTimesheet(existingTimesheet.Date, existingTimesheet.DurationHours,
-		existingTimesheet.Status, existingTimesheet.Description)
+		existingTimesheet.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -240,10 +196,6 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 		return nil, err
 	}
 
-	if statusChanged {
-		s.count(ctx, MetricEntryTransitions, "status", updatedTimesheet.Status)
-	}
-
 	return &command.UpdateTimesheetCommandResult{
 		Result: common.NewTimesheetResultFromModel(updatedTimesheet)[0],
 	}, nil
@@ -255,14 +207,10 @@ func (s *TimesheetApplicationService) DeleteTimesheet(ctx context.Context, cmd c
 		return apperror.InvalidFields("id")
 	}
 
-	existing, err := s.timesheetRepository.GetByID(ctx, cmd.ID)
-	if err != nil {
+	// Read first, so a delete of something that is not there answers "not found"
+	// rather than reporting success for a row nobody had.
+	if _, err := s.timesheetRepository.GetByID(ctx, cmd.ID); err != nil {
 		return err
-	}
-
-	if existing.Status == model.TimesheetStatusApproved {
-		return apperror.Conflictf("an approved timesheet can no longer be deleted").
-			WithCode("approvedEntryUndeletable")
 	}
 
 	return s.timesheetRepository.Delete(ctx, cmd.ID)
@@ -356,38 +304,7 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 	return nil
 }
 
-// touchesFigures reports whether an update would change anything other than
-// the status.
-func touchesFigures(cmd command.UpdateTimesheetCommand) bool {
-	return cmd.UserID != nil || cmd.ProjectID != nil || cmd.Date != nil ||
-		cmd.DurationHours != nil || cmd.Description != nil
-}
-
-// validateStatusChange enforces the timesheet lifecycle:
-// open -> submitted -> approved/rejected, and rejected -> open for rework.
-func validateStatusChange(current, next string) error {
-	if current == next {
-		return nil
-	}
-
-	allowed := map[string][]string{
-		model.TimesheetStatusOpen:      {model.TimesheetStatusSubmitted},
-		model.TimesheetStatusSubmitted: {model.TimesheetStatusApproved, model.TimesheetStatusRejected},
-		model.TimesheetStatusRejected:  {model.TimesheetStatusOpen},
-		model.TimesheetStatusApproved:  {},
-	}
-
-	for _, candidate := range allowed[current] {
-		if candidate == next {
-			return nil
-		}
-	}
-
-	return apperror.Conflictf("cannot change timesheet status from %q to %q", current, next).
-		WithCode("statusTransitionRefused", current, next)
-}
-
-func validateTimesheet(date time.Time, hours float64, status string, description *string) error {
+func validateTimesheet(date time.Time, hours float64, description *string) error {
 	var invalid []string
 
 	if date.IsZero() {
@@ -409,13 +326,6 @@ func validateTimesheet(date time.Time, hours float64, status string, description
 	// slow every listing that renders it is still not one.
 	if description != nil && model.TooLong(*description, model.MaxDescriptionLength) {
 		invalid = append(invalid, "description")
-	}
-
-	switch status {
-	case model.TimesheetStatusOpen, model.TimesheetStatusSubmitted,
-		model.TimesheetStatusApproved, model.TimesheetStatusRejected:
-	default:
-		invalid = append(invalid, "status")
 	}
 
 	if len(invalid) > 0 {

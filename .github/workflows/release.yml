@@ -300,6 +300,28 @@ jobs:
           files: |
             dist/go-time-recording_*
             dist/SHA256SUMS
+          # Above the generated notes, because somebody who has just downloaded a
+          # binary is about to ask exactly this. The installer covers the database;
+          # what it cannot cover is what has to be in place before the process
+          # starts at all.
+          body: |
+            ## Running the binary
+
+            Download the file for your platform, check it against `SHA256SUMS`, and
+            run it. It is self-contained: the interface, the timezone database and
+            the migrations are compiled in.
+
+            With **no database configured** it serves an installer on its own port
+            and waits, so the first start needs nothing but the binary.
+
+            Everything the installer cannot ask for - the port, TLS, the log level,
+            the session lifetime, the rate limit - is read from the environment or
+            from a `.env` file beside the binary. Start from
+            [`deploy/.env.example`](https://github.com/${{ github.repository }}/blob/${{ needs.version.outputs.version }}/deploy/.env.example),
+            which lists every variable with its default and says which ones matter.
+            Settings the interface can change are stored in the database and are
+            **not** read from there.
+          append_body: true
 
   # Deployment target is intentionally not wired up: this repo has no
   # Kubernetes manifests, docker-compose file, or SSH/PaaS target defined

@@ -49,6 +49,65 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  *
  * @throws {Error} with the server-provided message on a non-2xx response.
  */
+/**
+ * The loading strip, driven by how many requests are in flight.
+ *
+ * Counted rather than toggled: three requests starting together and finishing
+ * apart would otherwise switch it off while two were still running.
+ *
+ * Nothing appears for a request that finishes quickly. A strip that flashes for
+ * 40ms is noise, and the screen it flashes over is already answering - so it
+ * waits, and only says something when there is something to wait for.
+ */
+const progress = { inFlight: 0, showTimer: null, hideTimer: null };
+
+/** How long a request may take before it is worth mentioning. */
+const PROGRESS_DELAY_MS = 140;
+
+function progressStart() {
+  progress.inFlight += 1;
+
+  if (progress.inFlight > 1 || progress.showTimer) return;
+
+  clearTimeout(progress.hideTimer);
+
+  progress.showTimer = setTimeout(() => {
+    progress.showTimer = null;
+
+    const bar = $('#progress');
+    if (!bar) return;
+
+    // Removed and re-added so the creep animation restarts rather than
+    // continuing from where the last request left it.
+    bar.classList.remove('done');
+    bar.hidden = false;
+    void bar.offsetWidth;
+  }, PROGRESS_DELAY_MS);
+}
+
+function progressDone() {
+  progress.inFlight = Math.max(0, progress.inFlight - 1);
+
+  if (progress.inFlight > 0) return;
+
+  // Finished before it was ever shown, which is the common case.
+  if (progress.showTimer) {
+    clearTimeout(progress.showTimer);
+    progress.showTimer = null;
+
+    return;
+  }
+
+  const bar = $('#progress');
+  if (!bar || bar.hidden) return;
+
+  bar.classList.add('done');
+  progress.hideTimer = setTimeout(() => {
+    // Only if nothing started again while it was fading out.
+    if (progress.inFlight === 0) bar.hidden = true;
+  }, 460);
+}
+
 async function api(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = { 'Content-Type': 'application/json', ...(options.headers ?? {}) };
@@ -57,12 +116,22 @@ async function api(path, options = {}) {
     headers['X-CSRF-Token'] = readCookie('gtr_csrf');
   }
 
-  const res = await fetch(API + path, {
-    ...options,
-    headers,
-    // Without this a cross-origin deployment would drop the cookies entirely.
-    credentials: 'same-origin',
-  });
+  progressStart();
+
+  let res;
+
+  try {
+    res = await fetch(API + path, {
+      ...options,
+      headers,
+      // Without this a cross-origin deployment would drop the cookies entirely.
+      credentials: 'same-origin',
+    });
+  } finally {
+    // In a finally, so a refused connection does not leave the strip running for
+    // as long as the page is open.
+    progressDone();
+  }
 
   let body = null;
   try {
@@ -224,10 +293,48 @@ function statusBadge(status) {
   return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
 }
 
+/**
+ * A date in the reader's own language.
+ *
+ * Was hard-coded to d.m.Y, which is right in German and wrong everywhere else -
+ * an English reader saw 03.08.2026 and had to work out which number was the
+ * month. Intl knows every locale's order, and the date is built in UTC so a zone
+ * behind the line cannot shift it to the previous day: the string is a calendar
+ * day, not a moment.
+ */
+/** The built-in mark: a stopwatch, drawn rather than fetched. */
+const DEFAULT_FAVICON =
+  "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
+  + "<text y='14' font-size='14'>&#9201;</text></svg>";
+
+/**
+ * Points the browser tab at the instance's logo.
+ *
+ * The logo is stored as a data URI, so it needs no request and cannot be blocked
+ * by the Content-Security-Policy - which allows data: images for exactly this
+ * reason. Anything else is refused rather than set: a logo that is a link to
+ * somewhere else would make the tab icon a request to that somewhere.
+ */
+function applyFavicon(logo) {
+  const link = document.querySelector('link[rel="icon"]');
+  if (!link) return;
+
+  const usable = typeof logo === 'string' && logo.startsWith('data:image/');
+
+  link.href = usable ? logo : DEFAULT_FAVICON;
+}
+
 function fmtDate(iso) {
   if (!iso) return '–';
-  const [y, m, d] = iso.split('-');
-  return `${d}.${m}.${y}`;
+
+  const [y, m, d] = iso.split('-').map(Number);
+  const at = new Date(Date.UTC(y, m - 1, d));
+
+  if (Number.isNaN(at.getTime())) return iso;
+
+  return new Intl.DateTimeFormat(activeLanguage(), {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
+  }).format(at);
 }
 
 const fmtHours = (n) => `${n.toFixed(2)} h`;
@@ -394,7 +501,6 @@ const TRANSLATIONS = {
     'setup.finish': 'Fertigstellen',
     'setup.done': 'Einrichtung abgeschlossen.',
     'setup.stillRequired': 'Diese Schritte müssen zuerst erledigt werden; bis dahin erscheint der Assistent immer wieder.',
-    'setup.passwordChanged': 'Passwort geändert. Bitte erneut anmelden.',
     'setup.password.title': 'Administrator-Passwort ändern',
     'setup.password.text': 'Dieses Konto hat noch das Passwort aus der Dokumentation, das jeder nachlesen kann. Bis zur Änderung lässt sich nichts anderes nutzen.',
     'setup.timezone.title': 'Zeitzone wählen',
@@ -409,8 +515,6 @@ const TRANSLATIONS = {
     'tour.finish': 'Fertig',
     'tour.timer.title': 'Die Stoppuhr',
     'tour.timer.text': 'Beim Anfangen starten, beim Aufhören stoppen – die gemessene Zeit wird gebucht. Sie läuft weiter, wenn du den Browser schließt, denn sie läuft auf dem Server und nicht in diesem Tab.',
-    'tour.approve.title': 'Einreichen und genehmigen',
-    'tour.approve.text': 'Ein Eintrag geht offen, eingereicht, genehmigt. Du kannst genehmigen, was andere einreichen, oder es zurückgeben – ein abgelehnter Eintrag lässt sich wieder öffnen und korrigieren, statt neu getippt werden zu müssen. Genehmigte Einträge sind abgeschlossene Belege und nicht mehr änderbar.',
     'tour.stats.title': 'Deine eigenen Zahlen',
     'tour.stats.text': 'Stunden pro Tag, pro Projekt und nach Status, über einen Zeitraum deiner Wahl. Nur deine eigenen – für die eigene Woche braucht niemand ein Berichtsrecht.',
     'tour.report.title': 'Projektberichte',
@@ -448,7 +552,6 @@ const TRANSLATIONS = {
     'ops.maxDailyHours': 'Maximale Stunden pro Tag (systemweit)',
     'ops.rateLimit': 'Ratenbegrenzung (Anfragen)',
     'ops.rateWindow': 'Zeitfenster der Ratenbegrenzung (Sekunden)',
-    'ops.autoClose': 'Offene Einträge einreichen nach (Tagen)',
     'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1)',
     'ops.reset': 'Alle Werte auf die Konfigurationsdatei zurücksetzen',
     'ops.saved': 'Grenzwerte gespeichert',
@@ -457,7 +560,6 @@ const TRANSLATIONS = {
     'ops.sessionShort': 'Sitzung',
     'ops.maxShort': 'max./Tag',
     'ops.rateShort': 'Rate',
-    'ops.autoShort': 'Auto-Einreichen',
     'ops.ratioShort': 'Löschgrenze',
 
     'tel.title': 'Protokoll, Metriken und Traces',
@@ -526,7 +628,6 @@ const TRANSLATIONS = {
     'theme.light': 'Hell',
     'theme.dark': 'Dunkel',
 
-    'action.approve': 'genehmigen',
     'action.archive': 'archivieren',
     'action.book': 'Buchen',
     'action.calculate': 'Berechnen',
@@ -537,10 +638,7 @@ const TRANSLATIONS = {
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
     'action.new': 'Neu',
-    'action.reopen': 'wieder öffnen',
-    'action.reject': 'ablehnen',
     'action.save': 'Speichern',
-    'action.submit': 'einreichen',
     'action.dismiss': 'Schließen',
     'action.cancel': 'Abbrechen',
     'stats.title': 'Meine Stunden',
@@ -610,10 +708,6 @@ const TRANSLATIONS = {
     'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
     'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',
     'err.adminUndeletable': 'Der eingebaute Administrator kann nicht gelöscht werden.',
-    'err.approvedEntryLocked': 'Ein genehmigter Zeiteintrag kann nicht mehr bearbeitet werden.',
-    'err.approvedEntryUndeletable': 'Ein genehmigter Zeiteintrag kann nicht mehr gelöscht werden.',
-    'err.approvedEntryUntransferable': 'Ein genehmigter Zeiteintrag kann nicht mehr verschoben werden.',
-    'err.archiveHasOpenEntries': 'Das Projekt hat noch {0} offene Zeiteinträge und kann nicht archiviert werden.',
     'err.archiveNeedsCompleted': 'Ein Projekt kann erst archiviert werden, wenn sein Status „{0}“ ist.',
     'err.attemptExpired': 'Dieser Versuch ist abgelaufen. Bitte erneut versuchen.',
     'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
@@ -628,7 +722,6 @@ const TRANSLATIONS = {
     'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
     'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
-    'err.newEntryIsAlwaysOpen': 'Ein neuer Zeiteintrag ist immer „{0}“. Einreichen oder genehmigen geht danach.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
     'err.noSession': 'Keine Sitzung.',
@@ -647,7 +740,6 @@ const TRANSLATIONS = {
     'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',
     'err.roleStillAssigned': 'Rolle „{0}“ ist noch {1} Benutzer(n) zugewiesen.',
     'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
-    'err.statusTransitionRefused': 'Der Status kann nicht von „{0}“ auf „{1}“ geändert werden.',
     'err.systemRoleUndeletable': 'Die Systemrolle „{0}“ kann nicht gelöscht werden.',
     'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
     'err.systemRoleUnweakenable': 'Der Systemrolle „{0}“ können keine Rechte entzogen werden.',
@@ -700,7 +792,6 @@ const TRANSLATIONS = {
     'welcome.todayHours': 'Heute bislang {0} h gebucht.',
     'welcome.todayNothing': 'Heute noch nichts gebucht.',
     'welcome.tour': 'Rundgang starten',
-    'field.autoCloseAfterDays': 'Automatisch abschließen nach (Tagen)',
     'field.baseDn': 'Basis-DN',
     'field.code': 'Code',
     'field.companyUrl': 'Firmen-Adresse',
@@ -745,7 +836,6 @@ const TRANSLATIONS = {
     'field.to': 'Bis',
     'field.user': 'Benutzer',
     'filter.allProjects': 'Alle Projekte',
-    'filter.allStatus': 'Alle Status',
     'filter.allUsers': 'Alle Benutzer',
     'footer.versionTitle': 'Laufende Version dieser Installation',
     'log.clear': 'Ansicht leeren',
@@ -771,7 +861,6 @@ const TRANSLATIONS = {
     'login.title': 'Anmelden',
     'login.totp': 'Code der Authenticator-App',
     'login.totpNeeded': 'Bitte den Code aus der Authenticator-App eingeben.',
-    'msg.approved': 'Genehmigt',
     'msg.booked': 'Zeit gebucht',
     'msg.categoryCreated': 'Projekt angelegt',
     'msg.entryDeleted': 'Eintrag gelöscht',
@@ -795,13 +884,10 @@ const TRANSLATIONS = {
     'msg.projectCompleted': 'Projekt abgeschlossen',
     'msg.projectCreated': 'Projekt angelegt',
     'msg.projectDeleted': 'Projekt gelöscht',
-    'msg.rejected': 'Abgelehnt',
     'msg.roleChanged': 'Rolle geändert',
     'msg.roleCreated': 'Rolle angelegt',
     'msg.roleDeleted': 'Rolle gelöscht',
     'msg.roleSaved': 'Rolle gespeichert',
-    'msg.reopened': 'Wieder geöffnet',
-    'msg.submitted': 'Eingereicht',
     'msg.userCreated': 'Benutzer angelegt',
     'msg.userDeleted': 'Benutzer gelöscht',
     'msg.workingTimesSaved': 'Arbeitszeiten gespeichert',
@@ -839,10 +925,6 @@ const TRANSLATIONS = {
     'settings.targetHours': 'Soll-Stunden pro Tag',
     'settings.workingTimes': 'Meine Arbeitszeiten',
     'settings.workingTimesHint': 'Das Tagessoll ist die Grundlage der Überstunden. Das Tagesmaximum begrenzt, wie viel an einem Tag gebucht werden darf.',
-    'status.approved': 'genehmigt',
-    'status.open': 'offen',
-    'status.rejected': 'abgelehnt',
-    'status.submitted': 'eingereicht',
     'sync.aborted': 'Abgebrochen',
     'sync.confirm': 'ACHTUNG: {n} Konto/Konten und {h} Zeiteinträge werden unwiderruflich gelöscht. Fortfahren?',
     'sync.created': 'Angelegt',
@@ -860,6 +942,9 @@ const TRANSLATIONS = {
     'sync.preview': 'Vorschau',
     'sync.run': 'Abgleich ausführen',
     'sync.running': 'Wird geprüft …',
+    'status.active': 'aktiv',
+    'status.archived': 'archiviert',
+    'status.completed': 'abgeschlossen',
     'sync.title': 'Verzeichnis-Abgleich',
     'sync.warning': 'Achtung: Konten, die im Verzeichnis fehlen, werden hier gelöscht — mitsamt ihren erfassten Zeiten, eigenen Projekten und Tokens. Das lässt sich nicht rückgängig machen. Bitte immer zuerst die Vorschau ansehen.',
     'sync.wouldCreate': 'Würden angelegt',
@@ -1161,7 +1246,14 @@ async function loadUsers() {
     }
 
     const roleCell = el('td', {});
-    if (can('users:write') && can('roles:read')) {
+
+    // The built-in account's role is shown as text rather than as a control that
+    // cannot be used. A disabled dropdown still looks like something to click,
+    // and the answer to clicking it is "no" - which is worse than not offering it.
+    // Its role is fixed anyway: it must keep one that can still administer.
+    if (u.isSystem) {
+      roleCell.append(el('span', { text: u.role }));
+    } else if (can('users:write') && can('roles:read')) {
       // Changing a role is a select rather than a form: it is the one field
       // that is changed on its own often enough to deserve it.
       const select = el('select', {
@@ -1170,7 +1262,6 @@ async function loadUsers() {
       });
       fillSelect(select, cache.roles, { labelKey: 'name', valueKey: 'name' });
       select.value = u.role;
-      if (u.isSystem) select.disabled = true;
       roleCell.append(select);
     } else {
       roleCell.textContent = u.role || '–';
@@ -1350,8 +1441,6 @@ async function loadProjects() {
  * and the row click cannot disagree about it.
  */
 function mayEditTimesheet(entry) {
-  if (entry.status === 'approved') return false;
-
   const mine = me.user && entry.userId === me.user.id;
 
   return can('timesheets:write:all') || (mine && can('timesheets:write:own'));
@@ -1424,44 +1513,7 @@ function timesheetActions(entry) {
     }));
   }
 
-  // The API only allows open -> submitted -> approved/rejected.
-  if (mayEdit && entry.status === 'open') {
-    actions.append(el('button', {
-      class: 'link',
-      text: t('action.submit', 'submit'),
-      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'submitted' },
-        t('msg.submitted', 'Submitted'), reloadTimeViews),
-    }));
-  }
-
-  if (can('timesheets:approve') && entry.status === 'submitted') {
-    actions.append(el('button', {
-      class: 'link',
-      text: t('action.approve', 'approve'),
-      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'approved' },
-        t('msg.approved', 'Approved'), reloadTimeViews),
-    }));
-    actions.append(el('button', {
-      class: 'link danger',
-      text: t('action.reject', 'reject'),
-      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'rejected' },
-        t('msg.rejected', 'Rejected'), reloadTimeViews),
-    }));
-  }
-
-  // A rejected entry can go back to open, which the API allows and nothing in the
-  // interface offered - so the only way out of a rejection was to delete the entry
-  // and type it again.
-  if (mayEdit && entry.status === 'rejected') {
-    actions.append(el('button', {
-      class: 'link',
-      text: t('action.reopen', 'reopen'),
-      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'open' },
-        t('msg.reopened', 'Reopened'), reloadTimeViews),
-    }));
-  }
-
-  if (mayEdit && entry.status !== 'approved') {
+  if (mayEdit) {
     actions.append(el('button', {
       class: 'link danger',
       text: t('action.delete', 'delete'),
@@ -1486,10 +1538,8 @@ async function loadTimesheets() {
   const params = new URLSearchParams();
   const userId = $('#filter-ts-user').value;
   const projectId = $('#filter-ts-project').value;
-  const status = $('#filter-ts-status').value;
   if (userId) params.set('userId', userId);
   if (projectId) params.set('projectId', projectId);
-  if (status) params.set('status', status);
 
   const suffix = params.toString() ? `?${params}` : '';
   const entries = (await api(`/timesheets${suffix}`))?.items ?? [];
@@ -1508,12 +1558,11 @@ async function loadTimesheets() {
       }),
       el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
       el('td', { text: entry.description ?? '–' }),
-      el('td', {}, statusBadge(entry.status)),
       actions,
     );
   });
 
-  fillTable($('#table-timesheets tbody'), rows, 7, t('ts.empty', 'No entries for this filter.'));
+  fillTable($('#table-timesheets tbody'), rows, 6, t('ts.empty', 'No entries for this filter.'));
 }
 
 // ----------------------------------------------------------------- calendar
@@ -1670,7 +1719,6 @@ function showCalendarDay(iso, entries) {
       el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project') }),
       el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
       el('td', { text: entry.description ?? '–' }),
-      el('td', {}, statusBadge(entry.status)),
       timesheetActions(entry),
     );
 
@@ -1700,7 +1748,7 @@ function showCalendarDay(iso, entries) {
     return row;
   });
 
-  fillTable($('#table-calendar-day tbody'), rows, 5, t('ot.empty', 'No bookings in this period.'));
+  fillTable($('#table-calendar-day tbody'), rows, 4, t('ot.empty', 'No bookings in this period.'));
   $('#calendar-day-card').hidden = false;
 }
 
@@ -1816,6 +1864,11 @@ async function loadBranding() {
   // which is why the footer is no longer hidden when the branding is empty:
   // "which version is actually running" is the first question of every support
   // conversation, and guessing it from a container tag is not an answer.
+  // The instance's own logo in the browser tab, where somebody with several
+  // installations open tells them apart. Falls back to the built-in mark, so an
+  // instance with no logo looks as it always did.
+  applyFavicon(branding.logo);
+
   const versionEl = $('#footer-version');
   if (versionEl) {
     // The platform beside the version, as "v1.0 (windows)". The same version is
@@ -2042,7 +2095,16 @@ function wireDirectorySync() {
     status.textContent = t('sync.running', 'Checking …');
     status.className = 'muted';
 
-    mutate(async () => show(await api('/settings/ldap/sync/preview', { method: 'POST' })), null, null);
+    // Cleared on the way out, not only on the way through: a failure raises its
+    // own notice, and "Checking …" left standing underneath it says the check is
+    // still running when it has already finished badly.
+    mutate(
+      async () => show(await api('/settings/ldap/sync/preview', { method: 'POST' })),
+      null,
+      null,
+    ).finally(() => {
+      if (status.textContent === t('sync.running', 'Checking …')) status.textContent = '';
+    });
   });
 
   $('#sync-run').addEventListener('click', () => {
@@ -2496,17 +2558,6 @@ const TOUR_STEPS = [
     text: () => t('tour.entries.text',
       'Everything you booked, filterable by person, project and status. An entry stays '
       + 'editable until you submit it for approval.'),
-  },
-  {
-    target: '#table-timesheets',
-    view: 'timesheets',
-    permission: 'timesheets:approve',
-    title: () => t('tour.approve.title', 'Submitting and approving'),
-    text: () => t('tour.approve.text',
-      'An entry goes open, submitted, approved. You can approve what other people '
-      + 'submit, or send it back — a rejected entry can be opened again and corrected '
-      + 'rather than having to be typed afresh. Approved entries are closed records and '
-      + 'can no longer be changed.'),
   },
   {
     target: '#calendar-days',
@@ -2965,9 +3016,10 @@ const SETUP_STEPS = {
         }),
       });
 
-      // The server ends every session on a password change, so staying on the
-      // wizard would only produce 401s on the next step.
-      return { signOut: true };
+      // The session survives now: the server ends the other devices and keeps
+      // this one, so the wizard carries straight on to its next step instead of
+      // dropping the person at a sign-in screen half way through setting up.
+      return {};
     },
   },
 
@@ -3102,6 +3154,10 @@ function renderSetup() {
   if (!step.done && definition.fields) fields.append(...definition.fields());
   $('#setup-step-fields').replaceChildren(fields);
 
+  // The wizard builds its fields as it goes, so the one-off pass at start-up has
+  // already been and gone by the time a password field of its own exists.
+  enhancePasswordFields($('#setup-step-fields'));
+
   $('#setup-back').disabled = index === 0;
 
   const last = index === state.steps.length - 1;
@@ -3147,17 +3203,11 @@ async function advanceSetup() {
 
   if (!step.done && definition.submit) {
     try {
-      const result = await definition.submit(setupValues());
-
-      if (result?.signOut) {
-        // Changing the password invalidates this session, so the only correct
-        // next screen is the sign-in one.
-        toast(t('setup.passwordChanged', 'Password changed. Please sign in again.'), 'ok');
-        $('#setup-wizard').hidden = true;
-        await doLogout();
-
-        return;
-      }
+      // No step signs the person out any more. The password step used to: the
+      // server ended every session on a change, so the wizard had nowhere to go
+      // but the sign-in screen, half way through setting the installation up. It
+      // keeps this session now, so the password step advances like every other.
+      await definition.submit(setupValues());
     } catch (err) {
       setupError(err.message);
 
@@ -3256,7 +3306,7 @@ function wireSetup() {
 /** The fields of the operational form, in the order they appear. */
 const OPERATIONAL_FIELDS = [
   'sessionLifetimeHours', 'maxDailyHours', 'rateLimit',
-  'rateLimitWindowSeconds', 'autoCloseAfterDays', 'ldapSyncMaxDeleteRatio',
+  'rateLimitWindowSeconds', 'ldapSyncMaxDeleteRatio',
 ];
 
 /**
@@ -3272,6 +3322,17 @@ function fillOperationalForm(data) {
 
   for (const field of OPERATIONAL_FIELDS) {
     const input = form.elements[field];
+
+    // A field this list names and the markup does not is a mistake, but it must
+    // not be a silent one that takes the rest of the screen with it: this loop
+    // runs while the administration screen is being built, and a throw here left
+    // the telemetry and directory cards empty with nothing said about why.
+    if (!input) {
+      console.warn(`operational field ${field} is not in the form`);
+
+      continue;
+    }
+
     const override = data.configured?.[field];
 
     input.value = override ?? '';
@@ -3283,7 +3344,6 @@ function fillOperationalForm(data) {
     + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
     + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
     + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.autoShort', 'auto-submit')} ${effective.autoCloseAfterDays} d, `
     + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
 }
 
@@ -3293,7 +3353,10 @@ function operationalPayload() {
   const body = {};
 
   for (const field of OPERATIONAL_FIELDS) {
-    const raw = form.elements[field].value.trim();
+    const input = form.elements[field];
+    if (!input) continue;
+
+    const raw = input.value.trim();
     if (raw !== '') body[field] = Number(raw);
   }
 
@@ -3766,11 +3829,9 @@ function timesheetFilterQuery() {
 
   const userId = $('#filter-ts-user')?.value;
   const projectId = $('#filter-ts-project')?.value;
-  const status = $('#filter-ts-status')?.value;
 
   if (userId) params.set('userId', userId);
   if (projectId) params.set('projectId', projectId);
-  if (status) params.set('status', status);
 
   return params.toString() ? `?${params}` : '';
 }
@@ -5173,19 +5234,26 @@ function wireForms() {
     e.preventDefault();
     const body = formData(e.target);
     mutate(() => api('/me/password', { method: 'PUT', body: JSON.stringify(body) }),
-      t('msg.passwordChanged', 'Password changed. Please sign in again.'),
+      t('msg.passwordChanged',
+        'Password changed. Your other devices have been signed out.'),
       async () => {
         e.target.reset();
 
-        // The server ends every session of this user on a password change, so
-        // reloading would only produce 401s and leave a dead screen. The
-        // message already says to sign in again; this is what takes them
-        // there.
-        await doLogout();
+        // Deliberately not signed out. The server ends this account's other
+        // sessions and keeps this one, because this is the device that just
+        // proved it knew the old password - so there is nothing to sign back
+        // into, and dropping somebody at a sign-in screen achieves only a second
+        // sign-in.
+        //
+        // Refreshed, though. Until the change the server refuses most of the API
+        // and the interface knows it; the flag that says so lives on the account,
+        // and this screen is still holding the copy it was given at sign-in. The
+        // re-login used to do this refresh as a side effect.
+        await refreshAll();
       });
   });
 
-  for (const id of ['#filter-ts-user', '#filter-ts-project', '#filter-ts-status']) {
+  for (const id of ['#filter-ts-user', '#filter-ts-project']) {
     $(id).addEventListener('change', () => mutate(loadTimesheets, null, null));
   }
 

@@ -25,7 +25,6 @@ const (
 	PermTimesheetReadAll   = "timesheets:read:all"
 	PermTimesheetWriteOwn  = "timesheets:write:own"
 	PermTimesheetWriteAll  = "timesheets:write:all"
-	PermTimesheetApprove   = "timesheets:approve"
 	PermTimesheetTransfer  = "timesheets:transfer"
 	PermReportRead         = "reports:read"
 	PermReportReadOwn      = "reports:read:own"
@@ -44,7 +43,7 @@ func AllPermissions() []string {
 		PermProjectWriteOwn,
 		PermTimesheetReadOwn, PermTimesheetReadAll,
 		PermTimesheetWriteOwn, PermTimesheetWriteAll,
-		PermTimesheetApprove, PermTimesheetTransfer,
+		PermTimesheetTransfer,
 		PermReportRead, PermReportReadOwn,
 		PermSettingsWriteOwn, PermSettingsWriteOther,
 	}
@@ -59,9 +58,9 @@ func AllPermissions() []string {
 // backup or repointing the directory has no business in a colleague's week.
 //
 // So it manages the installation, its users and their roles, and books its own
-// time like anybody else. Everyone else's hours, the approvals, the transfers and
-// the reports belong to whoever the organisation puts in charge of the work - the
-// manager role by default, and any role it chooses to define.
+// time like anybody else. Nobody else's hours, and no reports over them: everyone
+// keeps their own, which is the whole arrangement now that there is no role
+// between this one and an ordinary account.
 //
 // This is not a hint. The rights are enforced per endpoint, so the administrator
 // is refused these by the same code that refuses an employee.
@@ -99,7 +98,6 @@ func IsPermission(name string) bool {
 // Default role names created on first start.
 const (
 	RoleAdmin    = "admin"
-	RoleManager  = "manager"
 	RoleEmployee = "employee"
 )
 
@@ -115,36 +113,20 @@ func DefaultRoles() []Role {
 			Permissions: SystemAdminPermissions(),
 		},
 		{
-			Name:        RoleManager,
-			Description: "Manages projects, approves time entries and reads the reports",
-			// PermReportRead lives here rather than with the administrator. It was
-			// withheld from this role while the administrator held it, on the
-			// reasoning that one account alone should see what people total up to;
-			// with the administrator out of everyone else's hours that reasoning
-			// points the other way. A manager already reads every entry one by one
-			// in order to approve it, so the total of those entries reveals nothing
-			// further - and left with nobody, the report would be a screen no
-			// installation could open.
-			Permissions: []string{
-				PermUserRead, PermRoleRead,
-				PermProjectRead, PermProjectWrite, PermProjectArchive, PermProjectWriteOwn,
-				// Refused while a project still has entries, so this deletes an
-				// empty project somebody created by mistake rather than anyone's
-				// recorded time.
-				PermProjectDelete,
-				PermTimesheetReadOwn, PermTimesheetReadAll,
-				PermTimesheetWriteOwn, PermTimesheetWriteAll,
-				PermTimesheetApprove, PermTimesheetTransfer,
-				PermReportRead, PermReportReadOwn,
-				PermSettingsWriteOwn, PermSettingsWriteOther,
-			},
-		},
-		{
 			Name:        RoleEmployee,
-			Description: "Books and submits their own time",
+			Description: "Keeps their own time, projects and calendar",
+			// Everything about their own work, and nothing about anybody else's.
+			// There is no third role between this one and the administrator: a
+			// manager who approved other people's hours needed a review path, and
+			// there is none - everyone keeps their own.
+			//
+			// That includes the projects. They are the person's own categories, so
+			// creating, completing, archiving and deleting one is theirs to do;
+			// PermProjectRead still only shows what they may see.
 			Permissions: []string{
-				PermProjectRead, PermProjectWriteOwn,
-				PermTimesheetReadOwn, PermTimesheetWriteOwn,
+				PermProjectRead, PermProjectWrite, PermProjectWriteOwn,
+				PermProjectArchive, PermProjectDelete,
+				PermTimesheetReadOwn, PermTimesheetWriteOwn, PermTimesheetTransfer,
 				PermReportReadOwn, PermSettingsWriteOwn,
 			},
 		},

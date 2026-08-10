@@ -64,7 +64,88 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260805020000: {UP: func(d migration.Datasource) error {
 			return separateSystemAdministration(d, dialect)
 		}},
+		20260810010000: {UP: func(d migration.Datasource) error {
+			return retireTheReviewPath(d, dialect)
+		}},
 	}
+}
+
+// retireTheReviewPath removes the entry status and the role that reviewed it.
+//
+// An entry travelled open -> submitted -> approved, and an approved one was locked
+// against every later change. That needs somebody to do the approving, and there is
+// nobody: everyone keeps their own hours and the built-in administrator runs the
+// installation rather than reading other people's work. A review path with no
+// reviewer is a step that only ever stands between a person and the time they
+// recorded.
+//
+// So the column goes, and with it the manager role, the approve right, and the
+// nightly sweep that moved stale entries along. Whoever was a manager becomes an
+// ordinary account, which now carries everything about its own work - including its
+// own projects.
+func retireTheReviewPath(d migration.Datasource, dialect string) error {
+	// The people first, while the role still exists to be moved away from. An
+	// account left pointing at a role that has gone cannot sign in.
+	moveUsers := sqldb.Rebind(dialect, `UPDATE users SET role_id =
+		(SELECT id FROM roles WHERE name = ?)
+		WHERE role_id IN (SELECT id FROM roles WHERE name = ?)`)
+
+	if _, err := d.SQL.Exec(moveUsers, model.RoleEmployee, "manager"); err != nil {
+		return fmt.Errorf("moving managers to %q: %w", model.RoleEmployee, err)
+	}
+
+	// Then the role, permissions first: role_permissions references roles(id), and
+	// on the engines that enforce it the delete would be refused.
+	for _, statement := range []string{
+		`DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE name = ?)`,
+		`DELETE FROM roles WHERE name = ?`,
+	} {
+		if _, err := d.SQL.Exec(sqldb.Rebind(dialect, statement), "manager"); err != nil {
+			return fmt.Errorf("removing the manager role: %w", err)
+		}
+	}
+
+	// The approve right is gone from the application, so any role still holding it
+	// holds a permission no line of code reads.
+	if _, err := d.SQL.Exec(
+		sqldb.Rebind(dialect, "DELETE FROM role_permissions WHERE permission = ?"),
+		"timesheets:approve"); err != nil {
+		return fmt.Errorf("revoking the approve permission: %w", err)
+	}
+
+	// What an ordinary account is now: its own time, and its own projects.
+	grant := sqldb.Rebind(dialect, `INSERT INTO role_permissions (role_id, permission)
+		SELECT id, ? FROM roles WHERE name = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM role_permissions rp
+			WHERE rp.role_id = roles.id AND rp.permission = ?)`)
+
+	for _, permission := range []string{
+		model.PermProjectWrite, model.PermProjectArchive, model.PermProjectDelete,
+		model.PermTimesheetTransfer,
+	} {
+		if _, err := d.SQL.Exec(grant, permission, model.RoleEmployee, permission); err != nil {
+			return fmt.Errorf("granting %q to %q: %w", permission, model.RoleEmployee, err)
+		}
+	}
+
+	// The description on screen, which would otherwise still promise submitting.
+	describe := sqldb.Rebind(dialect, "UPDATE roles SET description = ? WHERE name = ?")
+
+	for _, role := range model.DefaultRoles() {
+		if _, err := d.SQL.Exec(describe, role.Description, role.Name); err != nil {
+			return fmt.Errorf("describing %q: %w", role.Name, err)
+		}
+	}
+
+	// And the column itself. Supported by all three engines in the versions this
+	// application requires - SQLite has taken DROP COLUMN since 3.35, which predates
+	// the driver in go.mod.
+	if _, err := d.SQL.Exec("ALTER TABLE timesheets DROP COLUMN status"); err != nil {
+		return fmt.Errorf("dropping the timesheet status: %w", err)
+	}
+
+	return nil
 }
 
 // separateSystemAdministration narrows the administrator role to the installation.
@@ -90,7 +171,11 @@ func separateSystemAdministration(d migration.Datasource, dialect string) error 
 	for _, permission := range []string{
 		model.PermTimesheetReadAll,
 		model.PermTimesheetWriteAll,
-		model.PermTimesheetApprove,
+		// Literals rather than the model's constants: a migration records what was
+		// done at the time, and these two have since been removed from the model
+		// along with the review path and the role. Referring to them would tie a
+		// finished migration to a definition that is allowed to change.
+		"timesheets:approve",
 		model.PermTimesheetTransfer,
 		model.PermReportRead,
 		model.PermProjectWrite,
@@ -115,8 +200,8 @@ func separateSystemAdministration(d migration.Datasource, dialect string) error 
 	// with entries is refused, so what this deletes is an empty project created by
 	// mistake rather than anybody's recorded time.
 	for _, permission := range []string{model.PermReportRead, model.PermProjectDelete} {
-		if _, err := d.SQL.Exec(grant, permission, model.RoleManager, permission); err != nil {
-			return fmt.Errorf("granting %q to %q: %w", permission, model.RoleManager, err)
+		if _, err := d.SQL.Exec(grant, permission, "manager", permission); err != nil {
+			return fmt.Errorf("granting %q to %q: %w", permission, "manager", err)
 		}
 	}
 
@@ -125,7 +210,7 @@ func separateSystemAdministration(d migration.Datasource, dialect string) error 
 	describe := sqldb.Rebind(dialect, "UPDATE roles SET description = ? WHERE name = ?")
 
 	for _, role := range model.DefaultRoles() {
-		if role.Name != model.RoleAdmin && role.Name != model.RoleManager {
+		if role.Name != model.RoleAdmin && role.Name != "manager" {
 			continue
 		}
 

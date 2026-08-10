@@ -772,6 +772,60 @@ input[type="file"] { border: none; background: none; padding: 6px 0; }
  * values are what the eye lands on. */
 .pending-list .from { color: var(--muted); }
 
+/* The loading strip across the top, the way a browser or GitHub shows one.
+ *
+ * Fixed and 2px tall so it costs no layout: it appears over the page rather than
+ * pushing it down, which is what makes it usable for every request instead of
+ * only for a full navigation.
+ *
+ * Above the sign-in screen and the overlays (30/35) because it reports work that
+ * is happening behind them - the session check on the sign-in screen is exactly
+ * such a request - but below the notices (40), which are the thing to read.
+ */
+.progress {
+  height: 2px;
+  left: 0;
+  pointer-events: none;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 38;
+}
+
+.progress span {
+  background: var(--accent);
+  display: block;
+  height: 100%;
+  transform-origin: left;
+  width: 100%;
+  /* Creeps towards the end without ever arriving: the width cannot be honest,
+     because a request does not report its progress. What it does report is that
+     something is happening, which is the whole job. */
+  animation: progress-creep 12s cubic-bezier(.15, .7, .3, 1) forwards;
+}
+
+/* Finishing: run to the end quickly, then fade rather than vanish, so the eye
+   sees it complete instead of being cut off. */
+.progress.done span {
+  animation: none;
+  transition: transform .18s ease, opacity .28s ease .16s;
+  transform: scaleX(1);
+  opacity: 0;
+}
+
+@keyframes progress-creep {
+  0%   { transform: scaleX(0); }
+  20%  { transform: scaleX(.35); }
+  50%  { transform: scaleX(.65); }
+  80%  { transform: scaleX(.85); }
+  100% { transform: scaleX(.95); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress span { animation: none; transform: scaleX(.6); }
+  .progress.done span { transition: opacity .2s ease; }
+}
+
 .spinner {
   animation: spin 0.9s linear infinite;
   border: 3px solid var(--border);

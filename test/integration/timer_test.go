@@ -181,11 +181,6 @@ func TestStoppingBooksTheMeasuredTime(t *testing.T) {
 		t.Errorf("the description did not travel: %v", entry.Description)
 	}
 
-	// A new entry is open, whichever path created it.
-	if entry.Status != "open" {
-		t.Errorf("the entry is %q, want open", entry.Status)
-	}
-
 	// The clock is gone, so stopping twice cannot double-count.
 	if timer := runningTimer(t, admin); timer.Running {
 		t.Error("the clock survived being stopped")
@@ -211,25 +206,25 @@ func TestStoppingBooksTheMeasuredTime(t *testing.T) {
 func TestStoppingIsRefusedWhenTheEntryWouldBe(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
-	manager := a.signInAsManager(admin, "Nils", "nils@example.com")
+	other := a.signInAsUser(admin, "Nils", "nils@example.com")
 
 	var project projectResponse
-	manager.must(manager.api(http.MethodPost, "/projects", map[string]any{
+	other.must(other.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Finishing soon", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
-	manager.must(manager.api(http.MethodPost, "/me/timer",
+	other.must(other.api(http.MethodPost, "/me/timer",
 		map[string]any{"projectId": project.ID}), http.StatusCreated, http.StatusOK)
 
 	time.Sleep(40 * time.Second)
 
 	// Completed while the clock is still running, so the entry it would create is
 	// one the booking rules refuse.
-	manager.must(manager.api(http.MethodPut, path("/projects/", project.ID), map[string]any{
+	other.must(other.api(http.MethodPut, path("/projects/", project.ID), map[string]any{
 		"name": "Finishing soon", "startDate": "2026-08-01", "status": "completed",
 	}), http.StatusOK)
 
-	response := manager.api(http.MethodPost, "/me/timer/stop", nil)
+	response := other.api(http.MethodPost, "/me/timer/stop", nil)
 	if response.Status == http.StatusOK || response.Status == http.StatusCreated {
 		t.Errorf("a timer on a project that no longer accepts time was booked: %s",
 			response.Body)
@@ -237,7 +232,7 @@ func TestStoppingIsRefusedWhenTheEntryWouldBe(t *testing.T) {
 
 	// The clock stays, so the measured time survives a refusal the user can act
 	// on - they can point it somewhere real and stop it again.
-	if timer := runningTimer(t, manager); !timer.Running {
+	if timer := runningTimer(t, other); !timer.Running {
 		t.Error("the refused stop threw the clock away, losing the time")
 	}
 }
@@ -353,23 +348,23 @@ func TestDeletingAnAccountWithAClockRunning(t *testing.T) {
 func TestDeletingAProjectSomebodyIsTimingAgainst(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
-	manager := a.signInAsManager(admin, "Rolf", "rolf@example.com")
+	other := a.signInAsUser(admin, "Rolf", "rolf@example.com")
 
 	var project projectResponse
-	manager.must(manager.api(http.MethodPost, "/projects", map[string]any{
+	other.must(other.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Timed against", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &project)
 
-	manager.must(manager.api(http.MethodPost, "/me/timer",
+	other.must(other.api(http.MethodPost, "/me/timer",
 		map[string]any{"projectId": project.ID}), http.StatusCreated, http.StatusOK)
 
 	// The project has no entries, so nothing else stands in the way of deleting it.
-	deleted := manager.api(http.MethodDelete, path("/projects/", project.ID), nil)
+	deleted := other.api(http.MethodDelete, path("/projects/", project.ID), nil)
 
 	switch deleted.Status {
 	case http.StatusOK, http.StatusNoContent:
 		// Accepted. Then nothing may be left pointing at a project that is gone.
-		if timer := runningTimer(t, manager); timer.Running && timer.ProjectID != nil {
+		if timer := runningTimer(t, other); timer.Running && timer.ProjectID != nil {
 			t.Errorf("the project was deleted and a clock still points at it (%d)",
 				*timer.ProjectID)
 		}
@@ -381,7 +376,7 @@ func TestDeletingAProjectSomebodyIsTimingAgainst(t *testing.T) {
 			t.Error("the deletion was refused without saying why")
 		}
 
-		if got := manager.api(http.MethodGet, path("/projects/", project.ID), nil).Status; got != http.StatusOK {
+		if got := other.api(http.MethodGet, path("/projects/", project.ID), nil).Status; got != http.StatusOK {
 			t.Errorf("the refused deletion left the project reading as %d, want 200", got)
 		}
 

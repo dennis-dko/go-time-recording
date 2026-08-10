@@ -16,9 +16,8 @@ import (
 //
 // Export is the easy half. Import writes many rows from a file somebody assembled
 // by hand, so what these tests are really about is what it refuses: a row for
-// somebody else's account, a status that would skip the review path, a day that
-// would go over the ceiling, and a file with one bad row in it - which has to leave
-// the database exactly as it was.
+// somebody else's account, a day that would go over the ceiling, and a file with
+// one bad row in it - which has to leave the database exactly as it was.
 
 type importRow struct {
 	Row         int     `json:"row"`
@@ -81,24 +80,24 @@ func importFile(t *testing.T, c *client, book []byte, dryRun string) (importResu
 func TestExportingAndImportingRoundTrips(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
-	manager := a.signInAsManager(admin, "Mika", "mika@example.com")
+	other := a.signInAsUser(admin, "Mika", "mika@example.com")
 
 	var shared projectResponse
-	manager.must(manager.api(http.MethodPost, "/projects", map[string]any{
+	other.must(other.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Shared work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
 
-	// Two entries of the manager's own, one with a project and one without.
+	// Two entries of their own, one with a project and one without.
 	for _, entry := range []map[string]any{
 		{"date": "2026-08-03", "durationHours": 6.5, "projectId": shared.ID,
 			"description": "Exported and imported"},
 		{"date": "2026-08-04", "durationHours": 1.25},
 	} {
-		manager.must(manager.api(http.MethodPost, "/timesheets", entry),
+		other.must(other.api(http.MethodPost, "/timesheets", entry),
 			http.StatusCreated, http.StatusOK)
 	}
 
-	exported := manager.must(manager.api(http.MethodGet,
+	exported := other.must(other.api(http.MethodGet,
 		"/timesheets/export?from=2026-08-01&to=2026-08-31", nil), http.StatusOK)
 
 	// A real workbook: a zip, which is what an .xlsx is, and readable by the same
@@ -135,7 +134,7 @@ func TestExportingAndImportingRoundTrips(t *testing.T) {
 	}
 
 	// And the same file goes back in, which is the first thing anybody tries.
-	result, r := importFile(t, manager, exported.Body, "false")
+	result, r := importFile(t, other, exported.Body, "false")
 	if r.Status != http.StatusOK && r.Status != http.StatusCreated {
 		t.Fatalf("importing the export answered %d: %s", r.Status, r.Body)
 	}
@@ -147,7 +146,7 @@ func TestExportingAndImportingRoundTrips(t *testing.T) {
 	// Four now: the two that were there and the two from the file. An import is a
 	// creation, not a merge - it has no way to know which entry a row means.
 	var listed listOf[timesheetResponse]
-	manager.must(manager.api(http.MethodGet, "/timesheets?from=2026-08-01&to=2026-08-31", nil),
+	other.must(other.api(http.MethodGet, "/timesheets?from=2026-08-01&to=2026-08-31", nil),
 		http.StatusOK).Data(t, &listed)
 
 	if len(listed.Items) != 4 {
@@ -312,56 +311,16 @@ func TestImportingForSomebodyElseNeedsTheWiderRight(t *testing.T) {
 		t.Errorf("importing somebody else's row answered %d, want 409", r.Status)
 	}
 
-	// A manager may, which is what makes this a permission rather than a rule.
-	manager := a.signInAsManager(admin, "Mira", "mira@example.com")
+	// An account with the wider right may, which makes this a permission rather
+	other := a.signInAsAuditor(admin, "Mira", "mira@example.com")
 
-	result, r := importFile(t, manager, book, "false")
+	result, r := importFile(t, other, book, "false")
 	if r.Status != http.StatusOK && r.Status != http.StatusCreated {
 		t.Fatalf("a manager importing for others answered %d: %s", r.Status, r.Body)
 	}
 
 	if result.Imported != 2 {
 		t.Errorf("a manager imported %d of 2 rows", result.Imported)
-	}
-}
-
-// An import cannot create an entry that is already approved: that would be a way
-// round the review path.
-func TestAnImportCannotSkipTheReviewPath(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
-
-	book := workbookOf(t, spreadsheet.Row{
-		Date: mustDay(t, "2026-08-03"), Hours: 2, Status: "approved",
-	})
-
-	preview, _ := importFile(t, admin, book, "true")
-
-	if preview.Rejected != 1 {
-		t.Fatalf("an approved row was accepted: %+v", preview.Rows)
-	}
-
-	if len(preview.Rows) > 0 && !strings.Contains(preview.Rows[0].Problem, "open") {
-		t.Errorf("the refusal does not explain itself: %q", preview.Rows[0].Problem)
-	}
-
-	// An entry imported without a status is open, which is where the path starts.
-	fine := workbookOf(t, spreadsheet.Row{Date: mustDay(t, "2026-08-03"), Hours: 2})
-
-	if _, r := importFile(t, admin, fine, "false"); r.Status != http.StatusOK &&
-		r.Status != http.StatusCreated {
-		t.Fatalf("importing a plain row answered %d: %s", r.Status, r.Body)
-	}
-
-	var listed listOf[timesheetResponse]
-	admin.must(admin.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &listed)
-
-	if len(listed.Items) != 1 {
-		t.Fatalf("%d entries were imported, want 1", len(listed.Items))
-	}
-
-	if listed.Items[0].Status != "open" {
-		t.Errorf("the imported entry is %q, want open", listed.Items[0].Status)
 	}
 }
 
@@ -388,7 +347,9 @@ func TestSomethingThatIsNotAWorkbookIsRefusedOutright(t *testing.T) {
 func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
-	manager := a.signInAsManager(admin, "Malin", "malin@example.com")
+	// The auditor is the half that must see both: an ordinary account sees only
+	// its own, which is what the first half of this test proves.
+	other := a.signInAsAuditor(admin, "Malin", "malin@example.com")
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Xenia", "email": "xenia@example.com",
@@ -402,7 +363,7 @@ func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
 		"date": "2026-08-03", "durationHours": 4, "description": "hers",
 	}), http.StatusCreated, http.StatusOK)
 
-	manager.must(manager.api(http.MethodPost, "/timesheets", map[string]any{
+	other.must(other.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-03", "durationHours": 5, "description": "the manager's",
 	}), http.StatusCreated, http.StatusOK)
 
@@ -451,7 +412,7 @@ func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
 
 	// The manager sees both, which is what makes the scoping a scoping rather than
 	// an empty export.
-	all := manager.must(manager.api(http.MethodGet, "/timesheets/export", nil), http.StatusOK)
+	all := other.must(other.api(http.MethodGet, "/timesheets/export", nil), http.StatusOK)
 
 	allRows, _, err := spreadsheet.Read(bytes.NewReader(all.Body))
 	if err != nil {

@@ -36,11 +36,6 @@ type Operational struct {
 	RateLimit              *int `json:"rateLimit,omitempty"`
 	RateLimitWindowSeconds *int `json:"rateLimitWindowSeconds,omitempty"`
 
-	// AutoCloseAfterDays is how old an open entry must be before the nightly
-	// sweep submits it. The schedule itself stays in the environment: cron jobs
-	// are registered once at start-up and cannot be re-registered live.
-	AutoCloseAfterDays *int `json:"autoCloseAfterDays,omitempty"`
-
 	// LDAPSyncMaxDeleteRatio refuses a synchronisation that would remove more
 	// than this share of the directory-backed accounts. Zero switches the
 	// check off, which is why the field is a pointer.
@@ -54,7 +49,6 @@ type Limits struct {
 	MaxDailyHours          float64
 	RateLimit              int
 	RateLimitWindowSeconds int
-	AutoCloseAfterDays     int
 	LDAPSyncMaxDeleteRatio float64
 }
 
@@ -76,10 +70,6 @@ func (o Operational) Resolve(fallback Limits) Limits {
 
 	if o.RateLimitWindowSeconds != nil {
 		out.RateLimitWindowSeconds = *o.RateLimitWindowSeconds
-	}
-
-	if o.AutoCloseAfterDays != nil {
-		out.AutoCloseAfterDays = *o.AutoCloseAfterDays
 	}
 
 	if o.LDAPSyncMaxDeleteRatio != nil {
@@ -115,10 +105,6 @@ func (o Operational) InvalidOperationalFields() []string {
 	if o.RateLimitWindowSeconds != nil &&
 		(*o.RateLimitWindowSeconds < 1 || *o.RateLimitWindowSeconds > MaxRateWindowSeconds) {
 		invalid = append(invalid, "rateLimitWindowSeconds")
-	}
-
-	if o.AutoCloseAfterDays != nil && *o.AutoCloseAfterDays < 0 {
-		invalid = append(invalid, "autoCloseAfterDays")
 	}
 
 	if o.LDAPSyncMaxDeleteRatio != nil &&

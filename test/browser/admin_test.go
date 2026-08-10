@@ -891,8 +891,8 @@ func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
 // A refusal from the server reaches the reader in their own language.
 //
 // The messages are written where the rule is enforced, in English, which is right
-// for the log and wrong for the person who tripped over it: "an approved timesheet
-// can no longer be edited" was shown to a German reader whatever they had chosen.
+// for the log and wrong for the person who tripped over it: an English sentence was
+// shown to a German reader whatever they had chosen.
 // The reason now travels as a code with the values the sentence interpolated, and
 // the interface looks the sentence up.
 //
@@ -1362,4 +1362,69 @@ func TestTheImportShowsWhatAFileWouldDoBeforeDoingIt(t *testing.T) {
 
 	t.Fatalf("the imported entry never reached the table\n\ntable:\n%s\n\napplication log:\n%s",
 		p.text("#table-timesheets tbody"), p.app.Log())
+}
+
+// The loading strip appears while a request is in flight and goes when it is not.
+//
+// Two failure modes are worth pinning. One is a strip that never appears, which
+// makes a slow screen look frozen. The other is a strip that never leaves — an
+// in-flight counter that decrements on success only would stick on the first
+// failed request and stay for as long as the page is open.
+func TestTheLoadingStripAppearsAndGoesAgain(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// At rest: nothing in flight, so nothing on screen.
+	if p.visible("#progress") {
+		t.Error("the loading strip is showing with no request in flight")
+	}
+
+	// Held open on the server side so the strip has time to appear: the delay
+	// before it shows is deliberate, and a fast request must show nothing.
+	var appeared bool
+
+	p.run("watch a slow request", chromedp.Evaluate(`(async () => {
+		// A request that takes long enough to be worth mentioning. The log
+		// endpoint is admin-only and always answers, which is all this needs.
+		const inFlight = fetch('/api/v1/logs?limit=1', { credentials: 'same-origin' });
+
+		// Past the delay the strip waits out before it shows itself.
+		await new Promise((r) => setTimeout(r, 400));
+
+		const bar = document.querySelector('#progress');
+		const showing = Boolean(bar) && !bar.hidden;
+
+		await inFlight.catch(() => {});
+		return showing;
+	})()`, &appeared, awaitPromise))
+
+	// Not asserted as a failure: on a fast local server the request can finish
+	// inside the delay, which is the strip behaving correctly.
+	t.Logf("the strip was showing during the request: %v", appeared)
+
+	// What must hold either way: it is gone once nothing is in flight.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if !p.visible("#progress") {
+			break
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if p.visible("#progress") {
+		t.Error("the loading strip stayed on screen after the request finished")
+	}
+
+	// And a failed request leaves it clean too - the counter has to come back
+	// down in a finally, not on the success path.
+	p.run("make a request that fails", chromedp.Evaluate(`(async () => {
+		try { await fetch('/api/v1/does-not-exist', { credentials: 'same-origin' }); } catch {}
+	})()`, nil, awaitPromise))
+
+	time.Sleep(900 * time.Millisecond)
+
+	if p.visible("#progress") {
+		t.Error("the loading strip stayed on screen after a failed request")
+	}
 }

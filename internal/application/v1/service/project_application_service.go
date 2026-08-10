@@ -232,19 +232,10 @@ func (s *ProjectApplicationService) validateStatusTransition(
 			WithCode("archiveNeedsCompleted", model.ProjectStatusCompleted)
 	}
 
-	openEntries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
-		ProjectID: project.ID,
-		Status:    model.TimesheetStatusOpen,
-	})
-	if err != nil {
-		return err
-	}
-
-	if len(openEntries) > 0 {
-		return apperror.Conflictf("cannot archive a project with %d open time entries", len(openEntries)).
-			WithCode("archiveHasOpenEntries", len(openEntries))
-	}
-
+	// Entries no longer stand in the way. The rule was about open ones still
+	// expecting edits; an entry has no state any more, so that would mean every
+	// entry there is - and refusing to archive a finished project because time was
+	// booked against it is backwards. Deleting one still refuses while any exist.
 	return nil
 }
 

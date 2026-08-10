@@ -11,6 +11,10 @@
   <script src="/theme.js"></script>
 </head>
 <body>
+  <!-- The loading strip, above everything and outside the layout: it must not
+       move anything when it appears, or every request would nudge the page. -->
+  <div id="progress" class="progress" hidden aria-hidden="true"><span></span></div>
+
   <header class="topbar">
     <img id="brand-logo" class="brand-logo" alt="" hidden>
     <h1 id="app-title">Time Recording</h1>
@@ -227,13 +231,6 @@
           <div class="filters">
             <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">All users</option></select>
             <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">All projects</option></select>
-            <select id="filter-ts-status">
-              <option value="" data-i18n="filter.allStatus">All statuses</option>
-              <option value="open" data-i18n="status.open">open</option>
-              <option value="submitted" data-i18n="status.submitted">submitted</option>
-              <option value="approved" data-i18n="status.approved">approved</option>
-              <option value="rejected" data-i18n="status.rejected">rejected</option>
-            </select>
           </div>
         </div>
         <div class="table-wrap">
@@ -245,7 +242,6 @@
                 <th data-i18n="field.project">Project</th>
                 <th class="num" data-i18n="field.hours">Hours</th>
                 <th data-i18n="field.description">Description</th>
-                <th data-i18n="field.status">Status</th>
                 <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
@@ -316,7 +312,6 @@
                 <th data-i18n="field.project">Project</th>
                 <th class="num" data-i18n="field.hours">Hours</th>
                 <th data-i18n="field.description">Description</th>
-                <th data-i18n="field.status">Status</th>
                 <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
@@ -738,9 +733,6 @@
           </label>
           <label data-i18n="ops.rateWindow">Rate limit window (seconds)
             <input type="number" name="rateLimitWindowSeconds" step="1" min="1" max="3600">
-          </label>
-          <label data-i18n="ops.autoClose">Submit open entries after (days)
-            <input type="number" name="autoCloseAfterDays" step="1" min="0">
           </label>
           <label data-i18n="ops.deleteRatio">Directory sync: deletion limit (0–1)
             <input type="number" name="ldapSyncMaxDeleteRatio" step="0.05" min="0" max="1">

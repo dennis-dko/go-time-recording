@@ -18,7 +18,6 @@ func envDefaults() model.Limits {
 		MaxDailyHours:          24,
 		RateLimit:              30,
 		RateLimitWindowSeconds: 60,
-		AutoCloseAfterDays:     14,
 		LDAPSyncMaxDeleteRatio: 0.5,
 	}
 }
@@ -51,9 +50,6 @@ func TestOverridesReplaceOnlyWhatIsSet(t *testing.T) {
 		t.Errorf("an unset field must keep the environment's value, got %v", got.SessionLifetimeHours)
 	}
 
-	if got.AutoCloseAfterDays != 14 {
-		t.Errorf("an unset field must keep the environment's value, got %v", got.AutoCloseAfterDays)
-	}
 }
 
 // Zero is a real choice for two of these, which is the reason every field is a
@@ -61,15 +57,10 @@ func TestOverridesReplaceOnlyWhatIsSet(t *testing.T) {
 func TestZeroIsAnOverrideNotAnAbsence(t *testing.T) {
 	got := model.Operational{
 		LDAPSyncMaxDeleteRatio: ptr(0.0),
-		AutoCloseAfterDays:     ptr(0),
 	}.Resolve(envDefaults())
 
 	if got.LDAPSyncMaxDeleteRatio != 0 {
 		t.Errorf("a deliberate 0 must switch the check off, got %v", got.LDAPSyncMaxDeleteRatio)
-	}
-
-	if got.AutoCloseAfterDays != 0 {
-		t.Errorf("a deliberate 0 must be kept, got %v", got.AutoCloseAfterDays)
 	}
 }
 
@@ -108,10 +99,6 @@ func TestValidationRejectsValuesThatWouldBreakTheInstance(t *testing.T) {
 			model.Operational{LDAPSyncMaxDeleteRatio: ptr(-0.1)}, "ldapSyncMaxDeleteRatio",
 		},
 		{
-			"a negative sweep age would submit entries from the future",
-			model.Operational{AutoCloseAfterDays: ptr(-1)}, "autoCloseAfterDays",
-		},
-		{
 			"a window of zero seconds is not a window",
 			model.Operational{RateLimitWindowSeconds: ptr(0)}, "rateLimitWindowSeconds",
 		},
@@ -138,7 +125,6 @@ func TestValidationAcceptsReasonableValues(t *testing.T) {
 		MaxDailyHours:          ptr(10.0),
 		RateLimit:              ptr(60),
 		RateLimitWindowSeconds: ptr(60),
-		AutoCloseAfterDays:     ptr(7),
 		LDAPSyncMaxDeleteRatio: ptr(0.25),
 	}
 

@@ -2,14 +2,15 @@ package model
 
 import "time"
 
-const (
-	TimesheetStatusOpen      = "open"
-	TimesheetStatusSubmitted = "submitted"
-	TimesheetStatusApproved  = "approved"
-	TimesheetStatusRejected  = "rejected"
-)
-
 // Timesheet model
+//
+// There is no status. An entry used to travel open -> submitted -> approved, with
+// an approved one locked against further change - which needs somebody to do the
+// approving. There is nobody: everyone keeps their own hours, and the built-in
+// administrator runs the installation rather than reviewing other people's work.
+// A review path with no reviewer is a step that only ever gets in the way of the
+// person who recorded the time, so it is gone, along with the column that carried
+// it.
 type Timesheet struct {
 	ID     uint
 	UserID uint
@@ -21,7 +22,6 @@ type Timesheet struct {
 	Date          time.Time
 	DurationHours float64
 	Description   *string
-	Status        string
 }
 
 // HasProject reports whether the entry is assigned to a project.

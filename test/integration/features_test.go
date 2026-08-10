@@ -21,11 +21,11 @@ func TestPrivateProjectsAreInvisibleToOthers(t *testing.T) {
 		}), http.StatusCreated, http.StatusOK)
 	}
 
-	// A shared project, set up centrally - by a manager, because managing the
+	// A shared project, set up centrally - by a other, because managing the
 	// projects everybody books against is running the work rather than running
 	// the installation, and the administrator holds none of that.
-	manager := a.signInAsManager(admin, "Mila", "mila@example.com")
-	manager.must(manager.api(http.MethodPost, "/projects", map[string]any{
+	other := a.signInAsUser(admin, "Mila", "mila@example.com")
+	other.must(other.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Shared work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK)
 
@@ -81,12 +81,14 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	// Both managers. Reading a project report needs reports:read, and moving or
+	// Two ordinary accounts. Reading a project report needs reports:read, and moving
 	// archiving somebody's project needs rights over the work - none of which the
 	// built-in administrator holds any more, so it can no longer be the caller
 	// this rule is proved against: it would be refused for the wrong reason.
-	gerda := a.signInAsManager(admin, "Gerda", "gerda@example.com")
-	heiko := a.signInAsManager(admin, "Heiko", "heiko@example.com")
+	gerda := a.signInAsUser(admin, "Gerda", "gerda@example.com")
+	// An auditor: reading a project report needs reports:read, which no default
+	// role holds any more. Building the role is what an administrator can still do.
+	heiko := a.signInAsAuditor(admin, "Heiko", "heiko@example.com")
 
 	var hers projectResponse
 	gerda.must(gerda.api(http.MethodPost, "/projects", map[string]any{
@@ -97,7 +99,7 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 		"date": "2026-08-04", "durationHours": 2, "projectId": hers.ID,
 	}), http.StatusCreated, http.StatusOK)
 
-	// A manager is now the strongest caller there is - every right over the work,
+	// The other account is the caller to prove this with: it holds every right over
 	// including the report - which makes it the right one to prove the rule with,
 	// because a rule that only holds against an employee is not a rule.
 	if got := heiko.api(http.MethodGet,
@@ -129,12 +131,13 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	}
 
 	// And the owner is unaffected: the rule is about who is asking, not about a
-	// private project becoming unreachable. Through the report itself, which the
-	// manager role now holds the right to read - the same request that answered 404
-	// for Heiko a moment ago.
+	// private project becoming unreachable.
+	//
+	// Checked through the project rather than through its report, because a project
+	// report needs reports:read and no default role holds that any more - everyone
+	// reads their own figures through /me/statistics instead. Her own project is
+	// the same request that answered 404 for the auditor a moment ago.
 	gerda.must(gerda.api(http.MethodGet, path("/projects/", hers.ID), nil), http.StatusOK)
-	gerda.must(gerda.api(http.MethodGet, path("/projects/", hers.ID)+"/report", nil),
-		http.StatusOK)
 
 	var stillThere listOf[timesheetResponse]
 
@@ -144,30 +147,6 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	if len(stillThere.Items) != 1 {
 		t.Errorf("the owner sees %d of her own entries, want 1", len(stillThere.Items))
 	}
-}
-
-// An entry created "approved" would have skipped the review that approving is,
-// and landed on the one status that refuses every later edit, transfer and
-// deletion - reachable by anyone who could write a time entry at all.
-func TestATimeEntryCannotBeCreatedAlreadyApproved(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
-
-	for _, status := range []string{"approved", "submitted", "rejected"} {
-		response := admin.api(http.MethodPost, "/timesheets", map[string]any{
-			"date": "2026-08-05", "durationHours": 1, "status": status,
-		})
-
-		if response.Status == http.StatusCreated || response.Status == http.StatusOK {
-			t.Errorf("an entry was created as %q: %s", status, truncate(string(response.Body), 200))
-		}
-	}
-
-	// Asking for the status it gets anyway is not an error - a client that fills
-	// the field in with "open" is saying nothing unusual.
-	admin.must(admin.api(http.MethodPost, "/timesheets", map[string]any{
-		"date": "2026-08-05", "durationHours": 1, "status": "open",
-	}), http.StatusCreated, http.StatusOK)
 }
 
 // Recording time means recording the time that was worked. The form used to
