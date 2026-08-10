@@ -324,6 +324,22 @@ func (p *page) text(selector string) string {
 	return strings.TrimSpace(out)
 }
 
+// count is how many elements match, which text cannot answer.
+//
+// For the things the interface builds per row: a checkbox column derived from the
+// rows is right or wrong by the number of checkboxes in it, and reading the table's
+// text says nothing about that at all.
+func (p *page) count(selector string) int {
+	p.t.Helper()
+
+	var out int
+
+	p.run("count "+selector, chromedp.Evaluate(fmt.Sprintf(
+		`document.querySelectorAll(%q).length`, selector), &out))
+
+	return out
+}
+
 // attr reads an attribute as the browser currently has it, which is not always
 // what the markup said: the reveal button changes an input's type in place.
 func (p *page) attr(selector, name string) string {
