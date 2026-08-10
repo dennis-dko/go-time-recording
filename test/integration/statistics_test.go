@@ -150,15 +150,16 @@ func TestOwnStatisticsAreOnlyYourOwn(t *testing.T) {
 	// The built-in administrator used to be the caller that made this point, on the
 	// grounds that it held every permission there was. It holds nothing over time now
 	// - it administers the installation and the accounts - so it cannot even ask this
-	// question, and the claim moves to the role that genuinely can see everybody:
-	// somebody who may read all the entries there are.
-	ilka := a.signInAsAuditor(admin, "Ilka", "ilka@example.com")
+	// question. It used to move to a role that could read everybody's entries; no role
+	// can. So the claim is made by the most privileged account this application has:
+	// one that both works here and administers, which is as far as any role reaches.
+	ilka := a.signInAsWorkingAdmin(admin, "Ilka", "ilka@example.com")
 
-	// And that account still sees only its own hours here, because this endpoint is
-	// keyed on the caller rather than filtered by one.
+	// And it sees only its own hours, because this endpoint is keyed on the caller
+	// rather than filtered by one - there is no filter here to get wrong.
 	if stats := ownStatistics(t, ilka, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 0 {
-		t.Errorf("the statistics of somebody who may read everybody's entries include %v hours of somebody else's",
-			stats.TotalHours)
+		t.Errorf("the statistics of the most privileged account there is include %v hours "+
+			"of somebody else's", stats.TotalHours)
 	}
 
 	if stats := ownStatistics(t, wera, "?from=2026-08-01&to=2026-08-31"); stats.TotalHours != 4 {

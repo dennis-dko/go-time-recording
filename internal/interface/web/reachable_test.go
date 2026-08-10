@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -298,4 +299,97 @@ func TestEverySeededRoleSaysWhatItIsFor(t *testing.T) {
 			t.Errorf("%q explains a role this application does not ship", key)
 		}
 	}
+}
+
+// Nothing on screen asks which person.
+//
+// Four controls used to: the booking form, the entry filter, the calendar and the
+// overtime form each offered a dropdown of colleagues. They were built when a role
+// could hold timesheets:read:all, and they never worked as they read even then - the
+// account that administers colleagues does not read what they recorded, so it was
+// offered every name and every choice but its own came back 403. The filter was worse:
+// "All users" quietly showed only your own entries, because the server pins the scope
+// and the label did not know.
+//
+// Now that whose time it is is settled by who is signed in, any such control could
+// only refuse. This is the check that says so before somebody adds one back, because a
+// dropdown that looks ordinary and answers 403 is a bug that reads as a permissions
+// problem for as long as nobody tries it.
+func TestNothingOnScreenAsksWhichPerson(t *testing.T) {
+	html := asset(t, "/")
+
+	for _, gone := range []struct{ markup, was string }{
+		{`id="filter-ts-user"`, "the entry filter"},
+		{`id="calendar-user"`, "the calendar"},
+		{`name="userId"`, "the booking form and the overtime form"},
+	} {
+		if strings.Contains(html, gone.markup) {
+			t.Errorf("%s is back in the markup (%s)\n\nWhose time an entry is is decided "+
+				"by who is signed in, so a control that names somebody else can only be "+
+				"refused - and one that looks ordinary and answers 403 reads as a "+
+				"permissions problem rather than as a control that should not be there",
+				gone.markup, gone.was)
+		}
+	}
+}
+
+// The width an empty table claims is the width it has.
+//
+// fillTable takes a column count and uses it as the colspan of the "nothing here"
+// row. Nothing connects that number to the header it has to match, so removing a
+// column leaves the empty message spanning further than the table goes - which is
+// invisible for as long as the table has rows in it, and shows up as a stray cell
+// sticking out on the day somebody has no entries. That is exactly what happened when
+// the user column came out of the entry list.
+//
+// Read out of the two files rather than restated here, so a table added later is
+// checked without anybody remembering to add it.
+func TestAnEmptyTableSpansItsOwnColumns(t *testing.T) {
+	js := asset(t, "/app.js")
+	html := asset(t, "/")
+
+	calls := regexp.MustCompile(`fillTable\(\$\('#(table-[a-z-]+) tbody'\), [^,]+, (\d+)`).
+		FindAllStringSubmatch(js, -1)
+	if len(calls) == 0 {
+		t.Fatal("no fillTable calls found; this guard is no longer reading the source")
+	}
+
+	for _, call := range calls {
+		table, claimed := call[1], call[2]
+
+		markup := tableMarkup(t, html, table)
+		if markup == "" {
+			t.Errorf("app.js fills #%s, which is not in the markup", table)
+
+			continue
+		}
+
+		// <th followed by a space or a close bracket, so <thead does not count as a
+		// column - which it did on the first attempt, making every table in the
+		// application look one column wider than it is.
+		headers := len(regexp.MustCompile(`<th[\s>]`).FindAllString(markup, -1))
+
+		if claimed != strconv.Itoa(headers) {
+			t.Errorf("#%s has %d column(s) and its empty row spans %s: a message that "+
+				"reaches past the last column shows as a stray cell the moment somebody "+
+				"has nothing to list", table, headers, claimed)
+		}
+	}
+}
+
+// tableMarkup returns the head of one table, from its id to the end of its header row.
+func tableMarkup(t *testing.T, html, table string) string {
+	t.Helper()
+
+	start := strings.Index(html, `id="`+table+`"`)
+	if start < 0 {
+		return ""
+	}
+
+	end := strings.Index(html[start:], "</thead>")
+	if end < 0 {
+		t.Fatalf("#%s has no header row, so its width cannot be checked", table)
+	}
+
+	return html[start : start+end]
 }

@@ -278,3 +278,51 @@ func TestTheRoleDropdownExplainsEachRole(t *testing.T) {
 		t.Errorf("the combined role does not say that it administers: %q", both)
 	}
 }
+
+// The rights of a system role are shown as unavailable, not offered and then refused.
+//
+// The name of a system role has been read-only in this form all along; its permissions
+// were left clickable, and saving them came back as a refusal. A control that looks
+// usable and answers "no" is worse than one that says so first - and this is the screen
+// where somebody is deciding what an account may do, so being told afterwards is the
+// worst moment to find out.
+//
+// Only a browser can check it: the checkboxes are built at render time from what the
+// server sent, and whether they are disabled is not a fact about the source.
+func TestASystemRolesRightsCannotBeTicked(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open the roles screen", p.click(`.tab[data-view="roles"]`),
+		chromedp.WaitVisible("#table-roles", chromedp.ByID))
+
+	// The built-in administrator's own role, which is the system one.
+	p.waitForText("#table-roles tbody", "admin")
+
+	p.run("edit it", chromedp.Click(
+		`#table-roles tbody tr:nth-child(1) button.link`, chromedp.ByQuery),
+		chromedp.WaitVisible("#permission-list input", chromedp.ByQuery))
+
+	// Every box, not merely the first: a loop that disabled one would look right in a
+	// screenshot.
+	offered := p.count(`#permission-list input[name="permissions"]`)
+	locked := p.count(`#permission-list input[name="permissions"]:disabled`)
+
+	if offered == 0 {
+		t.Fatal("the form offers no permissions at all, so this proves nothing")
+	}
+
+	if locked != offered {
+		t.Errorf("%d of %d rights can still be ticked on a system role", offered-locked, offered)
+	}
+
+	// And the reason is on screen, next to them.
+	if !p.visible("#role-fixed-note") {
+		t.Error("nothing says why the rights cannot be changed")
+	}
+
+	// The name too, which was already the case - checked here so the two stay together.
+	if p.attr(`#form-role input[name="name"]`, "readonly") == "" {
+		t.Error("the name of a system role can be edited")
+	}
+}

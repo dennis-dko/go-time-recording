@@ -39,7 +39,7 @@ func NewTimesheetHandler(
 // date range. A caller who may only see their own entries is pinned to their
 // own id regardless of the filter they sent.
 func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c, model.PermTimesheetReadOwn, model.PermTimesheetReadAll)
+	principal, err := h.authz.Require(c, model.PermTimesheetReadOwn)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 
 // Get handles GET /api/v1/timesheets/{id}
 func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c, model.PermTimesheetReadOwn, model.PermTimesheetReadAll)
+	principal, err := h.authz.Require(c, model.PermTimesheetReadOwn)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +102,7 @@ func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	if h.authz.Enabled() && !principal.Can(model.PermTimesheetReadAll) &&
-		result.Result.UserID != principal.User.ID {
+	if h.authz.Enabled() && result.Result.UserID != principal.User.ID {
 		return nil, forbiddenError{msg: "you may only read your own time entries"}
 	}
 
@@ -112,7 +111,7 @@ func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
 
 // Create handles POST /api/v1/timesheets
 func (h *TimesheetHandler) Create(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c, model.PermTimesheetWriteOwn, model.PermTimesheetWriteAll)
+	principal, err := h.authz.Require(c, model.PermTimesheetWriteOwn)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +127,7 @@ func (h *TimesheetHandler) Create(c *gofr.Context) (any, error) {
 		req.UserID = principal.User.ID
 	}
 
-	if err := h.authz.requireOwnerOrAll(principal, req.UserID); err != nil {
+	if err := h.authz.requireOwner(principal, req.UserID); err != nil {
 		return nil, err
 	}
 
@@ -148,7 +147,7 @@ func (h *TimesheetHandler) Create(c *gofr.Context) (any, error) {
 
 // Update handles PUT /api/v1/timesheets/{id}
 func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c, model.PermTimesheetWriteOwn, model.PermTimesheetWriteAll)
+	principal, err := h.authz.Require(c, model.PermTimesheetWriteOwn)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +162,7 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	if err := h.authz.requireOwnerOrAll(principal, existing.Result.UserID); err != nil {
+	if err := h.authz.requireOwner(principal, existing.Result.UserID); err != nil {
 		return nil, err
 	}
 
@@ -177,7 +176,7 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 	// to a colleague by naming them here, pushing hours onto an account that is not
 	// theirs to book for. Create checks the target the same way.
 	if req.UserID != nil {
-		if err := h.authz.requireOwnerOrAll(principal, *req.UserID); err != nil {
+		if err := h.authz.requireOwner(principal, *req.UserID); err != nil {
 			return nil, err
 		}
 	}
@@ -205,7 +204,7 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 
 // Delete handles DELETE /api/v1/timesheets/{id}
 func (h *TimesheetHandler) Delete(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c, model.PermTimesheetWriteOwn, model.PermTimesheetWriteAll)
+	principal, err := h.authz.Require(c, model.PermTimesheetWriteOwn)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +219,7 @@ func (h *TimesheetHandler) Delete(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	if err := h.authz.requireOwnerOrAll(principal, existing.Result.UserID); err != nil {
+	if err := h.authz.requireOwner(principal, existing.Result.UserID); err != nil {
 		return nil, err
 	}
 
@@ -301,13 +300,12 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 // Report handles GET /api/v1/projects/{id}/report, totalling booked hours over a
 // date range. The range defaults to the last 30 days.
 //
-// The caller's own hours, unless they hold the right to read everybody's. It used to
-// be everybody's for anyone who could open it at all, gated on a right that no role
-// held - so the screen was unreachable and, had anyone granted it, would have shown
-// what each colleague had booked. Nobody sees what anybody else has.
+// The caller's own hours. It used to be everybody's for anyone who could open it at
+// all, gated on a right that no role held - so the screen was unreachable and, had
+// anyone granted it, would have shown what each colleague had booked on the project.
+// Nobody sees what anybody else has.
 func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c,
-		model.PermReportReadOwn, model.PermTimesheetReadAll)
+	principal, err := h.authz.Require(c, model.PermReportReadOwn)
 	if err != nil {
 		return nil, err
 	}

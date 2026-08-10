@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -35,26 +36,36 @@ func TestDefaultRolesAreSeeded(t *testing.T) {
 		t.Error("the admin role must hold roles:write")
 	}
 
-	// An ordinary account keeps its own time and nobody else's: there is no
-	// reviewer any more, and the rights over other people's work are what the
-	// administrator was deliberately stripped of.
-	for _, forbidden := range []string{
-		model.PermTimesheetReadAll, model.PermTimesheetWriteAll,
+	// No right answers "may this person see somebody else's time", because the
+	// answer is no and it is not a choice.
+	//
+	// This used to check that no seeded role held those rights, which was the weaker
+	// statement: the rights still existed, so an administrator could tick one in the
+	// role editor. That granted a capability with no screen behind it - every
+	// question about every colleague answered by the API, and nothing anywhere to
+	// show it had been granted.
+	//
+	// Named as literals rather than constants, because the point is that the
+	// constants are gone. A guard written against a constant disappears with it, and
+	// disappears silently.
+	for _, gone := range []string{
+		"timesheets:read:all",
+		"timesheets:write:all",
+		// A total rather than a list, asked of somebody else's hours. Same question,
+		// second answer - which is how two answers come to disagree.
+		"reports:read",
+		// Reviewing somebody's hours, from when there was a reviewer.
+		"timesheets:approve",
 	} {
-		if byName[model.RoleEmployee].Has(forbidden) {
-			t.Errorf("an ordinary account must not hold %q", forbidden)
+		if slices.Contains(model.AllPermissions(), gone) {
+			t.Errorf("%q is back in AllPermissions(); it lets one account read or write "+
+				"another's time, and this application has no such account", gone)
 		}
-	}
 
-	// And there is only one right that answers "may this person see somebody
-	// else's time". reports:read was a second one, for a total rather than a list,
-	// and it belonged to the role that reviewed other people's hours. Two rights
-	// for one question is how the two come to disagree - and this one had drifted
-	// to where no role held it while a whole screen was gated on it.
-	for _, permission := range model.AllPermissions() {
-		if permission == "reports:read" {
-			t.Error(`reports:read is back in AllPermissions(); whether somebody may see ` +
-				`another person's time is timesheets:read:all, and one question takes one right`)
+		for name, role := range byName {
+			if role.Has(gone) {
+				t.Errorf("the seeded role %q holds %q", name, gone)
+			}
 		}
 	}
 

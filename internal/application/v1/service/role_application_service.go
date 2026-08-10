@@ -75,19 +75,29 @@ func (s *RoleApplicationService) UpdateRole(
 		return nil, err
 	}
 
-	// A system role may be described differently but not renamed or weakened:
-	// the application looks it up by name, and stripping its permissions would
-	// leave the installation unadministrable.
+	// A system role may be described differently, and nothing else: not renamed, and
+	// not given or taken a single permission.
+	//
+	// Narrowing was always refused - the application looks the role up by name, and
+	// stripping it would leave the installation unadministrable. Widening was allowed,
+	// on the reasoning that whoever may manage roles can reach anything anyway. That
+	// reasoning does not survive the arrangement this application has now: the built-in
+	// administrator exists to configure the installation and keep the accounts, and it
+	// does not record time. A right added here would hand a working day to the one
+	// account nobody chose, quietly, from the screen that administers roles.
+	//
+	// The way to let somebody both work here and administer is to give a person the
+	// combined role. That is a decision about a colleague, which is the point.
 	if role.IsSystem {
 		if name != nil && *name != role.Name {
 			return nil, apperror.Conflictf("the system role %q cannot be renamed", role.Name).
 				WithCode("systemRoleUnrenamable", role.Name)
 		}
 
-		if permissions != nil && !grantsAtLeast(permissions, role.Permissions) {
+		if permissions != nil && !sameRights(permissions, role.Permissions) {
 			return nil, apperror.Conflictf(
-				"permissions cannot be removed from the system role %q", role.Name).
-				WithCode("systemRoleUnweakenable", role.Name)
+				"the permissions of the system role %q cannot be changed", role.Name).
+				WithCode("systemRoleRightsFixed", role.Name)
 		}
 	}
 
@@ -178,7 +188,31 @@ func validateRole(name string, permissions []string) ([]string, error) {
 			WithCode("unknownPermissions", strings.Join(unknown, ", "))
 	}
 
+	// A role that grants nothing is a role somebody will assign and then wonder about.
+	// Whoever holds it can sign in, see an interface with almost nothing on it, and
+	// reach no screen that matters - which looks like a broken installation rather than
+	// like a decision. If the intention is to take somebody's access away, that is what
+	// removing the account is for.
+	if len(clean) == 0 {
+		return nil, apperror.Invalidf("a role has to grant at least one permission").
+			WithCode("roleGrantsNothing")
+	}
+
 	return clean, nil
+}
+
+// sameRights reports whether two permission sets hold exactly the same names,
+// whatever order they arrive in.
+//
+// Order and duplicates are the client's business, not a difference: a screen that
+// sends its checkboxes back in a different sequence is not asking for a change, and
+// refusing it as one would make the Save button fail for no reason anybody could see.
+func sameRights(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	return grantsAtLeast(a, b) && grantsAtLeast(b, a)
 }
 
 // grantsAtLeast reports whether every permission in required is present in

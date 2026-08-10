@@ -419,7 +419,7 @@
           "timesheets"
         ],
         "summary": "List time entries",
-        "description": "A caller holding only `timesheets:read:own` is pinned to their own entries regardless of the filter sent.",
+        "description": "Your own entries. `userId` may name you, which is a reasonable thing for a client to send; naming anybody else is refused rather than quietly answered with your own rows, because a list that does not match what was asked for is worse than a plain no.",
         "parameters": [
           {
             "name": "userId",
@@ -511,7 +511,7 @@
           "timesheets"
         ],
         "summary": "Update an entry",
-        "description": "Changes an entry of your own. Somebody else’s needs `timesheets:write:all`, which no default role holds - and that includes naming somebody else in `userId`, which hands the entry over. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours.",
+        "description": "Changes an entry of your own. Somebody else’s is refused, and there is no right that changes that - including naming somebody else in `userId`, which would hand the entry over. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours.",
         "responses": {
           "200": {
             "description": "Updated"
@@ -690,7 +690,7 @@
           "reports"
         ],
         "summary": "Hours booked on a project",
-        "description": "Your own hours, unless you hold `timesheets:read:all` - the one right that says somebody may see another person’s recorded time. It used to be a breakdown per colleague, gated on a separate `reports:read` that no role held, so the screen was unreachable and would have shown what each colleague had booked. Needs `reports:read:own`.",
+        "description": "Your own hours on the project, and nobody else’s. It used to be a breakdown per colleague, gated on a separate `reports:read` that no role held, so the screen was unreachable and would have shown what each colleague had booked. Needs `reports:read:own`.",
         "parameters": [
           {
             "name": "id",
@@ -733,7 +733,7 @@
           "reports"
         ],
         "summary": "Overtime balance for one user",
-        "description": "Your own balance needs `reports:read:own`; anyone else’s needs `timesheets:read:all`, the same right as reading their entries - a balance is their recorded time, totalled. Only days with bookings count.",
+        "description": "Your own balance, which needs `reports:read:own`. Anyone else’s is refused outright: a balance is their recorded time, totalled, and nobody reads that. Only days with bookings count.",
         "parameters": [
           {
             "name": "id",
@@ -941,7 +941,8 @@
           "400": {
             "description": "Unknown permission"
           }
-        }
+        },
+        "description": "A role has to grant at least one permission: one that grants nothing can be assigned, and whoever holds it signs in to an interface with nothing on it."
       }
     },
     "/roles/{id}": {
@@ -978,7 +979,8 @@
           "409": {
             "description": "System roles cannot be renamed or weakened"
           }
-        }
+        },
+        "description": "A system role may be described differently and nothing else: not renamed, and its permissions not changed in either direction. That role belongs to the built-in administrator, which configures the installation and records no time — a right added here would hand it a working day from the screen that administers roles. Somebody who should both work here and administer is given the employee-admin role instead."
       },
       "delete": {
         "tags": [

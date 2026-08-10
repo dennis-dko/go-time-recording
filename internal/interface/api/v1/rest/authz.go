@@ -201,12 +201,16 @@ func (a *Authorizer) RequireSelf(
 	return nil, forbiddenError{msg: "you may only change your own working times"}
 }
 
-// scopeUserID narrows a requested user filter to what the caller may see.
+// scopeUserID narrows a requested user filter to what the caller may see, which is
+// themselves.
 //
-// A caller with only the "own" permission is pinned to their own id whatever
-// they asked for; a caller allowed to see everything keeps their filter.
+// The filter still exists as a parameter because an installation without
+// authentication uses it, and because asking about yourself by id is a reasonable
+// thing for a client to do. Asking about anybody else is refused rather than
+// quietly answered with your own rows: a list that does not match what was asked
+// for is worse than a plain no.
 func (a *Authorizer) scopeUserID(principal *service.Principal, requested uint) (uint, error) {
-	if a.open || principal.Can(model.PermTimesheetReadAll) {
+	if a.open {
 		return requested, nil
 	}
 
@@ -221,9 +225,9 @@ func (a *Authorizer) scopeUserID(principal *service.Principal, requested uint) (
 	return principal.User.ID, nil
 }
 
-// requireOwnerOrAll checks a write against a specific user's data.
-func (a *Authorizer) requireOwnerOrAll(principal *service.Principal, ownerID uint) error {
-	if a.open || principal.Can(model.PermTimesheetWriteAll) {
+// requireOwner checks a write against a specific user's data.
+func (a *Authorizer) requireOwner(principal *service.Principal, ownerID uint) error {
+	if a.open {
 		return nil
 	}
 
@@ -234,14 +238,21 @@ func (a *Authorizer) requireOwnerOrAll(principal *service.Principal, ownerID uin
 	return forbiddenError{msg: "you may only change your own time entries"}
 }
 
-// reportScope is whose hours a total may cover: nobody in particular, or one
-// person.
+// reportScope is whose hours a total covers: the caller's own.
 //
-// Zero for a caller who may read everybody's time, which the report reads as "no
-// narrowing". Anybody else gets their own id, so a total can never add up hours that
+// Zero means "no narrowing", which is what an installation without authentication
+// gets. Everybody else gets their own id, so a total can never add up hours that
 // are not theirs.
+//
+// The second of two locks, and today the redundant one. A project belongs to one
+// person and nobody else may even see it, so a report the caller can open is a report
+// over their own project, whose entries are their own by construction - which is why
+// removing this narrowing does not make any test fail. It stays because it is the lock
+// that states the rule: the first one is about which project is visible, and would go
+// on holding while quietly ceasing to be about whose hours are counted the moment two
+// people could book on one project again.
 func (a *Authorizer) reportScope(principal *service.Principal) uint {
-	if a.open || principal.Can(model.PermTimesheetReadAll) {
+	if a.open {
 		return 0
 	}
 
@@ -255,12 +266,12 @@ func (a *Authorizer) reportScope(principal *service.Principal) uint {
 // requireOwnEntry checks an action against whose entry it is, where the right to
 // do it at all is a permission of its own.
 //
-// Separate from requireOwnerOrAll, which additionally insists on
-// timesheets:write:own. Transferring is gated on timesheets:transfer, so a role
-// holding that and not the write right must still be able to transfer its own
-// entries - and must not be able to touch anybody else's.
+// Separate from requireOwner, which additionally insists on timesheets:write:own.
+// Transferring is gated on timesheets:transfer, so a role holding that and not the
+// write right must still be able to transfer its own entries - and must not be able
+// to touch anybody else's.
 func (a *Authorizer) requireOwnEntry(principal *service.Principal, ownerID uint) error {
-	if a.open || principal.Can(model.PermTimesheetWriteAll) {
+	if a.open {
 		return nil
 	}
 

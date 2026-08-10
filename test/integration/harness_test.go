@@ -374,40 +374,17 @@ func (a *app) signInAsUser(admin *client, name, email string) *client {
 	return user
 }
 
-// signInAsAuditor creates an account that may read everybody's entries.
+// There is no signInAsAuditor any more.
 //
-// No default role can do that any more: everyone keeps their own time and the
-// administrator runs the installation. What is left is that an administrator can
-// still define a role - so a test that has to observe somebody else's entries
-// builds the role it needs, which also keeps role administration honest.
-func (a *app) signInAsAuditor(admin *client, name, email string) *client {
-	a.t.Helper()
-
-	const password = "auditor-password-1"
-
-	admin.must(admin.api(http.MethodPost, "/roles", map[string]any{
-		"name": "auditor", "description": "reads what others recorded",
-		// timesheets:read:all is what makes this role see everybody: one right for
-		// one question, whether the answer is a list, an export, a project total or
-		// an overtime balance. There was a second, reports:read, for the totals; it
-		// belonged to the role that reviewed other people's hours and went with it.
-		"permissions": []string{
-			"timesheets:read:all", "timesheets:write:all", "timesheets:transfer",
-			"projects:read", "projects:write", "projects:archive", "projects:delete",
-			"timesheets:read:own", "timesheets:write:own", "reports:read:own",
-			"settings:write:own",
-		},
-	}), http.StatusCreated, http.StatusOK)
-
-	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": name, "email": email, "role": "auditor", "password": password,
-	}), http.StatusCreated, http.StatusOK)
-
-	auditor := a.newClient()
-	auditor.signIn(email, password)
-
-	return auditor
-}
+// It built a custom role holding timesheets:read:all and timesheets:write:all, which
+// is how these tests used to get a caller who could see somebody else's entries. No
+// role can hold those rights now, because they do not exist: nobody reads or writes
+// anybody else's time, and there is no box to tick that changes it.
+//
+// What the tests that used it do instead depends on what they were really asking.
+// Most wanted the strongest possible caller over somebody else's work, and that is
+// now an ordinary account - signInAsUser. The deletion tests wanted to know whether a
+// row was still in the database, which no caller can answer, so they ask the database.
 
 // ------------------------------------------------------------------- types
 

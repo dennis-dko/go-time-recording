@@ -26,6 +26,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	_ "modernc.org/sqlite"
 )
 
 const (
@@ -61,6 +62,75 @@ type App struct {
 	// own port, outside the middleware chain - so a test that wants to read what
 	// the application publishes cannot get there through BaseURL.
 	metricsPort int
+
+	// dbDriver and dbDSN reach the same database the instance is using. See DB.
+	dbDriver string
+	dbDSN    string
+}
+
+// DB opens a second connection to the database this instance is using.
+//
+// Almost everything should be asked over HTTP: that is what the suite is for, and a
+// test that reaches around the API can pass while the application is broken. This is
+// for the one question HTTP cannot answer - whether a row is still there.
+//
+// Deleting an account has to take its recorded time with it. What must not happen is
+// a half-deletion, where the account is gone and its hours are left pointing at an id
+// that no longer exists. Nobody can see those hours through the API, because nobody
+// can read anybody else's time at all, and that is exactly why an orphan would sit
+// there unnoticed until it turned up in a total or broke a foreign key on the next
+// dialect. So the cascade is checked against the thing that cascades.
+//
+// Returns nil for an instance started without a database.
+func (a *App) DB(t *testing.T) *sql.DB {
+	t.Helper()
+
+	if a.dbDriver == "" {
+		return nil
+	}
+
+	db, err := sql.Open(a.dbDriver, a.dbDSN)
+	if err != nil {
+		t.Fatalf("cannot open the instance's database: %v", err)
+	}
+
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := db.Ping(); err != nil {
+		t.Fatalf("cannot reach the instance's database: %v", err)
+	}
+
+	return db
+}
+
+// Rows counts what matches, for a table this suite has to look inside.
+func (a *App) Rows(t *testing.T, table, where string, args ...any) int {
+	t.Helper()
+
+	db := a.DB(t)
+	if db == nil {
+		t.Fatal("this instance has no database")
+	}
+
+	query := "SELECT COUNT(*) FROM " + table
+	if where != "" {
+		query += " WHERE " + where
+	}
+
+	// Placeholders differ by dialect, and this takes ? because that is what the
+	// application's own queries are written in.
+	if a.dbDriver == "postgres" {
+		for i := 1; strings.Contains(query, "?"); i++ {
+			query = strings.Replace(query, "?", fmt.Sprintf("$%d", i), 1)
+		}
+	}
+
+	var count int
+	if err := db.QueryRow(query, args...).Scan(&count); err != nil {
+		t.Fatalf("counting %s: %v", table, err)
+	}
+
+	return count
 }
 
 // BaseURL is where the instance answers, e.g. http://localhost:54321
@@ -170,14 +240,21 @@ func start(t *testing.T, withDatabase bool, env ...string) *App {
 		"LOG_LEVEL=WARN",
 	)
 
+	driver, driverDSN := "", ""
+
 	if withDatabase {
-		cmd.Env = append(cmd.Env,
-			"DB_DIALECT=sqlite",
-			"DB_NAME="+filepath.Join(dir, "test"),
-		)
+		name := filepath.Join(dir, "test")
+
+		cmd.Env = append(cmd.Env, "DB_DIALECT=sqlite", "DB_NAME="+name)
+
+		// The same rule the application applies to DB_NAME, so both open one file.
+		driver, driverDSN = "sqlite", "file:"+name+".db"
 
 		if dsn := os.Getenv(DSNEnv); dsn != "" {
-			cmd.Env = append(cmd.Env, serverEnv(t, dsn)...)
+			var env []string
+
+			env, driver, driverDSN = serverEnv(t, dsn)
+			cmd.Env = append(cmd.Env, env...)
 		}
 	} else {
 		// Explicitly blank rather than merely absent: the process inherits this
@@ -208,6 +285,8 @@ func start(t *testing.T, withDatabase bool, env ...string) *App {
 		dir:         dir,
 		cmd:         cmd,
 		logs:        logs,
+		dbDriver:    driver,
+		dbDSN:       driverDSN,
 	}
 
 	t.Cleanup(a.stop)
@@ -216,9 +295,10 @@ func start(t *testing.T, withDatabase bool, env ...string) *App {
 	return a
 }
 
-// serverEnv gives this test its own database on the configured server and
-// returns the DB_* variables pointing at it.
-func serverEnv(t *testing.T, dsn string) []string {
+// serverEnv gives this test its own database on the configured server and returns
+// the DB_* variables pointing at it, plus the driver and connection string a test
+// needs to open the same database itself.
+func serverEnv(t *testing.T, dsn string) (env []string, driver, driverConn string) {
 	t.Helper()
 
 	dialect := "postgres"
@@ -248,7 +328,7 @@ func serverEnv(t *testing.T, dsn string) []string {
 
 	name := createTestDatabase(t, dialect, driverDSN(dialect, user, password, host, port, adminDB))
 
-	env := []string{
+	env = []string{
 		"DB_DIALECT=" + dialect,
 		"DB_HOST=" + host,
 		"DB_PORT=" + port,
@@ -263,7 +343,7 @@ func serverEnv(t *testing.T, dsn string) []string {
 		env = append(env, "DB_SSL_MODE=disable")
 	}
 
-	return env
+	return env, dialect, driverDSN(dialect, user, password, host, port, name)
 }
 
 // driverDSN builds the connection string each driver expects. They disagree:

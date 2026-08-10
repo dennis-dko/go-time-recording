@@ -310,9 +310,10 @@ func TestAssigningARoleToAnOrdinaryUser(t *testing.T) {
 	f := newFixture(t)
 	employee := f.role(t, "employee", model.PermTimesheetWriteOwn)
 
-	// Not "manager": there is no such role any more. A custom one an installation
-	// could still create, which is all this case needs - somewhere to move somebody.
-	oversight := f.role(t, "oversight", model.PermTimesheetReadAll)
+	// Not "manager": there is no such role any more, and no right one could be built
+	// from either. A custom role an installation could still create, which is all this
+	// case needs - somewhere to move somebody.
+	oversight := f.role(t, "oversight", model.PermProjectRead)
 	user := f.user(t, "someone@example.com", employee.ID, false)
 
 	updated, err := f.userDomain.AssignRoleToUser(context.Background(), user.ID, "oversight")

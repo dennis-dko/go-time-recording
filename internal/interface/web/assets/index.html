@@ -19,9 +19,9 @@
     <img id="brand-logo" class="brand-logo" alt="" hidden>
     <h1 id="app-title">Time Recording</h1>
     <nav id="tabs">
-      <button class="tab" data-view="timesheets" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.timesheets">Time entries</button>
-      <button class="tab" data-view="calendar" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.calendar">Calendar</button>
-      <button class="tab" data-view="overtime" data-perm="timesheets:read:own,timesheets:read:all" data-i18n="nav.overtime">Overtime</button>
+      <button class="tab" data-view="timesheets" data-perm="timesheets:read:own" data-i18n="nav.timesheets">Time entries</button>
+      <button class="tab" data-view="calendar" data-perm="timesheets:read:own" data-i18n="nav.calendar">Calendar</button>
+      <button class="tab" data-view="overtime" data-perm="timesheets:read:own" data-i18n="nav.overtime">Overtime</button>
       <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects</button>
       <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Users</button>
       <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Roles</button>
@@ -178,7 +178,7 @@
       <!-- The clock, above the form, because it is the shorter way to record the
            day you are actually having: press start, work, press stop. The form
            below is for a day that has already happened. -->
-      <div class="card" id="timer-card" data-perm="timesheets:write:own,timesheets:write:all">
+      <div class="card" id="timer-card" data-perm="timesheets:write:own">
         <div class="card-head">
           <h2 data-i18n="timer.title">Stopwatch</h2>
           <span class="timer-elapsed" id="timer-elapsed" aria-live="off"></span>
@@ -199,12 +199,10 @@
         </div>
       </div>
 
-      <form id="form-timesheet" class="card form" data-perm="timesheets:write:own,timesheets:write:all">
+      <form id="form-timesheet" class="card form" data-perm="timesheets:write:own">
         <h2 id="timesheet-form-title" data-i18n="ts.book">Book time</h2>
         <input type="hidden" name="id">
         <div class="grid">
-          <label data-i18n="field.user">User<select name="userId" required></select>
-          </label>
           <label data-i18n="field.projectOptional">Project (optional)<select name="projectId"></select>
           </label>
           <label data-i18n="field.date">Date<input type="date" name="date" required>
@@ -229,7 +227,6 @@
         <div class="card-head">
           <h2 data-i18n="ts.entries">Entries</h2>
           <div class="filters">
-            <select id="filter-ts-user"><option value="" data-i18n="filter.allUsers">All users</option></select>
             <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">All projects</option></select>
           </div>
         </div>
@@ -238,7 +235,6 @@
             <thead>
               <tr>
                 <th data-i18n="field.date">Date</th>
-                <th data-i18n="field.user">User</th>
                 <th data-i18n="field.project">Project</th>
                 <th class="num" data-i18n="field.hours">Hours</th>
                 <th data-i18n="field.description">Description</th>
@@ -249,12 +245,12 @@
           </table>
         </div>
       </div>
-      <div class="card" id="workbook-card" data-perm="timesheets:read:own,timesheets:read:all">
+      <div class="card" id="workbook-card" data-perm="timesheets:read:own">
         <h2 data-i18n="wb.title">Spreadsheet</h2>
         <p class="muted" data-i18n="wb.text">Exports what the filters above are showing. An import creates entries; it never changes or replaces the ones that are already there.</p>
         <div class="row">
           <button type="button" class="secondary" id="wb-export" data-i18n="wb.export">Export as .xlsx</button>
-          <label class="file-pick" data-perm="timesheets:write:own,timesheets:write:all">
+          <label class="file-pick" data-perm="timesheets:write:own">
             <span data-i18n="wb.choose">Choose a file…</span>
             <input type="file" id="wb-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
           </label>
@@ -288,7 +284,6 @@
         <div class="card-head">
           <h2 id="calendar-title" data-i18n="cal.title">Calendar</h2>
           <div class="filters">
-            <select id="calendar-user"></select>
             <button type="button" class="secondary" id="calendar-prev" aria-label="&#8592;">&#8592;</button>
             <button type="button" class="secondary" id="calendar-today" data-i18n="cal.today">Today</button>
             <button type="button" class="secondary" id="calendar-next" aria-label="&#8594;">&#8594;</button>
@@ -352,7 +347,6 @@
       <form id="form-overtime" class="card form">
         <h2 data-i18n="nav.overtime">Overtime</h2>
         <div class="grid">
-          <label data-i18n="field.user">User<select name="userId"></select></label>
           <label data-i18n="field.from">From<input type="date" name="from"></label>
           <label data-i18n="field.to">To<input type="date" name="to"></label>
         </div>
@@ -460,6 +454,7 @@
         </div>
         <fieldset class="perms">
           <legend data-i18n="role.permissions">Permissions</legend>
+          <p class="muted" id="role-fixed-note" data-i18n="role.rightsFixed" hidden>The rights of a system role cannot be changed. Somebody who should work here and also administer is given the employee-admin role.</p>
           <div id="permission-list" class="perm-grid"></div>
         </fieldset>
         <div class="row">
@@ -504,7 +499,7 @@
           <table id="table-report">
             <thead>
               <tr>
-                <th data-i18n="field.user">User</th>
+                <th data-i18n="field.period">Period</th>
                 <th class="num" data-i18n="field.hours">Hours</th>
               </tr>
             </thead>

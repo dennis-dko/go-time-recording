@@ -91,15 +91,19 @@ func TestConcurrentWritesAreServedRatherThanRefused(t *testing.T) {
 
 	// And every one of them is really there: a booking that answered 201 and then
 	// lost the row would be worse than a refusal.
-	var listed listOf[timesheetResponse]
+	//
+	// Asked of each person about their own, because that is all anybody can ask. It
+	// also checks the arithmetic per account rather than in one total, so three rows
+	// landing under the wrong writer would show up here instead of cancelling out.
+	for i, c := range clients {
+		var listed listOf[timesheetResponse]
 
-	// An auditor, because no default role reads somebody else's entries any more.
-	other := a.signInAsAuditor(admin, "Merle", "merle@example.com")
-	other.must(other.api(http.MethodGet, "/timesheets?from=2026-08-03&to=2026-08-03", nil),
-		http.StatusOK).Data(t, &listed)
+		c.must(c.api(http.MethodGet, "/timesheets?from=2026-08-03&to=2026-08-03", nil),
+			http.StatusOK).Data(t, &listed)
 
-	if len(listed.Items) != people*each {
-		t.Errorf("%d of %d bookings survived", len(listed.Items), people*each)
+		if len(listed.Items) != each {
+			t.Errorf("writer %d sees %d of its %d bookings", i, len(listed.Items), each)
+		}
 	}
 }
 
