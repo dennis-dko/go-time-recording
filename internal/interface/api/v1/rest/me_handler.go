@@ -113,12 +113,16 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 		// so reports:read:own appeared in the role editor and granted nothing.
 		// A permission that exists only in the database is exactly what the
 		// comment on the permission list says must not happen.
-		if principal.User.ID != id && !principal.Can(model.PermReportRead) {
-			return nil, forbiddenError{msg: "missing permission: " + model.PermReportRead}
+		// Somebody else's balance is somebody else's recorded time, totalled. It
+		// answers the same question the entry list does, so it takes the same right
+		// rather than one of its own.
+		if principal.User.ID != id && !principal.Can(model.PermTimesheetReadAll) {
+			return nil, forbiddenError{msg: "missing permission: " + model.PermTimesheetReadAll}
 		}
 
 		if principal.User.ID == id &&
-			!principal.Can(model.PermReportReadOwn) && !principal.Can(model.PermReportRead) {
+			!principal.Can(model.PermReportReadOwn) &&
+			!principal.Can(model.PermTimesheetReadAll) {
 			return nil, forbiddenError{msg: "missing permission: " + model.PermReportReadOwn}
 		}
 	}
@@ -136,35 +140,6 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 	return newOvertimeResponse(balance), nil
 }
 
-// TeamOvertime handles GET /api/v1/overtime, the balance of every user.
-func (h *MeHandler) TeamOvertime(c *gofr.Context) (any, error) {
-	principal, err := h.authz.Require(c, model.PermReportRead)
-	if err != nil {
-		return nil, err
-	}
-
-	from, to, err := overtimeRange(c, h.locationFor(c, principal.User))
-	if err != nil {
-		return nil, toHTTPError(err)
-	}
-
-	balances, err := h.overtime.BalanceForAll(c, from, to)
-	if err != nil {
-		return nil, toHTTPError(err)
-	}
-
-	items := make([]OvertimeResponse, 0, len(balances))
-	for _, balance := range balances {
-		items = append(items, newOvertimeResponse(balance))
-	}
-
-	return listResponse[OvertimeResponse]{Items: items, TotalCount: uint(len(items))}, nil
-}
-
-// locationFor returns the zone the caller's calendar questions are answered in.
-//
-// The caller's rather than the subject's: "this month" is asked by the person
-// looking at the screen, and a manager in Berlin reviewing someone abroad means
 // their own month. The stored booking dates are calendar days already, so this
 // only decides the window, never which day an entry belongs to.
 func (h *MeHandler) locationFor(c *gofr.Context, user *model.User) *time.Location {

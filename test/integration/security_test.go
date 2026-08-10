@@ -190,7 +190,11 @@ func TestAnEmployeeCannotAdministerUsersOrRoles(t *testing.T) {
 			"name": "Sneaky", "email": "sneaky@example.com", "role": "admin",
 		}},
 		{http.MethodPost, "/roles", map[string]any{"name": "superuser"}},
-		{http.MethodGet, "/overtime", nil},
+		// GET /overtime was here, the team-wide balance. It is not forbidden any
+		// more, it is gone: comparing colleagues is the one thing this arrangement
+		// says nobody does, so the route was removed rather than guarded. That it
+		// answers 404 is TestThereIsNoTeamWideOvertimeEndpoint's business, and a
+		// removed route is a stronger promise than a refused one.
 		{http.MethodGet, "/settings/ldap", nil},
 		{http.MethodPut, "/settings/operational", map[string]any{"rateLimit": 9999}},
 	}

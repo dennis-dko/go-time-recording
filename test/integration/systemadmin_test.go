@@ -127,12 +127,34 @@ func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 			map[string]any{"name": "Renamed", "startDate": "2026-08-01"}},
 		{"archive it", http.MethodPost, path("/projects/", shared.ID) + "/archive", nil},
 		{"delete it", http.MethodDelete, path("/projects/", shared.ID), nil},
-		{"read its report", http.MethodGet, path("/projects/", shared.ID) + "/report", nil},
 	} {
 		got := admin.api(attempt.method, attempt.route, attempt.body).Status
 		if got == http.StatusOK || got == http.StatusNoContent {
 			t.Errorf("the administrator could %s", attempt.what)
 		}
+	}
+
+	// The report is a different matter now, and worth stating rather than leaving
+	// out: the administrator may open it, and what it shows is its own hours. It used
+	// to break down what every colleague had booked, gated on a right no role held -
+	// so this list refused it for the right reason by accident. Opening a report that
+	// is empty because you booked nothing reveals nothing about anybody.
+	report := admin.must(admin.api(http.MethodGet,
+		path("/projects/", shared.ID)+"/report", nil), http.StatusOK)
+
+	var totals struct {
+		Entries []struct {
+			UserID uint    `json:"userId"`
+			Hours  float64 `json:"hours"`
+		} `json:"entries"`
+		TotalHours float64 `json:"totalHours"`
+	}
+
+	report.Data(t, &totals)
+
+	if len(totals.Entries) != 0 || totals.TotalHours != 0 {
+		t.Errorf("the administrator's report over somebody else's project is not empty: %+v",
+			totals)
 	}
 
 	// Reading the list is still allowed: time has to be bookable against
@@ -174,7 +196,7 @@ func TestTheAdministratorStillAdministersAndStillWorks(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/roles", map[string]any{
 		"name": "auditor", "description": "reads the reports",
-		"permissions": []string{"reports:read", "timesheets:read:all"},
+		"permissions": []string{"reports:read:own", "timesheets:read:all"},
 	}), http.StatusCreated, http.StatusOK)
 
 	// Somebody else's working times: administering an account, as opposed to
@@ -258,10 +280,16 @@ func TestTheSeparationIsTheDefaultRatherThanAWall(t *testing.T) {
 	}
 
 	// Every permission the seed leaves out is one the administrator does not hold.
+	//
+	// reports:read:own is not among them: its own figures are its own, like anybody
+	// else's. What it must not have is any right over somebody else's work, and
+	// reading everybody's time is the one right that grants that.
 	for _, permission := range []string{
 		"timesheets:read:all", "timesheets:write:all",
-		"timesheets:approve", "timesheets:transfer",
-		"reports:read", "projects:write", "projects:archive", "projects:delete",
+		// Gone from the application entirely; listed so a reintroduction is noticed.
+		"timesheets:approve",
+		"timesheets:transfer",
+		"projects:write", "projects:archive", "projects:delete",
 	} {
 		for _, has := range held {
 			if has == permission {

@@ -261,8 +261,10 @@ func TestTheReportTotalsHoursPerPerson(t *testing.T) {
 	seedFor(1, 2.5, 1)
 	seedFor(2, 4, 1)
 
+	// The trailing zero is "everybody": what a caller who may read everyone's time
+	// gets. The case below covers the narrowing that everybody else gets.
 	report, err := f.timesheetDomain.GenerateProjectTimeReport(context.Background(),
-		project.ID, time.Now().AddDate(0, 0, -7), time.Now(), 0)
+		project.ID, time.Now().AddDate(0, 0, -7), time.Now(), 0, 0)
 	if err != nil {
 		t.Fatalf("report: %v", err)
 	}
@@ -283,7 +285,7 @@ func TestAReportOverAPeriodWithNothingInItIsEmpty(t *testing.T) {
 	project := f.project(t, "Quiet", model.ProjectStatusActive)
 
 	report, err := f.timesheetDomain.GenerateProjectTimeReport(context.Background(),
-		project.ID, time.Now().AddDate(-2, 0, 0), time.Now().AddDate(-1, 0, 0), 0)
+		project.ID, time.Now().AddDate(-2, 0, 0), time.Now().AddDate(-1, 0, 0), 0, 0)
 	if err != nil {
 		t.Fatalf("report: %v", err)
 	}
@@ -297,7 +299,7 @@ func TestAReportForAProjectThatIsNotThere(t *testing.T) {
 	f := newFixture(t)
 
 	if _, err := f.timesheetDomain.GenerateProjectTimeReport(context.Background(),
-		9999, time.Now().AddDate(0, 0, -7), time.Now(), 0); err == nil {
+		9999, time.Now().AddDate(0, 0, -7), time.Now(), 0, 0); err == nil {
 		t.Error("a report was produced for a project that does not exist")
 	}
 }
@@ -307,16 +309,19 @@ func TestAReportForAProjectThatIsNotThere(t *testing.T) {
 func TestAssigningARoleToAnOrdinaryUser(t *testing.T) {
 	f := newFixture(t)
 	employee := f.role(t, "employee", model.PermTimesheetWriteOwn)
-	manager := f.role(t, "manager", model.PermTimesheetReadAll, model.PermReportRead)
+
+	// Not "manager": there is no such role any more. A custom one an installation
+	// could still create, which is all this case needs - somewhere to move somebody.
+	oversight := f.role(t, "oversight", model.PermTimesheetReadAll)
 	user := f.user(t, "someone@example.com", employee.ID, false)
 
-	updated, err := f.userDomain.AssignRoleToUser(context.Background(), user.ID, "manager")
+	updated, err := f.userDomain.AssignRoleToUser(context.Background(), user.ID, "oversight")
 	if err != nil {
 		t.Fatalf("assign: %v", err)
 	}
 
-	if updated.RoleID != manager.ID {
-		t.Errorf("the user is on role %d, want %d", updated.RoleID, manager.ID)
+	if updated.RoleID != oversight.ID {
+		t.Errorf("the user is on role %d, want %d", updated.RoleID, oversight.ID)
 	}
 }
 

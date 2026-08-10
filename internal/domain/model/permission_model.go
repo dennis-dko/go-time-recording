@@ -26,11 +26,24 @@ const (
 	PermTimesheetWriteOwn  = "timesheets:write:own"
 	PermTimesheetWriteAll  = "timesheets:write:all"
 	PermTimesheetTransfer  = "timesheets:transfer"
-	PermReportRead         = "reports:read"
 	PermReportReadOwn      = "reports:read:own"
 	PermSettingsWriteOwn   = "settings:write:own"
 	PermSettingsWriteOther = "settings:write:other"
 )
+
+// Whether somebody may see another person's recorded time is one question, and
+// PermTimesheetReadAll is the one right that answers it.
+//
+// There used to be a second, reports:read, for the same question asked of a total
+// rather than of a list - and it went to the role that reviewed other people's
+// hours. That role is gone, and with it the idea that anybody reviews anybody:
+// everyone keeps their own. What was left was a right no role held, gating a whole
+// screen that therefore nobody could reach, and a second answer to a question that
+// should only have one - which is how two answers come to disagree.
+//
+// So every read that could show another person's time now checks the same right:
+// the entry list, the spreadsheet export, a project's total, and somebody else's
+// overtime balance. No default role holds it.
 
 // AllPermissions lists every permission the application enforces. The role
 // administration UI offers exactly these, so a typo cannot create a permission
@@ -44,7 +57,7 @@ func AllPermissions() []string {
 		PermTimesheetReadOwn, PermTimesheetReadAll,
 		PermTimesheetWriteOwn, PermTimesheetWriteAll,
 		PermTimesheetTransfer,
-		PermReportRead, PermReportReadOwn,
+		PermReportReadOwn,
 		PermSettingsWriteOwn, PermSettingsWriteOther,
 	}
 }
@@ -58,9 +71,9 @@ func AllPermissions() []string {
 // backup or repointing the directory has no business in a colleague's week.
 //
 // So it manages the installation, its users and their roles, and books its own
-// time like anybody else. Nobody else's hours, and no reports over them: everyone
-// keeps their own, which is the whole arrangement now that there is no role
-// between this one and an ordinary account.
+// time like anybody else. Nobody else's hours, and no total over them either:
+// everyone keeps their own, and nobody sees what anybody else has. That is the whole
+// arrangement now that there is no role between this one and an ordinary account.
 //
 // This is not a hint. The rights are enforced per endpoint, so the administrator
 // is refused these by the same code that refuses an employee.

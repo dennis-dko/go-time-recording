@@ -436,19 +436,6 @@
             }
           },
           {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "open",
-                "submitted",
-                "approved",
-                "rejected"
-              ]
-            }
-          },
-          {
             "name": "from",
             "in": "query",
             "schema": {
@@ -524,13 +511,13 @@
           "timesheets"
         ],
         "summary": "Update an entry",
-        "description": "Sending `projectId: 0` clears the project assignment. Approving or rejecting needs `timesheets:approve`.",
+        "description": "Changes an entry of your own. Somebody else’s needs `timesheets:write:all`, which no default role holds - and that includes naming somebody else in `userId`, which hands the entry over. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours.",
         "responses": {
           "200": {
             "description": "Updated"
           },
           "409": {
-            "description": "Illegal status change, or the entry is already approved"
+            "description": "The day would go over its ceiling, or the project no longer accepts hours"
           }
         }
       },
@@ -713,8 +700,8 @@
         "tags": [
           "reports"
         ],
-        "summary": "Hours per user on a project",
-        "description": "Requires `reports:read`, which by default only the built-in administrator holds.",
+        "summary": "Hours booked on a project",
+        "description": "Your own hours, unless you hold `timesheets:read:all` - the one right that says somebody may see another person’s recorded time. It used to be a breakdown per colleague, gated on a separate `reports:read` that no role held, so the screen was unreachable and would have shown what each colleague had booked. Needs `reports:read:own`.",
         "parameters": [
           {
             "name": "id",
@@ -757,7 +744,7 @@
           "reports"
         ],
         "summary": "Overtime balance for one user",
-        "description": "Your own balance needs no special permission; anyone else's needs `reports:read`. Only days with bookings count, and rejected entries are excluded.",
+        "description": "Your own balance needs `reports:read:own`; anyone else’s needs `timesheets:read:all`, the same right as reading their entries - a balance is their recorded time, totalled. Only days with bookings count.",
         "parameters": [
           {
             "name": "id",
@@ -787,22 +774,6 @@
         "responses": {
           "200": {
             "description": "Balance"
-          },
-          "403": {
-            "description": "Missing permission"
-          }
-        }
-      }
-    },
-    "/overtime": {
-      "get": {
-        "tags": [
-          "reports"
-        ],
-        "summary": "Overtime balance of every user; administrator only",
-        "responses": {
-          "200": {
-            "description": "Balances"
           },
           "403": {
             "description": "Missing permission"
@@ -1828,15 +1799,6 @@
           "description": {
             "type": "string",
             "nullable": true
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "open",
-              "submitted",
-              "approved",
-              "rejected"
-            ]
           }
         }
       },

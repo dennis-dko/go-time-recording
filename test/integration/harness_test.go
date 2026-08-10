@@ -350,11 +350,15 @@ func (a *app) signInAsAuditor(admin *client, name, email string) *client {
 
 	admin.must(admin.api(http.MethodPost, "/roles", map[string]any{
 		"name": "auditor", "description": "reads what others recorded",
+		// timesheets:read:all is what makes this role see everybody: one right for
+		// one question, whether the answer is a list, an export, a project total or
+		// an overtime balance. There was a second, reports:read, for the totals; it
+		// belonged to the role that reviewed other people's hours and went with it.
 		"permissions": []string{
 			"timesheets:read:all", "timesheets:write:all", "timesheets:transfer",
-			"reports:read",
 			"projects:read", "projects:write", "projects:archive", "projects:delete",
-			"timesheets:read:own", "timesheets:write:own", "settings:write:own",
+			"timesheets:read:own", "timesheets:write:own", "reports:read:own",
+			"settings:write:own",
 		},
 	}), http.StatusCreated, http.StatusOK)
 

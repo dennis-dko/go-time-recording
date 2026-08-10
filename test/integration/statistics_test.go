@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// Statistics over your own time deliberately do not go through the project
-// report. That one is keyed on a project id, needs reports:read - which both
-// default roles are without, so only the built-in administrator can see what other
-// people total up to - and cannot express "every project" or "no project" at all.
+// Statistics over your own time deliberately do not go through the project report.
+// That one is keyed on a project id and cannot express "every project" or "no
+// project" at all - and it totals only the caller's own hours, because nobody sees
+// what anybody else has.
 //
 // So the thing worth proving is that an ordinary employee can read their own
 // figures, and that the uncategorised hours are an answer rather than a gap.
@@ -43,8 +43,8 @@ func ownStatistics(t *testing.T, c *client, query string) StatisticsOnTheWire {
 	return stats
 }
 
-// An employee has timesheets:read:own and not reports:read, which is exactly the
-// account that could not have had a chart of its own week before.
+// An employee reads their own time and nobody else's, which is exactly the account
+// that could not have had a chart of its own week before.
 func TestAnEmployeeCanReadTheirOwnStatistics(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
@@ -77,12 +77,13 @@ func TestAnEmployeeCanReadTheirOwnStatistics(t *testing.T) {
 			http.StatusCreated, http.StatusOK)
 	}
 
-	// The project report is refused, which is the whole reason this endpoint
-	// exists rather than a second use of that one.
-	if got := hanne.api(http.MethodGet,
-		path("/projects/", shared.ID)+"/report", nil).Status; got == http.StatusOK {
-		t.Error("an employee could read a project report; this test no longer proves anything")
-	}
+	// The project report is open to them now, and covers their own hours - it used to
+	// be refused, because it broke down what every colleague had booked and was gated
+	// on a right no role held. This endpoint still earns its place: the report is keyed
+	// on a project id and cannot express "every project" or "no project", which is
+	// exactly what the figures below are about.
+	hanne.must(hanne.api(http.MethodGet, path("/projects/", shared.ID)+"/report", nil),
+		http.StatusOK)
 
 	stats := ownStatistics(t, hanne, "?from=2026-08-01&to=2026-08-31")
 

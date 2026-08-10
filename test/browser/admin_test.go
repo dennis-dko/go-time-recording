@@ -1114,10 +1114,22 @@ func TestAFirstSignInIsGreetedAndOfferedTheTour(t *testing.T) {
 		t.Errorf("the greeting does not name the person: %q", title)
 	}
 
-	// The points offered are the ones this person can act on. An employee cannot
-	// approve, so that line has no business being there.
-	if points := p.text("#welcome-points"); strings.Contains(points, "genehmige") {
-		t.Errorf("an employee is promised approvals: %q", points)
+	// The points offered are the ones this person can act on, and there is something
+	// there at all: the list is built from permissions, so a near-empty greeting means
+	// the building went wrong rather than that there is little to say.
+	//
+	// This used to check that the word "genehmige" was absent, from a line offered on
+	// a permission the application had stopped defining. The line is gone, so that
+	// assertion could no longer fail - and an assertion that cannot fail is worse
+	// than none, because it reads like cover.
+	points := p.text("#welcome-points")
+
+	if len(points) < 60 {
+		t.Errorf("the greeting lists almost nothing this person can do: %q", points)
+	}
+
+	if strings.Contains(strings.ToLower(points), "genehmig") {
+		t.Errorf("the greeting promises approvals, which nobody does any more: %q", points)
 	}
 
 	p.run("take the tour", p.click("#welcome-tour"),

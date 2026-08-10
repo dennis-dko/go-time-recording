@@ -160,7 +160,21 @@ func (a *Authorizer) RequireSelfOr(
 		return nil, err
 	}
 
-	if a.open || principal.User.ID == targetUserID || principal.Can(permission) {
+	if a.open || principal.Can(permission) {
+		return principal, nil
+	}
+
+	// Your own still takes a right, and it is the one the role editor offers for
+	// exactly this: settings:write:own. It went unchecked, so ticking it changed
+	// nothing and clearing it changed nothing either - a box in the role editor that
+	// did not do what it said. The permission list's own rule is that every right is
+	// enforced by a specific line of code, and this is that line.
+	//
+	// Both default roles hold it, so nothing an installation has changes; what it
+	// buys is a role that may book time without setting its own daily target, which
+	// is a figure somebody else administers.
+	if principal.User != nil && principal.User.ID == targetUserID &&
+		principal.Can(model.PermSettingsWriteOwn) {
 		return principal, nil
 	}
 
@@ -198,6 +212,24 @@ func (a *Authorizer) requireOwnerOrAll(principal *service.Principal, ownerID uin
 	}
 
 	return forbiddenError{msg: "you may only change your own time entries"}
+}
+
+// reportScope is whose hours a total may cover: nobody in particular, or one
+// person.
+//
+// Zero for a caller who may read everybody's time, which the report reads as "no
+// narrowing". Anybody else gets their own id, so a total can never add up hours that
+// are not theirs.
+func (a *Authorizer) reportScope(principal *service.Principal) uint {
+	if a.open || principal.Can(model.PermTimesheetReadAll) {
+		return 0
+	}
+
+	if principal.User == nil {
+		return 0
+	}
+
+	return principal.User.ID
 }
 
 // requireOwnEntry checks an action against whose entry it is, where the right to

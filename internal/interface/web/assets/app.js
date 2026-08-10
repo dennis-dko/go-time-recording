@@ -833,7 +833,7 @@ const TRANSLATIONS = {
     'tour.timer.title': 'Die Stoppuhr',
     'tour.timer.text': 'Beim Anfangen starten, beim Aufhören stoppen – die gemessene Zeit wird gebucht. Sie läuft weiter, wenn du den Browser schließt, denn sie läuft auf dem Server und nicht in diesem Tab.',
     'tour.stats.title': 'Deine eigenen Zahlen',
-    'tour.stats.text': 'Stunden pro Tag, pro Projekt und nach Status, über einen Zeitraum deiner Wahl. Nur deine eigenen – für die eigene Woche braucht niemand ein Berichtsrecht.',
+    'tour.stats.text': 'Stunden pro Tag und pro Projekt, über einen Zeitraum deiner Wahl. Nur deine eigenen – und niemand sonst sieht sie.',
     'tour.report.title': 'Projektberichte',
     'tour.report.text': 'Was ein Projekt zusammen ergibt, pro Person. Dieser Bereich braucht ein Berichtsrecht, denn es sind fremde Stunden und nicht die eigenen.',
     'tour.tokens.title': 'Token und zweiter Faktor',
@@ -843,7 +843,7 @@ const TRANSLATIONS = {
     'tour.book.title': 'Zeit buchen',
     'tour.book.text': 'Datum wählen, Stunden eintragen, fertig. Ein Projekt ist optional — Zeiten lassen sich jetzt erfassen und später einsortieren.',
     'tour.entries.title': 'Deine Einträge',
-    'tour.entries.text': 'Alles Gebuchte, filterbar nach Person, Projekt und Status. Ein Eintrag bleibt änderbar, bis du ihn zur Genehmigung einreichst.',
+    'tour.entries.text': 'Alles Gebuchte, filterbar nach Person und Projekt. Es bleibt deins zum Ändern – es gibt niemanden, dem du es vorlegen müsstest.',
     'tour.calendar.title': 'Der Monat auf einen Blick',
     'tour.calendar.text': 'Welche Tage Stunden haben und wie viele. Ein Klick auf einen Tag zeigt, was dahintersteckt – und ein Klick auf einen dieser Einträge öffnet ihn zum Korrigieren.',
     'tour.overtime.title': 'Dein Überstundensaldo',
@@ -1126,7 +1126,6 @@ const TRANSLATIONS = {
     'welcome.hello': 'Willkommen, {0}',
     'welcome.helloPlain': 'Willkommen',
     'welcome.point.account': 'Tagesziel, Zeitzone und einen zweiten Faktor stellst du unter „Mein Konto“ ein.',
-    'welcome.point.approve': 'Prüfe und genehmige, was deine Leute einreichen.',
     'welcome.point.book': 'Stunden von Hand buchen – oder eine Stoppuhr laufen lassen, die es für dich tut.',
     'welcome.point.see': 'Den Monat im Kalender sehen und die eigenen Zahlen als Diagramme.',
     'welcome.skip': 'Später',
@@ -1248,7 +1247,6 @@ const TRANSLATIONS = {
     'ot.booked': 'Gebucht',
     'ot.empty': 'Keine Buchungen in diesem Zeitraum.',
     'ot.target': 'Soll',
-    'ot.team': 'Team-Saldo (gleicher Zeitraum)',
     'project.create': 'Projekt anlegen',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
@@ -1548,10 +1546,30 @@ async function loadUsers() {
     cache.users = (await api('/users'))?.items ?? [];
   }
 
-  fillSelect($('#form-timesheet select[name=userId]'), cache.users);
-  fillSelect($('#filter-ts-user'), cache.users, { placeholder: t('filter.allUsers', 'All users') });
-  fillSelect($('#form-overtime select[name=userId]'), cache.users);
-  fillSelect($('#calendar-user'), cache.users);
+  // Who may be picked, which is not the same as who may be listed.
+  //
+  // Administering accounts and reading what people recorded in them are different
+  // jobs, and the built-in administrator has the first and not the second. It was
+  // offered every colleague in four dropdowns all the same, and every choice but
+  // itself came back 403 - four controls that looked ordinary and refused. The
+  // filter was worse than that: "All users" quietly showed only your own entries,
+  // because the server pins the scope and the label did not know.
+  //
+  // So the pickers offer whoever the caller may actually ask about, which for
+  // everybody by default is themselves alone.
+  const mine = me.user ? [me.user] : [];
+  const readable = can('timesheets:read:all') ? cache.users : mine;
+  const writable = can('timesheets:write:all') ? cache.users : mine;
+
+  fillSelect($('#form-timesheet select[name=userId]'), writable);
+  fillSelect($('#calendar-user'), readable);
+  fillSelect($('#form-overtime select[name=userId]'), readable);
+
+  // The placeholder only where it is true. With one name in the list "all users" is
+  // that name, and offering the choice suggests there is another answer.
+  fillSelect($('#filter-ts-user'), readable, readable.length > 1
+    ? { placeholder: t('filter.allUsers', 'All users') }
+    : {});
 
   if (me.user) {
     const own = String(me.user.id);
@@ -2902,8 +2920,8 @@ const TOUR_STEPS = [
     permission: 'timesheets:read:own,timesheets:read:all',
     title: () => t('tour.entries.title', 'Your entries'),
     text: () => t('tour.entries.text',
-      'Everything you booked, filterable by person, project and status. An entry stays '
-      + 'editable until you submit it for approval.'),
+      'Everything you booked, filterable by person and project. It stays yours to '
+      + 'change: there is nobody to submit it to.'),
   },
   {
     target: '#calendar-days',
@@ -2920,8 +2938,8 @@ const TOUR_STEPS = [
     permission: 'timesheets:read:own',
     title: () => t('tour.stats.title', 'Your own figures'),
     text: () => t('tour.stats.text',
-      'Hours per day, per project and by status, over any period you choose. Yours '
-      + 'alone — nobody needs a reporting permission to see their own week.'),
+      'Hours per day and per project, over any period you choose. Yours alone, and '
+      + 'nobody else sees them.'),
   },
   {
     target: '#form-overtime',
@@ -3224,15 +3242,18 @@ function showWelcome() {
     + 'about a minute, and you can start it again at any time under My account.');
 
   // What the application is for, in the order somebody meets it. Only the points
-  // this person can actually act on: a list that promises approvals to somebody
-  // who cannot approve is worse than a shorter list.
+  // this person can actually act on: a list that promises something somebody cannot
+  // do is worse than a shorter list.
+  //
+  // There was a fourth, about reviewing and approving what your people submit,
+  // asked of a permission the application had already stopped defining - so can()
+  // answered no for everybody, and yes for everybody with authentication switched
+  // off, where it greeted the first user with a job that does not exist.
   const points = [
     can('timesheets:write:own', 'timesheets:write:all')
       && t('welcome.point.book', 'Book hours by hand, or run a stopwatch and let it book them.'),
     can('timesheets:read:own', 'timesheets:read:all')
       && t('welcome.point.see', 'See your month in a calendar, and your own figures as charts.'),
-    can('timesheets:approve')
-      && t('welcome.point.approve', 'Review and approve what your people submit.'),
     t('welcome.point.account',
       'Set your daily target, your timezone and a second factor under My account.'),
   ].filter(Boolean);
@@ -5804,7 +5825,6 @@ function wireForms() {
         + `gebucht ${fmtHours(balance.totalBooked)} von ${fmtHours(balance.totalTarget)}`;
       $('#overtime-result').hidden = false;
 
-      if (can('reports:read')) await loadTeamOvertime(suffix);
     }, null, null);
   });
 
@@ -5863,18 +5883,6 @@ function wireForms() {
 
     switchView(startingView());
   });
-}
-
-async function loadTeamOvertime(suffix) {
-  const balances = (await api(`/overtime${suffix}`))?.items ?? [];
-  const rows = balances.map((b) => el('tr', { class: me.user && b.userId === me.user.id ? 'self' : '' },
-    el('td', { text: b.userName }),
-    el('td', { class: 'num', text: fmtHours(b.totalBooked) }),
-    el('td', { class: 'num', text: fmtHours(b.totalTarget) }),
-    balanceCell(b.totalBalance),
-  ));
-  fillTable($('#table-overtime-team tbody'), rows, 4, t('ot.empty', 'No bookings in this period.'));
-  $('#overtime-team-card').hidden = false;
 }
 
 async function init() {

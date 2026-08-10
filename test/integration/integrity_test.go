@@ -169,14 +169,14 @@ func TestChangingARolesPermissionsIsAllOrNothing(t *testing.T) {
 
 	c.must(c.api(http.MethodPost, "/roles", map[string]any{
 		"name": "auditor", "description": "reads reports",
-		"permissions": []string{"reports:read", "timesheets:read:all"},
+		"permissions": []string{"reports:read:own", "timesheets:read:all"},
 	}), http.StatusCreated, http.StatusOK).Data(t, &role)
 
 	// A permission that does not exist has to be refused - and refusing after
 	// the delete has already happened would leave the role stripped.
 	refused := c.api(http.MethodPut, path("/roles/", role.ID), map[string]any{
 		"name": "auditor", "description": "reads reports",
-		"permissions": []string{"reports:read", "not:a:permission"},
+		"permissions": []string{"reports:read:own", "not:a:permission"},
 	})
 
 	if refused.Status == http.StatusOK {

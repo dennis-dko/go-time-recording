@@ -30,9 +30,6 @@ const (
 	// half-hour entries are different installations to support.
 	MetricHoursBooked = "gtr_timesheet_hours_booked"
 
-	// MetricEntryTransitions counts entries changing state, labelled "status".
-	MetricEntryTransitions = "gtr_timesheet_transitions_total"
-
 	// MetricSignInFailures counts refused sign-ins, labelled "reason" with a
 	// fixed handful of values.
 	MetricSignInFailures = "gtr_signin_failures_total"

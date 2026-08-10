@@ -80,7 +80,7 @@ nobody would expect it, having set a real one minutes earlier.
 **Welcome, and the guided tour.** A first sign-in is greeted by name, told in a
 sentence what the application is for, and offered a walk through it. The list of
 what you can do here is built from your own permissions, so nobody is promised
-approvals they cannot give.
+something they cannot do.
 
 The walk itself covers booking time by hand and by stopwatch, the entry list and
 the calendar and correcting an entry from it, your
@@ -199,14 +199,19 @@ on upgrade.
 
 ### Reports
 
-Aggregate reports — what other people total up to — need `reports:read`, which by
-default **no role holds** — not even the administrator. Everyone sees their own
-figures through **My statistics**, which needs nothing beyond reading your own
-entries.
+A project's report totals **your own** hours on it. Everyone sees their own figures
+there and through **My statistics**, and nobody sees anybody else's.
 
-Nobody reads anybody else's totals unless an administrator deliberately defines a
-role that may, and assigns it. That is the whole arrangement: there is no
-supervisor built in.
+Whether somebody may see another person's recorded time is one question, and
+`timesheets:read:all` is the one right that answers it — for a list of entries, for
+the spreadsheet export, for a project's total and for an overtime balance alike. No
+default role holds it, not even the administrator's.
+
+There used to be a second right for the totals, `reports:read`, and it belonged to
+the role that reviewed other people's hours. When that role went, the right stayed:
+no role held it, and a whole screen was gated on it, so the report was unreachable on
+every installation while appearing to be somebody else's business. Two rights for one
+question is how the two come to disagree.
 
 ## API access with personal tokens
 
@@ -375,8 +380,12 @@ personal setting, 8 h target and the instance-wide `MAX_DAILY_HOURS` apply.
 The balance is the sum of `booked − target` over the days that **have
 bookings**. Days without bookings deliberately do not count: without a holiday
 and leave calendar — which this application does not have — weekends and time
-off would otherwise accumulate as a growing deficit. Rejected entries are
-excluded.
+off would otherwise accumulate as a growing deficit.
+
+It is your own balance. Somebody else's is their recorded time, totalled, so it
+takes the same right as reading their entries — and the team-wide overview that used
+to sit beside it is gone, because comparing colleagues is the one thing this
+arrangement says nobody does.
 
 ## Timezones
 
@@ -408,10 +417,17 @@ creating a *shared* project still needs `projects:write`.
 
 ## Spreadsheets
 
-Time entries go out and come back as a real **.xlsx** workbook — one row per entry,
-with the date, the person, the project, the hours, the description and the status.
-Names rather than identifiers, because a column of user ids is not something anybody
-can fill in by hand; hours as a number, so the column can be totalled in Excel.
+Every table that holds something goes out and comes back as a real **.xlsx**
+workbook, from the tab it belongs to: time entries with the date, the person, the
+project, the hours and the description; projects with their period, status and
+whether they are a private category; accounts with their role, working times and
+zone. Names rather than identifiers, because a column of user ids is not something
+anybody can fill in by hand; hours as a number, so the column can be totalled in
+Excel.
+
+The column headings are written in the language the export was asked for, and a file
+exported in any of them imports again: the heading row is skipped by position, and
+translated values are recognised in every language.
 
 Not comma-separated text. A CSV is what Excel mangles: the separator depends on the
 machine's locale, dates are re-interpreted on opening, and a description containing
@@ -433,12 +449,15 @@ A file half-imported leaves nobody able to say which half, or which entries came
 from it, which is why a single refused row refuses the file. Every row goes through
 the rules the API enforces — by calling them, not by restating them: the same
 validation, the same daily ceiling (counting the file against itself, so forty rows
-on one day are checked together), the same project visibility. A status other than
-`open` is refused rather than ignored, or an import would be a way around the review
-path, and a row naming somebody else needs the right to book for others.
+on one day are checked together), the same project visibility. A row naming somebody
+else needs the right to book for others.
 
-An import **creates**; it never updates or replaces. There is no way for it to know
-which existing entry a row was meant to be.
+An import of time entries **creates**; it never updates or replaces, because there is
+no way for it to know which existing entry a row was meant to be. Projects are
+matched by name, so importing the same file twice changes nothing the second time.
+Accounts are matched on the mail address and are **changed**, not created: a new
+account needs a password, and a password that arrives in a spreadsheet is a password
+that gets mailed around.
 
 ## Architecture
 
@@ -681,7 +700,6 @@ would act on it:
 | Metric | Says |
 | --- | --- |
 | `gtr_timesheet_hours_booked` | hours per entry — the sum is what was recorded, the count in how many pieces |
-| `gtr_timesheet_transitions_total` | entries entering a state, by state — a queue of submitted entries nobody approves is invisible otherwise |
 | `gtr_signin_failures_total` | refused sign-ins, by reason — `credentials` is somebody guessing, `directory` is a directory that stopped answering |
 | `gtr_directory_accounts_total` | accounts the synchronisation created or deleted — the one operation that removes people together with their hours |
 
@@ -704,12 +722,13 @@ internet, or switch it off under *Settings*.
 
 The server enforces these; the interface merely also hides what is not allowed:
 
-- Time entries follow `open → submitted → approved / rejected`; rejected may go
-  back to `open`. Other jumps are refused.
-- An **approved** entry can no longer be changed, deleted or moved.
-- Approving and rejecting needs `timesheets:approve` — someone who may only
-  write their own time can submit it, but not approve it.
-- Hours are booked only onto **active** projects.
+- A time entry belongs to whoever recorded it. Reading, editing, deleting,
+  transferring and totalling it are all refused to anybody else, unless they hold
+  `timesheets:read:all` or `timesheets:write:all` — which no default role does.
+  There is no state to travel through and nobody to approve anything: entries were
+  once `open → submitted → approved`, and the role that approved them is gone.
+- Hours are booked only onto **active** projects, whichever way they get there:
+  booking, transferring, or editing an entry onto one.
 - The personal daily maximum applies, falling back to `MAX_DAILY_HOURS`.
 - Archiving requires a completed project with no open entries left.
 - A project that still has time entries cannot be deleted.
@@ -835,9 +854,9 @@ compiled binary and talk to it over HTTP, the way a browser and a script do.
 Nothing is stubbed, so the middleware order, the CSRF check, the session
 cookie, the migrations and the embedded assets are all in the path — which is
 where every bug found by *running* this application rather than testing it has
-lived. They cover sign-in, the setup wizard, booking and approval, the daily
-cap, overtime, private projects, RBAC, API tokens, timezones and the guided
-tour.
+lived. They cover sign-in, the setup wizard, booking, the daily cap, overtime,
+private projects, RBAC, API tokens, timezones, deleting several rows at once and the
+guided tour.
 
 ```bash
 task test:integration              # against SQLite, one file per test
