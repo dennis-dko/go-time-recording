@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -284,6 +285,17 @@ func TestNoTranslationIsUnused(t *testing.T) {
 			if state, isState := strings.CutPrefix(key, "status."); isState {
 				if _, known := projectStates(t)[state]; known {
 					continue
+				}
+			}
+
+			// The per-table spreadsheet cards, looked up as t(`sheet.${key}.text`)
+			// from the table being built. TestEverySheetCardIsNamed checks these
+			// against the card list in both directions.
+			if rest, isCard := strings.CutPrefix(key, "sheet."); isCard {
+				if table, _, cut := strings.Cut(rest, "."); cut {
+					if _, known := sheetCards(t)[table]; known {
+						continue
+					}
 				}
 			}
 
@@ -675,4 +687,159 @@ func projectStates(t *testing.T) map[string]struct{} {
 	}
 
 	return states
+}
+
+// A translation is set with textContent, so an HTML entity in one renders as the
+// entity.
+//
+// "API-Dokumentation &#8599;" appeared on screen exactly like that. The markup may
+// carry entities - it is parsed as HTML - but a dictionary value never is.
+func TestNoTranslationCarriesAnHTMLEntity(t *testing.T) {
+	entity := regexp.MustCompile(`&(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z]+);`)
+
+	for language, dict := range dictionaries(t) {
+		for key, value := range dict {
+			if found := entity.FindString(value); found != "" {
+				t.Errorf("%s[%q] contains the HTML entity %s, which renders literally; "+
+					"write the character itself", language, key, found)
+			}
+		}
+	}
+}
+
+// The small "delete" in a table row is a text button, not a filled one.
+//
+// button.link sets no background and the solid danger rule sets a red one at the
+// same specificity, so source order decided it - and the solid rule came second.
+// Every row's delete button turned into a red rectangle with red text in it: a
+// coloured block with an invisible label, which is what a screenshot showed.
+func TestTheSolidDangerButtonSparesTextButtons(t *testing.T) {
+	css := asset(t, "/app.css")
+
+	if !strings.Contains(css, "button.danger:not(.link)") {
+		t.Error("the solid danger rule applies to .link buttons too, which paints the " +
+			"row actions red on red")
+	}
+
+	// And the text-button rule is still there to colour them.
+	if !strings.Contains(css, "button.link.danger") {
+		t.Error("nothing colours the text of a destructive row action")
+	}
+}
+
+// sheetCards reads the tables that have an export/import card out of app.js.
+//
+// The card is built by code, from this list, so the keys its words live under never
+// appear as literals anywhere - the same blind spot the err.* sentences have. Read
+// from the list rather than restated here, so adding a third table cannot pass with
+// no words to show in it.
+func sheetCards(t *testing.T) map[string]bool {
+	t.Helper()
+
+	js := asset(t, "/app.js")
+
+	start := strings.Index(js, "const SHEET_CARDS = [")
+	if start < 0 {
+		t.Fatal("SHEET_CARDS is gone from app.js; the per-table spreadsheet cards changed " +
+			"shape and this guard no longer guards anything")
+	}
+
+	end := strings.Index(js[start:], "\n];")
+	if end < 0 {
+		t.Fatal("SHEET_CARDS is not closed by \"\\n];\"; the guard cannot tell where the " +
+			"list ends")
+	}
+
+	found := map[string]bool{}
+
+	for _, match := range regexp.MustCompile(`key:\s*'([a-z]+)'`).
+		FindAllStringSubmatch(js[start:start+end], -1) {
+		found[match[1]] = true
+	}
+
+	if len(found) == 0 {
+		t.Fatal("SHEET_CARDS lists no tables, so nothing can export or import")
+	}
+
+	return found
+}
+
+// Every table with a spreadsheet card has the words the card shows.
+//
+// Three keys per table, none of which appears as a literal: the card is built from
+// the list, so a new table would silently show the English fallback to a German
+// reader - and the fallback is the paragraph explaining what its import does, which
+// is the one part somebody actually has to read.
+func TestEverySheetCardIsNamed(t *testing.T) {
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("no German dictionary")
+	}
+
+	// text is what the card says it does, file names the download, done reports
+	// what was written.
+	suffixes := []string{"text", "file", "done"}
+
+	for table := range sheetCards(t) {
+		for _, suffix := range suffixes {
+			key := "sheet." + table + "." + suffix
+
+			if _, translated := dict[key]; !translated {
+				t.Errorf("the %s spreadsheet card has no German %q, so a German reader "+
+					"is shown the English one", table, suffix)
+			}
+		}
+	}
+
+	// And nothing left over: a card that was removed leaves its paragraph behind,
+	// and a paragraph nobody shows is a paragraph nobody notices is wrong.
+	known := sheetCards(t)
+
+	for key := range dict {
+		rest, isCard := strings.CutPrefix(key, "sheet.")
+		if !isCard {
+			continue
+		}
+
+		table, suffix, cut := strings.Cut(rest, ".")
+		if !cut || !known[table] {
+			t.Errorf("%q belongs to no table in SHEET_CARDS", key)
+
+			continue
+		}
+
+		if !slices.Contains(suffixes, suffix) {
+			t.Errorf("%q is not one of the %v a card shows", key, suffixes)
+		}
+	}
+}
+
+// Selecting several rows to delete is derived from the rows themselves: the
+// checkbox appears where a delete button already does, so the two cannot come to
+// disagree about who may delete what.
+//
+// That only holds while every table asks deleteButton() for its delete button. A
+// hand-rolled one looks identical on screen and is invisible to the column, so
+// that table would quietly be the one without bulk deletion - and nobody would
+// notice until they went looking for it.
+func TestEveryRowDeletionGoesThroughTheSharedButton(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	const built = "class: 'link danger'"
+
+	if got := strings.Count(js, built); got != 1 {
+		t.Errorf("%d places build a destructive row button by hand, want 1 (deleteButton); "+
+			"a table that builds its own gets no checkbox column, because the column is "+
+			"derived from the buttons", got)
+	}
+
+	// The derivation itself, in both directions: the button records what it would
+	// delete, and the column reads it back.
+	for _, needed := range []string{"button.deletes = { label, path, message, after }",
+		"row.querySelectorAll('button.danger')", "box.deletes = deletes"} {
+		if !strings.Contains(js, needed) {
+			t.Errorf("app.js no longer contains %q, so the checkbox column and the delete "+
+				"buttons are no longer the same decision", needed)
+		}
+	}
 }

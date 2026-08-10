@@ -1117,20 +1117,6 @@
         }
       }
     },
-    "/setup/keep-database": {
-      "post": {
-        "tags": [
-          "setup"
-        ],
-        "summary": "Confirm the current database and settle that step",
-        "description": "Records that the database question was answered by keeping what this process already runs on. The step is required and comes first, because everything else is stored in the database it chooses; without a way to say \"this one is fine\", an installation happy on SQLite could never complete the wizard.",
-        "responses": {
-          "201": {
-            "description": "Settled"
-          }
-        }
-      }
-    },
     "/settings/operational": {
       "get": {
         "tags": [
@@ -1350,6 +1336,439 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/timesheets/export": {
+      "get": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Export time entries as .xlsx",
+        "description": "Takes the same filters as the list, with the same scoping: whoever may read only their own entries exports their own, whatever they ask for.",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Language for the column headings and the values inside them, e.g. `de`. Unknown or absent means English. The importer reads a file in any of these languages whatever this was set to, because the heading row is skipped by position and translated values are recognised in every language."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An .xlsx workbook",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timesheets/import": {
+      "post": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "Import time entries from .xlsx",
+        "description": "Creates entries; it never changes or replaces existing ones. Every row goes through the same validation, daily ceiling and project visibility as a single booking. Every row is reported either way: the ones that would be written and the ones that cannot, with the reason. Nothing is written while any row is refused - a file half imported leaves somebody looking for which half.",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Language for the column headings and the values inside them, e.g. `de`. Unknown or absent means English. The importer reads a file in any of these languages whatever this was set to, because the heading row is skipped by position and translated values are recognised in every language."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The .xlsx workbook to read."
+                  },
+                  "dryRun": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ],
+                    "description": "`true` previews without writing anything. Send the file twice - once to look, once to write - rather than relying on a plan held between requests."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the file would do, or what it did"
+          },
+          "201": {
+            "description": "What the file would do, or what it did"
+          },
+          "400": {
+            "description": "Not a readable workbook of this kind"
+          },
+          "409": {
+            "description": "Some rows cannot be written, so nothing was"
+          }
+        }
+      }
+    },
+    "/projects/export": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Export projects as .xlsx",
+        "description": "The shared projects the caller can see plus their own private categories - the same scoping as the list, so an export can never show more than the screen.",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Language for the column headings and the values inside them, e.g. `de`. Unknown or absent means English. The importer reads a file in any of these languages whatever this was set to, because the heading row is skipped by position and translated values are recognised in every language."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An .xlsx workbook",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/import": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Import projects from .xlsx",
+        "description": "Rows are matched by name: a name that exists is updated, a new one is created, so importing the same file twice changes nothing the second time. Rows marked as a category become private to the caller; creating a shared project needs `projects:write`. Every row is reported either way: the ones that would be written and the ones that cannot, with the reason. Nothing is written while any row is refused - a file half imported leaves somebody looking for which half.",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Language for the column headings and the values inside them, e.g. `de`. Unknown or absent means English. The importer reads a file in any of these languages whatever this was set to, because the heading row is skipped by position and translated values are recognised in every language."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The .xlsx workbook to read."
+                  },
+                  "dryRun": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ],
+                    "description": "`true` previews without writing anything. Send the file twice - once to look, once to write - rather than relying on a plan held between requests."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the file would do, or what it did"
+          },
+          "201": {
+            "description": "What the file would do, or what it did"
+          },
+          "400": {
+            "description": "Not a readable workbook of this kind"
+          },
+          "409": {
+            "description": "Some rows cannot be written, so nothing was"
+          }
+        }
+      }
+    },
+    "/users/export": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Export accounts as .xlsx",
+        "description": "Needs `users:read`. No password is included, in either direction.",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Language for the column headings and the values inside them, e.g. `de`. Unknown or absent means English. The importer reads a file in any of these languages whatever this was set to, because the heading row is skipped by position and translated values are recognised in every language."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An .xlsx workbook",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/import": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Import account changes from .xlsx",
+        "description": "Changes existing accounts, matched on the email address, and does not create them: a new account needs a password, and a password in a spreadsheet is a password that gets mailed around. An empty cell leaves that setting as it is. Needs `users:write`. Every row is reported either way: the ones that would be written and the ones that cannot, with the reason. Nothing is written while any row is refused - a file half imported leaves somebody looking for which half.",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Language for the column headings and the values inside them, e.g. `de`. Unknown or absent means English. The importer reads a file in any of these languages whatever this was set to, because the heading row is skipped by position and translated values are recognised in every language."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The .xlsx workbook to read."
+                  },
+                  "dryRun": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ],
+                    "description": "`true` previews without writing anything. Send the file twice - once to look, once to write - rather than relying on a plan held between requests."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the file would do, or what it did"
+          },
+          "201": {
+            "description": "What the file would do, or what it did"
+          },
+          "400": {
+            "description": "Not a readable workbook of this kind"
+          },
+          "409": {
+            "description": "Some rows cannot be written, so nothing was"
+          }
+        }
+      }
+    },
+    "/maintenance": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Whether the installation is in maintenance mode",
+        "description": "Public, like the branding and for the same reason: somebody opening the page during maintenance should read the notice on the sign-in screen rather than watch requests fail silently.",
+        "responses": {
+          "200": {
+            "description": "The maintenance state and its notice"
+          }
+        }
+      }
+    },
+    "/settings/maintenance": {
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Turn maintenance mode on or off",
+        "description": "While it is on, everything but signing in and the settings themselves is refused, so an administrator cannot lock themselves out of turning it off again.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "message": {
+                    "type": "string",
+                    "description": "Shown on the sign-in screen."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The state as it now stands"
+          }
+        }
+      }
+    },
+    "/settings/restart": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "What is waiting for a restart",
+        "description": "Lists the stored settings the running process does not match yet. `startedAt` changes when the process does, which is how a client can tell a restart it asked for actually happened.",
+        "responses": {
+          "200": {
+            "description": "Pending changes and the start time"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Restart the process",
+        "description": "Only where the platform can do it: the process replaces itself, which needs exec, so it is refused on Windows with a reason naming what to do instead.",
+        "responses": {
+          "202": {
+            "description": "Restarting"
+          },
+          "409": {
+            "description": "The platform cannot restart in place"
+          }
+        }
+      }
+    },
+    "/settings/ldap/sync/preview": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "What a directory synchronisation would do",
+        "description": "Changes nothing, so an administrator can see which accounts and how many recorded entries a run would remove before committing to it.",
+        "responses": {
+          "200": {
+            "description": "The report a run would produce"
+          }
+        }
+      }
+    },
+    "/settings/ldap/sync": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Synchronise accounts with the directory",
+        "description": "Matches on the directory-side identifier rather than the mail address, so a renamed mailbox is not read as a departure. `aborted` carries the reason a guard stopped the run.",
+        "responses": {
+          "200": {
+            "description": "What the run did"
+          }
+        }
+      }
+    },
+    "/admin/logs": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read the process log",
+        "description": "Behind the built-in administrator: the log carries email addresses, request paths and whatever a failing driver decided to print.",
+        "parameters": [
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Only lines newer than this sequence number."
+          },
+          {
+            "name": "levels",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated, e.g. `WARN,ERROR`. Absent means every level."
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Case-insensitive substring of the message."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "default": 300
+            },
+            "description": "How many lines at most; the newest are kept."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Log lines, the levels that exist and how many were dropped"
           }
         }
       }

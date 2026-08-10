@@ -353,12 +353,254 @@ const projectName = (id) => cache.projects.find((p) => p.id === id)?.name ?? `#$
 
 /** Replaces a tbody with rows, or a single "empty" row when there are none. */
 function fillTable(tbody, rows, columnCount, emptyText) {
+  // Before the rows go in, while they can still be read for delete buttons.
+  const picking = prepareBulkDelete(tbody, rows);
+
   tbody.replaceChildren();
+
   if (rows.length === 0) {
-    tbody.append(el('tr', {}, el('td', { class: 'empty', colspan: columnCount, text: emptyText })));
+    tbody.append(el('tr', {},
+      el('td', { class: 'empty', colspan: columnCount + (picking ? 1 : 0), text: emptyText })));
+
     return;
   }
+
   tbody.append(...rows);
+}
+
+/**
+ * The bar belonging to one table.
+ *
+ * Found by the table's own id rather than by position, so a card that grows a
+ * second table later cannot end up driving the wrong bar.
+ */
+function bulkBarOf(table) {
+  const card = table.parentElement && table.parentElement.parentElement;
+
+  return card ? card.querySelector(`.bulk-bar[data-for="${table.id}"]`) : null;
+}
+
+/**
+ * Gives a table a leading column of checkboxes, when any of its rows offers
+ * deletion, plus the bar that acts on them.
+ *
+ * Driven entirely by what the rows contain, so there is no list anywhere of
+ * which tables have this. A table of rows nobody may delete - the calendar day,
+ * the import preview, a report - is left exactly as it was, and a table that
+ * grows a delete button later gets this without being told.
+ *
+ * Returns whether the column is there, because the empty row's colspan has to
+ * know.
+ */
+function prepareBulkDelete(tbody, rows) {
+  const table = tbody.closest('table');
+  if (!table) return false;
+
+  // Which rows carry a deletion, and what it is. Every .danger button is
+  // considered, not just the first: a row may offer more than one dangerous
+  // thing, and only one of them is the deletion.
+  const deletions = new Map();
+  for (const row of rows) {
+    if (!row.querySelectorAll) continue;
+
+    for (const button of row.querySelectorAll('button.danger')) {
+      if (button.deletes) {
+        deletions.set(row, button.deletes);
+        break;
+      }
+    }
+  }
+
+  const head = table.tHead && table.tHead.rows[0];
+  const column = head && head.querySelector('th.pick');
+
+  if (deletions.size === 0) {
+    // Nothing deletable this time round - a filter that matched only other
+    // people's entries, say. The column goes rather than standing there with
+    // nothing in it.
+    if (column) column.remove();
+
+    const bar = bulkBarOf(table);
+    if (bar) bar.remove();
+
+    return false;
+  }
+
+  for (const row of rows) {
+    const deletes = deletions.get(row);
+
+    // A row nobody may delete still gets the cell, so the columns line up. It
+    // simply has nothing in it to tick.
+    const cell = el('td', { class: 'pick' });
+
+    if (deletes) {
+      const box = el('input', {
+        type: 'checkbox',
+        class: 'row-pick',
+        'aria-label': `${t('bulk.pick', 'Select')}: ${deletes.label}`,
+        onchange: () => refreshBulkBar(table),
+      });
+
+      box.deletes = deletes;
+      cell.append(box);
+    }
+
+    row.prepend(cell);
+  }
+
+  if (!column && head) {
+    head.prepend(el('th', { class: 'pick' }, el('input', {
+      type: 'checkbox',
+      class: 'pick-all',
+      'aria-label': t('bulk.pickAll', 'Select all'),
+      onchange: (event) => {
+        for (const box of table.querySelectorAll('tbody .row-pick')) {
+          box.checked = event.target.checked;
+        }
+
+        refreshBulkBar(table);
+      },
+    })));
+  }
+
+  ensureBulkBar(table);
+
+  // The rows are new, so nothing is ticked: the count goes back to zero and the
+  // bar hides itself. Carrying a selection across a reload would be worse than
+  // losing it - the rows underneath it may not be the same rows.
+  refreshBulkBar(table);
+
+  return true;
+}
+
+/** The bar that says how many rows are ticked and offers to delete them. */
+function ensureBulkBar(table) {
+  const existing = bulkBarOf(table);
+  if (existing) return existing;
+
+  const wrap = table.parentElement;
+  if (!wrap || !wrap.parentElement) return null;
+
+  const bar = el('div', { class: 'bulk-bar', 'data-for': table.id },
+    el('span', { class: 'bulk-count' }),
+    el('button', {
+      class: 'danger',
+      text: t('bulk.delete', 'Delete selected'),
+      onclick: () => runBulkDelete(table),
+    }));
+
+  // Above the table rather than below it: in a long table the bar would be off
+  // the screen, and the rows being ticked start at the top.
+  wrap.parentElement.insertBefore(bar, wrap);
+
+  return bar;
+}
+
+function refreshBulkBar(table) {
+  const bar = bulkBarOf(table);
+  if (!bar) return;
+
+  const boxes = [...table.querySelectorAll('tbody .row-pick')];
+  const picked = boxes.filter((box) => box.checked);
+
+  bar.classList.toggle('shown', picked.length > 0);
+  bar.querySelector('.bulk-count').textContent = t('bulk.count', '{n} selected')
+    .replace('{n}', String(picked.length));
+
+  const all = table.querySelector('thead .pick-all');
+  if (all) {
+    all.checked = boxes.length > 0 && picked.length === boxes.length;
+
+    // Some but not all: neither ticked nor empty is the truth, and the browser
+    // draws that third state itself.
+    all.indeterminate = picked.length > 0 && picked.length < boxes.length;
+  }
+}
+
+/**
+ * Deletes every ticked row, one after another.
+ *
+ * Sequentially, and through the ordinary single-row endpoint. There is no bulk
+ * endpoint on purpose: each row goes through the same rules, ownership check and
+ * audit entry as a single deletion, so a batch can never delete something the
+ * reader could not have deleted on its own. Firing them all at once would race
+ * for the same rows and, on SQLite, mostly queue behind each other anyway.
+ *
+ * A refusal partway does not stop the rest. Eight of ten deleted, with the two
+ * refusals named, is more use than eight silently undone.
+ */
+async function runBulkDelete(table) {
+  const picked = [...table.querySelectorAll('tbody .row-pick')]
+    .filter((box) => box.checked)
+    .map((box) => box.deletes);
+
+  if (picked.length === 0) return;
+
+  const shown = picked.slice(0, 5).map((item) => item.label);
+  if (picked.length > shown.length) shown.push('…');
+
+  const ok = await confirmDialog({
+    title: t('bulk.title', 'Delete the selected rows?'),
+    text: t('bulk.text', 'This cannot be undone.'),
+    detail: shown.join(', '),
+    confirmLabel: t('bulk.delete', 'Delete selected'),
+  });
+
+  if (!ok) return;
+
+  const refused = [];
+  let done = 0;
+
+  for (const item of picked) {
+    try {
+      await api(item.path, { method: 'DELETE' });
+      done += 1;
+    } catch (err) {
+      refused.push(`${item.label}: ${err.message}`);
+    }
+  }
+
+  if (refused.length > 0) {
+    toast(`${t('bulk.refused', '{n} could not be deleted').replace('{n}', String(refused.length))}`
+      + ` – ${refused[0]}`, 'error');
+  } else {
+    toast(t('bulk.done', '{n} deleted').replace('{n}', String(done)), 'ok');
+  }
+
+  // One reload for the batch, along the row's own reload path: whatever a single
+  // deletion refreshes is what a batch of them refreshes.
+  if (picked[0].after) await picked[0].after();
+}
+
+/**
+ * The "delete" button of a single row - and with it the row's ticket to being
+ * deleted in a batch.
+ *
+ * Every table built this button at its own call site, which was fine while
+ * deletion was one row at a time. Selecting several needs to know which rows may
+ * be deleted at all, and that question is already answered precisely here: this
+ * button exists only where the row builder decided the reader is allowed to
+ * delete that row. Deriving the checkbox from the button means the two cannot
+ * disagree - no second copy of "is this allowed?", no checkbox offering a
+ * deletion the server would refuse.
+ *
+ * `ask` replaces the confirmation for a row whose single deletion asks something
+ * extra; the batch still takes the plain path. `text` is for a table that calls
+ * it something else, like revoking a token.
+ *
+ * The details ride on the node as a property rather than an attribute, so
+ * `after` can stay a function.
+ */
+function deleteButton({ label, path, message, after, ask, text }) {
+  const button = el('button', {
+    class: 'link danger',
+    text: text || t('action.delete', 'delete'),
+    onclick: ask || (() => removeAfterConfirm(label, path, message, after)),
+  });
+
+  button.deletes = { label, path, message, after };
+
+  return button;
 }
 
 /** Fills a <select> with options, preserving the current selection if possible. */
@@ -635,6 +877,25 @@ const TRANSLATIONS = {
     'action.complete': 'abschließen',
     'action.create': 'Anlegen',
     'action.delete': 'löschen',
+    'bulk.pick': 'Auswählen',
+    'bulk.pickAll': 'Alle auswählen',
+    'bulk.count': '{n} ausgewählt',
+    'bulk.delete': 'Ausgewählte löschen',
+    'bulk.title': 'Die ausgewählten Zeilen löschen?',
+    'bulk.text': 'Das lässt sich nicht rückgängig machen.',
+    'bulk.done': '{n} gelöscht',
+    'bulk.refused': '{n} konnten nicht gelöscht werden',
+    'sheet.projects.text': 'Exportiert die Projekte und Kategorien, die Sie sehen. Ein Import '
+      + 'ordnet Zeilen über den Namen zu: ein vorhandener Name wird aktualisiert, ein neuer '
+      + 'angelegt. Als Kategorie markierte Zeilen werden Ihre eigenen privaten.',
+    'sheet.projects.file': 'projekte',
+    'sheet.projects.done': '{0} Zeilen geschrieben.',
+    'sheet.users.text': 'Exportiert alle Konten. Ein Import ändert vorhandene Konten, '
+      + 'zugeordnet über die E-Mail-Adresse, und legt keine an – ein neues Konto braucht ein '
+      + 'Kennwort, und das gehört nicht in eine Tabelle. Eine leere Zelle lässt die '
+      + 'Einstellung unverändert.',
+    'sheet.users.file': 'benutzer',
+    'sheet.users.done': '{0} Zeilen geschrieben.',
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
     'action.new': 'Neu',
@@ -759,6 +1020,10 @@ const TRANSLATIONS = {
     'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
+    'err.wrongWorkbook': 'Diese Datei enthält etwas anderes – vermutlich der Export einer '
+      + 'anderen Tabelle.',
+    'err.importStoppedAtRow': 'Abgebrochen bei Zeile {0}. {1} Zeilen wurden geschrieben; '
+      + 'die Datei kann erneut importiert werden, um den Rest nachzuholen.',
     'err.uploadUnreadable': 'Die übermittelte Datei konnte nicht gelesen werden.',
     'field.actor': 'Aufrufer',
     'wb.allReady': 'Alle {0} Zeilen können importiert werden.',
@@ -952,7 +1217,7 @@ const TRANSLATIONS = {
     'token.copyNow': 'Jetzt kopieren — dieser Wert wird nicht wieder angezeigt:',
     'token.create': 'Token erstellen',
     'token.created': 'Erstellt',
-    'token.docs': 'API-Dokumentation &#8599;',
+    'token.docs': 'API-Dokumentation ↗',
     'token.empty': 'Noch keine Tokens angelegt.',
     'token.expires': 'Gültig für (Tage, 0 = unbegrenzt)',
     'token.expiresAt': 'Läuft ab',
@@ -1224,10 +1489,15 @@ async function loadUsers() {
     const actions = el('td', { class: 'actions' });
 
     if (can('users:delete') && !u.isSystem) {
-      actions.append(el('button', {
-        class: 'link danger',
-        text: t('action.delete', 'delete'),
-        onclick: () => deleteStaffMember(u),
+      actions.append(deleteButton({
+        label: `${u.name} <${u.email}>`,
+        path: `/users/${u.id}`,
+        message: t('msg.userDeleted', 'User deleted'),
+        after: refreshAll,
+        // Deleting one account asks something extra - whether to keep its
+        // entries or purge them - so the row keeps its own dialog. A batch takes
+        // the plain deletion, the answer that keeps the history.
+        ask: () => deleteStaffMember(u),
       }));
     }
 
@@ -1300,12 +1570,11 @@ async function loadRoles() {
       }));
 
       if (!role.isSystem) {
-        actions.append(el('button', {
-          class: 'link danger',
-          text: t('action.delete', 'delete'),
-          onclick: () => removeAfterConfirm(
-            `${t('field.role', 'Role')} "${role.name}"`,
-            `/roles/${role.id}`, t('msg.roleDeleted', 'Role deleted'), refreshAll),
+        actions.append(deleteButton({
+          label: `${t('field.role', 'Role')} "${role.name}"`,
+          path: `/roles/${role.id}`,
+          message: t('msg.roleDeleted', 'Role deleted'),
+          after: refreshAll,
         }));
       }
     }
@@ -1397,12 +1666,11 @@ async function loadProjects() {
     }
 
     if (can('projects:delete') || mine) {
-      actions.append(el('button', {
-        class: 'link danger',
-        text: t('action.delete', 'delete'),
-        onclick: () => removeAfterConfirm(
-          `${t('field.project', 'Project')} "${p.name}"`,
-          `/projects/${p.id}`, t('msg.projectDeleted', 'Project deleted'), refreshAll),
+      actions.append(deleteButton({
+        label: `${t('field.project', 'Project')} "${p.name}"`,
+        path: `/projects/${p.id}`,
+        message: t('msg.projectDeleted', 'Project deleted'),
+        after: refreshAll,
       }));
     }
 
@@ -1514,13 +1782,11 @@ function timesheetActions(entry) {
   }
 
   if (mayEdit) {
-    actions.append(el('button', {
-      class: 'link danger',
-      text: t('action.delete', 'delete'),
-      onclick: () => removeAfterConfirm(
-        `${entry.date}, ${fmtHours(entry.durationHours)} h`,
-        `/timesheets/${entry.id}`,
-        t('msg.entryDeleted', 'Entry deleted'), reloadTimeViews),
+    actions.append(deleteButton({
+      label: `${fmtDate(entry.date)}, ${fmtHours(entry.durationHours)}`,
+      path: `/timesheets/${entry.id}`,
+      message: t('msg.entryDeleted', 'Entry deleted'),
+      after: reloadTimeViews,
     }));
   }
 
@@ -1788,12 +2054,14 @@ async function loadTokens() {
     el('td', { text: fmtDate(token.createdAt) }),
     el('td', { text: token.expiresAt ? fmtDate(token.expiresAt) : t('token.never', 'unlimited') }),
     el('td', { text: token.lastUsedAt ? fmtDate(token.lastUsedAt) : t('token.unused', 'never') }),
-    el('td', { class: 'actions' }, el('button', {
-      class: 'link danger',
+    el('td', { class: 'actions' }, deleteButton({
+      // Called revoking rather than deleting, because that is what it means for
+      // a token - but it is the same request, so it joins the batch too.
       text: t('token.revoke', 'revoke'),
-      onclick: () => removeAfterConfirm(
-        `${t('token.name', 'Label')} "${token.name}"`,
-        `/me/tokens/${token.id}`, t('token.revoked', 'Token revoked'), loadTokens),
+      label: `${t('token.name', 'Label')} "${token.name}"`,
+      path: `/me/tokens/${token.id}`,
+      message: t('token.revoked', 'Token revoked'),
+      after: loadTokens,
     })),
   ));
 
@@ -3845,9 +4113,23 @@ function timesheetFilterQuery() {
  * better anyway, because this is where the period being looked at is known.
  */
 async function exportWorkbook() {
-  const res = await fetch(`${API}/timesheets/export${timesheetFilterQuery()}`, {
-    credentials: 'same-origin',
-  });
+  await downloadSheet(`/timesheets/export${timesheetFilterQuery()}`,
+    t('wb.filename', 'time-entries'));
+}
+
+/**
+ * Fetches an export and saves it under a readable name.
+ *
+ * The language travels with the request, so the headings in the file are the ones
+ * on the screen of whoever asked for it. It is a query parameter rather than the
+ * account's setting: the file is about to be opened by the person looking at this
+ * screen, in the language they are reading it in.
+ */
+async function downloadSheet(path, name) {
+  const separator = path.includes('?') ? '&' : '?';
+  const url = `${API}${path}${separator}lang=${encodeURIComponent(activeLanguage())}`;
+
+  const res = await fetch(url, { credentials: 'same-origin' });
 
   if (!res.ok) {
     let body = null;
@@ -3861,16 +4143,16 @@ async function exportWorkbook() {
   }
 
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
+  const objectURL = URL.createObjectURL(blob);
 
-  const link = el('a', { href: url, download: `${t('wb.filename', 'time-entries')}-${todayISO()}.xlsx` });
+  const link = el('a', { href: objectURL, download: `${name}-${todayISO()}.xlsx` });
   document.body.append(link);
   link.click();
   link.remove();
 
   // Released once the browser has taken it; a blob left behind holds the whole
   // file in memory for as long as the page is open.
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(objectURL);
 }
 
 /** Sends the chosen file, either to look or to write. */
@@ -3989,6 +4271,235 @@ function wireWorkbook() {
     }));
 
   $('#wb-clear').addEventListener('click', resetWorkbookCard);
+}
+
+// ------------------------------------------- export and import, table by table
+
+/**
+ * The tables that go in and out as a spreadsheet, beside the time entries.
+ *
+ * Each one exports what its own tab shows and imports into its own table, which is
+ * the whole point: a single pair of buttons somewhere general would have meant
+ * guessing which table somebody had in mind.
+ *
+ * Roles, tokens and passkeys are deliberately absent. A token's secret exists once,
+ * at the moment it is created, and is not in the database to export; a passkey is
+ * bound to the device that holds it and means nothing anywhere else. Neither is a
+ * table a spreadsheet can carry.
+ */
+const SHEET_CARDS = [
+  {
+    key: 'projects',
+    path: '/projects',
+    view: '#view-projects',
+    read: 'projects:read',
+    write: 'projects:write,projects:write:own',
+    reload: () => refreshAll(),
+  },
+  {
+    key: 'users',
+    path: '/users',
+    view: '#view-users',
+    read: 'users:read',
+    write: 'users:write',
+    reload: () => refreshAll(),
+  },
+];
+
+/**
+ * Builds the export/import card for one table.
+ *
+ * Built here rather than written into index.html three times over. The markup is
+ * identical for every table - the only differences are the words and the endpoint -
+ * and three copies of it in the page is three places to fix the next time one of
+ * these buttons needs to change.
+ *
+ * The preview is driven by the answer: the server sends its column headings, already
+ * translated, so this renders a file of projects and a file of people with the same
+ * code and needs to know nothing about either.
+ */
+function buildSheetCard(spec) {
+  const summary = el('p', { class: 'muted' });
+  const headRow = el('tr');
+  const body = el('tbody');
+
+  const wrap = el('div', { class: 'table-wrap' },
+    el('table', {}, el('thead', {}, headRow), body));
+  wrap.hidden = true;
+
+  const file = el('input', {
+    type: 'file',
+    accept: '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+
+  const check = el('button', {
+    type: 'button', class: 'secondary',
+    'data-i18n': 'wb.preview', text: 'Check the file',
+  });
+
+  const write = el('button', { type: 'button', 'data-i18n': 'wb.import', text: 'Import' });
+
+  const cancel = el('button', {
+    type: 'button', class: 'link', 'data-i18n': 'action.cancelEdit', text: 'cancel',
+  });
+
+  for (const button of [check, write, cancel]) button.hidden = true;
+
+  const reset = () => {
+    file.value = '';
+
+    for (const button of [check, write, cancel]) button.hidden = true;
+
+    wrap.hidden = true;
+    summary.textContent = '';
+    headRow.replaceChildren();
+    body.replaceChildren();
+  };
+
+  const send = async (dryRun) => {
+    const chosen = file.files?.[0];
+    if (!chosen) throw new Error(t('wb.noFile', 'Choose a file first.'));
+
+    const form = new FormData();
+    form.append('file', chosen);
+    form.append('dryRun', dryRun ? 'true' : 'false');
+
+    // No Content-Type of our own: only the browser knows the multipart boundary
+    // it generated.
+    const res = await fetch(`${API}${spec.path}/import`
+      + `?lang=${encodeURIComponent(activeLanguage())}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': readCookie('gtr_csrf') },
+      body: form,
+    });
+
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      // Falls through to the status below.
+    }
+
+    if (!res.ok) {
+      const failure = new Error(errorMessage(payload)
+        || `${t('msg.error', 'Error')} ${res.status}`);
+      failure.status = res.status;
+
+      throw failure;
+    }
+
+    return payload?.data ?? null;
+  };
+
+  const preview = (result) => {
+    const columns = result?.columns ?? [];
+
+    headRow.replaceChildren(
+      el('th', { text: t('wb.row', 'Row') }),
+      ...columns.map((column) => el('th', { text: column })),
+      el('th', { text: t('wb.problem', 'Problem') }),
+    );
+
+    const rows = (result?.rows ?? []).map((row) => el('tr',
+      { class: row.problem ? 'rejected' : '' },
+      el('td', { class: 'num', text: String(row.row) }),
+      // Padded to the column count, because a row the file could not be read at
+      // all has no cells and would otherwise leave the table ragged.
+      ...columns.map((_, i) => el('td', { text: (row.cells ?? [])[i] || '–' })),
+      el('td', { class: row.problem ? 'minus' : 'muted', text: row.problem || '✓' }),
+    ));
+
+    fillTable(body, rows, columns.length + 2, t('wb.empty', 'The file has no entries in it.'));
+    wrap.hidden = false;
+
+    const writable = result?.writable ?? 0;
+    const rejected = result?.rejected ?? 0;
+
+    summary.textContent = rejected > 0
+      ? t('wb.someRejected',
+        '{0} of {1} rows can be imported. Nothing is written while any row is refused.')
+        .replace('{0}', String(writable)).replace('{1}', String(writable + rejected))
+      : t('wb.allReady', 'All {0} rows can be imported.').replace('{0}', String(writable));
+
+    // The import button only where it would do something: offering it for a file
+    // that would be refused is offering a failure.
+    write.hidden = rejected > 0 || writable === 0;
+  };
+
+  const exportButton = el('button', {
+    type: 'button', class: 'secondary',
+    'data-i18n': 'wb.export', text: 'Export as .xlsx',
+    onclick: () => mutate(
+      () => downloadSheet(`${spec.path}/export`, t(`sheet.${spec.key}.file`, spec.key)),
+      t('wb.exported', 'Export saved'), null),
+  });
+
+  const picker = el('label', { class: 'file-pick', 'data-perm': spec.write },
+    el('span', { 'data-i18n': 'wb.choose', text: 'Choose a file…' }), file);
+
+  file.addEventListener('change', () => {
+    const chosen = Boolean(file.files?.length);
+
+    check.hidden = !chosen;
+    cancel.hidden = !chosen;
+    write.hidden = true;
+    wrap.hidden = true;
+    summary.textContent = chosen ? t('wb.chosen', 'Check the file to see what it would do.') : '';
+  });
+
+  check.addEventListener('click', () => mutate(() => send(true), null, preview));
+
+  write.addEventListener('click', () => mutate(() => send(false),
+    t('wb.imported', 'The file was imported'),
+    async (result) => {
+      reset();
+      await spec.reload();
+
+      if (result?.imported) {
+        toast(t(`sheet.${spec.key}.done`, '{0} rows written.')
+          .replace('{0}', String(result.imported)), 'ok');
+      }
+    }));
+
+  cancel.addEventListener('click', reset);
+
+  return el('div', { class: 'card', 'data-perm': spec.read },
+    el('h2', { 'data-i18n': 'wb.title', text: 'Spreadsheet' }),
+    el('p', {
+      class: 'muted',
+      'data-i18n': `sheet.${spec.key}.text`,
+      text: SHEET_TEXTS[spec.key],
+    }),
+    el('div', { class: 'row' }, exportButton, picker, check, write, cancel),
+    summary,
+    wrap);
+}
+
+/**
+ * What each card says it does, in English, which is the source language.
+ *
+ * Here rather than in the markup because the card is built rather than written, and
+ * the paragraph is the one part of it that differs per table - each import behaves
+ * differently enough that a shared sentence would be wrong for at least one of
+ * them.
+ */
+const SHEET_TEXTS = {
+  projects: 'Exports the projects and categories you can see. An import matches rows '
+    + 'by name: a name that already exists is updated, a new one is created. Rows '
+    + 'marked as a category become your own private ones.',
+  users: 'Exports every account. An import changes existing accounts, matched on the '
+    + 'email address, and does not create them - a new account needs a password, which '
+    + 'does not belong in a spreadsheet. An empty cell leaves that setting alone.',
+};
+
+function wireSheetCards() {
+  for (const spec of SHEET_CARDS) {
+    const view = $(spec.view);
+    if (!view) continue;
+
+    view.append(buildSheetCard(spec));
+  }
 }
 
 function wireStatistics() {
@@ -4386,13 +4897,11 @@ async function loadPasskeys() {
     el('td', {
       text: passkey.lastUsedAt ? fmtDate(passkey.lastUsedAt) : t('passkey.never', 'never'),
     }),
-    el('td', { class: 'actions' }, el('button', {
-      class: 'link danger',
-      text: t('action.delete', 'delete'),
-      onclick: () => removeAfterConfirm(
-        `${t('passkey.name', 'Name')} "${passkey.name}"`,
-        `/me/passkeys/${passkey.id}`,
-        t('passkey.removed', 'Passkey removed'), loadPasskeys),
+    el('td', { class: 'actions' }, deleteButton({
+      label: `${t('passkey.name', 'Name')} "${passkey.name}"`,
+      path: `/me/passkeys/${passkey.id}`,
+      message: t('passkey.removed', 'Passkey removed'),
+      after: loadPasskeys,
     })),
   ));
 
@@ -5327,6 +5836,7 @@ async function init() {
     wireTimer();
     wireStatistics();
     wireWorkbook();
+    wireSheetCards();
     // After the forms are wired, so a submit handler registered here runs
     // beside theirs rather than instead of one.
     wirePasswordReveal();

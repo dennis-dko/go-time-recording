@@ -224,10 +224,14 @@ button.link {
 
 button.link.danger { color: var(--danger); }
 
-/* A solid button for the destructive answer in a dialog. .link.danger above is
- * for the small text buttons in table rows; this one is the one being pressed
- * on purpose. */
-button.danger {
+/* A solid button for the destructive answer in a dialog.
+ *
+ * :not(.link) matters more than it looks. button.link sets background: none and
+ * this rule sets a red one at the same specificity, so source order decided it -
+ * and this rule is second. Every "delete" in a table row is a .link.danger, so
+ * they all got the solid background while .link.danger above kept their text red:
+ * red on red, a coloured rectangle with an invisible label. */
+button.danger:not(.link) {
   background: var(--danger);
   color: #ffffff;
 }
@@ -322,6 +326,28 @@ th { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: upp
 
 td.num, th.num { text-align: right; }
 td.actions, th.actions { text-align: right; }
+
+/* The checkbox column for selecting several rows. As narrow as its content, so
+   it takes nothing away from the columns that carry meaning. */
+td.pick, th.pick { padding-right: 0; width: 1px; }
+td.pick input, th.pick input { cursor: pointer; margin: 0; }
+
+/* The bar above a table, shown only while something is ticked.
+ *
+ * Kept out of the flow when hidden rather than merely invisible: a permanently
+ * reserved strip above every table is a lot of empty space for something that is
+ * usually not happening. */
+.bulk-bar {
+  align-items: center;
+  display: none;
+  gap: 12px;
+  justify-content: flex-end;
+  padding-bottom: 10px;
+}
+
+.bulk-bar.shown { display: flex; }
+
+.bulk-count { color: var(--muted); font-size: 13px; }
 
 tbody tr:last-child td { border-bottom: none; }
 
