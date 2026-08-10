@@ -172,6 +172,16 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	// And whose it would become. The check above is about the entry as it stands;
+	// without this one, somebody who may only write their own could hand an entry
+	// to a colleague by naming them here, pushing hours onto an account that is not
+	// theirs to book for. Create checks the target the same way.
+	if req.UserID != nil {
+		if err := h.authz.requireOwnerOrAll(principal, *req.UserID); err != nil {
+			return nil, err
+		}
+	}
+
 	cmd := command.UpdateTimesheetCommand{
 		ID:            id,
 		UserID:        req.UserID,
@@ -252,6 +262,23 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 
 	if req.ProjectID == 0 {
 		return nil, toHTTPError(apperror.InvalidFields("projectId"))
+	}
+
+	// Whose entry it is, which this did not ask.
+	//
+	// It checked the target project and nothing about the entry, so the permission
+	// alone let anybody holding it move a colleague's hours onto another project -
+	// changing that colleague's totals - and read the entry's date, hours and
+	// description back out of the response. Ids are small and sequential, so
+	// walking somebody else's week cost nothing. Create, Update and Delete have all
+	// checked this from the start; only this path did not.
+	existing, err := h.timesheets.GetTimesheet(c, query.GetTimesheetQuery{ID: id})
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.authz.requireOwnEntry(principal, existing.Result.UserID); err != nil {
+		return nil, err
 	}
 
 	// Who is asking, so a transfer onto somebody else's private category is
