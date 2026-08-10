@@ -145,6 +145,10 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 		return nil, err
 	}
 
+	// As it stands, so the checks below can tell an edit that moves the entry from
+	// one that leaves it where it is.
+	owner, before := existingTimesheet.UserID, existingTimesheet.ProjectID
+
 	if cmd.UserID != nil {
 		if _, err := s.userRepository.GetByID(ctx, *cmd.UserID); err != nil {
 			return nil, err
@@ -153,17 +157,34 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 		existingTimesheet.UserID = *cmd.UserID
 	}
 
+	// Whether this edit moves the entry, and where to. Applied below rather than
+	// here, because the check that follows needs the owner to have settled first.
+	movedOwner := cmd.UserID != nil && *cmd.UserID != owner
+
 	if cmd.ProjectID != nil {
 		// 0 is how a client asks to remove the assignment again, which is what
 		// makes an entry uncategorised.
-		if *cmd.ProjectID == 0 {
-			existingTimesheet.ProjectID = nil
-		} else {
-			if _, err := s.projectRepository.GetByID(ctx, *cmd.ProjectID); err != nil {
-				return nil, err
-			}
+		existingTimesheet.ProjectID = normalizeProjectID(*cmd.ProjectID)
+	}
 
-			existingTimesheet.ProjectID = normalizeProjectID(*cmd.ProjectID)
+	// The same pairing check booking goes through, for the same reasons: the
+	// project has to exist, be one this person may see at all, and still accept
+	// hours. Editing checked only that it existed, so an edit could put hours into
+	// a colleague's private category - a project the API refuses even to admit
+	// exists - or onto one that had been completed, both of which the booking form
+	// refuses.
+	//
+	// Only when something actually moves. An entry already sitting on a completed
+	// project has to stay editable: the rule is about moving hours onto a closed
+	// project, not about fixing a typo in the description of one. A changed owner
+	// counts as a move too, because visibility is a fact about the pair.
+	movedProject := cmd.ProjectID != nil &&
+		!sameProject(existingTimesheet.ProjectID, before)
+
+	if (movedOwner || movedProject) && existingTimesheet.HasProject() {
+		err = s.requireUserAndProject(ctx, existingTimesheet.UserID, *existingTimesheet.ProjectID)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -246,6 +267,16 @@ func (s *TimesheetApplicationService) requireUserAndProject(ctx context.Context,
 	}
 
 	return nil
+}
+
+// sameProject reports whether two optional project assignments are the same one,
+// counting "no project" as equal to itself.
+func sameProject(a, b *uint) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+
+	return *a == *b
 }
 
 // normalizeProjectID turns the "no project" sentinel into a nil pointer, so

@@ -67,7 +67,75 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260810010000: {UP: func(d migration.Datasource) error {
 			return retireTheReviewPath(d, dialect)
 		}},
+		20260810020000: {UP: func(d migration.Datasource) error {
+			return repairAccountsWithoutARole(d, dialect)
+		}},
 	}
+}
+
+// repairAccountsWithoutARole puts back a role for every account left without one,
+// and makes sure there is one to put back.
+//
+// The migration before this one moves whoever was a manager to the employee role.
+// It does that with a subselect on the role name, and a subselect that matches
+// nothing yields NULL rather than nothing - so on an installation that had renamed
+// or deleted the default employee role, every ex-manager's role_id became NULL.
+//
+// That is worse than it sounds. The users table is read into a struct whose role id
+// is a plain uint, so a NULL in that column is not a user with no rights: it is a
+// scan error. The affected person cannot sign in, and every listing of accounts
+// fails for everybody, because one unreadable row fails the whole query. An
+// administrator would see an empty user list and no reason for it.
+//
+// Written as a new migration rather than as a correction to the one that caused it.
+// That one has shipped; an installation that already ran it has the NULL rows now,
+// and editing it would repair nothing while quietly changing history for anyone who
+// has not upgraded yet. This runs in the same start-up either way.
+//
+// What it cannot do is guess which role a renamed one was meant to be. An
+// installation that renamed the default employee role gets the default back,
+// alongside whatever they renamed it to, and their ex-managers land in it: two roles
+// where there was one, which is a tidying job for an administrator rather than an
+// account nobody can sign in to.
+func repairAccountsWithoutARole(d migration.Datasource, dialect string) error {
+	// A destination has to exist before anybody can be pointed at it. Inserted only
+	// when absent, so the ordinary upgrade - where it is there already - changes
+	// nothing.
+	var employees int
+
+	countRole := sqldb.Rebind(dialect, "SELECT COUNT(*) FROM roles WHERE name = ?")
+	if err := d.SQL.QueryRow(countRole, model.RoleEmployee).Scan(&employees); err != nil {
+		return fmt.Errorf("looking for the %q role: %w", model.RoleEmployee, err)
+	}
+
+	if employees == 0 {
+		if err := seedRole(d, dialect, employeeRole()); err != nil {
+			return err
+		}
+	}
+
+	// Everybody who has no role, whatever left them that way.
+	adopt := sqldb.Rebind(dialect, `UPDATE users SET role_id =
+		(SELECT id FROM roles WHERE name = ?) WHERE role_id IS NULL`)
+
+	if _, err := d.SQL.Exec(adopt, model.RoleEmployee); err != nil {
+		return fmt.Errorf("giving roleless accounts the %q role: %w", model.RoleEmployee, err)
+	}
+
+	return nil
+}
+
+// employeeRole is the seeded employee role, as a fresh installation gets it.
+func employeeRole() model.Role {
+	for _, role := range model.DefaultRoles() {
+		if role.Name == model.RoleEmployee {
+			return role
+		}
+	}
+
+	// Unreachable while RoleEmployee is one of the defaults, and a compile-time
+	// constant is not enough to promise that at run time.
+	return model.Role{Name: model.RoleEmployee, Description: "Keeps their own time"}
 }
 
 // retireTheReviewPath removes the entry status and the role that reviewed it.
@@ -575,20 +643,33 @@ func addRoleBasedAccess(d migration.Datasource, dialect string) error {
 
 // seedRoles inserts the default roles and their permissions.
 func seedRoles(d migration.Datasource, dialect string) error {
+	for _, role := range model.DefaultRoles() {
+		if err := seedRole(d, dialect, role); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// seedRole inserts one role and its permissions.
+//
+// Its own function because two places need it: first start, which writes every
+// default role, and the repair above, which writes exactly one back.
+func seedRole(d migration.Datasource, dialect string, role model.Role) error {
 	insertRole := sqldb.Rebind(dialect,
 		"INSERT INTO roles (name, description, is_system) VALUES (?, ?, ?)")
+
+	if _, err := d.SQL.Exec(insertRole, role.Name, role.Description, role.IsSystem); err != nil {
+		return fmt.Errorf("seeding role %q: %w", role.Name, err)
+	}
+
 	grant := sqldb.Rebind(dialect,
 		"INSERT INTO role_permissions (role_id, permission) SELECT id, ? FROM roles WHERE name = ?")
 
-	for _, role := range model.DefaultRoles() {
-		if _, err := d.SQL.Exec(insertRole, role.Name, role.Description, role.IsSystem); err != nil {
-			return fmt.Errorf("seeding role %q: %w", role.Name, err)
-		}
-
-		for _, permission := range role.Permissions {
-			if _, err := d.SQL.Exec(grant, permission, role.Name); err != nil {
-				return fmt.Errorf("granting %q to %q: %w", permission, role.Name, err)
-			}
+	for _, permission := range role.Permissions {
+		if _, err := d.SQL.Exec(grant, permission, role.Name); err != nil {
+			return fmt.Errorf("granting %q to %q: %w", permission, role.Name, err)
 		}
 	}
 

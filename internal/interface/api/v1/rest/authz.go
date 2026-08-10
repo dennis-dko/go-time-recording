@@ -200,6 +200,25 @@ func (a *Authorizer) requireOwnerOrAll(principal *service.Principal, ownerID uin
 	return forbiddenError{msg: "you may only change your own time entries"}
 }
 
+// requireOwnEntry checks an action against whose entry it is, where the right to
+// do it at all is a permission of its own.
+//
+// Separate from requireOwnerOrAll, which additionally insists on
+// timesheets:write:own. Transferring is gated on timesheets:transfer, so a role
+// holding that and not the write right must still be able to transfer its own
+// entries - and must not be able to touch anybody else's.
+func (a *Authorizer) requireOwnEntry(principal *service.Principal, ownerID uint) error {
+	if a.open || principal.Can(model.PermTimesheetWriteAll) {
+		return nil
+	}
+
+	if principal.User != nil && principal.User.ID == ownerID {
+		return nil
+	}
+
+	return forbiddenError{msg: "you may only change your own time entries"}
+}
+
 // mustChangePassword blocks everything except the password change itself
 // while an initial password is still in place.
 func mustChangePassword(principal *service.Principal) error {
