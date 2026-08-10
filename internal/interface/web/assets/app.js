@@ -64,6 +64,16 @@ const progress = { inFlight: 0, showTimer: null, hideTimer: null };
 /** How long a request may take before it is worth mentioning. */
 const PROGRESS_DELAY_MS = 140;
 
+/**
+ * How long the strip takes to run to the end and fade once nothing is waiting.
+ *
+ * Named rather than written into the one setTimeout that uses it, because a test
+ * has to wait longer than this to see the strip actually go - and a test carrying
+ * its own copy of the number starts blaming the wrong thing the day this changes.
+ * It matches the transition under .progress.done span in app.css.
+ */
+const PROGRESS_FADE_MS = 460;
+
 function progressStart() {
   progress.inFlight += 1;
 
@@ -101,26 +111,30 @@ function progressDone() {
   // earlier request, and then dropping the show timer is only half the job:
   //
   //   a slow request is shown, finishes, and starts fading out;
-  //   inside those 460ms another request starts, which cancels the fade;
+  //   inside that fade another request starts, which cancels it;
   //   that one finishes quickly, before it was itself worth showing.
   //
-  // The fade had been cancelled and nothing re-armed it, so the strip stayed on
-  // screen for as long as the page was open - invisible, because the inner span
-  // had already faded, but present. A browser test caught it as "showing with no
+  // The fade had been cancelled and nothing re-armed it, so the strip sat there
+  // with hidden still false - invisible, because the inner span had already faded,
+  // but present, and the counter out of step with the screen. It stayed that way
+  // until some later request outlived the delay and put the strip up again, which
+  // on a quiet screen is a long time. A browser test caught it as "showing with no
   // request in flight", which is exactly what it was.
   const bar = $('#progress');
   if (!bar || bar.hidden) return;
 
   bar.classList.add('done');
 
-  // One timer, not a queue of them: without this, each cycle leaves another
-  // pending callback that can hide a strip a later request has just put up.
+  // Belt and braces. Under the only traffic there is - api(), which pairs these two
+  // - progressStart has already cleared this on the way up from zero, so there is
+  // nothing live to cancel here. Nothing enforces that pairing though, and a stray
+  // timer would hide a strip that a later request has just put up.
   clearTimeout(progress.hideTimer);
 
   progress.hideTimer = setTimeout(() => {
     // Only if nothing started again while it was fading out.
     if (progress.inFlight === 0) bar.hidden = true;
-  }, 460);
+  }, PROGRESS_FADE_MS);
 }
 
 async function api(path, options = {}) {

@@ -1416,7 +1416,9 @@ func TestTheLoadingStripAppearsAndGoesAgain(t *testing.T) {
 	}
 
 	// Not asserted: on a fast local server the request can finish inside the delay,
-	// which is the strip behaving correctly.
+	// which is the strip behaving correctly. That it is drawn at all for a request
+	// that does outlive the delay is pinned deterministically by
+	// TestTheStripGoesAwayWhenARequestLandsDuringItsFade.
 	t.Logf("the strip was drawn during the request: %v", counted.Showing)
 
 	// What must hold either way: nothing outstanding, nothing on screen.
@@ -1434,35 +1436,50 @@ func TestTheLoadingStripAppearsAndGoesAgain(t *testing.T) {
 
 // The strip goes away when a request starts during its fade and finishes quickly.
 //
-// This is the sequence that left it on screen for as long as the page was open:
+// This is the sequence that left it standing:
 //
 //	a slow request is shown, finishes, and starts fading out;
-//	inside those 460ms another request starts, which cancels the fade;
+//	inside that fade another request starts, which cancels it;
 //	that one finishes before it was itself worth showing.
 //
 // Dropping the pending "show it" was only half the job - nothing re-armed the fade.
 // Invisible, because the inner span had already faded, but present, and the counter
-// was then permanently out of step with the screen.
+// out of step with the screen until some later request happened to put the strip up
+// again.
 //
 // Driven through progressStart and progressDone rather than real requests, because
-// the race needs the second request to land inside a 460ms window and a test that
-// waits for that to happen by luck is a test that passes for the wrong reason.
+// the race needs the second request to land inside the fade, and a test that waits
+// for that by luck is a test that passes for the wrong reason. No sign-in: these two
+// functions touch nothing but #progress and their own counter, and the less that is
+// running, the less can be in flight when the replay starts.
+//
+// This also pins the half its sibling only reports on - that a request outliving the
+// delay is drawn at all.
 func TestTheStripGoesAwayWhenARequestLandsDuringItsFade(t *testing.T) {
 	p := open(t)
-	p.readyAdmin()
 
 	// The counter has to start at zero, or progressStart sees a request already in
-	// flight, never arms the show timer, and the sequence below proves nothing.
+	// flight and takes an early return - and then the replay drives nothing while the
+	// other request's own fade hides the strip, which is a pass for entirely the wrong
+	// reason. The pre-fix code passes this test if that is allowed to happen.
 	p.atRest()
 
-	var hidden bool
+	// Two independent facts, kept apart. Collapsed into one boolean, "the strip was
+	// never drawn" is reported as "the strip never left", and the reader goes looking
+	// for the wrong fault.
+	var replay struct {
+		Shown  bool `json:"shown"`
+		Hidden bool `json:"hidden"`
+	}
 
+	// The waits are read out of the application rather than written here, so raising
+	// either constant cannot turn this into a failure blaming the other one.
 	p.run("replay the sequence", chromedp.Evaluate(`(async () => {
 		const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-		// Long enough for the strip to be put up rather than skipped.
+		// Comfortably past the delay, so the strip is put up rather than skipped.
 		progressStart();
-		await sleep(320);
+		await sleep(PROGRESS_DELAY_MS * 2 + 40);
 
 		const shown = !document.querySelector('#progress').hidden;
 
@@ -1472,19 +1489,20 @@ func TestTheStripGoesAwayWhenARequestLandsDuringItsFade(t *testing.T) {
 		progressStart();
 		progressDone();
 
-		// Longer than the fade, so a re-armed one has certainly run.
-		await sleep(760);
+		// Past the fade, so a re-armed one has certainly run.
+		await sleep(PROGRESS_FADE_MS + PROGRESS_DELAY_MS * 2 + 40);
 
-		const bar = document.querySelector('#progress');
+		return { shown, hidden: document.querySelector('#progress').hidden };
+	})()`, &replay, awaitPromise))
 
-		// shown is reported too: if the strip never appeared the rest proves
-		// nothing, and a silent pass would be worse than a failure.
-		return shown && bar.hidden;
-	})()`, &hidden, awaitPromise))
+	if !replay.Shown {
+		t.Fatal("the loading strip was never drawn for a request that outlived the " +
+			"delay, so the rest of this proves nothing")
+	}
 
-	if !hidden {
+	if !replay.Hidden {
 		t.Error("the loading strip is still on screen after a request that started " +
-			"during its fade and finished quickly; the counter is now permanently out " +
-			"of step with what is drawn")
+			"during its fade and finished quickly; the counter is out of step with what " +
+			"is drawn, and stays that way until something puts the strip up again")
 	}
 }
