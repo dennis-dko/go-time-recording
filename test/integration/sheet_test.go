@@ -340,6 +340,87 @@ func TestImportingPeopleChangesThemAndCreatesNothing(t *testing.T) {
 	}
 }
 
+// A time zone the machine does not know is refused in the preview.
+//
+// Getting one wrong moves somebody's hours between days rather than merely
+// displaying them oddly, so it is worth carrying in the sheet - and worth refusing
+// before anything is written, because nothing is written while any row is refused.
+func TestAnUnknownTimeZoneIsRefusedInThePreview(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	a.signInAsUser(admin, "Mika", "mika@example.com")
+
+	book, err := spreadsheet.WriteUsers("", []spreadsheet.UserRow{
+		{Name: "Mika", Email: "mika@example.com", Timezone: "Mars/Olympus_Mons"},
+	})
+	if err != nil {
+		t.Fatalf("building the workbook: %v", err)
+	}
+
+	preview, r := importSheet(t, admin, "/users/import", book, "true")
+	if !accepted(r.Status) {
+		t.Fatalf("previewing: status %d, body %.200q", r.Status, r.Body)
+	}
+
+	if preview.Rejected != 1 || preview.Writable != 0 {
+		t.Fatalf("preview says %d writable and %d refused, want 0 and 1: %+v",
+			preview.Writable, preview.Rejected, preview.Rows)
+	}
+
+	if len(preview.Rows) != 1 || !strings.Contains(preview.Rows[0].Problem, "time zone") {
+		t.Errorf("the reason given does not name the problem: %+v", preview.Rows)
+	}
+}
+
+// A known one goes through and is actually stored.
+func TestATimeZoneFromASheetIsStored(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	a.signInAsUser(admin, "Mika", "mika@example.com")
+
+	book, err := spreadsheet.WriteUsers("", []spreadsheet.UserRow{
+		{Name: "Mika", Email: "mika@example.com", Timezone: "Europe/Lisbon"},
+	})
+	if err != nil {
+		t.Fatalf("building the workbook: %v", err)
+	}
+
+	result, r := importSheet(t, admin, "/users/import", book, "false")
+	if !accepted(r.Status) {
+		t.Fatalf("importing: status %d, body %.300q", r.Status, r.Body)
+	}
+
+	if result.Imported != 1 {
+		t.Fatalf("wrote %d rows, want 1: %+v", result.Imported, result.Rows)
+	}
+
+	listed := admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK)
+
+	var people struct {
+		Items []struct {
+			Email    string `json:"email"`
+			Timezone string `json:"timezone"`
+		} `json:"items"`
+	}
+
+	listed.Data(t, &people)
+
+	for _, person := range people.Items {
+		if person.Email != "mika@example.com" {
+			continue
+		}
+
+		if person.Timezone != "Europe/Lisbon" {
+			t.Errorf("the time zone is %q after the import, want Europe/Lisbon",
+				person.Timezone)
+		}
+
+		return
+	}
+
+	t.Error("the account is not in the list any more")
+}
+
 // The system administrator can keep private categories and cannot create shared
 // projects, by import as by any other route.
 //

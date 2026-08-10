@@ -550,6 +550,20 @@ func (s *UserWorkbookService) PlanUsers(
 			continue
 		}
 
+		// The time zone is checked here rather than at the write for the same reason
+		// everything else is: nothing is written while any row is refused, so a bad
+		// zone found halfway through would fail the whole file after the preview had
+		// shown it as fine.
+		if zone := strings.TrimSpace(row.Timezone); zone != "" {
+			if _, err := time.LoadLocation(zone); err != nil {
+				plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: fmt.Sprintf(
+					"%q is not a time zone; use an IANA name such as Europe/Berlin",
+					zone)})
+
+				continue
+			}
+		}
+
 		plan.writable = append(plan.writable, plannedUser{row: row, id: person.ID})
 		plan.add(SheetRow{Number: row.Number, Cells: cells})
 	}
@@ -643,7 +657,9 @@ func (s *UserWorkbookService) ApplyUsers(ctx context.Context, plan *UserPlan) (i
 		}
 
 		if err := s.setTimezone(ctx, planned); err != nil {
-			return written, err
+			return written, apperror.Conflictf("row %d: %v; %d rows were written before it",
+				planned.row.Number, err, written).
+				WithCode("importStoppedAtRow", planned.row.Number, written)
 		}
 
 		written++
@@ -656,17 +672,13 @@ func (s *UserWorkbookService) ApplyUsers(ctx context.Context, plan *UserPlan) (i
 //
 // Targeted rather than through a whole-row update: writing the row back would race
 // with whatever else that account is doing and could undo it. Getting a time zone
-// wrong moves hours between days rather than merely displaying them oddly, so it is
-// worth having in the sheet at all.
+// wrong moves hours between days rather than merely displaying them oddly, which is
+// why it is worth having in the sheet at all - and why the name is checked in the
+// plan rather than here.
 func (s *UserWorkbookService) setTimezone(ctx context.Context, planned plannedUser) error {
 	zone := strings.TrimSpace(planned.row.Timezone)
 	if zone == "" {
 		return nil
-	}
-
-	if _, err := time.LoadLocation(zone); err != nil {
-		return apperror.Conflictf("row %d: %q is not a time zone", planned.row.Number, zone).
-			WithCode("importStoppedAtRow", planned.row.Number, 0)
 	}
 
 	return s.users.SetPreference(ctx, planned.id, repository.PreferenceTimezone, zone)
