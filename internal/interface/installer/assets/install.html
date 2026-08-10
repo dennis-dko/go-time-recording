@@ -80,36 +80,36 @@
 </head>
 <body>
 <main>
-  <h1 id="heading">Set up Time Recording</h1>
-  <p class="muted">
+  <h1 id="heading" data-i18n="title">Set up Time Recording</h1>
+  <p class="muted" data-i18n="intro">
     This installation has no database yet. Nothing can be stored, and nobody can
     sign in, until one is chosen here — so this is the first and only screen
     until it works.
   </p>
 
   <div class="card">
-    <h2>Setup token</h2>
-    <p class="muted">
+    <h2 data-i18n="token.title">Setup token</h2>
+    <p class="muted" data-i18n="token.text">
       Printed in this process's log when it started. It is asked for because
       until a database exists there is no account to authenticate against, and
       whoever completes this screen decides where the installation keeps its
       data.
     </p>
-    <label>Token
+    <label data-i18n="token.label">Token
       <input type="text" id="token" autocomplete="off" spellcheck="false" autofocus>
     </label>
   </div>
 
   <form class="card" id="form">
-    <h2>Database</h2>
-    <p class="muted">
+    <h2 data-i18n="db.title">Database</h2>
+    <p class="muted" data-i18n="db.text">
       The connection is tested before it is saved, so a typo is found here
       rather than at the next start.
     </p>
 
-    <label>Type
+    <label data-i18n="db.type">Type
       <select id="dialect">
-        <option value="sqlite">SQLite — a single file, no server needed</option>
+        <option value="sqlite" data-i18n="db.sqlite">SQLite — a single file, no server needed</option>
         <option value="postgres">PostgreSQL</option>
         <option value="mysql">MySQL / MariaDB</option>
       </select>
@@ -121,11 +121,11 @@
       </label>
 
       <div id="server-fields" hidden style="display:contents">
-        <label>Host<input type="text" id="host" autocomplete="off" spellcheck="false"></label>
-        <label>Port<input type="text" id="port" inputmode="numeric" autocomplete="off"></label>
-        <label>User<input type="text" id="user" autocomplete="off" spellcheck="false"></label>
-        <label>Password<input type="password" id="password" autocomplete="new-password"></label>
-        <label class="wide" id="ssl-label">SSL mode
+        <label data-i18n="db.host">Host<input type="text" id="host" autocomplete="off" spellcheck="false"></label>
+        <label data-i18n="db.port">Port<input type="text" id="port" inputmode="numeric" autocomplete="off"></label>
+        <label data-i18n="db.user">User<input type="text" id="user" autocomplete="off" spellcheck="false"></label>
+        <label data-i18n="db.password">Password<input type="password" id="password" autocomplete="new-password"></label>
+        <label class="wide" id="ssl-label" data-i18n="db.ssl">SSL mode
           <select id="sslMode">
             <option value="disable">disable</option>
             <option value="require">require</option>
@@ -137,8 +137,8 @@
     </div>
 
     <div class="row">
-      <button type="button" class="secondary" id="test">Test connection</button>
-      <button type="submit" id="save">Save and start</button>
+      <button type="button" class="secondary" id="test" data-i18n="action.test">Test connection</button>
+      <button type="submit" id="save" data-i18n="action.save">Save and start</button>
     </div>
 
     <p class="note" id="note" hidden></p>
@@ -150,10 +150,76 @@
 <script>
   const $ = (id) => document.getElementById(id);
 
+  /**
+   * The German the rest of the application already speaks.
+   *
+   * Its own copy rather than the main dictionary: this page runs before there is
+   * a database, so it cannot ask the server anything, and it is served as one
+   * self-contained file on purpose - the application's assets are not loaded yet.
+   *
+   * English is the fallback and lives in the markup, so a key nobody has
+   * translated still renders.
+   */
+  const DE = {
+    'title': 'Zeiterfassung einrichten',
+    'intro': 'Diese Installation hat noch keine Datenbank. Es kann nichts gespeichert '
+      + 'werden und niemand sich anmelden, bis hier eine gewählt ist — dies ist also der '
+      + 'erste und einzige Bildschirm, bis es funktioniert.',
+    'token.title': 'Einrichtungs-Token',
+    'token.text': 'Steht im Protokoll dieses Prozesses beim Start. Es wird verlangt, weil '
+      + 'es ohne Datenbank kein Konto gibt, gegen das geprüft werden könnte — und wer '
+      + 'diesen Bildschirm abschließt, entscheidet, wo die Installation ihre Daten hält.',
+    'token.label': 'Token',
+    'db.title': 'Datenbank',
+    'db.text': 'Die Verbindung wird vor dem Speichern getestet, damit ein Tippfehler hier '
+      + 'auffällt und nicht erst beim nächsten Start.',
+    'db.type': 'Typ',
+    'db.sqlite': 'SQLite — eine einzelne Datei, kein Server nötig',
+    'db.host': 'Host',
+    'db.port': 'Port',
+    'db.user': 'Benutzer',
+    'db.password': 'Passwort',
+    'db.ssl': 'SSL-Modus',
+    'action.test': 'Verbindung testen',
+    'action.save': 'Speichern und starten',
+    'name.sqlite': 'Datenbankname — eine Datei, wird angelegt, falls sie fehlt',
+    'name.server': 'Datenbankname — muss bereits existieren',
+    'msg.testing': 'Wird getestet …',
+    'msg.works': 'Die Verbindung funktioniert.',
+    'msg.saving': 'Wird gespeichert …',
+    'msg.saved': 'Gespeichert. Die Anwendung startet — diese Seite lädt neu, sobald sie '
+      + 'antwortet.',
+    'msg.slow': 'Die Anwendung ist nach zwei Minuten nicht erreichbar. Bitte das Protokoll '
+      + 'dieses Prozesses prüfen.',
+  };
+
+  // The browser's own preference, which is the only thing there is to go on: no
+  // session, no stored choice, no server to ask.
+  const german = (navigator.languages || [navigator.language || 'en'])
+    .some((tag) => String(tag).toLowerCase().startsWith('de'));
+
+  const t = (key, fallback) => (german && DE[key]) || fallback;
+
+  if (german) {
+    document.documentElement.lang = 'de';
+
+    for (const node of document.querySelectorAll('[data-i18n]')) {
+      const translated = DE[node.dataset.i18n];
+      if (!translated) continue;
+
+      // The first text node, so a label keeps the input that follows it.
+      if (node.firstChild && node.firstChild.nodeType === Node.TEXT_NODE) {
+        node.firstChild.textContent = translated;
+      } else {
+        node.textContent = translated;
+      }
+    }
+  }
+
   // A SQLite "name" is a file path and a server "name" is a database; the same
   // field means different things and has to say so.
-  const SQLITE_HINT = 'Database name — a file, created if it does not exist';
-  const SERVER_HINT = 'Database name — must already exist';
+  const SQLITE_HINT = t('name.sqlite', 'Database name — a file, created if it does not exist');
+  const SERVER_HINT = t('name.server', 'Database name — must already exist');
 
   // Prefilled from the link in the log, if that is how this page was opened.
   // Also kept out of the address bar afterwards, so the token does not sit in
@@ -288,11 +354,11 @@
 
   $('test').addEventListener('click', async () => {
     busy(true);
-    say('Testing…');
+    say(t('msg.testing', 'Testing…'));
 
     try {
       await call('/install/test');
-      say('The connection works.', 'good');
+      say(t('msg.works', 'The connection works.'), 'good');
     } catch (err) {
       say(err.message, 'bad');
     } finally {
@@ -303,11 +369,12 @@
   $('form').addEventListener('submit', async (event) => {
     event.preventDefault();
     busy(true);
-    say('Saving…');
+    say(t('msg.saving', 'Saving…'));
 
     try {
       await call('/install/save');
-      say('Saved. The application is starting — this page will reload when it answers.', 'good');
+      say(t('msg.saved',
+        'Saved. The application is starting — this page will reload when it answers.'), 'good');
       waitForTheApplication();
     } catch (err) {
       say(err.message, 'bad');
@@ -358,7 +425,8 @@
 
       if (attempts > 120) {
         clearInterval(tick);
-        say('The application has not come up after two minutes. Check this process\'s log.', 'bad');
+        say(t('msg.slow',
+          'The application has not come up after two minutes. Check this process\'s log.'), 'bad');
       }
     }, 1000);
   }

@@ -94,3 +94,50 @@ func TestTheWaitLoopDistinguishesTheApplicationFromTheInstaller(t *testing.T) {
 		t.Error("the loop never reloads the page")
 	}
 }
+
+// The installer speaks the browser's language.
+//
+// It is the first screen anybody sees and it was English only, on a German
+// machine with a German browser - which reads as software that was not meant for
+// you. It cannot ask the server which language to use, because there is no
+// database yet and no session; the browser's own preference is all there is.
+func TestTheInstallerFollowsTheBrowserLanguage(t *testing.T) {
+	page, err := assets.ReadFile("assets/install.html")
+	if err != nil {
+		t.Fatalf("reading the installer page: %v", err)
+	}
+
+	markup := string(page)
+
+	if !strings.Contains(markup, "navigator.languages") {
+		t.Error("the installer never looks at what language the browser asks for")
+	}
+
+	// Every piece of static text it shows has to be reachable by a key, or the
+	// German pass leaves half the page in English - which is worse than all of it.
+	for _, key := range []string{
+		"title", "intro", "token.title", "token.text", "db.title", "db.text",
+		"action.test", "action.save",
+	} {
+		if !strings.Contains(markup, `data-i18n="`+key+`"`) {
+			t.Errorf("no element carries the key %q", key)
+		}
+
+		if !strings.Contains(markup, `'`+key+`':`) {
+			t.Errorf("the German dictionary has no entry for %q", key)
+		}
+	}
+
+	// And the messages it writes while working, which are not in the markup.
+	for _, key := range []string{"msg.testing", "msg.works", "msg.saving", "msg.saved"} {
+		if !strings.Contains(markup, `t('`+key+`'`) {
+			t.Errorf("the message %q is not looked up", key)
+		}
+	}
+
+	// English stays in the markup as the fallback, so a key nobody translated
+	// still renders something.
+	if !strings.Contains(markup, ">Set up Time Recording</h1>") {
+		t.Error("the English original is gone from the markup, so there is no fallback")
+	}
+}

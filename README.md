@@ -925,6 +925,13 @@ interface, the timezone database and the migrations are all compiled in, so
 downloading one and running it is a complete installation — it serves the
 installer until it has a database.
 
+What the installer cannot ask for — the port, TLS, the log level, the session
+lifetime, the rate limit — comes from the environment or from a `.env` beside the
+binary. [`deploy/.env.example`](deploy/.env.example) lists every variable with its
+default; the release notes point at it too, because that is the moment somebody
+needs it. Settings the interface can change live in the database and are not read
+from there.
+
 Cross-compiled from a single runner, which works because there is no cgo anywhere
 in the tree: the SQLite driver is modernc's pure-Go one, so `GOOS` and `GOARCH`
 are all it takes. The same `-ldflags` as the image, so a downloaded binary reports
