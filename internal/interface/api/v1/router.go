@@ -25,6 +25,7 @@ type Handlers struct {
 	Timers     *rest.TimerHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
+	Sheets     *rest.SheetHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -121,6 +122,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.DELETE(base+"/me/tokens/{id}", h.Tokens.Revoke)
 	app.GET(base+"/overtime", h.Me.TeamOvertime)
 
+	// Ahead of the {id} routes for the same reason the timesheet pair below is:
+	// "export" is not an id, and this router matches the first pattern that fits.
+	app.GET(base+"/users/export", h.Sheets.ExportUsers)
+	app.POST(base+"/users/import", h.Sheets.ImportUsers)
+
 	app.GET(base+"/users", h.Users.List)
 	app.GET(base+"/users/{id}", h.Users.Get)
 	app.POST(base+"/users", h.Users.Create)
@@ -136,6 +142,9 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/roles/{id}", h.Roles.Update)
 	app.DELETE(base+"/roles/{id}", h.Roles.Delete)
 	app.GET(base+"/permissions", h.Roles.Permissions)
+
+	app.GET(base+"/projects/export", h.Sheets.ExportProjects)
+	app.POST(base+"/projects/import", h.Sheets.ImportProjects)
 
 	app.GET(base+"/projects", h.Projects.List)
 	app.GET(base+"/projects/{id}", h.Projects.Get)

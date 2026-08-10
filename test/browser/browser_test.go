@@ -324,6 +324,75 @@ func (p *page) text(selector string) string {
 	return strings.TrimSpace(out)
 }
 
+// atRest waits until nothing is in flight and the loading strip has been put away.
+//
+// Necessary because the screen has just been filled. A strip showing while a request
+// really is in flight is the strip doing its job, so asserting "nothing is loading"
+// straight after a reload asserts it about a page that is still loading - and it
+// passed or failed on how fast the last request happened to be. It failed in CI
+// exactly that way.
+//
+// The invariant worth holding is the one this waits for: no requests outstanding and
+// nothing drawn. When it cannot be reached the counter is reported alongside, because
+// zero in flight with a strip still on screen is a different fault from a request
+// that never came back.
+func (p *page) atRest() {
+	p.t.Helper()
+
+	// progress is a top-level const, so it is reachable by bare name but is not a
+	// property of window. Checked once, so an unreachable counter reads as itself
+	// rather than as a ReferenceError from somewhere inside chromedp.
+	var kind string
+
+	p.run("look for the progress counter", chromedp.Evaluate(`typeof progress`, &kind))
+
+	if kind != "object" {
+		p.t.Fatalf("the progress counter is not reachable from the page (typeof is %q); "+
+			"this helper cannot tell a loading page from a stuck one", kind)
+	}
+
+	deadline := time.Now().Add(15 * time.Second)
+
+	for time.Now().Before(deadline) {
+		var idle bool
+
+		p.run("check for requests in flight",
+			chromedp.Evaluate(`progress.inFlight === 0`, &idle))
+
+		// The fade is allowed to outlive the last request by its own length, so the
+		// strip is given until it has gone rather than checked the instant the
+		// counter reaches zero.
+		if idle && !p.visible("#progress") {
+			return
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	var inFlight int
+
+	p.run("read the counter", chromedp.Evaluate(`progress.inFlight`, &inFlight))
+
+	p.t.Fatalf("the page never came to rest: %d request(s) in flight, strip visible: %v"+
+		"\n\napplication log:\n%s", inFlight, p.visible("#progress"), p.app.Log())
+}
+
+// count is how many elements match, which text cannot answer.
+//
+// For the things the interface builds per row: a checkbox column derived from the
+// rows is right or wrong by the number of checkboxes in it, and reading the table's
+// text says nothing about that at all.
+func (p *page) count(selector string) int {
+	p.t.Helper()
+
+	var out int
+
+	p.run("count "+selector, chromedp.Evaluate(fmt.Sprintf(
+		`document.querySelectorAll(%q).length`, selector), &out))
+
+	return out
+}
+
 // attr reads an attribute as the browser currently has it, which is not always
 // what the markup said: the reveal button changes an input's type in place.
 func (p *page) attr(selector, name string) string {

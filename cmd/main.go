@@ -427,6 +427,8 @@ func main() {
 	// to enforce the rules the API enforces, and the only way to be sure of that is
 	// to call them.
 	workbook := appservice.NewWorkbookService(timesheetRepo, userRepo, projectRepo, timesheets)
+	projectSheets := appservice.NewProjectWorkbookService(projects)
+	userSheets := appservice.NewUserWorkbookService(userRepo, roleRepo, users)
 
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
 	projectDomain := domainservice.NewProjectDomainService(projectRepo, timesheetRepo)
@@ -557,6 +559,7 @@ func main() {
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),
+		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, authorizer),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
 			// What the device's prompt calls this installation. The
 			// administered title if there is one, so a person sees the name

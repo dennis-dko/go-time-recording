@@ -1,4 +1,4 @@
-// Package spreadsheet writes and reads the workbook of time entries.
+// Package spreadsheet writes and reads the workbooks the application exchanges.
 //
 // One package for both directions on purpose: the column order, the headings and
 // how a date and an hour figure are written are the same knowledge either way, and
@@ -22,11 +22,12 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// sheetName is the one worksheet the workbook has.
-//
-// Named rather than left as "Sheet1" so a file that has been through Excel and
-// back is still recognisable, and so the importer can say which sheet it read.
-const sheetName = "Time entries"
+// timesheets is the sheet of time entries.
+var timesheets = Table{
+	Key:      "Time entries",
+	Headings: []string{"Date", "User", "Project", "Hours", "Description"},
+	Widths:   []float64{12, 22, 22, 9, 48},
+}
 
 // Row is one time entry, in the form the workbook holds it.
 //
@@ -45,11 +46,14 @@ type Row struct {
 	Description string
 }
 
-// Columns are the headings, in order. Exported because the interface shows the
-// same names in its preview, and two lists would drift.
-func Columns() []string {
-	return []string{"Date", "User", "Project", "Hours", "Description"}
-}
+// Columns are the headings, in order, in English.
+func Columns() []string { return ColumnsIn("") }
+
+// ColumnsIn are the headings in one language.
+//
+// Exported because the interface shows the same names above its import preview,
+// and two lists would drift.
+func ColumnsIn(language string) []string { return headingsIn(language, timesheets) }
 
 // dateFormat is how a date is written and read.
 //
@@ -60,143 +64,25 @@ func Columns() []string {
 // readings are valid. Text is unambiguous in every locale.
 const dateFormat = "2006-01-02"
 
-// Write builds the workbook.
-func Write(rows []Row) ([]byte, error) {
-	book := excelize.NewFile()
+// Write builds the workbook in English.
+func Write(rows []Row) ([]byte, error) { return WriteIn("", rows) }
 
-	defer func() {
-		// The library holds a temporary file per workbook on large sheets, so it
-		// has to be closed whatever happens.
-		_ = book.Close()
-	}()
+// WriteIn builds the workbook with its headings in one language.
+func WriteIn(language string, rows []Row) ([]byte, error) {
+	cells := make([][]Cell, 0, len(rows))
 
-	index, err := book.NewSheet(sheetName)
-	if err != nil {
-		return nil, fmt.Errorf("creating the sheet: %w", err)
+	for _, row := range rows {
+		cells = append(cells, []Cell{
+			Text(row.Date.Format(dateFormat)),
+			Text(row.User),
+			Text(row.Project),
+			// Hours as a number: it is what lets somebody total a column in Excel.
+			Number(row.Hours),
+			Text(row.Description),
+		})
 	}
 
-	book.SetActiveSheet(index)
-
-	// The default sheet the library starts with, which would otherwise sit beside
-	// ours as an empty one somebody has to wonder about.
-	if err := book.DeleteSheet("Sheet1"); err != nil {
-		return nil, fmt.Errorf("removing the default sheet: %w", err)
-	}
-
-	if err := writeHeading(book); err != nil {
-		return nil, err
-	}
-
-	for i, row := range rows {
-		// Row 1 is the heading, so the first entry is row 2.
-		if err := writeRow(book, i+2, row); err != nil {
-			return nil, err
-		}
-	}
-
-	// Wide enough to read without dragging every column open. Descriptions are
-	// the long ones and get the most room; nothing is truncated either way, this
-	// only decides what is visible on opening.
-	for column, width := range map[string]float64{
-		"A": 12, "B": 22, "C": 22, "D": 9, "E": 48,
-	} {
-		if err := book.SetColWidth(sheetName, column, column, width); err != nil {
-			return nil, fmt.Errorf("setting the width of column %s: %w", column, err)
-		}
-	}
-
-	// The heading stays visible while scrolling, which is what makes a long export
-	// readable at all.
-	if err := book.SetPanes(sheetName, &excelize.Panes{
-		Freeze: true, Split: false, XSplit: 0, YSplit: 1,
-		TopLeftCell: "A2", ActivePane: "bottomLeft",
-	}); err != nil {
-		return nil, fmt.Errorf("freezing the heading: %w", err)
-	}
-
-	buffer, err := book.WriteToBuffer()
-	if err != nil {
-		return nil, fmt.Errorf("writing the workbook: %w", err)
-	}
-
-	return buffer.Bytes(), nil
-}
-
-func writeHeading(book *excelize.File) error {
-	bold, err := book.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
-	if err != nil {
-		return fmt.Errorf("creating the heading style: %w", err)
-	}
-
-	for i, heading := range Columns() {
-		cell, cellErr := excelize.CoordinatesToCellName(i+1, 1)
-		if cellErr != nil {
-			return fmt.Errorf("naming a heading cell: %w", cellErr)
-		}
-
-		if err := book.SetCellStr(sheetName, cell, heading); err != nil {
-			return fmt.Errorf("writing the heading %q: %w", heading, err)
-		}
-
-		if err := book.SetCellStyle(sheetName, cell, cell, bold); err != nil {
-			return fmt.Errorf("styling the heading %q: %w", heading, err)
-		}
-	}
-
-	return nil
-}
-
-func writeRow(book *excelize.File, number int, row Row) error {
-	// Hours as a number, everything else as text. The number matters: it is what
-	// lets somebody total a column in Excel, which is most of the reason to want
-	// a spreadsheet rather than a list.
-	values := []struct {
-		text   string
-		number *float64
-	}{
-		{text: row.Date.Format(dateFormat)},
-		{text: row.User},
-		{text: row.Project},
-		{number: &row.Hours},
-		{text: row.Description},
-	}
-
-	for i, value := range values {
-		cell, err := excelize.CoordinatesToCellName(i+1, number)
-		if err != nil {
-			return fmt.Errorf("naming a cell in row %d: %w", number, err)
-		}
-
-		if value.number != nil {
-			if err := book.SetCellFloat(sheetName, cell, *value.number, 2, 64); err != nil {
-				return fmt.Errorf("writing row %d: %w", number, err)
-			}
-
-			continue
-		}
-
-		if err := book.SetCellStr(sheetName, cell, value.text); err != nil {
-			return fmt.Errorf("writing row %d: %w", number, err)
-		}
-	}
-
-	return nil
-}
-
-// ErrNoSheet is returned for a workbook with nothing this can read.
-var ErrNoSheet = errors.New("the workbook has no readable sheet")
-
-// RowError is one row that could not be understood.
-//
-// Kept per row rather than failing the file, so somebody who typed one date wrong
-// in eighty rows is told which one rather than being told no.
-type RowError struct {
-	Number int
-	Reason string
-}
-
-func (e RowError) Error() string {
-	return fmt.Sprintf("row %d: %s", e.Number, e.Reason)
+	return write(timesheets, language, cells)
 }
 
 // Read parses a workbook back into rows.
@@ -205,40 +91,20 @@ func (e RowError) Error() string {
 // pass: the caller decides whether a file with problems in it is worth writing, and
 // cannot decide that from the first failure alone.
 func Read(r io.Reader) ([]Row, []RowError, error) {
-	book, err := excelize.OpenReader(r)
+	raw, err := read(r, timesheets)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading the workbook: %w", err)
-	}
-
-	defer func() { _ = book.Close() }()
-
-	sheet := readableSheet(book)
-	if sheet == "" {
-		return nil, nil, ErrNoSheet
-	}
-
-	raw, err := book.GetRows(sheet)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading the sheet %q: %w", sheet, err)
-	}
-
-	if len(raw) == 0 {
-		return nil, nil, ErrNoSheet
+		return nil, nil, err
 	}
 
 	rows := make([]Row, 0, len(raw))
 	problems := make([]RowError, 0)
 
-	// Row 1 is the heading. Skipped by position rather than by matching its text:
-	// a heading somebody has translated is still a heading, and refusing the file
-	// over it would be worse than ignoring one row.
-	for i := 1; i < len(raw); i++ {
-		number := i + 1
+	for i, cells := range raw {
+		// The heading was row 1 and has been dropped, so the first data row is 2.
+		number := i + 2
 
-		row, rowErr := parseRow(number, raw[i])
+		row, rowErr := parseRow(number, cells)
 		if rowErr != nil {
-			// A row that is entirely empty is not a mistake - a spreadsheet
-			// somebody has scrolled through has plenty of those at the bottom.
 			if errors.Is(rowErr, errBlankRow) {
 				continue
 			}
@@ -254,53 +120,19 @@ func Read(r io.Reader) ([]Row, []RowError, error) {
 	return rows, problems, nil
 }
 
-// readableSheet picks the sheet to read.
-//
-// Ours by name when it is there, so a workbook that also holds somebody's notes is
-// read correctly; otherwise the first one, because a file assembled by hand in
-// Excel has whatever name Excel gave it.
-func readableSheet(book *excelize.File) string {
-	for _, name := range book.GetSheetList() {
-		if strings.EqualFold(name, sheetName) {
-			return name
-		}
-	}
-
-	if list := book.GetSheetList(); len(list) > 0 {
-		return list[0]
-	}
-
-	return ""
-}
-
-// errBlankRow marks a row with nothing in it, which is skipped rather than
-// reported.
-var errBlankRow = errors.New("blank")
-
 func parseRow(number int, cells []string) (Row, error) {
-	// Short rows are normal: Excel does not pad a row out to the last column that
-	// has a heading, so a row with no description is three cells long.
-	value := func(i int) string {
-		if i >= len(cells) {
-			return ""
-		}
+	value := cellReader(cells)
 
-		return strings.TrimSpace(cells[i])
-	}
-
-	date, user, project := value(0), value(1), value(2)
-	hours, description := value(3), value(4)
-
-	if date == "" && user == "" && project == "" && hours == "" && description == "" {
+	if blank(value, len(timesheets.Headings)) {
 		return Row{}, errBlankRow
 	}
 
-	parsedDate, err := parseDate(date)
+	parsedDate, err := parseDate(value(0))
 	if err != nil {
 		return Row{}, err
 	}
 
-	parsedHours, err := parseHours(hours)
+	parsedHours, err := parseHours(value(3))
 	if err != nil {
 		return Row{}, err
 	}
@@ -308,14 +140,14 @@ func parseRow(number int, cells []string) (Row, error) {
 	return Row{
 		Number:      number,
 		Date:        parsedDate,
-		User:        user,
-		Project:     project,
+		User:        value(1),
+		Project:     value(2),
 		Hours:       parsedHours,
-		Description: description,
+		Description: value(4),
 	}, nil
 }
 
-// parseDate reads the date column.
+// parseDate reads a date column.
 //
 // ISO first, because that is what this application writes. The other two forms are
 // what Excel leaves behind when somebody types into the cell: the German order,
@@ -326,9 +158,20 @@ func parseDate(raw string) (time.Time, error) {
 		return time.Time{}, errors.New("the date is missing")
 	}
 
+	if parsed, ok := parseOptionalDate(raw); ok {
+		return parsed, nil
+	}
+
+	return time.Time{}, fmt.Errorf("%q is not a date the importer understands "+
+		"(use YYYY-MM-DD)", raw)
+}
+
+// parseOptionalDate is parseDate for a column that may be empty, which returns
+// the zero time and no complaint.
+func parseOptionalDate(raw string) (time.Time, bool) {
 	for _, layout := range []string{dateFormat, "02.01.2006", "01/02/2006", time.RFC3339} {
 		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed, nil
+			return parsed, true
 		}
 	}
 
@@ -336,15 +179,14 @@ func parseDate(raw string) (time.Time, error) {
 	// so the epoch setting is honoured rather than assumed.
 	if serial, err := strconv.ParseFloat(raw, 64); err == nil {
 		if converted, convErr := excelize.ExcelDateToTime(serial, false); convErr == nil {
-			return converted, nil
+			return converted, true
 		}
 	}
 
-	return time.Time{}, fmt.Errorf("%q is not a date the importer understands "+
-		"(use YYYY-MM-DD)", raw)
+	return time.Time{}, false
 }
 
-// parseHours reads the hours column, in either decimal convention.
+// parseHours reads an hours column, in either decimal convention.
 //
 // A comma is what a German keyboard produces and what German Excel writes, and
 // reading "6,50" as nothing would reject a file that is plainly correct. Neither
