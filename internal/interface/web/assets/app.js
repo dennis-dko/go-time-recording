@@ -1536,6 +1536,16 @@ async function loadMe() {
 
   applyLanguage(activeLanguage());
   applyPermissionVisibility();
+
+  // Here rather than in loadAdmin, which is where it used to be: that runs at the end
+  // of a chain of requests, so a single refusal earlier in the chain left the tab
+  // hidden and the Settings screen unreachable. While the initial password still
+  // stands the server refuses most of the API, which is exactly when an administrator
+  // is most likely to be looking for it.
+  //
+  // Not a data-perm, because it is not a permission: the Settings screen belongs to
+  // the built-in account rather than to a right somebody can be granted.
+  $('#tab-admin').hidden = !isSystemAdmin();
   renderTOTPState();
 }
 
@@ -2250,7 +2260,8 @@ async function loadBranding() {
 }
 
 async function loadAdmin() {
-  $('#tab-admin').hidden = !isSystemAdmin();
+  // The tab is shown as soon as who is signed in is known, which is not here - see
+  // refreshMe. This only decides whether there is anything to load.
   if (!isSystemAdmin()) return;
 
   await loadMaintenance();
