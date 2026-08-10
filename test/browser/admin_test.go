@@ -1428,3 +1428,56 @@ func TestTheLoadingStripAppearsAndGoesAgain(t *testing.T) {
 		t.Error("the loading strip stayed on screen after a failed request")
 	}
 }
+
+// The strip goes away when a request starts during its fade and finishes quickly.
+//
+// This is the sequence that left it on screen for as long as the page was open:
+//
+//	a slow request is shown, finishes, and starts fading out;
+//	inside those 460ms another request starts, which cancels the fade;
+//	that one finishes before it was itself worth showing.
+//
+// Dropping the pending "show it" was only half the job - nothing re-armed the fade.
+// Invisible, because the inner span had already faded, but present, and the counter
+// was then permanently out of step with the screen.
+//
+// Driven through progressStart and progressDone rather than real requests, because
+// the race needs the second request to land inside a 460ms window and a test that
+// waits for that to happen by luck is a test that passes for the wrong reason.
+func TestTheStripGoesAwayWhenARequestLandsDuringItsFade(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	var hidden bool
+
+	p.run("replay the sequence", chromedp.Evaluate(`(async () => {
+		const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+		// Long enough for the strip to be put up rather than skipped.
+		progressStart();
+		await sleep(320);
+
+		const shown = !document.querySelector('#progress').hidden;
+
+		// Finishing starts the fade; a new request lands inside it and finishes
+		// before it is itself worth showing.
+		progressDone();
+		progressStart();
+		progressDone();
+
+		// Longer than the fade, so a re-armed one has certainly run.
+		await sleep(760);
+
+		const bar = document.querySelector('#progress');
+
+		// shown is reported too: if the strip never appeared the rest proves
+		// nothing, and a silent pass would be worse than a failure.
+		return shown && bar.hidden;
+	})()`, &hidden, awaitPromise))
+
+	if !hidden {
+		t.Error("the loading strip is still on screen after a request that started " +
+			"during its fade and finished quickly; the counter is now permanently out " +
+			"of step with what is drawn")
+	}
+}

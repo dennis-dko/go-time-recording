@@ -90,18 +90,33 @@ function progressDone() {
 
   if (progress.inFlight > 0) return;
 
-  // Finished before it was ever shown, which is the common case.
+  // Nothing is waiting any more, so a pending "show it" is dropped: this is the
+  // common case, a request that finished before it was worth mentioning.
   if (progress.showTimer) {
     clearTimeout(progress.showTimer);
     progress.showTimer = null;
-
-    return;
   }
 
+  // Deliberately not a `return` above. The strip could still be on screen from an
+  // earlier request, and then dropping the show timer is only half the job:
+  //
+  //   a slow request is shown, finishes, and starts fading out;
+  //   inside those 460ms another request starts, which cancels the fade;
+  //   that one finishes quickly, before it was itself worth showing.
+  //
+  // The fade had been cancelled and nothing re-armed it, so the strip stayed on
+  // screen for as long as the page was open - invisible, because the inner span
+  // had already faded, but present. A browser test caught it as "showing with no
+  // request in flight", which is exactly what it was.
   const bar = $('#progress');
   if (!bar || bar.hidden) return;
 
   bar.classList.add('done');
+
+  // One timer, not a queue of them: without this, each cycle leaves another
+  // pending callback that can hide a strip a later request has just put up.
+  clearTimeout(progress.hideTimer);
+
   progress.hideTimer = setTimeout(() => {
     // Only if nothing started again while it was fading out.
     if (progress.inFlight === 0) bar.hidden = true;
