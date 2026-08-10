@@ -41,6 +41,21 @@ function readCookie(name) {
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
+ * How long a read may hang before this side gives up on it.
+ *
+ * A request that never comes back holds the in-flight counter above zero for as
+ * long as the connection lives, and nothing recovers from that on its own: the
+ * loading strip stays up, and every screen that was waiting on the answer waits
+ * for ever. The browser does eventually drop a dead connection, but "eventually"
+ * is minutes of a page that looks broken.
+ *
+ * Generous on purpose. This is meant to catch a server that has stopped
+ * answering, not a query that is merely slow - the slowest real read here is a
+ * long period of entries, which is seconds.
+ */
+const READ_TIMEOUT_MS = 60000;
+
+/**
  * Calls the API and unwraps GoFr's {data, error} envelope.
  *
  * State-changing calls echo the CSRF cookie back in a header. Another site can
@@ -145,6 +160,18 @@ async function api(path, options = {}) {
     headers['X-CSRF-Token'] = readCookie('gtr_csrf');
   }
 
+  // Reads only, and this is the whole reason the distinction is drawn here.
+  //
+  // Aborting in the browser does not stop the server: it finishes the work either
+  // way. Giving up on a write would therefore report a failure for something that
+  // succeeded - and somebody would do it again, which for an import means writing
+  // every row twice. A read costs nothing but a second attempt.
+  //
+  // A caller that brought its own signal keeps it: it has a reason of its own for
+  // wanting to cancel, and two things aborting one request cannot both be right.
+  const giveUp = SAFE_METHODS.has(method) && !options.signal ? new AbortController() : null;
+  const countdown = giveUp ? setTimeout(() => giveUp.abort(), READ_TIMEOUT_MS) : null;
+
   progressStart();
 
   let res;
@@ -153,10 +180,24 @@ async function api(path, options = {}) {
     res = await fetch(API + path, {
       ...options,
       headers,
+      signal: giveUp ? giveUp.signal : options.signal,
       // Without this a cross-origin deployment would drop the cookies entirely.
       credentials: 'same-origin',
     });
+  } catch (err) {
+    // Only our own abort is reported as a timeout. A caller's signal firing is
+    // their business, and "the server did not answer" would be a lie about it.
+    if (giveUp?.signal.aborted) {
+      throw new Error(t('msg.tooSlow',
+        'The server did not answer in time. Please try again.'));
+    }
+
+    throw err;
   } finally {
+    // Cleared whatever happened, so a fast request does not leave a timer holding
+    // a controller it has no further use for.
+    clearTimeout(countdown);
+
     // In a finally, so a refused connection does not leave the strip running for
     // as long as the page is open.
     progressDone();
@@ -1055,6 +1096,7 @@ const TRANSLATIONS = {
     'err.importEmpty': 'Die Datei enthält nichts zu importieren.',
     'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
+    'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
     'err.wrongWorkbook': 'Diese Datei enthält etwas anderes – vermutlich der Export einer '
       + 'anderen Tabelle.',
