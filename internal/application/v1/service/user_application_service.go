@@ -72,9 +72,6 @@ func (s *UserApplicationService) CreateUser(
 	// could be created with a negative daily target that no later edit was
 	// required to fix, and every overtime balance computed from it would be
 	// wrong in a direction nobody would think to question.
-	if err := validateWorkingTimes(cmd.DailyTargetHours, cmd.MaxDailyHours); err != nil {
-		return nil, err
-	}
 
 	role, err := s.resolveRole(ctx, cmd.Role)
 	if err != nil {
@@ -102,8 +99,11 @@ func (s *UserApplicationService) CreateUser(
 		RoleID:             role.ID,
 		PasswordHash:       hash,
 		MustChangePassword: mustChange,
-		DailyTargetHours:   cmd.DailyTargetHours,
-		MaxDailyHours:      cmd.MaxDailyHours,
+		// Zero, which the reader resolves to the instance default. A new account
+		// starts on what the installation is configured for; its owner changes it
+		// afterwards, and nobody else can.
+		DailyTargetHours: 0,
+		MaxDailyHours:    0,
 	})
 	if err != nil {
 		return nil, err
@@ -192,19 +192,13 @@ func (s *UserApplicationService) UpdateUser(
 		existingUser.RoleID = role.ID
 	}
 
-	if cmd.DailyTargetHours != nil {
-		existingUser.DailyTargetHours = *cmd.DailyTargetHours
-	}
-
-	if cmd.MaxDailyHours != nil {
-		existingUser.MaxDailyHours = *cmd.MaxDailyHours
-	}
-
+	// The daily target and the ceiling are deliberately not here. They are time
+	// figures and belong to whoever they are about, who sets them through
+	// UpdateWorkingTimes - the one path that asks whose account it is.
+	//
+	// They used to be writable here too, on users:write alone, which made the right
+	// that was supposed to guard them one lock on a door with three ways in.
 	if err := validateUser(existingUser.Name, existingUser.Email); err != nil {
-		return nil, err
-	}
-
-	if err := validateWorkingTimes(existingUser.DailyTargetHours, existingUser.MaxDailyHours); err != nil {
 		return nil, err
 	}
 

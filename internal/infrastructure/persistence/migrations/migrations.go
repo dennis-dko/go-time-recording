@@ -73,7 +73,37 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260810030000: {UP: func(d migration.Datasource) error {
 			return retireTheSeparateReportRight(d, dialect)
 		}},
+		20260810040000: {UP: func(d migration.Datasource) error {
+			return handWorkingTimesToTheirOwners(d, dialect)
+		}},
 	}
+}
+
+// handWorkingTimesToTheirOwners withdraws settings:write:other from every role.
+//
+// A daily target and a daily ceiling are time figures, and everything to do with time
+// belongs to the person it is about. The right existed so this installation's
+// administrator could set them for somebody else, and the reason that does not work is
+// the arrangement itself: the administrator cannot read that person's entries, their
+// balance or their figures. Setting a number whose effect is invisible to you is not
+// administration, and the number's only consumer is an overtime balance nobody but its
+// owner may see.
+//
+// It was not the lock it looked like either. The same two fields were writable through
+// PUT /users/{id} and through the spreadsheet import, both of which check only
+// users:write - so the right guarded one of three doors. All three are closed now, and
+// the one that remains asks whose account it is.
+//
+// Nothing is lost by withdrawing it. The instance-wide default under Settings is what
+// a new account gets, and its owner changes it from there.
+func handWorkingTimesToTheirOwners(d migration.Datasource, dialect string) error {
+	if _, err := d.SQL.Exec(
+		sqldb.Rebind(dialect, "DELETE FROM role_permissions WHERE permission = ?"),
+		"settings:write:other"); err != nil {
+		return fmt.Errorf("withdrawing the right to set somebody else's working times: %w", err)
+	}
+
+	return nil
 }
 
 // retireTheSeparateReportRight withdraws reports:read from every role.

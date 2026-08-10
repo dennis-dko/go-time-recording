@@ -25,8 +25,16 @@ type UserResult struct {
 	Timezone    string
 	TourSeen    bool
 
-	// Effective working times, with the defaults already applied so callers
-	// do not have to know the fallback rules.
+	// Working times as this account has them, which is zero for one that has not
+	// chosen: zero means "follow the instance default", and the interface shows it as
+	// "default" rather than as no hours at all.
+	//
+	// Deliberately not resolved here, though the comment used to claim it was. A
+	// resolved value cannot be told apart from a deliberate one, so somebody who set
+	// eight hours and somebody who set nothing would look identical - and the screen
+	// would offer to clear a figure that was never there. What reads them resolves
+	// them: the overtime balance through EffectiveDailyTarget, the daily ceiling
+	// through the stricter of this and the installation's.
 	DailyTargetHours float64
 	MaxDailyHours    float64
 }

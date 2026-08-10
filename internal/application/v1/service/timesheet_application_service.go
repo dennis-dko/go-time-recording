@@ -299,7 +299,11 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 	hours float64,
 	excludeID uint,
 ) error {
-	limit := s.dailyCap(ctx)
+	limit, err := s.dailyLimitFor(ctx, userID)
+	if err != nil {
+		return err
+	}
+
 	if limit <= 0 {
 		return nil
 	}
@@ -307,13 +311,13 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 	from := startOfDay(day)
 	to := from.AddDate(0, 0, 1).Add(-time.Nanosecond)
 
-	sameDay, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
+	sameDay, filterErr := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
 		UserID:    userID,
 		StartDate: &from,
 		EndDate:   &to,
 	})
-	if err != nil {
-		return err
+	if filterErr != nil {
+		return filterErr
 	}
 
 	total := hours
@@ -367,6 +371,40 @@ func validateTimesheet(date time.Time, hours float64, description *string) error
 }
 
 // dailyCap is the administered booking limit, or the one the environment set.
+// dailyLimitFor is how many hours this person may book on one day.
+//
+// The stricter of two numbers, and both are meant: the installation's ceiling is
+// configuration, which the administrator owns, and the personal one is a time figure,
+// which belongs to whoever it is about. Taking the lower lets somebody hold their own
+// day shorter than the installation allows without letting them raise it past what the
+// installation allows - which would be overriding a setting that is not theirs.
+//
+// The personal figure was stored, offered on screen and consulted by nothing: only the
+// instance ceiling was ever read here. A field that changes nothing when you fill it in
+// is worse than a field that is not there.
+func (s *TimesheetApplicationService) dailyLimitFor(
+	ctx context.Context,
+	userID uint,
+) (float64, error) {
+	instance := s.dailyCap(ctx)
+
+	user, err := s.userRepository.GetByID(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+
+	personal := user.MaxDailyHours
+	if personal <= 0 {
+		return instance, nil
+	}
+
+	if instance <= 0 || personal < instance {
+		return personal, nil
+	}
+
+	return instance, nil
+}
+
 func (s *TimesheetApplicationService) dailyCap(ctx context.Context) float64 {
 	if s.limits == nil {
 		return s.maxDailyHours

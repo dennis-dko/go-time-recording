@@ -83,13 +83,14 @@ func (h *UserHandler) Create(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	// No working times. A new account starts on the instance default and its owner
+	// changes it afterwards; a daily target is a time figure, and nobody sets somebody
+	// else's.
 	result, err := h.users.CreateUser(c, command.CreateUserCommand{
-		Name:             req.Name,
-		Email:            req.Email,
-		Role:             req.Role,
-		Password:         req.Password,
-		DailyTargetHours: req.DailyTargetHours,
-		MaxDailyHours:    req.MaxDailyHours,
+		Name:     req.Name,
+		Email:    req.Email,
+		Role:     req.Role,
+		Password: req.Password,
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -114,13 +115,14 @@ func (h *UserHandler) Update(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	// The working times are not passed on. They belong to whoever the account is
+	// about, who sets them through their own working-times route; sending them here
+	// was one of three ways into figures a single right was meant to guard.
 	result, err := h.users.UpdateUser(c, command.UpdateUserCommand{
-		ID:               id,
-		Name:             req.Name,
-		Email:            req.Email,
-		Role:             req.Role,
-		DailyTargetHours: req.DailyTargetHours,
-		MaxDailyHours:    req.MaxDailyHours,
+		ID:    id,
+		Name:  req.Name,
+		Email: req.Email,
+		Role:  req.Role,
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -182,15 +184,18 @@ func (h *UserHandler) AssignRole(c *gofr.Context) (any, error) {
 
 // UpdateWorkingTimes handles PUT /api/v1/users/{id}/working-times.
 //
-// Users may set their own hours; changing someone else's needs the wider
-// permission.
+// Your own hours, and only your own.
+//
+// There was a wider permission for changing somebody else's, and it is gone: a daily
+// target is a time figure, everything to do with time is the person's own, and the
+// administrator cannot see what the number does anyway.
 func (h *UserHandler) UpdateWorkingTimes(c *gofr.Context) (any, error) {
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
-	if _, err := h.authz.RequireSelfOr(c, id, model.PermSettingsWriteOther); err != nil {
+	if _, err := h.authz.RequireSelf(c, id, model.PermSettingsWriteOwn); err != nil {
 		return nil, err
 	}
 

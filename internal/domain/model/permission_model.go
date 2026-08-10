@@ -21,15 +21,30 @@ const (
 	PermProjectWriteOwn = "projects:write:own"
 
 	// Own vs. all separates "my time sheet" from "everyone's".
-	PermTimesheetReadOwn   = "timesheets:read:own"
-	PermTimesheetReadAll   = "timesheets:read:all"
-	PermTimesheetWriteOwn  = "timesheets:write:own"
-	PermTimesheetWriteAll  = "timesheets:write:all"
-	PermTimesheetTransfer  = "timesheets:transfer"
-	PermReportReadOwn      = "reports:read:own"
-	PermSettingsWriteOwn   = "settings:write:own"
-	PermSettingsWriteOther = "settings:write:other"
+	PermTimesheetReadOwn  = "timesheets:read:own"
+	PermTimesheetReadAll  = "timesheets:read:all"
+	PermTimesheetWriteOwn = "timesheets:write:own"
+	PermTimesheetWriteAll = "timesheets:write:all"
+	PermTimesheetTransfer = "timesheets:transfer"
+	PermReportReadOwn     = "reports:read:own"
+	PermSettingsWriteOwn  = "settings:write:own"
 )
+
+// There is no settings:write:other. A daily target and a daily ceiling are time
+// figures, and everything to do with time is the person's own.
+//
+// It existed so the administrator could set them for somebody else, and the reason
+// that does not work is in this same file: the administrator cannot read that
+// person's entries, their balance or their figures. Setting a number whose effect is
+// invisible to you is not administration, it is guessing - and the number's only
+// consumer is the overtime balance, which nobody but its owner may see anyway.
+//
+// It was also not the lock it looked like. The same two fields were writable through
+// PUT /users/{id} and through the spreadsheet import, both of which check only
+// users:write, so the right guarded one of three doors.
+//
+// What stays with the administrator is the instance-wide default under Settings,
+// which is what a new account gets until its owner decides otherwise.
 
 // Whether somebody may see another person's recorded time is one question, and
 // PermTimesheetReadAll is the one right that answers it.
@@ -58,7 +73,7 @@ func AllPermissions() []string {
 		PermTimesheetWriteOwn, PermTimesheetWriteAll,
 		PermTimesheetTransfer,
 		PermReportReadOwn,
-		PermSettingsWriteOwn, PermSettingsWriteOther,
+		PermSettingsWriteOwn,
 	}
 }
 
@@ -90,10 +105,9 @@ func SystemAdminPermissions() []string {
 		// An administrator is also a person who works here.
 		PermTimesheetReadOwn, PermTimesheetWriteOwn, PermReportReadOwn,
 
-		// Their own preferences, and the per-account figures that are part of
-		// administering an account rather than of reading it: the daily target and
-		// the ceiling.
-		PermSettingsWriteOwn, PermSettingsWriteOther,
+		// Their own preferences, and nobody else's: the daily target and the ceiling
+		// belong to whoever they are about.
+		PermSettingsWriteOwn,
 	}
 }
 

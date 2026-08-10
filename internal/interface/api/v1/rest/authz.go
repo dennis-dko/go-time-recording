@@ -160,25 +160,45 @@ func (a *Authorizer) RequireSelfOr(
 		return nil, err
 	}
 
-	if a.open || principal.Can(permission) {
-		return principal, nil
-	}
-
-	// Your own still takes a right, and it is the one the role editor offers for
-	// exactly this: settings:write:own. It went unchecked, so ticking it changed
-	// nothing and clearing it changed nothing either - a box in the role editor that
-	// did not do what it said. The permission list's own rule is that every right is
-	// enforced by a specific line of code, and this is that line.
-	//
-	// Both default roles hold it, so nothing an installation has changes; what it
-	// buys is a role that may book time without setting its own daily target, which
-	// is a figure somebody else administers.
-	if principal.User != nil && principal.User.ID == targetUserID &&
-		principal.Can(model.PermSettingsWriteOwn) {
+	if a.open || principal.User.ID == targetUserID || principal.Can(permission) {
 		return principal, nil
 	}
 
 	return nil, forbiddenError{msg: "missing permission: " + permission}
+}
+
+// RequireSelf checks an action nobody may take on anybody else's account, and that
+// still takes a right of its own on your own.
+//
+// Distinct from RequireSelfOr, which has a wider permission that reaches other
+// people: there is no such permission here on purpose. A daily target and a daily
+// ceiling are time figures, everything to do with time is the person's own, and the
+// one account that administers this installation cannot see what those numbers do -
+// not the entries, not the balance, not the figures. Setting a number whose effect is
+// invisible to you is not administration.
+//
+// The right is still checked for your own, because the role editor offers it and a
+// box that does nothing when ticked is worse than no box.
+func (a *Authorizer) RequireSelf(
+	c *gofr.Context,
+	targetUserID uint,
+	permission string,
+) (*service.Principal, error) {
+	principal, err := a.permittedPrincipal(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if a.open {
+		return principal, nil
+	}
+
+	if principal.User != nil && principal.User.ID == targetUserID &&
+		principal.Can(permission) {
+		return principal, nil
+	}
+
+	return nil, forbiddenError{msg: "you may only change your own working times"}
 }
 
 // scopeUserID narrows a requested user filter to what the caller may see.

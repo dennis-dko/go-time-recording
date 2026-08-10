@@ -297,8 +297,8 @@ func TestImportingPeopleChangesThemAndCreatesNothing(t *testing.T) {
 	a.signInAsUser(admin, "Mika", "mika@example.com")
 
 	book, err := spreadsheet.WriteUsers("", []spreadsheet.UserRow{
-		{Name: "Mika", Email: "mika@example.com", DailyTargetHours: 6, MaxDailyHours: 9},
-		{Name: "Nobody", Email: "nobody@example.com", DailyTargetHours: 8},
+		{Name: "Mika Renamed", Email: "mika@example.com", Role: "employee"},
+		{Name: "Nobody", Email: "nobody@example.com", Role: "employee"},
 	})
 	if err != nil {
 		t.Fatalf("building the workbook: %v", err)
@@ -320,106 +320,74 @@ func TestImportingPeopleChangesThemAndCreatesNothing(t *testing.T) {
 		t.Fatalf("a file with a refused row wrote %d rows", written.Imported)
 	}
 
-	// The working times are untouched, which is the point of refusing the whole
-	// file rather than the one row.
+	// Mika is untouched, which is the point of refusing the whole file rather than
+	// the one row.
 	listed := admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK)
 
 	var people struct {
 		Items []struct {
-			Email            string  `json:"email"`
-			DailyTargetHours float64 `json:"dailyTargetHours"`
+			Email string `json:"email"`
+			Name  string `json:"name"`
 		} `json:"items"`
 	}
 
 	listed.Data(t, &people)
 
 	for _, person := range people.Items {
-		if person.Email == "mika@example.com" && person.DailyTargetHours == 6 {
-			t.Error("a file with a refused row in it still changed an account")
+		if person.Email == "mika@example.com" && person.Name != "Mika" {
+			t.Errorf("a file with a refused row in it still renamed an account to %q",
+				person.Name)
 		}
 	}
 }
 
-// A time zone the machine does not know is refused in the preview.
+// The sheet carries nothing the administrator may not set.
 //
-// Getting one wrong moves somebody's hours between days rather than merely
-// displaying them oddly, so it is worth carrying in the sheet - and worth refusing
-// before anything is written, because nothing is written while any row is refused.
-func TestAnUnknownTimeZoneIsRefusedInThePreview(t *testing.T) {
+// It used to hold the daily target, the ceiling and the time zone, and the import
+// wrote all three - which made a spreadsheet the widest way into figures that belong
+// to the person they are about. Removing the write without removing the columns would
+// have been worse than leaving it: somebody edits forty targets, is told forty rows
+// were written, and nothing happened.
+func TestThePeopleSheetCarriesNoWorkingTimes(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	a.signInAsUser(admin, "Mika", "mika@example.com")
 
-	book, err := spreadsheet.WriteUsers("", []spreadsheet.UserRow{
-		{Name: "Mika", Email: "mika@example.com", Timezone: "Mars/Olympus_Mons"},
-	})
-	if err != nil {
-		t.Fatalf("building the workbook: %v", err)
-	}
+	exported := admin.must(admin.api(http.MethodGet, "/users/export", nil), http.StatusOK)
 
-	preview, r := importSheet(t, admin, "/users/import", book, "true")
+	preview, r := importSheet(t, admin, "/users/import", exported.Body, "true")
 	if !accepted(r.Status) {
-		t.Fatalf("previewing: status %d, body %.200q", r.Status, r.Body)
+		t.Fatalf("previewing the export: status %d, body %.200q", r.Status, r.Body)
 	}
 
-	if preview.Rejected != 1 || preview.Writable != 0 {
-		t.Fatalf("preview says %d writable and %d refused, want 0 and 1: %+v",
-			preview.Writable, preview.Rejected, preview.Rows)
+	for _, gone := range []string{"Daily target", "Daily maximum", "Time zone"} {
+		for _, column := range preview.Columns {
+			if column == gone {
+				t.Errorf("the people sheet still has a %q column, which the import "+
+					"cannot write - it would be silently ignored", gone)
+			}
+		}
 	}
 
-	if len(preview.Rows) != 1 || !strings.Contains(preview.Rows[0].Problem, "time zone") {
-		t.Errorf("the reason given does not name the problem: %+v", preview.Rows)
+	// What it does carry, so this cannot pass by the sheet being empty.
+	if len(preview.Columns) == 0 {
+		t.Fatal("the people sheet has no columns at all")
+	}
+
+	want := map[string]bool{"Name": true, "Email": true, "Role": true, "Directory": true}
+
+	for _, column := range preview.Columns {
+		if !want[column] {
+			t.Errorf("unexpected column %q in the people sheet", column)
+		}
 	}
 }
 
-// A known one goes through and is actually stored.
-func TestATimeZoneFromASheetIsStored(t *testing.T) {
-	a := start(t)
-	admin := a.signInAsAdmin("a-much-better-password")
-	a.signInAsUser(admin, "Mika", "mika@example.com")
-
-	book, err := spreadsheet.WriteUsers("", []spreadsheet.UserRow{
-		{Name: "Mika", Email: "mika@example.com", Timezone: "Europe/Lisbon"},
-	})
-	if err != nil {
-		t.Fatalf("building the workbook: %v", err)
-	}
-
-	result, r := importSheet(t, admin, "/users/import", book, "false")
-	if !accepted(r.Status) {
-		t.Fatalf("importing: status %d, body %.300q", r.Status, r.Body)
-	}
-
-	if result.Imported != 1 {
-		t.Fatalf("wrote %d rows, want 1: %+v", result.Imported, result.Rows)
-	}
-
-	listed := admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK)
-
-	var people struct {
-		Items []struct {
-			Email    string `json:"email"`
-			Timezone string `json:"timezone"`
-		} `json:"items"`
-	}
-
-	listed.Data(t, &people)
-
-	for _, person := range people.Items {
-		if person.Email != "mika@example.com" {
-			continue
-		}
-
-		if person.Timezone != "Europe/Lisbon" {
-			t.Errorf("the time zone is %q after the import, want Europe/Lisbon",
-				person.Timezone)
-		}
-
-		return
-	}
-
-	t.Error("the account is not in the list any more")
-}
+// The two time-zone cases that were here are gone with the column they tested. A
+// zone decides which calendar day a booking falls on, so it is a time figure, and
+// everything to do with time belongs to the person it is about - who sets it under My
+// account. TestThePeopleSheetCarriesNoWorkingTimes is what replaced them: it checks
+// the column is absent rather than that a value in it is validated.
 
 // The system administrator can keep private categories and cannot create shared
 // projects, by import as by any other route.

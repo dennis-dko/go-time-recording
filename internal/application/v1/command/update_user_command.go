@@ -10,9 +10,6 @@ type UpdateUserCommand struct {
 
 	// Role is the role name to move the user to.
 	Role *string
-
-	DailyTargetHours *float64
-	MaxDailyHours    *float64
 }
 
 // UpdateUserCommandResult command to get update result of existing user

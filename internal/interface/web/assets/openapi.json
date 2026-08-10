@@ -903,7 +903,7 @@
         "tags": [
           "users"
         ],
-        "summary": "Set the daily target and the daily maximum",
+        "summary": "Set your own daily target and daily maximum",
         "parameters": [
           {
             "name": "id",
@@ -920,8 +920,12 @@
           },
           "400": {
             "description": "The target cannot exceed the maximum"
+          },
+          "403": {
+            "description": "Somebody else's account, or the right is not held"
           }
-        }
+        },
+        "description": "Yours alone. Needs `settings:write:own`, and the id has to be your own: there is no wider permission that reaches somebody else’s, because a daily target is a time figure and everything to do with time belongs to the person it is about. An empty value, sent as 0, means \"follow the instance default\" under Settings. The account that administers this installation cannot set these for anybody, which is deliberate - it cannot read the entries, the balance or the figures the numbers produce."
       }
     },
     "/roles": {

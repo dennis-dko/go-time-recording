@@ -199,9 +199,23 @@ func TestTheAdministratorStillAdministersAndStillWorks(t *testing.T) {
 		"permissions": []string{"reports:read:own", "timesheets:read:all"},
 	}), http.StatusCreated, http.StatusOK)
 
-	// Somebody else's working times: administering an account, as opposed to
-	// reading what they recorded in it.
-	admin.must(admin.api(http.MethodPut, path("/users/", created.ID, "/working-times"),
+	// Somebody else's working times: not any more. A daily target is a time figure,
+	// everything to do with time belongs to the person it is about, and this account
+	// cannot read the entries, the balance or the figures those numbers produce -
+	// setting a cause whose effect is invisible to you is not administering anything.
+	if got := admin.api(http.MethodPut, path("/users/", created.ID, "/working-times"),
+		map[string]any{"dailyTargetHours": 7}).Status; got != http.StatusForbidden {
+		t.Errorf("the administrator set somebody else's working times: %d, want 403", got)
+	}
+
+	// Its own, though: it works here like anybody else. Its id comes from /me further
+	// down, where this test already reads it.
+	var self struct {
+		User userResponse `json:"user"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &self)
+	admin.must(admin.api(http.MethodPut, path("/users/", self.User.ID, "/working-times"),
 		map[string]any{"dailyTargetHours": 7}), http.StatusOK)
 
 	// The installation itself.

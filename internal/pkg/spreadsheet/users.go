@@ -4,27 +4,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 )
 
 // users is the sheet of people.
 var users = Table{
-	Key: "Users",
-	Headings: []string{
-		"Name", "Email", "Role", "Daily target", "Daily maximum", "Time zone", "Directory",
-	},
-	Widths: []float64{24, 30, 16, 12, 14, 22, 12},
+	Key:      "Users",
+	Headings: []string{"Name", "Email", "Role", "Directory"},
+	Widths:   []float64{24, 30, 16, 12},
 }
 
 // UserRow is one account as the workbook holds it.
 //
 // No password column, in either direction. A spreadsheet of passwords is a
-// spreadsheet that gets mailed around, and one this application generated would
-// have to be read back out of the file to be of any use - so import changes
-// existing accounts rather than creating them, matched on the mail address. That
-// makes it the right tool for what it is actually wanted for: giving forty people
-// a new daily target, or moving a department to another role.
+// spreadsheet that gets mailed around, and one this application generated would have
+// to be read back out of the file to be of any use - so an import changes existing
+// accounts rather than creating them, matched on the mail address. That makes it the
+// right tool for what it is wanted for: moving a department to another role.
+//
+// No daily target, ceiling or time zone either, and they were here. They are time
+// figures, and everything to do with time belongs to the person it is about, who sets
+// it under My account - so a column for them would be one the import had to ignore,
+// and a column that is silently ignored is worse than one that is missing: somebody
+// edits forty of them and is told forty rows were written.
 type UserRow struct {
 	// Number is the row in the sheet, so a complaint can name where to look.
 	Number int
@@ -33,17 +35,9 @@ type UserRow struct {
 	Email string
 	Role  string
 
-	// DailyTargetHours and MaxDailyHours are zero for an account left on the
-	// instance defaults, and stay on them when the cell is empty.
-	DailyTargetHours float64
-	MaxDailyHours    float64
-
-	// Timezone is an IANA name, or empty for the instance setting.
-	Timezone string
-
-	// Directory says the password lives in LDAP. Written for information and
-	// ignored on reading: an account cannot be moved into the directory, or out
-	// of it, by editing a cell.
+	// Directory says the password lives in LDAP. Written for information and ignored
+	// on reading: an account cannot be moved into the directory, or out of it, by
+	// editing a cell.
 	Directory bool
 }
 
@@ -59,9 +53,6 @@ func WriteUsers(language string, rows []UserRow) ([]byte, error) {
 			Text(row.Name),
 			Text(row.Email),
 			Text(row.Role),
-			Number(row.DailyTargetHours),
-			Number(row.MaxDailyHours),
-			Text(row.Timezone),
 			Text(translate(language, yesNo(row.Directory))),
 		})
 	}
@@ -123,38 +114,10 @@ func parseUserRow(number int, cells []string) (UserRow, error) {
 			"what the row is matched on", value(1))
 	}
 
-	target, err := parseOptionalHours(value(3), "daily target")
-	if err != nil {
-		return UserRow{}, err
-	}
-
-	maximum, err := parseOptionalHours(value(4), "daily maximum")
-	if err != nil {
-		return UserRow{}, err
-	}
-
 	return UserRow{
-		Number:           number,
-		Name:             value(0),
-		Email:            email,
-		Role:             value(2),
-		DailyTargetHours: target,
-		MaxDailyHours:    maximum,
-		Timezone:         value(5),
+		Number: number,
+		Name:   value(0),
+		Email:  email,
+		Role:   value(2),
 	}, nil
-}
-
-// parseOptionalHours reads an hours column that may be left empty, which means
-// "leave this as it is" rather than zero.
-func parseOptionalHours(raw, column string) (float64, error) {
-	if raw == "" {
-		return 0, nil
-	}
-
-	hours, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
-	if err != nil {
-		return 0, fmt.Errorf("%q is not a number of hours for the %s", raw, column)
-	}
-
-	return hours, nil
 }

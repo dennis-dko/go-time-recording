@@ -15,8 +15,6 @@ type CreateUserCommand struct {
 	Password string
 
 	// Working times; zero means "use the instance default".
-	DailyTargetHours float64
-	MaxDailyHours    float64
 }
 
 // CreateUserCommandResult command to get create result of new user

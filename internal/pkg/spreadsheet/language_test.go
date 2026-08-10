@@ -173,7 +173,12 @@ func TestProjectsSurviveTranslationOfTheirValues(t *testing.T) {
 	}
 }
 
-// People go out and come back with their figures intact, in every language.
+// People go out and come back intact, in every language.
+//
+// Name, mail address, role and whether the password lives in the directory - and
+// nothing else. The daily target, the ceiling and the time zone were here and are
+// not: they are time figures, they belong to the person they are about, and a column
+// the import would have to ignore is worse than a column that is missing.
 func TestUsersSurviveTheRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -183,7 +188,6 @@ func TestUsersSurviveTheRoundTrip(t *testing.T) {
 
 			written, err := spreadsheet.WriteUsers(language, []spreadsheet.UserRow{{
 				Name: "Vera", Email: "vera@example.test", Role: "employee",
-				DailyTargetHours: 7.5, MaxDailyHours: 10, Timezone: "Europe/Berlin",
 				Directory: true,
 			}})
 			if err != nil {
@@ -206,13 +210,8 @@ func TestUsersSurviveTheRoundTrip(t *testing.T) {
 			got := rows[0]
 
 			if got.Email != "vera@example.test" || got.Name != "Vera" ||
-				got.Role != "employee" || got.Timezone != "Europe/Berlin" {
-				t.Errorf("a text column moved: %+v", got)
-			}
-
-			if got.DailyTargetHours != 7.5 || got.MaxDailyHours != 10 {
-				t.Errorf("figures came back as %v/%v, want 7.5/10",
-					got.DailyTargetHours, got.MaxDailyHours)
+				got.Role != "employee" {
+				t.Errorf("a column moved: %+v", got)
 			}
 
 			// Directory membership is written for information and deliberately not
