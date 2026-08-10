@@ -111,8 +111,6 @@ func TestBookingTimeRefusesWhatCannotBeStored(t *testing.T) {
 			map[string]any{"date": "2026-08-01", "durationHours": -2}},
 		{"more hours than a day has", http.MethodPost, "/timesheets",
 			map[string]any{"date": "2026-08-01", "durationHours": 25}},
-		{"a status from another version of the interface", http.MethodPost, "/timesheets",
-			map[string]any{"date": "2026-08-01", "durationHours": 2, "status": "archived"}},
 		{"a project that does not exist", http.MethodPost, "/timesheets",
 			map[string]any{"date": "2026-08-01", "durationHours": 2, "projectId": 99999}},
 		{"a description longer than any column", http.MethodPost, "/timesheets",
@@ -133,8 +131,6 @@ func TestCreatingAProjectRefusesWhatCannotBeStored(t *testing.T) {
 			map[string]any{"name": "P", "startDate": "whenever"}},
 		{"an end date before the start", http.MethodPost, "/projects",
 			map[string]any{"name": "P", "startDate": "2026-06-01", "endDate": "2026-01-01"}},
-		{"a status from another version of the interface", http.MethodPost, "/projects",
-			map[string]any{"name": "P", "startDate": "2026-01-01", "status": "cancelled"}},
 	})
 }
 

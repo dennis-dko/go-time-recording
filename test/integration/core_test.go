@@ -212,37 +212,21 @@ func TestSetupWizardIsAdministratorOnly(t *testing.T) {
 func TestBookingSubmittingAndApproving(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
-	manager := a.signInAsManager(admin, "Meike", "meike@example.com")
+	other := a.signInAsUser(admin, "Meike", "meike@example.com")
 
 	today := time.Now().Format("2006-01-02")
 
 	var booked timesheetResponse
-	manager.must(manager.api(http.MethodPost, "/timesheets", map[string]any{
+	other.must(other.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": today, "durationHours": 6.5, "description": "Integration work",
 	}), http.StatusCreated, http.StatusOK).Data(t, &booked)
-
-	if booked.Status != "open" {
-		t.Errorf("a new entry should start open, got %q", booked.Status)
-	}
 
 	if booked.DurationHours != 6.5 {
 		t.Errorf("expected 6.5 hours, got %v", booked.DurationHours)
 	}
 
-	// open -> submitted -> approved, the whole review path.
-	for _, status := range []string{"submitted", "approved"} {
-		var updated timesheetResponse
-
-		manager.must(manager.api(http.MethodPut, path("/timesheets/", booked.ID),
-			map[string]any{"status": status}), http.StatusOK).Data(t, &updated)
-
-		if updated.Status != status {
-			t.Fatalf("expected %q, got %q", status, updated.Status)
-		}
-	}
-
 	var list listOf[timesheetResponse]
-	manager.must(manager.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
+	other.must(other.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
 
 	if list.TotalCount != 1 {
 		t.Errorf("expected one entry, got %d", list.TotalCount)

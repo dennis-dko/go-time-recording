@@ -12,7 +12,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-const timesheetColumns = "id, user_id, project_id, date, duration_hours, description, status"
+const timesheetColumns = "id, user_id, project_id, date, duration_hours, description"
 
 // TimesheetRepository stores time entries in a SQL database.
 type TimesheetRepository struct {
@@ -28,10 +28,10 @@ var _ repository.TimesheetRepository = (*TimesheetRepository)(nil)
 
 func (r *TimesheetRepository) Save(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
 	id, err := r.insert(ctx,
-		"INSERT INTO timesheets (user_id, project_id, date, duration_hours, description, status) "+
-			"VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT INTO timesheets (user_id, project_id, date, duration_hours, description) "+
+			"VALUES (?, ?, ?, ?, ?)",
 		timesheet.UserID, timesheet.ProjectID, timesheet.Date,
-		timesheet.DurationHours, timesheet.Description, timesheet.Status)
+		timesheet.DurationHours, timesheet.Description)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -58,9 +58,9 @@ func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Tim
 			// waiting for a lock this transaction is holding.
 			if _, err := tx.db.ExecContext(ctx, tx.rebind(
 				"INSERT INTO timesheets (user_id, project_id, date, duration_hours, "+
-					"description, status) VALUES (?, ?, ?, ?, ?, ?)"),
+					"description) VALUES (?, ?, ?, ?, ?)"),
 				entry.UserID, entry.ProjectID, entry.Date,
-				entry.DurationHours, entry.Description, entry.Status); err != nil {
+				entry.DurationHours, entry.Description); err != nil {
 				return apperror.Internal(err)
 			}
 		}
@@ -109,11 +109,6 @@ func (r *TimesheetRepository) GetByFilter(
 		conditions = append(conditions, "project_id IS NULL")
 	}
 
-	if filter.Status != "" {
-		conditions = append(conditions, "status = ?")
-		args = append(args, filter.Status)
-	}
-
 	if filter.StartDate != nil {
 		conditions = append(conditions, "date >= ?")
 		args = append(args, *filter.StartDate)
@@ -141,10 +136,10 @@ func (r *TimesheetRepository) GetAll(ctx context.Context) ([]*model.Timesheet, e
 func (r *TimesheetRepository) Update(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
 	found, err := r.update(ctx, "timesheets",
 		"UPDATE timesheets SET user_id = ?, project_id = ?, date = ?, duration_hours = ?, "+
-			"description = ?, status = ? WHERE id = ?",
+			"description = ? WHERE id = ?",
 		timesheet.ID,
 		timesheet.UserID, timesheet.ProjectID, timesheet.Date, timesheet.DurationHours,
-		timesheet.Description, timesheet.Status, timesheet.ID)
+		timesheet.Description, timesheet.ID)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -203,7 +198,7 @@ func scanTimesheet(s scanner) (*model.Timesheet, error) {
 	)
 
 	err := s.Scan(&timesheet.ID, &timesheet.UserID, &timesheet.ProjectID, &date,
-		&timesheet.DurationHours, &timesheet.Description, &timesheet.Status)
+		&timesheet.DurationHours, &timesheet.Description)
 	if err != nil {
 		return nil, err
 	}

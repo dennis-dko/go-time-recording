@@ -105,7 +105,6 @@ func (h *WorkbookHandler) timesheetFilter(
 	return repository.TimesheetFilter{
 		UserID:    userID,
 		ProjectID: projectID,
-		Status:    c.Param("status"),
 		StartDate: from,
 		EndDate:   to,
 	}, nil

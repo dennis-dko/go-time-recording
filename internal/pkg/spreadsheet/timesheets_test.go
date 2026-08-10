@@ -29,13 +29,13 @@ func sample(t *testing.T) []spreadsheet.Row {
 	return []spreadsheet.Row{
 		{
 			Date: day(t, "2026-08-03"), User: "Hanne Bloem", Project: "Shared work",
-			Hours: 6.5, Description: "Wrote the importer", Status: "open",
+			Hours: 6.5, Description: "Wrote the importer",
 		},
 		{
 			// No project and no description, which is a perfectly ordinary entry
 			// and the one a rigid parser drops.
 			Date: day(t, "2026-08-04"), User: "Hanne Bloem",
-			Hours: 1.25, Status: "submitted",
+			Hours: 1.25,
 		},
 	}
 }
@@ -77,9 +77,9 @@ func TestWhatIsWrittenReadsBackUnchanged(t *testing.T) {
 			t.Errorf("row %d: %v hours, want %v", i, got.Hours, want[i].Hours)
 		}
 
-		if got.Description != want[i].Description || got.Status != want[i].Status {
-			t.Errorf("row %d: %q/%q, want %q/%q",
-				i, got.Description, got.Status, want[i].Description, want[i].Status)
+		if got.Description != want[i].Description {
+			t.Errorf("row %d: description %q, want %q",
+				i, got.Description, want[i].Description)
 		}
 
 		// The sheet row, so a complaint can name where to look. Row 1 is the
@@ -202,7 +202,7 @@ func TestAFileAssembledByHandIsUnderstood(t *testing.T) {
 		}
 	}
 
-	// German date order, comma decimal, no project, no status.
+	// German date order, comma decimal, no project.
 	for column, value := range map[string]string{
 		"A2": "04.08.2026", "B2": "Ilka Ruf", "D2": "3,75",
 		"E2": "Typed into Excel",

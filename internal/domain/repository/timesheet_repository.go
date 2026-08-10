@@ -10,7 +10,6 @@ import (
 type TimesheetFilter struct {
 	UserID    uint
 	ProjectID uint
-	Status    string
 	StartDate *time.Time
 	EndDate   *time.Time
 

@@ -93,8 +93,9 @@ func TestConcurrentWritesAreServedRatherThanRefused(t *testing.T) {
 	// lost the row would be worse than a refusal.
 	var listed listOf[timesheetResponse]
 
-	manager := a.signInAsManager(admin, "Merle", "merle@example.com")
-	manager.must(manager.api(http.MethodGet, "/timesheets?from=2026-08-03&to=2026-08-03", nil),
+	// An auditor, because no default role reads somebody else's entries any more.
+	other := a.signInAsAuditor(admin, "Merle", "merle@example.com")
+	other.must(other.api(http.MethodGet, "/timesheets?from=2026-08-03&to=2026-08-03", nil),
 		http.StatusOK).Data(t, &listed)
 
 	if len(listed.Items) != people*each {

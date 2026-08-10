@@ -478,8 +478,6 @@ const TRANSLATIONS = {
     'tour.finish': 'Fertig',
     'tour.timer.title': 'Die Stoppuhr',
     'tour.timer.text': 'Beim Anfangen starten, beim Aufhören stoppen – die gemessene Zeit wird gebucht. Sie läuft weiter, wenn du den Browser schließt, denn sie läuft auf dem Server und nicht in diesem Tab.',
-    'tour.approve.title': 'Einreichen und genehmigen',
-    'tour.approve.text': 'Ein Eintrag geht offen, eingereicht, genehmigt. Du kannst genehmigen, was andere einreichen, oder es zurückgeben – ein abgelehnter Eintrag lässt sich wieder öffnen und korrigieren, statt neu getippt werden zu müssen. Genehmigte Einträge sind abgeschlossene Belege und nicht mehr änderbar.',
     'tour.stats.title': 'Deine eigenen Zahlen',
     'tour.stats.text': 'Stunden pro Tag, pro Projekt und nach Status, über einen Zeitraum deiner Wahl. Nur deine eigenen – für die eigene Woche braucht niemand ein Berichtsrecht.',
     'tour.report.title': 'Projektberichte',
@@ -517,7 +515,6 @@ const TRANSLATIONS = {
     'ops.maxDailyHours': 'Maximale Stunden pro Tag (systemweit)',
     'ops.rateLimit': 'Ratenbegrenzung (Anfragen)',
     'ops.rateWindow': 'Zeitfenster der Ratenbegrenzung (Sekunden)',
-    'ops.autoClose': 'Offene Einträge einreichen nach (Tagen)',
     'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1)',
     'ops.reset': 'Alle Werte auf die Konfigurationsdatei zurücksetzen',
     'ops.saved': 'Grenzwerte gespeichert',
@@ -595,7 +592,6 @@ const TRANSLATIONS = {
     'theme.light': 'Hell',
     'theme.dark': 'Dunkel',
 
-    'action.approve': 'genehmigen',
     'action.archive': 'archivieren',
     'action.book': 'Buchen',
     'action.calculate': 'Berechnen',
@@ -606,10 +602,7 @@ const TRANSLATIONS = {
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
     'action.new': 'Neu',
-    'action.reopen': 'wieder öffnen',
-    'action.reject': 'ablehnen',
     'action.save': 'Speichern',
-    'action.submit': 'einreichen',
     'action.dismiss': 'Schließen',
     'action.cancel': 'Abbrechen',
     'stats.title': 'Meine Stunden',
@@ -679,10 +672,6 @@ const TRANSLATIONS = {
     'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
     'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',
     'err.adminUndeletable': 'Der eingebaute Administrator kann nicht gelöscht werden.',
-    'err.approvedEntryLocked': 'Ein genehmigter Zeiteintrag kann nicht mehr bearbeitet werden.',
-    'err.approvedEntryUndeletable': 'Ein genehmigter Zeiteintrag kann nicht mehr gelöscht werden.',
-    'err.approvedEntryUntransferable': 'Ein genehmigter Zeiteintrag kann nicht mehr verschoben werden.',
-    'err.archiveHasOpenEntries': 'Das Projekt hat noch {0} offene Zeiteinträge und kann nicht archiviert werden.',
     'err.archiveNeedsCompleted': 'Ein Projekt kann erst archiviert werden, wenn sein Status „{0}“ ist.',
     'err.attemptExpired': 'Dieser Versuch ist abgelaufen. Bitte erneut versuchen.',
     'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
@@ -697,7 +686,6 @@ const TRANSLATIONS = {
     'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
     'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
-    'err.newEntryIsAlwaysOpen': 'Ein neuer Zeiteintrag ist immer „{0}“. Einreichen oder genehmigen geht danach.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
     'err.noSession': 'Keine Sitzung.',
@@ -716,7 +704,6 @@ const TRANSLATIONS = {
     'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',
     'err.roleStillAssigned': 'Rolle „{0}“ ist noch {1} Benutzer(n) zugewiesen.',
     'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
-    'err.statusTransitionRefused': 'Der Status kann nicht von „{0}“ auf „{1}“ geändert werden.',
     'err.systemRoleUndeletable': 'Die Systemrolle „{0}“ kann nicht gelöscht werden.',
     'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
     'err.systemRoleUnweakenable': 'Der Systemrolle „{0}“ können keine Rechte entzogen werden.',
@@ -769,7 +756,6 @@ const TRANSLATIONS = {
     'welcome.todayHours': 'Heute bislang {0} h gebucht.',
     'welcome.todayNothing': 'Heute noch nichts gebucht.',
     'welcome.tour': 'Rundgang starten',
-    'field.autoCloseAfterDays': 'Automatisch abschließen nach (Tagen)',
     'field.baseDn': 'Basis-DN',
     'field.code': 'Code',
     'field.companyUrl': 'Firmen-Adresse',
@@ -814,7 +800,6 @@ const TRANSLATIONS = {
     'field.to': 'Bis',
     'field.user': 'Benutzer',
     'filter.allProjects': 'Alle Projekte',
-    'filter.allStatus': 'Alle Status',
     'filter.allUsers': 'Alle Benutzer',
     'footer.versionTitle': 'Laufende Version dieser Installation',
     'log.clear': 'Ansicht leeren',
@@ -840,7 +825,6 @@ const TRANSLATIONS = {
     'login.title': 'Anmelden',
     'login.totp': 'Code der Authenticator-App',
     'login.totpNeeded': 'Bitte den Code aus der Authenticator-App eingeben.',
-    'msg.approved': 'Genehmigt',
     'msg.booked': 'Zeit gebucht',
     'msg.categoryCreated': 'Projekt angelegt',
     'msg.entryDeleted': 'Eintrag gelöscht',
@@ -864,13 +848,10 @@ const TRANSLATIONS = {
     'msg.projectCompleted': 'Projekt abgeschlossen',
     'msg.projectCreated': 'Projekt angelegt',
     'msg.projectDeleted': 'Projekt gelöscht',
-    'msg.rejected': 'Abgelehnt',
     'msg.roleChanged': 'Rolle geändert',
     'msg.roleCreated': 'Rolle angelegt',
     'msg.roleDeleted': 'Rolle gelöscht',
     'msg.roleSaved': 'Rolle gespeichert',
-    'msg.reopened': 'Wieder geöffnet',
-    'msg.submitted': 'Eingereicht',
     'msg.userCreated': 'Benutzer angelegt',
     'msg.userDeleted': 'Benutzer gelöscht',
     'msg.workingTimesSaved': 'Arbeitszeiten gespeichert',
@@ -908,10 +889,6 @@ const TRANSLATIONS = {
     'settings.targetHours': 'Soll-Stunden pro Tag',
     'settings.workingTimes': 'Meine Arbeitszeiten',
     'settings.workingTimesHint': 'Das Tagessoll ist die Grundlage der Überstunden. Das Tagesmaximum begrenzt, wie viel an einem Tag gebucht werden darf.',
-    'status.approved': 'genehmigt',
-    'status.open': 'offen',
-    'status.rejected': 'abgelehnt',
-    'status.submitted': 'eingereicht',
     'sync.aborted': 'Abgebrochen',
     'sync.confirm': 'ACHTUNG: {n} Konto/Konten und {h} Zeiteinträge werden unwiderruflich gelöscht. Fortfahren?',
     'sync.created': 'Angelegt',
@@ -1419,8 +1396,6 @@ async function loadProjects() {
  * and the row click cannot disagree about it.
  */
 function mayEditTimesheet(entry) {
-  if (entry.status === 'approved') return false;
-
   const mine = me.user && entry.userId === me.user.id;
 
   return can('timesheets:write:all') || (mine && can('timesheets:write:own'));
@@ -1493,44 +1468,7 @@ function timesheetActions(entry) {
     }));
   }
 
-  // The API only allows open -> submitted -> approved/rejected.
-  if (mayEdit && entry.status === 'open') {
-    actions.append(el('button', {
-      class: 'link',
-      text: t('action.submit', 'submit'),
-      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'submitted' },
-        t('msg.submitted', 'Submitted'), reloadTimeViews),
-    }));
-  }
-
-  if (can('timesheets:approve') && entry.status === 'submitted') {
-    actions.append(el('button', {
-      class: 'link',
-      text: t('action.approve', 'approve'),
-      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'approved' },
-        t('msg.approved', 'Approved'), reloadTimeViews),
-    }));
-    actions.append(el('button', {
-      class: 'link danger',
-      text: t('action.reject', 'reject'),
-      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'rejected' },
-        t('msg.rejected', 'Rejected'), reloadTimeViews),
-    }));
-  }
-
-  // A rejected entry can go back to open, which the API allows and nothing in the
-  // interface offered - so the only way out of a rejection was to delete the entry
-  // and type it again.
-  if (mayEdit && entry.status === 'rejected') {
-    actions.append(el('button', {
-      class: 'link',
-      text: t('action.reopen', 'reopen'),
-      onclick: () => patch(`/timesheets/${entry.id}`, { status: 'open' },
-        t('msg.reopened', 'Reopened'), reloadTimeViews),
-    }));
-  }
-
-  if (mayEdit && entry.status !== 'approved') {
+  if (mayEdit) {
     actions.append(el('button', {
       class: 'link danger',
       text: t('action.delete', 'delete'),
@@ -1555,10 +1493,8 @@ async function loadTimesheets() {
   const params = new URLSearchParams();
   const userId = $('#filter-ts-user').value;
   const projectId = $('#filter-ts-project').value;
-  const status = $('#filter-ts-status').value;
   if (userId) params.set('userId', userId);
   if (projectId) params.set('projectId', projectId);
-  if (status) params.set('status', status);
 
   const suffix = params.toString() ? `?${params}` : '';
   const entries = (await api(`/timesheets${suffix}`))?.items ?? [];
@@ -1577,12 +1513,11 @@ async function loadTimesheets() {
       }),
       el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
       el('td', { text: entry.description ?? '–' }),
-      el('td', {}, statusBadge(entry.status)),
       actions,
     );
   });
 
-  fillTable($('#table-timesheets tbody'), rows, 7, t('ts.empty', 'No entries for this filter.'));
+  fillTable($('#table-timesheets tbody'), rows, 6, t('ts.empty', 'No entries for this filter.'));
 }
 
 // ----------------------------------------------------------------- calendar
@@ -1739,7 +1674,6 @@ function showCalendarDay(iso, entries) {
       el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project') }),
       el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
       el('td', { text: entry.description ?? '–' }),
-      el('td', {}, statusBadge(entry.status)),
       timesheetActions(entry),
     );
 
@@ -1769,7 +1703,7 @@ function showCalendarDay(iso, entries) {
     return row;
   });
 
-  fillTable($('#table-calendar-day tbody'), rows, 5, t('ot.empty', 'No bookings in this period.'));
+  fillTable($('#table-calendar-day tbody'), rows, 4, t('ot.empty', 'No bookings in this period.'));
   $('#calendar-day-card').hidden = false;
 }
 
@@ -2565,17 +2499,6 @@ const TOUR_STEPS = [
     text: () => t('tour.entries.text',
       'Everything you booked, filterable by person, project and status. An entry stays '
       + 'editable until you submit it for approval.'),
-  },
-  {
-    target: '#table-timesheets',
-    view: 'timesheets',
-    permission: 'timesheets:approve',
-    title: () => t('tour.approve.title', 'Submitting and approving'),
-    text: () => t('tour.approve.text',
-      'An entry goes open, submitted, approved. You can approve what other people '
-      + 'submit, or send it back — a rejected entry can be opened again and corrected '
-      + 'rather than having to be typed afresh. Approved entries are closed records and '
-      + 'can no longer be changed.'),
   },
   {
     target: '#calendar-days',
@@ -3835,11 +3758,9 @@ function timesheetFilterQuery() {
 
   const userId = $('#filter-ts-user')?.value;
   const projectId = $('#filter-ts-project')?.value;
-  const status = $('#filter-ts-status')?.value;
 
   if (userId) params.set('userId', userId);
   if (projectId) params.set('projectId', projectId);
-  if (status) params.set('status', status);
 
   return params.toString() ? `?${params}` : '';
 }
@@ -5254,7 +5175,7 @@ function wireForms() {
       });
   });
 
-  for (const id of ['#filter-ts-user', '#filter-ts-project', '#filter-ts-status']) {
+  for (const id of ['#filter-ts-user', '#filter-ts-project']) {
     $(id).addEventListener('change', () => mutate(loadTimesheets, null, null));
   }
 

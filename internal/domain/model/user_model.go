@@ -4,7 +4,6 @@ package model
 // data and configuration keep working after roles moved into the database.
 const (
 	UserRoleAdmin    = RoleAdmin
-	UserRoleManager  = RoleManager
 	UserRoleEmployee = RoleEmployee
 )
 

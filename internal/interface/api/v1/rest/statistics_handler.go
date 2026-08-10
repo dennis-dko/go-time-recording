@@ -44,12 +44,6 @@ type ProjectTotalResponse struct {
 	Hours     float64 `json:"hours"`
 }
 
-// StatusTotalResponse is how the time is spread across the workflow.
-type StatusTotalResponse struct {
-	Status string  `json:"status"`
-	Hours  float64 `json:"hours"`
-}
-
 // StatisticsResponse is everything a chart of your own time needs, in one request.
 type StatisticsResponse struct {
 	From Date `json:"from"`
@@ -63,7 +57,6 @@ type StatisticsResponse struct {
 	Days []DayTotalResponse `json:"days"`
 
 	Projects []ProjectTotalResponse `json:"projects"`
-	Statuses []StatusTotalResponse  `json:"statuses"`
 }
 
 // Own handles GET /api/v1/me/statistics.
@@ -93,7 +86,6 @@ func (h *StatisticsHandler) Own(c *gofr.Context) (any, error) {
 		TotalHours: stats.TotalHours,
 		Days:       make([]DayTotalResponse, 0, len(stats.Days)),
 		Projects:   make([]ProjectTotalResponse, 0, len(stats.Projects)),
-		Statuses:   make([]StatusTotalResponse, 0, len(stats.Statuses)),
 	}
 
 	for _, day := range stats.Days {
@@ -105,11 +97,6 @@ func (h *StatisticsHandler) Own(c *gofr.Context) (any, error) {
 		response.Projects = append(response.Projects, ProjectTotalResponse{
 			ProjectID: project.ProjectID, Name: project.Name, Hours: project.Hours,
 		})
-	}
-
-	for _, status := range stats.Statuses {
-		response.Statuses = append(response.Statuses,
-			StatusTotalResponse{Status: status.Status, Hours: status.Hours})
 	}
 
 	return response, nil

@@ -23,7 +23,7 @@ func TestDefaultRolesAreSeeded(t *testing.T) {
 		byName[role.Name] = role
 	}
 
-	for _, expected := range []string{model.RoleAdmin, model.RoleManager, model.RoleEmployee} {
+	for _, expected := range []string{model.RoleAdmin, model.RoleEmployee} {
 		if _, ok := byName[expected]; !ok {
 			t.Fatalf("expected default role %q to exist", expected)
 		}
@@ -35,9 +35,24 @@ func TestDefaultRolesAreSeeded(t *testing.T) {
 		t.Error("the admin role must hold roles:write")
 	}
 
-	// The employee role must not be able to approve its own time.
-	if byName[model.RoleEmployee].Has(model.PermTimesheetApprove) {
-		t.Error("the employee role must not hold timesheets:approve")
+	// An ordinary account keeps its own time and nobody else's: there is no
+	// reviewer any more, and the rights over other people's work are what the
+	// administrator was deliberately stripped of.
+	for _, forbidden := range []string{
+		model.PermTimesheetReadAll, model.PermTimesheetWriteAll, model.PermReportRead,
+	} {
+		if byName[model.RoleEmployee].Has(forbidden) {
+			t.Errorf("an ordinary account must not hold %q", forbidden)
+		}
+	}
+
+	// And it does keep its own projects, which is what replaced the manager.
+	for _, own := range []string{
+		model.PermProjectWrite, model.PermProjectArchive, model.PermProjectDelete,
+	} {
+		if !byName[model.RoleEmployee].Has(own) {
+			t.Errorf("an ordinary account must hold %q to keep its own projects", own)
+		}
 	}
 }
 

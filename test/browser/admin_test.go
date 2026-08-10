@@ -891,8 +891,8 @@ func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
 // A refusal from the server reaches the reader in their own language.
 //
 // The messages are written where the rule is enforced, in English, which is right
-// for the log and wrong for the person who tripped over it: "an approved timesheet
-// can no longer be edited" was shown to a German reader whatever they had chosen.
+// for the log and wrong for the person who tripped over it: an English sentence was
+// shown to a German reader whatever they had chosen.
 // The reason now travels as a code with the values the sentence interpolated, and
 // the interface looks the sentence up.
 //

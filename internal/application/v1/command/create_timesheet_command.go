@@ -13,7 +13,6 @@ type CreateTimesheetCommand struct {
 	Date          time.Time
 	DurationHours float64
 	Description   *string
-	Status        string
 }
 
 // CreateTimesheetCommandResult command to get create result of new timesheet

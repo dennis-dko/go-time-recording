@@ -2,7 +2,6 @@ package service_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -62,11 +61,11 @@ func (f *fixture) project(t *testing.T, name, status string) *model.Project {
 	return created
 }
 
-func (f *fixture) entry(t *testing.T, projectID uint, status string) *model.Timesheet {
+func (f *fixture) entry(t *testing.T, projectID uint) *model.Timesheet {
 	t.Helper()
 
 	entry := &model.Timesheet{
-		UserID: 1, Date: time.Now(), DurationHours: 3, Status: status,
+		UserID: 1, Date: time.Now(), DurationHours: 3,
 	}
 
 	if projectID != 0 {
@@ -144,32 +143,13 @@ func TestOnlyACompletedProjectCanBeArchived(t *testing.T) {
 	}
 }
 
-// An open entry still expects edits. Archiving around it would leave it
-// unreachable in a project nobody can reopen.
-func TestAProjectWithOpenEntriesCannotBeArchived(t *testing.T) {
-	f := newFixture(t)
-	project := f.project(t, "Nearly done", model.ProjectStatusCompleted)
-	f.entry(t, project.ID, model.TimesheetStatusOpen)
-
-	_, err := f.projectDomain.ArchiveProject(context.Background(), project.ID, 0)
-	if err == nil {
-		t.Fatal("a project with an open entry was archived")
-	}
-
-	// The count belongs in the message: "there is something open" leaves the
-	// reader to go and find it.
-	if !strings.Contains(err.Error(), "1") {
-		t.Errorf("the refusal does not say how many: %q", err)
-	}
-}
-
-// Settled entries are no obstacle - that is the normal state of a finished
-// project, and refusing here would make the operation impossible in practice.
-func TestSettledEntriesDoNotBlockArchiving(t *testing.T) {
+// Entries are no obstacle - a finished project has them by definition, and
+// refusing here would make archiving impossible in practice.
+func TestEntriesDoNotBlockArchiving(t *testing.T) {
 	f := newFixture(t)
 	project := f.project(t, "Done", model.ProjectStatusCompleted)
-	f.entry(t, project.ID, model.TimesheetStatusApproved)
-	f.entry(t, project.ID, model.TimesheetStatusSubmitted)
+	f.entry(t, project.ID)
+	f.entry(t, project.ID)
 
 	if _, err := f.projectDomain.ArchiveProject(context.Background(), project.ID, 0); err != nil {
 		t.Errorf("archiving was refused over settled entries: %v", err)
@@ -190,7 +170,7 @@ func TestTransferringAnEntryToAnotherProject(t *testing.T) {
 	f := newFixture(t)
 	from := f.project(t, "From", model.ProjectStatusActive)
 	to := f.project(t, "To", model.ProjectStatusActive)
-	entry := f.entry(t, from.ID, model.TimesheetStatusOpen)
+	entry := f.entry(t, from.ID)
 
 	moved, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, to.ID, 0)
 	if err != nil {
@@ -207,7 +187,7 @@ func TestTransferringAnEntryToAnotherProject(t *testing.T) {
 func TestAnEntryWithNoProjectCanBeGivenOne(t *testing.T) {
 	f := newFixture(t)
 	target := f.project(t, "Target", model.ProjectStatusActive)
-	entry := f.entry(t, 0, model.TimesheetStatusOpen)
+	entry := f.entry(t, 0)
 
 	moved, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, target.ID, 0)
 	if err != nil {
@@ -219,27 +199,13 @@ func TestAnEntryWithNoProjectCanBeGivenOne(t *testing.T) {
 	}
 }
 
-// An approved entry is a signed-off record. Moving its hours elsewhere would
-// silently change a total that has already been reported to somebody.
-func TestAnApprovedEntryCannotBeTransferred(t *testing.T) {
-	f := newFixture(t)
-	from := f.project(t, "From", model.ProjectStatusActive)
-	to := f.project(t, "To", model.ProjectStatusActive)
-	entry := f.entry(t, from.ID, model.TimesheetStatusApproved)
-
-	if _, err := f.timesheetDomain.TransferTimesheetToProject(
-		context.Background(), entry.ID, to.ID, 0); err == nil {
-		t.Error("an approved entry was transferred")
-	}
-}
-
 // A project that no longer accepts time must not receive any by the back door.
 func TestAnEntryCannotBeTransferredIntoAClosedProject(t *testing.T) {
 	for _, status := range []string{model.ProjectStatusCompleted, model.ProjectStatusArchived} {
 		f := newFixture(t)
 		from := f.project(t, "From", model.ProjectStatusActive)
 		to := f.project(t, "Closed", status)
-		entry := f.entry(t, from.ID, model.TimesheetStatusOpen)
+		entry := f.entry(t, from.ID)
 
 		if _, err := f.timesheetDomain.TransferTimesheetToProject(
 			context.Background(), entry.ID, to.ID, 0); err == nil {
@@ -253,7 +219,7 @@ func TestAnEntryCannotBeTransferredIntoAClosedProject(t *testing.T) {
 func TestTransferringAnEntryToTheProjectItIsAlreadyOn(t *testing.T) {
 	f := newFixture(t)
 	project := f.project(t, "Here", model.ProjectStatusActive)
-	entry := f.entry(t, project.ID, model.TimesheetStatusOpen)
+	entry := f.entry(t, project.ID)
 
 	if _, err := f.timesheetDomain.TransferTimesheetToProject(
 		context.Background(), entry.ID, project.ID, 0); err == nil {
@@ -264,7 +230,7 @@ func TestTransferringAnEntryToTheProjectItIsAlreadyOn(t *testing.T) {
 func TestTransferringToAProjectThatIsNotThere(t *testing.T) {
 	f := newFixture(t)
 	from := f.project(t, "From", model.ProjectStatusActive)
-	entry := f.entry(t, from.ID, model.TimesheetStatusOpen)
+	entry := f.entry(t, from.ID)
 
 	if _, err := f.timesheetDomain.TransferTimesheetToProject(
 		context.Background(), entry.ID, 9999, 0); err == nil {
@@ -284,8 +250,7 @@ func TestTheReportTotalsHoursPerPerson(t *testing.T) {
 		id := project.ID
 		_, err := f.timesheets.Save(context.Background(), &model.Timesheet{
 			UserID: userID, ProjectID: &id, DurationHours: hours,
-			Date:   time.Now().AddDate(0, 0, -daysAgo),
-			Status: model.TimesheetStatusApproved,
+			Date: time.Now().AddDate(0, 0, -daysAgo),
 		})
 		if err != nil {
 			t.Fatalf("seed: %v", err)

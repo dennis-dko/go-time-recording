@@ -14,7 +14,6 @@ type UpdateTimesheetCommand struct {
 	Date          *time.Time
 	DurationHours *float64
 	Description   *string
-	Status        *string
 }
 
 // UpdateTimesheetCommandResult command to get update result of existing timesheet

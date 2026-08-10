@@ -17,7 +17,6 @@ type TimesheetResult struct {
 	Date          time.Time
 	DurationHours float64
 	Description   *string
-	Status        string
 }
 
 func NewTimesheetResultFromModel(timesheetModels ...*model.Timesheet) []*TimesheetResult {
@@ -33,7 +32,6 @@ func NewTimesheetResultFromModel(timesheetModels ...*model.Timesheet) []*Timeshe
 			Date:          timesheetModel.Date,
 			DurationHours: timesheetModel.DurationHours,
 			Description:   timesheetModel.Description,
-			Status:        timesheetModel.Status,
 		}
 		if timesheetModel.Description != nil {
 			timesheetData.Description = timesheetModel.Description

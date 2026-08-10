@@ -37,7 +37,6 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
-	"github.com/dennis-dko/go-time-recording/internal/interface/worker"
 )
 
 // version is stamped at build time via -ldflags "-X main.version=...".
@@ -392,7 +391,6 @@ func main() {
 		MaxDailyHours:          cfg.MaxDailyHours,
 		RateLimit:              cfg.RateLimit,
 		RateLimitWindowSeconds: int(cfg.RateLimitWindow.Seconds()),
-		AutoCloseAfterDays:     cfg.AutoCloseAfterDays,
 		LDAPSyncMaxDeleteRatio: cfg.LDAPSyncMaxDeleteRatio,
 	})
 
@@ -624,17 +622,9 @@ func main() {
 		})
 	}
 
-	// Nightly sweep so stale open entries do not linger unreported.
-	if cfg.AutoCloseSchedule != "" {
-		app.AddCronJob(cfg.AutoCloseSchedule, "auto-submit-stale-timesheets",
-			worker.AutoSubmitStaleTimesheets(timesheetRepo,
-				func(ctx *gofr.Context) int { return limits.Limits(ctx).AutoCloseAfterDays },
-				func(ctx *gofr.Context) *time.Location {
-					// No user in a cron run, so the instance zone is the only one
-					// that could apply.
-					return model.EffectiveTimezone("", instanceTimezone(ctx))
-				}))
-	}
+	// The nightly sweep that moved stale open entries to submitted is gone with the
+	// review path it fed: an entry has no state any more, and there is nobody to
+	// submit it to.
 
 	if stop := startTLS(app, cfg); stop != nil {
 		defer func() {

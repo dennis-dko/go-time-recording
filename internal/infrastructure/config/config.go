@@ -74,14 +74,6 @@ type Config struct {
 	// truncated or misfiltered directory answer reading as a mass departure.
 	LDAPSyncMaxDeleteRatio float64
 
-	// AutoCloseSchedule is the cron expression for sweeping stale open
-	// timesheets. Empty disables the job.
-	AutoCloseSchedule string
-
-	// AutoCloseAfterDays is how old an open timesheet must be before the
-	// sweep submits it.
-	AutoCloseAfterDays int
-
 	// MaxDailyHours caps the total hours a user may book on a single day.
 	MaxDailyHours float64
 
@@ -193,7 +185,6 @@ func traceRatio(raw string) float64 {
 
 const (
 	defaultDialect            = "sqlite"
-	defaultAutoCloseSchedule  = "0 2 * * *" // 02:00 daily
 	defaultAutoCloseAfterDays = 14
 	defaultMaxDailyHours      = 24
 	defaultSessionLifetime    = 12 * time.Hour
@@ -268,9 +259,7 @@ func Load(p Provider) Config {
 		LDAPSyncSchedule: p.Get("LDAP_SYNC_SCHEDULE"),
 		LDAPSyncMaxDeleteRatio: ratioOr(p.GetOrDefault("LDAP_SYNC_MAX_DELETE_RATIO", ""),
 			defaultSyncMaxDeleteRatio),
-		AutoCloseSchedule:  p.GetOrDefault("AUTO_CLOSE_SCHEDULE", defaultAutoCloseSchedule),
-		AutoCloseAfterDays: intOr(p.GetOrDefault("AUTO_CLOSE_AFTER_DAYS", ""), defaultAutoCloseAfterDays),
-		MaxDailyHours:      floatOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),
+		MaxDailyHours: floatOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),
 
 		Telemetry: Telemetry{
 			LogLevel:      logLevel(p.Get("LOG_LEVEL")),

@@ -11,8 +11,8 @@ import (
 //
 // Every installation has this account, and nobody chose to give it anything: it
 // arrived with the software. So it is the one account that must not be able to
-// read, edit or approve what other people recorded - an administrator restoring a
-// backup or repointing the directory has no business in a colleague's week.
+// read or edit what other people recorded - an administrator restoring a backup
+// or repointing the directory has no business in a colleague's week.
 //
 // Enforced by the same per-endpoint checks that refuse an employee, which is what
 // these tests go through. A guarantee that only holds in the interface is not a
@@ -64,8 +64,8 @@ func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
 		t.Error("the administrator read another user's entries by filtering for them")
 	}
 
-	// Reading, changing, approving and moving one, each refused on its own - they
-	// are four different rights and a single check would not cover the others.
+	// Reading, changing and moving one, each refused on its own - they are
+	// different rights and a single check would not cover the others.
 	for _, attempt := range []struct {
 		what   string
 		method string
@@ -75,10 +75,6 @@ func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
 		{"read one entry", http.MethodGet, path("/timesheets/", entry.ID), nil},
 		{"change the hours", http.MethodPut, path("/timesheets/", entry.ID),
 			map[string]any{"durationHours": 9}},
-		{"submit it", http.MethodPut, path("/timesheets/", entry.ID),
-			map[string]any{"status": "submitted"}},
-		{"approve it", http.MethodPut, path("/timesheets/", entry.ID),
-			map[string]any{"status": "approved"}},
 		{"transfer it", http.MethodPost, path("/timesheets/", entry.ID) + "/transfer",
 			map[string]any{"projectId": 1}},
 	} {
@@ -99,9 +95,8 @@ func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
 	owner.must(owner.api(http.MethodGet, path("/timesheets/", entry.ID), nil),
 		http.StatusOK).Data(t, &after)
 
-	if after.DurationHours != 4 || after.Status != "open" {
-		t.Errorf("the entry is now %v hours and %q; it was 4 and open",
-			after.DurationHours, after.Status)
+	if after.DurationHours != 4 {
+		t.Errorf("the entry is now %v hours; it was 4", after.DurationHours)
 	}
 }
 
@@ -109,10 +104,10 @@ func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
 func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
-	manager := a.signInAsManager(admin, "Momo", "momo@example.com")
+	other := a.signInAsUser(admin, "Momo", "momo@example.com")
 
 	var shared projectResponse
-	manager.must(manager.api(http.MethodPost, "/projects", map[string]any{
+	other.must(other.api(http.MethodPost, "/projects", map[string]any{
 		"name": "Everyone's work", "startDate": "2026-08-01",
 	}), http.StatusCreated, http.StatusOK).Data(t, &shared)
 

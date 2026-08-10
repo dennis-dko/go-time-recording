@@ -317,26 +317,55 @@ func (a *app) signInAsAdmin(newPassword string) *client {
 	return fresh
 }
 
-// signInAsManager creates a manager and signs in as them.
+// signInAsUser creates an ordinary account and signs in as it.
 //
-// Needed because the built-in administrator deliberately holds none of the rights
-// over other people's work: no approving, no reading or editing somebody else's
-// entries, no managing the shared projects. Those belong to whoever the
-// organisation puts in charge of the work, which on a default installation is the
-// manager role. A test that needs any of it needs one of these.
-func (a *app) signInAsManager(admin *client, name, email string) *client {
+// There is no second role any more. Everyone keeps their own time, projects and
+// calendar, and the built-in administrator runs the installation - so a test that
+// needs somebody who is not the administrator needs one of these.
+func (a *app) signInAsUser(admin *client, name, email string) *client {
 	a.t.Helper()
 
-	const password = "manager-password-1"
+	const password = "another-password-1"
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": name, "email": email, "role": "manager", "password": password,
+		"name": name, "email": email, "role": "employee", "password": password,
 	}), http.StatusCreated, http.StatusOK)
 
-	manager := a.newClient()
-	manager.signIn(email, password)
+	user := a.newClient()
+	user.signIn(email, password)
 
-	return manager
+	return user
+}
+
+// signInAsAuditor creates an account that may read everybody's entries.
+//
+// No default role can do that any more: everyone keeps their own time and the
+// administrator runs the installation. What is left is that an administrator can
+// still define a role - so a test that has to observe somebody else's entries
+// builds the role it needs, which also keeps role administration honest.
+func (a *app) signInAsAuditor(admin *client, name, email string) *client {
+	a.t.Helper()
+
+	const password = "auditor-password-1"
+
+	admin.must(admin.api(http.MethodPost, "/roles", map[string]any{
+		"name": "auditor", "description": "reads what others recorded",
+		"permissions": []string{
+			"timesheets:read:all", "timesheets:write:all", "timesheets:transfer",
+			"reports:read",
+			"projects:read", "projects:write", "projects:archive", "projects:delete",
+			"timesheets:read:own", "timesheets:write:own", "settings:write:own",
+		},
+	}), http.StatusCreated, http.StatusOK)
+
+	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
+		"name": name, "email": email, "role": "auditor", "password": password,
+	}), http.StatusCreated, http.StatusOK)
+
+	auditor := a.newClient()
+	auditor.signIn(email, password)
+
+	return auditor
 }
 
 // ------------------------------------------------------------------- types
@@ -364,7 +393,6 @@ type timesheetResponse struct {
 	Date          string  `json:"date"`
 	DurationHours float64 `json:"durationHours"`
 	Description   *string `json:"description"`
-	Status        string  `json:"status"`
 }
 
 type projectResponse struct {

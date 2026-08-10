@@ -65,11 +65,6 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 
 	// An approved entry is a signed-off record; moving its hours to another
 	// project would silently rewrite an already-reported total.
-	if timesheet.Status == model.TimesheetStatusApproved {
-		return nil, apperror.Conflictf("an approved timesheet can no longer be transferred").
-			WithCode("approvedEntryUntransferable")
-	}
-
 	newProject, err := s.projectRepository.GetByID(ctx, newProjectID)
 	if err != nil {
 		return nil, err

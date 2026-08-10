@@ -5,7 +5,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
@@ -50,12 +49,6 @@ type ProjectTotal struct {
 	Hours     float64
 }
 
-// StatusTotal is the hours sitting in one state of the workflow.
-type StatusTotal struct {
-	Status string
-	Hours  float64
-}
-
 // OwnStatistics is what somebody's own recorded time adds up to.
 type OwnStatistics struct {
 	From time.Time
@@ -69,7 +62,6 @@ type OwnStatistics struct {
 	Days []DayTotal
 
 	Projects []ProjectTotal
-	Statuses []StatusTotal
 }
 
 // Own totals the caller's entries between two dates, inclusive at both ends.
@@ -99,20 +91,12 @@ func (s *StatisticsService) Own(
 
 	perDay := map[string]float64{}
 	perProject := map[uint]float64{}
-	perStatus := map[string]float64{}
 
 	var withoutProject float64
 
 	for _, entry := range entries {
-		// A rejected entry is not work anybody is counting, the same reading the
-		// overtime balance takes.
-		if entry.Status == model.TimesheetStatusRejected {
-			continue
-		}
-
 		stats.TotalHours += entry.DurationHours
 		perDay[entry.Date.Format(dayKey)] += entry.DurationHours
-		perStatus[entry.Status] += entry.DurationHours
 
 		if entry.HasProject() {
 			perProject[*entry.ProjectID] += entry.DurationHours
@@ -129,7 +113,6 @@ func (s *StatisticsService) Own(
 	}
 
 	stats.Projects = projects
-	stats.Statuses = statusTotals(perStatus)
 
 	return stats, nil
 }
@@ -189,24 +172,4 @@ func (s *StatisticsService) projectTotals(
 	}
 
 	return totals, nil
-}
-
-// statusTotals returns the workflow states in their own order rather than in the
-// order the entries happened to arrive.
-func statusTotals(perStatus map[string]float64) []StatusTotal {
-	ordered := []string{
-		model.TimesheetStatusOpen,
-		model.TimesheetStatusSubmitted,
-		model.TimesheetStatusApproved,
-	}
-
-	totals := make([]StatusTotal, 0, len(ordered))
-
-	for _, status := range ordered {
-		if hours, ok := perStatus[status]; ok {
-			totals = append(totals, StatusTotal{Status: status, Hours: hours})
-		}
-	}
-
-	return totals
 }

@@ -89,11 +89,6 @@ func TestBookingTimeIsCounted(t *testing.T) {
 		t.Errorf("the hours histogram has no count:\n%s", metricLines(scraped, "gtr_timesheet"))
 	}
 
-	// And the entry is counted as having entered its state, which is what makes
-	// a queue of submitted entries nobody approves visible at all.
-	if !declares(scraped, `gtr_timesheet_transitions_total`) {
-		t.Errorf("the transition was not counted:\n%s", metricLines(scraped, "gtr_timesheet"))
-	}
 }
 
 // Either somebody is working through a password list, or the directory has

@@ -141,21 +141,6 @@ func requireKind(t *testing.T, err error, want apperror.Kind) {
 	}
 }
 
-func TestCreateTimesheetDefaultsToOpen(t *testing.T) {
-	f := newFixture(t)
-
-	res, err := f.timesheets.CreateTimesheet(context.Background(), command.CreateTimesheetCommand{
-		UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: 4,
-	})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	if res.Result.Status != model.TimesheetStatusOpen {
-		t.Errorf("expected status %q, got %q", model.TimesheetStatusOpen, res.Result.Status)
-	}
-}
-
 func TestCreateTimesheetRejectsInvalidInput(t *testing.T) {
 	f := newFixture(t)
 
@@ -163,10 +148,6 @@ func TestCreateTimesheetRejectsInvalidInput(t *testing.T) {
 		"zero hours":    {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: 0},
 		"over 24 hours": {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: 25},
 		"missing date":  {UserID: f.userID, ProjectID: f.projectID, DurationHours: 4},
-		"bad status": {
-			UserID: f.userID, ProjectID: f.projectID, Date: day(15),
-			DurationHours: 4, Status: "whatever",
-		},
 	}
 
 	for name, cmd := range cases {
@@ -221,86 +202,6 @@ func TestDailyHoursCapExcludesTheEntryBeingUpdated(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("raising 8h to 9h under a 10h cap should succeed: %v", err)
 	}
-}
-
-func TestStatusLifecycle(t *testing.T) {
-	cases := []struct {
-		name      string
-		from, to  string
-		wantError bool
-	}{
-		{"open to submitted", model.TimesheetStatusOpen, model.TimesheetStatusSubmitted, false},
-		{"open to approved", model.TimesheetStatusOpen, model.TimesheetStatusApproved, true},
-		{"submitted to approved", model.TimesheetStatusSubmitted, model.TimesheetStatusApproved, false},
-		{"submitted to rejected", model.TimesheetStatusSubmitted, model.TimesheetStatusRejected, false},
-		{"rejected to open", model.TimesheetStatusRejected, model.TimesheetStatusOpen, false},
-		{"approved to open", model.TimesheetStatusApproved, model.TimesheetStatusOpen, true},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newFixture(t)
-			id := f.book(t, day(15), 4)
-
-			// Walk the entry to the starting status through legal steps.
-			for _, step := range pathTo(tc.from) {
-				status := step
-				if _, err := f.timesheets.UpdateTimesheet(context.Background(),
-					command.UpdateTimesheetCommand{ID: id, Status: &status}); err != nil {
-					t.Fatalf("setting up status %q: %v", step, err)
-				}
-			}
-
-			to := tc.to
-			_, err := f.timesheets.UpdateTimesheet(context.Background(),
-				command.UpdateTimesheetCommand{ID: id, Status: &to})
-
-			if tc.wantError {
-				requireKind(t, err, apperror.KindConflict)
-
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("transition %s -> %s should be allowed: %v", tc.from, tc.to, err)
-			}
-		})
-	}
-}
-
-// pathTo returns the legal status steps needed to reach target from "open".
-func pathTo(target string) []string {
-	switch target {
-	case model.TimesheetStatusSubmitted:
-		return []string{model.TimesheetStatusSubmitted}
-	case model.TimesheetStatusApproved:
-		return []string{model.TimesheetStatusSubmitted, model.TimesheetStatusApproved}
-	case model.TimesheetStatusRejected:
-		return []string{model.TimesheetStatusSubmitted, model.TimesheetStatusRejected}
-	default:
-		return nil
-	}
-}
-
-func TestApprovedTimesheetIsImmutable(t *testing.T) {
-	f := newFixture(t)
-	id := f.book(t, day(15), 4)
-
-	for _, status := range []string{model.TimesheetStatusSubmitted, model.TimesheetStatusApproved} {
-		s := status
-		if _, err := f.timesheets.UpdateTimesheet(context.Background(),
-			command.UpdateTimesheetCommand{ID: id, Status: &s}); err != nil {
-			t.Fatalf("advancing to %q: %v", status, err)
-		}
-	}
-
-	hours := 5.0
-	_, err := f.timesheets.UpdateTimesheet(context.Background(),
-		command.UpdateTimesheetCommand{ID: id, DurationHours: &hours})
-	requireKind(t, err, apperror.KindConflict)
-
-	requireKind(t, f.timesheets.DeleteTimesheet(context.Background(),
-		command.DeleteTimesheetCommand{ID: id}), apperror.KindConflict)
 }
 
 func TestListTimesheetsFiltersByUser(t *testing.T) {

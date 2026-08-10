@@ -83,7 +83,7 @@ what you can do here is built from your own permissions, so nobody is promised
 approvals they cannot give.
 
 The walk itself covers booking time by hand and by stopwatch, the entry list and
-the submit-and-approve path, the calendar and correcting an entry from it, your
+the calendar and correcting an entry from it, your
 own figures as charts, the overtime balance, projects including private ones,
 reports, tokens and the second factor, and appearance and language. Steps are
 dropped for anything your role cannot reach, so nobody is shown a tab they do not
@@ -148,7 +148,6 @@ missing. That is why "Finish later" is safe to offer.
 | Own statistics | Hours per day and per project, drawn as charts, for everybody rather than administrators |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
-| Background job | Cron sweep that submits time entries left open too long |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
 | Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |
 
@@ -161,11 +160,10 @@ interface: create them, set their permissions, delete them.
 | Role | Purpose |
 | --- | --- |
 | `admin` | The installation, its accounts and their roles. A system role: it cannot be deleted or stripped of permissions |
-| `manager` | Runs the projects, sees, approves and reports on everyone's time entries |
-| `employee` | Books and submits their own time, reads shared projects |
+| `employee` | Keeps their own time, projects and calendar |
 
 Permissions are fine grained, for example `timesheets:read:own` against
-`timesheets:read:all`, and `timesheets:approve` separately from writing.
+`timesheets:read:all`, and reading separately from writing.
 Someone holding only the `:own` variant is restricted to their own data
 server-side, even if they send a filter naming somebody else.
 
@@ -178,16 +176,16 @@ are actually enforced.
 
 Running an installation and reading what people recorded in it are two different
 jobs, and the `admin` role does only the first: accounts, roles, the database, the
-directory, the backups, the log. It cannot read, edit, approve or transfer
-somebody else's entries, cannot keep the shared projects, and cannot open a
-report.
+directory, the backups, the log. It cannot read, edit or transfer somebody
+else's entries, and cannot open a report over them.
 
 That is deliberate. Every installation has the built-in administrator, and nobody
 chose to give it anything — it arrived with the software. An administrator
 restoring a backup has no business in a colleague's week. Running the work is the
-`manager` role's job, or any role you define.
+everybody's own job: each account keeps its own time, its own projects and its
+own calendar.
 
-The administrator still books, submits and reads **their own** time like anybody
+The administrator still books and reads **their own** time like anybody
 who works here, and still sets each account's daily target and ceiling, which is
 administering an account rather than reading it.
 
@@ -197,19 +195,18 @@ What it buys you is that the reach is never there by accident, and that granting
 it is a visible act — the role screen shows the permission.
 
 Existing installations are migrated: the rights are revoked from the `admin` role
-on upgrade, and the report right moves to `manager`, which would otherwise leave
-it with nobody.
+on upgrade.
 
 ### Reports
 
 Aggregate reports — what other people total up to — need `reports:read`, which by
-default only `manager` holds. Everyone else sees only their own figures, through
-**My statistics**, which needs nothing beyond reading your own entries.
+default **no role holds** — not even the administrator. Everyone sees their own
+figures through **My statistics**, which needs nothing beyond reading your own
+entries.
 
-`reports:read` sits with `manager` rather than with the administrator because a
-manager already reads every entry one by one in order to approve it, so the total
-of those entries reveals nothing further — while the administrator has no business
-in either.
+Nobody reads anybody else's totals unless an administrator deliberately defines a
+role that may, and assigns it. That is the whole arrangement: there is no
+supervisor built in.
 
 ## API access with personal tokens
 
@@ -405,7 +402,7 @@ categorised later, or left uncategorised.
 
 Beyond the shared projects, **every user can create their own private
 projects** to split up a day when no shared project fits. A private project is
-visible only to its owner — not to managers, and not to the administrator.
+visible only to its owner — not to anybody else, and not to the administrator.
 Creating one needs only `projects:write:own`, which every default role holds;
 creating a *shared* project still needs `projects:write`.
 
@@ -526,7 +523,7 @@ expressions.
 **Starting values** are what a fresh installation begins with; the setup wizard
 and *Settings* administer them at run time and what is stored there wins:
 `SESSION_LIFETIME`, `MAX_DAILY_HOURS`, `RATE_LIMIT`, `RATE_LIMIT_WINDOW`,
-`AUTO_CLOSE_AFTER_DAYS`, `LDAP_SYNC_MAX_DELETE_RATIO`, `APP_NAME`.
+`LDAP_SYNC_MAX_DELETE_RATIO`, `APP_NAME`.
 
 **At the next start** are administered too, but stored rather than applied,
 because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
@@ -558,8 +555,6 @@ only disagree with the first.
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client |
 | `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only. Administered under *Settings* as well, where what is saved wins from the next start |
 | `LDAP_SYNC_MAX_DELETE_RATIO` | `0.5` | refuse a run removing more than this share of directory accounts |
-| `AUTO_CLOSE_SCHEDULE` | `0 2 * * *` | cron for the sweep; empty disables it |
-| `AUTO_CLOSE_AFTER_DAYS` | `14` | when an open entry gets submitted |
 | `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day |
 | `LOG_LEVEL` | `INFO` | `DEBUG`…`FATAL`; anything else is read as `INFO` |
 | `TRACE_EXPORTER` | empty | `otlp` or `jaeger`; empty exports nothing |
@@ -580,7 +575,6 @@ force, and *Reset* drops every override at once.
 | `SESSION_LIFETIME` | to the next sign-in |
 | `MAX_DAILY_HOURS` | to the next booking |
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | within seconds |
-| `AUTO_CLOSE_AFTER_DAYS` | at the next sweep |
 | `LDAP_SYNC_MAX_DELETE_RATIO` | at the next synchronisation |
 
 Values are bounded on save, because this is the one screen that can lock its

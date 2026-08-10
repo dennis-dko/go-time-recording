@@ -72,7 +72,6 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 	result, err := h.timesheets.ListTimesheets(c, query.ListTimesheetsQuery{
 		UserID:    userID,
 		ProjectID: projectID,
-		Status:    c.Param("status"),
 		StartDate: from,
 		EndDate:   to,
 	})
@@ -139,7 +138,6 @@ func (h *TimesheetHandler) Create(c *gofr.Context) (any, error) {
 		Date:          req.Date.Time,
 		DurationHours: req.DurationHours,
 		Description:   req.Description,
-		Status:        req.Status,
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -174,20 +172,12 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	// Approving or rejecting is a separate right from editing your own hours.
-	if req.Status != nil && isReviewDecision(*req.Status) {
-		if _, err := h.authz.Require(c, model.PermTimesheetApprove); err != nil {
-			return nil, err
-		}
-	}
-
 	cmd := command.UpdateTimesheetCommand{
 		ID:            id,
 		UserID:        req.UserID,
 		ProjectID:     req.ProjectID,
 		DurationHours: req.DurationHours,
 		Description:   req.Description,
-		Status:        req.Status,
 	}
 
 	if req.Date != nil {
@@ -201,12 +191,6 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 	}
 
 	return newTimesheetResponse(result.Result), nil
-}
-
-// isReviewDecision reports whether a status change is an approval decision
-// rather than something the author may do themselves.
-func isReviewDecision(status string) bool {
-	return status == model.TimesheetStatusApproved || status == model.TimesheetStatusRejected
 }
 
 // Delete handles DELETE /api/v1/timesheets/{id}
@@ -284,7 +268,6 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 		Date:          Date{Time: timesheet.Date},
 		DurationHours: timesheet.DurationHours,
 		Description:   timesheet.Description,
-		Status:        timesheet.Status,
 	}, nil
 }
 

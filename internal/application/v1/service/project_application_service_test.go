@@ -45,22 +45,6 @@ func TestArchiveRequiresCompleted(t *testing.T) {
 	requireKind(t, err, apperror.KindConflict)
 }
 
-func TestArchiveBlockedByOpenEntries(t *testing.T) {
-	f := newFixture(t)
-	f.book(t, day(15), 4) // stays open
-
-	completed := model.ProjectStatusCompleted
-	if _, err := f.projects.UpdateProject(context.Background(),
-		command.UpdateProjectCommand{ID: f.projectID, Status: &completed}); err != nil {
-		t.Fatalf("completing: %v", err)
-	}
-
-	archived := model.ProjectStatusArchived
-	_, err := f.projects.UpdateProject(context.Background(),
-		command.UpdateProjectCommand{ID: f.projectID, Status: &archived})
-	requireKind(t, err, apperror.KindConflict)
-}
-
 func TestDeleteProjectBlockedByEntries(t *testing.T) {
 	f := newFixture(t)
 	f.book(t, day(15), 4)

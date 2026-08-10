@@ -105,7 +105,7 @@ func TestPurgeUserRemovesEveryReference(t *testing.T) {
 	for _, owner := range []*model.User{leaving, staying} {
 		if _, err := timesheets.Save(ctx, &model.Timesheet{
 			UserID: owner.ID, ProjectID: &shared.ID, Date: time.Now(),
-			DurationHours: 4, Status: model.TimesheetStatusOpen,
+			DurationHours: 4,
 		}); err != nil {
 			t.Fatalf("book for %s: %v", owner.Email, err)
 		}
