@@ -49,6 +49,65 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  *
  * @throws {Error} with the server-provided message on a non-2xx response.
  */
+/**
+ * The loading strip, driven by how many requests are in flight.
+ *
+ * Counted rather than toggled: three requests starting together and finishing
+ * apart would otherwise switch it off while two were still running.
+ *
+ * Nothing appears for a request that finishes quickly. A strip that flashes for
+ * 40ms is noise, and the screen it flashes over is already answering - so it
+ * waits, and only says something when there is something to wait for.
+ */
+const progress = { inFlight: 0, showTimer: null, hideTimer: null };
+
+/** How long a request may take before it is worth mentioning. */
+const PROGRESS_DELAY_MS = 140;
+
+function progressStart() {
+  progress.inFlight += 1;
+
+  if (progress.inFlight > 1 || progress.showTimer) return;
+
+  clearTimeout(progress.hideTimer);
+
+  progress.showTimer = setTimeout(() => {
+    progress.showTimer = null;
+
+    const bar = $('#progress');
+    if (!bar) return;
+
+    // Removed and re-added so the creep animation restarts rather than
+    // continuing from where the last request left it.
+    bar.classList.remove('done');
+    bar.hidden = false;
+    void bar.offsetWidth;
+  }, PROGRESS_DELAY_MS);
+}
+
+function progressDone() {
+  progress.inFlight = Math.max(0, progress.inFlight - 1);
+
+  if (progress.inFlight > 0) return;
+
+  // Finished before it was ever shown, which is the common case.
+  if (progress.showTimer) {
+    clearTimeout(progress.showTimer);
+    progress.showTimer = null;
+
+    return;
+  }
+
+  const bar = $('#progress');
+  if (!bar || bar.hidden) return;
+
+  bar.classList.add('done');
+  progress.hideTimer = setTimeout(() => {
+    // Only if nothing started again while it was fading out.
+    if (progress.inFlight === 0) bar.hidden = true;
+  }, 460);
+}
+
 async function api(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = { 'Content-Type': 'application/json', ...(options.headers ?? {}) };
@@ -57,12 +116,22 @@ async function api(path, options = {}) {
     headers['X-CSRF-Token'] = readCookie('gtr_csrf');
   }
 
-  const res = await fetch(API + path, {
-    ...options,
-    headers,
-    // Without this a cross-origin deployment would drop the cookies entirely.
-    credentials: 'same-origin',
-  });
+  progressStart();
+
+  let res;
+
+  try {
+    res = await fetch(API + path, {
+      ...options,
+      headers,
+      // Without this a cross-origin deployment would drop the cookies entirely.
+      credentials: 'same-origin',
+    });
+  } finally {
+    // In a finally, so a refused connection does not leave the strip running for
+    // as long as the page is open.
+    progressDone();
+  }
 
   let body = null;
   try {

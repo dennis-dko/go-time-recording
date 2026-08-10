@@ -332,7 +332,16 @@
         const res = await fetch('/install/state', { cache: 'no-store' });
 
         // The installer still answers, so it is still in charge.
-        if (res.ok) return;
+        //
+        // A 200 is not enough to conclude that. Once the application has taken
+        // the port it serves the single-page app for every unknown path - this
+        // one included - so /install/state answers 200 with HTML, and a check on
+        // res.ok alone waits here for ever. That is exactly what it did: the page
+        // never reloaded after the database was configured.
+        //
+        // The content type is what tells them apart: the installer answers JSON,
+        // the application answers a document.
+        if (res.ok && (res.headers.get('content-type') || '').includes('json')) return;
       } catch {
         // Nothing listening yet, or the handover is in progress.
       }

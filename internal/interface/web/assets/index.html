@@ -11,6 +11,10 @@
   <script src="/theme.js"></script>
 </head>
 <body>
+  <!-- The loading strip, above everything and outside the layout: it must not
+       move anything when it appears, or every request would nudge the page. -->
+  <div id="progress" class="progress" hidden aria-hidden="true"><span></span></div>
+
   <header class="topbar">
     <img id="brand-logo" class="brand-logo" alt="" hidden>
     <h1 id="app-title">Time Recording</h1>
