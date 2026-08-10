@@ -263,9 +263,19 @@ func TestAFileWithABadRowImportsNothing(t *testing.T) {
 	}
 }
 
-// A file naming somebody else is refused for whoever may not book for others, and
-// the refusal names the row rather than the whole file.
-func TestImportingForSomebodyElseNeedsTheWiderRight(t *testing.T) {
+// A file naming somebody else is refused, and the refusal names the row rather than
+// the whole file.
+//
+// This used to end by showing the way past it: an account holding
+// timesheets:write:all imported the same file and got both rows. There is no such
+// account any more and no right to build one from, so the second half of this case is
+// now the opposite claim - the most privileged account this application has is refused
+// the same row for the same reason.
+//
+// A per-row refusal rather than a rejected file, because a spreadsheet somebody
+// exported from a colleague's screen and edited is a realistic thing to be handed:
+// the rows that are yours import, and the ones that are not come back named.
+func TestImportingSomebodyElsesRowIsRefused(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -308,16 +318,28 @@ func TestImportingForSomebodyElseNeedsTheWiderRight(t *testing.T) {
 		t.Errorf("importing somebody else's row answered %d, want 409", r.Status)
 	}
 
-	// An account with the wider right may, which makes this a permission rather
-	other := a.signInAsAuditor(admin, "Mira", "mira@example.com")
+	// And nobody may. The caller here both works and administers, which is as far as
+	// any role reaches - so this is not "Vera lacks a right somebody else has", it is
+	// that the right is not there to be held.
+	mira := a.signInAsWorkingAdmin(admin, "Mira", "mira@example.com")
 
-	result, r := importFile(t, other, book, "false")
+	elsewhere, r := importFile(t, mira, book, "true")
 	if r.Status != http.StatusOK && r.Status != http.StatusCreated {
-		t.Fatalf("a manager importing for others answered %d: %s", r.Status, r.Body)
+		t.Fatalf("the preview answered %d for an account that administers too: %s",
+			r.Status, r.Body)
 	}
 
-	if result.Imported != 2 {
-		t.Errorf("a manager imported %d of 2 rows", result.Imported)
+	// Two rows named for two other people, so both are rejected and none is
+	// writable - Mira is neither Vera nor Wim.
+	if elsewhere.Writable != 0 || elsewhere.Rejected != 2 {
+		t.Errorf("an account that administers as well previews %d writable and %d "+
+			"rejected, want 0 and 2: administering the installation is not a way into "+
+			"a colleague's hours", elsewhere.Writable, elsewhere.Rejected)
+	}
+
+	if _, r := importFile(t, mira, book, "false"); r.Status != http.StatusConflict {
+		t.Errorf("an account that administers as well imported somebody else's rows "+
+			"with %d, want 409", r.Status)
 	}
 }
 
@@ -338,14 +360,18 @@ func TestSomethingThatIsNotAWorkbookIsRefusedOutright(t *testing.T) {
 	}
 }
 
-// An employee exports their own entries and nobody else's, the same way the list
+// An export holds the caller's own entries and nobody else's, the same way the list
 // does - an export that saw more than the screen would be a way around the screen.
+//
+// This used to prove the scoping by contrast: an account holding timesheets:read:all
+// exported both rows, so a one-row export was clearly a scope and not an accident. No
+// account can do that now, so the contrast is drawn the other way round - each of the
+// two accounts exports exactly its own row, which distinguishes a scope from an empty
+// answer just as well and does not need a right that no longer exists.
 func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
-	// The auditor is the half that must see both: an ordinary account sees only
-	// its own, which is what the first half of this test proves.
-	other := a.signInAsAuditor(admin, "Malin", "malin@example.com")
+	other := a.signInAsUser(admin, "Malin", "malin@example.com")
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Xenia", "email": "xenia@example.com",
@@ -360,7 +386,7 @@ func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
 	}), http.StatusCreated, http.StatusOK)
 
 	other.must(other.api(http.MethodPost, "/timesheets", map[string]any{
-		"date": "2026-08-03", "durationHours": 5, "description": "the manager's",
+		"date": "2026-08-03", "durationHours": 5, "description": "the other one's",
 	}), http.StatusCreated, http.StatusOK)
 
 	// Hers alone with no filter at all, which is where an export that ignored the
@@ -389,33 +415,38 @@ func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
 
 	admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK).Data(t, &people)
 
-	var managerID uint
+	var otherID uint
 
 	for _, person := range people.Items {
 		if person.Email == "malin@example.com" {
-			managerID = person.ID
+			otherID = person.ID
 		}
 	}
 
-	if managerID == 0 {
-		t.Fatal("could not find the manager's id")
+	if otherID == 0 {
+		t.Fatal("could not find the other account's id")
 	}
 
 	if got := xenia.api(http.MethodGet,
-		path("/timesheets/export?userId=", managerID), nil).Status; got == http.StatusOK {
+		path("/timesheets/export?userId=", otherID), nil).Status; got == http.StatusOK {
 		t.Error("she exported somebody else's entries by asking for them by id")
 	}
 
-	// The manager sees both, which is what makes the scoping a scoping rather than
-	// an empty export.
-	all := other.must(other.api(http.MethodGet, "/timesheets/export", nil), http.StatusOK)
+	// And the other account's export is its own single row, not hers and not both.
+	// That is what makes a one-row export a scope rather than an export that happens
+	// to be short.
+	theirs := other.must(other.api(http.MethodGet, "/timesheets/export", nil), http.StatusOK)
 
-	allRows, _, err := spreadsheet.Read(bytes.NewReader(all.Body))
+	theirRows, _, err := spreadsheet.Read(bytes.NewReader(theirs.Body))
 	if err != nil {
-		t.Fatalf("reading the manager's export: %v", err)
+		t.Fatalf("reading the other export: %v", err)
 	}
 
-	if len(allRows) != 2 {
-		t.Errorf("the manager's export has %d row(s), want 2", len(allRows))
+	if len(theirRows) != 1 {
+		t.Fatalf("the other export has %d row(s), want only its own", len(theirRows))
+	}
+
+	if theirRows[0].User != "Malin" {
+		t.Errorf("the other export contains %q's entry", theirRows[0].User)
 	}
 }

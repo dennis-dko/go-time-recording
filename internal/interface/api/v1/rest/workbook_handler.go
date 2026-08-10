@@ -45,8 +45,7 @@ const xlsxContentType = "application/vnd.openxmlformats-officedocument.spreadshe
 // names the file when it saves it, which it can do better anyway because it knows
 // which period was asked for.
 func (h *WorkbookHandler) Export(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c,
-		model.PermTimesheetReadOwn, model.PermTimesheetReadAll)
+	principal, err := h.authz.Require(c, model.PermTimesheetReadOwn)
 	if err != nil {
 		return nil, err
 	}
@@ -157,12 +156,11 @@ type ImportResponse struct {
 
 // Import handles POST /api/v1/timesheets/import.
 //
-// Writing somebody else's hours needs the wider permission, which is checked per
-// row rather than here: a file of one's own time is the ordinary case and must not
-// need the right to book for others.
+// A row naming somebody else is rejected rather than refused wholesale, which is
+// what the per-row plan is for: a file that is mostly yours still imports, and the
+// rows that are not yours come back named, so whoever exported the file can see why.
 func (h *WorkbookHandler) Import(c *gofr.Context) (any, error) {
-	principal, err := h.authz.RequireAny(c,
-		model.PermTimesheetWriteOwn, model.PermTimesheetWriteAll)
+	principal, err := h.authz.Require(c, model.PermTimesheetWriteOwn)
 	if err != nil {
 		return nil, err
 	}
@@ -195,8 +193,9 @@ func (h *WorkbookHandler) Import(c *gofr.Context) (any, error) {
 	}
 
 	// With enforcement off there is no caller to restrict, which is the same
-	// reading every other handler takes.
-	mayWriteAll := !h.authz.Enabled() || principal.Can(model.PermTimesheetWriteAll)
+	// reading every other handler takes. With it on, the answer is now always no:
+	// booking time in another person's name was the last thing the manager could do.
+	mayWriteAll := !h.authz.Enabled()
 
 	plan, err := h.workbook.Plan(c, rows, problems, principal.User, mayWriteAll)
 	if err != nil {

@@ -24,11 +24,12 @@ const (
 	// what the "own" right used to be about. Keeping both would have meant one of them
 	// granting nothing, and which one would have depended on where you looked.
 
-	// Own vs. all separates "my time sheet" from "everyone's".
+	// Everything about time is the person's own, so there is no "all" to contrast
+	// "own" with any more. The suffix stays on the names because the database and
+	// every installation's roles already spell them this way, and renaming a right
+	// to say the same thing is a migration that buys nothing.
 	PermTimesheetReadOwn  = "timesheets:read:own"
-	PermTimesheetReadAll  = "timesheets:read:all"
 	PermTimesheetWriteOwn = "timesheets:write:own"
-	PermTimesheetWriteAll = "timesheets:write:all"
 	PermTimesheetTransfer = "timesheets:transfer"
 	PermReportReadOwn     = "reports:read:own"
 	PermSettingsWriteOwn  = "settings:write:own"
@@ -50,19 +51,25 @@ const (
 // What stays with the administrator is the instance-wide default under Settings,
 // which is what a new account gets until its owner decides otherwise.
 
-// Whether somebody may see another person's recorded time is one question, and
-// PermTimesheetReadAll is the one right that answers it.
+// There is no timesheets:read:all, and no timesheets:write:all.
 //
-// There used to be a second, reports:read, for the same question asked of a total
-// rather than of a list - and it went to the role that reviewed other people's
-// hours. That role is gone, and with it the idea that anybody reviews anybody:
-// everyone keeps their own. What was left was a right no role held, gating a whole
-// screen that therefore nobody could reach, and a second answer to a question that
-// should only have one - which is how two answers come to disagree.
+// They were the last of the manager: one right that opened everybody's entries,
+// balances, totals and exports, and one that let somebody book or change time in
+// another person's name. Both survived the removal of the role that used them,
+// because a right outlives whoever held it, and no default role held either.
 //
-// So every read that could show another person's time now checks the same right:
-// the entry list, the spreadsheet export, a project's total, and somebody else's
-// overtime balance. No default role holds it.
+// A right nobody holds is not the same as a right nobody can hold. These two stayed
+// tickable in the role editor, and ticking one changed nothing anybody could see -
+// the screens that offered a "which person" choice were gone by then - while the API
+// answered every question about every colleague. A capability with no screen is a
+// capability nobody audits.
+//
+// What replaces them is the arrangement itself: whose entry it is decides who may
+// read or change it, and that is not a permission because it is not a choice. The
+// question "may this person see somebody else's time" now has one answer, no, and
+// no box that appears to change it. Somebody who should administer the installation
+// as well as record their own hours is given the combined role, which grants the
+// accounts and the configuration - never a colleague's time.
 
 // AllPermissions lists every permission the application enforces. The role
 // administration UI offers exactly these, so a typo cannot create a permission
@@ -72,8 +79,7 @@ func AllPermissions() []string {
 		PermUserRead, PermUserWrite, PermUserDelete,
 		PermRoleRead, PermRoleWrite,
 		PermProjectRead, PermProjectWrite, PermProjectDelete, PermProjectArchive,
-		PermTimesheetReadOwn, PermTimesheetReadAll,
-		PermTimesheetWriteOwn, PermTimesheetWriteAll,
+		PermTimesheetReadOwn, PermTimesheetWriteOwn,
 		PermTimesheetTransfer,
 		PermReportReadOwn,
 		PermSettingsWriteOwn,

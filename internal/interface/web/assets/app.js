@@ -418,7 +418,6 @@ function balanceCell(value) {
   });
 }
 
-const userName = (id) => cache.users.find((u) => u.id === id)?.name ?? `#${id}`;
 const projectName = (id) => cache.projects.find((p) => p.id === id)?.name ?? `#${id}`;
 
 /** Replaces a tbody with rows, or a single "empty" row when there are none. */
@@ -863,7 +862,7 @@ const TRANSLATIONS = {
     'tour.stats.title': 'Deine eigenen Zahlen',
     'tour.stats.text': 'Stunden pro Tag und pro Projekt, über einen Zeitraum deiner Wahl. Nur deine eigenen – und niemand sonst sieht sie.',
     'tour.report.title': 'Projektberichte',
-    'tour.report.text': 'Was ein Projekt zusammen ergibt, pro Person. Dieser Bereich braucht ein Berichtsrecht, denn es sind fremde Stunden und nicht die eigenen.',
+    'tour.report.text': 'Was du auf einem Projekt in einem Zeitraum gebucht hast. Deine eigenen Stunden – es gibt keine Aufschlüsselung nach Personen, denn niemand sieht, was jemand anderes erfasst hat.',
     'tour.tokens.title': 'Token und zweiter Faktor',
     'tour.tokens.text': 'Mit einem persönlichen Token kann ein Skript in deinem Namen buchen – mit genau den Rechten, die deine Rolle im Moment der Nutzung hat. Die Zwei-Faktor-Anmeldung liegt ebenfalls hier, mit einem Code zum Scannen.',
     'tour.nav.title': 'Alles liegt hier oben',
@@ -871,7 +870,7 @@ const TRANSLATIONS = {
     'tour.book.title': 'Zeit buchen',
     'tour.book.text': 'Datum wählen, Stunden eintragen, fertig. Ein Projekt ist optional — Zeiten lassen sich jetzt erfassen und später einsortieren.',
     'tour.entries.title': 'Deine Einträge',
-    'tour.entries.text': 'Alles Gebuchte, filterbar nach Person und Projekt. Es bleibt deins zum Ändern – es gibt niemanden, dem du es vorlegen müsstest.',
+    'tour.entries.text': 'Alles Gebuchte, filterbar nach Projekt. Es bleibt deins zum Ändern – es gibt niemanden, dem du es vorlegen müsstest.',
     'tour.calendar.title': 'Der Monat auf einen Blick',
     'tour.calendar.text': 'Welche Tage Stunden haben und wie viele. Ein Klick auf einen Tag zeigt, was dahintersteckt – und ein Klick auf einen dieser Einträge öffnet ihn zum Korrigieren.',
     'tour.overtime.title': 'Dein Überstundensaldo',
@@ -958,6 +957,11 @@ const TRANSLATIONS = {
     'passkey.added.done': 'Passkey hinzugefügt',
     'passkey.removed': 'Passkey entfernt',
     'passkey.cancelled': 'Der Passkey wurde nicht verwendet.',
+    'passkey.err.notAllowed': 'Die Abfrage wurde abgebrochen oder lief ab. Es wurde nichts geändert.',
+    'passkey.err.already': 'Dieses Gerät hat für dieses Konto schon einen Passkey.',
+    'passkey.err.unsupported': 'Dieses Gerät kann keinen Passkey der Art erstellen, die diese Installation verlangt.',
+    'passkey.err.insecure': 'Ein Passkey braucht HTTPS, und die Adresse in der Leiste muss die sein, für die er angelegt wurde.',
+    'passkey.err.aborted': 'Die Abfrage wurde geschlossen, bevor etwas geschehen ist.',
     'passkey.failed': 'Der Passkey wurde nicht akzeptiert.',
 
     'tz.title': 'Zeitzone',
@@ -1106,7 +1110,8 @@ const TRANSLATIONS = {
     'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
     'err.systemRoleUndeletable': 'Die Systemrolle „{0}“ kann nicht gelöscht werden.',
     'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
-    'err.systemRoleUnweakenable': 'Der Systemrolle „{0}“ können keine Rechte entzogen werden.',
+    'err.systemRoleRightsFixed': 'Die Rechte der Systemrolle „{0}“ lassen sich nicht ändern – weder entziehen noch hinzufügen. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „employee-admin“.',
+    'err.roleGrantsNothing': 'Eine Rolle muss mindestens ein Recht gewähren.',
     'err.targetOverMaximum': 'Das Tagesziel ({0} h) darf das Tagesmaximum ({1} h) nicht überschreiten.',
     'err.timerTooLong': 'Die Stoppuhr läuft seit {0} Stunden, mehr als ein Eintrag aufnehmen kann. Bitte von Hand buchen und die Stoppuhr verwerfen.',
     'err.timerTooShort': 'Die Stoppuhr läuft kürzer als die kleinste buchbare Dauer. Bitte stattdessen verwerfen.',
@@ -1207,7 +1212,6 @@ const TRANSLATIONS = {
     'field.to': 'Bis',
     'field.user': 'Benutzer',
     'filter.allProjects': 'Alle Projekte',
-    'filter.allUsers': 'Alle Benutzer',
     'footer.versionTitle': 'Laufende Version dieser Installation',
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
@@ -1274,6 +1278,7 @@ const TRANSLATIONS = {
     'ot.balance': 'Saldo',
     'ot.booked': 'Gebucht',
     'ot.empty': 'Keine Buchungen in diesem Zeitraum.',
+    'ot.meta': '{0} · Soll {1}/Tag · gebucht {2} von {3}',
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
     'project.hint': 'Ihre Projekte sind Ihre: nur Sie sehen sie, und nur Sie buchen darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
@@ -1282,8 +1287,11 @@ const TRANSLATIONS = {
     'pw.hide': 'Passwort verbergen',
     'pw.show': 'Passwort anzeigen',
     'report.result': 'Ergebnis',
+    'report.total': '{0} h gesamt',
     'report.title': 'Projektauswertung',
     'role.create': 'Rolle anlegen',
+    'role.edit': 'Rolle „{0}“ bearbeiten',
+    'role.rightsFixed': 'Die Rechte einer Systemrolle lassen sich nicht ändern. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „employee-admin“.',
     'role.empty': 'Keine Rollen vorhanden.',
     'role.permissions': 'Berechtigungen',
     'role.rights': 'Rechte',
@@ -1581,47 +1589,33 @@ async function loadMe() {
 }
 
 async function loadUsers() {
-  // Everyone can see themselves, but listing all users is a permission.
+  // Listing accounts is a permission, and administering them is the only thing this
+  // list is for now.
+  //
+  // It used to be loaded for everybody, including whoever may not list accounts - who
+  // got a list of exactly one entry, themselves. That was to fill four dropdowns of
+  // colleagues: the booking form, the entry filter, the calendar and the overtime
+  // form. They were built when a role could hold timesheets:read:all, and they never
+  // worked as they read - the built-in administrator administers accounts and does not
+  // read what people recorded in them, so it was offered every colleague and every
+  // choice but itself came back 403. The filter was worse: "All users" quietly showed
+  // only your own entries, because the server pins the scope and the label did not
+  // know.
+  //
+  // A dropdown holding a single name is a question with one answer, so all four are
+  // gone, and with them the two rights they existed to use. Whose time it is is not a
+  // choice any more, it is who is signed in.
+  //
+  // Emptied rather than left alone on the way out: a session that loses the right -
+  // its role changed while it was signed in - must not go on showing the accounts it
+  // read a moment ago.
   if (!can('users:read')) {
-    cache.users = me.user ? [me.user] : [];
-  } else {
-    cache.users = (await api('/users'))?.items ?? [];
+    cache.users = [];
+
+    return;
   }
 
-  // Who may be picked, which is not the same as who may be listed.
-  //
-  // Administering accounts and reading what people recorded in them are different
-  // jobs, and the built-in administrator has the first and not the second. It was
-  // offered every colleague in four dropdowns all the same, and every choice but
-  // itself came back 403 - four controls that looked ordinary and refused. The
-  // filter was worse than that: "All users" quietly showed only your own entries,
-  // because the server pins the scope and the label did not know.
-  //
-  // So the pickers offer whoever the caller may actually ask about, which for
-  // everybody by default is themselves alone.
-  const mine = me.user ? [me.user] : [];
-  const readable = can('timesheets:read:all') ? cache.users : mine;
-  const writable = can('timesheets:write:all') ? cache.users : mine;
-
-  fillSelect($('#form-timesheet select[name=userId]'), writable);
-  fillSelect($('#calendar-user'), readable);
-  fillSelect($('#form-overtime select[name=userId]'), readable);
-
-  // The placeholder only where it is true. With one name in the list "all users" is
-  // that name, and offering the choice suggests there is another answer.
-  fillSelect($('#filter-ts-user'), readable, readable.length > 1
-    ? { placeholder: t('filter.allUsers', 'All users') }
-    : {});
-
-  if (me.user) {
-    const own = String(me.user.id);
-    for (const selector of ['#form-overtime select[name=userId]', '#form-timesheet select[name=userId]', '#calendar-user']) {
-      const select = $(selector);
-      if (select && !select.value) select.value = own;
-    }
-  }
-
-  if (!can('users:read')) return;
+  cache.users = (await api('/users'))?.items ?? [];
 
   const rows = cache.users.map((u) => {
     const actions = el('td', { class: 'actions' });
@@ -1731,20 +1725,39 @@ async function loadRoles() {
   fillTable($('#table-roles tbody'), rows, 4, t('role.empty', 'No roles available.'));
 }
 
-function renderPermissionCheckboxes(selected = []) {
+/**
+ * The rights to tick, and whether they can be ticked at all.
+ *
+ * fixed is for a system role. Its permissions cannot be changed - neither given nor
+ * taken - because that role belongs to the built-in account, which configures the
+ * installation and records no time; a right added here would hand it a working day from
+ * the screen that administers roles.
+ *
+ * Shown as unavailable rather than left clickable and refused on save. The name of a
+ * system role has always been read-only in this form for the same reason: a control
+ * that looks usable and answers "no" is worse than one that says so first.
+ */
+function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
   const list = $('#permission-list');
   list.replaceChildren();
+
   for (const permission of cache.permissions) {
-    list.append(el('label', {},
+    list.append(el('label', { class: fixed ? 'muted' : '' },
       el('input', {
         type: 'checkbox',
         name: 'permissions',
         value: permission,
         checked: selected.includes(permission),
+        disabled: fixed,
       }),
       el('span', { text: permission }),
     ));
   }
+
+  // Why they cannot be ticked, next to them rather than in a notice after the fact.
+  const note = $('#role-fixed-note');
+
+  if (note) note.hidden = !fixed;
 }
 
 function editRole(role) {
@@ -1753,8 +1766,9 @@ function editRole(role) {
   form.elements.name.value = role.name;
   form.elements.description.value = role.description ?? '';
   form.elements.name.readOnly = role.isSystem;
-  renderPermissionCheckboxes(role.permissions);
-  $('#role-form-title').textContent = `Rolle „${role.name}" bearbeiten`;
+  renderPermissionCheckboxes(role.permissions, { fixed: role.isSystem });
+  $('#role-form-title').textContent = t('role.edit', 'Edit role')
+    .replace('{0}', role.name);
   switchView('roles');
 }
 
@@ -1764,7 +1778,7 @@ function resetRoleForm() {
   form.elements.id.value = '';
   form.elements.name.readOnly = false;
   renderPermissionCheckboxes();
-  $('#role-form-title').textContent = 'Rolle anlegen';
+  $('#role-form-title').textContent = t('role.create', 'Create role');
 }
 
 async function loadProjects() {
@@ -1779,13 +1793,16 @@ async function loadProjects() {
   fillSelect($('#form-timesheet select[name=projectId]'), bookable,
     { placeholder: t('ts.noProject', 'no project') });
   fillSelect($('#form-report select[name=projectId]'), cache.projects);
-  fillSelect($('#filter-ts-project'), cache.projects, { placeholder: 'Alle Projekte' });
+  fillSelect($('#filter-ts-project'), cache.projects,
+    { placeholder: t('filter.allProjects', 'All projects') });
 
   const rows = cache.projects.map((p) => {
     const actions = el('td', { class: 'actions' });
 
-    // A private category belongs to the signed-in user, so they may manage it
-    // whatever their project permissions are.
+    // Every project belongs to somebody, and the only ones anybody is handed are
+    // their own - so this is true of every row here. It stays because it is the
+    // question the delete button is really asking: you may remove your own way of
+    // organising your hours whatever your project permissions say.
     const mine = me.user && p.ownerId === me.user.id;
 
     if (can('projects:write') && p.status === 'active') {
@@ -1816,7 +1833,9 @@ async function loadProjects() {
     const period = `${fmtDate(p.startDate)} – ${p.endDate ? fmtDate(p.endDate) : t('project.open', 'open')}`;
 
     const name = el('td', { text: p.name });
-    return el('tr', { class: mine ? 'self' : '' },
+    // No "this one is yours" shade: they all are, and a table shaded from top to
+    // bottom says nothing that an unshaded one does not.
+    return el('tr', {},
       name,
       // A project needs no period, so the column stays quiet when there is none:
       // it is one person's way of organising their hours, not a plan.
@@ -1847,7 +1866,7 @@ async function loadProjects() {
 function mayEditTimesheet(entry) {
   const mine = me.user && entry.userId === me.user.id;
 
-  return can('timesheets:write:all') || (mine && can('timesheets:write:own'));
+  return Boolean(mine) && can('timesheets:write:own');
 }
 
 /**
@@ -1864,7 +1883,6 @@ function editTimesheet(entry) {
   if (!form) return;
 
   form.elements.id.value = String(entry.id);
-  form.elements.userId.value = String(entry.userId);
   form.elements.projectId.value = entry.projectId ? String(entry.projectId) : '';
   form.elements.date.value = entry.date;
   form.elements.durationHours.value = String(entry.durationHours);
@@ -1935,25 +1953,23 @@ async function reloadTimeViews() {
 }
 
 async function loadTimesheets() {
-  if (!can('timesheets:read:own', 'timesheets:read:all')) return;
+  if (!can('timesheets:read:own')) return;
 
   const params = new URLSearchParams();
-  const userId = $('#filter-ts-user').value;
   const projectId = $('#filter-ts-project').value;
-  if (userId) params.set('userId', userId);
   if (projectId) params.set('projectId', projectId);
 
   const suffix = params.toString() ? `?${params}` : '';
   const entries = (await api(`/timesheets${suffix}`))?.items ?? [];
 
   // Named `entry` rather than `t`, which would shadow the translation helper.
+  // No user column and no "this row is yours" highlight: every row is, so a column
+  // repeating one name and a shade behind every line say nothing.
   const rows = entries.map((entry) => {
     const actions = timesheetActions(entry);
-    const mine = me.user && entry.userId === me.user.id;
 
-    return el('tr', { class: mine ? 'self' : '' },
+    return el('tr', {},
       el('td', { text: fmtDate(entry.date) }),
-      el('td', { text: userName(entry.userId) }),
       el('td', {
         class: entry.projectId ? '' : 'empty',
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project'),
@@ -1964,7 +1980,7 @@ async function loadTimesheets() {
     );
   });
 
-  fillTable($('#table-timesheets tbody'), rows, 6, t('ts.empty', 'No entries for this filter.'));
+  fillTable($('#table-timesheets tbody'), rows, 5, t('ts.empty', 'No entries for this filter.'));
 }
 
 // ----------------------------------------------------------------- calendar
@@ -2032,14 +2048,12 @@ function todayISO() {
  * per day would be dozens of round trips for one screen.
  */
 async function loadCalendar() {
-  if (!can('timesheets:read:own', 'timesheets:read:all')) return;
+  if (!can('timesheets:read:own')) return;
 
   const first = calendarMonth;
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
 
   const params = new URLSearchParams({ from: ISO_DAY(first), to: ISO_DAY(last) });
-  const userId = $('#calendar-user').value;
-  if (userId) params.set('userId', userId);
 
   const entries = (await api(`/timesheets?${params}`))?.items ?? [];
 
@@ -2167,7 +2181,6 @@ function wireCalendar() {
     calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     mutate(loadCalendar, null, null);
   });
-  $('#calendar-user').addEventListener('change', () => mutate(loadCalendar, null, null));
   $('#calendar-day-close').addEventListener('click', () => { $('#calendar-day-card').hidden = true; });
 }
 
@@ -2950,7 +2963,7 @@ const TOUR_STEPS = [
   {
     target: '#form-timesheet',
     view: 'timesheets',
-    permission: 'timesheets:write:own,timesheets:write:all',
+    permission: 'timesheets:write:own',
     title: () => t('tour.book.title', 'Booking time'),
     text: () => t('tour.book.text',
       'Pick a date, enter the hours, done. A project is optional — hours can be recorded '
@@ -2959,16 +2972,16 @@ const TOUR_STEPS = [
   {
     target: '#table-timesheets',
     view: 'timesheets',
-    permission: 'timesheets:read:own,timesheets:read:all',
+    permission: 'timesheets:read:own',
     title: () => t('tour.entries.title', 'Your entries'),
     text: () => t('tour.entries.text',
-      'Everything you booked, filterable by person and project. It stays yours to '
-      + 'change: there is nobody to submit it to.'),
+      'Everything you booked, filterable by project. It stays yours to change: there '
+      + 'is nobody to submit it to.'),
   },
   {
     target: '#calendar-days',
     view: 'calendar',
-    permission: 'timesheets:read:own,timesheets:read:all',
+    permission: 'timesheets:read:own',
     title: () => t('tour.calendar.title', 'The month at a glance'),
     text: () => t('tour.calendar.text',
       'Which days have hours on them, and how many. Click a day to see what is behind '
@@ -2986,7 +2999,7 @@ const TOUR_STEPS = [
   {
     target: '#form-overtime',
     view: 'overtime',
-    permission: 'timesheets:read:own,timesheets:read:all',
+    permission: 'timesheets:read:own',
     title: () => t('tour.overtime.title', 'Your overtime balance'),
     text: () => t('tour.overtime.text',
       'Booked hours against your daily target. Only days with bookings count, so weekends '
@@ -3007,8 +3020,8 @@ const TOUR_STEPS = [
     permission: 'reports:read:own',
     title: () => t('tour.report.title', 'Project reports'),
     text: () => t('tour.report.text',
-      'What a project totals up to, per person. This one needs a reporting permission, '
-      + 'because it is other people\'s hours rather than your own.'),
+      'What you have booked on one project over a period. Your own hours: there is no '
+      + 'breakdown per colleague, because nobody sees what anybody else recorded.'),
   },
   {
     target: '#token-card',
@@ -3292,9 +3305,9 @@ function showWelcome() {
   // answered no for everybody, and yes for everybody with authentication switched
   // off, where it greeted the first user with a job that does not exist.
   const points = [
-    can('timesheets:write:own', 'timesheets:write:all')
+    can('timesheets:write:own')
       && t('welcome.point.book', 'Book hours by hand, or run a stopwatch and let it book them.'),
-    can('timesheets:read:own', 'timesheets:read:all')
+    can('timesheets:read:own')
       && t('welcome.point.see', 'See your month in a calendar, and your own figures as charts.'),
     // The daily target is the one part of "My account" that only somebody who works
     // here has, so it is named separately. The greeting used to promise it to
@@ -3374,7 +3387,7 @@ async function maybeWelcomeBack() {
   const card = $('#welcome-back');
   if (!card || !me.user || !me.user.tourSeen) return;
   if (!$('#setup-wizard').hidden || me.user.mustChangePassword) return;
-  if (!can('timesheets:read:own', 'timesheets:read:all')) return;
+  if (!can('timesheets:read:own')) return;
   if (greetedThisVisit()) return;
 
   $('#welcome-back-title').textContent = me.user.name
@@ -4208,7 +4221,7 @@ function defaultStatisticsRange() {
 
 async function loadStatistics() {
   const card = $('#statistics-card');
-  if (!card || !can('timesheets:read:own', 'timesheets:read:all')) return;
+  if (!card || !can('timesheets:read:own')) return;
 
   const range = defaultStatisticsRange();
 
@@ -4261,10 +4274,8 @@ async function loadStatistics() {
 function timesheetFilterQuery() {
   const params = new URLSearchParams();
 
-  const userId = $('#filter-ts-user')?.value;
   const projectId = $('#filter-ts-project')?.value;
 
-  if (userId) params.set('userId', userId);
   if (projectId) params.set('projectId', projectId);
 
   return params.toString() ? `?${params}` : '';
@@ -4739,7 +4750,7 @@ function renderTimer() {
 }
 
 async function loadTimer() {
-  if (!can('timesheets:write:own', 'timesheets:write:all')) return;
+  if (!can('timesheets:write:own')) return;
 
   const state = await api('/me/timer');
   runningTimer = state.running ? state : null;
@@ -4974,6 +4985,45 @@ async function loadPasskeySupport() {
 }
 
 /** Registers a new credential for the signed-in user. */
+/**
+ * A refused passkey, in the reader's language.
+ *
+ * navigator.credentials rejects with a DOMException whose message the browser writes
+ * itself, in its own wording and usually in English: "The request is not allowed by the
+ * user agent or the platform in the current context, possibly because the user denied
+ * permission." That went straight into a notice, so a German reader got an English
+ * sentence - and a long one that names neither what failed nor what to do next.
+ *
+ * The name is the part worth reading. It is fixed by the specification, so it can be
+ * translated where the message cannot, and it distinguishes the cases that need
+ * different answers: a prompt somebody dismissed, a device that already holds a passkey
+ * for this account, and a page served over plain HTTP, which cannot work at all.
+ *
+ * Anything unrecognised keeps the browser's own sentence. It is in the wrong language,
+ * and it is still better than "something went wrong".
+ */
+function passkeyProblem(err) {
+  switch (err?.name) {
+    case 'NotAllowedError':
+      return t('passkey.err.notAllowed',
+        'The prompt was dismissed, or it timed out. Nothing was changed.');
+    case 'InvalidStateError':
+      return t('passkey.err.already',
+        'This device already holds a passkey for this account.');
+    case 'NotSupportedError':
+      return t('passkey.err.unsupported',
+        'This device cannot make the kind of passkey this installation asks for.');
+    case 'SecurityError':
+      return t('passkey.err.insecure',
+        'A passkey needs HTTPS, and the address in the bar has to be the one it was '
+        + 'made for.');
+    case 'AbortError':
+      return t('passkey.err.aborted', 'The prompt closed before anything was done.');
+    default:
+      return err?.message || t('passkey.failed', 'The passkey was not accepted.');
+  }
+}
+
 async function registerPasskey(name) {
   const started = await api('/me/passkeys/register', { method: 'POST' });
   const options = started.options.publicKey;
@@ -4987,7 +5037,14 @@ async function registerPasskey(name) {
     credential.id = b64urlToBytes(credential.id);
   }
 
-  const created = await navigator.credentials.create({ publicKey: options });
+  let created;
+
+  try {
+    created = await navigator.credentials.create({ publicKey: options });
+  } catch (err) {
+    throw new Error(passkeyProblem(err));
+  }
+
   if (!created) throw new Error(t('passkey.cancelled', 'The passkey was not created.'));
 
   return api('/me/passkeys/register', {
@@ -5029,7 +5086,14 @@ async function signInWithPasskey() {
     credential.id = b64urlToBytes(credential.id);
   }
 
-  const assertion = await navigator.credentials.get({ publicKey: options });
+  let assertion;
+
+  try {
+    assertion = await navigator.credentials.get({ publicKey: options });
+  } catch (err) {
+    throw new Error(passkeyProblem(err));
+  }
+
   if (!assertion) throw new Error(t('passkey.cancelled', 'The passkey was not used.'));
 
   return api('/auth/passkey/login', {
@@ -5817,7 +5881,6 @@ function wireForms() {
     const { id, ...raw } = formData(e.target);
     const body = {
       ...raw,
-      userId: Number(raw.userId),
       projectId: Number(raw.projectId),
       durationHours: Number(raw.durationHours),
     };
@@ -5830,7 +5893,8 @@ function wireForms() {
     mutate(() => api(path, { method, body: JSON.stringify(body) }),
       editing ? t('msg.entrySaved', 'Entry saved') : t('msg.booked', 'Time booked'),
       async () => {
-        // Keeps user/project/date, so booking several entries in a row stays quick.
+        // Keeps the project and the date, so booking several entries in a row stays
+        // quick.
         resetTimesheetForm();
         await reloadTimeViews();
       });
@@ -5848,26 +5912,33 @@ function wireForms() {
 
     mutate(async () => {
       const report = await api(`/projects/${projectId}/report${suffix}`);
+
+      // One row, because the total covers the reader's own hours and nobody else's.
+      // The column used to name the person, which is now always the same person.
       const rows = (report.entries ?? []).map((entry) => el('tr', {},
-        el('td', { text: userName(entry.userId) }),
+        el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
         el('td', { class: 'num', text: entry.hours.toFixed(2) }),
       ));
+
       fillTable($('#table-report tbody'), rows, 2, t('ot.empty', 'No bookings in this period.'));
-      $('#report-total').textContent = `${report.totalHours.toFixed(2)} h gesamt`;
+      $('#report-total').textContent = t('report.total', '{0} h in total')
+        .replace('{0}', report.totalHours.toFixed(2));
       $('#report-result').hidden = false;
     }, null, null);
   });
 
   $('#form-overtime').addEventListener('submit', (e) => {
     e.preventDefault();
-    const { userId, from, to } = formData(e.target);
+    const { from, to } = formData(e.target);
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const suffix = params.toString() ? `?${params}` : '';
 
     mutate(async () => {
-      const balance = await api(`/users/${userId}/overtime${suffix}`);
+      // Your own balance. The id is still in the path because the endpoint takes
+      // one, and any other id is refused rather than answered.
+      const balance = await api(`/users/${me.user.id}/overtime${suffix}`);
       const rows = (balance.days ?? []).map((d) => el('tr', {},
         el('td', { text: fmtDate(d.date) }),
         el('td', { class: 'num', text: fmtHours(d.booked) }),
@@ -5880,9 +5951,11 @@ function wireForms() {
       const pill = $('#overtime-total');
       pill.textContent = `${total > 0 ? '+' : ''}${total.toFixed(2)} h`;
       pill.className = `pill ${total > 0 ? 'plus' : total < 0 ? 'minus' : ''}`;
-      $('#overtime-meta').textContent =
-        `${balance.userName} · Soll ${fmtHours(balance.dailyTarget)}/Tag · `
-        + `gebucht ${fmtHours(balance.totalBooked)} von ${fmtHours(balance.totalTarget)}`;
+      $('#overtime-meta').textContent = t('ot.meta', '{0} · target {1}/day · booked {2} of {3}')
+        .replace('{0}', balance.userName)
+        .replace('{1}', fmtHours(balance.dailyTarget))
+        .replace('{2}', fmtHours(balance.totalBooked))
+        .replace('{3}', fmtHours(balance.totalTarget));
       $('#overtime-result').hidden = false;
 
     }, null, null);
@@ -5925,9 +5998,8 @@ function wireForms() {
       });
   });
 
-  for (const id of ['#filter-ts-user', '#filter-ts-project']) {
-    $(id).addEventListener('change', () => mutate(loadTimesheets, null, null));
-  }
+  $('#filter-ts-project').addEventListener('change',
+    () => mutate(loadTimesheets, null, null));
 
   $('#tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');

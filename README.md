@@ -175,10 +175,18 @@ the installation. The three that ship are translated; a role an installation wri
 itself shows whatever was typed, which is the only sensible answer for words this
 application has never seen.
 
-Permissions are fine grained, for example `timesheets:read:own` against
-`timesheets:read:all`, and reading separately from writing.
-Someone holding only the `:own` variant is restricted to their own data
-server-side, even if they send a filter naming somebody else.
+Permissions are fine grained — reading separately from writing, projects separately
+from time — and every one of them is scoped to the person holding it. A filter naming
+somebody else is refused rather than quietly answered with your own rows.
+
+There is no wider variant. `timesheets:read:all` and `timesheets:write:all` used to
+exist beside the `:own` ones, and they were the last of the manager: one opened
+everybody's entries, balances, totals and exports, the other let an account book time
+in a colleague's name. No role held either by the end, and the four screens that asked
+"which person" had been narrowed to a dropdown with a single entry — so ticking one in
+the role editor changed nothing anybody could see, while the API answered every
+question about every colleague. A capability with no screen is a capability nobody
+audits, so both are gone.
 
 Permissions are Go constants, not database rows: each one is checked by a
 specific line of code, and a permission that existed only in the database would
@@ -213,26 +221,37 @@ here is not something a database can work out, and guessing would either invent 
 colleague or take an administrator's hours away. The entries stay in the tables and
 become reachable again the moment the combined role is assigned.
 
-It is the seeded default rather than a wall: whoever may manage roles may widen
-the role they hold, and taking that away would take role administration with it.
-What it buys you is that the reach is never there by accident, and that granting
-it is a visible act — the role screen shows the permission.
+It is a wall rather than a default. The `admin` role's permissions cannot be changed
+at all — neither given nor taken — and the role editor shows them as unavailable rather
+than letting them be ticked and refusing the save.
+
+It was the other way round: whoever may manage roles could widen the role they hold, on
+the reasoning that somebody who administers roles can reach anything anyway. That
+reasoning does not survive this arrangement. The built-in administrator configures the
+installation and records no time, so a right added to its role would hand a working day
+to the one account nobody chose — quietly, from the screen that administers roles.
+
+The way past the wall is a decision about a colleague: give a person the
+`employee-admin` role. Note what that does *not* buy them — it is an employee's rights
+plus the administration, so they keep their own hours and still nobody else's.
 
 ### Reports
 
 A project's report totals **your own** hours on it. Everyone sees their own figures
 there and through **My statistics**, and nobody sees anybody else's.
 
-Whether somebody may see another person's recorded time is one question, and
-`timesheets:read:all` is the one right that answers it — for a list of entries, for
-the spreadsheet export, for a project's total and for an overtime balance alike. No
-default role holds it, not even the administrator's.
+Whether somebody may see another person's recorded time is not a permission question,
+because no permission answers yes — not for a list of entries, not for the spreadsheet
+export, not for a project's total and not for an overtime balance. Whose entry it is
+decides, and that is not a choice anybody can be granted.
 
-There used to be a second right for the totals, `reports:read`, and it belonged to
-the role that reviewed other people's hours. When that role went, the right stayed:
-no role held it, and a whole screen was gated on it, so the report was unreachable on
-every installation while appearing to be somebody else's business. Two rights for one
-question is how the two come to disagree.
+Two rights used to answer it, which is how two answers come to disagree. `reports:read`
+covered the totals and belonged to the role that reviewed other people's hours; when
+that role went, the right stayed, held by nobody and gating a whole screen, so the
+report was unreachable on every installation while appearing to be somebody else's
+business. `timesheets:read:all` covered everything else and outlived it by one release.
+Both are withdrawn on upgrade, and a role that held one keeps the half of it that is
+still a right — whoever could read everybody's time can read their own.
 
 ## API access with personal tokens
 
@@ -759,10 +778,14 @@ internet, or switch it off under *Settings*.
 The server enforces these; the interface merely also hides what is not allowed:
 
 - A time entry belongs to whoever recorded it. Reading, editing, deleting,
-  transferring and totalling it are all refused to anybody else, unless they hold
-  `timesheets:read:all` or `timesheets:write:all` — which no default role does.
-  There is no state to travel through and nobody to approve anything: entries were
-  once `open → submitted → approved`, and the role that approved them is gone.
+  transferring and totalling it are refused to everybody else, with no exception and
+  no right that grants one — including the account that administers the installation
+  and including the combined role. There is no state to travel through and nobody to
+  approve anything: entries were once `open → submitted → approved`, and the role that
+  approved them is gone.
+- No screen asks which person. The booking form, the entry filter, the calendar and
+  the overtime form each had a dropdown of colleagues; every one of them held a single
+  name by the end, and a question with one answer is not a question.
 - Hours are booked only onto **active** projects, whichever way they get there:
   booking, transferring, or editing an entry onto one.
 - The personal daily maximum applies, falling back to `MAX_DAILY_HOURS`.
@@ -770,7 +793,11 @@ The server enforces these; the interface merely also hides what is not allowed:
 - A project that still has time entries cannot be deleted.
 - Email addresses are unique.
 - The built-in administrator cannot be deleted or stripped of administration.
-- System roles cannot be deleted, renamed or weakened.
+- A system role cannot be deleted or renamed, and its permissions cannot be changed —
+  in either direction. Its description can.
+- A role has to grant at least one permission. One that grants nothing can be assigned,
+  and whoever holds it signs in to an interface with nothing on it, which reads as a
+  broken installation rather than as a decision.
 - A role still assigned to someone cannot be deleted.
 - A project is invisible to everyone but its owner, and asking for one that is not
   yours answers `404` rather than `403`.

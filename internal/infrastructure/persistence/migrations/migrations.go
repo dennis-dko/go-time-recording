@@ -83,7 +83,49 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260810060000: {UP: func(d migration.Datasource) error {
 			return separateAdministeringFromWorking(d, dialect)
 		}},
+		20260811010000: {UP: func(d migration.Datasource) error {
+			return retireReadingEverybodysTime(d, dialect)
+		}},
 	}
+}
+
+// retireReadingEverybodysTime withdraws timesheets:read:all and timesheets:write:all
+// from every role.
+//
+// They were the last of the manager. One opened everybody's entries, balances, totals
+// and exports; the other let somebody book and change time in another person's name.
+// No default role has held either since the review path was retired, and by then the
+// four screens that asked "which person" had been narrowed to a dropdown with one
+// entry, so ticking one changed nothing anybody could see - while the API went on
+// answering every question about every colleague.
+//
+// Each role keeps the half of what it held that is still a right: whoever could read
+// everybody's time could read their own, and whoever could write everybody's could
+// write their own. Granted before the wider one is withdrawn, in that order, so no
+// role is left granting nothing - a role that grants nothing is one somebody assigns
+// and then wonders about, because its holder signs in to an interface with no screen
+// on it.
+//
+// The two names are literals. This migration is the reason the constants no longer
+// exist, and a finished migration that referred to them would have to be edited every
+// time the model moves on.
+func retireReadingEverybodysTime(d migration.Datasource, dialect string) error {
+	for _, right := range []struct{ all, own string }{
+		{"timesheets:read:all", model.PermTimesheetReadOwn},
+		{"timesheets:write:all", model.PermTimesheetWriteOwn},
+	} {
+		if err := grantToAllRolesHolding(d, dialect, right.all, right.own); err != nil {
+			return err
+		}
+
+		if _, err := d.SQL.Exec(
+			sqldb.Rebind(dialect, "DELETE FROM role_permissions WHERE permission = ?"),
+			right.all); err != nil {
+			return fmt.Errorf("withdrawing %q: %w", right.all, err)
+		}
+	}
+
+	return nil
 }
 
 // separateAdministeringFromWorking takes the working day off the built-in account and
@@ -583,13 +625,14 @@ func separateSystemAdministration(d migration.Datasource, dialect string) error 
 		  AND role_id IN (SELECT id FROM roles WHERE name = ?)`)
 
 	// What running the work is, as opposed to running the installation.
+	// Literals rather than the model's constants throughout: a migration records
+	// what was done at the time, and every name in this list has since been removed
+	// from the model - the review path, the role that used it, and finally the two
+	// rights that opened everybody's time at once. Referring to a constant would tie
+	// a finished migration to a definition that is allowed to change.
 	for _, permission := range []string{
-		model.PermTimesheetReadAll,
-		model.PermTimesheetWriteAll,
-		// Literals rather than the model's constants: a migration records what was
-		// done at the time, and these two have since been removed from the model
-		// along with the review path and the role. Referring to them would tie a
-		// finished migration to a definition that is allowed to change.
+		"timesheets:read:all",
+		"timesheets:write:all",
 		"timesheets:approve",
 		"reports:read",
 		model.PermTimesheetTransfer,

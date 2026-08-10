@@ -108,21 +108,17 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 	}
 
 	if h.authz.Enabled() {
-		// Reading somebody else's balance is the wider permission. Reading your
-		// own is the narrower one - which until now was checked nowhere at all,
-		// so reports:read:own appeared in the role editor and granted nothing.
-		// A permission that exists only in the database is exactly what the
-		// comment on the permission list says must not happen.
-		// Somebody else's balance is somebody else's recorded time, totalled. It
-		// answers the same question the entry list does, so it takes the same right
-		// rather than one of its own.
-		if principal.User.ID != id && !principal.Can(model.PermTimesheetReadAll) {
-			return nil, forbiddenError{msg: "missing permission: " + model.PermTimesheetReadAll}
+		// Somebody else's balance is somebody else's recorded time, totalled, and
+		// nobody reads that. There is no permission to check here because there is
+		// no right that grants it - the id in the path is either yours or the
+		// answer is no.
+		if principal.User.ID != id {
+			return nil, forbiddenError{msg: "you may only read your own overtime balance"}
 		}
 
-		if principal.User.ID == id &&
-			!principal.Can(model.PermReportReadOwn) &&
-			!principal.Can(model.PermTimesheetReadAll) {
+		// Reading your own takes the narrow right, which until it was checked here
+		// appeared in the role editor and granted nothing.
+		if !principal.Can(model.PermReportReadOwn) {
 			return nil, forbiddenError{msg: "missing permission: " + model.PermReportReadOwn}
 		}
 	}

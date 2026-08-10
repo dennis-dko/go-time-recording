@@ -22,41 +22,32 @@ import (
 // says why. What must not happen is a half-deletion - an account gone with its
 // recorded hours still in the reports, or its passkeys still able to sign in.
 
-// countEntriesFor returns how many time entries the API still reports for a user.
+// countEntriesFor returns how many time entries the database still holds for a user.
 //
-// Asked as an auditor: reading somebody else's entries needs timesheets:read:all,
-// which the built-in administrator deliberately does not hold. The deletions these
-// tests are about are still the administrator's, which is the point - the account
-// goes with one caller and its recorded time is counted by another.
-func countEntriesFor(t *testing.T, c *client, userID uint) int {
+// Asked of the database, because HTTP cannot answer it. Reading somebody else's
+// recorded time is not a right anybody has - not the administrator that does the
+// deleting, not a role an installation could define - so an entry left behind by a
+// half-deletion is invisible to every account there is. It would sit there pointing
+// at an id that no longer exists until it broke a foreign key on another dialect.
+//
+// This used to be asked over HTTP, as a caller holding timesheets:read:all. That
+// right is gone, and the honest replacement is not a different caller: it is to stop
+// pretending the API is the right instrument. What cascades is the database.
+func countEntriesFor(t *testing.T, a *app, userID uint) int {
 	t.Helper()
 
-	var listed struct {
-		Items []struct {
-			UserID uint `json:"userId"`
-		} `json:"items"`
-	}
-
-	c.must(c.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &listed)
-
-	var count int
-
-	for _, item := range listed.Items {
-		if item.UserID == userID {
-			count++
-		}
-	}
-
-	return count
+	return a.Rows(t, "timesheets", "user_id = ?", userID)
 }
 
-// createEmployeeWithTime adds an account and books an hour for it.
+// createEmployeeWithTime adds an account and has it book an hour.
 //
-// Two callers, because the two halves are now two different rights: the account is
-// the administrator's to create, the entry against it needs timesheets:write:all,
-// which belongs to whoever runs the work.
-func createEmployeeWithTime(t *testing.T, admin, observer *client, email string) uint {
+// Two callers, because these are two jobs: the account is the administrator's to
+// create, and the hour is nobody's to book but its owner's. So the new account signs
+// in and records its own, which is the only shape a real installation ever has.
+func createEmployeeWithTime(t *testing.T, a *app, admin *client, email string) uint {
 	t.Helper()
+
+	const password = "doomed-password-1"
 
 	var created struct {
 		ID uint `json:"id"`
@@ -64,19 +55,22 @@ func createEmployeeWithTime(t *testing.T, admin, observer *client, email string)
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Doomed", "email": email,
-		"role": "employee", "password": "doomed-password-1",
+		"role": "employee", "password": password,
 	}), http.StatusCreated, http.StatusOK).Data(t, &created)
 
 	if created.ID == 0 {
 		t.Fatal("the new account has no id")
 	}
 
-	observer.must(observer.api(http.MethodPost, "/timesheets", map[string]any{
-		"userId": created.ID, "date": "2026-08-01",
-		"durationHours": 4, "description": "work that was really done",
+	doomed := a.newClient()
+	doomed.signIn(email, password)
+
+	doomed.must(doomed.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-01", "durationHours": 4,
+		"description": "work that was really done",
 	}), http.StatusCreated, http.StatusOK)
 
-	if got := countEntriesFor(t, observer, created.ID); got != 1 {
+	if got := countEntriesFor(t, a, created.ID); got != 1 {
 		t.Fatalf("the entry was not recorded: %d entries for the new account", got)
 	}
 
@@ -89,8 +83,7 @@ func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	other := a.signInAsAuditor(c, "Mona", "mona@example.com")
-	userID := createEmployeeWithTime(t, c, other, "leaver@example.com")
+	userID := createEmployeeWithTime(t, a, c, "leaver@example.com")
 
 	response := c.api(http.MethodDelete, path("/users/", userID), nil)
 
@@ -99,7 +92,7 @@ func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
 		// Accepted. Then nothing of the account may be left pointing at an id
 		// that no longer exists - an orphaned entry still counts towards a
 		// project report while belonging to nobody.
-		if got := countEntriesFor(t, other, userID); got != 0 {
+		if got := countEntriesFor(t, a, userID); got != 0 {
 			t.Errorf("the account was deleted but %d of its time entries remain, "+
 				"pointing at a user that no longer exists", got)
 		}
@@ -119,7 +112,7 @@ func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
 			t.Errorf("the deletion was refused but the account reads as %d, want 200", got)
 		}
 
-		if got := countEntriesFor(t, other, userID); got != 1 {
+		if got := countEntriesFor(t, a, userID); got != 1 {
 			t.Errorf("the deletion was refused but the account has %d entries, want 1", got)
 		}
 
@@ -168,14 +161,14 @@ func TestChangingARolesPermissionsIsAllOrNothing(t *testing.T) {
 	}
 
 	c.must(c.api(http.MethodPost, "/roles", map[string]any{
-		"name": "auditor", "description": "reads reports",
-		"permissions": []string{"reports:read:own", "timesheets:read:all"},
+		"name": "bookkeeping", "description": "reads its own figures",
+		"permissions": []string{"reports:read:own", "timesheets:read:own"},
 	}), http.StatusCreated, http.StatusOK).Data(t, &role)
 
 	// A permission that does not exist has to be refused - and refusing after
 	// the delete has already happened would leave the role stripped.
 	refused := c.api(http.MethodPut, path("/roles/", role.ID), map[string]any{
-		"name": "auditor", "description": "reads reports",
+		"name": "bookkeeping", "description": "reads its own figures",
 		"permissions": []string{"reports:read:own", "not:a:permission"},
 	})
 
@@ -202,8 +195,7 @@ func TestConfirmingTheDeletionRemovesTheAccountAndItsTime(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	other := a.signInAsAuditor(c, "Mona", "mona@example.com")
-	userID := createEmployeeWithTime(t, c, other, "confirmed@example.com")
+	userID := createEmployeeWithTime(t, a, c, "confirmed@example.com")
 
 	// Unconfirmed is refused, and says how much is at stake.
 	refused := c.api(http.MethodDelete, path("/users/", userID), nil)
@@ -223,7 +215,7 @@ func TestConfirmingTheDeletionRemovesTheAccountAndItsTime(t *testing.T) {
 		t.Errorf("the deleted account reads as %d, want 404", got)
 	}
 
-	if got := countEntriesFor(t, other, userID); got != 0 {
+	if got := countEntriesFor(t, a, userID); got != 0 {
 		t.Errorf("%d time entries survived the confirmed deletion", got)
 	}
 }

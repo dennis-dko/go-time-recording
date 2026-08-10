@@ -11,11 +11,9 @@ import (
 //
 // A sys admin exists for configuration, everybody manages their own, and no screen
 // adds up somebody else's hours. Whether a caller may see another person's recorded
-// time is one question, and timesheets:read:all is the one right that answers it -
-// for a list, for an export, for a project total and for an overtime balance alike.
-// There used to be a second right for the totals, held by the role that reviewed
-// other people's work; when that role went, that right was left gating a screen
-// nobody could reach.
+// time is not a permission question any more, because there is no permission that
+// answers yes - not for a list, an export, a project total or an overtime balance.
+// Whose entry it is decides, and that is not a choice anybody can be granted.
 
 // A project total covers the caller's own hours, and there is no way for anybody
 // else's to be in it.
@@ -118,10 +116,14 @@ func TestTheProjectReportIsReachableByAnOrdinaryAccount(t *testing.T) {
 		http.StatusOK)
 }
 
-// Somebody else's overtime balance is refused, to everybody a fresh install has.
+// Somebody else's overtime balance is refused, to every account there can be.
 //
-// A balance is that person's recorded time, totalled, so it takes the same right as
-// reading their entries - which no default role holds, including the administrator's.
+// A balance is that person's recorded time, totalled, so it is refused for the same
+// reason their entry list is. There used to be a right that said otherwise,
+// timesheets:read:all, and this case proved only that no default role held it. It does
+// not exist any more, so the claim is stronger and is made against the two accounts
+// that come closest: the one that administers the installation, and the one that
+// administers and works here as well.
 func TestSomebodyElsesOvertimeIsRefused(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
@@ -154,6 +156,17 @@ func TestSomebodyElsesOvertimeIsRefused(t *testing.T) {
 	if got := admin.api(http.MethodGet, path("/users/", annaID)+"/overtime", nil).Status; got !=
 		http.StatusForbidden {
 		t.Errorf("the administrator reading somebody else's balance answered %d, want 403", got)
+	}
+
+	// Nor an account holding every right this application can grant. That is the
+	// combined role, which is an employee's rights plus the administration - so it has
+	// its own working day and still not a minute of anybody else's.
+	both := a.signInAsWorkingAdmin(admin, "Bernd", "bernd@example.com")
+
+	if got := both.api(http.MethodGet, path("/users/", annaID)+"/overtime", nil).Status; got !=
+		http.StatusForbidden {
+		t.Errorf("an account that administers and works here read somebody else's "+
+			"balance: %d, want 403", got)
 	}
 
 	// Anna's own is hers to see.

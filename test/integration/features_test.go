@@ -84,9 +84,10 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	// the caller this rule is proved against: it would be refused for the wrong
 	// reason.
 	gerda := a.signInAsUser(admin, "Gerda", "gerda@example.com")
-	// An auditor: a role that may read everybody's time, which no default role is.
-	// Building one is what an administrator can still do.
-	heiko := a.signInAsAuditor(admin, "Heiko", "heiko@example.com")
+	// A second ordinary account, which is the strongest caller there is over somebody
+	// else's work: an employee holds every right over the work, and the roles that
+	// hold more hold more administration, never more of a colleague's time.
+	heiko := a.signInAsUser(admin, "Heiko", "heiko@example.com")
 
 	var hers projectResponse
 	gerda.must(gerda.api(http.MethodPost, "/projects", map[string]any{
@@ -97,9 +98,9 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 		"date": "2026-08-04", "durationHours": 2, "projectId": hers.ID,
 	}), http.StatusCreated, http.StatusOK)
 
-	// The other account is the caller to prove this with: it holds every right over
-	// including the report - which makes it the right one to prove the rule with,
-	// because a rule that only holds against an employee is not a rule.
+	// The other account is the caller to prove this with: it holds every right there
+	// is over the work, including the report. If a private project were reachable by
+	// anybody, it would be reachable by this one.
 	if got := heiko.api(http.MethodGet,
 		path("/projects/", hers.ID)+"/report", nil).Status; got != http.StatusNotFound {
 		t.Errorf("a report on somebody else's private project answered %d, want 404", got)
@@ -134,7 +135,7 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	// Checked through the project rather than through its report: a report over her
 	// private category would total her own hours, which proves nothing about whether
 	// somebody else may see it. Her own project is the same request that answered 404
-	// for the auditor a moment ago.
+	// for the other account a moment ago.
 	gerda.must(gerda.api(http.MethodGet, path("/projects/", hers.ID), nil), http.StatusOK)
 
 	var stillThere listOf[timesheetResponse]

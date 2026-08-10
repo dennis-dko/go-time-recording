@@ -179,8 +179,8 @@ func TestTheAdministratorStillAdministersAndNothingElse(t *testing.T) {
 	admin.must(admin.api(http.MethodGet, "/roles", nil), http.StatusOK)
 
 	admin.must(admin.api(http.MethodPost, "/roles", map[string]any{
-		"name": "auditor", "description": "reads the reports",
-		"permissions": []string{"reports:read:own", "timesheets:read:all"},
+		"name": "bookkeeping", "description": "reads its own figures",
+		"permissions": []string{"reports:read:own", "timesheets:read:own"},
 	}), http.StatusCreated, http.StatusOK)
 
 	// Somebody else's working times: not any more. A daily target is a time figure,
@@ -260,16 +260,23 @@ func TestTheAdministratorStillAdministersAndNothingElse(t *testing.T) {
 	}), http.StatusCreated, http.StatusOK)
 }
 
-// What the guarantee is, exactly.
+// What the guarantee is, exactly: a wall, and the way past it is a decision about a
+// colleague rather than about itself.
 //
-// It is the seeded default, not a wall: whoever may manage roles may widen the role
-// they hold, and taking that away would take role administration with it.
+// This case used to record the opposite. Whoever may manage roles could widen the role
+// they hold, so the administrator could grant itself the right to read everybody's
+// time, and that was written down as deliberate - the reasoning being that somebody who
+// administers roles can reach anything anyway.
 //
-// Recorded as a test because the difference matters to anybody relying on it: the
-// administrator cannot reach somebody else's hours by accident or by pointing a
-// token at the API, and can reach them by deliberately granting the right to
-// itself, where the role screen shows it holding it.
-func TestTheSeparationIsTheDefaultRatherThanAWall(t *testing.T) {
+// That reasoning does not survive the arrangement this application has now. The
+// built-in administrator configures the installation and keeps the accounts; it does
+// not record time. A right added to its role would hand a working day to the one
+// account nobody chose, quietly, from the screen that administers roles.
+//
+// So its permissions are fixed - neither given nor taken - and somebody who needs both
+// jobs is given the combined role. That is a decision about a person, which is the
+// point.
+func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -305,13 +312,18 @@ func TestTheSeparationIsTheDefaultRatherThanAWall(t *testing.T) {
 	// Every permission the seed leaves out is one the administrator does not hold.
 	//
 	// reports:read:own is not among them: its own figures are its own, like anybody
-	// else's. What it must not have is any right over somebody else's work, and
-	// reading everybody's time is the one right that grants that.
+	// else's. What it must not have is a working day - the rights that record and
+	// organise time, which belong to the people who do the work.
+	//
+	// The first four are gone from the application entirely, and are listed by name so
+	// that reintroducing one and quietly seeding it here would be noticed. The rest
+	// exist and belong to an employee.
 	for _, permission := range []string{
 		"timesheets:read:all", "timesheets:write:all",
-		// Gone from the application entirely; listed so a reintroduction is noticed.
-		"timesheets:approve",
+		"timesheets:approve", "reports:read",
+		"timesheets:read:own", "timesheets:write:own",
 		"timesheets:transfer",
+		"projects:write", "settings:write:own",
 	} {
 		for _, has := range held {
 			if has == permission {
@@ -320,15 +332,112 @@ func TestTheSeparationIsTheDefaultRatherThanAWall(t *testing.T) {
 		}
 	}
 
+	// Widening is refused, which is the half that changed.
+	//
+	// With a right this application actually enforces, and one the administrator does
+	// not hold: timesheets:read:own is an employee's, and the administrator has no
+	// working day. A name the application does not know would be refused too, for
+	// being unknown, and would prove nothing about the wall.
+	widened := admin.api(http.MethodPut, path("/roles/", adminRole), map[string]any{
+		"permissions": append(append([]string{}, held...), "timesheets:read:own"),
+	})
+
+	if widened.Status == http.StatusOK {
+		t.Error("the administrator granted itself a working day")
+	}
+
+	// Narrowing too, which it always was: the application looks this role up by name,
+	// and stripping it would leave the installation unadministrable.
+	narrowed := admin.api(http.MethodPut, path("/roles/", adminRole), map[string]any{
+		"permissions": []string{"users:read"},
+	})
+
+	if narrowed.Status == http.StatusOK {
+		t.Error("the administrator stripped its own role")
+	}
+
+	// Sending the set it already holds is not a change, and must not be refused as one:
+	// a screen that returns its checkboxes in a different order would otherwise fail to
+	// save for no reason anybody could see.
 	admin.must(admin.api(http.MethodPut, path("/roles/", adminRole), map[string]any{
-		"permissions": append(held, "timesheets:read:all"),
+		"permissions": held,
 	}), http.StatusOK)
 
-	// The session carries the permissions, so a new one is needed to pick the
-	// grant up - which is itself worth knowing.
-	regranted := a.newClient()
-	regranted.signIn(adminEmail, "a-much-better-password")
+	// And the description is still editable, because it explains rather than grants.
+	admin.must(admin.api(http.MethodPut, path("/roles/", adminRole), map[string]any{
+		"description": "Runs this installation",
+	}), http.StatusOK)
 
-	regranted.must(regranted.api(http.MethodGet, path("/timesheets/", entry.ID), nil),
-		http.StatusOK)
+	// A fresh session, because the session carries the permissions - so this cannot
+	// pass by the old session simply not having noticed a grant.
+	after := a.newClient()
+	after.signIn(adminEmail, "a-much-better-password")
+
+	if got := after.api(http.MethodGet, path("/timesheets/", entry.ID), nil).Status; got ==
+		http.StatusOK {
+		t.Error("the administrator can read somebody else's entry after all")
+	}
+
+	// The way past the wall: a person who works here and also administers. Note what it
+	// does not buy - the combined role is an employee's rights plus the administration,
+	// so it holds its own working day and still nobody else's time.
+	both := a.signInAsWorkingAdmin(admin, "Bothe", "bothe@example.com")
+
+	both.must(both.api(http.MethodPost, "/users", map[string]any{
+		"name": "Hired", "email": "hired@example.com",
+		"role": "employee", "password": "hired-password-1",
+	}), http.StatusCreated, http.StatusOK)
+
+	both.must(both.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-03", "durationHours": 2,
+	}), http.StatusCreated, http.StatusOK)
+
+	if got := both.api(http.MethodGet, path("/timesheets/", entry.ID), nil).Status; got ==
+		http.StatusOK {
+		t.Error("the combined role reads somebody else's entry; it is an employee's " +
+			"rights plus the administration, and an employee reads only their own")
+	}
+}
+
+// A role has to grant something.
+//
+// One that grants nothing can be created and assigned, and whoever holds it signs in to
+// an interface with almost nothing on it and no screen that matters - which reads as a
+// broken installation rather than as a decision. Taking somebody's access away is what
+// removing the account is for.
+func TestARoleMustGrantAtLeastOnePermission(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	for _, attempt := range []struct {
+		what string
+		body map[string]any
+	}{
+		{"no permissions at all", map[string]any{
+			"name": "hollow", "description": "grants nothing"}},
+		{"an empty list", map[string]any{
+			"name": "hollow", "description": "grants nothing", "permissions": []string{}}},
+		{"a list of blanks", map[string]any{
+			"name": "hollow", "description": "grants nothing",
+			"permissions": []string{"", "  "}}},
+	} {
+		r := admin.api(http.MethodPost, "/roles", attempt.body)
+
+		if r.Status == http.StatusCreated || r.Status == http.StatusOK {
+			t.Errorf("a role with %s was created", attempt.what)
+
+			continue
+		}
+
+		if r.Message() == "" {
+			t.Errorf("a role with %s was refused without saying why", attempt.what)
+		}
+	}
+
+	// And one that grants something is created, so this is not simply refusing
+	// everything.
+	admin.must(admin.api(http.MethodPost, "/roles", map[string]any{
+		"name": "reader", "description": "reads the accounts",
+		"permissions": []string{"users:read"},
+	}), http.StatusCreated, http.StatusOK)
 }
