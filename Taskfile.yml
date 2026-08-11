@@ -136,22 +136,51 @@ tasks:
       Docker is therefore required. `task test` on its own stays containerless
       and is the one to run while working.
 
+      With DB=postgres or DB=mysql the integration suite is run twice, against
+      the server and then against SQLite. That second pass is what lets this
+      task claim to run everything: a handful of cases start two instances
+      against one shared database file - what an administrator saves being
+      applied by the next start - and the harness gives each instance a database
+      of its own on a server, so on a server those cases skip themselves and the
+      run still reports success. Skipping quietly is exactly what this task
+      exists to prevent.
+
+      What it does not cover: the shipped container image, which is `task
+      stage`; more than one dialect per run, so all three means running it three
+      times or letting ci.yml do it; and the dialect in any suite but the
+      integration one - the directory, tracing and browser legs always run on
+      SQLite, because what they cover has nothing to do with the dialect.
+
       Linting is deliberately not part of this. It is not a test, it needs the
       version pinned in .golangci-lint-version to mean the same thing here as
       in CI, and ci.yml enforces it independently on every push.
 
       Usage:
         task test:all              integration leg against SQLite
-        task test:all DB=postgres  ...against PostgreSQL instead
-        task test:all DB=mysql     ...against MySQL instead
+        task test:all DB=postgres  ...against PostgreSQL, then SQLite as well
+        task test:all DB=mysql     ...against MySQL, then SQLite as well
     cmds:
+      # Registered first so it runs whichever suite fails. It takes a staging
+      # environment with it, and there is no way around that: `task stage` runs
+      # against the same PostgreSQL container these tests do, so ending this run
+      # cleanly and leaving that one standing is not a choice this can make.
+      #
+      # A single failing suite is re-run on its own afterwards - and `task
+      # test:ldap` and `task test:traces` each leave their container up for
+      # looking at, which is where a failure gets read rather than guessed at.
+      - defer: { task: env:down }
       - task: test
       - task: test:integration
         vars: { DB: '{{.DB}}' }
+      # The whole suite again rather than a list of the case names that skip:
+      # the list would go stale the first time somebody adds another one, and a
+      # test nobody notices is not running is the thing this pass is here for.
+      - '{{if or (eq .DB "postgres") (eq .DB "mysql")}}task test:integration{{end}}'
       - task: test:ldap
       - task: test:traces
       - task: test:browser
       - echo "All suites passed, including the directory and the trace collector."
+      - echo "Containers and their data are gone; task stage is what leaves an environment standing."
 
   test:
     desc: 'Verify: run the unit tests.'
@@ -277,10 +306,14 @@ tasks:
       - go test -tags browser -count=1 -timeout 20m ./test/browser/
 
   stage:
-    desc: 'Verify: run the shipped container image against real services, for a full test.'
+    desc: 'Verify: run the shipped container image against all of it - database, directory, collector.'
     summary: |
       Builds the actual deployment image from the repository Dockerfile and runs
-      it against PostgreSQL and the seeded directory.
+      it against everything it can be exercised against at once: PostgreSQL, the
+      seeded directory, a collector the exported spans have to arrive in, and a
+      browser for the directory. One command, so "does the real artifact work
+      with all of it" is not a set of profiles assembled by hand, with the one
+      that was left out found out about later.
 
       This is what `task dev` is not. Development runs a binary compiled on your
       machine, which is fast but is not the artifact anyone deploys. This goes
@@ -288,8 +321,26 @@ tasks:
       user, healthcheck, prod configuration - so what is tested is what will be
       running.
 
-      Reachable on http://localhost:8080 (deliberately not 8000, so a
-      development instance can keep running alongside it).
+        application   http://localhost:8080   admin@local / changeme123
+        metrics       http://localhost:8021/metrics
+        traces        http://localhost:51686
+        directory     http://localhost:5080
+
+      All deliberately not the usual ports, so a development instance and
+      anything already listening can keep running alongside it.
+
+      Two things it starts but does not configure for you. Tracing is set
+      through the environment in test/docker-compose.yml, so spans arrive from
+      the first request. The directory is not, because the application does not
+      read LDAP from the environment at all - it is administered under Settings,
+      and until the values in test/README.md are entered there the image is
+      running beside a directory it has never contacted.
+
+      What it does not cover: MySQL and SQLite, since the image is run against
+      the dialect a deployment uses and the other two are the integration
+      suite's question, not the image's; and anything that has to be clicked or
+      requested, because this starts an environment rather than exercising one.
+      `task test:all` is what exercises it.
 
       Usage:
         task stage           start it
@@ -298,7 +349,19 @@ tasks:
     dir: test
     cmds:
       - docker compose --profile stage up -d --build --wait
-      - echo "Staging is up on http://localhost:8080 - sign in as admin@local / changeme123"
+      # Healthy containers and a reachable network are different statements, and
+      # only the second one is worth starting to click through: the probe opens
+      # both connections from inside the network with the application's own
+      # drivers. --rm because it is one check and then gone; a stopped container
+      # left behind is something the next `docker compose ps` reports as part of
+      # the environment. A failure here leaves everything standing, which is
+      # what makes it possible to look at.
+      - docker compose --profile probe run --rm probe
+      - echo "Staging is up. Ports of its own, so a development instance can keep running."
+      - echo "  application   http://localhost:8080 - admin@local / changeme123"
+      - echo "  metrics       http://localhost:8021/metrics"
+      - echo "  traces        http://localhost:51686 - spans arrive seconds after a request"
+      - echo "  directory     http://localhost:5080 - not configured yet, see test/README.md"
 
   stage:logs:
     desc: 'Verify: follow the staging application log.'

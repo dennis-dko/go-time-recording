@@ -67,14 +67,21 @@ VOLUME /data
 # when they tried to move to a real one - which is the failure the installer
 # exists to prevent.
 #
-# DB_NAME stays, and configures nothing on its own: it is the path the installer
-# offers when SQLite is chosen, which is the right suggestion in a container and
-# saves the operator working out where the volume is.
+# DB_NAME configures nothing on its own, and stays for what it does to the
+# installer: configs/.env leaves it empty, an environment variable beats that
+# file, so this is the path already filled in when somebody picks SQLite. That
+# is what puts the database on the /data volume instead of inside the container,
+# where replacing the container would throw it away with it.
+#
+# HTTP_PORT and METRICS_PORT used to be here too, repeating configs/.env - which
+# is copied into this image above, so it was the same value written twice. Being
+# real environment variables they also beat a configs directory mounted over the
+# image's own: an operator who set HTTP_PORT in their own file was overridden by
+# the image, with nothing to say so. The ports come from configs/.env now, and
+# `docker run -e HTTP_PORT=...` still wins over that.
 #
 # Set DB_DIALECT to skip the installer, which is what deploy/compose.yaml does.
-ENV DB_NAME=/data/go-time-recording \
-    HTTP_PORT=8000 \
-    METRICS_PORT=2121
+ENV DB_NAME=/data/go-time-recording
 
 USER app
 

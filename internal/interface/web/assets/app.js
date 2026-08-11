@@ -1031,6 +1031,7 @@ const TRANSLATIONS = {
     'tel.follow': 'Der Konfigurationsdatei folgen',
     'tel.url': 'Collector als host:port, ohne http://',
     'tel.ratio': 'Anteil aufgezeichneter Traces (0–1)',
+    'tel.tracingHint': 'Läuft deploy/compose.tracing.yaml neben der Anwendung? Dann ist es Exporter OTLP und Collector jaeger:4317, und die Traces liest man unter http://127.0.0.1:16686.',
     'tel.reset': 'Alles auf die Konfigurationsdatei zurücksetzen',
     'tel.resetDone': 'Metriken und Traces folgen wieder der Konfigurationsdatei',
     'tel.activeMetrics': 'Metriken',
@@ -5222,7 +5223,18 @@ function fillTelemetryForm(data) {
   form.elements.tracerUrl.value = configured.tracerUrl ?? '';
   form.elements.tracerRatio.value = configured.tracerRatio ?? '';
 
-  $('#telemetry-active').textContent = describeActiveTelemetry(data.active ?? {});
+  const active = data.active ?? {};
+
+  // An empty field here means "whatever applies", and what applies was a thing
+  // you had to work out from the line below. The placeholder says it in the box
+  // that is asking, which is where somebody is looking when they wonder what
+  // leaving it empty will do. The collector keeps the address the shipped
+  // tracing overlay uses, because an empty one has no current value to show.
+  form.elements.tracerRatio.placeholder = String(active.tracerRatio ?? '');
+
+  if (active.tracerUrl) form.elements.tracerUrl.placeholder = active.tracerUrl;
+
+  $('#telemetry-active').textContent = describeActiveTelemetry(active);
 }
 
 /**

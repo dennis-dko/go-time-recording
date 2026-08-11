@@ -194,16 +194,26 @@ docker run -d -p 8000:8000 -v gtr-data:/data \
 With no `DB_DIALECT` this serves its **installer** and waits — that is on
 purpose. Setting `DB_DIALECT` skips it, which is what Compose does.
 
-The image bakes in three variables and no more:
+The image bakes in exactly one variable:
 
-| | |
-| --- | --- |
-| `DB_NAME=/data/go-time-recording` | the path to offer if you pick SQLite, so the data lands on the volume rather than inside the container |
-| `HTTP_PORT=8000` | |
-| `METRICS_PORT=2121` | |
+```
+DB_NAME=/data/go-time-recording
+```
 
-They are real environment variables, so they sit at layer 3 and beat
-`configs/.env` — which is what lets `docker run -e HTTP_PORT=…` change them.
+That is the path already filled in if you pick SQLite in the installer, which is
+what puts the database on the volume instead of inside the container. It
+configures nothing by itself, because `DB_DIALECT` is deliberately absent.
+
+Everything else the image runs on comes from `configs/.env` inside it, at layer
+1 — the ports included. It used to set `HTTP_PORT` and `METRICS_PORT` here as
+well, which was the same value written twice and had one consequence worth
+knowing if you are on an older image: being real environment variables they beat
+a `configs/` directory mounted over the image's own, so an operator who set a
+port in their own file was overridden by the image with nothing on screen to say
+so. Mounting your own `configs/` now actually decides the ports.
+
+`docker run -e HTTP_PORT=…` still wins over both, because a real environment
+variable still beats a file.
 
 Only `/data` is persistent. Anything the process writes elsewhere — including
 `configs/datasource.json`, so the answer you gave the installer — disappears with
@@ -236,9 +246,32 @@ cannot select an overlay. With it unset, layer 2 falls back to
 **The rule that explains the rest:** anything the running application can change
 lives in the **database**. For those settings an environment variable only
 decides what a fresh installation starts with — it does not override an
-administrator who has already changed it. What stays in the environment is what
-must be settled before the process exists: the ports, TLS, the log level, and the
-two switches that could remove the interface that would put them back.
+administrator who has already changed it.
+
+So the shipped `configs/.env` sets only what no screen can administer:
+
+| Still in the file | Why it cannot be a screen |
+| --- | --- |
+| `HTTP_PORT`, `METRICS_PORT` | the listeners are bound while starting; Settings can switch the metrics endpoint off but never move its port |
+| `TLS_*`, `HSTS_MAX_AGE` | same, and a wrong value makes the instance unreachable rather than merely wrong |
+| `DB_DIALECT`, `DB_NAME` | this is what decides whether there is a database to store a setting in |
+| `UI_ENABLED`, `AUTH_ENABLED` | either one switched off removes the screen that would switch it back |
+| `SHUTDOWN_GRACE_PERIOD` | read by the framework at start |
+| `APP_NAME` | see below — it is not the instance title |
+
+Six values used to sit there **as well as** in Settings — the log level, the
+session lifetime, the daily cap, the two rate-limit figures and the directory
+deletion ratio. They are gone from the file. Nothing changed behaviourally,
+because every built-in fallback was already identical to the line that was
+removed; what changed is that there is now one place per value instead of two,
+and the file's copy was always the losing one.
+
+**`APP_NAME` is not the instance title.** The title under *Settings → Appearance*
+renames the browser tab and the header. `APP_NAME` is the issuer an authenticator
+app shows beside an enrolled two-factor account — read once at start, administered
+by no screen — and it also seeds the initial title, so naming the instance in the
+environment saves naming it again. Changing it invalidates no enrolled codes, but
+phones already enrolled keep showing the old name.
 
 ### The two example files here
 
@@ -388,6 +421,61 @@ A metric is published only once it has a value. An installation that has had no
 refused sign-in publishes no `gtr_signin_failures_total` at all, rather than
 publishing zero. Treat an absent series as absent — `absent()` — not as a healthy
 zero.
+
+### Tracing
+
+[`compose.tracing.yaml`](compose.tracing.yaml) is a third overlay that runs a
+Jaeger beside the application. It combines with the other two in any order,
+because it only adds a service:
+
+```bash
+docker compose -f compose.yaml -f compose.tracing.yaml up -d
+docker compose -f compose.yaml -f compose.tls.yaml -f compose.tracing.yaml up -d
+```
+
+**The overlay supplies the collector and nothing else.** It sets no tracing
+variables on the application on purpose, because they would not be the setting
+that wins: tracing is administered in the running application, and what is stored
+there is applied over the environment at the next start. So switch it on under
+*Settings → Logging, metrics and tracing*:
+
+| Field | Value |
+| --- | --- |
+| Trace exporter | `OTLP` |
+| Collector as host:port | `jaeger:4317` — **no** `http://` in front |
+| Share of traces recorded | `1` while investigating, lower if left on |
+
+The scheme matters: that string goes to a gRPC dialer, which reads `http://` as
+part of the host name and then resolves nothing.
+
+**Then restart the application.** The exporter is built while it starts, so a
+saved setting does nothing until it does — and this is one of the changes the
+pending list does report, so the Settings screen will say so.
+
+**Reading the traces.** The browser is on `127.0.0.1:16686` and asks nobody to
+sign in, so it is not published to the network — traces carry request paths and
+the identifiers in them. Reach it through a tunnel:
+
+```bash
+ssh -L 16686:127.0.0.1:16686 <server>   # then http://127.0.0.1:16686
+```
+
+**Traces are held in memory and bounded** (`MEMORY_MAX_TRACES=20000`). A Jaeger
+restart, a host reboot or an image upgrade takes every trace with it, including
+the ones you were in the middle of reading. That is the right trade for a
+debugging aid that is switched on for an afternoon; an installation that needs
+traces to survive wants a badger store on a volume with a span TTL, and has to
+plan that disk the way it plans the database's.
+
+Two deliberate omissions: the OTLP port is not published, so nothing outside the
+compose network can write spans; and Jaeger is **not** a startup dependency of
+the application, so a broken collector can never keep the time recording from
+starting. The price of the second is that spans exported before Jaeger is ready
+are dropped.
+
+To turn it off again, drop the overlay from the command **and** set the exporter
+back under *Settings*. The stored setting outlives the container, so leaving it
+behind means an application starting up and failing to export, every time.
 
 ## Backup
 

@@ -1,0 +1,104 @@
+# Overlay that runs a Jaeger beside the application to receive its traces.
+#
+#   docker compose -f compose.yaml -f compose.tracing.yaml up -d
+#   docker compose -f compose.yaml -f compose.tls.yaml \
+#     -f compose.tracing.yaml up -d
+#
+# It adds a service and changes nothing that compose.yaml already declares, so
+# there is nothing here to replace - unlike compose.tls.yaml, which has to use
+# `!override` because it takes the application's published ports away rather
+# than adding to them. That is also why the two overlays combine in any order.
+#
+# This file provides the collector and stops there. It deliberately sets no
+# tracing variables on the application, because they would not be the setting
+# that wins: tracing is administered in the running application under Settings,
+# and what is stored there is applied over the environment on the next start.
+# Two places saying different things, one of them invisible, is how an
+# afternoon gets spent on a collector address that was never being read.
+#
+# So after starting this, in Settings, on the "Logging, metrics and tracing"
+# card:
+#
+#   - Trace exporter: OTLP
+#   - Collector as host:port: jaeger:4317 - the service name below, and no
+#     "http://" in front of it. GoFr hands that string to a gRPC dialer, which
+#     reads the scheme as part of the host name and then resolves nothing.
+#   - Share of traces recorded: 1 while investigating something; lower it if
+#     tracing is left on permanently.
+#
+# Then restart the application. The exporter is built while it starts, so a
+# saved setting does nothing until it does.
+#
+# The trace browser is published on the loopback interface only, for the same
+# reason compose.yaml publishes the application there: it asks nobody to sign
+# in, and traces carry request paths and the identifiers in them. Read it
+# through an SSH tunnel from your own machine:
+#
+#   ssh -L 16686:127.0.0.1:16686 <server>, then http://127.0.0.1:16686
+
+services:
+  jaeger:
+    # Same version as test/jaeger/Dockerfile on purpose. A trace that renders
+    # in testing but not on the server would be a version difference, and a
+    # version difference is the last thing anybody thinks to check.
+    image: jaegertracing/all-in-one:1.62.0
+    restart: unless-stopped
+
+    # Traces are kept in memory and are gone when this container stops, which
+    # is a decision and not an oversight. Persisting them means a second
+    # stateful service to size and expire beside the database, holding data
+    # that is only ever read in the days after something went wrong, on a
+    # volume that grows with request volume rather than with the number of
+    # employees - the one thing on this host nobody is watching. What the
+    # decision costs is worth knowing before it is discovered: a Jaeger
+    # restart, a host reboot or an image upgrade takes every recorded trace
+    # with it, including the ones from the incident being investigated. An
+    # installation that needs them to survive that should give this container
+    # a badger store on a volume with a span TTL, and then plan its disk the
+    # way the database's is planned.
+    environment:
+      # Set rather than left to the image default: receiving OTLP over gRPC is
+      # the entire reason this container is here, and the default has not
+      # always been the same one.
+      COLLECTOR_OTLP_ENABLED: "true"
+
+      # A bound, not a tuning knob. Left unset, the memory store keeps every
+      # trace it is handed until the container has taken the memory the
+      # database needed. Enough here to look back across an incident at a low
+      # recording share; how much memory it actually costs depends on how many
+      # spans a trace carries, so watch this container on the first day
+      # tracing is switched on.
+      MEMORY_MAX_TRACES: "20000"
+
+    ports:
+      # The query API and the trace browser.
+      - "127.0.0.1:16686:16686"
+      # Deliberately no 4317. The application reaches the receiver as
+      # jaeger:4317 inside this network, and nothing outside needs to: a
+      # published receiver lets anyone who can reach the host write spans into
+      # the browser above, which is then no longer evidence of anything.
+
+    healthcheck:
+      # Asked of the admin port rather than the query port, because the query
+      # API answers before the receiver does, and a span exported into that gap
+      # is dropped without an error anybody sees.
+      test:
+        - CMD-SHELL
+        - wget -q -O - http://127.0.0.1:14269/ | grep -q "Server available"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    logging:
+      # Same limits as the other services. This one runs as long as they do,
+      # and a collector left on for a month is exactly the sort of thing that
+      # fills a disk long after anybody remembers switching it on.
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+# No `depends_on` on the application on purpose. Ordering the two would mean a
+# collector that fails its health check keeps the time recording from starting,
+# and a debugging aid must never be able to do that. The cost is that spans
+# exported in the seconds before Jaeger is ready are lost, which nobody is
+# reading anyway.
