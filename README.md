@@ -643,24 +643,42 @@ ports, `TLS_*`, `AUTH_ENABLED`, `UI_ENABLED`, and `LDAP_SYNC_SCHEDULE`, which is
 the only cron expression there is — the session prune runs at 03:00 and is not
 configurable at all.
 
-**Starting values** are what a fresh installation begins with; the setup wizard
-and *Settings* administer them at run time and what is stored there wins:
-`SESSION_LIFETIME`, `MAX_DAILY_HOURS`, `RATE_LIMIT`, `RATE_LIMIT_WINDOW`,
-`LDAP_SYNC_MAX_DELETE_RATIO`, `APP_NAME`.
+**Administered only** - `SESSION_LIFETIME`, `MAX_DAILY_HOURS`, `RATE_LIMIT`,
+`RATE_LIMIT_WINDOW` and `LDAP_SYNC_MAX_DELETE_RATIO` - no longer appear in
+`configs/.env` at all. They used to, beside being administrable, and every
+built-in fallback was already identical to the line in the file: two places
+holding one value, of which the file's was always the losing copy. Setting one
+in the environment still decides what a fresh installation begins with, before
+anybody opens that screen; the templates in `deploy/` name them commented out
+for exactly that case.
+
+`APP_NAME` stays, and it is worth knowing why, because it looks like the
+instance title and is not. The title under *Settings* renames the browser tab
+and the header; `APP_NAME` is the issuer an authenticator app shows beside an
+enrolled two-factor account, which no screen administers - and it seeds the
+initial title, so naming the instance in the environment saves naming it twice.
 
 **At the next start** are administered too, but stored rather than applied,
 because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
 `LDAP_SYNC_SCHEDULE`, and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What
 is stored wins from the next start onwards, and *Settings → Restart* lists what is
-still waiting.
+still waiting - though not completely: a database change that keeps the dialect,
+and the trace sample ratio, are never compared and so never reported.
+
+`LOG_LEVEL` is administered too and is likewise out of `configs/.env` now. The
+one file that still names it is `configs/.dev.env`, which is what "follow the
+configuration file" means for a development run that has no stored setting yet.
 
 The **timezone and the LDAP connection appear in no file at all**. Both are
 administered entirely in the application — a second place to write them would
 only disagree with the first.
 
+The default column is the value built into the binary, which applies when
+nothing sets the variable.
+
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `APP_NAME` | `Time Recording` | instance title, until one is set under Settings |
+| `APP_NAME` | `Time Recording` | the two-factor issuer, and the initial title until one is set under Settings |
 | `HTTP_PORT` | `8000` | API and web interface |
 | `METRICS_PORT` | `2121` | Prometheus endpoint; `0` switches it off |
 | `DB_DIALECT` | – | `sqlite`, `postgres` or `mysql`. **Empty serves the installer** |
@@ -668,18 +686,18 @@ only disagree with the first.
 | `SETUP_TOKEN` | generated | what the installer asks for; logged when generated |
 | `UI_ENABLED` | `true` | `false` runs the binary as a headless API |
 | `AUTH_ENABLED` | `true` | `false` gives **every** caller full admin rights |
-| `SESSION_LIFETIME` | `12h` | how long a sign-in stays valid |
+| `SESSION_LIFETIME` | `12h` | how long a sign-in stays valid. **Administered under Settings**; not in `configs/.env` |
 | `TLS_ENABLED` | `false` | HTTPS with Let's Encrypt |
 | `TLS_DOMAINS` | – | comma separated; required when TLS is on |
 | `TLS_EMAIL` | – | receives expiry warnings |
 | `TLS_PORT` / `TLS_REDIRECT_PORT` | `443` / `80` | HTTPS, and the ACME/redirect listener |
 | `TLS_STAGING` | `false` | Let's Encrypt test authority |
 | `HSTS_MAX_AGE` | `8760h` | only sent over HTTPS |
-| `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client |
+| `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client. **Administered under Settings**; not in `configs/.env` |
 | `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only. Administered under *Settings* as well, where what is saved wins from the next start |
-| `LDAP_SYNC_MAX_DELETE_RATIO` | `0.5` | refuse a run removing more than this share of directory accounts |
-| `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day |
-| `LOG_LEVEL` | `INFO` | `DEBUG`…`FATAL`; anything else is read as `INFO` |
+| `LDAP_SYNC_MAX_DELETE_RATIO` | `0.5` | refuse a run removing more than this share of directory accounts. **Administered under Settings**; not in `configs/.env` |
+| `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day. **Administered under Settings**; not in `configs/.env` |
+| `LOG_LEVEL` | `INFO` | `DEBUG`…`FATAL`; anything else is read as `INFO`. **Administered under Settings**; in `configs/.dev.env` only |
 | `TRACE_EXPORTER` | empty | `otlp` or `jaeger`; empty exports nothing |
 | `TRACER_URL` | – | the collector as `host:port`, **without** a scheme |
 | `TRACER_RATIO` | `1` | share of traces recorded, `0`–`1` |
@@ -1191,8 +1209,9 @@ Nothing has to be built on the server.
 
 ### On the server
 
-Copy [`deploy/`](deploy/) — two compose files and an environment template — and
-nothing else. The source tree is not needed.
+Copy [`deploy/`](deploy/) — three compose files, two environment templates and
+[the manual](deploy/OPERATIONS.md) — and nothing else. The source tree is not
+needed.
 
 ```bash
 cp .env.example .env
@@ -1236,6 +1255,23 @@ is where the challenge arrives.
 
 Do not terminate TLS in both places. Two certificates for one name means one
 renewal that quietly stops working.
+
+### Tracing
+
+A third overlay runs a Jaeger beside the application. It only adds a service, so
+it combines with the TLS one in either order:
+
+```bash
+docker compose -f compose.yaml -f compose.tracing.yaml up -d
+```
+
+It supplies the collector and configures nothing on the application, because
+tracing is administered in the running application and what is stored there is
+applied over the environment at the next start — a variable set in the compose
+file would be the losing half of a disagreement nobody can see. Switch it on
+under *Settings*: exporter `OTLP`, collector `jaeger:4317`, then restart.
+[`deploy/OPERATIONS.md`](deploy/OPERATIONS.md) has the rest, including why the
+traces are held in memory and how to read them through a tunnel.
 
 ### Updating
 
