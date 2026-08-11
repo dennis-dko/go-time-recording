@@ -415,6 +415,19 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     needs: publish
+    # always(), for the same reason publish needs it, one step further along.
+    #
+    # A skip travels the whole way down the graph, not one hop: verify is skipped
+    # on the merge path, publish overrides that for itself, and this job - which
+    # only says it needs publish - inherited the skip anyway, through publish,
+    # from a job it does not name. So it never ran. Not on the merge path, which
+    # is every release, and not once in the repository's history; it was skipped
+    # in the release before this fix and in the one before that.
+    #
+    # The condition then says the thing the bare `needs` was meant to say all
+    # along: run when publish actually published something. A skipped publish -
+    # a commit that was already tagged - is not a release to report.
+    if: always() && needs.publish.result == 'success'
     # No `environment:` here, and that is not an omission.
     #
     # It named "production", which does not exist in this repository - GitHub
