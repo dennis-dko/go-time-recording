@@ -47,8 +47,8 @@ func entryOf(t *testing.T, c *client, body map[string]any) timesheetResponse {
 // Transferring somebody else's entry is refused, and tells the caller nothing
 // about it.
 //
-// The employee role holds timesheets:transfer, so before this the permission alone
-// was enough: any employee could move a colleague's hours onto another project,
+// The user role holds timesheets:transfer, so before this the permission alone
+// was enough: any user could move a colleague's hours onto another project,
 // changing that colleague's totals, and read the entry's date, hours and free-text
 // description out of the response. Entry ids are small and sequential, so walking
 // somebody else's week cost nothing.

@@ -107,22 +107,22 @@ func SystemAdminPermissions() []string {
 	}
 }
 
-// EmployeeAdminPermissions is what somebody who works here and also administers holds.
+// UserAdminPermissions is what somebody who works here and also administers holds.
 //
 // The one arrangement that reaches across the two jobs, and it is granted rather than
-// assumed: the built-in administrator hands it out. It is an employee's rights plus the
+// assumed: the built-in administrator hands it out. It is a user's own rights plus the
 // administration, which means an ordinary account gaining a second job - not the
 // built-in account gaining a working day.
 //
 // Assembled from the two lists rather than written out, so a right added to either one
 // cannot be forgotten here.
-func EmployeeAdminPermissions() []string {
-	return append(EmployeePermissions(), SystemAdminPermissions()...)
+func UserAdminPermissions() []string {
+	return append(UserPermissions(), SystemAdminPermissions()...)
 }
 
-// EmployeePermissions is what an ordinary account holds: everything about its own work
-// and nothing about anybody else's.
-func EmployeePermissions() []string {
+// UserPermissions is what an ordinary account holds: everything about its own work and
+// nothing about anybody else's.
+func UserPermissions() []string {
 	return []string{
 		PermProjectRead, PermProjectWrite, PermProjectArchive, PermProjectDelete,
 		PermTimesheetReadOwn, PermTimesheetWriteOwn, PermTimesheetTransfer,
@@ -142,17 +142,27 @@ func IsPermission(name string) bool {
 }
 
 // Default role names created on first start.
+//
+// The ordinary role was called employee, and its combined one employee-admin. The word
+// said more than this application knows: it holds accounts, and whether the person
+// behind one is employed here, contracted, a volunteer or the only person in the
+// company is not something it records or needs. What it does know is that they use it.
+//
+// These are identifiers, and the interface does not show them raw - each is translated
+// where it is displayed, so a German reader chooses "Benutzer" rather than a lowercase
+// English word. An installation that renamed a role sees whatever it typed, which is
+// the only sensible answer for words this application has never seen.
 const (
-	RoleAdmin    = "admin"
-	RoleEmployee = "employee"
+	RoleAdmin = "admin"
+	RoleUser  = "user"
 
-	// RoleEmployeeAdmin is somebody who works here and also administers.
+	// RoleUserAdmin is somebody who works here and also administers.
 	//
 	// Seeded rather than left to be assembled by hand, because the alternative is an
 	// administrator building a role out of two lists of rights and getting one of them
 	// slightly wrong - which nobody notices until somebody is refused something, or
 	// allowed something.
-	RoleEmployeeAdmin = "employee-admin"
+	RoleUserAdmin = "user-admin"
 )
 
 // DefaultRoles is the role set seeded on first start. Admin is marked as a
@@ -167,16 +177,16 @@ func DefaultRoles() []Role {
 			Permissions: SystemAdminPermissions(),
 		},
 		{
-			Name:        RoleEmployee,
+			Name:        RoleUser,
 			Description: "Keeps their own time, projects and calendar",
 			// Everything about their own work, and nothing about anybody else's -
 			// there is no role that reads across accounts, because there is nothing
 			// to read across. Projects included: one belongs to this person, so
 			// creating, finishing, archiving and removing it is theirs to do.
-			Permissions: EmployeePermissions(),
+			Permissions: UserPermissions(),
 		},
 		{
-			Name: RoleEmployeeAdmin,
+			Name: RoleUserAdmin,
 			Description: "Keeps their own time and projects, and administers the " +
 				"installation",
 			// The one role that spans both jobs, and the answer to "somebody here
@@ -187,7 +197,7 @@ func DefaultRoles() []Role {
 			// and its rights are visible in the role editor like any other. What must
 			// not be removable is the built-in administrator's own role, and that one
 			// is marked above.
-			Permissions: EmployeeAdminPermissions(),
+			Permissions: UserAdminPermissions(),
 		},
 	}
 }

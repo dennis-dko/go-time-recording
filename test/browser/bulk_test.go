@@ -194,7 +194,7 @@ func TestARowThatCannotBeDeletedHasNoCheckboxButKeepsItsPlace(t *testing.T) {
 		chromedp.SendKeys(`#form-user input[name="name"]`, "Wilma", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="email"]`, "wilma@example.com",
 			chromedp.ByQuery),
-		chromedp.SetValue(`#form-user select[name="role"]`, "employee", chromedp.ByQuery),
+		chromedp.SetValue(`#form-user select[name="role"]`, "user", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="password"]`, "wilma-password-1",
 			chromedp.ByQuery),
 		p.click(`#form-user button[type="submit"]`))
@@ -226,8 +226,8 @@ func TestARowThatCannotBeDeletedHasNoCheckboxButKeepsItsPlace(t *testing.T) {
 
 // The role dropdown says what each role is for.
 //
-// Somebody deciding what a colleague may do picks from this list, and "employee-admin"
-// against "employee" is a difference you can only infer from the name - the difference
+// Somebody deciding what a colleague may do picks from this list, and "user-admin"
+// against "user" is a difference you can only infer from the name - the difference
 // being whether that person can administer the installation. Only a browser can check
 // it: the labels are built at render time from what the server sent, so reading app.js
 // proves nothing about what is on screen.
@@ -238,37 +238,53 @@ func TestTheRoleDropdownExplainsEachRole(t *testing.T) {
 	p.run("open the people screen", p.click(`.tab[data-view="users"]`),
 		chromedp.WaitVisible(`#form-user select[name="role"]`, chromedp.ByQuery))
 
-	var labels []string
+	// Value and label together, because they are deliberately different things: the
+	// value is the identifier the API takes, and the label is what a person reads.
+	var options []struct {
+		Value string `json:"value"`
+		Label string `json:"label"`
+	}
 
 	p.run("read the choices", chromedp.Evaluate(
 		`[...document.querySelectorAll('#form-user select[name="role"] option')]
-			.map((o) => o.textContent)`, &labels))
+			.map((o) => ({ value: o.value, label: o.textContent }))`, &options))
 
-	if len(labels) < 3 {
+	if len(options) < 3 {
 		t.Fatalf("the dropdown offers %d role(s), want the three that ship: %v",
-			len(labels), labels)
+			len(options), options)
 	}
 
 	// Each one carries more than its name. The separator is what the label builder
 	// puts between the two, so its absence means the description never arrived.
-	for _, label := range labels {
-		if !strings.Contains(label, "—") {
-			t.Errorf("the choice %q says only its name, so it has to be guessed at", label)
+	for _, option := range options {
+		if !strings.Contains(option.Label, "—") {
+			t.Errorf("the choice %q says only its name, so it has to be guessed at",
+				option.Label)
+		}
+
+		// And no label is the identifier. Those are lowercase, hyphenated and English
+		// because that is what the API takes; a person choosing what a colleague may do
+		// should be reading a title in their own language, and for a while they were
+		// reading "user-admin".
+		if strings.HasPrefix(option.Label, option.Value+" ") ||
+			strings.HasPrefix(option.Label, option.Value+"—") {
+			t.Errorf("the choice for %q is shown by its identifier: %q",
+				option.Value, option.Label)
 		}
 	}
 
-	// And the one whose name is least self-explanatory says the thing that matters:
-	// that it administers as well.
+	// Found by value rather than by what it says, which is the whole point: the label
+	// is translated and the value is not.
 	both := ""
 
-	for _, label := range labels {
-		if strings.HasPrefix(label, "employee-admin") {
-			both = label
+	for _, option := range options {
+		if option.Value == "user-admin" {
+			both = option.Label
 		}
 	}
 
 	if both == "" {
-		t.Fatalf("the combined role is not offered at all: %v", labels)
+		t.Fatalf("the combined role is not offered at all: %v", options)
 	}
 
 	// German, because readyAdmin leaves the interface in whatever the browser asked

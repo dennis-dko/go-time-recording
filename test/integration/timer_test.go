@@ -312,7 +312,7 @@ func TestDeletingAnAccountWithAClockRunning(t *testing.T) {
 	// and somebody else does the deleting.
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Pia", "email": "pia@example.com",
-		"role": "employee", "password": "pia-password-1",
+		"role": "user", "password": "pia-password-1",
 	}), http.StatusCreated, http.StatusOK).Data(t, &created)
 
 	pia := a.newClient()

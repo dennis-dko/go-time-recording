@@ -17,7 +17,7 @@ func TestAProjectIsInvisibleToEverybodyButItsOwner(t *testing.T) {
 	for _, name := range []string{"Erika", "Frank"} {
 		admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 			"name": name, "email": lower(name) + "@example.com",
-			"role": "employee", "password": lower(name) + "-password-1",
+			"role": "user", "password": lower(name) + "-password-1",
 		}), http.StatusCreated, http.StatusOK)
 	}
 
@@ -85,7 +85,7 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 	// reason.
 	gerda := a.signInAsUser(admin, "Gerda", "gerda@example.com")
 	// A second ordinary account, which is the strongest caller there is over somebody
-	// else's work: an employee holds every right over the work, and the roles that
+	// else's work: a user holds every right over the work, and the roles that
 	// hold more hold more administration, never more of a colleague's time.
 	heiko := a.signInAsUser(admin, "Heiko", "heiko@example.com")
 

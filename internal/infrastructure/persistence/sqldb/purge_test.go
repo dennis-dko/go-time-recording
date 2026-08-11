@@ -66,7 +66,7 @@ func TestPurgeUserRemovesEveryReference(t *testing.T) {
 	// The migrations seed the roles, so an existing one can be used.
 	roles := sqldb.NewRoleRepository(db, sqldb.DialectSQLite)
 
-	role, err := roles.GetByName(ctx, model.RoleEmployee)
+	role, err := roles.GetByName(ctx, model.RoleUser)
 	if err != nil {
 		t.Fatalf("read seeded role: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestPurgeUserIsSafeToRepeat(t *testing.T) {
 	users := sqldb.NewUserRepository(db, sqldb.DialectSQLite)
 	roles := sqldb.NewRoleRepository(db, sqldb.DialectSQLite)
 
-	role, err := roles.GetByName(ctx, model.RoleEmployee)
+	role, err := roles.GetByName(ctx, model.RoleUser)
 	if err != nil {
 		t.Fatalf("read seeded role: %v", err)
 	}

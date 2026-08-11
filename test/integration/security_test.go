@@ -124,7 +124,7 @@ func TestAPIResponsesAreNotCached(t *testing.T) {
 
 // -------------------------------------------------------------------- RBAC
 
-func TestAnEmployeeSeesOnlyTheirOwnEntries(t *testing.T) {
+func TestAUserSeesOnlyTheirOwnEntries(t *testing.T) {
 	a, admin, colleague := startWithWorker(t)
 
 	// Somebody else's hours have to be recorded for "only their own" to mean
@@ -136,7 +136,7 @@ func TestAnEmployeeSeesOnlyTheirOwnEntries(t *testing.T) {
 		"date": "2026-08-02", "durationHours": 4, "description": "A colleague's work",
 	}), http.StatusCreated, http.StatusOK).Data(t, &theirs)
 
-	employee := a.signInAsUser(admin, "Erika", "erika@example.com")
+	user := a.signInAsUser(admin, "Erika", "erika@example.com")
 
 	// Who the session belongs to, asked of the server rather than taken from the
 	// entry below - otherwise the check further down compares an answer with itself.
@@ -144,17 +144,17 @@ func TestAnEmployeeSeesOnlyTheirOwnEntries(t *testing.T) {
 		User userResponse `json:"user"`
 	}
 
-	employee.must(employee.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+	user.must(user.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
 
-	employee.must(employee.api(http.MethodPost, "/timesheets", map[string]any{
+	user.must(user.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-02", "durationHours": 3, "description": "My work",
 	}), http.StatusCreated, http.StatusOK)
 
 	var list listOf[timesheetResponse]
-	employee.must(employee.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
+	user.must(user.api(http.MethodGet, "/timesheets", nil), http.StatusOK).Data(t, &list)
 
 	if len(list.Items) != 1 {
-		t.Fatalf("an employee should see only their own entry, got %d", len(list.Items))
+		t.Fatalf("a user should see only their own entry, got %d", len(list.Items))
 	}
 
 	if list.Items[0].UserID != me.User.ID {
@@ -168,23 +168,23 @@ func TestAnEmployeeSeesOnlyTheirOwnEntries(t *testing.T) {
 	// building a client that quietly relies on the filter being honoured. The id
 	// named is the colleague who really does have an entry, so a filter that was
 	// merely honoured instead of refused would be visible as the wrong answer.
-	refused := employee.api(http.MethodGet, path("/timesheets?userId=", theirs.UserID), nil)
+	refused := user.api(http.MethodGet, path("/timesheets?userId=", theirs.UserID), nil)
 	if refused.Status != http.StatusForbidden {
 		t.Errorf("a filter naming someone else must be refused, got %d", refused.Status)
 	}
 }
 
-func TestAnEmployeeCannotAdministerUsersOrRoles(t *testing.T) {
+func TestAUserCannotAdministerUsersOrRoles(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Erika", "email": "erika@example.com",
-		"role": "employee", "password": "erika-password-1",
+		"role": "user", "password": "erika-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
-	employee := a.newClient()
-	employee.signIn("erika@example.com", "erika-password-1")
+	user := a.newClient()
+	user.signIn("erika@example.com", "erika-password-1")
 
 	refused := []struct {
 		method, path string
@@ -205,7 +205,7 @@ func TestAnEmployeeCannotAdministerUsersOrRoles(t *testing.T) {
 	}
 
 	for _, call := range refused {
-		r := employee.api(call.method, call.path, call.body)
+		r := user.api(call.method, call.path, call.body)
 		if r.Status != http.StatusForbidden {
 			t.Errorf("%s %s should be forbidden, got %d", call.method, call.path, r.Status)
 		}
@@ -248,11 +248,11 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Erika", "email": "erika@example.com",
-		"role": "employee", "password": "erika-password-1",
+		"role": "user", "password": "erika-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
-	employee := a.newClient()
-	employee.signIn("erika@example.com", "erika-password-1")
+	user := a.newClient()
+	user.signIn("erika@example.com", "erika-password-1")
 
 	// The value is returned as "secret", and only on creation.
 	var created struct {
@@ -260,7 +260,7 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 		ID     uint   `json:"id"`
 	}
 
-	employee.must(employee.api(http.MethodPost, "/me/tokens",
+	user.must(user.api(http.MethodPost, "/me/tokens",
 		map[string]any{"name": "ci", "expiresInDays": 0}),
 		http.StatusCreated, http.StatusOK).Data(t, &created)
 
@@ -277,7 +277,7 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 		t.Fatalf("the token should authenticate, got %d: %s", resp.Status, resp.Body)
 	}
 
-	// It carries the owner's role, not more: an employee's token cannot
+	// It carries the owner's role, not more: a user's token cannot
 	// administer users.
 	req = rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/users", "")
 	req.Header.Set("X-API-Token", created.Secret)
@@ -287,7 +287,7 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 	}
 
 	// Revoking takes effect on the next call.
-	employee.must(employee.api(http.MethodDelete, path("/me/tokens/", created.ID), nil),
+	user.must(user.api(http.MethodDelete, path("/me/tokens/", created.ID), nil),
 		http.StatusOK, http.StatusNoContent)
 
 	req = rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/timesheets", "")

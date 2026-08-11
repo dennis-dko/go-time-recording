@@ -159,7 +159,7 @@ func TestTheResidueIsNotGrantedTwice(t *testing.T) {
 //
 // The seeded roles have not held them since the review path was retired, so this is
 // what almost every real installation runs - and a migration that quietly added a
-// right to the employee role on the way past would be a hole nobody looked for.
+// right to the user role on the way past would be a hole nobody looked for.
 func TestTheRetirementChangesNothingOnAnOrdinaryUpgrade(t *testing.T) {
 	t.Parallel()
 
@@ -167,7 +167,7 @@ func TestTheRetirementChangesNothingOnAnOrdinaryUpgrade(t *testing.T) {
 	migrate(t, db, 0, theRetirement-1)
 
 	before := map[string][]string{}
-	for _, role := range []string{"admin", "employee", "employee-admin"} {
+	for _, role := range []string{"admin", "user", "user-admin"} {
 		before[role] = permissionsOf(t, db, role)
 	}
 

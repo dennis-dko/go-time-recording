@@ -692,6 +692,41 @@ function fillSelect(select, items, { placeholder, labelKey = 'name', valueKey = 
 }
 
 /**
+ * The English titles of the roles that ship.
+ *
+ * These are what an English reader sees, because English is what a t() fallback is for.
+ * Without them the fallback would be the identifier itself, and "user-admin" is not a
+ * thing to put in front of somebody deciding what a colleague may do.
+ *
+ * A role an installation named itself is not in here and falls back to the name it was
+ * given, which is the only sensible answer for a word this application has never seen.
+ */
+const SHIPPED_ROLE_TITLES = {
+  admin: 'Administrator',
+  user: 'User',
+  'user-admin': 'User & administrator',
+};
+
+/**
+ * What a role is called, in the reader's language.
+ *
+ * The name in the database is an identifier: lowercase, hyphenated, English - admin,
+ * user, user-admin. It is what the API takes, what the directory configuration stores
+ * and what the role editor edits. It is not what somebody choosing a colleague's role
+ * should have to read, and it was: the dropdown, the account list, the greeting and the
+ * confirmation before deleting a role all showed it raw, so a German reader picked
+ * between two lowercase English words.
+ *
+ * Takes the name rather than the role, because most of the places that show one have
+ * only the name - an account carries the name of its role, not the role.
+ */
+function roleTitle(name) {
+  if (!name) return '';
+
+  return t(`role.name.${name}`, SHIPPED_ROLE_TITLES[name] ?? name);
+}
+
+/**
  * What a role is for, in the reader's language.
  *
  * The description lives in the database, in English, because an administrator writes
@@ -706,16 +741,19 @@ function roleDescription(role) {
 /**
  * The roles as something to choose from, each with what it is for.
  *
- * A dropdown of bare names asks somebody to guess: "employee-admin" against
- * "employee" is a difference you can only infer, and the difference is whether that
- * person can administer the installation. The list on the Roles screen has always
- * shown the descriptions; the place where the choice is actually made did not.
+ * A dropdown of bare identifiers asks somebody to guess: "user-admin" against "user" is
+ * a difference you can only infer, and the difference is whether that person can
+ * administer the installation. The list on the Roles screen has always shown the
+ * descriptions; the place where the choice is actually made did not.
+ *
+ * The value stays the identifier, because that is what the API takes.
  */
 function roleChoices() {
   return cache.roles.map((role) => {
+    const title = roleTitle(role.name);
     const purpose = roleDescription(role);
 
-    return { name: role.name, label: purpose ? `${role.name} — ${purpose}` : role.name };
+    return { name: role.name, label: purpose ? `${title} — ${purpose}` : title };
   });
 }
 
@@ -1110,7 +1148,7 @@ const TRANSLATIONS = {
     'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
     'err.systemRoleUndeletable': 'Die Systemrolle „{0}“ kann nicht gelöscht werden.',
     'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
-    'err.systemRoleRightsFixed': 'Die Rechte der Systemrolle „{0}“ lassen sich nicht ändern – weder entziehen noch hinzufügen. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „employee-admin“.',
+    'err.systemRoleRightsFixed': 'Die Rechte der Systemrolle „{0}“ lassen sich nicht ändern – weder entziehen noch hinzufügen. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'err.roleGrantsNothing': 'Eine Rolle muss mindestens ein Recht gewähren.',
     'err.targetOverMaximum': 'Das Tagesziel ({0} h) darf das Tagesmaximum ({1} h) nicht überschreiten.',
     'err.timerTooLong': 'Die Stoppuhr läuft seit {0} Stunden, mehr als ein Eintrag aufnehmen kann. Bitte von Hand buchen und die Stoppuhr verwerfen.',
@@ -1291,14 +1329,18 @@ const TRANSLATIONS = {
     'report.title': 'Projektauswertung',
     'role.create': 'Rolle anlegen',
     'role.edit': 'Rolle „{0}“ bearbeiten',
-    'role.rightsFixed': 'Die Rechte einer Systemrolle lassen sich nicht ändern. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „employee-admin“.',
+    'role.rightsFixed': 'Die Rechte einer Systemrolle lassen sich nicht ändern. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'role.empty': 'Keine Rollen vorhanden.',
     'role.permissions': 'Berechtigungen',
     'role.rights': 'Rechte',
     'role.systemRole': 'Systemrolle',
     'role.desc.admin': 'Verwaltet die Installation, ihre Konten und deren Rollen – und erfasst selbst keine Zeit.',
-    'role.desc.employee': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
-    'role.desc.employee-admin': 'Beides: arbeitet hier und verwaltet zusätzlich die Installation.',
+    'role.desc.user': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
+    'role.desc.user-admin': 'Beides: arbeitet hier und verwaltet zusätzlich die Installation.',
+    'role.name.admin': 'Administrator',
+    'role.name.user': 'Benutzer',
+    'role.name.user-admin': 'Benutzer & Administrator',
+    'role.none': 'ohne Rolle',
     'settings.changePassword': 'Passwort ändern',
     'settings.currentPassword': 'Aktuelles Passwort',
     'settings.maxHours': 'Maximale Stunden pro Tag',
@@ -1564,7 +1606,9 @@ async function loadMe() {
   if (me.authEnabled) {
     who.replaceChildren(
       el('strong', { text: me.user.name }),
-      el('span', { text: ` · ${me.user.role || 'ohne Rolle'}` }),
+      el('span', {
+        text: ` · ${roleTitle(me.user.role) || t('role.none', 'no role')}`,
+      }),
     );
   } else {
     who.replaceChildren(el('span', { text: 'Authentifizierung deaktiviert' }));
@@ -1654,7 +1698,7 @@ async function loadUsers() {
     // and the answer to clicking it is "no" - which is worse than not offering it.
     // Its role is fixed anyway: it must keep one that can still administer.
     if (u.isSystem) {
-      roleCell.append(el('span', { text: u.role }));
+      roleCell.append(el('span', { text: roleTitle(u.role) }));
     } else if (can('users:write') && can('roles:read')) {
       // Changing a role is a select rather than a form: it is the one field
       // that is changed on its own often enough to deserve it.
@@ -1666,7 +1710,7 @@ async function loadUsers() {
       select.value = u.role;
       roleCell.append(select);
     } else {
-      roleCell.textContent = u.role || '–';
+      roleCell.textContent = roleTitle(u.role) || '–';
     }
 
     return el('tr', { class: me.user && u.id === me.user.id ? 'self' : '' },
@@ -1704,7 +1748,7 @@ async function loadRoles() {
 
       if (!role.isSystem) {
         actions.append(deleteButton({
-          label: `${t('field.role', 'Role')} "${role.name}"`,
+          label: `${t('field.role', 'Role')} "${roleTitle(role.name)}"`,
           path: `/roles/${role.id}`,
           message: t('msg.roleDeleted', 'Role deleted'),
           after: refreshAll,
@@ -1715,7 +1759,13 @@ async function loadRoles() {
     if (role.isSystem) actions.append(el('span', { class: 'muted', text: t('role.systemRole', 'System role') }));
 
     return el('tr', {},
-      el('td', { text: role.name }),
+      // The title, and the identifier under it for the three that have both: the
+      // identifier is what the API takes and what the directory configuration stores,
+      // so the screen that administers roles is the one place it has to stay visible.
+      el('td', {}, el('span', { text: roleTitle(role.name) }),
+        ...(roleTitle(role.name) === role.name
+          ? []
+          : [el('span', { class: 'muted', text: ` ${role.name}` })])),
       el('td', { text: roleDescription(role) || '–' }),
       el('td', { class: 'num', text: String(role.permissions.length) }),
       actions,
@@ -1768,7 +1818,7 @@ function editRole(role) {
   form.elements.name.readOnly = role.isSystem;
   renderPermissionCheckboxes(role.permissions, { fixed: role.isSystem });
   $('#role-form-title').textContent = t('role.edit', 'Edit role')
-    .replace('{0}', role.name);
+    .replace('{0}', roleTitle(role.name));
   switchView('roles');
 }
 
@@ -2355,7 +2405,7 @@ async function loadAdmin() {
 
   fillSelect(ldapForm.elements.defaultRole, roleChoices(),
     { labelKey: 'label', valueKey: 'name' });
-  ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'employee';
+  ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'user';
 
   const schedule = $('#form-sync-schedule');
   if (schedule) {
@@ -2938,7 +2988,7 @@ async function loadLanguages() {
  * the calendar while the timesheet is on screen helps nobody.
  *
  * `permission` keeps the tour honest about what this person can actually do:
- * an employee has no Roles tab, and a tour that mentions one is a tour that
+ * a user has no Roles tab, and a tour that mentions one is a tour that
  * lies.
  */
 const TOUR_STEPS = [

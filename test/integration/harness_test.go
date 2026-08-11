@@ -345,7 +345,7 @@ func (a *app) signInAsWorkingAdmin(admin *client, name, email string) *client {
 	const password = "both-jobs-password-1"
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": name, "email": email, "role": "employee-admin", "password": password,
+		"name": name, "email": email, "role": "user-admin", "password": password,
 	}), http.StatusCreated, http.StatusOK)
 
 	user := a.newClient()
@@ -365,7 +365,7 @@ func (a *app) signInAsUser(admin *client, name, email string) *client {
 	const password = "another-password-1"
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": name, "email": email, "role": "employee", "password": password,
+		"name": name, "email": email, "role": "user", "password": password,
 	}), http.StatusCreated, http.StatusOK)
 
 	user := a.newClient()

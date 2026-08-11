@@ -24,7 +24,7 @@ func TestDefaultRolesAreSeeded(t *testing.T) {
 		byName[role.Name] = role
 	}
 
-	for _, expected := range []string{model.RoleAdmin, model.RoleEmployee} {
+	for _, expected := range []string{model.RoleAdmin, model.RoleUser} {
 		if _, ok := byName[expected]; !ok {
 			t.Fatalf("expected default role %q to exist", expected)
 		}
@@ -73,7 +73,7 @@ func TestDefaultRolesAreSeeded(t *testing.T) {
 	for _, own := range []string{
 		model.PermProjectWrite, model.PermProjectArchive, model.PermProjectDelete,
 	} {
-		if !byName[model.RoleEmployee].Has(own) {
+		if !byName[model.RoleUser].Has(own) {
 			t.Errorf("an ordinary account must hold %q to keep its own projects", own)
 		}
 	}
@@ -185,7 +185,7 @@ func TestSystemUserIsProtected(t *testing.T) {
 
 	// Nor may it be demoted to a role that cannot administer.
 	_, err = f.userDomain.AssignRoleToUser(context.Background(),
-		principal.User.ID, model.RoleEmployee)
+		principal.User.ID, model.RoleUser)
 	requireKind(t, err, apperror.KindConflict)
 }
 
@@ -263,7 +263,7 @@ func TestPrincipalPermissionsComeFromRole(t *testing.T) {
 	f := newFixture(t)
 
 	if _, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
-		Name: "Worker", Email: "worker@example.com", Role: model.RoleEmployee,
+		Name: "Worker", Email: "worker@example.com", Role: model.RoleUser,
 		Password: "worker-password",
 	}); err != nil {
 		t.Fatalf("create user: %v", err)
@@ -276,10 +276,10 @@ func TestPrincipalPermissionsComeFromRole(t *testing.T) {
 	}
 
 	if !principal.Can(model.PermTimesheetWriteOwn) {
-		t.Error("an employee must be able to book their own time")
+		t.Error("a user must be able to book their own time")
 	}
 
 	if principal.Can(model.PermUserDelete) {
-		t.Error("an employee must not be able to delete users")
+		t.Error("a user must not be able to delete users")
 	}
 }

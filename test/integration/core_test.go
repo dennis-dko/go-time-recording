@@ -218,14 +218,14 @@ func TestSetupWizardIsAdministratorOnly(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Erika", "email": "erika@example.com",
-		"role": "employee", "password": "erika-password-1",
+		"role": "user", "password": "erika-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
-	employee := a.newClient()
-	employee.signIn("erika@example.com", "erika-password-1")
+	user := a.newClient()
+	user.signIn("erika@example.com", "erika-password-1")
 
-	if r := employee.api(http.MethodGet, "/setup", nil); r.Status != http.StatusForbidden {
-		t.Errorf("an employee must not read the setup state, got %d", r.Status)
+	if r := user.api(http.MethodGet, "/setup", nil); r.Status != http.StatusForbidden {
+		t.Errorf("a user must not read the setup state, got %d", r.Status)
 	}
 }
 

@@ -289,7 +289,7 @@ func (s *UserApplicationService) DeleteUser(ctx context.Context, cmd command.Del
 func (s *UserApplicationService) resolveRole(ctx context.Context, name string) (*model.Role, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		name = model.RoleEmployee
+		name = model.RoleUser
 	}
 
 	role, err := s.roleRepository.GetByName(ctx, name)

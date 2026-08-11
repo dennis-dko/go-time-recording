@@ -69,7 +69,7 @@ func TestRegisteringAPasskeyAndSigningInWithIt(t *testing.T) {
 	// The built-in administrator keeps its password, so the passkey belongs to
 	// an ordinary account - which is also the realistic case.
 	p.readyAdmin()
-	p.createEmployee(t, "erika@example.com", "erika-password-1")
+	p.createOrdinaryAccount(t, "erika@example.com", "erika-password-1")
 
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
 		chromedp.WaitVisible("#form-login", chromedp.ByID))
@@ -119,7 +119,7 @@ func TestRemovingAPasskey(t *testing.T) {
 	p.withAuthenticator(t)
 
 	p.readyAdmin()
-	p.createEmployee(t, "frank@example.com", "frank-password-1")
+	p.createOrdinaryAccount(t, "frank@example.com", "frank-password-1")
 
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
 		chromedp.WaitVisible("#form-login", chromedp.ByID))
@@ -174,9 +174,9 @@ func TestTheBuiltInAdministratorIsNotOfferedPasskeys(t *testing.T) {
 
 // ------------------------------------------------------------------ helpers
 
-// createEmployee adds an ordinary account through the API, since the point of
+// createOrdinaryAccount adds an ordinary account through the API, since the point of
 // these tests is the passkey ceremony and not the staff form.
-func (p *page) createEmployee(t *testing.T, email, password string) {
+func (p *page) createOrdinaryAccount(t *testing.T, email, password string) {
 	t.Helper()
 
 	var status string
@@ -192,7 +192,7 @@ func (p *page) createEmployee(t *testing.T, email, password string) {
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
 				body: JSON.stringify({
 					name: `+"`"+`Erika`+"`"+`, email: '`+email+`',
-					role: 'employee', password: '`+password+`',
+					role: 'user', password: '`+password+`',
 				}),
 			});
 

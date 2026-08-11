@@ -139,12 +139,12 @@ func TestPausingTheLogViewer(t *testing.T) {
 	t.Errorf("the pause button still says %q, so nothing was paused", p.text("#log-pause"))
 }
 
-// An employee must not be offered the log at all - not merely be refused when
+// A user must not be offered the log at all - not merely be refused when
 // they ask. The whole Settings screen is the built-in administrator's.
-func TestAnEmployeeIsNotOfferedTheLog(t *testing.T) {
+func TestAUserIsNotOfferedTheLog(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
-	p.createEmployee(t, "gerd@example.com", "gerd-password-1")
+	p.createOrdinaryAccount(t, "gerd@example.com", "gerd-password-1")
 
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
 		chromedp.WaitVisible("#form-login", chromedp.ByID))
@@ -154,7 +154,7 @@ func TestAnEmployeeIsNotOfferedTheLog(t *testing.T) {
 	p.settleWelcome()
 
 	if p.visible("#tab-admin") {
-		t.Error("an employee is being offered the Settings tab, which holds the log")
+		t.Error("a user is being offered the Settings tab, which holds the log")
 	}
 }
 
@@ -261,7 +261,7 @@ func TestAPasskeySignsInWithoutATwoFactorCodeEvenWhenTOTPIsOn(t *testing.T) {
 	p.withAuthenticator(t)
 
 	p.readyAdmin()
-	p.createEmployee(t, "hanna@example.com", "hanna-password-1")
+	p.createOrdinaryAccount(t, "hanna@example.com", "hanna-password-1")
 
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
 		chromedp.WaitVisible("#form-login", chromedp.ByID))
@@ -492,7 +492,7 @@ func TestAFirstSignInAdoptsTheBrowsersZoneAndLanguage(t *testing.T) {
 			});
 		})()`, nil, awaitPromise))
 
-	p.createEmployee(t, "ingrid@example.com", "ingrid-password-1")
+	p.createOrdinaryAccount(t, "ingrid@example.com", "ingrid-password-1")
 
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
 		chromedp.WaitVisible("#form-login", chromedp.ByID))
@@ -1092,15 +1092,15 @@ func TestAFirstSignInIsGreetedAndOfferedTheTour(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
-	// An ordinary employee, because the built-in administrator is deliberately not
+	// An ordinary user, because the built-in administrator is deliberately not
 	// greeted: it arrives at the setup wizard, and a walk through booking time
 	// would be a walk through somebody else's job.
-	p.run("create an employee",
+	p.run("create a user",
 		chromedp.Click(`.tab[data-view="users"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#form-user", chromedp.ByID),
 		chromedp.SendKeys(`#form-user input[name="name"]`, "Rieke", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="email"]`, "rieke@example.com", chromedp.ByQuery),
-		chromedp.SetValue(`#form-user select[name="role"]`, "employee", chromedp.ByQuery),
+		chromedp.SetValue(`#form-user select[name="role"]`, "user", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="password"]`, "rieke-password-1", chromedp.ByQuery),
 		p.click(`#form-user button[type="submit"]`),
 	)
@@ -1192,12 +1192,12 @@ func TestAReturningSignInIsGreetedOncePerVisit(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
-	p.run("create an employee",
+	p.run("create a user",
 		chromedp.Click(`.tab[data-view="users"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#form-user", chromedp.ByID),
 		chromedp.SendKeys(`#form-user input[name="name"]`, "Sven", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="email"]`, "sven@example.com", chromedp.ByQuery),
-		chromedp.SetValue(`#form-user select[name="role"]`, "employee", chromedp.ByQuery),
+		chromedp.SetValue(`#form-user select[name="role"]`, "user", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="password"]`, "sven-password-1", chromedp.ByQuery),
 		p.click(`#form-user button[type="submit"]`),
 	)

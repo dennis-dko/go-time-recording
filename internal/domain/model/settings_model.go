@@ -134,6 +134,6 @@ func DefaultLDAPConfig() LDAPConfig {
 		NameAttribute:  "cn",
 		EmailAttribute: "mail",
 		IDAttribute:    "entryUUID",
-		DefaultRole:    RoleEmployee,
+		DefaultRole:    RoleUser,
 	}
 }

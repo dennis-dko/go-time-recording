@@ -288,10 +288,15 @@ func TestNoTranslationIsUnused(t *testing.T) {
 				}
 			}
 
-			// What a role is for, looked up as t(`role.desc.${name}`) from whatever the
-			// server sent. TestEverySeededRoleSaysWhatItIsFor checks these against the
-			// roles the application ships, in both directions.
+			// What a role is called and what it is for, looked up as
+			// t(`role.name.${name}`) and t(`role.desc.${name}`) from whatever the server
+			// sent. TestEverySeededRoleSaysWhatItIsFor checks both against the roles the
+			// application ships, in both directions.
 			if _, isRole := strings.CutPrefix(key, "role.desc."); isRole {
+				continue
+			}
+
+			if _, isRole := strings.CutPrefix(key, "role.name."); isRole {
 				continue
 			}
 

@@ -112,7 +112,7 @@ func TestANewAccountStartsOnTheInstanceDefault(t *testing.T) {
 	admin := a.signInAsAdmin("a-much-better-password")
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": "Nina", "email": "nina@example.com", "role": "employee",
+		"name": "Nina", "email": "nina@example.com", "role": "user",
 		"password": "nina-password-1",
 		// Ignored, and this is the assertion: an old client sending them must not
 		// decide somebody's working time.

@@ -39,12 +39,12 @@ func countEntriesFor(t *testing.T, a *app, userID uint) int {
 	return a.Rows(t, "timesheets", "user_id = ?", userID)
 }
 
-// createEmployeeWithTime adds an account and has it book an hour.
+// createUserWithTime adds an account and has it book an hour.
 //
 // Two callers, because these are two jobs: the account is the administrator's to
 // create, and the hour is nobody's to book but its owner's. So the new account signs
 // in and records its own, which is the only shape a real installation ever has.
-func createEmployeeWithTime(t *testing.T, a *app, admin *client, email string) uint {
+func createUserWithTime(t *testing.T, a *app, admin *client, email string) uint {
 	t.Helper()
 
 	const password = "doomed-password-1"
@@ -55,7 +55,7 @@ func createEmployeeWithTime(t *testing.T, a *app, admin *client, email string) u
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Doomed", "email": email,
-		"role": "employee", "password": password,
+		"role": "user", "password": password,
 	}), http.StatusCreated, http.StatusOK).Data(t, &created)
 
 	if created.ID == 0 {
@@ -83,7 +83,7 @@ func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	userID := createEmployeeWithTime(t, a, c, "leaver@example.com")
+	userID := createUserWithTime(t, a, c, "leaver@example.com")
 
 	response := c.api(http.MethodDelete, path("/users/", userID), nil)
 
@@ -137,7 +137,7 @@ func TestDeletingAnAccountWithNothingAttached(t *testing.T) {
 
 	c.must(c.api(http.MethodPost, "/users", map[string]any{
 		"name": "Passing through", "email": "transient@example.com",
-		"role": "employee", "password": "transient-password-1",
+		"role": "user", "password": "transient-password-1",
 	}), http.StatusCreated, http.StatusOK).Data(t, &created)
 
 	c.must(c.api(http.MethodDelete, path("/users/", created.ID), nil),
@@ -195,7 +195,7 @@ func TestConfirmingTheDeletionRemovesTheAccountAndItsTime(t *testing.T) {
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
-	userID := createEmployeeWithTime(t, a, c, "confirmed@example.com")
+	userID := createUserWithTime(t, a, c, "confirmed@example.com")
 
 	// Unconfirmed is refused, and says how much is at stake.
 	refused := c.api(http.MethodDelete, path("/users/", userID), nil)
@@ -232,7 +232,7 @@ func TestAnAccountWithNoRecordedTimeNeedsNoConfirmation(t *testing.T) {
 
 	c.must(c.api(http.MethodPost, "/users", map[string]any{
 		"name": "Never booked", "email": "nothing@example.com",
-		"role": "employee", "password": "nothing-password-1",
+		"role": "user", "password": "nothing-password-1",
 	}), http.StatusCreated, http.StatusOK).Data(t, &created)
 
 	c.must(c.api(http.MethodDelete, path("/users/", created.ID), nil),

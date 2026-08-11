@@ -13,7 +13,7 @@ import (
 // The administration surface: the build version the footer shows, and the
 // process log. Both are new, and both are the kind of thing that looks fine in
 // a screenshot while being wrong in a way only a request would reveal - a
-// version that is always "dev", a log endpoint any employee can read.
+// version that is always "dev", a log endpoint any user can read.
 
 // ------------------------------------------------------------------ version
 
@@ -75,7 +75,7 @@ func (c *client) logs(t *testing.T, query string) logPage {
 }
 
 // The log carries email addresses, request paths and whatever a failing driver
-// decided to print. An employee reading it would be reading the whole
+// decided to print. A user reading it would be reading the whole
 // installation's traffic.
 func TestTheLogIsOnlyReadableByTheBuiltInAdministrator(t *testing.T) {
 	a := start(t)
@@ -83,14 +83,14 @@ func TestTheLogIsOnlyReadableByTheBuiltInAdministrator(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Nosy", "email": "nosy@example.com",
-		"role": "employee", "password": "nosy-password-1",
+		"role": "user", "password": "nosy-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
-	employee := a.newClient()
-	employee.signIn("nosy@example.com", "nosy-password-1")
+	user := a.newClient()
+	user.signIn("nosy@example.com", "nosy-password-1")
 
-	if got := employee.api(http.MethodGet, "/admin/logs", nil).Status; got != http.StatusForbidden {
-		t.Errorf("an employee reading the log got %d, want 403", got)
+	if got := user.api(http.MethodGet, "/admin/logs", nil).Status; got != http.StatusForbidden {
+		t.Errorf("a user reading the log got %d, want 403", got)
 	}
 
 	// And without any session at all.

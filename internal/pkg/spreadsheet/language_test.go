@@ -183,7 +183,7 @@ func TestUsersSurviveTheRoundTrip(t *testing.T) {
 			t.Parallel()
 
 			written, err := spreadsheet.WriteUsers(language, []spreadsheet.UserRow{{
-				Name: "Vera", Email: "vera@example.test", Role: "employee",
+				Name: "Vera", Email: "vera@example.test", Role: "user",
 				Directory: true,
 			}})
 			if err != nil {
@@ -206,7 +206,7 @@ func TestUsersSurviveTheRoundTrip(t *testing.T) {
 			got := rows[0]
 
 			if got.Email != "vera@example.test" || got.Name != "Vera" ||
-				got.Role != "employee" {
+				got.Role != "user" {
 				t.Errorf("a column moved: %+v", got)
 			}
 

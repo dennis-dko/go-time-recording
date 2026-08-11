@@ -92,7 +92,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	user, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
-		Name: "Dennis", Email: "dennis@example.com", Role: model.UserRoleEmployee,
+		Name: "Dennis", Email: "dennis@example.com", Role: model.RoleUser,
 	})
 	if err != nil {
 		t.Fatalf("seed user: %v", err)
@@ -212,7 +212,7 @@ func TestListTimesheetsFiltersByUser(t *testing.T) {
 	f.book(t, day(15), 4)
 
 	other, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
-		Name: "Other", Email: "other@example.com", Role: model.UserRoleEmployee,
+		Name: "Other", Email: "other@example.com", Role: model.RoleUser,
 	})
 	if err != nil {
 		t.Fatalf("create second user: %v", err)

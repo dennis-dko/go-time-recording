@@ -4,6 +4,7 @@
 package migrations
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -86,7 +87,187 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260811010000: {UP: func(d migration.Datasource) error {
 			return retireReadingEverybodysTime(d, dialect)
 		}},
+		20260812010000: {UP: func(d migration.Datasource) error {
+			return callTheEverydayRoleUser(d, dialect)
+		}},
 	}
+}
+
+// callTheEverydayRoleUser renames employee to user, and employee-admin to user-admin.
+//
+// The word said more than this application knows. It holds accounts, and whether the
+// person behind one is employed here, contracted, a volunteer or the only person in the
+// company is not something it records, checks or needs - what it knows is that they use
+// it. The role is also what a fresh installation puts everybody in, including whoever
+// installed it, and calling that person an employee of themselves reads as a mistake.
+//
+// A rename rather than a new role beside the old one. Every account points at a role by
+// id, so nobody is moved and nobody loses anything; what changes is the name the
+// application looks the role up by, which is why this has to happen in the database
+// rather than only in the model.
+//
+// Three things carry the name and all three are handled here: the roles table, the
+// description that goes with each shipped role - which the migration that retired the
+// review path could not update on an installation still using the old names - and the
+// directory configuration, where the name of the role given to accounts provisioned
+// from LDAP is stored inside a JSON blob.
+func callTheEverydayRoleUser(d migration.Datasource, dialect string) error {
+	for _, renaming := range []struct{ from, to string }{
+		{"employee", model.RoleUser},
+		{"employee-admin", model.RoleUserAdmin},
+	} {
+		if err := renameRole(d, dialect, renaming.from, renaming.to); err != nil {
+			return err
+		}
+	}
+
+	// The descriptions of the roles that ship, now that they can be found by the names
+	// the model uses. This is also the repair for an installation that upgraded through
+	// the review-path migration while still calling the role employee: that one matched
+	// on today's names and updated nothing.
+	describe := sqldb.Rebind(dialect, "UPDATE roles SET description = ? WHERE name = ?")
+
+	for _, role := range model.DefaultRoles() {
+		if _, err := d.SQL.Exec(describe, role.Description, role.Name); err != nil {
+			return fmt.Errorf("describing %q: %w", role.Name, err)
+		}
+	}
+
+	return pointTheDirectoryAtTheRenamedRole(d, dialect)
+}
+
+// renameRole renames one role, and does nothing if there is nothing to rename.
+//
+// The interesting case is a collision: an installation that built its own role called
+// user, which is a perfectly reasonable thing to have done while the shipped one was
+// called employee. The shipped name has to win, because the application looks this role
+// up by it - the LDAP default, the account that arrives without a role, the fallback in
+// the migration that first moved roles into the database. So the one standing in the way
+// is moved aside with a suffix and keeps everything else: its rights, its description,
+// and every account on it.
+//
+// Renamed rather than merged. Merging would move people between roles, which is a
+// decision about who may do what, and no migration should make that quietly. Two roles
+// with similar names is a tidying job an administrator can see and do; an account that
+// silently gained or lost rights is not visible at all.
+func renameRole(d migration.Datasource, dialect string, from, to string) error {
+	taken, err := firstRoleThatExists(d, dialect, from)
+	if err != nil {
+		return err
+	}
+
+	if taken == "" {
+		// Nothing to rename: a fresh installation was seeded with the new name from
+		// the start, because the seeding migration builds the roles from the model.
+		return nil
+	}
+
+	inTheWay, err := firstRoleThatExists(d, dialect, to)
+	if err != nil {
+		return err
+	}
+
+	if inTheWay != "" {
+		free, err := aFreeRoleName(d, dialect, to)
+		if err != nil {
+			return err
+		}
+
+		if err := setRoleName(d, dialect, to, free); err != nil {
+			return fmt.Errorf("moving the existing %q role aside: %w", to, err)
+		}
+	}
+
+	return setRoleName(d, dialect, from, to)
+}
+
+// aFreeRoleName finds a name nothing is using, by counting up from name-2.
+//
+// Starting at 2 rather than 1 because the one already there is the first of them, and
+// bounded so a database that answers strangely cannot spin here for ever.
+func aFreeRoleName(d migration.Datasource, dialect, name string) (string, error) {
+	for suffix := 2; suffix < 100; suffix++ {
+		candidate := fmt.Sprintf("%s-%d", name, suffix)
+
+		taken, err := firstRoleThatExists(d, dialect, candidate)
+		if err != nil {
+			return "", err
+		}
+
+		if taken == "" {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("no free name near %q after 98 attempts", name)
+}
+
+func setRoleName(d migration.Datasource, dialect, from, to string) error {
+	if _, err := d.SQL.Exec(
+		sqldb.Rebind(dialect, "UPDATE roles SET name = ? WHERE name = ?"), to, from); err != nil {
+		return fmt.Errorf("renaming the %q role to %q: %w", from, to, err)
+	}
+
+	return nil
+}
+
+// pointTheDirectoryAtTheRenamedRole updates the role name stored in the LDAP settings.
+//
+// It lives inside a JSON document in the settings table, so this reads it, changes the
+// one field and writes it back rather than editing the text - a string replacement would
+// depend on how the encoder happened to space the document out.
+//
+// Getting this wrong would not be visible until somebody signed in from the directory
+// for the first time after the upgrade: the name would match no role, and the account
+// would be refused at the one moment it is meant to be created.
+func pointTheDirectoryAtTheRenamedRole(d migration.Datasource, dialect string) error {
+	var stored string
+
+	err := d.SQL.QueryRow(
+		sqldb.Rebind(dialect, "SELECT value FROM settings WHERE key_name = ?"),
+		"ldap.config").Scan(&stored)
+	if err != nil || strings.TrimSpace(stored) == "" {
+		// No directory configured, which is the ordinary case. A missing row is
+		// sql.ErrNoRows here and not a problem worth failing an upgrade over; a
+		// corrupt one is left alone for the same reason the settings screen leaves
+		// it alone - it has to stay repairable from the interface.
+		return nil
+	}
+
+	var config map[string]any
+
+	if err := json.Unmarshal([]byte(stored), &config); err != nil {
+		return nil
+	}
+
+	// The field has no JSON tag on the model, so it is spelled as the Go field is.
+	current, ok := config["DefaultRole"].(string)
+	if !ok {
+		return nil
+	}
+
+	switch current {
+	case "employee":
+		config["DefaultRole"] = model.RoleUser
+	case "employee-admin":
+		config["DefaultRole"] = model.RoleUserAdmin
+	default:
+		// A role this installation named itself, which keeps its name.
+		return nil
+	}
+
+	patched, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("rewriting the directory configuration: %w", err)
+	}
+
+	if _, err := d.SQL.Exec(
+		sqldb.Rebind(dialect, "UPDATE settings SET value = ? WHERE key_name = ?"),
+		string(patched), "ldap.config"); err != nil {
+		return fmt.Errorf("storing the directory configuration: %w", err)
+	}
+
+	return nil
 }
 
 // retireReadingEverybodysTime withdraws timesheets:read:all and timesheets:write:all
@@ -150,16 +331,17 @@ func retireReadingEverybodysTime(d migration.Datasource, dialect string) error {
 // if an installation wants the old arrangement.
 func separateAdministeringFromWorking(d migration.Datasource, dialect string) error {
 	// The role that spans both jobs, so there is somewhere to put whoever needs it.
-	var existing int
-
-	if err := d.SQL.QueryRow(
-		sqldb.Rebind(dialect, "SELECT COUNT(*) FROM roles WHERE name = ?"),
-		model.RoleEmployeeAdmin).Scan(&existing); err != nil {
-		return fmt.Errorf("looking for the %q role: %w", model.RoleEmployeeAdmin, err)
+	//
+	// Under either name, because this migration runs before the one that renames it -
+	// and looking for one name only would seed a second copy of a role that is already
+	// there under the other.
+	combined, err := theCombinedRoleName(d, dialect)
+	if err != nil {
+		return err
 	}
 
-	if existing == 0 {
-		if err := seedRole(d, dialect, employeeAdminRole()); err != nil {
+	if combined == "" {
+		if err := seedRole(d, dialect, shippedRole(model.RoleUserAdmin)); err != nil {
 			return err
 		}
 	}
@@ -188,23 +370,6 @@ func separateAdministeringFromWorking(d migration.Datasource, dialect string) er
 	}
 
 	return nil
-}
-
-// employeeAdminRole is the seeded role for somebody who works here and administers.
-func employeeAdminRole() model.Role {
-	for _, role := range model.DefaultRoles() {
-		if role.Name == model.RoleEmployeeAdmin {
-			return role
-		}
-	}
-
-	// Unreachable while RoleEmployeeAdmin is one of the defaults, and a compile-time
-	// constant is not enough to promise that at run time.
-	return model.Role{
-		Name:        model.RoleEmployeeAdmin,
-		Description: "Keeps their own time and administers the installation",
-		Permissions: model.EmployeeAdminPermissions(),
-	}
 }
 
 // giveEveryProjectAnOwner turns the shared projects into personal ones.
@@ -487,18 +652,18 @@ func retireTheSeparateReportRight(d migration.Datasource, dialect string) error 
 // where there was one, which is a tidying job for an administrator rather than an
 // account nobody can sign in to.
 func repairAccountsWithoutARole(d migration.Datasource, dialect string) error {
-	// A destination has to exist before anybody can be pointed at it. Inserted only
-	// when absent, so the ordinary upgrade - where it is there already - changes
-	// nothing.
-	var employees int
-
-	countRole := sqldb.Rebind(dialect, "SELECT COUNT(*) FROM roles WHERE name = ?")
-	if err := d.SQL.QueryRow(countRole, model.RoleEmployee).Scan(&employees); err != nil {
-		return fmt.Errorf("looking for the %q role: %w", model.RoleEmployee, err)
+	// A destination has to exist before anybody can be pointed at it, under whichever
+	// name this installation calls it - and seeded only if it calls it neither, which
+	// is the broken case this repair is for. An ordinary upgrade changes nothing here.
+	ordinary, err := theOrdinaryRoleName(d, dialect)
+	if err != nil {
+		return err
 	}
 
-	if employees == 0 {
-		if err := seedRole(d, dialect, employeeRole()); err != nil {
+	if ordinary == "" {
+		ordinary = model.RoleUser
+
+		if err := seedRole(d, dialect, shippedRole(model.RoleUser)); err != nil {
 			return err
 		}
 	}
@@ -507,24 +672,11 @@ func repairAccountsWithoutARole(d migration.Datasource, dialect string) error {
 	adopt := sqldb.Rebind(dialect, `UPDATE users SET role_id =
 		(SELECT id FROM roles WHERE name = ?) WHERE role_id IS NULL`)
 
-	if _, err := d.SQL.Exec(adopt, model.RoleEmployee); err != nil {
-		return fmt.Errorf("giving roleless accounts the %q role: %w", model.RoleEmployee, err)
+	if _, err := d.SQL.Exec(adopt, ordinary); err != nil {
+		return fmt.Errorf("giving roleless accounts the %q role: %w", ordinary, err)
 	}
 
 	return nil
-}
-
-// employeeRole is the seeded employee role, as a fresh installation gets it.
-func employeeRole() model.Role {
-	for _, role := range model.DefaultRoles() {
-		if role.Name == model.RoleEmployee {
-			return role
-		}
-	}
-
-	// Unreachable while RoleEmployee is one of the defaults, and a compile-time
-	// constant is not enough to promise that at run time.
-	return model.Role{Name: model.RoleEmployee, Description: "Keeps their own time"}
 }
 
 // retireTheReviewPath removes the entry status and the role that reviewed it.
@@ -541,14 +693,23 @@ func employeeRole() model.Role {
 // ordinary account, which now carries everything about its own work - including its
 // own projects.
 func retireTheReviewPath(d migration.Datasource, dialect string) error {
+	// Whichever name this installation calls the everyday role. Read once, up here,
+	// because the first thing this migration does is point people at it - and a
+	// subselect that matches no row yields NULL rather than nothing, which is how an
+	// earlier version of this left accounts unable to sign in at all.
+	ordinary, err := theOrdinaryRoleName(d, dialect)
+	if err != nil {
+		return err
+	}
+
 	// The people first, while the role still exists to be moved away from. An
 	// account left pointing at a role that has gone cannot sign in.
 	moveUsers := sqldb.Rebind(dialect, `UPDATE users SET role_id =
 		(SELECT id FROM roles WHERE name = ?)
 		WHERE role_id IN (SELECT id FROM roles WHERE name = ?)`)
 
-	if _, err := d.SQL.Exec(moveUsers, model.RoleEmployee, "manager"); err != nil {
-		return fmt.Errorf("moving managers to %q: %w", model.RoleEmployee, err)
+	if _, err := d.SQL.Exec(moveUsers, ordinary, "manager"); err != nil {
+		return fmt.Errorf("moving managers to %q: %w", ordinary, err)
 	}
 
 	// Then the role, permissions first: role_permissions references roles(id), and
@@ -581,12 +742,16 @@ func retireTheReviewPath(d migration.Datasource, dialect string) error {
 		model.PermProjectWrite, model.PermProjectArchive, model.PermProjectDelete,
 		model.PermTimesheetTransfer,
 	} {
-		if _, err := d.SQL.Exec(grant, permission, model.RoleEmployee, permission); err != nil {
-			return fmt.Errorf("granting %q to %q: %w", permission, model.RoleEmployee, err)
+		if _, err := d.SQL.Exec(grant, permission, ordinary, permission); err != nil {
+			return fmt.Errorf("granting %q to %q: %w", permission, ordinary, err)
 		}
 	}
 
 	// The description on screen, which would otherwise still promise submitting.
+	//
+	// Matched on today's names, so on an installation that still calls the everyday
+	// role employee this updates nothing - and the migration that renames it writes the
+	// descriptions again afterwards, which is where that case is caught.
 	describe := sqldb.Rebind(dialect, "UPDATE roles SET description = ? WHERE name = ?")
 
 	for _, role := range model.DefaultRoles() {
@@ -1026,14 +1191,76 @@ func addRoleBasedAccess(d migration.Datasource, dialect string) error {
 	}
 
 	// Carry existing users over to the new roles, then retire the old column.
-	// Anyone whose role name no longer exists lands on employee, the least
-	// privileged role, rather than losing access entirely.
+	// Anyone whose role name no longer exists lands on the everyday role, the least
+	// privileged one, rather than losing access entirely.
+	//
+	// The constant rather than a literal, unusually for a migration this old: this one
+	// seeds the roles itself, a few lines up and from the model, so the name it should
+	// fall back to is whatever the model calls that role today.
 	return execAll(d,
 		"UPDATE users SET role_id = (SELECT id FROM roles WHERE roles.name = users.role)",
 		fmt.Sprintf("UPDATE users SET role_id = (SELECT id FROM roles WHERE name = '%s') WHERE role_id IS NULL",
-			model.RoleEmployee),
+			model.RoleUser),
 		"ALTER TABLE users DROP COLUMN role",
 	)
+}
+
+// theOrdinaryRoleName is the name the everyday role has in this database, and
+// theCombinedRoleName the same for the one that works and administers.
+//
+// The everyday role was called employee and is called user; the combined one was
+// employee-admin and is user-admin. The migration that renames them is at the end of
+// this chain, so a migration in the middle of it can be looking at either name.
+//
+// Which one it sees depends on the installation, not on the position in the chain. The
+// migration that first moved roles into the database builds them from the model, so a
+// fresh installation is seeded with today's names from the very beginning; one that has
+// been running since before the rename carries the old ones until the rename runs.
+//
+// Matching both is what keeps a migration in the middle honest. The constant alone
+// would silently do nothing on every existing installation, and a literal alone would
+// silently do nothing on every fresh one - and a migration that does nothing looks
+// exactly like a migration that worked.
+//
+// An empty answer means neither is there, which is a repair rather than an upgrade: the
+// caller seeds the role under today's name.
+func theOrdinaryRoleName(d migration.Datasource, dialect string) (string, error) {
+	return firstRoleThatExists(d, dialect, "employee", model.RoleUser)
+}
+
+func theCombinedRoleName(d migration.Datasource, dialect string) (string, error) {
+	return firstRoleThatExists(d, dialect, "employee-admin", model.RoleUserAdmin)
+}
+
+func firstRoleThatExists(d migration.Datasource, dialect string, names ...string) (string, error) {
+	count := sqldb.Rebind(dialect, "SELECT COUNT(*) FROM roles WHERE name = ?")
+
+	for _, name := range names {
+		var found int
+
+		if err := d.SQL.QueryRow(count, name).Scan(&found); err != nil {
+			return "", fmt.Errorf("looking for the %q role: %w", name, err)
+		}
+
+		if found > 0 {
+			return name, nil
+		}
+	}
+
+	return "", nil
+}
+
+// shippedRole is one of the roles a fresh installation gets, by name.
+func shippedRole(name string) model.Role {
+	for _, role := range model.DefaultRoles() {
+		if role.Name == name {
+			return role
+		}
+	}
+
+	// Unreachable while name is one of the defaults, and a compile-time constant is
+	// not enough to promise that at run time.
+	return model.Role{Name: name, Description: "Keeps their own time"}
 }
 
 // seedRoles inserts the default roles and their permissions.

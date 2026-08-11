@@ -980,7 +980,7 @@
             "description": "System roles cannot be renamed or weakened"
           }
         },
-        "description": "A system role may be described differently and nothing else: not renamed, and its permissions not changed in either direction. That role belongs to the built-in administrator, which configures the installation and records no time — a right added here would hand it a working day from the screen that administers roles. Somebody who should both work here and administer is given the employee-admin role instead."
+        "description": "A system role may be described differently and nothing else: not renamed, and its permissions not changed in either direction. That role belongs to the built-in administrator, which configures the installation and records no time — a right added here would hand it a working day from the screen that administers roles. Somebody who should both work here and administer is given the user-admin role instead."
       },
       "delete": {
         "tags": [

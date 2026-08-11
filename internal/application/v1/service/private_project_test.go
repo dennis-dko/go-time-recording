@@ -16,7 +16,7 @@ func secondUser(t *testing.T, f *fixture) uint {
 	t.Helper()
 
 	created, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
-		Name: "Erik", Email: "erik@example.com", Role: model.RoleEmployee,
+		Name: "Erik", Email: "erik@example.com", Role: model.RoleUser,
 	})
 	if err != nil {
 		t.Fatalf("create second user: %v", err)
@@ -195,7 +195,7 @@ func TestCannotEditOrDeleteAnotherUsersPrivateProject(t *testing.T) {
 func TestWhoeverWorksHereMayKeepTheirOwnProjects(t *testing.T) {
 	f := newFixture(t)
 
-	for _, roleName := range []string{model.RoleEmployee, model.RoleEmployeeAdmin} {
+	for _, roleName := range []string{model.RoleUser, model.RoleUserAdmin} {
 		role := roleNamed(t, f, roleName)
 		if !role.Has(model.PermProjectWrite) {
 			t.Errorf("role %q must hold %q", roleName, model.PermProjectWrite)

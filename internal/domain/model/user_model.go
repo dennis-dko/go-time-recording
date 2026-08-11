@@ -1,12 +1,5 @@
 package model
 
-// Legacy role names, kept as the names of the seeded default roles so existing
-// data and configuration keep working after roles moved into the database.
-const (
-	UserRoleAdmin    = RoleAdmin
-	UserRoleEmployee = RoleEmployee
-)
-
 // Defaults applied to a user who has not chosen their own working times.
 const (
 	DefaultDailyTargetHours = 8

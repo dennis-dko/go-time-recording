@@ -41,7 +41,7 @@ func TestConcurrentWritesAreServedRatherThanRefused(t *testing.T) {
 
 		admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 			"name": fmt.Sprintf("Writer %d", i), "email": email,
-			"role": "employee", "password": "writer-password-1",
+			"role": "user", "password": "writer-password-1",
 		}), http.StatusCreated, http.StatusOK)
 
 		c := a.newClient()
@@ -116,7 +116,7 @@ func TestAWriteRightAfterSigningInIsServed(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Tarek", "email": "tarek@example.com",
-		"role": "employee", "password": "tarek-password-1",
+		"role": "user", "password": "tarek-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
 	for attempt := 0; attempt < 5; attempt++ {
@@ -176,7 +176,7 @@ func TestASettingWrittenInPassingDoesNotRevertAnother(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Yusuf", "email": "yusuf@example.com",
-		"role": "employee", "password": "yusuf-password-1",
+		"role": "user", "password": "yusuf-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
 	// Repeated, because the order of two concurrent writes is not fixed and the
