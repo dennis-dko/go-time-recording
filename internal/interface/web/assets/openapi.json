@@ -554,7 +554,7 @@
             "description": "Moved"
           },
           "409": {
-            "description": "Approved entries cannot be moved"
+            "description": "The entry is already on that project, or the project is closed for booking"
           }
         }
       }
@@ -720,6 +720,52 @@
         "responses": {
           "200": {
             "description": "Report"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
+        }
+      }
+    },
+    "/reports": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Hours you booked, with or without a project",
+        "description": "Your own hours over a period. `projectId` chooses what it covers: leave it out for every project, send `none` for the hours that were never given one, or send an id for that project. The project-scoped report at `/projects/{id}/report` cannot express either of the first two, because an id has no spare value for \"all\" and \"none\" at once. Needs `reports:read:own`.",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "query",
+            "description": "A project id, `none` for the entries without a project, or omitted for all.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report"
+          },
+          "400": {
+            "description": "Unreadable project selection, or a range that ends before it starts"
           },
           "403": {
             "description": "Missing permission"
@@ -1531,6 +1577,99 @@
         ],
         "summary": "Import account changes from .xlsx",
         "description": "Changes existing accounts, matched on the email address, and does not create them: a new account needs a password, and a password in a spreadsheet is a password that gets mailed around. An empty cell leaves that setting as it is. Needs `users:write`. Every row is reported either way: the ones that would be written and the ones that cannot, with the reason. Nothing is written while any row is refused - a file half imported leaves somebody looking for which half.",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Language for the column headings and the values inside them, e.g. `de`. Unknown or absent means English. The importer reads a file in any of these languages whatever this was set to, because the heading row is skipped by position and translated values are recognised in every language."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The .xlsx workbook to read."
+                  },
+                  "dryRun": {
+                    "type": "string",
+                    "enum": [
+                      "true",
+                      "false"
+                    ],
+                    "description": "`true` previews without writing anything. Send the file twice - once to look, once to write - rather than relying on a plan held between requests."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the file would do, or what it did"
+          },
+          "201": {
+            "description": "What the file would do, or what it did"
+          },
+          "400": {
+            "description": "Not a readable workbook of this kind"
+          },
+          "409": {
+            "description": "Some rows cannot be written, so nothing was"
+          }
+        }
+      }
+    },
+    "/roles/export": {
+      "get": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Export roles as .xlsx, a column per permission",
+        "description": "Needs `roles:read`. Every permission the application enforces gets a column holding yes or no, rather than one cell listing them: a typo in a list is a right silently dropped, and nothing about it looks wrong until somebody cannot open a screen. The permission columns are not translated - a permission is an identifier, and the role editor shows it verbatim.",
+        "parameters": [
+          {
+            "name": "lang",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Language for the column headings and the values inside them, e.g. `de`. Unknown or absent means English. The importer reads a file in any of these languages whatever this was set to, because the heading row is skipped by position and translated values are recognised in every language."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An .xlsx workbook",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/roles/import": {
+      "post": {
+        "tags": [
+          "roles"
+        ],
+        "summary": "Import roles from .xlsx",
+        "description": "Creates and changes roles, matched on the name. Needs `roles:write`. A permission column is read by its heading rather than by position, so a file exported before a right existed still imports correctly; a heading naming a permission this application does not enforce is refused, because it means the file came from somewhere else. A system role may be described differently and nothing else - its permissions are what keeps the installation administrable. Every row is reported either way, and nothing is written while any row is refused.",
         "parameters": [
           {
             "name": "lang",
