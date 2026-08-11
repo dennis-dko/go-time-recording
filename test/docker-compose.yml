@@ -10,7 +10,8 @@
 #   docker compose --profile postgres up -d
 #   docker compose --profile ldap up -d
 #   docker compose --profile traces up -d    Jaeger, for the trace exporter
-#   docker compose --profile stage up -d     ...plus the application image
+#   docker compose --profile stage up -d     the shipped image, and everything
+#                                            it can be exercised against
 #   docker compose --profile all up -d       ...plus MySQL
 #
 # Profiles keep it to what is needed: starting three databases to test one is
@@ -147,9 +148,14 @@ services:
 
   # A browser for the directory, for when a failing bind needs looking at
   # rather than guessing at.
+  #
+  # On the staging profile too, and there it earns its place twice over: the
+  # image is handed no LDAP settings at all, so somebody types them into the
+  # running application by hand, and a typo in a base DN is indistinguishable
+  # from an empty directory until the entries can be seen.
   ldap-ui:
     image: osixia/phpldapadmin:0.9.0
-    profiles: [ldap, dev, all]
+    profiles: [ldap, dev, all, stage]
     environment:
       PHPLDAPADMIN_LDAP_HOSTS: openldap
       PHPLDAPADMIN_HTTPS: "false"

@@ -21,6 +21,8 @@ docker compose --profile mysql    up -d      # MySQL      on localhost:53306
 docker compose --profile ldap     up -d      # OpenLDAP   on localhost:5389, browser on :5080
 docker compose --profile traces   up -d      # Jaeger     on localhost:54317, browser on :51686
 docker compose --profile all      up -d      # everything
+docker compose --profile stage    up -d      # the shipped image, and the three
+                                             # services it runs against
 
 docker compose --profile all down -v         # and clean up
 ```
@@ -120,6 +122,43 @@ saved it:
 Restart, make a request, and the trace appears at http://localhost:51686 under
 this instance's `APP_NAME`. Spans are batched, so give it a few seconds.
 
+## Run the shipped image against all of it
+
+```bash
+task stage
+```
+
+Builds the deployment image from the repository `Dockerfile` and starts it
+against everything it can be exercised against at once - PostgreSQL, the seeded
+directory, and a collector its spans have to arrive in - so "does the real
+artifact work with all of it" is one command rather than a set of profiles put
+together by hand, with the one that was left out found out about later.
+
+Before it reports the environment as up it runs the probe from inside the
+network: healthy containers and a reachable network are different statements,
+and only the second one is worth starting to click through.
+
+| What | Where |
+| --- | --- |
+| Application | <http://localhost:8080>, as `admin@local` / `changeme123` |
+| Metrics | <http://localhost:8021/metrics> |
+| Traces | <http://localhost:51686> |
+| Directory browser | <http://localhost:5080> |
+
+Tracing is configured through the environment there, so spans arrive from the
+first request. The directory is not, and cannot be - LDAP is administered in the
+running application under Settings, so until the values above are entered the
+image is running beside a directory it has never contacted. Entering them, and
+then signing in as `alice`, is the point of a staging run.
+
+With one change to those values: the image is inside the compose network, where
+the service name resolves and the published port does not exist. Host `openldap`
+and port `389`, not `localhost` and `5389` - the same distinction the probe is
+built to tell apart.
+
+`task stage:logs` follows the application log and `task stage:down` stops it and
+deletes the data. Nothing here survives that, by design.
+
 ## Check that a span actually arrives
 
 ```bash
@@ -156,6 +195,16 @@ the test told it to. A real directory did, the first time it was asked.
 
 Both suites are part of `task test:all`, which therefore needs Docker.
 `task test` on its own stays containerless.
+
+`task test:all DB=postgres` runs the integration suite twice, against the server
+and then against SQLite. The second pass is not redundant - a handful of cases
+start two instances against one shared database file, and the harness gives each
+instance a database of its own on a server, so on a server they skip themselves
+and the run reports success having never checked that what an administrator
+saves is applied by the next start. The run tidies up after itself when it
+finishes, however it finished; a single failing suite is re-run on its own, and
+`task test:ldap` and `task test:traces` each leave their container standing for
+looking at.
 
 ## The seeded accounts, and why each one is there
 
