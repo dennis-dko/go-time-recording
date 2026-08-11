@@ -203,6 +203,8 @@ async function api(path, options = {}) {
     progressDone();
   }
 
+  noticePermissionChange(res.headers.get('X-Permissions-Revision'));
+
   let body = null;
   try {
     body = await res.json();
@@ -251,6 +253,15 @@ function errorMessage(body) {
   if (!err) return '';
   if (typeof err === 'string') return err;
 
+  // Maintenance is the one refusal whose sentence may not be ours: an
+  // administrator who wrote the notice wrote it for the people who will read it.
+  // The server sends this code only when nobody did, so the default is the one
+  // thing translated here - and it is the sentence the banner already carries, so
+  // both say the same words.
+  if (err.code === 'maintenance') {
+    return t('maint.default', 'This installation is temporarily unavailable for maintenance.');
+  }
+
   if (err.code) {
     const translated = t(`err.${err.code}`, err.message ?? '');
     if (translated) return fillIn(translated, err.values);
@@ -298,6 +309,34 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 function can(...permissions) {
   if (!me.authEnabled) return true;
   return permissions.some((p) => me.permissions.includes(p));
+}
+
+/**
+ * Tells somebody their rights changed while they were signed in.
+ *
+ * The server has always applied the change on the very next request - it resolves
+ * who is calling from the database every time - but the interface read /me once at
+ * start-up and kept whatever it was given. So a right taken away showed up as a
+ * refusal on a button that was still on screen, and a right granted showed up as
+ * nothing at all until the next sign-in.
+ *
+ * Every response carries the current revision; this compares it with the one that
+ * came with /me. Once per change, because the header arrives on every request and
+ * a notice per request would be a wall of them - the recorded value moves forward
+ * so the second response through here is already in agreement.
+ *
+ * A reload rather than re-reading /me in place: what a role opens is more than a
+ * set of tabs - it is which screens were loaded at all - and reloading is the one
+ * way to be sure the whole interface agrees about it.
+ */
+function noticePermissionChange(revision) {
+  if (!revision || !me.user || !me.permissionsRevision) return;
+  if (revision === me.permissionsRevision) return;
+
+  me.permissionsRevision = revision;
+
+  toast(t('msg.rightsChanged',
+    'What you may do here has changed. Reload the page to see it.'), 'error');
 }
 
 function toast(message, kind = 'ok') {
@@ -847,10 +886,15 @@ function applyPermissionVisibility(root = document) {
 /**
  * Translations for the interface.
  *
- * German is the source language and lives in the markup itself, so the `de`
- * dictionary is intentionally empty: switching back to German restores the
+ * English is the source language and lives in the markup itself, so the `en`
+ * dictionary is intentionally empty: switching back to English restores the
  * original text nodes. Every user-visible string has a key here, including the
  * ones this script generates at run time.
+ *
+ * This comment used to say the opposite, naming German as the source and `de` as
+ * the empty one. Both halves were wrong, and a comment that describes the mirror
+ * image of the code is worse than none: it is the thing somebody reads before
+ * adding a key, and it told them to put it in the wrong dictionary.
  */
 const TRANSLATIONS = {
   // English is the source language: it lives in the markup and in the
@@ -862,6 +906,7 @@ const TRANSLATIONS = {
     // Entries that read the same in both languages are still listed, so the
     // dictionary stays a complete translation of the markup rather than
     // something a reader has to diff against it.
+    'auth.disabled': 'Authentifizierung deaktiviert',
     'admin.baseDn': 'Base DN',
     'admin.bindDn': 'Bind DN (optional)',
     'admin.dbHost': 'Host',
@@ -895,30 +940,60 @@ const TRANSLATIONS = {
     'tour.back': 'Zurück',
     'tour.end': 'Tour überspringen',
     'tour.finish': 'Fertig',
-    'tour.timer.title': 'Die Stoppuhr',
-    'tour.timer.text': 'Beim Anfangen starten, beim Aufhören stoppen – die gemessene Zeit wird gebucht. Sie läuft weiter, wenn du den Browser schließt, denn sie läuft auf dem Server und nicht in diesem Tab.',
-    'tour.stats.title': 'Deine eigenen Zahlen',
-    'tour.stats.text': 'Stunden pro Tag und pro Projekt, über einen Zeitraum deiner Wahl. Nur deine eigenen – und niemand sonst sieht sie.',
-    'tour.report.title': 'Projektberichte',
-    'tour.report.text': 'Was du auf einem Projekt in einem Zeitraum gebucht hast. Deine eigenen Stunden – es gibt keine Aufschlüsselung nach Personen, denn niemand sieht, was jemand anderes erfasst hat.',
-    'tour.tokens.title': 'Token und zweiter Faktor',
-    'tour.tokens.text': 'Mit einem persönlichen Token kann ein Skript in deinem Namen buchen – mit genau den Rechten, die deine Rolle im Moment der Nutzung hat. Die Zwei-Faktor-Anmeldung liegt ebenfalls hier, mit einem Code zum Scannen.',
+    'tour.welcome.title': 'Der Weg zurück',
+    'tour.welcome.text': 'Der Titel bringt dich von überall auf die Willkommensseite. Dort steht, was der heutige Tag schon hat – und von dort lässt sich dieser Rundgang erneut starten.',
     'tour.nav.title': 'Alles liegt hier oben',
     'tour.nav.text': 'Diese Reiter sind die ganze Anwendung. Sichtbar ist nur, was deine Rolle erlaubt — bei manchen ist diese Leiste also kürzer als bei anderen.',
+    'tour.timer.title': 'Die Stoppuhr',
+    'tour.timer.text': 'Beim Anfangen starten, beim Aufhören stoppen – die gemessene Zeit wird gebucht. Sie läuft weiter, wenn du den Browser schließt, denn sie läuft auf dem Server und nicht in diesem Tab.',
     'tour.book.title': 'Zeit buchen',
-    'tour.book.text': 'Datum wählen, Stunden eintragen, fertig. Ein Projekt ist optional — Zeiten lassen sich jetzt erfassen und später einsortieren.',
+    'tour.book.text': 'Datum wählen, Stunden eintragen, fertig. Ein Projekt ist optional, Zeiten lassen sich also jetzt erfassen und später einsortieren. Gespeichert wird, was du schreibst – auf die Minute genau, hier rundet nichts auf eine Viertelstunde.',
     'tour.entries.title': 'Deine Einträge',
-    'tour.entries.text': 'Alles Gebuchte, filterbar nach Projekt. Es bleibt deins zum Ändern – es gibt niemanden, dem du es vorlegen müsstest.',
+    'tour.entries.text': 'Alles Gebuchte, filterbar nach Projekt. Ein Klick auf eine Zeile öffnet sie zum Korrigieren, mehrere angehakte lassen sich in einem Zug löschen. Es bleibt deins zum Ändern – es gibt niemanden, dem du es vorlegen müsstest.',
+    'tour.sheet.title': 'Rein und raus als Tabelle',
+    'tour.sheet.text': 'Deine Stunden als Tabellendatei, mit den Spaltenköpfen in deiner Sprache. Ein Import zeigt zuerst, was er ändern würde, bevor er etwas ändert. Jede Tabelle, bei der sich das lohnt, hat dasselbe Paar auf ihrem eigenen Bildschirm.',
     'tour.calendar.title': 'Der Monat auf einen Blick',
     'tour.calendar.text': 'Welche Tage Stunden haben und wie viele. Ein Klick auf einen Tag zeigt, was dahintersteckt – und ein Klick auf einen dieser Einträge öffnet ihn zum Korrigieren.',
+    'tour.stats.title': 'Deine eigenen Zahlen',
+    'tour.stats.text': 'Stunden pro Tag und pro Projekt, über einen Zeitraum deiner Wahl. Nur deine eigenen – und niemand sonst sieht sie.',
     'tour.overtime.title': 'Dein Überstundensaldo',
     'tour.overtime.text': 'Gebuchte Stunden gegen dein Tagesziel. Nur Tage mit Buchungen zählen, damit Wochenenden und freie Tage sich nicht stillschweigend als Minus aufsummieren.',
-    'tour.projects.title': 'Projekte, auch eigene',
-    'tour.projects.text': 'Gemeinsame Projekte werden zentral angelegt. Du kannst zusätzlich private anlegen, die nur du siehst, um einen Tag aufzuteilen, wenn kein gemeinsames Projekt passt.',
+    'tour.projects.title': 'Deine Projekte',
+    'tour.projects.text': 'Ein Platz für deine Stunden, und zwar nur deiner: Nur du siehst sie und nur du buchst darauf. Zwei Menschen an derselben Sache haben jeweils ein eigenes Projekt.',
+    'tour.report.title': 'Auswertungen',
+    'tour.report.text': 'Was du in einem Zeitraum gebucht hast: auf einem Projekt, über alle hinweg oder nur die Stunden ohne Projekt. Deine eigenen Stunden – es gibt keine Aufschlüsselung nach Personen, denn niemand sieht, was jemand anderes erfasst hat.',
+    'tour.users.title': 'Die Menschen, die hier arbeiten',
+    'tour.users.text': 'Ein Konto anlegen und ihm eine Rolle geben. Es startet mit den Vorgaben der Installation; die eigenen Arbeitszeiten setzt danach die Person selbst unter „Mein Konto“.',
+    'tour.userTable.title': 'Wer hier ist und was er darf',
+    'tour.userTable.text': 'Die Rolle neben jedem Namen lässt sich hier ändern. Der eingebaute Administrator ist die Ausnahme: Er lässt sich weder löschen noch umhängen, denn er ist der Weg zurück ins System.',
+    'tour.roles.title': 'Rollen entscheiden, was möglich ist',
+    'tour.roles.text': 'Eine Rolle ist ein Satz Rechte, und jedes einzelne wird von echtem Code durchgesetzt und nicht von einem versteckten Knopf. Hier ankreuzen, was die Rolle darf – jedes Konto mit dieser Rolle ändert sich mit.',
     'tour.account.title': 'Mein Konto',
-    'tour.account.text': 'Tagesziel, Zeitzone, Zwei-Faktor-Authentifizierung und API-Token. Das Tagesziel ist der Maßstab für den Überstundensaldo.',
-    'tour.admin.title': 'Einstellungen',
-    'tour.admin.text': 'Nur für dich als eingebauten Administrator: Darstellung, Datenbank, Verzeichnis, Zeitzone und die Betriebsgrenzwerte.',
+    'tour.account.text': 'Dein Tagessoll und dein Tagesmaximum. Das Tagessoll ist der Maßstab für den Überstundensaldo, und niemand außer dir setzt es.',
+    'tour.myZone.title': 'Deine Zeitzone',
+    'tour.myZone.text': 'Sie entscheidet, auf welchen Kalendertag eine Buchung fällt. Bei der ersten Anmeldung wird sie aus dem Browser übernommen – und hier widersprichst du dem.',
+    'tour.totp.title': 'Ein zweiter Faktor',
+    'tour.totp.text': 'Ein Code aus einer Authenticator-App, eingerichtet durch Scannen eines QR-Codes – oder durch Abtippen des Geheimnisses, wenn Scannen nicht geht.',
+    'tour.passkey.title': 'Anmelden ohne Kennwort',
+    'tour.passkey.text': 'Ein Passkey bleibt auf diesem Gerät und wird mit dem entsperrt, was das Gerät ohnehin entsperrt. Du kannst mehrere hinterlegen, einen pro Gerät.',
+    'tour.tokens.title': 'Token für Skripte',
+    'tour.tokens.text': 'Mit einem persönlichen Token kann ein Skript in deinem Namen buchen – mit genau den Rechten, die deine Rolle im Moment der Nutzung hat. Er wird einmal angezeigt, beim Anlegen.',
+    'tour.password.title': 'Dein Kennwort',
+    'tour.password.text': 'Eine Änderung beendet alle anderen Sitzungen außer dieser. Ein Konto, das sich über das Verzeichnis anmeldet, hat hier kein Kennwort zu ändern.',
+    'tour.branding.title': 'Wie diese Installation aussieht',
+    'tour.branding.text': 'Titel, Banner, Logo und Fußzeile. Das Logo wird zum Symbol im Browser-Tab – und genau das unterscheidet auf einen Blick eine Testinstanz von der echten.',
+    'tour.database.title': 'Die Datenbank',
+    'tour.database.text': 'In welche Datenbank diese Installation schreibt. Die Verbindung wird vor dem Speichern getestet, und die Änderung gilt ab dem nächsten Start.',
+    'tour.ldap.title': 'Anmelden gegen ein Verzeichnis',
+    'tour.ldap.text': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Darunter läuft der Abgleich nach Zeitplan – und lässt sich vorher ansehen, bevor er von Hand ausgeführt wird.',
+    'tour.maintenance.title': 'Wartungsmodus',
+    'tour.maintenance.text': 'Schließt die Installation mit einer Erklärung, die auch auf der Anmeldemaske steht – wer nicht hineinkommt, erfährt also warum, statt zu raten.',
+    'tour.limits.title': 'Grenzwerte und Laufzeiten',
+    'tour.limits.text': 'Wie lange eine Sitzung gilt, wie viele Anfragen jemand stellen darf und mit welchen Werten ein neues Konto startet.',
+    'tour.telemetry.title': 'Metriken und Tracing',
+    'tour.telemetry.text': 'Log-Level, der Metrik-Endpunkt und wohin Traces exportiert werden. Alle drei werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
+    'tour.log.title': 'Das Protokoll, ohne Shell',
+    'tour.log.text': 'Was dieser Prozess schreibt, filterbar nach Stufe. Die erste Anlaufstelle, wenn etwas abgelehnt wurde und der Grund nicht auf dem Bildschirm stand.',
     'tour.theme.title': 'Darstellung und Sprache',
     'tour.theme.text': 'Hell oder dunkel — automatisch richtet sich nach der Tageszeit. Die Sprache folgt dem Browser, bis du eine wählst. Das war alles, viel Erfolg.',
 
@@ -1030,9 +1105,9 @@ const TRANSLATIONS = {
     'bulk.text': 'Das lässt sich nicht rückgängig machen.',
     'bulk.done': '{n} gelöscht',
     'bulk.refused': '{n} konnten nicht gelöscht werden',
-    'sheet.projects.text': 'Exportiert die Projekte und Kategorien, die Sie sehen. Ein Import '
+    'sheet.projects.text': 'Exportiert Ihre Projekte. Ein Import '
       + 'ordnet Zeilen über den Namen zu: ein vorhandener Name wird aktualisiert, ein neuer '
-      + 'angelegt. Als Kategorie markierte Zeilen werden Ihre eigenen privaten. Eine leere '
+      + 'angelegt. Eine leere '
       + 'Zelle lässt den Wert unverändert, es geht also nichts verloren, wenn eine Spalte '
       + 'fehlt.',
     'sheet.projects.file': 'projekte',
@@ -1044,6 +1119,13 @@ const TRANSLATIONS = {
       + 'gehören der Person, die sie unter „Mein Konto“ selbst setzt.',
     'sheet.users.file': 'benutzer',
     'sheet.users.done': '{0} Zeilen geschrieben.',
+    'sheet.roles.text': 'Exportiert jede Rolle mit einer Spalte pro Recht, die ja oder nein '
+      + 'enthält – genau das Raster, das man braucht, wenn die Frage lautet, was vier Rollen '
+      + 'dürfen. Ein Import ordnet Zeilen über den Namen zu, legt eine noch nicht vorhandene '
+      + 'Rolle an und weist eine Spaltenüberschrift zurück, die ein hier nicht durchgesetztes '
+      + 'Recht benennt. Eine System-Rolle lässt sich nur anders beschreiben, sonst nichts.',
+    'sheet.roles.file': 'rollen',
+    'sheet.roles.done': '{0} Zeilen geschrieben.',
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
     'action.new': 'Neu',
@@ -1079,6 +1161,7 @@ const TRANSLATIONS = {
     'admin.database': 'Datenbank-Anbindung',
     'admin.databaseHint': 'Die Verbindung wird gespeichert und beim nächsten Start der Anwendung verwendet. Ein Wechsel im laufenden Betrieb wäre nicht gefahrlos möglich.',
     'admin.dbName': 'Datenbank / Dateiname',
+    'admin.dbFile': 'Datenbankdatei – wird angelegt, falls sie fehlt',
     'admin.dbPassword': 'Passwort',
     'admin.dbSsl': 'SSL-Modus',
     'admin.dbUser': 'Benutzer',
@@ -1118,6 +1201,7 @@ const TRANSLATIONS = {
     'err.attemptExpired': 'Dieser Versuch ist abgelaufen. Bitte erneut versuchen.',
     'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
     'err.credentialUnreadable': 'Der Anmeldeschlüssel konnte nicht gelesen werden.',
+    'err.datasourceInvalid': 'Die Datenbank-Verbindung ist unvollständig oder ungültig.',
     'err.dateFormat': 'Das Datum „{0}“ muss YYYY-MM-DD oder RFC 3339 sein.',
     'err.deletionNeedsConfirming': '„{0}“ hat {1} erfasste Zeiteinträge. Sie würden mit dem Konto gelöscht und sind nicht wiederherstellbar – zum Fortfahren bitte bestätigen.',
     'err.emailTaken': 'Es gibt bereits einen Benutzer mit der E-Mail-Adresse „{0}“.',
@@ -1127,6 +1211,8 @@ const TRANSLATIONS = {
     'err.invalidToken': 'Ungültiges Token.',
     'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
     'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
+    'err.missingPermission': 'Dafür fehlt die Berechtigung „{0}“.',
+    'err.restartUnsupported': 'Ein Neustart aus der Anwendung heraus ist auf diesem System nicht möglich. Gespeicherte Einstellungen werden beim nächsten regulären Start wirksam.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
@@ -1199,10 +1285,10 @@ const TRANSLATIONS = {
     'welcome.point.administer': 'Lege die Menschen an, die hier arbeiten, und entscheide, was jede und jeder darf.',
     'welcome.point.book': 'Stunden von Hand buchen – oder eine Stoppuhr laufen lassen, die es für dich tut.',
     'welcome.point.see': 'Den Monat im Kalender sehen und die eigenen Zahlen als Diagramme.',
-    'welcome.skip': 'Später',
-    'welcome.begin': 'Los geht’s',
+    'welcome.continue': 'Los geht’s',
+    'welcome.goTo': 'Zur Willkommensseite',
     'welcome.text': 'Hier wird deine Arbeitszeit erfasst. Ein kurzer Rundgang dauert etwa eine Minute; du kannst ihn jederzeit unter „Mein Konto“ erneut starten.',
-    'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Auf diesem Bildschirm stoppen, um die Zeit zu buchen.',
+    'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Unter „Zeiteinträge“ stoppen, um die Zeit zu buchen.',
     'welcome.todayHours': 'Heute bislang {0} h gebucht.',
     'welcome.todayNothing': 'Heute noch nichts gebucht.',
     'welcome.tour': 'Rundgang starten',
@@ -1290,6 +1376,7 @@ const TRANSLATIONS = {
     'msg.error': 'Fehler',
     'msg.initFailed': 'Initialisierung fehlgeschlagen',
     'msg.loadFailed': 'Konnte nicht alles laden',
+    'msg.rightsChanged': 'Deine Berechtigungen haben sich geändert. Bitte die Seite neu laden.',
     'msg.invalidFields': 'Ungültige Felder',
     'msg.passwordChanged': 'Passwort geändert. Bitte neu anmelden.',
     'msg.projectArchived': 'Projekt archiviert',
@@ -1326,7 +1413,8 @@ const TRANSLATIONS = {
     'pw.show': 'Passwort anzeigen',
     'report.result': 'Ergebnis',
     'report.total': '{0} h gesamt',
-    'report.title': 'Projektauswertung',
+    'report.title': 'Auswertung',
+    'report.noProject': 'Ohne Projekt',
     'role.create': 'Rolle anlegen',
     'role.edit': 'Rolle „{0}“ bearbeiten',
     'role.rightsFixed': 'Die Rechte einer Systemrolle lassen sich nicht ändern. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
@@ -1611,7 +1699,7 @@ async function loadMe() {
       }),
     );
   } else {
-    who.replaceChildren(el('span', { text: 'Authentifizierung deaktiviert' }));
+    who.replaceChildren(el('span', { text: t('auth.disabled', 'Authentication disabled') }));
   }
 
   $("#password-banner").hidden = !me.user.mustChangePassword;
@@ -1620,15 +1708,6 @@ async function loadMe() {
   applyLanguage(activeLanguage());
   applyPermissionVisibility();
 
-  // Here rather than in loadAdmin, which is where it used to be: that runs at the end
-  // of a chain of requests, so a single refusal earlier in the chain left the tab
-  // hidden and the Settings screen unreachable. While the initial password still
-  // stands the server refuses most of the API, which is exactly when an administrator
-  // is most likely to be looking for it.
-  //
-  // Not a data-perm, because it is not a permission: the Settings screen belongs to
-  // the built-in account rather than to a right somebody can be granted.
-  $('#tab-admin').hidden = !isSystemAdmin();
   renderTOTPState();
 }
 
@@ -1673,7 +1752,7 @@ async function loadUsers() {
         // Deleting one account asks something extra - whether to keep its
         // entries or purge them - so the row keeps its own dialog. A batch takes
         // the plain deletion, the answer that keeps the history.
-        ask: () => deleteStaffMember(u),
+        ask: () => deleteUser(u),
       }));
     }
 
@@ -1842,7 +1921,22 @@ async function loadProjects() {
     { placeholder: t('field.projectOptional', 'Project (optional)') });
   fillSelect($('#form-timesheet select[name=projectId]'), bookable,
     { placeholder: t('ts.noProject', 'no project') });
-  fillSelect($('#form-report select[name=projectId]'), cache.projects);
+  // An evaluation covers all projects, one of them, or the hours that belong to
+  // none - so this select carries two options that are not projects. The picker
+  // used to be required and offer only real ones, which made the two questions
+  // people ask most often the two the screen could not answer.
+  //
+  // "none" is appended after the projects and the choice restored by hand,
+  // because fillSelect restores before it exists and would drop it every reload.
+  const reportProject = $('#form-report select[name=projectId]');
+  const chosenScope = reportProject.value;
+
+  fillSelect(reportProject, cache.projects,
+    { placeholder: t('filter.allProjects', 'All projects') });
+  reportProject.append(el('option', {
+    value: 'none', text: t('report.noProject', 'No project assigned'),
+  }));
+  reportProject.value = chosenScope;
   fillSelect($('#filter-ts-project'), cache.projects,
     { placeholder: t('filter.allProjects', 'All projects') });
 
@@ -1909,9 +2003,13 @@ async function loadProjects() {
 /**
  * Whether this caller may change this entry's figures.
  *
- * An approved entry is refused by the API however it is reached, so offering it
- * would only produce a conflict; the answer lives here so the list, the calendar
- * and the row click cannot disagree about it.
+ * Whose it is and whether they may write their own time, and nothing else. It used
+ * to also say that an approved entry is refused by the API however it is reached -
+ * a rule that went with the review path, and a comment that outlived it by
+ * describing a refusal the server no longer makes.
+ *
+ * The answer lives here so the list, the calendar and the row click cannot
+ * disagree about it.
  */
 function mayEditTimesheet(entry) {
   const mine = me.user && entry.userId === me.user.id;
@@ -1965,9 +2063,9 @@ function resetTimesheetForm() {
  * The actions one time entry offers, as a table cell.
  *
  * Shared between the list and the calendar's day view, which render the same
- * records: two copies of these rules would be two places for "who may approve
- * this" to be answered differently, and the copy nobody was looking at would be
- * the wrong one.
+ * records: two copies of these rules would be two places for "whose entry is this"
+ * to be answered differently, and the copy nobody was looking at would be the
+ * wrong one.
  *
  * What is offered depends on the status and on the caller, because the API refuses
  * the rest anyway - the API is the authority here and this only avoids offering
@@ -2035,23 +2133,34 @@ async function loadTimesheets() {
 
 // ----------------------------------------------------------------- calendar
 
-/** The month the calendar is showing, as a Date on the first of that month. */
-let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+/**
+ * The month the calendar is showing, as a Date on the first of that month.
+ *
+ * Empty until something renders it, because which month somebody is in is a
+ * question about their own zone, and the zone is not known until they are signed
+ * in. It used to be worked out from the browser's clock as this file loaded, which
+ * is a different month from theirs for part of the first and the last day of every
+ * one - so an account in Auckland read on a Berlin machine opened the calendar on
+ * the month it had just left, with today highlighted nowhere in the grid.
+ */
+let calendarMonth = null;
 
 const ISO_DAY = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-/**
- * The calendar day it is right now, in the zone that applies to this user.
- *
- * Not `new Date().toISOString().slice(0, 10)`, which is the day in UTC: for
- * anyone east of Greenwich that is yesterday for part of every evening, and for
- * anyone west it is tomorrow for part of every morning. Booking hours against
- * the wrong day is the kind of error nobody notices until a month-end total is
- * short.
- *
- * Intl is used rather than date arithmetic because it is the only thing in the
- * platform that knows about daylight saving.
- */
+/** The first of the month a YYYY-MM-DD day falls in. */
+function monthOf(iso) {
+  const [year, month] = iso.split('-').map(Number);
+
+  return new Date(year, month - 1, 1);
+}
+
+/** The month to show, worked out from this user's own today the first time it is asked. */
+function currentCalendarMonth() {
+  if (!calendarMonth) calendarMonth = monthOf(todayISO());
+
+  return calendarMonth;
+}
+
 /** The date this code last filled in, so a date the user typed is recognisable. */
 let autofilledDate = '';
 
@@ -2071,6 +2180,18 @@ function resetBookingDate() {
   }
 }
 
+/**
+ * The calendar day it is right now, in the zone that applies to this user.
+ *
+ * Not `new Date().toISOString().slice(0, 10)`, which is the day in UTC: for
+ * anyone east of Greenwich that is yesterday for part of every evening, and for
+ * anyone west it is tomorrow for part of every morning. Booking hours against
+ * the wrong day is the kind of error nobody notices until a month-end total is
+ * short.
+ *
+ * Intl is used rather than date arithmetic because it is the only thing in the
+ * platform that knows about daylight saving.
+ */
 function todayISO() {
   const timeZone = me.user?.effectiveTimezone;
 
@@ -2100,7 +2221,7 @@ function todayISO() {
 async function loadCalendar() {
   if (!can('timesheets:read:own')) return;
 
-  const first = calendarMonth;
+  const first = currentCalendarMonth();
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
 
   const params = new URLSearchParams({ from: ISO_DAY(first), to: ISO_DAY(last) });
@@ -2220,15 +2341,18 @@ function showCalendarDay(iso, entries) {
 
 function wireCalendar() {
   const shift = (months) => {
-    calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + months, 1);
+    const from = currentCalendarMonth();
+    calendarMonth = new Date(from.getFullYear(), from.getMonth() + months, 1);
     mutate(loadCalendar, null, null);
   };
 
   $('#calendar-prev').addEventListener('click', () => shift(-1));
   $('#calendar-next').addEventListener('click', () => shift(1));
   $('#calendar-today').addEventListener('click', () => {
-    const now = new Date();
-    calendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // This person's today, not the browser's - the same reason the grid highlights
+    // it from todayISO(). The two disagreeing is what sent the button to a month
+    // that did not contain the day it was named after.
+    calendarMonth = monthOf(todayISO());
     mutate(loadCalendar, null, null);
   });
   $('#calendar-day-close').addEventListener('click', () => { $('#calendar-day-card').hidden = true; });
@@ -2354,10 +2478,45 @@ async function loadBranding() {
   return branding;
 }
 
+/** Whether the chosen database is one that lives on a server rather than in a file. */
+function datasourceIsServer() {
+  return $('#form-datasource').elements.dialect.value !== 'sqlite';
+}
+
+/**
+ * Shows the database fields that apply to the chosen type, and hides the rest.
+ *
+ * The same four behaviours the installation assistant has had all along, which
+ * this screen never got: SQLite offered a host, a port, a user, a password and an
+ * SSL mode for a file on disk; MySQL offered PostgreSQL's SSL mode; the caption
+ * above the name said "database" for a thing that is a file path; and the port was
+ * never filled in, so it had to be looked up.
+ *
+ * Kept separate from the installer's copy rather than shared: that page ships as
+ * one self-contained file precisely because it runs before these assets are
+ * loaded, so there is nothing to share it with.
+ */
+function syncDatasourceFields() {
+  const form = $('#form-datasource');
+  const server = datasourceIsServer();
+
+  $('#ds-server-fields').hidden = !server;
+  $('#ds-ssl-label').hidden = form.elements.dialect.value !== 'postgres';
+
+  setLeadingText($('#ds-name-label'), server
+    ? t('admin.dbName', 'Database / file name')
+    : t('admin.dbFile', 'Database file - created if it does not exist'));
+
+  if (server && !form.elements.port.value) {
+    form.elements.port.value = form.elements.dialect.value === 'postgres' ? '5432' : '3306';
+  }
+}
+
 async function loadAdmin() {
-  // The tab is shown as soon as who is signed in is known, which is not here - see
-  // refreshMe. This only decides whether there is anything to load.
-  if (!isSystemAdmin()) return;
+  // The tab itself is a data-perm, applied as soon as who is signed in is known -
+  // which is not here. This only decides whether there is anything to load, and it
+  // has to agree with the tab, or an account would see a screen full of failures.
+  if (!can('settings:manage')) return;
 
   await loadMaintenance();
 
@@ -2382,6 +2541,9 @@ async function loadAdmin() {
   for (const field of ['dialect', 'name', 'host', 'port', 'user', 'sslMode']) {
     dsForm.elements[field].value = ds[field] ?? '';
   }
+
+  // After the values are in, or the port would be prefilled over a stored one.
+  syncDatasourceFields();
 
   $('#datasource-active').textContent =
     `${t('admin.activeConnection', 'Currently connected via')}: ${ds.active}`;
@@ -2462,9 +2624,21 @@ function wireAdmin() {
       async () => { await loadBranding(); await loadAdmin(); });
   });
 
+  $('#form-datasource').elements.dialect.addEventListener('change', syncDatasourceFields);
+
   $('#form-datasource').addEventListener('submit', (e) => {
     e.preventDefault();
     const body = formData(e.target);
+
+    // A field that is not on screen for this dialect has nothing to say about the
+    // connection, and sending what is left in it would store an SSL mode against
+    // MySQL, or a host against a file on disk.
+    if (!datasourceIsServer()) {
+      for (const field of ['host', 'port', 'user', 'password']) body[field] = '';
+    }
+
+    if (body.dialect !== 'postgres') body.sslMode = '';
+
     mutate(async () => {
       const result = await api('/settings/datasource', { method: 'PUT', body: JSON.stringify(body) });
       toast(result.message ?? t('admin.restartNeeded', 'Saved. Applied on the next start.'), 'ok');
@@ -2489,31 +2663,43 @@ function wireAdmin() {
   });
 
   $('#datasource-test').addEventListener('click', () => {
-    const result = $('#datasource-test-result');
-    result.textContent = t('admin.testing', 'Testing the connection …');
-    result.className = 'muted';
-
-    mutate(async () => {
-      const outcome = await api('/settings/datasource/test',
-        { method: 'POST', body: JSON.stringify(formData($('#form-datasource'))) });
-
-      result.textContent = outcome.message;
-      result.className = outcome.ok ? 'muted plus' : 'muted minus';
-    }, null, null);
+    runConnectionTest($('#datasource-test-result'), () => api('/settings/datasource/test',
+      { method: 'POST', body: JSON.stringify(formData($('#form-datasource'))) }));
   });
 
   $('#ldap-test').addEventListener('click', () => {
-    const result = $('#ldap-test-result');
-    result.textContent = t('admin.testing', 'Testing the connection …');
-
-    mutate(async () => {
-      const outcome = await api('/settings/ldap/test',
-        { method: 'POST', body: JSON.stringify(ldapPayload()) });
-
-      result.textContent = outcome.message;
-      result.className = outcome.ok ? 'muted plus' : 'muted minus';
-    }, null, null);
+    runConnectionTest($('#ldap-test-result'), () => api('/settings/ldap/test',
+      { method: 'POST', body: JSON.stringify(ldapPayload()) }));
   });
+}
+
+/**
+ * Tries a connection and reports the outcome under the card that asked for it.
+ *
+ * The waiting line has to be taken back by whichever way the attempt ends. It used
+ * to be written before the request and overwritten only where the request came
+ * back, and mutate() turns a refusal into a toast - so a database or directory that
+ * would not answer left "Testing the connection …" standing underneath for as long
+ * as the screen stayed open, beside an error that had already been read and
+ * dismissed.
+ *
+ * A failure now says why in the same place a success does, because that is where
+ * somebody who just pressed the button is looking.
+ */
+async function runConnectionTest(result, attempt) {
+  result.textContent = t('admin.testing', 'Testing the connection …');
+  result.className = 'muted';
+
+  try {
+    const outcome = await attempt();
+
+    result.textContent = outcome.message;
+    result.className = outcome.ok ? 'muted plus' : 'muted minus';
+  } catch (err) {
+    result.textContent = err.message;
+    result.className = 'muted minus';
+    toast(err.message, 'error');
+  }
 }
 
 /**
@@ -2768,8 +2954,8 @@ const removeAfterConfirm = async (what, path, msg, after) => {
  * something with no consequence trains people to click through the dialog that
  * does have one.
  */
-async function deleteStaffMember(user) {
-  const done = t('msg.userDeleted', 'Staff member deleted');
+async function deleteUser(user) {
+  const done = t('msg.userDeleted', 'User deleted');
 
   try {
     await api(`/users/${user.id}`, { method: 'DELETE' });
@@ -2872,7 +3058,11 @@ async function submitLogin(e) {
 
   try {
     await refreshAll();
-    switchView(firstVisibleView());
+
+    // The same choice a page load makes, rather than always the first tab: signing
+    // out and back in used to discard the screen somebody was working on, so the
+    // only way back to it was to reload the page afterwards.
+    switchView(startingView());
 
     // Here as well as on a page load, or the greeting would only ever appear to
     // somebody who reloaded after signing in - which is nobody's first sign-in.
@@ -2892,8 +3082,8 @@ async function doLogout() {
     // Even a failed call should drop the client back to the sign-in screen.
   }
 
-  // Before the state is cleared: the poller checks isSystemAdmin(), and a
-  // timer left running would keep asking for the log with no session and paint
+  // Before the state is cleared: the poller checks what this account may do, and
+  // a timer left running would keep asking for the log with no session and paint
   // the screen with authentication failures.
   stopLogPolling();
 
@@ -2993,6 +3183,14 @@ async function loadLanguages() {
  */
 const TOUR_STEPS = [
   {
+    target: '#app-title',
+    view: null,
+    title: () => t('tour.welcome.title', 'The way back'),
+    text: () => t('tour.welcome.text',
+      'The title takes you to the welcome screen from wherever you are. It says what '
+      + 'today already has on it, and it can start this walk again.'),
+  },
+  {
     target: '#tabs',
     view: null,
     title: () => t('tour.nav.title', 'Everything lives up here'),
@@ -3016,8 +3214,9 @@ const TOUR_STEPS = [
     permission: 'timesheets:write:own',
     title: () => t('tour.book.title', 'Booking time'),
     text: () => t('tour.book.text',
-      'Pick a date, enter the hours, done. A project is optional — hours can be recorded '
-      + 'now and sorted later.'),
+      'Pick a date, enter the hours, done. A project is optional, so hours can be recorded '
+      + 'now and sorted later. What you write is what is stored, to the minute: nothing '
+      + 'here rounds to a quarter of an hour.'),
   },
   {
     target: '#table-timesheets',
@@ -3025,8 +3224,19 @@ const TOUR_STEPS = [
     permission: 'timesheets:read:own',
     title: () => t('tour.entries.title', 'Your entries'),
     text: () => t('tour.entries.text',
-      'Everything you booked, filterable by project. It stays yours to change: there '
-      + 'is nobody to submit it to.'),
+      'Everything you booked, filterable by project. Click a row to correct it, or tick '
+      + 'several and delete them in one go. It stays yours to change: there is nobody to '
+      + 'submit it to.'),
+  },
+  {
+    target: '#workbook-card',
+    view: 'timesheets',
+    permission: 'timesheets:read:own',
+    title: () => t('tour.sheet.title', 'In and out as a spreadsheet'),
+    text: () => t('tour.sheet.text',
+      'Your hours as a spreadsheet, with the column headings in the language you are '
+      + 'reading. An import shows you what it would change before it changes anything. '
+      + 'Every table worth moving this way has the same pair on its own screen.'),
   },
   {
     target: '#calendar-days',
@@ -3068,43 +3278,157 @@ const TOUR_STEPS = [
     target: '#form-report',
     view: 'report',
     permission: 'reports:read:own',
-    title: () => t('tour.report.title', 'Project reports'),
+    title: () => t('tour.report.title', 'Reports'),
     text: () => t('tour.report.text',
-      'What you have booked on one project over a period. Your own hours: there is no '
-      + 'breakdown per colleague, because nobody sees what anybody else recorded.'),
+      'What you booked over a period: on one project, across all of them at once, or only '
+      + 'the hours you never assigned to one. Your own hours - there is no breakdown per '
+      + 'colleague, because nobody sees what anybody else recorded.'),
   },
   {
-    target: '#token-card',
-    view: 'settings',
-    title: () => t('tour.tokens.title', 'Tokens and a second factor'),
-    text: () => t('tour.tokens.text',
-      'A personal token lets a script book time as you, and carries exactly the rights '
-      + 'your role has at the time it is used. Two-factor authentication is here as '
-      + 'well, with a code to scan.'),
+    target: '#form-user',
+    view: 'users',
+    permission: 'users:write',
+    title: () => t('tour.users.title', 'The people who work here'),
+    text: () => t('tour.users.text',
+      'Add an account and give it a role. It starts on the instance default, and its owner '
+      + 'changes their own working times from My account.'),
+  },
+  {
+    target: '#table-users',
+    view: 'users',
+    permission: 'users:read',
+    title: () => t('tour.userTable.title', 'Who is here, and what they may do'),
+    text: () => t('tour.userTable.text',
+      'The role beside each name can be changed from here. The built-in administrator is '
+      + 'the exception: it cannot be deleted and its role cannot be moved, because it is '
+      + 'the way back in.'),
+  },
+  {
+    target: '#form-role',
+    view: 'roles',
+    permission: 'roles:write',
+    title: () => t('tour.roles.title', 'Roles decide what is possible'),
+    text: () => t('tour.roles.text',
+      'A role is a set of rights, and each one is enforced by real code rather than by a '
+      + 'hidden button. Tick what the role may do; every account holding it changes with it.'),
   },
   {
     target: '#form-working-times',
     view: 'settings',
     title: () => t('tour.account.title', 'My account'),
     text: () => t('tour.account.text',
-      'Your daily target, timezone, two-factor authentication and API tokens. The daily '
-      + 'target is what the overtime balance is measured against.'),
+      'Your daily target and your daily ceiling. The target is what the overtime balance '
+      + 'is measured against, and nobody but you sets it.'),
   },
   {
-    target: '#tab-admin',
-    view: null,
-    adminOnly: true,
-    title: () => t('tour.admin.title', 'Settings'),
-    text: () => t('tour.admin.text',
-      'Yours alone as the built-in administrator: appearance, database, directory, timezone '
-      + 'and the operational limits.'),
+    target: '#form-my-timezone',
+    view: 'settings',
+    title: () => t('tour.myZone.title', 'Your timezone'),
+    text: () => t('tour.myZone.text',
+      'It decides which calendar day a booking lands on. It is taken from your browser the '
+      + 'first time you sign in, and this is where you disagree with that.'),
+  },
+  {
+    target: '#totp-card',
+    view: 'settings',
+    title: () => t('tour.totp.title', 'A second factor'),
+    text: () => t('tour.totp.text',
+      'A code from an authenticator app, set up by scanning a QR code - or by typing the '
+      + 'secret, where scanning is not an option.'),
+  },
+  {
+    target: '#passkey-card',
+    view: 'settings',
+    title: () => t('tour.passkey.title', 'Signing in without a password'),
+    text: () => t('tour.passkey.text',
+      'A passkey stays on this device and unlocks with whatever already unlocks it. You '
+      + 'can register several, one per device.'),
+  },
+  {
+    target: '#token-card',
+    view: 'settings',
+    title: () => t('tour.tokens.title', 'Tokens for scripts'),
+    text: () => t('tour.tokens.text',
+      'A personal token lets a script book time as you, and carries exactly the rights your '
+      + 'role has at the time it is used. It is shown once, when it is created.'),
+  },
+  {
+    target: '#form-password',
+    view: 'settings',
+    title: () => t('tour.password.title', 'Your password'),
+    text: () => t('tour.password.text',
+      'Changing it ends every other session but this one. An account that signs in through '
+      + 'the directory has no password here to change.'),
+  },
+  {
+    target: '#form-branding',
+    view: 'admin',
+    permission: 'settings:manage',
+    title: () => t('tour.branding.title', 'What this installation looks like'),
+    text: () => t('tour.branding.text',
+      'Title, banner, logo and footer. The logo becomes the icon in the browser tab, which '
+      + 'is what tells a test instance from the real one at a glance.'),
+  },
+  {
+    target: '#form-datasource',
+    view: 'admin',
+    permission: 'settings:manage',
+    title: () => t('tour.database.title', 'The database'),
+    text: () => t('tour.database.text',
+      'Which database this installation writes to. The connection is tested before it is '
+      + 'saved, and the change applies at the next start.'),
+  },
+  {
+    target: '#form-ldap',
+    view: 'admin',
+    permission: 'settings:manage',
+    title: () => t('tour.ldap.title', 'Signing in against a directory'),
+    text: () => t('tour.ldap.text',
+      'Accounts can come from LDAP instead of being created here. Below it, the '
+      + 'reconciliation runs on a schedule, and can be previewed before it is run by hand.'),
+  },
+  {
+    target: '#form-maintenance',
+    view: 'admin',
+    permission: 'settings:manage',
+    title: () => t('tour.maintenance.title', 'Maintenance mode'),
+    text: () => t('tour.maintenance.text',
+      'Closes the installation with an explanation, shown on the sign-in screen as well - '
+      + 'so somebody who cannot get in is told why rather than left guessing.'),
+  },
+  {
+    target: '#form-operational',
+    view: 'admin',
+    permission: 'settings:manage',
+    title: () => t('tour.limits.title', 'Limits and lifetimes'),
+    text: () => t('tour.limits.text',
+      'How long a session lasts, how many requests a caller may make, and the figures a '
+      + 'new account starts on.'),
+  },
+  {
+    target: '#form-telemetry',
+    view: 'admin',
+    permission: 'settings:manage',
+    title: () => t('tour.telemetry.title', 'Metrics and tracing'),
+    text: () => t('tour.telemetry.text',
+      'The log level, the metrics endpoint and where traces are exported to. All three are '
+      + 'read when the process starts, so they wait for the next one.'),
+  },
+  {
+    target: '#log-card',
+    view: 'admin',
+    permission: 'settings:manage',
+    title: () => t('tour.log.title', 'The log, without a shell'),
+    text: () => t('tour.log.text',
+      'What this process is writing, filterable by level. It is the first place to look '
+      + 'when something refused and the reason was not on screen.'),
   },
   {
     target: '#theme-picker',
     view: null,
     title: () => t('tour.theme.title', 'Appearance and language'),
     text: () => t('tour.theme.text',
-      'Light or dark — automatic follows the time of day. The language follows your browser '
+      'Light or dark - automatic follows the time of day. The language follows your browser '
       + 'until you choose one. That is everything; enjoy.'),
   },
 ];
@@ -3115,15 +3439,32 @@ let tour = { steps: [], index: 0, active: false };
 /** Drops steps this person cannot reach, so the tour never points at nothing. */
 function applicableTourSteps() {
   return TOUR_STEPS.filter((step) => {
-    if (step.adminOnly && !isSystemAdmin()) return false;
     if (step.permission && !can(...step.permission.split(','))) return false;
 
-    // A target that is not in the document, or is hidden for this person, is
-    // not something to explain.
-    const node = $(step.target);
-
-    return node && node.offsetParent !== null;
+    return tourTargetIsReachable($(step.target));
   });
+}
+
+/**
+ * Whether a control is one this person could be shown.
+ *
+ * This asked for offsetParent, and offsetParent is null for everything inside a
+ * screen that is not the current one - every `.view` but one is display:none. So
+ * every step outside the screen the tour happened to start on measured as absent
+ * and was dropped: a tour begun on the time entries came to four steps and looked
+ * complete, and the calendar, the projects, the reports and My account were simply
+ * never mentioned. A step switches to its own screen before it runs, so where
+ * somebody is standing right now says nothing about whether the control exists.
+ *
+ * What does say so is a hidden that is not a screen - a card kept back because
+ * there is nothing in it yet, or one a permission removed.
+ */
+function tourTargetIsReachable(node) {
+  for (let current = node; current && current !== document.body; current = current.parentElement) {
+    if (current.hidden && !current.classList.contains('view')) return false;
+  }
+
+  return Boolean(node);
 }
 
 /** Positions the spotlight and the bubble around one element. */
@@ -3273,15 +3614,14 @@ function wireTour() {
 }
 
 /**
- * The greeting, whichever kind applies to this person.
+ * What happens once, on arrival, beyond putting a screen up.
  *
- * One place rather than two calls at each site: a first sign-in is greeted and
- * offered the walk through, anybody who has been here before gets the short one,
- * and never both.
+ * Only the walk through is left here. The greeting itself is a screen now, so it
+ * needs no arranging - somebody arriving at it sees it, and somebody who wants it
+ * again presses the title.
  */
 async function greetAfterSignIn() {
   await maybeWelcome();
-  await maybeWelcomeBack();
 }
 
 /**
@@ -3312,7 +3652,12 @@ function greetedThisVisit() {
 }
 
 /**
- * Greets somebody on their first sign-in, and offers the walk through.
+ * Greets somebody on their first sign-in by walking them through the place.
+ *
+ * The walk starts by itself now. It used to be offered by a modal with a "Not
+ * now" beside it, and "Not now" recorded the tour as seen - so the one button
+ * that looked like "later" meant "never", and the introduction the application
+ * had was the introduction almost nobody got.
  *
  * Never while the setup wizard is up: being walked through the application by
  * two things at once is worse than either alone, and the wizard is the one
@@ -3330,21 +3675,47 @@ async function maybeWelcome() {
   if (isSystemAdmin()) return;
   if (greetedThisVisit()) return;
 
-  showWelcome();
+  await startTour();
 }
 
-/** Fills in the greeting and puts it up. */
-function showWelcome() {
-  const overlay = $('#welcome-overlay');
-  if (!overlay) return;
+/**
+ * Fills in the greeting screen for whoever is looking at it.
+ *
+ * Rendered on every arrival rather than once, because half of what it says is
+ * about today - what is already booked, whether a stopwatch was left running -
+ * and a screen somebody can come back to has to be right when they do.
+ */
+async function renderWelcome() {
+  if (!me.user) return;
 
-  $('#welcome-title').textContent = me.user?.name
-    ? t('welcome.hello', 'Welcome, {0}').replace('{0}', me.user.name)
-    : t('welcome.helloPlain', 'Welcome');
+  // Somebody who has been walked through the application is not new to it, so
+  // the same screen greets them differently. tourSeen is the only durable record
+  // of "has been here before" there is.
+  const returning = me.user.tourSeen;
+
+  const greeting = returning
+    ? {
+      named: t('welcome.backName', 'Welcome back, {0}'),
+      plain: t('welcome.back', 'Welcome back'),
+    }
+    : {
+      named: t('welcome.hello', 'Welcome, {0}'),
+      plain: t('welcome.helloPlain', 'Welcome'),
+    };
+
+  $('#welcome-title').textContent = me.user.name
+    ? greeting.named.replace('{0}', me.user.name)
+    : greeting.plain;
 
   $('#welcome-text').textContent = t('welcome.text',
     'This is where your working time is recorded. A short walk through it takes '
     + 'about a minute, and you can start it again at any time under My account.');
+
+  // What today already has on it. Only for somebody who has hours of their own:
+  // an account that only administers has no today to report.
+  const today = $('#welcome-today');
+  today.textContent = can('timesheets:read:own') ? await todayInOneSentence() : '';
+  today.hidden = !today.textContent;
 
   // What the application is for, in the order somebody meets it. Only the points
   // this person can actually act on: a list that promises something somebody cannot
@@ -3377,79 +3748,11 @@ function showWelcome() {
   // cannot reach is dropped - so for an account that only administers there is nothing
   // left to walk through. Offering it anyway would open an empty tour, which is a
   // worse first impression than not offering one.
-  const walkable = applicableTourSteps().length > 0;
-  const tourButton = $('#welcome-tour');
-  const skipButton = $('#welcome-skip');
-
-  tourButton.hidden = !walkable;
-
-  // With nothing to show, the remaining button is the only way out, so it stops being
-  // the quiet second choice and says what it does.
-  skipButton.classList.toggle('secondary', walkable);
-  setLeadingText(skipButton, walkable
-    ? t('welcome.skip', 'Not now')
-    : t('welcome.begin', 'Get started'));
-
-  overlay.hidden = false;
-  (walkable ? tourButton : skipButton).focus();
-}
-
-/** Takes the greeting down, and records that it has been seen. */
-async function dismissWelcome({ thenTour }) {
-  $('#welcome-overlay').hidden = true;
-
-  if (thenTour) {
-    await startTour();
-
-    return;
-  }
-
-  // Declining counts as seen, the same way skipping the tour does: somebody who
-  // said "not now" made a decision, and asking again next time overrides it.
-  await recordTourSeen();
-}
-
-function wireWelcome() {
-  $('#welcome-tour').addEventListener('click', () => dismissWelcome({ thenTour: true }));
-  $('#welcome-skip').addEventListener('click', () => dismissWelcome({ thenTour: false }));
-
-  // Escape is what people press to get out of a dialog.
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('#welcome-overlay').hidden) {
-      dismissWelcome({ thenTour: false });
-    }
-  });
-
-  $('#welcome-back-close').addEventListener('click', () => {
-    $('#welcome-back').hidden = true;
-  });
-}
-
-/**
- * Greets somebody who has been here before, once per browser session.
- *
- * Per visit rather than per page load: a reload is not an arrival, and a greeting
- * that reappears every time is something to close rather than read. Says what they
- * would otherwise have to go and look up - what today already has on it, and
- * whether they left a stopwatch running.
- */
-async function maybeWelcomeBack() {
-  const card = $('#welcome-back');
-  if (!card || !me.user || !me.user.tourSeen) return;
-  if (!$('#setup-wizard').hidden || me.user.mustChangePassword) return;
-  if (!can('timesheets:read:own')) return;
-  if (greetedThisVisit()) return;
-
-  $('#welcome-back-title').textContent = me.user.name
-    ? t('welcome.backName', 'Welcome back, {0}').replace('{0}', me.user.name)
-    : t('welcome.back', 'Welcome back');
-
-  $('#welcome-back-text').textContent = await welcomeBackDetail();
-  card.hidden = false;
+  $('#welcome-tour').hidden = applicableTourSteps().length === 0;
 }
 
 /** What today looks like, in one sentence. */
-async function welcomeBackDetail() {
+async function todayInOneSentence() {
   const today = todayISO();
 
   try {
@@ -3457,17 +3760,16 @@ async function welcomeBackDetail() {
 
     if (running?.running) {
       return t('welcome.timerRunning',
-        'A stopwatch is still running. Stop it on this screen to book the time.');
+        'A stopwatch is still running. Stop it on the time entries screen to book the time.');
     }
   } catch {
-    // Not worth a word: the greeting is a courtesy, and the screen below it
+    // Not worth a word: the greeting is a courtesy, and the screen behind it
     // reports anything that is actually wrong.
   }
 
   try {
     const entries = (await api(`/timesheets?from=${today}&to=${today}`))?.items ?? [];
-    const mine = entries.filter((entry) => entry.userId === me.user.id);
-    const hours = mine.reduce((sum, entry) => sum + entry.durationHours, 0);
+    const hours = entries.reduce((sum, entry) => sum + entry.durationHours, 0);
 
     if (hours > 0) {
       return t('welcome.todayHours', '{0} h booked today so far.')
@@ -3478,6 +3780,22 @@ async function welcomeBackDetail() {
   } catch {
     return '';
   }
+}
+
+/** The screen to carry on to from the greeting. */
+function onwardView() {
+  const last = rememberedView();
+
+  return last && last !== 'welcome' ? last : firstVisibleView();
+}
+
+function wireWelcome() {
+  // The title, from anywhere. This is the way back to the greeting, and the
+  // reason it is a screen rather than something that appears once and is gone.
+  $('#app-title').addEventListener('click', () => switchView('welcome'));
+
+  $('#welcome-continue').addEventListener('click', () => switchView(onwardView()));
+  $('#welcome-tour').addEventListener('click', startTour);
 }
 
 // ------------------------------------------------------------ setup wizard
@@ -4535,6 +4853,14 @@ const SHEET_CARDS = [
     write: 'users:write',
     reload: () => refreshAll(),
   },
+  {
+    key: 'roles',
+    path: '/roles',
+    view: '#view-roles',
+    read: 'roles:read',
+    write: 'roles:write',
+    reload: () => refreshAll(),
+  },
 ];
 
 /**
@@ -4716,10 +5042,15 @@ function buildSheetCard(spec) {
  * them.
  */
 const SHEET_TEXTS = {
-  projects: 'Exports the projects and categories you can see. An import matches rows '
-    + 'by name: a name that already exists is updated, a new one is created. Rows '
-    + 'marked as a category become your own private ones. An empty cell leaves that '
+  projects: 'Exports your projects. An import matches rows '
+    + 'by name: a name that already exists is updated, a new one is created. '
+    + 'An empty cell leaves that '
     + 'value alone, so nothing is lost by a column somebody deleted.',
+  roles: 'Exports every role with a column per permission, holding yes or no - which '
+    + 'is the grid you want when the question is what four roles may do. An import '
+    + 'matches rows by name, creates a role that is not there yet, and refuses a '
+    + 'heading naming a right this application does not enforce. A system role can be '
+    + 'described differently and nothing else.',
   users: 'Exports every account: name, email, role, and whether its password lives in '
     + 'the directory. An import changes the name and the role, matched on the email '
     + 'address, and does not create accounts - a new one needs a password, which does '
@@ -5222,7 +5553,7 @@ function wirePasskeys() {
 
     try {
       await refreshAll();
-      switchView(firstVisibleView());
+      switchView(startingView());
       await greetAfterSignIn();
     } catch (err) {
       toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
@@ -5373,7 +5704,7 @@ function logViewerActive() {
   // The sign-in screen being up means there is no session to poll with. Without
   // this the poller keeps asking through a password change - which ends every
   // session - and paints the screen with authentication failures.
-  return isSystemAdmin() && !$('#view-admin').hidden && $('#login-screen').hidden;
+  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden;
 }
 
 function setLogStatus(text) {
@@ -5800,6 +6131,13 @@ function switchView(name) {
     history.replaceState(null, '', `#${name}`);
   }
 
+  rememberView(name);
+
+  // Filled on arrival rather than once, because what it says about today goes
+  // stale. Not awaited: switching screens is not something to hold up for two
+  // requests, and the screen reads correctly while they are in flight.
+  if (name === 'welcome') renderWelcome();
+
   // The log viewer polls, so it follows the screen it lives on rather than
   // running for as long as the tab is open.
   if (logViewerActive()) schedulePoll({ immediate: true });
@@ -5820,18 +6158,68 @@ function currentHashView() {
 }
 
 /**
- * The view to open: the one in the address bar when it is real and permitted,
- * otherwise the first tab this user may see.
+ * Where this person's last visit left off, if it was recorded.
  *
- * Checked against the tabs rather than trusted, because the hash is whatever was
- * typed or bookmarked - including a tab this user is not allowed, or one that
- * stopped existing between releases.
+ * Per account and in localStorage rather than in the session: the point is to
+ * survive signing out, closing the browser and coming back tomorrow. Keyed by
+ * user id so two people sharing a machine do not inherit each other's screen.
+ *
+ * Storage can be refused outright in private browsing, which costs nothing here -
+ * the first permitted tab is a perfectly good answer.
+ */
+function rememberedView() {
+  if (!me.user) return '';
+
+  try {
+    return localStorage.getItem(`gtr_view_${me.user.id}`) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Records the screen somebody is on, for the next time they sign in. */
+function rememberView(name) {
+  // Not while the initial password stands: the wizard forces My account open, and
+  // recording that would make the forced screen look like a choice somebody made.
+  if (!me.user || me.user.mustChangePassword) return;
+
+  // The greeting is not somewhere somebody was working, it is the way back to the
+  // start - recording it would make "carry on where you were" lead here.
+  if (name === 'welcome') return;
+
+  try {
+    localStorage.setItem(`gtr_view_${me.user.id}`, name);
+  } catch {
+    // Nothing to do about a storage that will not take it.
+  }
+}
+
+/**
+ * The view to open: the one in the address bar when it is real and permitted, then
+ * the one this person was last on, and otherwise the greeting.
+ *
+ * Checked against the tabs rather than trusted, because neither the hash nor the
+ * remembered name is anything more than a string that was true once - the hash is
+ * whatever was typed or bookmarked, and a remembered screen may belong to a tab
+ * this account has since lost, or one that stopped existing between releases.
+ *
+ * The greeting has no tab of its own, so it is permitted by name: it asks for no
+ * right, because it only ever says what this person already has. It is where a
+ * first sign-in lands, and where anybody lands who has not been anywhere yet -
+ * somebody who was working somewhere goes back to it instead, which is the point
+ * of remembering.
  */
 function startingView() {
-  const wanted = currentHashView();
-  const permitted = $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === wanted);
+  const permitted = (name) => name === 'welcome'
+    || $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === name);
 
-  return permitted ? wanted : firstVisibleView();
+  const wanted = currentHashView();
+  if (permitted(wanted)) return wanted;
+
+  const last = rememberedView();
+  if (permitted(last)) return last;
+
+  return 'welcome';
 }
 
 /** Picks the first tab the user is actually allowed to see. */
@@ -5893,7 +6281,7 @@ function wireForms() {
     const body = formData(e.target);
 
     mutate(() => api('/users', { method: 'POST', body: JSON.stringify(body) }),
-      t('msg.userCreated', 'Staff member created'),
+      t('msg.userCreated', 'User created'),
       async () => { e.target.reset(); await refreshAll(); });
   });
 
@@ -5956,12 +6344,16 @@ function wireForms() {
     e.preventDefault();
     const { projectId, from, to } = formData(e.target);
     const params = new URLSearchParams();
+    if (projectId) params.set('projectId', projectId);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const suffix = params.toString() ? `?${params}` : '';
 
     mutate(async () => {
-      const report = await api(`/projects/${projectId}/report${suffix}`);
+      // /reports rather than /projects/{id}/report, because the selection is not
+      // always a project: an empty projectId means every one of them and "none"
+      // means the hours that never got one, and neither fits in a path.
+      const report = await api(`/reports${suffix}`);
 
       // One row, because the total covers the reader's own hours and nobody else's.
       // The column used to name the person, which is now always the same person.

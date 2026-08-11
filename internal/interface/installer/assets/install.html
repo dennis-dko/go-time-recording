@@ -162,6 +162,12 @@
    */
   const DE = {
     'title': 'Zeiterfassung einrichten',
+    // The heading once the installation has a name of its own. Separate from
+    // 'title' because German puts the name first and English puts it last, so
+    // the sentence cannot be built by sticking the name onto a fixed prefix -
+    // which is exactly how this page ended up greeting a German reader with
+    // "Set up Time Recording" above an otherwise German screen.
+    'title.named': '{name} einrichten',
     'intro': 'Diese Installation hat noch keine Datenbank. Es kann nichts gespeichert '
       + 'werden und niemand sich anmelden, bis hier eine gewählt ist — dies ist also der '
       + 'erste und einzige Bildschirm, bis es funktioniert.',
@@ -202,6 +208,11 @@
 
   if (german) {
     document.documentElement.lang = 'de';
+
+    // The browser tab as well as the page. It carries no data-i18n because a
+    // <title> has no place to put one, so the loop below would walk straight
+    // past it and leave the tab reading English.
+    document.title = DE.title;
 
     for (const node of document.querySelectorAll('[data-i18n]')) {
       const translated = DE[node.dataset.i18n];
@@ -439,8 +450,14 @@
       const state = await res.json();
 
       if (state.appName) {
-        document.title = `Set up ${state.appName}`;
-        $('heading').textContent = `Set up ${state.appName}`;
+        // Looked up rather than concatenated. APP_NAME defaults to "Time
+        // Recording", so this branch is taken on practically every installation -
+        // which made a hard-coded "Set up ..." the one English line every German
+        // reader was guaranteed to meet, at the top of the page.
+        const named = t('title.named', 'Set up {name}').replace('{name}', state.appName);
+
+        document.title = named;
+        $('heading').textContent = named;
       }
 
       if (state.version) $('footer').textContent = state.version;

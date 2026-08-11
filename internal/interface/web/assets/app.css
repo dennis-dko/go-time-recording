@@ -126,6 +126,20 @@ body {
 
 .topbar h1 { font-size: 18px; margin: 0; }
 
+/* Reads as the heading it sits in rather than as a control, until it is pointed
+   at - a button-looking title in the corner of every screen would compete with
+   the tabs beside it for the same attention. */
+.app-title {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.app-title:hover { text-decoration: underline; }
+
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
 
 .tab {
@@ -270,18 +284,12 @@ button.danger:not(.link) {
 
 .confirm-card { max-width: 460px; }
 
-/* The greeting on a first sign-in.
+/* The greeting.
  *
- * No z-index of its own: it keeps the .overlay layer (25), which puts the sign-in
- * screen (30) above it. That is the right way round - if the session dies while the
- * greeting is up, being signed out is the thing that matters, and a courtesy must
- * not cover the way back in. It cannot collide with the setup wizard on the same
- * layer because it is never shown while that is up.
- *
- * Wider than a confirmation, because it carries a short list rather than one
- * question. */
-.welcome-card { max-width: 520px; }
-
+ * It has no layer at all any more. It used to be a modal over everything, which is
+ * why it needed one - and being a modal is what made it a thing you got past
+ * rather than a thing you could go back to. It is a screen now, so it sits in the
+ * document like every other one. */
 .welcome-points {
   color: var(--muted);
   display: grid;
@@ -301,10 +309,6 @@ button.danger:not(.link) {
   left: 0;
   position: absolute;
 }
-
-/* Welcome back, at the top of the screen somebody lands on. Quieter than a card
-   of its own work: it is a greeting, not a heading. */
-.welcome-back h2 { font-size: 16px; }
 
 /* The destructive answer sits on the right, away from where the pointer lands
  * when the dialog opens. */

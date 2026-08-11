@@ -191,21 +191,37 @@ func (p *page) settleWizard() {
 func (p *page) settleWelcome() {
 	p.t.Helper()
 
+	// A first sign-in opens the walk through by itself now - it used to be offered
+	// by a modal with a "Not now" beside it, and that button recorded the tour as
+	// seen, so the one control that looked like "later" meant "never". Skipping it
+	// is what every case but the tour's own wants.
 	deadline := time.Now().Add(5 * time.Second)
 
 	for time.Now().Before(deadline) {
-		if p.visible("#welcome-overlay") {
-			p.run("decline the greeting", p.click("#welcome-skip"))
-			p.waitGone("#welcome-overlay")
+		if p.visible("#tour-bubble") {
+			p.run("skip the walk through", p.click("#tour-end"))
+			p.waitGone("#tour-bubble")
 
-			return
+			break
+		}
+
+		if p.visible("#view-welcome") {
+			break
 		}
 
 		time.Sleep(150 * time.Millisecond)
 	}
 
-	// Not an error: an account that has already been greeted, or one the greeting
-	// does not apply to, is a perfectly ordinary state to be in.
+	// And the greeting is a screen rather than something over one, so a sign-in
+	// with nothing to go back to lands on it. Carrying on is what a person does
+	// next, and it puts the case on the screen it came to look at.
+	if p.visible("#view-welcome") {
+		p.run("carry on from the greeting", p.click("#welcome-continue"))
+		p.waitGone("#view-welcome")
+	}
+
+	// Not an error if neither happened: an account that has already been greeted,
+	// or one that landed on a remembered screen, is a perfectly ordinary state.
 }
 
 // awaitPromise makes chromedp wait for an async evaluation to resolve instead
