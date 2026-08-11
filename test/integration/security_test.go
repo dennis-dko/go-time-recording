@@ -91,6 +91,19 @@ func TestSecurityHeadersAreSet(t *testing.T) {
 		"Referrer-Policy":         "no-referrer",
 	}
 
+	// The two directives the markup is written against, named rather than left
+	// inside "default-src 'self'". Widening either is what would let an inline
+	// script or an inline style into the page, and a violation is silent: the
+	// browser drops the offending thing and renders the rest, so the page still
+	// works and only the part that needed it is quietly wrong. The markup side is
+	// held by TestNoInlineScriptInTheMarkup and TestNoInlineStyleInTheMarkup.
+	for _, directive := range []string{"script-src 'self'", "style-src 'self'"} {
+		if got := resp.Header.Get("Content-Security-Policy"); !strings.Contains(got, directive) {
+			t.Errorf("the policy no longer says %q, so the markup's assumptions "+
+				"about it are no longer true: %q", directive, got)
+		}
+	}
+
 	for header, want := range expected {
 		if got := resp.Header.Get(header); !strings.Contains(got, want) {
 			t.Errorf("%s: expected to contain %q, got %q", header, want, got)

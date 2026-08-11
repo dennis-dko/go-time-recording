@@ -769,9 +769,14 @@
           </label>
           <label id="ds-name-label" data-i18n="admin.dbName">Database / file name<input type="text" name="name" required>
           </label>
-          <!-- display:contents so the grid still lays the fields out in one flow:
-               a wrapper that participated would put all four in one cell. -->
-          <div id="ds-server-fields" style="display:contents">
+          <!-- A class rather than a style attribute. The rule it needs is
+               display:contents, so the grid keeps laying these four out in one
+               flow - a wrapper that participated would put all four in a single
+               cell - but an inline style is exactly what style-src 'self'
+               forbids, so it was silently dropped and the layout it was there to
+               protect broke. The installer page uses the attribute and gets away
+               with it because that server sends no policy at all. -->
+          <div id="ds-server-fields" class="grid-passthrough">
             <label data-i18n="admin.dbHost">Host<input type="text" name="host">
             </label>
             <label data-i18n="admin.dbPort">Port<input type="text" name="port" inputmode="numeric">
