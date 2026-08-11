@@ -46,6 +46,12 @@ thing standing between an exposed port and that decision is a value only somebod
 who can already see the process can read. Set `SETUP_TOKEN` to choose it yourself
 and drive the screen unattended.
 
+The token guards the decision, not the page. `GET /install/state` needs no token
+and answers with the instance name, the build version and whatever database
+prefill the environment supplied — dialect, name, host, port, user, SSL mode. No
+password is in it, but the intended topology is, so an installer left reachable
+from the internet is worth closing rather than merely not answering.
+
 Setting `DB_DIALECT` skips the installer entirely, which is how a container
 deployment configures itself; see [Deployment](#deployment). `task dev` sets it
 too, so development never meets this screen.
@@ -60,8 +66,15 @@ too, so development never meets this screen.
 That account **cannot be deleted**, cannot be moved to a role without
 administration rights, and is never authenticated against a directory — so an
 installation can never lock itself out, and nobody who controls the directory
-can take it over. Until the initial password is replaced the server refuses
-everything else, including issuing API tokens.
+can take it over.
+
+Until the initial password is replaced the server refuses the ordinary API,
+including issuing API tokens. It does **not** refuse the installation itself:
+reaching *Settings* goes through a check that resolves the caller without the
+initial-password gate, so the database connection, the directory bind,
+telemetry, the process log and the restart are all open while `changeme123`
+still stands. Treat that password as full control of the installation until it
+is changed, not as a limited foothold.
 
 **Setup wizard.** On first sign-in the built-in administrator is walked through
 what an installation has to settle, one step at a time. Two are required — the
@@ -210,8 +223,12 @@ are actually enforced.
 
 Running an installation and recording time in it are two different jobs, and the
 `admin` role does only the first: accounts, roles, the database, the directory, the
-backups, the log. It has **no** working day at all — it cannot book an hour, keep a
-project, read a figure or set a daily target, its own included.
+log. It has **no** working day at all — it cannot book an hour, keep a project, read
+a figure or set a daily target, its own included.
+
+Backups used to be in that list and are not a thing this application does: there is
+no permission for them, no endpoint and no screen. They are external, and
+[`deploy/OPERATIONS.md`](deploy/OPERATIONS.md) says what to copy for each dialect.
 
 That is deliberate, and the reason is the account itself. Every installation has the
 built-in administrator before anybody has chosen anything: it is how you get in, not
@@ -380,6 +397,19 @@ Requirements: the host must be reachable from the internet on
 everything else to HTTPS. Use `TLS_STAGING=true` while setting things up — its
 certificates are not trusted by browsers, but its rate limits are far looser
 than the production ones.
+
+Two things about this arrangement that are easier to know than to discover:
+
+- **The plain `HTTP_PORT` listener stays open, on every interface.** The TLS
+  server proxies to it and nothing closes it. Under `deploy/compose.tls.yaml`
+  that is hidden because the overlay publishes only 80 and 443; on a host, close
+  it yourself.
+- **A listener that cannot bind does not stop the process.** Both are started in
+  their own goroutines and only log, so start-up reports success either way — an
+  unprivileged process that may not bind 443 comes up and serves plain HTTP with
+  one error line in the log. After switching TLS on, look for
+  `serving HTTPS on :443` and connect to the name; "the service is running" is
+  not evidence.
 
 GoFr owns its own listener and accepts only a static certificate pair, so TLS
 is terminated in front of it and proxied to localhost.
@@ -585,26 +615,33 @@ Four layers, lowest to highest:
 | 1 | `configs/.env` | the repository — every default |
 | 2 | `configs/.$APP_ENV.env` | the repository — differences per environment |
 | 3 | real environment variables | the deployment: compose, systemd, the shell |
-| 4 | `configs/datasource.json` | the **setup wizard**, when someone changes the database in the interface |
+| 4 | `configs/datasource.json` | the **installer**, and *Settings → Database* |
 
 Layer 3 is why a deployment needs no file edits: `deploy/compose.yaml` sets
 everything it needs as environment variables. Layer 4 is deliberately on top of
 it — changing the database in the interface is an explicit act, and it would be
 surprising for it to be silently ignored because a stale variable was still set
-somewhere.
+somewhere. It is also narrower than the others: it only ever supplies `DB_*`, and
+only the fields it actually holds, so an environment `DB_HOST` survives a
+`datasource.json` that omits one.
 
 With `APP_ENV` unset, layer 2 falls back to `configs/.local.env`. That file is
 not in the repository and is gitignored: it is the right place for a personal
 database or a debug log level, and the wrong thing to commit, because it would
 silently apply to everyone.
 
+`APP_ENV` itself has to come from layer 3. GoFr reads it before it opens any of
+these files, so writing `APP_ENV=prod` into `configs/.env` selects no overlay at
+all — and does it quietly, which is the part worth knowing.
+
 ### What belongs in a file, and what belongs in the application
 
 **Bootstrap** settings can only be set in layers 1–3. They decide how the
 process starts, so an application that has not started cannot administer them —
 and getting one wrong must not be fixable only from a screen it takes away:
-ports, `TLS_*`, `AUTH_ENABLED`, `UI_ENABLED`, and the `*_SCHEDULE` cron
-expressions.
+ports, `TLS_*`, `AUTH_ENABLED`, `UI_ENABLED`, and `LDAP_SYNC_SCHEDULE`, which is
+the only cron expression there is — the session prune runs at 03:00 and is not
+configurable at all.
 
 **Starting values** are what a fresh installation begins with; the setup wizard
 and *Settings* administer them at run time and what is stored there wins:
@@ -717,12 +754,42 @@ so there is no arrangement in which pressing it leaves the installation down.
 Windows has no `execve`, so the button is not offered there and the card stays on
 screen to say why — with nothing pending it used to disappear, which left the one
 screen that explains the limitation unreachable on the one platform that has it.
-There, a saved setting takes effect when the application is next started the way
-it was started. Two exporters are offered, `otlp` and
-`jaeger`. Zipkin is not: GoFr still accepts it while warning that it is on its
-way out. Neither is GoFr's hosted exporter, which posts every span to a service
+
+`execve` passes the current environment on, and that has one consequence worth
+knowing before it surprises somebody: a setting cleared back to *follow the
+configuration file* is **not** restored by this button. The variable the previous
+process exported is inherited, and a real environment variable beats the file. The
+same goes for deleting `configs/datasource.json` — the inherited `DB_DIALECT`
+keeps the old connection rather than bringing the installer back. Both need a
+genuine stop and start.
+
+Two other things the card cannot tell you, because they are never compared: a
+database change that keeps the dialect — another host, port, user or password —
+and the trace sample ratio. Both need a restart and neither appears as pending.
+So an empty card is not a promise that nothing is waiting.
+
+On Windows, then, a saved setting takes effect when the application is next
+started the way it was started. Two exporters are offered, `otlp` and `jaeger`.
+Zipkin is not: GoFr still accepts it while warning that it is on its way out. Neither is GoFr's hosted exporter, which posts every span to a service
 run by the framework's authors — not a thing to be able to switch on by picking
 an entry from a list.
+
+**The framework calls home by default, and nothing here switches that off.**
+`GOFR_TELEMETRY` defaults to on — [`deploy/.env.binary.example`](deploy/.env.binary.example)
+writes that default out so it is at least visible — which means every start POSTs to
+`https://gofr.dev/api/ping/up`, every shutdown to `.../ping/down`, and every
+start also sends a document — application name and version, framework and Go
+version, operating system, architecture — to
+`https://gofr.dev/telemetry/v1/metrics`. None of it carries recorded time or
+anybody's data, and all of it is outbound traffic an air-gapped or
+egress-filtered deployment did not ask for. One line switches all three off:
+
+```bash
+GOFR_TELEMETRY=false
+```
+
+It is deliberately not administrable from *Settings*: it has to be settled before
+the framework starts, which is the same reason the ports are not.
 
 ## API
 
@@ -780,11 +847,32 @@ an installation that has had no refused sign-in publishes no
 `gtr_signin_failures_total` at all rather than publishing it as zero. Treat an
 absent series as absent — `absent()` — rather than as a healthy zero.
 
-Operations: `/.well-known/health`, `/.well-known/alive`, and `/metrics` on port
-2121 — a port of its own, outside the middleware chain, which therefore asks for
+Operations: `/.well-known/health` and `/.well-known/alive` on the application's
+own port, which is what the image's healthcheck asks — and `/metrics` on port
+2121, a port of its own, outside the middleware chain, which therefore asks for
 no sign-in, is not covered by TLS, and serves Go's profiling endpoints under
-`/debug/pprof/` beside the metrics. Reach it from your monitoring, not from the
-internet, or switch it off under *Settings*.
+`/debug/pprof/` beside the metrics. Reach that one from your monitoring, not from
+the internet, or switch it off under *Settings*.
+
+This sentence used to put all three on 2121. They are not: the two health paths
+answer on the application port and 404 on the metrics port, which is why
+`wget http://127.0.0.1:8000/.well-known/alive` is what
+[`Dockerfile`](Dockerfile) and [`deploy/compose.yaml`](deploy/compose.yaml) both
+run.
+
+Neither of them means as much as it looks like. `/.well-known/health` answers
+`200` even when the SQL datasource is down — the state is in the body, as
+`"status": "UP"` or `"DEGRADED"` — so alerting on the status code alerts on
+nothing. And `/.well-known/alive` answers `200` while the **installer** is
+running, because the installer serves its page for every path, so a container
+sitting on the installer with no application behind it reports healthy. The
+honest liveness check for "is the application actually up" is
+`/api/v1/branding` carrying a `version`, which is what the release workflow's
+smoke test asks.
+
+`METRICS_PORT` switches the endpoint off only on exactly `0`. Any other value it
+cannot parse — `off`, `false`, `-1`, empty — falls back to 2121 and switches it
+**on**, which given what that port serves is worth getting right.
 
 ## Business rules
 
@@ -885,21 +973,54 @@ unreachable LDAP server delays one sign-in rather than holding a request open.
 GoFr's **circuit breaker** does not apply here, which is worth stating rather than
 leaving somebody to look for it. It lives in `pkg/gofr/service` and guards
 *outgoing HTTP calls* registered with `AddHTTPService` — it takes a `HealthURL`
-and polls it. This application makes no outgoing HTTP calls at all: it talks to a
-SQL database and an LDAP server, neither of which is HTTP, and the optional trace
-exporter is gRPC and managed by the framework. Wiring one in would add a
-configuration surface that protects nothing.
+and polls it. Nothing here is registered that way, and there is nothing to
+register: the work this application does is a SQL database and an LDAP server,
+neither of which is HTTP, and the optional trace exporter is gRPC and managed by
+the framework.
 
-**Caching** is likewise deliberate rather than absent. Two things are cached, both
-because they are read on nearly every request and both with the staleness written
-down: the maintenance state for two seconds
-([`maintenance.go`](internal/interface/api/v1/rest/maintenance.go)) and the
-operational limits ([`limits_provider.go`](internal/application/v1/service/limits_provider.go)),
-each invalidated on save so a change takes effect on the next request rather than
-at the end of an interval. GoFr can bring Redis, and for an installation the size
-this is built for that would mean one more service to run, back up and keep
-reachable in exchange for queries that already answer in under a millisecond
-against a local file.
+Two outgoing HTTP paths do exist, and a breaker helps neither. Both live in
+[`tlsserver`](internal/infrastructure/tlsserver/tlsserver.go) and only when the
+binary terminates TLS itself: `autocert` talks to Let's Encrypt to obtain and
+renew a certificate, and the redirect listener proxies to this same process. The
+first already retries on its own schedule and is not on any request's path — a
+breaker around it would trip while nobody was waiting. The second is a hop to
+localhost, where the thing a breaker protects you from is the thing that would
+have tripped it.
+
+So the conclusion stands, but not for the reason this paragraph used to give: it
+claimed the process makes no outgoing HTTP calls at all, which was simply untrue,
+and an argument that is wrong on the facts is worse than the missing feature it
+was defending.
+
+**Caching** is likewise deliberate rather than absent, and there are three kinds
+of it here.
+
+*In process*, two things are cached, both because they are read on nearly every
+request and both with the staleness written down: the maintenance state for two
+seconds ([`maintenance.go`](internal/interface/api/v1/rest/maintenance.go)) and
+the operational limits
+([`limits_provider.go`](internal/application/v1/service/limits_provider.go)), each
+invalidated on save so a change takes effect on the next request rather than at
+the end of an interval.
+
+*In the browser*, the interface itself is revalidated rather than re-sent. Every
+embedded asset carries an ETag computed once at start-up — it cannot change while
+the process runs — and `Cache-Control: no-cache`, so a reload asks and is answered
+`304 Not Modified` with no body
+([`web.go`](internal/interface/web/web.go)). `no-cache` rather than a long
+`max-age`, deliberately: the asset URLs are not fingerprinted, `/app.js` is
+`/app.js` in every release, so a browser told to hold one for a year would run the
+previous interface against the current API with no way to be told otherwise. This
+was missing entirely until it was measured — `http.FileServer` derives its
+validators from the modification time, and a file compiled in with `embed` reports
+the zero time, so nothing was ever sent and every page load refetched the whole
+interface.
+
+*Not at all* for API answers, which is the right answer for them: they depend on
+who is asking and several change between two requests a second apart. GoFr can
+bring Redis, and for an installation the size this is built for that would mean
+one more service to run, back up and keep reachable in exchange for queries that
+already answer in under a millisecond against a local file.
 
 ### Develop
 
@@ -996,12 +1117,26 @@ question of a support conversation.
 
 ## Deployment
 
+> Operating this rather than developing it?
+> [`deploy/OPERATIONS.md`](deploy/OPERATIONS.md) is the manual: the four ways to
+> run it, what to back up, what needs a restart, what the health endpoints
+> actually mean, and the handful of behaviours that surprise people. This section
+> is about how a release is produced.
+
 **Every merge to `main` is a release.** The patch number goes up, the image is
 published to GHCR as both that version and `:latest`, and a GitHub release is
 created with generated notes. The version is not written down anywhere:
 [`release.yml`](.github/workflows/release.yml) reads the newest tag and counts on,
 so there is no file to forget to bump and no way for a tag and a constant to
 disagree. With no tags at all it starts at `v0.1.0`.
+
+The image is built into the runner's own daemon first, started there with nothing
+but `DB_DIALECT`, and asked for `/api/v1/branding` — the body rather than the
+status, because the installer answers every path with a 200 and only the
+application puts a version in the answer. It is pushed from that same daemon
+afterwards, so the bytes somebody pulls are the bytes that answered. Nothing is
+published if they do not: this used to run after the push and end in a warning,
+which made it a note in a log rather than a gate.
 
 For a minor or major bump, tag it by hand: `task release VERSION=v1.2.0` pushes
 the tag and that exact version is released — the next merge then counts on from
@@ -1022,11 +1157,18 @@ downloading one and running it is a complete installation — it serves the
 installer until it has a database.
 
 What the installer cannot ask for — the port, TLS, the log level, the session
-lifetime, the rate limit — comes from the environment or from a `.env` beside the
-binary. [`deploy/.env.example`](deploy/.env.example) lists every variable with its
-default; the release notes point at it too, because that is the moment somebody
-needs it. Settings the interface can change live in the database and are not read
-from there.
+lifetime, the rate limit — comes from the environment or from `configs/.env`
+beside the binary.
+[`deploy/.env.binary.example`](deploy/.env.binary.example) lists every variable
+the process reads, with the value it uses when the variable is absent; the release
+notes point at it too, because that is the moment somebody needs it. Settings the
+interface can change live in the database and are not read from there.
+
+The two example files are not interchangeable, which is worth saying because the
+release notes used to send binary downloaders to the wrong one.
+[`deploy/.env.example`](deploy/.env.example) is read by docker compose and carries
+only what the compose files interpolate — database credentials, the image tag —
+several of which mean nothing beside a single binary.
 
 Cross-compiled from a single runner, which works because there is no cgo anywhere
 in the tree: the SQLite driver is modernc's pure-Go one, so `GOOS` and `GOARCH`
@@ -1122,11 +1264,20 @@ settings live where and why.
 The binary is self-contained; the image is a convenience, not a requirement.
 
 ```bash
-DB_DIALECT=postgres DB_HOST=… DB_USER=… DB_PASSWORD=… ./go-time-recording
+DB_DIALECT=postgres DB_NAME=… DB_HOST=… DB_USER=… DB_PASSWORD=… ./go-time-recording
 ```
 
-It has to be started from a directory containing `configs/`, which is where
-GoFr looks for its configuration.
+`DB_NAME` is not optional and this line used to leave it out, which does not
+start: the connection is validated before anything else happens, and a server
+dialect without a name is refused with that as the reason. The port may be left
+out — the application fills in the dialect's own.
+
+It does not need a `configs/` directory; a missing one is tolerated and every
+value has a default. What the **working directory** decides is where
+`configs/datasource.json` is read and written, where a relative SQLite file
+lands, and where the default TLS cache `configs/certs` goes — so start it from
+the same place every time. [`deploy/OPERATIONS.md`](deploy/OPERATIONS.md) has a
+systemd unit that gets that right.
 
 ## Licence
 
