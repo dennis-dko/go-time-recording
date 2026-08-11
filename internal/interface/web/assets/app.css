@@ -215,6 +215,11 @@ main { max-width: 1080px; margin: 0 auto; padding: 20px; }
 
 .grid .wide { grid-column: 1 / -1; }
 
+/* A wrapper that groups fields for showing and hiding without becoming a cell
+   itself: its children stay grid items. Here rather than as a style attribute
+   on the element, which the Content-Security-Policy forbids. */
+.grid-passthrough { display: contents; }
+
 /* Fields line up across a row even when a caption does not.
  *
  * Grid stretches each cell to the tallest in its row, and a label is a column of

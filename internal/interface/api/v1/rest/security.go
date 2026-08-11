@@ -17,8 +17,9 @@ import (
 func SecurityHeaders(hstsMaxAge time.Duration) func(http.Handler) http.Handler {
 	csp := strings.Join([]string{
 		"default-src 'self'",
-		// The favicon is an inline SVG data URI, and the logo is stored as a
-		// data URI, so images need that scheme.
+		// An administrator's logo is stored as a data URI, so images need that
+		// scheme. The favicon used to be one as well and is a file now, which
+		// narrows what this is for without removing the need for it.
 		"img-src 'self' data:",
 		"script-src 'self'",
 		"style-src 'self'",
