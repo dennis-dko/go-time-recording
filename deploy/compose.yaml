@@ -13,6 +13,10 @@
 # proxy in front of it. To terminate TLS here instead, add compose.tls.yaml:
 #
 #   docker compose -f compose.yaml -f compose.tls.yaml up -d
+#
+# compose.tracing.yaml adds a Jaeger for the application's traces, and joins
+# either of those arrangements. It sets nothing on the application: tracing is
+# switched on under Settings, not here.
 
 name: go-time-recording
 

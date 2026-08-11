@@ -794,6 +794,11 @@
             <input type="number" name="tracerRatio" step="0.05" min="0" max="1">
           </label>
         </div>
+        <!-- Named rather than filled in. The collector this repository ships an
+             overlay for is the obvious answer, but storing it by default would
+             make an installation without that overlay try to export at every
+             start and write failures nobody asked for. -->
+        <p class="muted" data-i18n="tel.tracingHint">Running deploy/compose.tracing.yaml beside the application? Then it is exporter OTLP and collector jaeger:4317, and the traces are read at http://127.0.0.1:16686.</p>
         <div class="row">
           <button type="submit" data-i18n="action.save">Save</button>
           <button type="button" class="secondary" id="telemetry-reset" data-i18n="tel.reset">Reset all to the configuration file</button>

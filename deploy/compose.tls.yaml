@@ -14,6 +14,9 @@
 # Leave this overlay out if something else already terminates TLS - a reverse
 # proxy, a load balancer, an ingress controller. Doing it in both places means
 # two certificates for one name and a renewal that quietly stops working.
+#
+# compose.tracing.yaml can be added in front of or behind this one: it only
+# adds a collector service and replaces nothing, so the ports below stand.
 
 services:
   app:
