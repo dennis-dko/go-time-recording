@@ -56,6 +56,7 @@ func NewWorkbookService(
 func (s *WorkbookService) Export(
 	ctx context.Context,
 	filter repository.TimesheetFilter,
+	language string,
 ) ([]byte, error) {
 	entries, err := s.timesheets.GetByFilter(ctx, filter)
 	if err != nil {
@@ -101,7 +102,12 @@ func (s *WorkbookService) Export(
 		rows = append(rows, row)
 	}
 
-	return spreadsheet.Write(rows)
+	// In the reader's language, the way the project and user exports already were.
+	// This one called the untranslated writer, so a German screen produced a file
+	// headed Date, User, Project, Hours - and the person who then edited it and
+	// sent it back was the only one who could tell that the round trip still
+	// worked, because the importer accepts both.
+	return spreadsheet.WriteIn(language, rows)
 }
 
 // PlannedRow is one row of a file, as it would be written - or the reason it

@@ -63,8 +63,6 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 		return nil, err
 	}
 
-	// An approved entry is a signed-off record; moving its hours to another
-	// project would silently rewrite an already-reported total.
 	newProject, err := s.projectRepository.GetByID(ctx, newProjectID)
 	if err != nil {
 		return nil, err
@@ -95,6 +93,69 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 	}
 
 	return updatedTimesheet, nil
+}
+
+// ProjectScope says which projects an evaluation covers.
+//
+// A struct rather than an id, because an id has only one spare value and there are
+// two things to say with it: zero has to mean "every project", so "only the hours
+// that were never given a project" had nowhere to live - and so the one evaluation
+// people actually wanted, what did I do that is not on anything, could not be asked
+// for at all. Splitting it makes the ambiguity impossible to write down again.
+type ProjectScope struct {
+	// ProjectID names one project. Zero means every project this person books on.
+	ProjectID uint
+
+	// Unassigned narrows it to the entries that never got a project. Only
+	// meaningful while ProjectID is zero; naming a project and asking for the ones
+	// without would be a contradiction, so the project wins.
+	Unassigned bool
+}
+
+// GenerateOwnTimeReport totals what one person booked over a range: on one
+// project, across all of them, or only on the hours that belong to none.
+//
+// Separate from GenerateProjectTimeReport rather than a parameter on it, because
+// the two answer different questions. That one is about a project and has to decide
+// whether the caller may see it at all; this one is about a person and is always
+// about the caller, so there is nothing to hide from them.
+func (s *TimesheetDomainService) GenerateOwnTimeReport(
+	ctx context.Context,
+	scope ProjectScope,
+	startDate time.Time,
+	endDate time.Time,
+	userID uint,
+) (float64, error) {
+	// A named project is still checked, because a project id is something the
+	// caller supplies and somebody else's project is not theirs to total.
+	if scope.ProjectID != 0 {
+		project, err := s.projectRepository.GetByID(ctx, scope.ProjectID)
+		if err != nil {
+			return 0, err
+		}
+
+		if err := requireVisible(project, userID); err != nil {
+			return 0, err
+		}
+	}
+
+	timesheets, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
+		UserID:         userID,
+		ProjectID:      scope.ProjectID,
+		WithoutProject: scope.ProjectID == 0 && scope.Unassigned,
+		StartDate:      &startDate,
+		EndDate:        &endDate,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	var total float64
+	for _, ts := range timesheets {
+		total += ts.DurationHours
+	}
+
+	return total, nil
 }
 
 // GenerateProjectTimeReport totals the hours booked on a project, per user.

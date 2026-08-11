@@ -22,6 +22,7 @@ var translations = map[string]map[string]string{
 		"Time entries": "Zeiteinträge",
 		"Projects":     "Projekte",
 		"Users":        "Benutzer",
+		"Roles":        "Rollen",
 
 		// Columns.
 		"Date":          "Datum",
@@ -33,13 +34,13 @@ var translations = map[string]map[string]string{
 		"Start":         "Beginn",
 		"End":           "Ende",
 		"Status":        "Status",
-		"Category":      "Kategorie",
 		"Email":         "E-Mail",
 		"Role":          "Rolle",
 		"Daily target":  "Tagessoll",
 		"Daily maximum": "Tagesmaximum",
 		"Time zone":     "Zeitzone",
 		"Directory":     "Verzeichnis",
+		"System":        "System",
 
 		// Values.
 		"active":    "aktiv",

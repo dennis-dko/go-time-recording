@@ -23,6 +23,7 @@ import (
 type SheetHandler struct {
 	projects *service.ProjectWorkbookService
 	users    *service.UserWorkbookService
+	roles    *service.RoleWorkbookService
 	authz    *Authorizer
 }
 
@@ -30,9 +31,10 @@ type SheetHandler struct {
 func NewSheetHandler(
 	projects *service.ProjectWorkbookService,
 	users *service.UserWorkbookService,
+	roles *service.RoleWorkbookService,
 	authz *Authorizer,
 ) *SheetHandler {
-	return &SheetHandler{projects: projects, users: users, authz: authz}
+	return &SheetHandler{projects: projects, users: users, roles: roles, authz: authz}
 }
 
 // SheetImportRow is one row of a file, as it would be written or the reason it
@@ -205,6 +207,66 @@ func (h *SheetHandler) ImportUsers(c *gofr.Context) (any, error) {
 	}
 
 	imported, err := h.users.ApplyUsers(c, plan)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	out.Imported = imported
+
+	return out, nil
+}
+
+// ExportRoles handles GET /api/v1/roles/export.
+//
+// A column per permission, which is the reason this pair exists at all: reviewing
+// what four roles may do means reading a grid, and the role editor shows one role
+// at a time.
+func (h *SheetHandler) ExportRoles(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermRoleRead); err != nil {
+		return nil, err
+	}
+
+	book, err := h.roles.Export(c, language(c))
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return response.File{Content: book, ContentType: xlsxContentType}, nil
+}
+
+// ImportRoles handles POST /api/v1/roles/import.
+//
+// Creates as well as changes, unlike the accounts import: everything a role is
+// fits in a row, so a file can describe one that does not exist yet without
+// carrying anything that has no business being in a spreadsheet.
+func (h *SheetHandler) ImportRoles(c *gofr.Context) (any, error) {
+	if _, err := h.authz.Require(c, model.PermRoleWrite); err != nil {
+		return nil, err
+	}
+
+	sent, err := uploadedFile(c)
+	if err != nil {
+		return nil, err
+	}
+
+	defer sent.close()
+
+	rows, problems, err := spreadsheet.ReadRoles(sent.file, model.AllPermissions())
+	if err != nil {
+		return nil, unreadableWorkbook(err)
+	}
+
+	plan, err := h.roles.PlanRoles(c, language(c), rows, problems)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	out := sheetResponse(sent.dryRun, &plan.SheetPlan)
+	if sent.dryRun {
+		return out, nil
+	}
+
+	imported, err := h.roles.ApplyRoles(c, plan)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

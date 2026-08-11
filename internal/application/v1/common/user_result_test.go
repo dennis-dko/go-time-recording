@@ -87,13 +87,35 @@ func TestUserResultCarriesNoPasswordMaterial(t *testing.T) {
 	}
 }
 
-// An account with no stored language falls back rather than reporting empty,
-// so a list does not show a blank where the interface will show English.
-func TestUserResultResolvesTheLanguage(t *testing.T) {
+// An account with no stored language reports both: nothing chosen, and English
+// applying.
+//
+// This used to report only the resolved value, and that is what stopped the
+// interface adopting the browser's language. It offers that once, on a first
+// sign-in, and the only way to know it is a first sign-in is a language that is not
+// there - so every account arrived looking like it had chosen English, and the
+// browser was never asked. The timezone beside it has carried the pair for exactly
+// this reason all along.
+func TestUserResultReportsAnUnchosenLanguageAsUnchosen(t *testing.T) {
 	results := common.NewUserResultFromModel(&model.User{Email: "a@example.com"})
 
-	if results[0].Language != model.DefaultLanguage {
-		t.Errorf("expected the default language, got %q", results[0].Language)
+	if results[0].Language != "" {
+		t.Errorf("expected no stored language, got %q", results[0].Language)
+	}
+
+	if results[0].EffectiveLanguage != model.DefaultLanguage {
+		t.Errorf("expected the default to apply, got %q", results[0].EffectiveLanguage)
+	}
+}
+
+// And an account that did choose reports the choice in both places, so nothing
+// that only wants "which language" has to know about the pair.
+func TestUserResultReportsAChosenLanguageInBoth(t *testing.T) {
+	results := common.NewUserResultFromModel(&model.User{Email: "a@example.com", Language: "de"})
+
+	if results[0].Language != "de" || results[0].EffectiveLanguage != "de" {
+		t.Errorf("expected de in both, got %q and %q",
+			results[0].Language, results[0].EffectiveLanguage)
 	}
 }
 

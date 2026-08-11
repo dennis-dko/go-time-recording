@@ -135,6 +135,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/users/{id}/working-times", h.Users.UpdateWorkingTimes)
 	app.GET(base+"/users/{id}/overtime", h.Me.Overtime)
 
+	// Ahead of the {id} routes, for the same reason the others are: "export" is
+	// not an id.
+	app.GET(base+"/roles/export", h.Sheets.ExportRoles)
+	app.POST(base+"/roles/import", h.Sheets.ImportRoles)
+
 	app.GET(base+"/roles", h.Roles.List)
 	app.GET(base+"/roles/{id}", h.Roles.Get)
 	app.POST(base+"/roles", h.Roles.Create)
@@ -152,6 +157,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.DELETE(base+"/projects/{id}", h.Projects.Delete)
 	app.POST(base+"/projects/{id}/archive", h.Projects.Archive)
 	app.GET(base+"/projects/{id}/report", h.Timesheets.Report)
+
+	// The evaluation that is not about one project: every project at once, or only
+	// the hours that belong to none. Neither can be said with an id in a path, which
+	// is why it is a route of its own rather than a parameter on the one above.
+	app.GET(base+"/reports", h.Timesheets.OwnReport)
 
 	// Ahead of the {id} routes, which this router would otherwise match first:
 	// "export" is not an id, and the answer was 400 for a parameter nobody sent.

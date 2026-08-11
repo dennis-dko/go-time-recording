@@ -186,11 +186,19 @@ func respondUnavailable(w http.ResponseWriter, maintenance model.Maintenance) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)
 
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": map[string]any{
-			"message":     maintenance.Text(),
-			"maintenance": true,
-			"retryAfter":  maintenanceRetryAfter,
-		},
-	})
+	body := map[string]any{
+		"message":     maintenance.Text(),
+		"maintenance": true,
+		"retryAfter":  maintenanceRetryAfter,
+	}
+
+	// A code only where the text is this application's own. An administrator who
+	// wrote the notice wrote it for the people who will read it, so translating it
+	// would replace their words with ours; the default is ours, and a German reader
+	// met it in English.
+	if maintenance.Message == "" {
+		body["code"] = "maintenance"
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": body})
 }

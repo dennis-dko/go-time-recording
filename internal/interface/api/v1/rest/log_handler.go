@@ -75,7 +75,7 @@ const defaultLogPage = 300
 // built-in administrator: it carries email addresses, request paths and
 // whatever a failing driver decided to print.
 func (h *LogHandler) Logs(c *gofr.Context) (any, error) {
-	if _, err := h.authz.RequireSystemAdmin(c); err != nil {
+	if _, err := h.authz.RequireInstallationAdmin(c); err != nil {
 		return nil, err
 	}
 

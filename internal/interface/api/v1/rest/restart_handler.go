@@ -88,7 +88,7 @@ type RestartResponse struct {
 
 // State handles GET /api/v1/settings/restart.
 func (h *RestartHandler) State(c *gofr.Context) (any, error) {
-	if _, err := h.authz.RequireSystemAdmin(c); err != nil {
+	if _, err := h.authz.RequireInstallationAdmin(c); err != nil {
 		return nil, err
 	}
 
@@ -187,12 +187,17 @@ const restartGrace = 500 * time.Millisecond
 // once the process image has been replaced. The interface takes the answer as
 // "it is going down now" and starts waiting for it to come back.
 func (h *RestartHandler) Restart(c *gofr.Context) (any, error) {
-	if _, err := h.authz.RequireSystemAdmin(c); err != nil {
+	if _, err := h.authz.RequireInstallationAdmin(c); err != nil {
 		return nil, err
 	}
 
 	if !restart.Supported() {
-		return nil, toHTTPError(apperror.Invalidf("%s", restart.Why()))
+		// One code rather than one per reason. Which reason it is belongs on the
+		// card above the button, which already says it in the reader's language and
+		// at length; what a refused press has to say is only that it was refused,
+		// and it used to say that in English on an otherwise German screen.
+		return nil, toHTTPError(apperror.Invalidf("%s", restart.Why()).
+			WithCode("restartUnsupported"))
 	}
 
 	logger := c.Logger

@@ -23,15 +23,36 @@ func NewRoleRepository(db DB, dialect string) *RoleRepository {
 
 var _ repository.RoleRepository = (*RoleRepository)(nil)
 
+// Save stores a new role together with the permissions it grants.
+//
+// Both in one transaction, because to whoever filled in the form they are one
+// thing. The row used to be committed on its own and the grants attempted
+// afterwards in a transaction of their own, so a permission phase that failed -
+// the same right listed twice is enough, the pair is the primary key - left a
+// role behind that granted nothing and that nobody had asked for. That is the
+// state replacePermissions' comment says a transaction is there to prevent,
+// reached one level up.
+//
+// The read back happens after the commit, not inside it: GetByID runs on the
+// repository's own datasource, which means a second connection, and asking for
+// one while this transaction still holds the write lock is a wait that only the
+// transaction doing the waiting could end.
 func (r *RoleRepository) Save(ctx context.Context, role *model.Role) (*model.Role, error) {
-	id, err := r.insert(ctx,
-		"INSERT INTO roles (name, description, is_system) VALUES (?, ?, ?)",
-		role.Name, role.Description, role.IsSystem)
-	if err != nil {
-		return nil, translateRoleErr(err, role.Name)
-	}
+	var id uint
 
-	if err := r.replacePermissions(ctx, id, role.Permissions); err != nil {
+	err := r.withTx(ctx, func(tx base) error {
+		newID, err := tx.insert(ctx,
+			"INSERT INTO roles (name, description, is_system) VALUES (?, ?, ?)",
+			role.Name, role.Description, role.IsSystem)
+		if err != nil {
+			return translateRoleErr(err, role.Name)
+		}
+
+		id = newID
+
+		return replacePermissions(ctx, tx, newID, role.Permissions)
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -103,20 +124,28 @@ func (r *RoleRepository) GetAll(ctx context.Context) ([]*model.Role, error) {
 	return roles, nil
 }
 
+// Update rewrites a role and the set of permissions it grants.
+//
+// Same transaction, same reason as Save, with more to lose: here the failing
+// half is a role that already had grants and users on it. The rename would stand
+// while the permissions behind it were half replaced or gone.
 func (r *RoleRepository) Update(ctx context.Context, role *model.Role) (*model.Role, error) {
-	found, err := r.update(ctx, "roles",
-		"UPDATE roles SET name = ?, description = ? WHERE id = ?",
-		role.ID,
-		role.Name, role.Description, role.ID)
+	err := r.withTx(ctx, func(tx base) error {
+		found, updateErr := tx.update(ctx, "roles",
+			"UPDATE roles SET name = ?, description = ? WHERE id = ?",
+			role.ID,
+			role.Name, role.Description, role.ID)
+		if updateErr != nil {
+			return translateRoleErr(updateErr, role.Name)
+		}
+
+		if !found {
+			return apperror.NotFound("role", strconv.FormatUint(uint64(role.ID), 10))
+		}
+
+		return replacePermissions(ctx, tx, role.ID, role.Permissions)
+	})
 	if err != nil {
-		return nil, translateRoleErr(err, role.Name)
-	}
-
-	if !found {
-		return nil, apperror.NotFound("role", strconv.FormatUint(uint64(role.ID), 10))
-	}
-
-	if err := r.replacePermissions(ctx, role.ID, role.Permissions); err != nil {
 		return nil, err
 	}
 
@@ -194,23 +223,27 @@ func (r *RoleRepository) permissionsOf(ctx context.Context, roleID uint) ([]stri
 // permissions granted, immediately, with the only trace being an error the
 // administrator saw once.
 //
-// Inside a transaction the role keeps what it had.
-func (r *RoleRepository) replacePermissions(ctx context.Context, roleID uint, permissions []string) error {
-	return r.withTx(ctx, func(tx base) error {
-		if _, err := tx.exec(ctx, "DELETE FROM role_permissions WHERE role_id = ?", roleID); err != nil {
+// It runs on the transaction it is handed instead of opening one, so that the
+// role row and its grants share a single transaction with its callers. Opening
+// one here would not nest: it would begin a second transaction on the
+// repository's own datasource, and that means a second connection asking to
+// write rows the first connection has already locked. On SQLite the two then
+// wait for each other, and the one that could release the lock is the one
+// blocked. Handing the transaction down is what keeps it one.
+func replacePermissions(ctx context.Context, tx base, roleID uint, permissions []string) error {
+	if _, err := tx.exec(ctx, "DELETE FROM role_permissions WHERE role_id = ?", roleID); err != nil {
+		return apperror.Internal(err)
+	}
+
+	for _, permission := range permissions {
+		_, err := tx.exec(ctx,
+			"INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)", roleID, permission)
+		if err != nil {
 			return apperror.Internal(err)
 		}
+	}
 
-		for _, permission := range permissions {
-			_, err := tx.exec(ctx,
-				"INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)", roleID, permission)
-			if err != nil {
-				return apperror.Internal(err)
-			}
-		}
-
-		return nil
-	})
+	return nil
 }
 
 func translateRoleErr(err error, name string) error {

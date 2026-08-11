@@ -304,6 +304,17 @@ func main() {
 	// place before there is anything to configure.
 	makeSQLiteWait()
 
+	// The build's own version, where GoFr will look for it. GoFr puts APP_VERSION
+	// into the body of /.well-known/health, and the only place that variable was
+	// ever set is configs/.env, which ships "0.0.1" and is baked into the image -
+	// so every release answered a monitoring check with 0.0.1 while its footer
+	// correctly said v1.2.3. Exported rather than passed, because GoFr reads it
+	// from its configuration and lets the real environment win over the file, the
+	// same lever ApplyDatasource uses.
+	if err := os.Setenv("APP_VERSION", version); err != nil {
+		die(restoreOutput, "cannot publish the build version: %v", err)
+	}
+
 	app := gofr.New()
 
 	if telemetryErr != nil {
@@ -429,6 +440,7 @@ func main() {
 	workbook := appservice.NewWorkbookService(timesheetRepo, userRepo, projectRepo, timesheets)
 	projectSheets := appservice.NewProjectWorkbookService(projects)
 	userSheets := appservice.NewUserWorkbookService(userRepo, roleRepo, users)
+	roleSheets := appservice.NewRoleWorkbookService(roleRepo, roles)
 
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
 	projectDomain := domainservice.NewProjectDomainService(projectRepo, timesheetRepo)
@@ -559,7 +571,7 @@ func main() {
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),
-		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, authorizer),
+		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
 			// What the device's prompt calls this installation. The
 			// administered title if there is one, so a person sees the name

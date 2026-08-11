@@ -168,7 +168,33 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - run: go build -o /dev/null ./cmd/main.go
+      # ./cmd rather than ./cmd/main.go: naming the file builds that file, so a
+      # second one added to the package would be left out of the check that is
+      # supposed to prove the package builds.
+      - run: go build -o /dev/null ./cmd
+
+      # Every platform a release publishes, on this one runner - there is no cgo
+      # anywhere in the tree, so GOOS and GOARCH are all it takes.
+      #
+      # It belongs here because nothing else looks. Every other job runs on
+      # ubuntu/amd64, and this tree has files that only exist for one platform:
+      # restart_unix.go and restart_other.go are selected by build tag, so the
+      # Windows half is never compiled by lint, vet or test, and a break in it
+      # passes all of CI. The release then cross-compiles for real and fails -
+      # after the merge, on a commit that is already on main, leaving that commit
+      # unreleasable and the reason a long way from the change that caused it.
+      #
+      # vet as well as build, because vet is what reads the file rather than only
+      # linking it, and it is the half that finds a mistake worth finding.
+      - name: Cross-compile every published platform
+        run: |
+          set -euo pipefail
+          for target in linux/amd64 linux/arm64 windows/amd64 darwin/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            echo "==> ${os}/${arch}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -o /dev/null ./cmd
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go vet ./...
+          done
 
   # Builds the Docker image on every PR as a smoke test. On pushes to main
   # it additionally publishes a rolling ":edge" image to GHCR, so main

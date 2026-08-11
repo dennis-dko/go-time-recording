@@ -36,9 +36,11 @@ type Error struct {
 	// act on, and Values carries what the message interpolated.
 	//
 	// Msg is written in English at the point the rule is enforced, which is right
-	// for a log and wrong for the person who tripped over it: the interface showed
-	// them "an approved timesheet can no longer be edited" whatever language they
-	// had chosen. Translating the prose is not possible - by the time it exists the
+	// for a log and wrong for the person who tripped over it. The rule that made
+	// this obvious is long gone - back when timesheets were submitted and approved,
+	// the interface showed a German reader "an approved timesheet can no longer be
+	// edited" whatever language they had chosen - but every rule since has the same
+	// problem. Translating the prose is not possible - by the time it exists the
 	// numbers are already in it - so the reason travels as a code with its values
 	// beside it, and whoever displays it looks the sentence up in the reader's own
 	// language.

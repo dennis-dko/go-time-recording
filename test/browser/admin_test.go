@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1083,18 +1084,20 @@ func TestTheTwoFactorQRCodeIsShown(t *testing.T) {
 	}
 }
 
-// A first sign-in is greeted, and the greeting offers the walk through.
+// A first sign-in is walked through the application, without being asked first.
 //
 // Somebody arriving in an application nobody has introduced is the moment they
-// decide it is complicated. The greeting is also the only place the tour is offered
-// automatically, so if it fails to appear the walk through is effectively gone.
-func TestAFirstSignInIsGreetedAndOfferedTheTour(t *testing.T) {
+// decide it is complicated. The walk used to be offered by a modal with "Show me
+// around" and "Not now" on it, and "Not now" recorded the tour as seen - so the
+// button that looked like "later" meant "never", and the introduction this
+// application has was the introduction almost nobody got.
+func TestAFirstSignInIsWalkedThroughTheApplication(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
 	// An ordinary user, because the built-in administrator is deliberately not
-	// greeted: it arrives at the setup wizard, and a walk through booking time
-	// would be a walk through somebody else's job.
+	// walked through: it arrives at the setup wizard, and a walk through booking
+	// time would be a walk through somebody else's job.
 	p.run("create a user",
 		chromedp.Click(`.tab[data-view="users"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#form-user", chromedp.ByID),
@@ -1107,9 +1110,9 @@ func TestAFirstSignInIsGreetedAndOfferedTheTour(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	// The administrator was not greeted, which is half the requirement.
-	if p.visible("#welcome-overlay") {
-		t.Error("the built-in administrator was greeted with the tour")
+	// The administrator was not, which is half the requirement.
+	if p.visible("#tour-bubble") {
+		t.Error("the built-in administrator was walked through the application")
 	}
 
 	p.run("sign out", p.click("#logout"), chromedp.WaitVisible("#form-login", chromedp.ByID))
@@ -1117,37 +1120,9 @@ func TestAFirstSignInIsGreetedAndOfferedTheTour(t *testing.T) {
 	p.signIn("rieke@example.com", "rieke-password-1")
 	p.waitGone("#login-screen")
 
-	p.run("wait for the greeting",
-		chromedp.WaitVisible("#welcome-overlay", chromedp.ByID))
-
-	if title := p.text("#welcome-title"); !strings.Contains(title, "Rieke") {
-		t.Errorf("the greeting does not name the person: %q", title)
-	}
-
-	// The points offered are the ones this person can act on, and there is something
-	// there at all: the list is built from permissions, so a near-empty greeting means
-	// the building went wrong rather than that there is little to say.
-	//
-	// This used to check that the word "genehmige" was absent, from a line offered on
-	// a permission the application had stopped defining. The line is gone, so that
-	// assertion could no longer fail - and an assertion that cannot fail is worse
-	// than none, because it reads like cover.
-	points := p.text("#welcome-points")
-
-	if len(points) < 60 {
-		t.Errorf("the greeting lists almost nothing this person can do: %q", points)
-	}
-
-	if strings.Contains(strings.ToLower(points), "genehmig") {
-		t.Errorf("the greeting promises approvals, which nobody does any more: %q", points)
-	}
-
-	p.run("take the tour", p.click("#welcome-tour"),
+	// No click anywhere: it starts by itself.
+	p.run("wait for the walk through",
 		chromedp.WaitVisible("#tour-bubble", chromedp.ByQuery))
-
-	if p.visible("#welcome-overlay") {
-		t.Error("the greeting is still up behind the tour")
-	}
 
 	// The walk has to be a walk: the first step counts itself, and Next moves on.
 	first := p.text("#tour-title")
@@ -1158,6 +1133,16 @@ func TestAFirstSignInIsGreetedAndOfferedTheTour(t *testing.T) {
 
 	if count := p.text("#tour-count"); count == "" {
 		t.Error("the tour does not say where in it you are")
+	}
+
+	// Long enough to be the tour of an application rather than of one screen. Every
+	// step outside the screen it started on used to be dropped - the reachability
+	// check asked for offsetParent, which is null for everything inside a hidden
+	// view - so a walk begun on the time entries was four steps long and looked
+	// complete.
+	if total := tourTotal(p); total < 12 {
+		t.Errorf("the walk is %d steps, which is one screen's worth rather than the "+
+			"whole application", total)
 	}
 
 	p.run("next step", p.click("#tour-next"))
@@ -1174,21 +1159,26 @@ func TestAFirstSignInIsGreetedAndOfferedTheTour(t *testing.T) {
 		t.Error("skipping did not end the tour")
 	}
 
-	// Seen once: a reload must not greet them again, or "not now" would mean
+	// Seen once: a reload must not start it again, or leaving it would mean
 	// nothing.
 	p.run("reload", chromedp.Reload())
 	p.waitGone("#login-screen")
 
 	time.Sleep(800 * time.Millisecond)
 
-	if p.visible("#welcome-overlay") {
-		t.Error("the greeting came back after being answered")
+	if p.visible("#tour-bubble") {
+		t.Error("the walk through started again after being left")
 	}
 }
 
-// Somebody who has been here before is greeted differently: once per visit, with
-// what they would otherwise have to go and look up.
-func TestAReturningSignInIsGreetedOncePerVisit(t *testing.T) {
+// The greeting is a screen, reachable from the title, and it says what today has
+// on it.
+//
+// It used to be two half-measures: a modal on a first sign-in, and a card wedged
+// above the time entries afterwards. Neither could be gone back to - the only ways
+// to read the greeting were to be new or to have just arrived - which is why it is
+// a screen now, and why the title in the header leads to it from anywhere.
+func TestTheGreetingIsAScreenReachableFromTheTitle(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
@@ -1209,63 +1199,94 @@ func TestAReturningSignInIsGreetedOncePerVisit(t *testing.T) {
 	p.signIn("sven@example.com", "sven-password-1")
 	p.waitGone("#login-screen")
 
-	// Answer the first-sign-in greeting, which is what makes the next one a
-	// return rather than an arrival.
-	p.run("decline the tour",
-		chromedp.WaitVisible("#welcome-overlay", chromedp.ByID),
-		p.click("#welcome-skip"),
-	)
+	// The walk through, out of the way: what this case is about is the screen
+	// behind it.
+	p.settleWelcome()
 
-	time.Sleep(600 * time.Millisecond)
+	// Somewhere else entirely, so that arriving at the greeting is a navigation
+	// rather than where the page happened to be.
+	p.run("go to the calendar",
+		chromedp.Click(`.tab[data-view="calendar"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#calendar-days", chromedp.ByID))
 
-	// A reload in the same tab is not an arrival, so no welcome back either.
-	p.run("reload", chromedp.Reload())
-	p.waitGone("#login-screen")
+	p.run("press the title", p.click("#app-title"),
+		chromedp.WaitVisible("#view-welcome", chromedp.ByID))
 
-	time.Sleep(800 * time.Millisecond)
-
-	if p.visible("#welcome-back") {
-		t.Error("a reload was greeted; the greeting is per visit, not per page load")
+	if title := p.text("#welcome-title"); !strings.Contains(title, "Sven") {
+		t.Errorf("the greeting does not name the person: %q", title)
 	}
 
-	// A fresh session is. Simulated by clearing the per-tab marker, which is what
-	// opening the application in a new tab does.
-	p.run("come back later",
-		chromedp.Evaluate(`sessionStorage.clear()`, nil),
-		chromedp.Reload(),
-	)
+	// It says something about today rather than only hello - what somebody would
+	// otherwise have to go and look up.
+	if today := p.text("#welcome-today"); today == "" {
+		t.Error("the greeting says nothing about today")
+	}
 
+	// The points offered are the ones this person can act on, and there is
+	// something there at all: the list is built from permissions, so a near-empty
+	// greeting means the building went wrong rather than that there is little to
+	// say.
+	points := p.text("#welcome-points")
+
+	if len(points) < 60 {
+		t.Errorf("the greeting lists almost nothing this person can do: %q", points)
+	}
+
+	if strings.Contains(strings.ToLower(points), "genehmig") {
+		t.Errorf("the greeting promises approvals, which nobody does any more: %q", points)
+	}
+
+	// And it is a screen you leave the way you leave any other.
+	p.run("carry on", p.click("#welcome-continue"))
+	p.waitGone("#view-welcome")
+}
+
+// Signing out and back in returns to the screen that was open.
+//
+// Both sign-in paths used to jump to the first tab the account may see, so the
+// screen somebody was working on was discarded and the only way back to it was to
+// reload the page afterwards.
+func TestSigningInAgainReturnsToTheScreenThatWasOpen(t *testing.T) {
+	p := open(t)
+	p.readyWorker()
+
+	p.run("go to the calendar",
+		chromedp.Click(`.tab[data-view="calendar"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#calendar-days", chromedp.ByID))
+
+	p.run("sign out", p.click("#logout"), chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn(workerEmail, workerPassword)
 	p.waitGone("#login-screen")
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if p.visible("#welcome-back") {
+		if p.visible("#calendar-days") {
 			break
 		}
 
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	if !p.visible("#welcome-back") {
-		t.Fatalf("a returning visit was not greeted\n\napplication log:\n%s", p.app.Log())
+	if !p.visible("#calendar-days") {
+		t.Errorf("signing in again did not return to the calendar\n\napplication log:\n%s",
+			p.app.Log())
+	}
+}
+
+// tourTotal reads how many steps the walk has, out of "Step 1 of 20".
+func tourTotal(p *page) int {
+	fields := strings.Fields(p.text("#tour-count"))
+	if len(fields) == 0 {
+		return 0
 	}
 
-	if title := p.text("#welcome-back-title"); !strings.Contains(title, "Sven") {
-		t.Errorf("the greeting does not name the person: %q", title)
+	total, err := strconv.Atoi(fields[len(fields)-1])
+	if err != nil {
+		return 0
 	}
 
-	// And it says something about today rather than only hello.
-	if detail := p.text("#welcome-back-text"); detail == "" {
-		t.Error("the greeting says nothing about today")
-	}
-
-	// Closable, and it stays closed.
-	p.run("close it", p.click("#welcome-back-close"))
-	time.Sleep(200 * time.Millisecond)
-
-	if p.visible("#welcome-back") {
-		t.Error("the greeting could not be dismissed")
-	}
+	return total
 }
 
 // The spreadsheet card: an export that downloads, and an import that shows what a

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xuri/excelize/v2"
+
 	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
 )
 
@@ -150,6 +152,84 @@ func TestExportingAndImportingRoundTrips(t *testing.T) {
 
 	if len(listed.Items) != 4 {
 		t.Errorf("there are %d entries after the import, want 4", len(listed.Items))
+	}
+}
+
+// A German export is in German, and goes back in.
+//
+// The projects and users exports read the lang parameter from the start; this one
+// dropped it between the handler and the writer, so a German screen produced a file
+// headed Date, User, Project, Hours. Nothing failed - the importer accepts either
+// language - which is exactly why nobody noticed.
+func TestTheGermanTimeExportIsGermanAndStillImports(t *testing.T) {
+	_, _, worker := startWithWorker(t)
+
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-03", "durationHours": 6.5, "description": "in German",
+	}), http.StatusCreated, http.StatusOK)
+
+	exported := worker.must(worker.api(http.MethodGet, "/timesheets/export?lang=de", nil),
+		http.StatusOK)
+
+	// The heading row itself, because the reader accepts both languages: parsing
+	// the file successfully proves the round trip and nothing at all about which
+	// language it came back in.
+	assertGermanHeadings(t, exported.Body)
+
+	rows, problems, err := spreadsheet.Read(bytes.NewReader(exported.Body))
+	if err != nil {
+		t.Fatalf("reading back a German export: %v", err)
+	}
+
+	if len(problems) != 0 {
+		t.Fatalf("a German export came back with problems: %v", problems)
+	}
+
+	if len(rows) != 1 || rows[0].Hours != 6.5 {
+		t.Fatalf("the German export read back as %+v", rows)
+	}
+
+	result, r := importFile(t, worker, exported.Body, "false")
+	if !accepted(r.Status) {
+		t.Fatalf("importing a German export answered %d: %s", r.Status, r.Body)
+	}
+
+	if result.Imported != 1 {
+		t.Errorf("%d rows were imported from the German export, want 1", result.Imported)
+	}
+}
+
+// assertGermanHeadings opens the workbook and reads row 1.
+//
+// Opened rather than searched: an .xlsx is a zip, so the words are not in the
+// bytes at all and looking for them there finds nothing whatever the file says.
+func assertGermanHeadings(t *testing.T, workbook []byte) {
+	t.Helper()
+
+	book, err := excelize.OpenReader(bytes.NewReader(workbook))
+	if err != nil {
+		t.Fatalf("opening the export: %v", err)
+	}
+
+	defer func() { _ = book.Close() }()
+
+	sheets := book.GetSheetList()
+	if len(sheets) == 0 {
+		t.Fatal("the export has no sheet")
+	}
+
+	if sheets[0] != "Zeiteinträge" {
+		t.Errorf("the sheet is called %q, want Zeiteinträge", sheets[0])
+	}
+
+	rows, err := book.GetRows(sheets[0])
+	if err != nil || len(rows) == 0 {
+		t.Fatalf("reading the heading row: %v", err)
+	}
+
+	want := spreadsheet.ColumnsIn("de")
+	if strings.Join(rows[0], ",") != strings.Join(want, ",") {
+		t.Errorf("the headings are %v, want %v", rows[0], want)
 	}
 }
 

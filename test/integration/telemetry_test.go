@@ -94,25 +94,52 @@ func TestTelemetryReportsWhatTheProcessIsActuallyDoing(t *testing.T) {
 // The metrics port carries no authentication and serves Go's profiling endpoints
 // beside the metrics, so who may read and change these settings matters as much
 // as the settings themselves.
-func TestTelemetryIsOnlyAdministrableByTheBuiltInAdministrator(t *testing.T) {
+//
+// It is a right now rather than the built-in account by name. This used to check
+// that nobody but that one account could reach it - the strictest rule available,
+// and the reason people signed in as the built-in administrator to do ordinary
+// administration, which is the one account whose actions cannot be attributed to a
+// person. What guards it now is settings:manage, held by the roles that administer
+// and by nobody else. See Authorizer.RequireInstallationAdmin, which records what
+// that costs.
+func TestTelemetryNeedsTheRightToManageSettings(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
-		"name": "Second admin", "email": "admin2@example.com",
-		"role": "admin", "password": "admin2-password-1",
-	}), http.StatusCreated, http.StatusOK)
+	for _, account := range []map[string]any{
+		{"name": "Second admin", "email": "admin2@example.com",
+			"role": "admin", "password": "admin2-password-1"},
+		{"name": "Worker", "email": "worker@example.com",
+			"role": "user", "password": "worker-password-1"},
+	} {
+		admin.must(admin.api(http.MethodPost, "/users", account),
+			http.StatusCreated, http.StatusOK)
+	}
 
+	// Somebody who administers reaches it without being the built-in account.
 	other := a.newClient()
 	other.signIn("admin2@example.com", "admin2-password-1")
 
-	if got := other.api(http.MethodGet, "/settings/telemetry", nil).Status; got == http.StatusOK {
-		t.Error("an ordinary administrator could read the telemetry settings")
+	if got := other.api(http.MethodGet, "/settings/telemetry", nil).Status; got != http.StatusOK {
+		t.Errorf("an account holding the administrator role was refused telemetry: %d", got)
 	}
 
 	if got := other.api(http.MethodPut, "/settings/telemetry",
+		map[string]any{"metricsOff": true}).Status; !accepted(got) {
+		t.Errorf("an account holding the administrator role could not change telemetry: %d", got)
+	}
+
+	// And somebody who only records time does not, which is the half that matters.
+	worker := a.newClient()
+	worker.signIn("worker@example.com", "worker-password-1")
+
+	if got := worker.api(http.MethodGet, "/settings/telemetry", nil).Status; got == http.StatusOK {
+		t.Error("an account that only records time could read the telemetry settings")
+	}
+
+	if got := worker.api(http.MethodPut, "/settings/telemetry",
 		map[string]any{"metricsOff": true}).Status; got == http.StatusOK {
-		t.Error("an ordinary administrator could change the telemetry settings")
+		t.Error("an account that only records time could change the telemetry settings")
 	}
 }
 

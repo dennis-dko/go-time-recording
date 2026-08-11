@@ -90,7 +90,32 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260812010000: {UP: func(d migration.Datasource) error {
 			return callTheEverydayRoleUser(d, dialect)
 		}},
+		20260813010000: {UP: func(d migration.Datasource) error {
+			return letAdministratorsReachTheSettings(d, dialect)
+		}},
 	}
+}
+
+// letAdministratorsReachTheSettings grants settings:manage to every role that
+// already administers the accounts.
+//
+// Until now the Settings screen answered to one account: the built-in one, checked
+// by name rather than by right. So the combined role - somebody who works here and
+// also administers - held the accounts and the roles and could not open the
+// database, directory or maintenance screens at all. The way round it was to sign
+// in as the built-in account, which is the one account whose actions cannot be
+// attributed to a person.
+//
+// Keyed on users:write rather than on a role name, because a role's name is a
+// thing installations change and this has to find the ones that exist rather than
+// the ones this application shipped. Whoever already decides who may sign in is
+// not gaining reach they did not have.
+//
+// What this costs is written down where it is enforced, in
+// Authorizer.RequireInstallationAdmin: a right that can be granted is a right that
+// can be granted to yourself, if you hold roles:write.
+func letAdministratorsReachTheSettings(d migration.Datasource, dialect string) error {
+	return grantToAllRolesHolding(d, dialect, model.PermUserWrite, model.PermSettingsManage)
 }
 
 // callTheEverydayRoleUser renames employee to user, and employee-admin to user-admin.

@@ -3,6 +3,7 @@ package rest
 import (
 	"cmp"
 	"slices"
+	"strings"
 	"time"
 
 	"gofr.dev/pkg/gofr"
@@ -295,6 +296,120 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 		DurationHours: timesheet.DurationHours,
 		Description:   timesheet.Description,
 	}, nil
+}
+
+// OwnReport handles GET /api/v1/reports, totalling what the caller booked over a
+// date range. The range defaults to the last 30 days.
+//
+// projectId chooses what it covers: absent or empty is every project, the literal
+// "none" is the hours that were never given one, and a number is that project.
+//
+// It exists beside Report rather than replacing it because the two are different
+// questions, and because an evaluation used to demand exactly one project - the
+// screen's picker was required and the endpoint parsed an id out of the path - so
+// "everything I did" and "everything I did that is on nothing" were both
+// unaskable, which is precisely what people wanted to ask.
+func (h *TimesheetHandler) OwnReport(c *gofr.Context) (any, error) {
+	principal, err := h.authz.Require(c, model.PermReportReadOwn)
+	if err != nil {
+		return nil, err
+	}
+
+	scope, err := reportScope(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	from, to, err := h.reportRange(c, principal)
+	if err != nil {
+		return nil, err
+	}
+
+	total, err := h.domain.GenerateOwnTimeReport(c, scope, *from, *to, principal.User.ID)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	resp := ReportResponse{
+		ProjectID:  scope.ProjectID,
+		From:       Date{Time: *from},
+		To:         Date{Time: *to},
+		Entries:    make([]ReportEntry, 0, 1),
+		TotalHours: total,
+	}
+
+	// The same shape a project report answers with, so one screen renders both.
+	// Nothing booked stays an empty list rather than a zero row: "no bookings in
+	// this period" and "0.00 h" say the same thing, and only one of them reads
+	// like an answer.
+	if total > 0 {
+		resp.Entries = append(resp.Entries, ReportEntry{UserID: principal.User.ID, Hours: total})
+	}
+
+	return resp, nil
+}
+
+// reportScope reads which projects an evaluation covers.
+//
+// "none" rather than an empty value for the unassigned hours, because empty is
+// already taken by "all of them" - a select that submits nothing and a select
+// nobody touched are the same string.
+func reportScope(c *gofr.Context) (domainservice.ProjectScope, error) {
+	raw := strings.TrimSpace(c.Param("projectId"))
+
+	switch raw {
+	case "":
+		return domainservice.ProjectScope{}, nil
+	case unassignedProjects:
+		return domainservice.ProjectScope{Unassigned: true}, nil
+	}
+
+	id, err := parseUint(raw, "projectId")
+	if err != nil {
+		return domainservice.ProjectScope{}, err
+	}
+
+	return domainservice.ProjectScope{ProjectID: id}, nil
+}
+
+// unassignedProjects is what the interface sends for "no project assigned". It is
+// a word rather than a number because there is no id that means "not one of them".
+const unassignedProjects = "none"
+
+// reportRange reads the from/to pair an evaluation covers, defaulting to the last
+// 30 days in the reader's own zone.
+func (h *TimesheetHandler) reportRange(
+	c *gofr.Context,
+	principal *service.Principal,
+) (*time.Time, *time.Time, error) {
+	from, err := queryDate(c, "from")
+	if err != nil {
+		return nil, nil, toHTTPError(err)
+	}
+
+	to, err := queryDate(c, "to")
+	if err != nil {
+		return nil, nil, toHTTPError(err)
+	}
+
+	// In the reader's zone: "the last 30 days" ending on the server's idea of
+	// today would be off by one for anyone far enough east or west.
+	now := time.Now().In(principal.User.TimezoneOf(h.timezone.resolve(c)))
+	if to == nil {
+		to = &now
+	}
+
+	if from == nil {
+		start := to.AddDate(0, 0, -30)
+		from = &start
+	}
+
+	if to.Before(*from) {
+		return nil, nil, toHTTPError(
+			apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted"))
+	}
+
+	return from, to, nil
 }
 
 // Report handles GET /api/v1/projects/{id}/report, totalling booked hours over a

@@ -55,7 +55,7 @@ func (h *WorkbookHandler) Export(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	book, err := h.workbook.Export(c, filter)
+	book, err := h.workbook.Export(c, filter, language(c))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
