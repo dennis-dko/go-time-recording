@@ -183,9 +183,9 @@ jobs:
     permissions:
       contents: write
       packages: write
-    outputs:
-      image: ${{ steps.image.outputs.name }}
-      version: ${{ needs.version.outputs.version }}
+    # No outputs. They existed so the deploy job could name the image it was
+    # announcing, and nothing else ever read them - so they went with it rather
+    # than staying as two lines that look like an interface somebody depends on.
     steps:
       - uses: actions/checkout@v7
         with:
@@ -401,48 +401,21 @@ jobs:
             from there.
           append_body: true
 
-  # Deployment target is intentionally not wired up: this repo has no
-  # Kubernetes manifests, docker-compose file, or SSH/PaaS target defined
-  # yet. Until one is chosen, "deploy" means the versioned image is
-  # published to GHCR. Add the real rollout command below once the target
-  # infrastructure is decided.
+  # There is no deploy job, and that is the decision rather than a gap waiting to
+  # be filled. This repository has no rollout target and is not getting one, so a
+  # release ends here: the image is in GHCR under its version and under latest,
+  # the binaries are on the release, and pulling either of them is somebody's
+  # deployment rather than this workflow's.
   #
-  # The smoke test used to live here and no longer does. Running it after the
-  # image was pushed and the release created meant it could report a broken
-  # image and change nothing - so it is a step of the publish job now, before
-  # anything is pushed, and it fails rather than warns.
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: publish
-    # always(), for the same reason publish needs it, one step further along.
-    #
-    # A skip travels the whole way down the graph, not one hop: verify is skipped
-    # on the merge path, publish overrides that for itself, and this job - which
-    # only says it needs publish - inherited the skip anyway, through publish,
-    # from a job it does not name. So it never ran. Not on the merge path, which
-    # is every release, and not once in the repository's history; it was skipped
-    # in the release before this fix and in the one before that.
-    #
-    # The condition then says the thing the bare `needs` was meant to say all
-    # along: run when publish actually published something. A skipped publish -
-    # a commit that was already tagged - is not a release to report.
-    if: always() && needs.publish.result == 'success'
-    # No `environment:` here, and that is not an omission.
-    #
-    # It named "production", which does not exist in this repository - GitHub
-    # would have created it on the first run, and the editor flagged it as
-    # unknown until then. But the real reason to leave it out is what this job
-    # does: it echoes. An environment records a deployment, so every release
-    # would have entered a deployment to production that deployed nothing, and a
-    # history of those is worse than no history.
-    #
-    # It goes back in beside the rollout command below, which is the point at
-    # which protection rules - required reviewers, a wait timer, environment
-    # secrets - start guarding something.
-    steps:
-      - name: Deploy
-        run: |
-          echo "${{ needs.publish.outputs.image }}:${{ needs.publish.outputs.version }} is published to GHCR; it was smoke-tested before being pushed."
-          echo "No rollout target (Kubernetes/Compose/SSH/PaaS) is configured in this repository yet."
-          echo "Wire the actual deploy command in here once the target infrastructure is decided."
+  # There was one, echoing three lines about a release that had already happened.
+  # It is worth recording why it went, because the shape of it invites being put
+  # back: a job that only announces is a job whose failure means nothing and whose
+  # success proves nothing, and it had in fact never run at all - a skip reaches
+  # down the whole graph, so it inherited one from a job it did not name and
+  # nobody noticed for the lifetime of the repository.
+  #
+  # If a target is ever chosen: the job goes back here needing publish, with
+  # `if: always() && needs.publish.result == 'success'` so the same inherited skip
+  # does not silence it, and with an `environment:` - which is where the deploy
+  # credential belongs, because an environment secret is readable only by jobs
+  # that declare it while a repository secret is readable by every job there is.
