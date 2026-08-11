@@ -417,7 +417,16 @@ tasks:
       - echo "Building {{.APP_NAME}} {{.VERSION}}"
       - mkdir -p {{.BIN_DIR}}
       - cp -r {{.CONFIG_SRC}} {{.BIN_DIR}}/
-      - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd/main.go
+      # On Windows, the icon and the Properties tab - the same resource the
+      # release builds, so a binary built here is not a different artefact from
+      # the published one. Needs goversioninfo on PATH; without it the build goes
+      # ahead unadorned rather than failing, because a missing tool is not a
+      # reason to be unable to build the application.
+      - '{{if eq OS "windows"}}sh build/windows-resource.sh {{.VERSION}} || echo "no goversioninfo on PATH - building without the resource"{{end}}'
+      # ./cmd rather than ./cmd/main.go: naming the file builds that file, and a
+      # .syso beside it in the package is not picked up.
+      - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd
+      - '{{if eq OS "windows"}}sh build/windows-resource.sh --clean{{end}}'
 
   image:
     desc: 'Ship: build the deployment image, tagged with the version and "latest".'

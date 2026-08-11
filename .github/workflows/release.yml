@@ -264,7 +264,21 @@ jobs:
 
           build linux   amd64
           build linux   arm64
+
+          # The Windows resource: the icon on the file, and the Properties tab
+          # that is otherwise blank. Generated here rather than committed,
+          # because it carries the version and a committed one would go stale
+          # the moment it was written.
+          #
+          # Removed immediately afterwards, which is not tidiness. The toolchain
+          # links any .syso in the package directory with no import and no build
+          # tag; the _windows_amd64 suffix is what keeps it off the other three,
+          # and darwin builds after this one in the same directory.
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0
+          sh build/windows-resource.sh "${VERSION}"
           build windows amd64 .exe
+          sh build/windows-resource.sh --clean
+
           build darwin  arm64
 
           # Checksums, so a download can be checked against something the release

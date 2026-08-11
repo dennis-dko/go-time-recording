@@ -26,3 +26,8 @@ bin/configs/.local.env
 
 # Release binaries, built into the work tree by the release workflow.
 dist/
+
+# The Windows resource, generated per build from build/versioninfo.json.in.
+# The toolchain links any .syso in the package directory, so a committed one
+# would be linked with whatever version it was written with, for ever.
+*.syso

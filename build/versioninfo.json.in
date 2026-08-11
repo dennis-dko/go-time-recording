@@ -1,0 +1,32 @@
+{
+  "FixedFileInfo": {
+    "FileVersion": {
+      "Major": 0, "Minor": 0, "Patch": 0, "Build": 0
+    },
+    "ProductVersion": {
+      "Major": 0, "Minor": 0, "Patch": 0, "Build": 0
+    },
+    "FileFlagsMask": "3f",
+    "FileFlags": "00",
+    "FileOS": "040004",
+    "FileType": "01",
+    "FileSubType": "00"
+  },
+  "StringFileInfo": {
+    "CompanyName": "Dennis Köhler",
+    "FileDescription": "Project time tracking: REST API and web interface in one file",
+    "InternalName": "go-time-recording",
+    "LegalCopyright": "Copyright (c) 2025-2026 Dennis Köhler. MIT licence.",
+    "OriginalFilename": "go-time-recording.exe",
+    "ProductName": "Time Recording",
+    "FileVersion": "0.0.0.0",
+    "ProductVersion": "0.0.0.0"
+  },
+  "VarFileInfo": {
+    "Translation": {
+      "LangID": "0409",
+      "CharsetID": "04B0"
+    }
+  },
+  "IconPath": "build/icon.ico"
+}
