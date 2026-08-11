@@ -269,13 +269,16 @@ jobs:
 
           # Checksums, so a download can be checked against something the release
           # itself carries.
-          ( cd dist && sha256sum * > SHA256SUMS )
+          ( cd dist && sha256sum -- * > SHA256SUMS )
           cat dist/SHA256SUMS
 
+      # Built into this runner's daemon rather than pushed, because the next step
+      # is what decides whether it may be pushed at all.
       - uses: docker/build-push-action@v7
         with:
           context: .
-          push: true
+          push: false
+          load: true
           # The tag is the version, and it has to reach the binary: the footer
           # reads it, and a release that calls itself "dev" is worse than no
           # version at all.
@@ -285,9 +288,76 @@ jobs:
             ${{ steps.image.outputs.name }}:${{ needs.version.outputs.version }}
             ${{ steps.image.outputs.name }}:latest
 
+      # The image has to actually run before anybody is told it exists.
+      #
+      # This check used to sit in the deploy job, which runs after the image is
+      # pushed and after the release is created - so it could report a broken
+      # image and change nothing about the fact that it was already published.
+      # It also ended in a warning rather than a failure, which made it a note in
+      # a log rather than a gate. Here it is neither: nothing leaves this runner
+      # until the application has answered.
+      - name: Smoke-test the image before publishing it
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}:${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # The image serves on 8000; 9090 is only where this runner reaches it.
+          # An earlier version published 9090:9090, which could never have
+          # answered - and warned rather than failed, so nobody found out.
+          #
+          # DB_DIALECT alone on purpose: the image supplies DB_NAME itself, so
+          # this also proves that default is still there. Run bare the binary
+          # serves its installer, and an installer answering says nothing about
+          # the application being publishable.
+          docker run -d --name smoke -p 9090:8000 -e DB_DIALECT=sqlite "$IMAGE"
+
+          ok=0
+
+          for _ in $(seq 1 20); do
+            # The body, not the status. The installer answers every path with its
+            # own page and a 200 - including this one - so a successful request
+            # proves only that something is listening. A version in the answer is
+            # the application.
+            if curl -fsS http://localhost:9090/api/v1/branding 2>/dev/null | grep -q '"version"'; then
+              ok=1
+              break
+            fi
+
+            sleep 2
+          done
+
+          docker logs smoke || true
+          docker rm -f smoke || true
+
+          if [ "$ok" -ne 1 ]; then
+            echo "::error::the image did not answer on /api/v1/branding within 40s; nothing was published"
+            exit 1
+          fi
+
+      # The image that was tested, not another build of it: pushed from the local
+      # daemon rather than built a second time, so the bytes somebody pulls are
+      # the bytes that answered above.
+      - name: Push the tested image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker push "${IMAGE}:${VERSION}"
+          docker push "${IMAGE}:latest"
+
       # Last, because this step creates the tag: everything a release consists of -
       # the binaries and the image - already exists by now, and a tag with nothing
       # behind it is a release that cannot be used.
+      #
+      # That leaves one window, and it is worth naming rather than implying it is
+      # gone: if this step fails, an image is published under a version that has
+      # no tag. It heals itself, which is why the order is this way round and not
+      # the other - the next version is computed from tags alone, so the next
+      # merge computes the same number, and pushes an image and a tag for a commit
+      # that contains the one that failed. Tagging first would instead leave a
+      # release whose image never arrived, which nothing later repairs.
       #
       # It also has to be this action that creates it. A tag pushed with
       # GITHUB_TOKEN triggers no further workflows, so a two-step "tag now,
@@ -300,12 +370,18 @@ jobs:
           files: |
             dist/go-time-recording_*
             dist/SHA256SUMS
-          # Above the generated notes, because somebody who has just downloaded a
-          # binary is about to ask exactly this. The installer covers the database;
-          # what it cannot cover is what has to be in place before the process
-          # starts at all.
+          # append_body puts this below the generated notes, which is where it
+          # belongs: the changelog is what a returning reader came for, and this
+          # is what somebody who has just downloaded a binary reads once. The
+          # installer covers the database; what it cannot cover is what has to be
+          # in place before the process starts at all.
           body: |
             ## Running the binary
+
+            The manual is
+            [`deploy/OPERATIONS.md`](https://github.com/${{ github.repository }}/blob/${{ needs.version.outputs.version }}/deploy/OPERATIONS.md) —
+            the ways to run it, what to back up, what needs a restart, and what the
+            health endpoints actually mean. The short version:
 
             Download the file for your platform, check it against `SHA256SUMS`, and
             run it. It is self-contained: the interface, the timezone database and
@@ -316,53 +392,44 @@ jobs:
 
             Everything the installer cannot ask for - the port, TLS, the log level,
             the session lifetime, the rate limit - is read from the environment or
-            from a `.env` file beside the binary. Start from
-            [`deploy/.env.example`](https://github.com/${{ github.repository }}/blob/${{ needs.version.outputs.version }}/deploy/.env.example),
-            which lists every variable with its default and says which ones matter.
-            Settings the interface can change are stored in the database and are
-            **not** read from there.
+            from `configs/.env` beside the binary. Start from
+            [`deploy/.env.binary.example`](https://github.com/${{ github.repository }}/blob/${{ needs.version.outputs.version }}/deploy/.env.binary.example),
+            which lists every variable the process reads with the value it uses when
+            the variable is absent. (`deploy/.env.example` is the other one: it is
+            read by docker compose and means nothing beside a binary.) Settings the
+            interface can change are stored in the database and are **not** read
+            from there.
           append_body: true
 
   # Deployment target is intentionally not wired up: this repo has no
   # Kubernetes manifests, docker-compose file, or SSH/PaaS target defined
   # yet. Until one is chosen, "deploy" means the versioned image is
-  # published to GHCR and smoke-tested. Add the real rollout command below
-  # once the target infrastructure is decided.
+  # published to GHCR. Add the real rollout command below once the target
+  # infrastructure is decided.
+  #
+  # The smoke test used to live here and no longer does. Running it after the
+  # image was pushed and the release created meant it could report a broken
+  # image and change nothing - so it is a step of the publish job now, before
+  # anything is pushed, and it fails rather than warns.
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
     needs: publish
-    environment:
-      name: production
+    # No `environment:` here, and that is not an omission.
+    #
+    # It named "production", which does not exist in this repository - GitHub
+    # would have created it on the first run, and the editor flagged it as
+    # unknown until then. But the real reason to leave it out is what this job
+    # does: it echoes. An environment records a deployment, so every release
+    # would have entered a deployment to production that deployed nothing, and a
+    # history of those is worse than no history.
+    #
+    # It goes back in beside the rollout command below, which is the point at
+    # which protection rules - required reviewers, a wait timer, environment
+    # secrets - start guarding something.
     steps:
-      - name: Smoke-test the published image
-        run: |
-          # The image serves on 8000; publishing 9090:9090 could never have answered.
-          #
-          # DB_DIALECT because the image ships without one on purpose - run bare it
-          # serves its installer, and a smoke test that only proved the installer
-          # answers would say nothing about the application being publishable.
-          docker run -d --name smoke -p 9090:8000             -e DB_DIALECT=sqlite             ${{ needs.publish.outputs.image }}:${{ needs.publish.outputs.version }}
-          ok=0
-          for i in $(seq 1 10); do
-            # The body, not the status. The installer answers every path with its
-            # page and a 200 - including this one - so a successful request proves
-            # only that something is listening. A version field in the response
-            # is the application.
-            if curl -fsS http://localhost:9090/api/v1/branding 2>/dev/null | grep -q '"version"'; then
-              ok=1
-              break
-            fi
-            sleep 2
-          done
-          docker logs smoke || true
-          docker rm -f smoke || true
-          if [ "$ok" -ne 1 ]; then
-            echo "::warning::The application did not answer on :9090/api/v1/branding within 20s. Verify manually before trusting this smoke test."
-          fi
-
       - name: Deploy
         run: |
-          echo "${{ needs.publish.outputs.image }}:${{ needs.publish.outputs.version }} is published to GHCR and smoke-tested."
+          echo "${{ needs.publish.outputs.image }}:${{ needs.publish.outputs.version }} is published to GHCR; it was smoke-tested before being pushed."
           echo "No rollout target (Kubernetes/Compose/SSH/PaaS) is configured in this repository yet."
           echo "Wire the actual deploy command in here once the target infrastructure is decided."
