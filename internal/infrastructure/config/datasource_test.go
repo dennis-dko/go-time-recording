@@ -184,3 +184,92 @@ func TestABlankDialectIsNotAConfiguredDatabase(t *testing.T) {
 		t.Error("whitespace should not count as a configured dialect")
 	}
 }
+
+// The port that is proven is the port that gets used.
+//
+// GoFr defaults DB_PORT to 3306 for every dialect - its 5432 applies only to the
+// "supabase" dialect - while this package's probe defaulted PostgreSQL to 5432.
+// So a PostgreSQL deployment that named everything but the port was told the
+// connection was fine and then watched GoFr fail against MySQL's port, in the
+// middle of a migration, with a message about a table it could not create. The
+// check written to explain that failure was the one thing that said it was fine.
+func TestTheDefaultPortIsTheSameForTheProbeAndForGoFr(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		dialect, given, want string
+	}{
+		{"postgres", "", "5432"},
+		{"postgres", "6543", "6543"},
+		{"mysql", "", "3306"},
+		{"mysql", "13306", "13306"},
+		// SQLite is a file. A port would be a value nothing reads, exported into
+		// the environment for GoFr to find.
+		{"sqlite", "", ""},
+		{"POSTGRES", "  ", "5432"},
+	} {
+		if got := config.DefaultPortFor(tc.dialect, tc.given); got != tc.want {
+			t.Errorf("DefaultPortFor(%q, %q) = %q, want %q",
+				tc.dialect, tc.given, got, tc.want)
+		}
+	}
+}
+
+// And it actually reaches GoFr, which reads it out of the environment.
+func TestApplyDatasourceExportsAPortForAServerDialect(t *testing.T) {
+	ds := config.Datasource{
+		Dialect: "postgres", Name: "gtr", Host: "db.example", User: "gtr",
+	}
+
+	if err := config.ApplyDatasource(ds); err != nil {
+		t.Fatalf("applying: %v", err)
+	}
+
+	if got := os.Getenv("DB_PORT"); got != "5432" {
+		t.Errorf("DB_PORT was exported as %q, want 5432 - GoFr would otherwise dial 3306", got)
+	}
+}
+
+// The probe speaks TLS to MySQL when the connection asks for it.
+//
+// DB_SSL_MODE reads like a PostgreSQL setting, and this package treated it as
+// one. GoFr does not: it appends a tls= parameter to the MySQL DSN as well, so a
+// MySQL deployment configured for TLS was proven over a plaintext connection and
+// then opened over an encrypted one. Same shape as the port: a check that
+// connects differently from the thing it checks.
+func TestTheMySQLProbeCarriesTheTLSModeGoFrWouldUse(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ mode, want string }{
+		{"", ""},
+		{"disable", ""},
+		{"false", ""},
+		{"preferred", "tls=preferred"},
+		{"require", "tls=skip-verify"},
+		{"true", "tls=skip-verify"},
+		{"skip-verify", "tls=skip-verify"},
+		// Mirrored as far as a probe honestly can: GoFr registers a config built
+		// from the operator's CA, which this does not reproduce.
+		{"verify-ca", "tls=skip-verify"},
+		{"verify-full", "tls=skip-verify"},
+		{"  REQUIRE  ", "tls=skip-verify"},
+	} {
+		ds := config.Datasource{
+			Dialect: "mysql", Name: "gtr", Host: "db.example", User: "gtr", SSLMode: tc.mode,
+		}
+
+		dsn := config.ProbeDSNForTest(ds)
+
+		if tc.want == "" {
+			if strings.Contains(dsn, "tls=") {
+				t.Errorf("SSL mode %q produced a TLS parameter: %s", tc.mode, dsn)
+			}
+
+			continue
+		}
+
+		if !strings.Contains(dsn, tc.want) {
+			t.Errorf("SSL mode %q produced %q, want it to carry %q", tc.mode, dsn, tc.want)
+		}
+	}
+}

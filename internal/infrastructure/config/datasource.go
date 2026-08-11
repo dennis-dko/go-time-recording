@@ -292,19 +292,18 @@ func TestDatasource(ctx context.Context, ds Datasource) error {
 // testTimeout keeps an unreachable host from holding the request open.
 const testTimeout = 8 * time.Second
 
-// driverDSN builds the driver name and connection string for a probe. It
-// mirrors what GoFr assembles internally from the same settings.
+// driverDSN builds the driver name and connection string for a probe.
+//
+// The port comes from DefaultPortFor rather than being defaulted per branch here,
+// which is what lets this claim to probe the connection GoFr will open: the same
+// function fills it in for GoFr, in ApplyDatasource.
 func driverDSN(ds Datasource) (driver, dsn string, err error) {
-	port := ds.Port
+	port := DefaultPortFor(ds.Dialect, ds.Port)
 
 	switch strings.ToLower(ds.Dialect) {
 	case "sqlite":
 		return "sqlite", fmt.Sprintf("file:%s.db", strings.TrimSuffix(ds.Name, ".db")), nil
 	case "postgres":
-		if port == "" {
-			port = "5432"
-		}
-
 		sslMode := ds.SSLMode
 		if sslMode == "" {
 			sslMode = "disable"
@@ -313,14 +312,77 @@ func driverDSN(ds Datasource) (driver, dsn string, err error) {
 		return "postgres", fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 			ds.Host, port, ds.User, ds.Password, ds.Name, sslMode), nil
 	case "mysql":
-		if port == "" {
-			port = "3306"
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+			ds.User, ds.Password, ds.Host, port, ds.Name)
+
+		if tls := mysqlTLSParam(ds.SSLMode); tls != "" {
+			dsn += "&" + tls
 		}
 
-		return "mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
-			ds.User, ds.Password, ds.Host, port, ds.Name), nil
+		return "mysql", dsn, nil
 	default:
 		return "", "", fmt.Errorf("unsupported dialect %q", ds.Dialect)
+	}
+}
+
+// mysqlTLSParam maps a stored SSL mode onto the DSN parameter the MySQL driver
+// reads, the way GoFr does.
+//
+// The second half of the same mistake DefaultPortFor fixes. DB_SSL_MODE reads
+// like a PostgreSQL setting and the comment beside it used to say so, but GoFr
+// appends a tls= parameter for MySQL as well - so a MySQL deployment asking for
+// TLS was proven over a plaintext connection here and then opened over TLS by
+// GoFr. A check that connects differently from the thing it is checking is not a
+// check.
+//
+// verify-ca and verify-full are the one case this cannot mirror exactly: GoFr
+// registers a TLS config built from DB_TLS_CA_CERT under its own name, and
+// reproducing that here would mean loading and parsing the operator's CA a
+// second time, in a probe, to answer a question GoFr will answer properly a
+// moment later. The probe uses skip-verify for those, which proves the server is
+// reachable, speaks TLS and accepts the credentials - everything except the
+// certificate's provenance, which is left to the start-up that actually enforces
+// it.
+func mysqlTLSParam(sslMode string) string {
+	switch strings.ToLower(strings.TrimSpace(sslMode)) {
+	case "preferred":
+		return "tls=preferred"
+	case "require", "true", "skip-verify", "verify-ca", "verify-full":
+		return "tls=skip-verify"
+	default:
+		// "disable", "false", empty, and anything GoFr does not recognise - all
+		// of which leave GoFr's DSN without a tls parameter too.
+		return ""
+	}
+}
+
+// DefaultPortFor fills in the port a dialect is served on, when none was given.
+//
+// It exists because GoFr and this package disagreed, silently and in the worst
+// possible direction. GoFr defaults DB_PORT to 3306 for *every* dialect - the
+// 5432 it knows about is applied only to the "supabase" dialect - while the
+// pre-flight probe here defaulted PostgreSQL to 5432 and its own comment claimed
+// to mirror GoFr. So a PostgreSQL deployment that set everything but the port
+// passed the probe on 5432 and GoFr then dialled 3306, which is exactly the
+// opaque mid-migration failure the probe was written to prevent: the check that
+// exists to explain the problem was the one thing that said it was fine.
+//
+// One answer for both, resolved here and exported to GoFr by ApplyDatasource, so
+// the port that was proven is the port that gets used.
+func DefaultPortFor(dialect, port string) string {
+	if strings.TrimSpace(port) != "" {
+		return port
+	}
+
+	switch strings.ToLower(dialect) {
+	case "postgres":
+		return "5432"
+	case "mysql":
+		return "3306"
+	default:
+		// SQLite has no port, and an unsupported dialect is refused by Validate
+		// long before anything dials anywhere.
+		return ""
 	}
 }
 
@@ -340,8 +402,11 @@ func ApplyDatasource(ds Datasource) error {
 		values["DB_HOST"] = ds.Host
 	}
 
-	if ds.Port != "" {
-		values["DB_PORT"] = ds.Port
+	// Filled in rather than passed through: an empty port here means GoFr falls
+	// back to 3306 whatever the dialect, so leaving it out is how a PostgreSQL
+	// deployment ends up dialling MySQL's port. See DefaultPortFor.
+	if port := DefaultPortFor(ds.Dialect, ds.Port); port != "" {
+		values["DB_PORT"] = port
 	}
 
 	if ds.User != "" {
