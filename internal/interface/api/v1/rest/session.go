@@ -2,7 +2,10 @@ package rest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,10 +46,48 @@ func SessionMiddleware(sessions *service.SessionService) func(http.Handler) http
 				return
 			}
 
+			// On every answer, so a change of rights is noticed on the next request
+			// rather than at the next sign-in.
+			//
+			// The server has always enforced the change immediately - the principal
+			// above is resolved from the database per request - but nothing told the
+			// browser, which had read /me once at start-up and kept the tabs and
+			// buttons it was given. So a revoked right showed up as a refusal on a
+			// control that was still on screen, with no explanation attached.
+			w.Header().Set(PermissionRevisionHeader, PermissionRevision(principal))
+
 			ctx := context.WithValue(r.Context(), sessionContextKey{}, principal)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// PermissionRevisionHeader carries what the caller may currently do, as a value
+// that changes only when the answer does.
+const PermissionRevisionHeader = "X-Permissions-Revision"
+
+// PermissionRevision is a short stable digest of what a principal may do.
+//
+// A digest rather than a counter, because there is no one place a change to a
+// role, a role assignment or the permission list passes through - and a counter
+// that something forgets to bump is worse than none. Anything that changes what
+// this account may do changes these inputs, and nothing else does.
+//
+// Sorted first, so the same rights in a different order are the same revision and
+// the interface is not told to reload for a row order.
+func PermissionRevision(principal *service.Principal) string {
+	if principal == nil || principal.User == nil {
+		return ""
+	}
+
+	permissions := slices.Clone(principal.Permissions)
+	slices.Sort(permissions)
+
+	sum := sha256.Sum256([]byte(principal.User.RoleName + "\x00" + strings.Join(permissions, "\x00")))
+
+	// Half the digest. This is a change detector, not a secret: it is compared
+	// with itself, and a collision costs a reload nobody needed.
+	return hex.EncodeToString(sum[:6])
 }
 
 // principalFromContext returns the signed-in caller, if any.

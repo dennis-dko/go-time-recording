@@ -23,9 +23,20 @@ type UserResponse struct {
 	DailyTargetHours float64 `json:"dailyTargetHours"`
 	MaxDailyHours    float64 `json:"maxDailyHours"`
 
-	TOTPEnabled bool   `json:"totpEnabled"`
-	Language    string `json:"language"`
-	IsExternal  bool   `json:"isExternal"`
+	TOTPEnabled bool `json:"totpEnabled"`
+
+	// Language is this user's own choice; empty means they have never made one.
+	// The emptiness is the whole point: the interface adopts the browser's
+	// language on a first sign-in, and it can only know it is a first sign-in
+	// from a language that is not there. This used to be sent resolved, so every
+	// account looked like it had chosen English and the browser was never asked.
+	Language string `json:"language"`
+
+	// EffectiveLanguage is what to render in once the fallback has been worked
+	// out, so nothing that only wants "which language" has to repeat the rule.
+	EffectiveLanguage string `json:"effectiveLanguage"`
+
+	IsExternal bool `json:"isExternal"`
 
 	// Timezone is this user's own choice; empty means they follow the
 	// instance-wide setting. The UI needs the difference so its picker can show
@@ -94,6 +105,11 @@ type MeResponse struct {
 	// AuthEnabled is false when the instance runs without authentication, so
 	// the UI can explain why no sign-in is shown.
 	AuthEnabled bool `json:"authEnabled"`
+
+	// PermissionsRevision changes exactly when what this account may do changes.
+	// Every response carries the current one in a header; this is the baseline to
+	// compare it against. See PermissionRevision.
+	PermissionsRevision string `json:"permissionsRevision"`
 }
 
 func newUserResponse(r *common.UserResult, instanceTimezone string) UserResponse {
@@ -108,6 +124,7 @@ func newUserResponse(r *common.UserResult, instanceTimezone string) UserResponse
 		IsExternal:         r.IsExternal,
 		TOTPEnabled:        r.TOTPEnabled,
 		Language:           r.Language,
+		EffectiveLanguage:  r.EffectiveLanguage,
 		Timezone:           r.Timezone,
 		TourSeen:           r.TourSeen,
 		EffectiveTimezone:  model.EffectiveTimezoneName(r.Timezone, instanceTimezone),
@@ -147,7 +164,8 @@ func newUserResponseFromModel(u *model.User, instanceTimezone string) UserRespon
 		DailyTargetHours:   u.DailyTargetHours,
 		MaxDailyHours:      u.MaxDailyHours,
 		TOTPEnabled:        u.TOTPEnabled,
-		Language:           u.EffectiveLanguage(),
+		Language:           u.Language,
+		EffectiveLanguage:  u.EffectiveLanguage(),
 		IsExternal:         u.IsExternal,
 		Timezone:           u.Timezone,
 		TourSeen:           u.TourSeen,

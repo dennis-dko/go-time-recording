@@ -21,9 +21,19 @@ type UserResult struct {
 	IsExternal bool
 
 	TOTPEnabled bool
-	Language    string
-	Timezone    string
-	TourSeen    bool
+
+	// Language is the choice as stored, empty for an account that never made
+	// one; EffectiveLanguage is what actually applies once the fallback has been
+	// worked out. Both travel for the same reason the timezone does: a resolved
+	// value alone cannot be told apart from a deliberate "English", and the
+	// interface adopts the browser's language exactly once - on a first sign-in,
+	// which is precisely the case that used to arrive here already flattened to
+	// "en" and so never happened at all.
+	Language          string
+	EffectiveLanguage string
+
+	Timezone string
+	TourSeen bool
 
 	// Working times as this account has them, which is zero for one that has not
 	// chosen: zero means "follow the instance default", and the interface shows it as
@@ -57,7 +67,8 @@ func NewUserResultFromModel(userModels ...*model.User) []*UserResult {
 			MustChangePassword: userModel.MustChangePassword,
 			IsExternal:         userModel.IsExternal,
 			TOTPEnabled:        userModel.TOTPEnabled,
-			Language:           userModel.EffectiveLanguage(),
+			Language:           userModel.Language,
+			EffectiveLanguage:  userModel.EffectiveLanguage(),
 			Timezone:           userModel.Timezone,
 			TourSeen:           userModel.TourSeen,
 			DailyTargetHours:   userModel.DailyTargetHours,

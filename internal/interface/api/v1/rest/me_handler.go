@@ -50,6 +50,11 @@ func (h *MeHandler) Me(c *gofr.Context) (any, error) {
 		User:        newUserResponseFromModel(principal.User, h.timezone.resolve(c)),
 		Permissions: permissions,
 		AuthEnabled: h.authz.Enabled(),
+
+		// The baseline the interface compares every later response's
+		// X-Permissions-Revision against, so it can say that the rights changed
+		// rather than only meeting refusals on controls it is still showing.
+		PermissionsRevision: PermissionRevision(principal),
 	}, nil
 }
 
