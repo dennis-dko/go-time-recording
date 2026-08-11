@@ -83,7 +83,7 @@ func (f *fixture) entry(t *testing.T, projectID uint) *model.Timesheet {
 // role returns the named role, creating it only if the repository does not
 // already have one.
 //
-// The memory repository seeds the standard roles, and saving a second "employee"
+// The memory repository seeds the standard roles, and saving a second "user"
 // would leave two - with GetByName answering the first, so the test would compare
 // against a role nothing points at.
 func (f *fixture) role(t *testing.T, name string, permissions ...string) *model.Role {
@@ -308,13 +308,13 @@ func TestAReportForAProjectThatIsNotThere(t *testing.T) {
 
 func TestAssigningARoleToAnOrdinaryUser(t *testing.T) {
 	f := newFixture(t)
-	employee := f.role(t, "employee", model.PermTimesheetWriteOwn)
+	everyday := f.role(t, "user", model.PermTimesheetWriteOwn)
 
 	// Not "manager": there is no such role any more, and no right one could be built
 	// from either. A custom role an installation could still create, which is all this
 	// case needs - somewhere to move somebody.
 	oversight := f.role(t, "oversight", model.PermProjectRead)
-	user := f.user(t, "someone@example.com", employee.ID, false)
+	user := f.user(t, "someone@example.com", everyday.ID, false)
 
 	updated, err := f.userDomain.AssignRoleToUser(context.Background(), user.ID, "oversight")
 	if err != nil {
@@ -333,10 +333,10 @@ func TestAssigningARoleToAnOrdinaryUser(t *testing.T) {
 func TestTheBuiltInAdministratorCannotLoseAdministrationRights(t *testing.T) {
 	f := newFixture(t)
 	admin := f.role(t, "admin", model.AllPermissions()...)
-	employee := f.role(t, "employee", model.PermTimesheetWriteOwn)
+	user := f.role(t, "user", model.PermTimesheetWriteOwn)
 	system := f.user(t, "admin@local", admin.ID, true)
 
-	_, err := f.userDomain.AssignRoleToUser(context.Background(), system.ID, "employee")
+	_, err := f.userDomain.AssignRoleToUser(context.Background(), system.ID, "user")
 	if err == nil {
 		t.Fatal("the built-in administrator was moved to a role that cannot administer")
 	}
@@ -351,8 +351,8 @@ func TestTheBuiltInAdministratorCannotLoseAdministrationRights(t *testing.T) {
 		t.Errorf("the role changed to %d despite the refusal", after.RoleID)
 	}
 
-	if after.RoleID == employee.ID {
-		t.Error("the administrator ended up on the employee role")
+	if after.RoleID == user.ID {
+		t.Error("the administrator ended up on the user role")
 	}
 }
 
@@ -376,8 +376,8 @@ func TestTheBuiltInAdministratorCanMoveToAnotherAdministeringRole(t *testing.T) 
 
 func TestAssigningARoleThatDoesNotExist(t *testing.T) {
 	f := newFixture(t)
-	employee := f.role(t, "employee", model.PermTimesheetWriteOwn)
-	user := f.user(t, "someone@example.com", employee.ID, false)
+	everyday := f.role(t, "user", model.PermTimesheetWriteOwn)
+	user := f.user(t, "someone@example.com", everyday.ID, false)
 
 	if _, err := f.userDomain.AssignRoleToUser(context.Background(), user.ID, "wizard"); err == nil {
 		t.Error("a role that does not exist was assigned")
@@ -386,9 +386,9 @@ func TestAssigningARoleThatDoesNotExist(t *testing.T) {
 
 func TestAssigningARoleToAUserThatDoesNotExist(t *testing.T) {
 	f := newFixture(t)
-	f.role(t, "employee", model.PermTimesheetWriteOwn)
+	f.role(t, "user", model.PermTimesheetWriteOwn)
 
-	if _, err := f.userDomain.AssignRoleToUser(context.Background(), 9999, "employee"); err == nil {
+	if _, err := f.userDomain.AssignRoleToUser(context.Background(), 9999, "user"); err == nil {
 		t.Error("a role was assigned to a user that does not exist")
 	}
 }

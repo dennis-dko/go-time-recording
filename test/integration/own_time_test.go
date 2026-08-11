@@ -159,7 +159,7 @@ func TestSomebodyElsesOvertimeIsRefused(t *testing.T) {
 	}
 
 	// Nor an account holding every right this application can grant. That is the
-	// combined role, which is an employee's rights plus the administration - so it has
+	// combined role, which is a user's rights plus the administration - so it has
 	// its own working day and still not a minute of anybody else's.
 	both := a.signInAsWorkingAdmin(admin, "Bernd", "bernd@example.com")
 

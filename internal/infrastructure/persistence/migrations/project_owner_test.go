@@ -40,7 +40,7 @@ func person(t *testing.T, db *sql.DB, name, email string) uint {
 
 	_, err := db.Exec(`INSERT INTO users
 		(name, email, role_id, password_hash, daily_target_hours, max_daily_hours)
-		VALUES (?, ?, (SELECT id FROM roles WHERE name = 'employee'), 'x', 0, 0)`,
+		VALUES (?, ?, (SELECT id FROM roles WHERE name = 'user'), 'x', 0, 0)`,
 		name, email)
 	if err != nil {
 		t.Fatalf("creating %s: %v", name, err)
@@ -380,7 +380,7 @@ func TestTheUpgradeSeparatesAdministeringFromWorking(t *testing.T) {
 	var spans int
 
 	err = db.QueryRow(`SELECT COUNT(*) FROM role_permissions
-		WHERE role_id = (SELECT id FROM roles WHERE name = 'employee-admin')
+		WHERE role_id = (SELECT id FROM roles WHERE name = 'user-admin')
 		  AND permission IN ('timesheets:write:own', 'users:write')`).Scan(&spans)
 	if err != nil {
 		t.Fatalf("counting the combined role: %v", err)

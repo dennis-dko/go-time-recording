@@ -85,7 +85,7 @@ func NewSessionService(
 		sessions:    sessions,
 		auth:        auth,
 		lifetime:    lifetime,
-		defaultRole: model.RoleEmployee,
+		defaultRole: model.RoleUser,
 	}
 }
 

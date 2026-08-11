@@ -18,9 +18,9 @@ import (
 // Nobody comes out of an upgrade without a role.
 //
 // The migration that retires the review path moves whoever was a manager to the
-// employee role, by name, with a subselect. A subselect that matches nothing gives
+// user role, by name, with a subselect. A subselect that matches nothing gives
 // NULL rather than nothing, so on an installation that had renamed or deleted the
-// default employee role every ex-manager's role_id became NULL.
+// default user role every ex-manager's role_id became NULL.
 //
 // That is not "a user with no rights". The users table is read into a struct whose
 // role id is a plain uint, so a NULL there is a scan error: the person cannot sign
@@ -95,7 +95,7 @@ const retirement = int64(20260810010000)
 func TestNobodyIsLeftWithoutARoleByTheUpgrade(t *testing.T) {
 	t.Parallel()
 
-	// Whatever an administrator did to the default employee role before upgrading.
+	// Whatever an administrator did to the default user role before upgrading.
 	for _, how := range []struct {
 		name string
 		do   func(t *testing.T, db *sql.DB)
@@ -106,8 +106,8 @@ func TestNobodyIsLeftWithoutARoleByTheUpgrade(t *testing.T) {
 				t.Helper()
 
 				if _, err := db.Exec(`UPDATE roles SET name = 'Teamleiter' WHERE name = ?`,
-					model.RoleEmployee); err != nil {
-					t.Fatalf("renaming the employee role: %v", err)
+					model.RoleUser); err != nil {
+					t.Fatalf("renaming the user role: %v", err)
 				}
 			},
 		},
@@ -121,8 +121,8 @@ func TestNobodyIsLeftWithoutARoleByTheUpgrade(t *testing.T) {
 						(SELECT id FROM roles WHERE name = ?)`,
 					`DELETE FROM roles WHERE name = ?`,
 				} {
-					if _, err := db.Exec(statement, model.RoleEmployee); err != nil {
-						t.Fatalf("deleting the employee role: %v", err)
+					if _, err := db.Exec(statement, model.RoleUser); err != nil {
+						t.Fatalf("deleting the user role: %v", err)
 					}
 				}
 			},
@@ -196,7 +196,7 @@ func TestNobodyIsLeftWithoutARoleByTheUpgrade(t *testing.T) {
 
 // The repair leaves an ordinary upgrade exactly as it was.
 //
-// It inserts the employee role only when there is none, so the common case - where
+// It inserts the user role only when there is none, so the common case - where
 // it is there already - must not end up with two of them or with anybody moved.
 func TestTheRepairChangesNothingOnAnOrdinaryUpgrade(t *testing.T) {
 	t.Parallel()
@@ -204,15 +204,15 @@ func TestTheRepairChangesNothingOnAnOrdinaryUpgrade(t *testing.T) {
 	db := freshDB(t)
 	migrate(t, db, 0, latest(t))
 
-	var employees int
+	var users int
 
 	if err := db.QueryRow(`SELECT COUNT(*) FROM roles WHERE name = ?`,
-		model.RoleEmployee).Scan(&employees); err != nil {
-		t.Fatalf("counting the employee role: %v", err)
+		model.RoleUser).Scan(&users); err != nil {
+		t.Fatalf("counting the user role: %v", err)
 	}
 
-	if employees != 1 {
+	if users != 1 {
 		t.Errorf("there are %d roles named %q after a clean run, want 1",
-			employees, model.RoleEmployee)
+			users, model.RoleUser)
 	}
 }

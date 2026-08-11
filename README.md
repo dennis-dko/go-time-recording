@@ -160,20 +160,33 @@ interface: create them, set their permissions, delete them.
 | Role | Purpose |
 | --- | --- |
 | `admin` | The installation, its accounts and their roles — and nothing else. A system role: it cannot be deleted or stripped of permissions |
-| `employee` | Keeps their own time, projects and calendar |
-| `employee-admin` | Both: somebody who works here and also administers |
+| `user` | Keeps their own time, projects and calendar |
+| `user-admin` | Both: somebody who works here and also administers |
 
 The third one is the answer to "somebody here needs to administer as well". It is
 handed out by the built-in administrator, so holding both jobs is a decision somebody
 made rather than something an account arrived with — and it is an ordinary account
 gaining administration, never the built-in account gaining a working day.
 
-Each role's description travels with it into the dropdown where somebody assigns it,
-because the difference between `employee` and `employee-admin` is a difference you can
-only infer from the name — and what it decides is whether that person can administer
-the installation. The three that ship are translated; a role an installation writes for
-itself shows whatever was typed, which is the only sensible answer for words this
-application has never seen.
+The everyday role was called `employee`, and its combined one `employee-admin`. The word
+said more than this application knows: it holds accounts, and whether the person behind
+one is employed here, contracted, a volunteer or the only person in the company is not
+something it records, checks or needs. Renamed on upgrade, in the database as well as in
+the code — every account points at its role by id, so nobody is moved and nobody loses
+anything, and the role name stored in the directory configuration is brought along. An
+installation that already had a role of its own called `user` keeps it, moved aside as
+`user-2` with its rights and its people intact: the shipped name has to win because the
+application looks this role up by it, and merging two roles would change who may do what.
+
+What you see is not the identifier. Those names are lowercase, hyphenated and English
+because that is what the API takes, what the directory configuration stores and what the
+role editor edits — and none of that is something to put in front of somebody deciding
+what a colleague may do. Each role is shown by a translated title with its description
+beside it, so a German reader chooses *Benutzer & Administrator* rather than
+`user-admin`. The screen that administers roles keeps the identifier visible next to the
+title, because that screen is where it matters. A role an installation named itself
+shows whatever was typed, which is the only sensible answer for words this application
+has never seen.
 
 Permissions are fine grained — reading separately from writing, projects separately
 from time — and every one of them is scoped to the person holding it. A filter naming
@@ -203,7 +216,7 @@ project, read a figure or set a daily target, its own included.
 That is deliberate, and the reason is the account itself. Every installation has the
 built-in administrator before anybody has chosen anything: it is how you get in, not
 somebody's working day. Whoever does work here has an account of their own, and if
-that person also administers, they are given the `employee-admin` role rather than
+that person also administers, they are given the `user-admin` role rather than
 made to sign in twice.
 
 It used to book and read its own hours "like anybody who works here", and that was
@@ -214,8 +227,8 @@ What it does own is the instance-wide default under *Settings*, which is what a 
 account starts on. Each person changes their own from there, and nobody changes
 anybody else's.
 
-On upgrade, the working day is taken off the `admin` role and the `employee-admin`
-role is created first, so an installation that had been using the built-in account for
+On upgrade, the working day is taken off the `admin` role and the combined role is
+created first, so an installation that had been using the built-in account for
 both jobs has somewhere to move that person. Nobody is moved automatically: who works
 here is not something a database can work out, and guessing would either invent a
 colleague or take an administrator's hours away. The entries stay in the tables and
@@ -231,9 +244,9 @@ reasoning does not survive this arrangement. The built-in administrator configur
 installation and records no time, so a right added to its role would hand a working day
 to the one account nobody chose — quietly, from the screen that administers roles.
 
-The way past the wall is a decision about a colleague: give a person the
-`employee-admin` role. Note what that does *not* buy them — it is an employee's rights
-plus the administration, so they keep their own hours and still nobody else's.
+The way past the wall is a decision about a colleague: give a person the `user-admin`
+role. Note what that does *not* buy them — it is a user's own rights plus the
+administration, so they keep their own hours and still nobody else's.
 
 ### Reports
 

@@ -281,12 +281,12 @@ func TestImportingSomebodyElsesRowIsRefused(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Vera", "email": "vera@example.com",
-		"role": "employee", "password": "vera-password-1",
+		"role": "user", "password": "vera-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Wim", "email": "wim@example.com",
-		"role": "employee", "password": "wim-password-1",
+		"role": "user", "password": "wim-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
 	vera := a.newClient()
@@ -375,7 +375,7 @@ func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Xenia", "email": "xenia@example.com",
-		"role": "employee", "password": "xenia-password-1",
+		"role": "user", "password": "xenia-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
 	xenia := a.newClient()

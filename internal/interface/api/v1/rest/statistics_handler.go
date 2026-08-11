@@ -11,7 +11,7 @@ import (
 //
 // Under /me/ and keyed on the caller, which is what lets it need nothing beyond
 // the permission to read your own entries. The project report needs reports:read,
-// which both default roles are deliberately without - so an employee could not
+// which both default roles are deliberately without - so a user could not
 // have seen a chart of their own week through it, and it cannot express "every
 // project" or "no project" either.
 type StatisticsHandler struct {

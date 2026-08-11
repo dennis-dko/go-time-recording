@@ -82,8 +82,8 @@ func TestCreateUserValidation(t *testing.T) {
 	f := newFixture(t)
 
 	cases := map[string]command.CreateUserCommand{
-		"no name":   {Email: "a@b.de", Role: model.UserRoleAdmin},
-		"bad email": {Name: "A", Email: "not-an-email", Role: model.UserRoleAdmin},
+		"no name":   {Email: "a@b.de", Role: model.RoleAdmin},
+		"bad email": {Name: "A", Email: "not-an-email", Role: model.RoleAdmin},
 		"bad role":  {Name: "A", Email: "a@b.de", Role: "wizard"},
 	}
 
@@ -97,7 +97,7 @@ func TestCreateUserValidation(t *testing.T) {
 
 // Omitting the role must not fail but land on the least privileged role, so a
 // new account can never accidentally be created with elevated rights.
-func TestCreateUserWithoutRoleFallsBackToEmployee(t *testing.T) {
+func TestCreateUserWithoutRoleFallsBackToTheEverydayOne(t *testing.T) {
 	f := newFixture(t)
 
 	created, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
@@ -107,8 +107,8 @@ func TestCreateUserWithoutRoleFallsBackToEmployee(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if created.Result.Role != model.RoleEmployee {
-		t.Errorf("expected fallback to %q, got %q", model.RoleEmployee, created.Result.Role)
+	if created.Result.Role != model.RoleUser {
+		t.Errorf("expected fallback to %q, got %q", model.RoleUser, created.Result.Role)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestDuplicateEmailIsConflict(t *testing.T) {
 	f := newFixture(t)
 
 	_, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
-		Name: "Clone", Email: "dennis@example.com", Role: model.UserRoleEmployee,
+		Name: "Clone", Email: "dennis@example.com", Role: model.RoleUser,
 	})
 	requireKind(t, err, apperror.KindConflict)
 }
@@ -126,7 +126,7 @@ func TestListUsersPaginates(t *testing.T) {
 
 	for _, email := range []string{"b@x.de", "c@x.de", "d@x.de"} {
 		if _, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
-			Name: email, Email: email, Role: model.UserRoleEmployee,
+			Name: email, Email: email, Role: model.RoleUser,
 		}); err != nil {
 			t.Fatalf("seed %s: %v", email, err)
 		}

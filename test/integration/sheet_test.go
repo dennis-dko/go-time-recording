@@ -300,8 +300,8 @@ func TestImportingPeopleChangesThemAndCreatesNothing(t *testing.T) {
 	a.signInAsUser(admin, "Mika", "mika@example.com")
 
 	book, err := spreadsheet.WriteUsers("", []spreadsheet.UserRow{
-		{Name: "Mika Renamed", Email: "mika@example.com", Role: "employee"},
-		{Name: "Nobody", Email: "nobody@example.com", Role: "employee"},
+		{Name: "Mika Renamed", Email: "mika@example.com", Role: "user"},
+		{Name: "Nobody", Email: "nobody@example.com", Role: "user"},
 	})
 	if err != nil {
 		t.Fatalf("building the workbook: %v", err)

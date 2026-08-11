@@ -14,36 +14,36 @@ import (
 // read or edit what other people recorded - an administrator restoring a backup
 // or repointing the directory has no business in a colleague's week.
 //
-// Enforced by the same per-endpoint checks that refuse an employee, which is what
+// Enforced by the same per-endpoint checks that refuse a user, which is what
 // these tests go through. A guarantee that only holds in the interface is not a
 // guarantee; the interface hides what it cannot do, and a token client does not.
 
-// employeeWithTime returns an employee and one entry of theirs, booked by
+// userWithTime returns a user and one entry of theirs, booked by
 // themselves - the administrator could not book it for them.
-func employeeWithTime(t *testing.T, a *app, admin *client) (*client, timesheetResponse) {
+func userWithTime(t *testing.T, a *app, admin *client) (*client, timesheetResponse) {
 	t.Helper()
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Nadja", "email": "nadja@example.com",
-		"role": "employee", "password": "nadja-password-1",
+		"role": "user", "password": "nadja-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
-	employee := a.newClient()
-	employee.signIn("nadja@example.com", "nadja-password-1")
+	user := a.newClient()
+	user.signIn("nadja@example.com", "nadja-password-1")
 
 	var entry timesheetResponse
-	employee.must(employee.api(http.MethodPost, "/timesheets", map[string]any{
+	user.must(user.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-03", "durationHours": 4, "description": "her own work",
 	}), http.StatusCreated, http.StatusOK).Data(t, &entry)
 
-	return employee, entry
+	return user, entry
 }
 
 func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	owner, entry := employeeWithTime(t, a, admin)
+	owner, entry := userWithTime(t, a, admin)
 
 	// The listing is refused outright now, where it used to be scoped to the caller:
 	// the administrator had its own entries to read and somebody else's were simply
@@ -144,7 +144,7 @@ func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 		http.StatusOK)
 
 	// Reading the list is still allowed: time has to be bookable against
-	// something, and that list is what every employee sees anyway.
+	// something, and that list is what every user sees anyway.
 	// The list is refused as well. This checked twice before: first that the shared
 	// project was visible so there was something to book against, then that only its
 	// own was. It has none and books nothing, so the right to read the list is gone
@@ -172,7 +172,7 @@ func TestTheAdministratorStillAdministersAndNothingElse(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Olaf", "email": "olaf@example.com",
-		"role": "employee", "password": "olaf-password-1",
+		"role": "user", "password": "olaf-password-1",
 	}), http.StatusCreated, http.StatusOK).Data(t, &created)
 
 	admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK)
@@ -256,7 +256,7 @@ func TestTheAdministratorStillAdministersAndNothingElse(t *testing.T) {
 	// ordinary account.
 	both.must(both.api(http.MethodPost, "/users", map[string]any{
 		"name": "Hired", "email": "hired@example.com",
-		"role": "employee", "password": "hired-password-1",
+		"role": "user", "password": "hired-password-1",
 	}), http.StatusCreated, http.StatusOK)
 }
 
@@ -280,7 +280,7 @@ func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	_, entry := employeeWithTime(t, a, admin)
+	_, entry := userWithTime(t, a, admin)
 
 	if got := admin.api(http.MethodGet, path("/timesheets/", entry.ID), nil).Status; got == http.StatusOK {
 		t.Fatal("the administrator could read somebody else's entry before granting itself anything")
@@ -317,7 +317,7 @@ func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
 	//
 	// The first four are gone from the application entirely, and are listed by name so
 	// that reintroducing one and quietly seeding it here would be noticed. The rest
-	// exist and belong to an employee.
+	// exist and belong to a user.
 	for _, permission := range []string{
 		"timesheets:read:all", "timesheets:write:all",
 		"timesheets:approve", "reports:read",
@@ -335,7 +335,7 @@ func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
 	// Widening is refused, which is the half that changed.
 	//
 	// With a right this application actually enforces, and one the administrator does
-	// not hold: timesheets:read:own is an employee's, and the administrator has no
+	// not hold: timesheets:read:own is a user's, and the administrator has no
 	// working day. A name the application does not know would be refused too, for
 	// being unknown, and would prove nothing about the wall.
 	widened := admin.api(http.MethodPut, path("/roles/", adminRole), map[string]any{
@@ -379,13 +379,13 @@ func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
 	}
 
 	// The way past the wall: a person who works here and also administers. Note what it
-	// does not buy - the combined role is an employee's rights plus the administration,
+	// does not buy - the combined role is a user's rights plus the administration,
 	// so it holds its own working day and still nobody else's time.
 	both := a.signInAsWorkingAdmin(admin, "Bothe", "bothe@example.com")
 
 	both.must(both.api(http.MethodPost, "/users", map[string]any{
 		"name": "Hired", "email": "hired@example.com",
-		"role": "employee", "password": "hired-password-1",
+		"role": "user", "password": "hired-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
 	both.must(both.api(http.MethodPost, "/timesheets", map[string]any{
@@ -394,8 +394,8 @@ func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
 
 	if got := both.api(http.MethodGet, path("/timesheets/", entry.ID), nil).Status; got ==
 		http.StatusOK {
-		t.Error("the combined role reads somebody else's entry; it is an employee's " +
-			"rights plus the administration, and an employee reads only their own")
+		t.Error("the combined role reads somebody else's entry; it is a user's " +
+			"rights plus the administration, and a user reads only their own")
 	}
 }
 

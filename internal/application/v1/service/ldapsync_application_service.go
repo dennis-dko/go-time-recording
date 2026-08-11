@@ -103,7 +103,7 @@ func NewLDAPSyncService(
 	defaultRole string,
 ) *LDAPSyncService {
 	if defaultRole == "" {
-		defaultRole = model.RoleEmployee
+		defaultRole = model.RoleUser
 	}
 
 	return &LDAPSyncService{

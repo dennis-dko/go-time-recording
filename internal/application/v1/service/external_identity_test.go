@@ -233,7 +233,7 @@ func newSessionFixture(t *testing.T, directoryUser *service.ExternalUser) (*fixt
 	f := newFixture(t)
 	sessions := service.NewSessionService(f.userRepo, f.roleRepo, newStubSessions(),
 		f.auth, time.Hour).
-		WithExternalAuth(&fakeAuthenticator{user: directoryUser}, model.RoleEmployee)
+		WithExternalAuth(&fakeAuthenticator{user: directoryUser}, model.RoleUser)
 
 	return f, sessions
 }

@@ -89,7 +89,7 @@ func ldapSettings(host string, port int, baseDN string) map[string]any {
 		"nameAttribute":  "cn",
 		"emailAttribute": "mail",
 		"idAttribute":    "entryUUID",
-		"defaultRole":    "employee",
+		"defaultRole":    "user",
 	}
 }
 
@@ -170,7 +170,7 @@ func TestADirectoryAccountCanSignInAndIsCreatedLocally(t *testing.T) {
 		t.Errorf("the address came back as %q", me.User.Email)
 	}
 
-	if me.User.Role != "employee" {
+	if me.User.Role != "user" {
 		t.Errorf("the account got the role %q, want the configured default", me.User.Role)
 	}
 

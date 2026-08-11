@@ -33,18 +33,18 @@ func TestMaintenanceModeTurnsOrdinaryWorkAway(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Worker", "email": "worker@example.com",
-		"role": "employee", "password": "worker-password-1",
+		"role": "user", "password": "worker-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
-	employee := a.newClient()
-	employee.signIn("worker@example.com", "worker-password-1")
+	user := a.newClient()
+	user.signIn("worker@example.com", "worker-password-1")
 
 	// Working before.
-	employee.must(employee.api(http.MethodGet, "/timesheets", nil), http.StatusOK)
+	user.must(user.api(http.MethodGet, "/timesheets", nil), http.StatusOK)
 
 	setMaintenance(t, admin, true, "Back at 14:00")
 
-	response := employee.api(http.MethodGet, "/timesheets", nil)
+	response := user.api(http.MethodGet, "/timesheets", nil)
 	if response.Status != http.StatusServiceUnavailable {
 		t.Fatalf("got %d, want 503: %s", response.Status, response.Body)
 	}
@@ -55,7 +55,7 @@ func TestMaintenanceModeTurnsOrdinaryWorkAway(t *testing.T) {
 	}
 
 	// Booking time is the thing this is meant to prevent.
-	if got := employee.api(http.MethodPost, "/timesheets", map[string]any{
+	if got := user.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-01", "durationHours": 2,
 	}).Status; got != http.StatusServiceUnavailable {
 		t.Errorf("booking during maintenance answered %d, want 503", got)
@@ -65,7 +65,7 @@ func TestMaintenanceModeTurnsOrdinaryWorkAway(t *testing.T) {
 
 	// The cache is short-lived, so this may need a moment.
 	if !eventually(func() bool {
-		return employee.api(http.MethodGet, "/timesheets", nil).Status == http.StatusOK
+		return user.api(http.MethodGet, "/timesheets", nil).Status == http.StatusOK
 	}) {
 		t.Error("work is still refused after maintenance mode was turned off")
 	}
@@ -181,15 +181,15 @@ func TestAnEmptyMessageFallsBackToSomethingReadable(t *testing.T) {
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Reader", "email": "reader@example.com",
-		"role": "employee", "password": "reader-password-1",
+		"role": "user", "password": "reader-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
-	employee := a.newClient()
-	employee.signIn("reader@example.com", "reader-password-1")
+	user := a.newClient()
+	user.signIn("reader@example.com", "reader-password-1")
 
 	setMaintenance(t, admin, true, "")
 
-	response := employee.api(http.MethodGet, "/timesheets", nil)
+	response := user.api(http.MethodGet, "/timesheets", nil)
 	if response.Status != http.StatusServiceUnavailable {
 		t.Fatalf("got %d, want 503", response.Status)
 	}

@@ -12,7 +12,7 @@ import (
 // project" at all - and it totals only the caller's own hours, because nobody sees
 // what anybody else has.
 //
-// So the thing worth proving is that an ordinary employee can read their own
+// So the thing worth proving is that an ordinary user can read their own
 // figures, and that the uncategorised hours are an answer rather than a gap.
 
 // StatisticsOnTheWire mirrors the response.
@@ -43,15 +43,15 @@ func ownStatistics(t *testing.T, c *client, query string) StatisticsOnTheWire {
 	return stats
 }
 
-// An employee reads their own time and nobody else's, which is exactly the account
+// A user reads their own time and nobody else's, which is exactly the account
 // that could not have had a chart of its own week before.
-func TestAnEmployeeCanReadTheirOwnStatistics(t *testing.T) {
+func TestAUserCanReadTheirOwnStatistics(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
 	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
 		"name": "Hanne", "email": "hanne@example.com",
-		"role": "employee", "password": "hanne-password-1",
+		"role": "user", "password": "hanne-password-1",
 	}), http.StatusCreated, http.StatusOK)
 
 	hanne := a.newClient()

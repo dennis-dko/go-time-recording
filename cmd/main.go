@@ -400,12 +400,12 @@ func main() {
 	registerBusinessMetrics(app)
 
 	sessions := appservice.NewSessionService(userRepo, roleRepo, sessionRepo, auth, cfg.SessionLifetime).
-		WithExternalAuth(ldapClient, model.RoleEmployee).
+		WithExternalAuth(ldapClient, model.RoleUser).
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
 
 	ldapSync := appservice.NewLDAPSyncService(ldapClient, userRepo, roleRepo, timesheetRepo,
-		userRepo, cfg.LDAPSyncMaxDeleteRatio, model.RoleEmployee).
+		userRepo, cfg.LDAPSyncMaxDeleteRatio, model.RoleUser).
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
 

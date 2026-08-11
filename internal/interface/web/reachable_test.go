@@ -253,13 +253,19 @@ func TestEveryPermissionTheInterfaceNamesExists(t *testing.T) {
 	}
 }
 
-// Every role the application ships says what it is for, in the reader's language.
+// Every role the application ships has a name and an explanation, in both languages.
 //
 // A role is chosen from a dropdown by somebody deciding what a colleague may do, and
-// "employee-admin" against "employee" is a difference you can only infer from the
-// name - the difference being whether that person can administer the installation.
-// The description carries it, and for the roles that ship it is translated rather
-// than left as the English sentence the seed wrote into the database.
+// what the database calls it is an identifier: lowercase, hyphenated, English. Two of
+// them differ by a suffix - "user-admin" against "user" - and the difference is whether
+// that person can administer the installation. So the screen shows a title and a
+// description, and for the roles that ship both are translated.
+//
+// Four things have to line up for each of them. The German title and the German
+// description, or a German reader picks between two lowercase English words. The English
+// title, because a t() fallback is what an English reader gets and the fallback would
+// otherwise be the identifier itself. And the English description, which is what the
+// seed writes into the database and what a custom role has instead of a translation.
 //
 // Read from the model rather than restated here, so a fourth role cannot arrive with
 // nothing to explain it.
@@ -269,6 +275,7 @@ func TestEverySeededRoleSaysWhatItIsFor(t *testing.T) {
 		t.Fatal("no German dictionary")
 	}
 
+	english := shippedRoleTitles(t)
 	shipped := map[string]bool{}
 
 	for _, role := range model.DefaultRoles() {
@@ -285,20 +292,75 @@ func TestEverySeededRoleSaysWhatItIsFor(t *testing.T) {
 			t.Errorf("the seeded role %q has no German description, so a German reader "+
 				"chooses it from the dropdown by guessing", role.Name)
 		}
+
+		if _, translated := dict["role.name."+role.Name]; !translated {
+			t.Errorf("the seeded role %q has no German name, so a German reader is shown "+
+				"the identifier instead", role.Name)
+		}
+
+		if _, titled := english[role.Name]; !titled {
+			t.Errorf("the seeded role %q has no English title, so an English reader is "+
+				"shown the identifier instead", role.Name)
+		}
 	}
 
-	// And nothing left over: a role that was removed leaves its sentence behind, and a
-	// sentence nobody shows is a sentence nobody notices is wrong.
+	// And nothing left over, in either direction: a role that was removed leaves its
+	// words behind, and words nobody shows are words nobody notices are wrong.
 	for key := range dict {
-		name, isRole := strings.CutPrefix(key, "role.desc.")
-		if !isRole {
-			continue
-		}
+		for _, prefix := range []string{"role.desc.", "role.name."} {
+			name, isRole := strings.CutPrefix(key, prefix)
+			if !isRole {
+				continue
+			}
 
-		if !shipped[name] {
-			t.Errorf("%q explains a role this application does not ship", key)
+			if !shipped[name] {
+				t.Errorf("%q names or explains a role this application does not ship", key)
+			}
 		}
 	}
+
+	for name := range english {
+		if !shipped[name] {
+			t.Errorf("SHIPPED_ROLE_TITLES has an English title for %q, which this "+
+				"application does not ship", name)
+		}
+	}
+}
+
+// shippedRoleTitles reads the English titles out of app.js.
+//
+// They live there rather than in the model because they are what a t() fallback shows,
+// and a fallback is the interface's own business: the server sends an identifier and an
+// English sentence, and neither of those is a title.
+func shippedRoleTitles(t *testing.T) map[string]string {
+	t.Helper()
+
+	js := asset(t, "/app.js")
+
+	start := strings.Index(js, "const SHIPPED_ROLE_TITLES = {")
+	if start < 0 {
+		t.Fatal("app.js has no SHIPPED_ROLE_TITLES, so this guard is no longer reading " +
+			"what an English reader is shown")
+	}
+
+	end := strings.Index(js[start:], "};")
+	if end < 0 {
+		t.Fatal("SHIPPED_ROLE_TITLES is not closed")
+	}
+
+	found := map[string]string{}
+
+	for _, match := range regexp.MustCompile(`'?([a-z-]+)'?:\s*'([^']+)'`).
+		FindAllStringSubmatch(js[start:start+end], -1) {
+		found[match[1]] = match[2]
+	}
+
+	if len(found) == 0 {
+		t.Fatal("SHIPPED_ROLE_TITLES parsed as empty; the shape changed and this guard " +
+			"no longer guards anything")
+	}
+
+	return found
 }
 
 // Nothing on screen asks which person.

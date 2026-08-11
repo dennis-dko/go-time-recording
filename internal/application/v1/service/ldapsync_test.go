@@ -62,7 +62,7 @@ func newSyncFixture(t *testing.T, ratio float64) *syncFixture {
 		directory: directory,
 		purger:    purger,
 		sync: service.NewLDAPSyncService(directory, f.userRepo, f.roleRepo,
-			f.timesheetRepo, purger, ratio, model.RoleEmployee),
+			f.timesheetRepo, purger, ratio, model.RoleUser),
 	}
 }
 
@@ -71,7 +71,7 @@ func externalUser(t *testing.T, f *fixture, email string) uint {
 	t.Helper()
 
 	created, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
-		Name: email, Email: email, Role: model.RoleEmployee,
+		Name: email, Email: email, Role: model.RoleUser,
 	})
 	if err != nil {
 		t.Fatalf("create %s: %v", email, err)

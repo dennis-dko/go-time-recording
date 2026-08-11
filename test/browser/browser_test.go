@@ -300,7 +300,7 @@ func (p *page) readyWorker() {
 func (p *page) becomeWorker() {
 	p.t.Helper()
 
-	p.createEmployee(p.t, workerEmail, workerPassword)
+	p.createOrdinaryAccount(p.t, workerEmail, workerPassword)
 
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
 		chromedp.WaitVisible("#form-login", chromedp.ByID))
