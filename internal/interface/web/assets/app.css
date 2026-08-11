@@ -126,19 +126,40 @@ body {
 
 .topbar h1 { font-size: 18px; margin: 0; }
 
-/* Reads as the heading it sits in rather than as a control, until it is pointed
-   at - a button-looking title in the corner of every screen would compete with
-   the tabs beside it for the same attention. */
+/* The title is the way back to the greeting, so it has to look like something
+   you can press.
+ *
+ * An underline on hover was not enough: it says "this is a link" only to
+ * somebody whose pointer is already on it, which is nobody looking for the way
+ * back. It carries its own outline and a little room around it now - quiet
+ * enough that it does not compete with the tabs beside it, and present enough
+ * that it reads as a control while standing still. */
 .app-title {
   background: none;
-  border: 0;
-  padding: 0;
-  margin: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  margin: -4px 0;
   font: inherit;
   color: inherit;
   cursor: pointer;
 }
-.app-title:hover { text-decoration: underline; }
+
+.app-title::before {
+  content: "⌂";
+  margin-right: 8px;
+  opacity: 0.55;
+  font-weight: 400;
+}
+
+.app-title:hover,
+.app-title:focus-visible {
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.app-title:hover::before,
+.app-title:focus-visible::before { opacity: 1; }
 
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
 
@@ -193,6 +214,17 @@ main { max-width: 1080px; margin: 0 auto; padding: 20px; }
 }
 
 .grid .wide { grid-column: 1 / -1; }
+
+/* Fields line up across a row even when a caption does not.
+ *
+ * Grid stretches each cell to the tallest in its row, and a label is a column of
+ * caption then field - so a caption that wrapped to two lines pushed its own
+ * field a line lower than the ones beside it, and a row of inputs came out as a
+ * staircase. Pushing the field to the bottom of its cell puts every field on the
+ * same line whatever the caption above it did. */
+.grid > label > input,
+.grid > label > select,
+.grid > label > textarea { margin-top: auto; }
 
 label {
   display: flex;
@@ -266,6 +298,27 @@ button.danger:not(.link) {
  * makes a gap in the week visible. */
 .chart-track { fill: var(--bg); }
 .chart-bar { fill: var(--accent); }
+
+/* The floor of a column chart. A line rather than a track per column: upright
+   bars share one baseline, which is what makes their heights comparable. */
+.chart-axis { stroke: var(--border); stroke-width: 1; }
+
+/* Six steps of the accent colour rather than six unrelated hues. A pie of one
+   period's projects is one quantity divided up, not six different things, and
+   a rainbow says the opposite. They stay distinguishable in both themes because
+   the lightness moves, not only the opacity - a light slice on a dark ground
+   and a dark slice on a light one would otherwise be the same value twice. */
+.chart-slice { stroke: var(--surface); stroke-width: 2; }
+.chart-slice-0 { fill: var(--accent); }
+.chart-slice-1 { fill: color-mix(in srgb, var(--accent) 78%, var(--muted)); }
+.chart-slice-2 { fill: color-mix(in srgb, var(--accent) 58%, var(--muted)); }
+.chart-slice-3 { fill: color-mix(in srgb, var(--accent) 40%, var(--muted)); }
+.chart-slice-4 { fill: color-mix(in srgb, var(--accent) 26%, var(--muted)); }
+.chart-slice-5 { fill: color-mix(in srgb, var(--accent) 14%, var(--muted)); }
+
+/* The selected shape is the one that is not "secondary", which is how every
+   other pressed control in this interface reads. */
+.chart-switch { margin-bottom: 6px; }
 
 /* The elapsed time, big enough to read across a desk and monospaced so the
  * digits do not shuffle sideways every second. */
@@ -525,6 +578,12 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 }
 
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* A line's worth of air above, for the two places where the control below is a
+   different kind of thing from the one above it: a synchronisation that deletes
+   sitting under a Save that only stores a schedule, and the Save of the
+   appearance form sitting under the file picker it does not belong to. */
+.row-apart { margin-top: 18px; }
 
 button.secondary {
   background: var(--bg);
