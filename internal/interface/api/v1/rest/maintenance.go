@@ -97,11 +97,17 @@ func (c *cachedMaintenance) Invalidate() {
 //
 // # Who still works
 //
-// The built-in administrator, for the same reason they can always sign in: they
-// are the way back into an installation. Everyone else is turned away, including
-// other administrators - not because they are less trusted, but because "nobody
-// is writing to this database right now" is the whole point, and every exception
-// is a way for that to be untrue.
+// Whoever may administer this installation: the built-in account, and anybody
+// holding model.PermSettingsManage. Everyone else is turned away, because
+// "nobody is writing to this database right now" is the whole point, and every
+// exception is a way for that to be untrue.
+//
+// The exemption used to be the built-in account and nothing else, and that made
+// maintenance mode a reason to sign in as it - the one account whose actions are
+// hardest to attribute to a person, used for exactly the work where you most want
+// to know who did it. The people fixing an installation are the people who may
+// configure it, so it is the same right the Settings screen is gated on rather
+// than a second answer to "who may administer".
 //
 // # The status
 //
@@ -124,7 +130,7 @@ func MaintenanceMiddleware(state MaintenanceState) func(http.Handler) http.Handl
 				return
 			}
 
-			if maintenanceExempt(r) || isSystemAdminRequest(r) {
+			if maintenanceExempt(r) || isInstallationAdminRequest(r) {
 				next.ServeHTTP(w, r)
 
 				return
@@ -166,11 +172,23 @@ func maintenanceExempt(r *http.Request) bool {
 	return strings.HasPrefix(path, base+"/settings/") || strings.HasPrefix(path, base+"/admin/")
 }
 
-// isSystemAdminRequest reports whether the caller is the built-in administrator.
-func isSystemAdminRequest(r *http.Request) bool {
+// isInstallationAdminRequest reports whether the caller may configure this
+// installation, which is what Authorizer.RequireInstallationAdmin asks: the
+// built-in account, or somebody whose role holds model.PermSettingsManage.
+//
+// The rule is spelled a second time rather than delegated, because this
+// middleware runs in front of the router and has an *http.Request where the
+// authorizer needs a gofr.Context. What it does share is where the answer comes
+// from: the principal SessionMiddleware resolved from the cookie and left on the
+// request context, which is the same principal the authorizer would read. A
+// request that arrives without a session has none, and holds nothing.
+func isInstallationAdminRequest(r *http.Request) bool {
 	principal, ok := principalFromContext(r.Context())
+	if !ok || principal == nil || principal.User == nil {
+		return false
+	}
 
-	return ok && principal.User != nil && principal.User.IsSystem
+	return principal.User.IsSystem || principal.Can(model.PermSettingsManage)
 }
 
 // maintenanceRetryAfter is what a caller is told to wait. Deliberately short:

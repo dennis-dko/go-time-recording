@@ -150,26 +150,65 @@ func TestTheNoticeIsReadableWithoutSigningIn(t *testing.T) {
 	}
 }
 
-// An ordinary administrator is turned away like everyone else. Not because they
-// are less trusted, but because "nothing is writing to this database" is the
-// point, and every exception is a way for that to be untrue.
+// Who gets past the notice: everybody who may administer the installation, and
+// nobody else.
 //
-// The exemption is the built-in administrator account itself, not the rights it
-// holds, so the account that proves the rule has to be somebody who could do the
-// work if maintenance mode let them. That is exactly the person who works here and
-// administers as well: without their own time rights the refusal would be a 403
-// about permissions and would say nothing about maintenance mode.
-func TestAnOrdinaryAdministratorIsAlsoTurnedAway(t *testing.T) {
+// The exemption used to be the built-in account and nothing else, which made
+// maintenance mode a reason to sign in as it - the one account whose actions are
+// hardest to attribute to a person, used for exactly the work where you most want
+// to know who did it. It is now the same right the Settings screen is gated on,
+// settings:manage, so "who may administer" has one answer.
+//
+// All three callers are checked in one instance, because what makes the answer
+// worth anything is the contrast: the same installation, the same window, and one
+// of them turned away.
+func TestWhoeverMayAdministerGetsPastMaintenanceMode(t *testing.T) {
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
+	// Somebody who works here and administers as well, and somebody who only
+	// works here.
 	other := a.signInAsWorkingAdmin(admin, "Second admin", "admin2@example.com")
-	other.must(other.api(http.MethodGet, "/timesheets", nil), http.StatusOK)
+	worker := a.signInAsUser(admin, "Wera", "wera@example.com")
+
+	worker.must(worker.api(http.MethodGet, "/timesheets", nil), http.StatusOK)
 
 	setMaintenance(t, admin, true, "maintenance")
 
-	if got := other.api(http.MethodGet, "/timesheets", nil).Status; got != http.StatusServiceUnavailable {
-		t.Errorf("a second administrator got %d for ordinary work, want 503", got)
+	// /users rather than an exempt path: the administration screen keeps
+	// answering for everybody, so a request that goes through it would prove
+	// nothing about who is calling.
+	if got := admin.api(http.MethodGet, "/users", nil).Status; got != http.StatusOK {
+		t.Errorf("the built-in administrator got %d during maintenance, want 200", got)
+	}
+
+	if got := other.api(http.MethodGet, "/users", nil).Status; got != http.StatusOK {
+		t.Errorf("an account holding the administration got %d during maintenance, want 200", got)
+	}
+
+	// And their own ordinary work, which is the half of that account maintenance
+	// mode has no reason to stop once the person is let through at all.
+	if got := other.api(http.MethodGet, "/timesheets", nil).Status; got != http.StatusOK {
+		t.Errorf("an administrator's own timesheet answered %d during maintenance, want 200", got)
+	}
+
+	if got := worker.api(http.MethodGet, "/timesheets", nil).Status; got != http.StatusServiceUnavailable {
+		t.Errorf("an ordinary account got %d during maintenance, want 503", got)
+	}
+}
+
+// Nobody, which is not the same as everybody: the exemption is about the account
+// behind the request, so a request that carries no account at all is refused.
+func TestMaintenanceModeStillRefusesARequestWithoutASession(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	setMaintenance(t, admin, true, "maintenance")
+
+	anonymous := a.newClient()
+
+	if got := anonymous.api(http.MethodGet, "/timesheets", nil).Status; got != http.StatusServiceUnavailable {
+		t.Errorf("a request with no session got %d during maintenance, want 503", got)
 	}
 }
 

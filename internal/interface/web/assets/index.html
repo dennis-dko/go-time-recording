@@ -5,7 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Time Recording</title>
   <link rel="stylesheet" href="/app.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>&#9201;</text></svg>">
+  <!-- Two, because they answer different questions. The SVG is what a modern
+       browser shows in the tab and scales to any size; the .ico is what a
+       bookmark, a restored tab or a pinned shortcut asks for by name, and what
+       older browsers understand. Both are drawn as paths rather than as the ⏱
+       character this used to be - a font glyph is a different picture on every
+       platform and a hollow box where the font is missing. -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" href="/favicon.ico">
   <!-- Blocking on purpose: it has to pick the theme before the first paint,
        or the page flashes in the wrong colours. -->
   <script src="/theme.js"></script>
@@ -134,9 +141,15 @@
       <img id="login-logo" class="brand-logo" alt="" hidden>
       <h2 data-i18n="login.title">Sign in</h2>
       <p class="muted" id="login-hint" data-i18n="login.hint">Please sign in with your email address and password.</p>
-      <label data-i18n="login.email">Email<input type="email" name="email" autocomplete="username" required>
+      <!-- autocomplete off on both, which is unusual and deliberate. The
+           browser offered the last account that signed in on this machine, so
+           a shared or handed-over device showed somebody else's address to
+           whoever opened the page next - a name is not a secret, but it is not
+           the sign-in screen's to volunteer either. A password manager still
+           fills this; what stops is the browser's own history. -->
+      <label data-i18n="login.email">Email<input type="email" name="email" autocomplete="off" required>
       </label>
-      <label data-i18n="login.password">Password<input type="password" name="password" autocomplete="current-password" required>
+      <label data-i18n="login.password">Password<input type="password" name="password" autocomplete="off" required>
       </label>
       <label id="login-totp-field" hidden data-i18n="login.totp">Code from your authenticator app<input type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
       </label>
@@ -493,6 +506,21 @@
 
       <div class="card" id="report-result" hidden>
         <h2><span data-i18n="report.result">Result</span> <span id="report-total" class="pill"></span></h2>
+
+        <!-- The same figures as the table below, as a picture. Which shape reads
+             best depends on the question: a share of a whole wants a pie, a
+             comparison of a few things wants columns, and a long list of names
+             wants bars, because a name fits beside a bar and not under a
+             column. -->
+        <div class="row chart-switch" id="report-chart-switch" role="group"
+             data-i18n-aria="report.chartKind" aria-label="Chart type">
+          <button type="button" class="secondary" data-chart="bars" data-i18n="report.bars">Bars</button>
+          <button type="button" class="secondary" data-chart="columns" data-i18n="report.columns">Columns</button>
+          <button type="button" class="secondary" data-chart="pie" data-i18n="report.pie">Pie</button>
+        </div>
+        <p class="muted" id="report-chart-caption"></p>
+        <div id="report-chart" class="chart"></div>
+
         <div class="table-wrap">
           <table id="table-report">
             <thead>
@@ -509,7 +537,11 @@
 
     <!-- My account -->
     <section id="view-settings" class="view" hidden>
-      <form id="form-working-times" class="card form">
+      <!-- Not for the account that records no time. The built-in administrator
+           has no working day, so a daily target and a daily ceiling are two
+           figures nothing would ever measure against - and settings:write:own
+           is exactly the right this screen writes. -->
+      <form id="form-working-times" class="card form" data-perm="settings:write:own">
         <h2 data-i18n="settings.workingTimes">My working hours</h2>
         <p class="muted" data-i18n="settings.workingTimesHint">The daily target is the basis for overtime. The daily maximum limits how much may be booked on a single day.</p>
         <div class="grid">
@@ -679,7 +711,10 @@
           <img id="logo-preview" class="logo-preview" alt="" hidden>
           <button type="button" class="secondary" id="logo-clear" data-i18n="admin.logoClear">Remove logo</button>
         </div>
-        <button type="submit" data-i18n="action.save">Save</button>
+        <!-- Away from the file picker above it: they sat on adjacent lines and
+             read as one pair, which invites pressing Save to mean "take this
+             file" - and choosing a file is already enough on its own. -->
+        <button type="submit" class="row-apart" data-i18n="action.save">Save</button>
       </form>
 
       <form id="form-operational" class="card form">
@@ -853,7 +888,12 @@
           <button type="submit" data-i18n="action.save">Save</button>
         </form>
 
-        <div class="row">
+        <!-- Set apart from the Save above it on purpose. Save stores a schedule
+             and changes nothing today; Run deletes accounts and the hours on
+             them. Two buttons a few pixels apart, one harmless and one
+             irreversible, is a layout that will eventually pick the wrong one
+             for somebody. -->
+        <div class="row row-apart">
           <button type="button" class="secondary" id="sync-preview" data-i18n="sync.preview">Preview</button>
           <button type="button" id="sync-run" data-i18n="sync.run">Run synchronisation</button>
         </div>
@@ -880,6 +920,10 @@
 
         <div class="log-controls">
           <div class="log-levels" id="log-levels" role="group" aria-label="Log levels"></div>
+          <!-- Filled in only when a ticked level is below what the process is
+               writing, which is the one case where this control looks broken
+               rather than empty. -->
+          <p class="muted minus" id="log-level-warning" hidden></p>
 
           <label class="log-search" data-i18n="log.search">Search
             <input type="search" id="log-search" autocomplete="off" placeholder="…">

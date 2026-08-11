@@ -383,7 +383,13 @@ func (h *SettingsHandler) TestLDAP(c *gofr.Context) (any, error) {
 		return map[string]any{"ok": false, "message": err.Error()}, nil
 	}
 
-	return map[string]any{"ok": true, "message": "connection established"}, nil
+	// No message on the way out. What a success is called is the interface's
+	// business and it has a translated sentence for it; this one was written
+	// here in English and shown in preference to it, so a German screen
+	// answered "connection established". A failure still carries its own text,
+	// because what went wrong is not a fixed set of sentences code could
+	// translate.
+	return map[string]any{"ok": true}, nil
 }
 
 // bindLDAP reads the payload, keeping the stored password when the client
@@ -559,7 +565,13 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 		return map[string]any{"ok": false, "message": err.Error()}, nil
 	}
 
-	return map[string]any{"ok": true, "message": "connection established"}, nil
+	// No message on the way out. What a success is called is the interface's
+	// business and it has a translated sentence for it; this one was written
+	// here in English and shown in preference to it, so a German screen
+	// answered "connection established". A failure still carries its own text,
+	// because what went wrong is not a fixed set of sentences code could
+	// translate.
+	return map[string]any{"ok": true}, nil
 }
 
 // requireAdmin restricts the screen to the built-in administrator: these

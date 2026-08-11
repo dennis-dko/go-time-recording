@@ -65,6 +65,15 @@ jobs:
   # arriving and a rule being reached - middleware order, CSRF, sessions,
   # migrations, embedded assets, the wiring in main.go. Run against both
   # dialects, because that gap is where the dialect actually shows.
+  #
+  # sqlite is in the matrix for more than symmetry. Five cases start two
+  # instances against one shared database file - what an administrator saves
+  # being applied by the next start - and on a server the harness gives each
+  # instance a database of its own, so those five skip themselves whenever
+  # GTR_TEST_DSN is set. The sqlite leg is the only place three of them run:
+  # the directory schedule, and the two telemetry cases. The other two are the
+  # tracing ones, which need a collector as well and so run in the directory and
+  # tracing job below - which likewise leaves GTR_TEST_DSN unset, and has to.
   integration:
     name: Integration (${{ matrix.dialect }})
     runs-on: ubuntu-latest
@@ -117,6 +126,71 @@ jobs:
           # root on MySQL, because each test creates its own database.
           GTR_TEST_DSN: ${{ matrix.dialect == 'postgres' && 'postgres://gtr:gtr-test-password@localhost:5432/go-time-recording?sslmode=disable' || matrix.dialect == 'mysql' && 'mysql://root:gtr-test-root@localhost:3306/go-time-recording' || '' }}
         run: go test -tags integration -count=1 -timeout 15m ./test/integration/
+
+  # The two suites that were never run here at all.
+  #
+  # Both guard themselves on an environment variable - GTR_TEST_LDAP and
+  # GTR_TEST_JAEGER - and nothing in this workflow set either, so both skipped in
+  # every run since they were written. A test binary that skips everything exits
+  # 0 and looks exactly like one that passed, which is why nobody noticed. What
+  # went unchecked is the directory reconciliation: the one operation in this
+  # application that deletes accounts together with the hours they recorded.
+  #
+  # Their services are built from this repository rather than pulled, so GitHub's
+  # `services:` cannot start them - it only takes prebuilt images. Compose is on
+  # the runner anyway, and the profiles already exist for `task test:ldap` and
+  # `task test:traces`, so the same ones are used here.
+  #
+  # Roughly four minutes, run in parallel with the other jobs.
+  directory-and-tracing:
+    name: Directory and tracing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Start the directory and the collector
+        working-directory: test
+        run: docker compose --profile ldap --profile traces up -d --build --wait
+
+      # No GTR_TEST_DSN, and that is load-bearing rather than an omission: five
+      # integration cases start two instances against one shared SQLite file and
+      # skip themselves whenever a server DSN is set. Three of those are the
+      # directory schedule and the two tracing cases this job exists for.
+      - name: Directory and tracing tests
+        env:
+          GTR_TEST_LDAP: localhost:5389
+          GTR_TEST_JAEGER: localhost:54317
+          GTR_TEST_JAEGER_QUERY: http://localhost:51686
+        run: |
+          set -euo pipefail
+          go test -tags integration -count=1 -timeout 15m -v \
+            -run 'Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed|Tracing' \
+            ./test/integration/ | tee results.txt
+
+          # The whole point of this job, asserted rather than assumed. Skipping is
+          # how these went unnoticed for their entire existence, so a run where
+          # they skip again has to be a red one - and a -run pattern that matches
+          # nothing also exits 0, which would look the same.
+          if grep -q -- '--- SKIP' results.txt; then
+            echo "::error::a case skipped; this job exists because skipping is invisible"
+            grep -- '--- SKIP' results.txt
+            exit 1
+          fi
+
+          if ! grep -q -- '--- PASS: TestDirectory\|--- PASS: TestTracing\|--- PASS: Test.*Synchronisation' results.txt; then
+            echo "::error::no directory or tracing case ran; check the -run pattern"
+            exit 1
+          fi
+
+      - name: Stop them
+        if: always()
+        working-directory: test
+        run: docker compose --profile ldap --profile traces down -v
 
   # Drives the real interface in a real browser. The integration tests prove the
   # API answers correctly; these prove the application is usable - that the
@@ -203,7 +277,7 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
-    needs: [lint, test, integration, browser, build]
+    needs: [lint, test, integration, directory-and-tracing, browser, build]
     permissions:
       contents: read
       packages: write

@@ -531,10 +531,10 @@ func main() {
 	// found, so a browser session always wins over a stray header.
 	app.UseMiddleware(rest.APITokenMiddleware(apiTokens))
 
-	// After both authentication paths, because the exemption for the built-in
-	// administrator needs to know who is calling - placed earlier it would turn
-	// away the one account that can end maintenance mode. Before the UI, so the
-	// assets are still served and the page can render the notice.
+	// After both authentication paths, because the exemption for whoever
+	// administers the installation needs to know who is calling - placed earlier
+	// it would turn away the only people who can end maintenance mode. Before the
+	// UI, so the assets are still served and the page can render the notice.
 	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState))
 
 	if cfg.UIEnabled {

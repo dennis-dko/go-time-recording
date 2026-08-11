@@ -164,11 +164,23 @@ func TestTheBuiltInAdministratorIsNotOfferedPasskeys(t *testing.T) {
 
 	p.readyAdmin()
 
+	// Waits for the password form rather than the working times, which this
+	// account no longer has: a daily target and a ceiling are figures nothing
+	// would measure against for somebody who records no time, so that card is
+	// gated on settings:write:own and the built-in administrator does not hold
+	// it. Waiting for it here was waiting for something that never arrives.
 	p.run("open My account", chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
-		chromedp.WaitVisible("#form-working-times", chromedp.ByID))
+		chromedp.WaitVisible("#form-password", chromedp.ByID))
 
 	if p.visible("#passkey-card") {
 		t.Error("the built-in administrator must not be offered a passkey")
+	}
+
+	// And the reason this test now waits on something else, asserted rather than
+	// left as a comment - otherwise the next person to see the working times
+	// missing from this screen has no way to tell intent from regression.
+	if p.visible("#form-working-times") {
+		t.Error("the built-in administrator is offered working times, which it has no use for")
 	}
 }
 

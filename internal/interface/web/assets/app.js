@@ -412,9 +412,10 @@ function statusBadge(status) {
  * day, not a moment.
  */
 /** The built-in mark: a stopwatch, drawn rather than fetched. */
-const DEFAULT_FAVICON =
-  "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
-  + "<text y='14' font-size='14'>&#9201;</text></svg>";
+// The shipped file rather than an inline copy of it. There used to be a data URI
+// here holding a ⏱ character, which had to be kept in step with the one in the
+// markup by hand and drew a different picture on every platform.
+const DEFAULT_FAVICON = '/favicon.svg';
 
 /**
  * Points the browser tab at the instance's logo.
@@ -1184,6 +1185,7 @@ const TRANSLATIONS = {
     'admin.skipVerify': 'Zertifikat nicht prüfen (unsicher)',
     'admin.testConnection': 'Verbindung testen',
     'admin.testing': 'Verbindung wird geprüft …',
+    'admin.testOk': 'Die Verbindung funktioniert.',
     'admin.title': 'Titel (Browser-Tab und Kopfzeile)',
     'admin.userFilter': 'Benutzer-Filter (%s = Anmeldename)',
     'app.language': 'Sprache',
@@ -1346,6 +1348,7 @@ const TRANSLATIONS = {
     'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
+    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Das Log-Level wird unter „Protokollierung, Metriken und Tracing“ geändert und gilt ab dem nächsten Start.',
     'log.paused': 'Angehalten.',
     'log.resume': 'Fortsetzen',
     'log.search': 'Suche',
@@ -1416,6 +1419,12 @@ const TRANSLATIONS = {
     'report.total': '{0} h gesamt',
     'report.title': 'Auswertung',
     'report.noProject': 'Ohne Projekt',
+    'report.chartKind': 'Diagrammart',
+    'report.bars': 'Balken',
+    'report.columns': 'Säulen',
+    'report.pie': 'Kuchen',
+    'report.byProject': 'Stunden je Projekt',
+    'report.byDay': 'Stunden je Tag',
     'role.create': 'Rolle anlegen',
     'role.edit': 'Rolle „{0}“ bearbeiten',
     'role.rightsFixed': 'Die Rechte einer Systemrolle lassen sich nicht ändern. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
@@ -2657,10 +2666,11 @@ function wireAdmin() {
     e.preventDefault();
     mutate(
       () => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
-      t('admin.restartNeeded', 'Saved. Applied on the next start.'),
+      null,
       // The restart card too: the schedule is the one directory setting that
-      // waits, because a scheduler is built while the application starts.
-      async () => { await loadAdmin(); });
+      // waits, because a scheduler is built while the application starts - and
+      // only when it actually changed, which is what announceSave asks.
+      async () => { await loadAdmin(); announceSave(); });
   });
 
   $('#datasource-test').addEventListener('click', () => {
@@ -2694,7 +2704,13 @@ async function runConnectionTest(result, attempt) {
   try {
     const outcome = await attempt();
 
-    result.textContent = outcome.message;
+    // A success is named here rather than by the server, which wrote it in
+    // English and had it shown in preference to this sentence. A failure keeps
+    // the server's own text: what went wrong is not a fixed set of reasons that
+    // code could translate.
+    result.textContent = outcome.ok
+      ? t('admin.testOk', 'The connection works.')
+      : outcome.message;
     result.className = outcome.ok ? 'muted plus' : 'muted minus';
   } catch (err) {
     result.textContent = err.message;
@@ -3089,6 +3105,19 @@ async function doLogout() {
   stopLogPolling();
 
   me = { user: null, permissions: [], authEnabled: true };
+
+  // The screen belongs to nobody now, so it stops speaking the language of
+  // whoever just left. activeLanguage() falls back to the browser once me.user
+  // is gone, but nothing was re-rendering with it - so signing out of a German
+  // account left an English browser looking at a German sign-in form.
+  applyLanguage(activeLanguage());
+
+  // And it stops holding their address. The fields keep their values across a
+  // sign-out otherwise, which on a shared machine hands the next person the
+  // last one's name.
+  $('#form-login').reset();
+  $('#login-totp-field').hidden = true;
+
   showLogin();
 }
 
@@ -4243,6 +4272,8 @@ async function loadRestart() {
   restartStartedAt = state.startedAt ?? '';
 
   const pending = state.pending ?? [];
+  restartWaiting = pending.length > 0;
+
   // Normally the card is only there when something is waiting for a restart.
   // Where restarting is not possible at all it stays, whether anything is pending
   // or not: that is a standing property of this installation, and finding it out
@@ -4285,6 +4316,27 @@ async function loadRestart() {
 
 /** The identity of the running process, to tell a restart from a hiccup. */
 let restartStartedAt = '';
+
+/** Whether anything is stored that the running process has not picked up. */
+let restartWaiting = false;
+
+/**
+ * Reports a save on one of the cards the framework only reads while starting.
+ *
+ * Both of them used to announce "Applied on the next start" unconditionally, so
+ * pressing Save on a form you had only looked at, or twice in a row, promised a
+ * restart that would change nothing. The server already knows which it was: the
+ * restart card is a comparison of what is running against what is stored, so an
+ * empty list after the save means nothing is waiting.
+ *
+ * Call it after loadRestart, which is what fills that in - the save paths reload
+ * the card anyway, so this costs no request of its own.
+ */
+function announceSave() {
+  toast(restartWaiting
+    ? t('admin.restartNeeded', 'Saved. Applied on the next start.')
+    : t('admin.saved', 'Settings saved'), 'ok');
+}
 
 /** How long to wait for the application to come back before giving up on it. */
 const RESTART_TIMEOUT_MS = 60000;
@@ -4575,6 +4627,162 @@ function drawBarChart(container, bars, formatValue) {
     });
     value.textContent = formatValue(bar.value);
     chart.append(value);
+  });
+
+  container.append(chart);
+}
+
+/**
+ * The same figures as a column chart: one upright bar per entry.
+ *
+ * Its own function rather than a flag on drawBarChart, because turning that one
+ * on its side is not a rotation - the label moves from beside the bar to under
+ * it, which is the whole reason to choose one over the other. Columns compare a
+ * handful of things well and run out of room for names at about a dozen.
+ */
+function drawColumnChart(container, bars, formatValue) {
+  container.replaceChildren();
+
+  if (bars.length === 0) return;
+
+  const width = 640;
+  const height = 260;
+  const labelBand = 46;
+  const valueBand = 16;
+  const plot = height - labelBand - valueBand;
+  const slot = width / bars.length;
+  const barWidth = Math.min(56, slot * 0.6);
+
+  const chart = svg('svg', {
+    viewBox: `0 0 ${width} ${height}`,
+    width: '100%',
+    height,
+    role: 'img',
+  });
+
+  const largest = Math.max(...bars.map((bar) => bar.value), 0);
+
+  // The floor, so a period with nothing on it is still a chart rather than an
+  // empty box.
+  chart.append(svg('line', {
+    x1: 0, y1: valueBand + plot, x2: width, y2: valueBand + plot, class: 'chart-axis',
+  }));
+
+  bars.forEach((bar, index) => {
+    const centre = index * slot + slot / 2;
+    const barHeight = largest > 0 && bar.value > 0
+      ? Math.max(2, (bar.value / largest) * plot)
+      : 0;
+    const top = valueBand + plot - barHeight;
+
+    if (barHeight > 0) {
+      const rect = svg('rect', {
+        x: centre - barWidth / 2,
+        y: top,
+        width: barWidth,
+        height: barHeight,
+        rx: 4,
+        class: 'chart-bar',
+      });
+
+      const title = svg('title');
+      title.textContent = bar.title ?? `${bar.label}: ${formatValue(bar.value)}`;
+      rect.append(title);
+      chart.append(rect);
+
+      // Above the column rather than inside it: inside is unreadable on a short
+      // one, which is exactly the column somebody is squinting at.
+      const value = svg('text', {
+        x: centre, y: top - 4, class: 'chart-value', 'text-anchor': 'middle',
+      });
+      value.textContent = formatValue(bar.value);
+      chart.append(value);
+    }
+
+    const label = svg('text', {
+      x: centre,
+      y: valueBand + plot + 16,
+      class: 'chart-label',
+      'text-anchor': 'middle',
+    });
+    label.textContent = bar.label;
+    chart.append(label);
+  });
+
+  container.append(chart);
+}
+
+/**
+ * The same figures as a pie: one slice per entry, sized by its share.
+ *
+ * Only for things that add up to something - hours per project add up to the
+ * hours worked, so a share is a real quantity. Entries worth nothing are left
+ * out rather than drawn as a slice of no width, which would put a label on the
+ * rim pointing at a line.
+ */
+function drawPieChart(container, slices, formatValue) {
+  container.replaceChildren();
+
+  const shown = slices.filter((slice) => slice.value > 0);
+  const total = shown.reduce((sum, slice) => sum + slice.value, 0);
+
+  if (total <= 0) return;
+
+  const size = 260;
+  const radius = size / 2 - 8;
+  const centre = size / 2;
+  const width = 640;
+
+  const chart = svg('svg', {
+    viewBox: `0 0 ${width} ${size}`,
+    width: '100%',
+    height: size,
+    role: 'img',
+  });
+
+  let angle = -Math.PI / 2;
+
+  shown.forEach((slice, index) => {
+    const share = slice.value / total;
+    const sweep = share * Math.PI * 2;
+    const end = angle + sweep;
+
+    // A full circle cannot be drawn as an arc - the start and end points would
+    // be the same and the path collapses - so the single-slice case is a circle.
+    const shape = shown.length === 1
+      ? svg('circle', { cx: centre, cy: centre, r: radius })
+      : svg('path', {
+        d: [
+          `M ${centre} ${centre}`,
+          `L ${centre + radius * Math.cos(angle)} ${centre + radius * Math.sin(angle)}`,
+          `A ${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1`,
+          `${centre + radius * Math.cos(end)} ${centre + radius * Math.sin(end)}`,
+          'Z',
+        ].join(' '),
+      });
+
+    shape.setAttribute('class', `chart-slice chart-slice-${index % 6}`);
+
+    const title = svg('title');
+    title.textContent = slice.title
+      ?? `${slice.label}: ${formatValue(slice.value)} (${Math.round(share * 100)}%)`;
+    shape.append(title);
+    chart.append(shape);
+
+    // The key, beside the pie rather than on it: a label on a thin slice either
+    // overlaps its neighbour or points at nothing.
+    const y = 14 + index * 20;
+
+    chart.append(svg('rect', {
+      x: size + 24, y: y - 10, width: 12, height: 12, rx: 3,
+      class: `chart-slice chart-slice-${index % 6}`,
+    }));
+
+    const label = svg('text', { x: size + 44, y, class: 'chart-label' });
+    label.textContent = `${slice.label} — ${formatValue(slice.value)}`;
+    chart.append(label);
+
+    angle = end;
   });
 
   container.append(chart);
@@ -5068,6 +5276,83 @@ function wireSheetCards() {
   }
 }
 
+/**
+ * What the evaluation is showing as a picture, and which shape it is drawn in.
+ *
+ * The shape is remembered for the session rather than reset on every
+ * evaluation: somebody who prefers a pie prefers it for the next period too.
+ */
+const reportChart = { kind: 'bars', bars: [], caption: '' };
+
+/**
+ * Fetches the breakdown for the period just evaluated and draws it.
+ *
+ * What it breaks down depends on what was asked. Across all projects the
+ * interesting division is between them, which is also the only one where a pie
+ * means anything - the parts add up to the whole. With one project named, or
+ * only the hours belonging to none, there is one part, so the days are the
+ * division worth seeing.
+ */
+async function loadReportChart(from, to, projectId) {
+  const container = $('#report-chart');
+  if (!container) return;
+
+  const params = new URLSearchParams({ from, to });
+  const stats = await api(`/me/statistics?${params}`);
+
+  const everyProject = !projectId;
+
+  if (everyProject) {
+    reportChart.bars = (stats.projects ?? []).map((project) => ({
+      label: project.project || t('ts.noProject', 'no project'),
+      value: project.hours,
+    }));
+    reportChart.caption = t('report.byProject', 'Hours per project');
+  } else {
+    reportChart.bars = (stats.days ?? []).map((day) => ({
+      label: fmtDate(day.date),
+      value: day.booked,
+    }));
+    reportChart.caption = t('report.byDay', 'Hours per day');
+  }
+
+  drawReportChart();
+}
+
+/** Draws the breakdown in whichever shape is selected. */
+function drawReportChart() {
+  const container = $('#report-chart');
+  if (!container) return;
+
+  for (const button of $$('#report-chart-switch button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.chart === reportChart.kind));
+    button.classList.toggle('secondary', button.dataset.chart !== reportChart.kind);
+  }
+
+  $('#report-chart-caption').textContent = reportChart.caption;
+
+  const draw = {
+    bars: drawBarChart,
+    columns: drawColumnChart,
+    pie: drawPieChart,
+  }[reportChart.kind] ?? drawBarChart;
+
+  draw(container, reportChart.bars, fmtHours);
+}
+
+function wireReportChart() {
+  const holder = $('#report-chart-switch');
+  if (!holder) return;
+
+  holder.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-chart]');
+    if (!button) return;
+
+    reportChart.kind = button.dataset.chart;
+    drawReportChart();
+  });
+}
+
 function wireStatistics() {
   const button = $('#statistics-load');
   if (!button) return;
@@ -5235,6 +5520,12 @@ function fillTelemetryForm(data) {
   if (active.tracerUrl) form.elements.tracerUrl.placeholder = active.tracerUrl;
 
   $('#telemetry-active').textContent = describeActiveTelemetry(active);
+
+  // The log viewer's filters need this to know when they are asking for lines
+  // the process never wrote. Both cards are on this screen, so the answer is
+  // already here rather than worth a request of its own.
+  logView.runningLevel = active.logLevel ?? null;
+  warnAboutLevelsTheProcessDoesNotWrite();
 }
 
 /**
@@ -5297,10 +5588,12 @@ function wireTelemetry() {
       () => api('/settings/telemetry', {
         method: 'PUT', body: JSON.stringify(telemetryPayload()),
       }),
-      t('admin.restartNeeded', 'Saved. Applied on the next start.'),
+      // Named afterwards rather than here: whether this needs a restart depends
+      // on whether it changed anything the running process has not got.
+      null,
       // The restart card too, so what was just saved appears in the list of
       // what is waiting rather than only in a toast that fades.
-      afterTelemetrySaved);
+      async () => { await afterTelemetrySaved(); announceSave(); });
   });
 
   $('#telemetry-reset').addEventListener('click', () => {
@@ -5592,6 +5885,11 @@ const logView = {
   // A default that is useful rather than complete: DEBUG carries every SQL
   // statement the process runs, which buries everything else.
   quiet: new Set(['DEBUG']),
+
+  // What the process is actually writing, read off the telemetry card. Here so
+  // the filters can say when one of them is asking for lines that were never
+  // captured - see warnAboutLevelsTheProcessDoesNotWrite.
+  runningLevel: null,
 };
 
 const LOG_DEFAULT_DELAY = 3;
@@ -5613,7 +5911,12 @@ function wireLogViewer() {
   };
 
   search.addEventListener('input', debounce(restart, 300));
-  $('#log-levels').addEventListener('change', restart);
+  $('#log-levels').addEventListener('change', () => {
+    // Before the poll, so somebody who has just ticked DEBUG on a process
+    // running at INFO is told why nothing arrives rather than watching for it.
+    warnAboutLevelsTheProcessDoesNotWrite();
+    restart();
+  });
 
   delay.addEventListener('change', () => schedulePoll({ immediate: true }));
 
@@ -5804,6 +6107,52 @@ function buildLogLevelFilters(levels) {
     label.append(input, document.createTextNode(level));
     holder.append(label);
   }
+
+  warnAboutLevelsTheProcessDoesNotWrite();
+}
+
+/** The levels, quietest first, so two of them can be compared. */
+const LOG_LEVELS_BY_DETAIL = ['DEBUG', 'INFO', 'NOTICE', 'WARN', 'ERROR', 'FATAL'];
+
+/**
+ * Says so when a ticked level is one the running process never writes.
+ *
+ * These boxes filter what was captured; they do not ask for more. The sink reads
+ * the process's own output, so a level the logger is not writing was never
+ * captured and can never appear - which makes ticking DEBUG on a process running
+ * at INFO look like a filter that is broken rather than one that is working
+ * exactly as intended and has nothing to show.
+ *
+ * The level itself is on the logging card, and it applies at the next start,
+ * because the framework changes a logger's level by writing a field every
+ * request goroutine reads without synchronisation. So this is a sentence rather
+ * than a button: what somebody has to do next is two screens and a restart away,
+ * and being told that beats waiting for lines that are not coming.
+ */
+function warnAboutLevelsTheProcessDoesNotWrite() {
+  const warning = $('#log-level-warning');
+  if (!warning) return;
+
+  const running = LOG_LEVELS_BY_DETAIL.indexOf(logView.runningLevel ?? '');
+  if (running < 0) {
+    warning.hidden = true;
+
+    return;
+  }
+
+  const quieter = selectedLogLevels()
+    .filter((level) => LOG_LEVELS_BY_DETAIL.indexOf(level) >= 0
+      && LOG_LEVELS_BY_DETAIL.indexOf(level) < running);
+
+  warning.textContent = quieter.length
+    ? t('log.levelTooQuiet',
+      'This installation is writing {0} and above, so {1} will stay empty. '
+      + 'Change the log level under Logging, metrics and tracing; it applies at the next start.')
+      .replace('{0}', logView.runningLevel)
+      .replace('{1}', quieter.join(', '))
+    : '';
+
+  warning.hidden = !warning.textContent;
 }
 
 function appendLogLines(records) {
@@ -6378,6 +6727,12 @@ function wireForms() {
       $('#report-total').textContent = t('report.total', '{0} h in total')
         .replace('{0}', report.totalHours.toFixed(2));
       $('#report-result').hidden = false;
+
+      // The same period as a picture. The figures come from the statistics
+      // endpoint rather than the report, because a total is one number and a
+      // chart of one number says nothing - that endpoint already breaks the
+      // same range down, scoped to this person by the same right.
+      await loadReportChart(report.from, report.to, projectId);
     }, null, null);
   });
 
@@ -6512,6 +6867,7 @@ async function init() {
     wireRestart();
     wireTimer();
     wireStatistics();
+    wireReportChart();
     wireWorkbook();
     wireSheetCards();
     // After the forms are wired, so a submit handler registered here runs
