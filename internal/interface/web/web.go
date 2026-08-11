@@ -26,9 +26,17 @@ var apiPrefixes = []string{
 	"/health",
 	"/alive",
 	"/metrics",
-	"/favicon.ico",
 	"/swagger",
 }
+
+// /favicon.ico used to be in that list, which meant the one path browsers ask
+// for by name fell through to the API and answered 404.
+//
+// The markup carries an icon, so a browser that reads the page was fine - but a
+// bookmark, a restored tab, a feed reader and a pinned shortcut all ask for the
+// file directly and got nothing. There is a real one in the assets now, so
+// removing the entry is all it takes: it is served like any other file, and no
+// API route was ever registered under that name for it to shadow.
 
 // Handler returns middleware that serves the embedded UI.
 //

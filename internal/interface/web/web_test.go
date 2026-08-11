@@ -60,12 +60,15 @@ func TestServesEmbeddedAssets(t *testing.T) {
 // The API must never be shadowed by the file server, even for paths that do
 // not exist as files.
 func TestAPIPathsPassThrough(t *testing.T) {
+	// /favicon.ico is deliberately not in this list any more. It was, and the
+	// consequence was that the one path browsers ask for by name reached an API
+	// that has no route for it and answered 404 - see
+	// TestTheFaviconIsServedRatherThanPassedToTheAPI.
 	paths := []string{
 		"/api/v1/users",
 		"/.well-known/alive",
 		"/.well-known/health",
 		"/metrics",
-		"/favicon.ico",
 	}
 
 	for _, path := range paths {
@@ -74,6 +77,39 @@ func TestAPIPathsPassThrough(t *testing.T) {
 
 			if rec.Body.String() != nextMarker {
 				t.Errorf("%s should reach the API, got %q", path, rec.Body.String())
+			}
+		})
+	}
+}
+
+// The tab icon is a file, and it is served.
+//
+// The markup carries one, so a browser that reads the page was always fine. What
+// was not fine is everything that asks for the file by name and never sees the
+// markup: a bookmark, a restored tab, a pinned shortcut, a feed reader. Those
+// asked for /favicon.ico, which was routed to the API, which has no such route.
+func TestTheFaviconIsServedRatherThanPassedToTheAPI(t *testing.T) {
+	for _, tc := range []struct{ path, wantType string }{
+		{"/favicon.ico", "image/"},
+		{"/favicon.svg", "image/svg+xml"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := get(t, http.MethodGet, tc.path)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+
+			if rec.Body.String() == nextMarker {
+				t.Fatal("the request reached the API instead of the file")
+			}
+
+			if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, tc.wantType) {
+				t.Errorf("served as %q, want %s...", got, tc.wantType)
+			}
+
+			if rec.Body.Len() == 0 {
+				t.Error("the icon is empty")
 			}
 		})
 	}
