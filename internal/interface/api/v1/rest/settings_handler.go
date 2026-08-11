@@ -506,17 +506,20 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 	}
 
 	if err := ds.Validate(); err != nil {
-		return nil, toHTTPError(apperror.Invalidf("%v", err))
+		return nil, toHTTPError(apperror.Invalidf("%v", err).WithCode("datasourceInvalid"))
 	}
 
 	if err := appconfig.SaveDatasource(appconfig.DatasourceFile, ds); err != nil {
 		return nil, toHTTPError(apperror.Internal(err))
 	}
 
+	// No message. There used to be one, written in English here, and the interface
+	// showed it in preference to its own translated sentence - so the one screen
+	// that is otherwise entirely German answered a successful save in English.
+	// What to call this is the interface's business; what happened is this one's.
 	return map[string]any{
 		"status":          "saved",
 		"restartRequired": true,
-		"message":         "The connection is applied when the application is restarted.",
 	}, nil
 }
 
@@ -562,7 +565,7 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 // requireAdmin restricts the screen to the built-in administrator: these
 // settings decide where the data lives and who may sign in at all.
 func (h *SettingsHandler) requireAdmin(c *gofr.Context) error {
-	_, err := h.authz.RequireSystemAdmin(c)
+	_, err := h.authz.RequireInstallationAdmin(c)
 
 	return err
 }

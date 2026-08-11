@@ -126,7 +126,12 @@ func TestTheRightsOverEverybodysTimeAreWithdrawn(t *testing.T) {
 	// And a role that held other things keeps them. A migration that tidied a right
 	// away and took an installation's own arrangement with it would be worse than the
 	// right staying.
-	want := "timesheets:read:own,timesheets:write:own,users:read,users:write"
+	//
+	// settings:manage is in the list because this role holds users:write, and the
+	// migration that opened the Settings screen to granted rights follows exactly
+	// that: whoever an installation already trusted with who may sign in is who it
+	// meant by "administrator". See letAdministratorsReachTheSettings.
+	want := "settings:manage,timesheets:read:own,timesheets:write:own,users:read,users:write"
 	if got := strings.Join(permissionsOf(t, db, "our-own-admin"), ","); got != want {
 		t.Errorf("the administrator role an installation built now grants %q, want %q",
 			got, want)

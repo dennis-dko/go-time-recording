@@ -11,6 +11,18 @@ const (
 	PermRoleRead  = "roles:read"
 	PermRoleWrite = "roles:write"
 
+	// PermSettingsManage opens the installation itself: the database connection,
+	// the directory bind, appearance, maintenance mode, telemetry, the process log
+	// and the restart.
+	//
+	// This was deliberately not a permission for a long time, and the argument
+	// against it is still true - see Authorizer.RequireInstallationAdmin, which
+	// records what granting it costs. It exists because somebody who administers
+	// an installation has to be able to administer it without signing in as the
+	// built-in account, and holding the accounts but not the configuration is half
+	// a job.
+	PermSettingsManage = "settings:manage"
+
 	PermProjectRead    = "projects:read"
 	PermProjectWrite   = "projects:write"
 	PermProjectDelete  = "projects:delete"
@@ -78,6 +90,7 @@ func AllPermissions() []string {
 	return []string{
 		PermUserRead, PermUserWrite, PermUserDelete,
 		PermRoleRead, PermRoleWrite,
+		PermSettingsManage,
 		PermProjectRead, PermProjectWrite, PermProjectDelete, PermProjectArchive,
 		PermTimesheetReadOwn, PermTimesheetWriteOwn,
 		PermTimesheetTransfer,
@@ -104,6 +117,7 @@ func SystemAdminPermissions() []string {
 	return []string{
 		PermUserRead, PermUserWrite, PermUserDelete,
 		PermRoleRead, PermRoleWrite,
+		PermSettingsManage,
 	}
 }
 

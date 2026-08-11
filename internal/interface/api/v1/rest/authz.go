@@ -34,14 +34,36 @@ func (a *Authorizer) Enabled() bool { return !a.open }
 
 // forbiddenError renders a 403. GoFr has no error type for it, and reusing a
 // 400 or 404 would hide the reason from the client.
+//
+// It carries the same code and values every other refusal does, for the same
+// reason: "missing permission: settings:manage" is a sentence for a log, and the
+// person who read it had chosen German. It is also the one refusal the interface
+// has to act on rather than only show - a 403 where the screen still offers the
+// button means the rights changed underneath somebody.
 type forbiddenError struct {
-	msg string
+	msg        string
+	code       string
+	codeValues []any
 }
 
 func (e forbiddenError) Error() string { return e.msg }
 
+// WithCode names the reason, mirroring apperror.Error.WithCode so a refusal is
+// annotated the same way whichever layer raised it - and so the one test that
+// checks every code has a German sentence can find these too.
+func (e forbiddenError) WithCode(code string, values ...any) forbiddenError {
+	e.code, e.codeValues = code, values
+
+	return e
+}
+
 // StatusCode is what GoFr's responder reads to pick the HTTP status.
 func (forbiddenError) StatusCode() int { return http.StatusForbidden }
+
+// Response is GoFr's ResponseMarshaller, which merges this into the error body.
+func (e forbiddenError) Response() map[string]any {
+	return reason{code: e.code, values: e.codeValues}.response()
+}
 
 // Principal returns the authenticated caller.
 //
@@ -72,24 +94,44 @@ func (unauthorizedError) Error() string { return "not authenticated" }
 // StatusCode is what GoFr's responder reads to pick the HTTP status.
 func (unauthorizedError) StatusCode() int { return http.StatusUnauthorized }
 
-// RequireSystemAdmin returns the caller only if they are the built-in
-// administrator.
+// RequireInstallationAdmin returns the caller only if they may configure the
+// installation: the built-in administrator, or somebody holding
+// model.PermSettingsManage.
 //
-// Deliberately not a permission. Everything behind this - the database
-// connection, the directory bind, the process log - describes the installation
-// rather than the work recorded in it, and a role that could be edited into
-// holding it would be a way to grant yourself the installation.
-func (a *Authorizer) RequireSystemAdmin(c *gofr.Context) (*service.Principal, error) {
+// This used to be the built-in account and nothing else, on purpose, and the
+// argument for that is worth keeping because it is still true: everything behind
+// here - the database connection, the directory bind, the process log - describes
+// the installation rather than the work recorded in it, and a role that can be
+// edited into holding it is a way to grant yourself the installation.
+//
+// That is now the arrangement, and the cost is exactly what the old comment
+// predicted: roles:write is the installation as well, because whoever holds it can
+// tick settings:manage on a role and assign it. Nothing here prevents that, and
+// pretending otherwise would be worse than saying it - so it is said here, where
+// the next reader meets it.
+//
+// What made it worth paying: an account that administers the accounts but cannot
+// reach the database screen is half an administrator, and the way people worked
+// around it was to sign in as the built-in account, which is the one account whose
+// actions are hardest to attribute to a person.
+func (a *Authorizer) RequireInstallationAdmin(c *gofr.Context) (*service.Principal, error) {
 	principal, err := a.Principal(c)
 	if err != nil {
 		return nil, err
 	}
 
-	if a.open || principal.User.IsSystem {
+	if a.open || principal.User.IsSystem || principal.Can(model.PermSettingsManage) {
 		return principal, nil
 	}
 
-	return nil, forbiddenError{msg: "only the built-in administrator may do this"}
+	return nil, missingPermission(model.PermSettingsManage)
+}
+
+// missingPermission is the one refusal shape, so every 403 the interface meets
+// carries the same code and can be acted on rather than only shown.
+func missingPermission(permission string) forbiddenError {
+	return forbiddenError{msg: "missing permission: " + permission}.
+		WithCode("missingPermission", permission)
 }
 
 // Require returns the caller only if they hold the permission.
@@ -103,7 +145,7 @@ func (a *Authorizer) Require(c *gofr.Context, permission string) (*service.Princ
 		return principal, nil
 	}
 
-	return nil, forbiddenError{msg: "missing permission: " + permission}
+	return nil, missingPermission(permission)
 }
 
 // RequireAny returns the caller if they hold at least one of the permissions.
@@ -124,7 +166,7 @@ func (a *Authorizer) RequireAny(c *gofr.Context, permissions ...string) (*servic
 		}
 	}
 
-	return nil, forbiddenError{msg: "missing permission: " + permissions[0]}
+	return nil, missingPermission(permissions[0])
 }
 
 // permittedPrincipal resolves the caller and refuses anyone still on their
@@ -164,7 +206,7 @@ func (a *Authorizer) RequireSelfOr(
 		return principal, nil
 	}
 
-	return nil, forbiddenError{msg: "missing permission: " + permission}
+	return nil, missingPermission(permission)
 }
 
 // RequireSelf checks an action nobody may take on anybody else's account, and that
@@ -215,7 +257,7 @@ func (a *Authorizer) scopeUserID(principal *service.Principal, requested uint) (
 	}
 
 	if !principal.Can(model.PermTimesheetReadOwn) {
-		return 0, forbiddenError{msg: "missing permission: " + model.PermTimesheetReadOwn}
+		return 0, missingPermission(model.PermTimesheetReadOwn)
 	}
 
 	if requested != 0 && requested != principal.User.ID {
