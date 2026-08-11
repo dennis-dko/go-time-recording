@@ -174,7 +174,7 @@ var ErrWrongSheet = errors.New("this workbook holds something else")
 
 // tables are every sheet this package knows, which is what lets it recognise a
 // workbook of the wrong kind rather than reading one column out of step.
-func tables() []Table { return []Table{timesheets, projects, users} }
+func tables() []Table { return []Table{timesheets, projects, users, roles} }
 
 // RowError is one row that could not be understood.
 //
@@ -193,8 +193,38 @@ func (e RowError) Error() string {
 // reported.
 var errBlankRow = errors.New("blank")
 
+// readWithHeading returns the heading row as well as the data rows.
+//
+// Only the sheet of roles needs it. Every other sheet has a fixed set of columns
+// and can be read by position; that one's columns are the permissions the
+// application enforces, and that list grows between releases - so which right a
+// column stands for is a question only its heading can answer.
+func readWithHeading(r io.Reader, table Table) ([]string, [][]string, error) {
+	raw, err := rowsOf(r, table)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return raw[0], raw[1:], nil
+}
+
 // read returns the data rows of a workbook, the heading dropped.
 func read(r io.Reader, table Table) ([][]string, error) {
+	raw, err := rowsOf(r, table)
+	if err != nil {
+		return nil, err
+	}
+
+	// Row 1 is the heading. Dropped by position rather than by matching its text:
+	// a heading somebody has translated - or that this application itself wrote in
+	// another language - is still a heading, and refusing the file over it would
+	// be worse than ignoring one row.
+	return raw[1:], nil
+}
+
+// rowsOf opens a workbook and returns every row of the sheet that belongs to this
+// table, heading included.
+func rowsOf(r io.Reader, table Table) ([][]string, error) {
 	book, err := excelize.OpenReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("reading the workbook: %w", err)
@@ -216,11 +246,7 @@ func read(r io.Reader, table Table) ([][]string, error) {
 		return nil, ErrNoSheet
 	}
 
-	// Row 1 is the heading. Dropped by position rather than by matching its text:
-	// a heading somebody has translated - or that this application itself wrote in
-	// another language - is still a heading, and refusing the file over it would
-	// be worse than ignoring one row.
-	return raw[1:], nil
+	return raw, nil
 }
 
 // readableSheet picks the sheet to read.
