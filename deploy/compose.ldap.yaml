@@ -122,6 +122,11 @@
 # withdrew their OpenLDAP images in 2025 and the osixia one is archived
 # upstream - a deployment resting on either is one deprecation away from not
 # starting, and this container holds the credentials everybody signs in with.
+#
+# It is the same image the test environment runs, given generated passwords and
+# a volume instead of a throwaway password and none. That is deliberate: every
+# bind the test suite exercises is exercised against exactly this, rather than
+# against a near-copy kept level by hand.
 
 services:
   openldap:

@@ -53,12 +53,33 @@ services:
       timeout: 5s
       retries: 30
 
-  # A seeded OpenLDAP, built here rather than pulled. The seed is the point: it
-  # contains the cases the synchronisation has to get right, not just a user
-  # that can bind. See ldap/Dockerfile for why it is not a stock image.
+  # A seeded OpenLDAP. The seed is the point: it holds the cases the
+  # synchronisation has to get right, not just a user that can bind.
+  #
+  # The image is the deployment one, built from ../deploy/ldap, and this handles
+  # it the way the two databases above are handled - the real thing, given a
+  # throwaway password and thrown away afterwards. There used to be a near-copy
+  # of that image here, which meant the same forty lines of directory
+  # configuration in two places and a bind exercised against an image no
+  # deployment ever runs. The directory was only ever built rather than pulled
+  # because there is no usable OpenLDAP image to pull; now that this repository
+  # has one, it is the one to test against.
   openldap:
     profiles: [ldap, dev, all, stage]
-    build: ./ldap
+    build:
+      context: ../deploy/ldap
+    environment:
+      # Weak on purpose, and the only difference that matters between this and a
+      # deployment: same image, throwaway inputs. cn=admin is what the probe and
+      # the healthcheck bind as; cn=service is what the application binds as
+      # once the directory card is filled in.
+      LDAP_ADMIN_PASSWORD: gtr-test-password
+      LDAP_BIND_PASSWORD: gtr-test-password
+    volumes:
+      # Loaded after the structure the image seeds, so it can put people into
+      # the ou=people that structure creates. Read-only: a test that could edit
+      # its own fixture is a test that stops describing what it checks.
+      - ./ldap/people.ldif:/seed/extra/people.ldif:ro
     ports:
       - "5389:389"
     healthcheck:

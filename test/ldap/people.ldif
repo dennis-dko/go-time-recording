@@ -1,8 +1,9 @@
-# Seed for the throwaway test directory.
+# The people in the throwaway test directory.
 #
-# The entries below are not just "some users to bind as". Each one stands for a
-# case the synchronisation has to get right, and together they make the failure
-# modes reproducible instead of theoretical:
+# Mounted into /seed/extra of the image built from deploy/ldap, which creates
+# the suffix, ou=people, ou=services and the bind account before this is loaded.
+# So this file holds only what is particular to testing: five entries, each
+# standing for a case the synchronisation has to get right.
 #
 #   alice    an ordinary account; the baseline
 #   bob      the rename case - change his mail address and re-run the sync. He
@@ -11,45 +12,27 @@
 #   carol    no mail address at all; must be skipped rather than guessed at
 #   dave     outside the people subtree; must not appear when the base DN is
 #            narrowed to ou=people, which is how a wrong base DN is spotted
-#   service  the bind account, which is not a person and holds no hours
 #
-# entryUUID is not set here: the server assigns it, which is exactly why it is
-# the right thing to match on. Passwords are plain text because this directory
-# is disposable; nothing here belongs anywhere near a real deployment.
+# The bind account is the fifth, and it is not here: the image seeds a
+# cn=service with no mail attribute of its own, which is the same case this file
+# used to make - a directory bind user must never turn into a person with a
+# timesheet - and duplicating it here would fail the import on the second copy.
+#
+# entryUUID is not set on any of them: the server assigns it, which is exactly
+# why it is the right thing to match on. Passwords are plain text because this
+# directory is disposable; nothing here belongs anywhere near a real deployment.
+#
+# __SUFFIX__ is substituted by the entrypoint, so this reads correctly whatever
+# LDAP_SUFFIX the compose file sets rather than hard-coding one and silently
+# importing nothing when it changes.
 
-# The suffix has to be the first entry: slapadd rejects a child whose parent
-# does not exist yet. cn=admin is not here - it is the rootdn from slapd.conf,
-# which slapd answers for without it being stored.
-
-dn: dc=example,dc=com
-objectClass: top
-objectClass: dcObject
-objectClass: organization
-o: Example Organisation
-dc: example
-
-dn: ou=people,dc=example,dc=com
-objectClass: organizationalUnit
-ou: people
-
-dn: ou=contractors,dc=example,dc=com
+# Not created by the image, because a deployment has no use for it. It exists
+# here to hold somebody outside ou=people.
+dn: ou=contractors,__SUFFIX__
 objectClass: organizationalUnit
 ou: contractors
 
-dn: ou=services,dc=example,dc=com
-objectClass: organizationalUnit
-ou: services
-
-# The service account the application binds as to search. It has no mail
-# address, so the synchronisation skips it - a directory bind user must never
-# turn into a person with a timesheet.
-dn: cn=service,ou=services,dc=example,dc=com
-objectClass: inetOrgPerson
-cn: service
-sn: Account
-userPassword: gtr-test-password
-
-dn: uid=alice,ou=people,dc=example,dc=com
+dn: uid=alice,ou=people,__SUFFIX__
 objectClass: inetOrgPerson
 uid: alice
 cn: Alice Anderson
@@ -66,7 +49,7 @@ userPassword: alice-password
 #   mail: robert.builder@example.com
 #   EOF
 # Then run the sync preview: bob must not be listed for deletion.
-dn: uid=bob,ou=people,dc=example,dc=com
+dn: uid=bob,ou=people,__SUFFIX__
 objectClass: inetOrgPerson
 uid: bob
 cn: Bob Builder
@@ -76,7 +59,7 @@ userPassword: bob-password
 
 # No mail attribute on purpose. The application cannot key an account on
 # nothing, so this entry is skipped - silently, but deliberately.
-dn: uid=carol,ou=people,dc=example,dc=com
+dn: uid=carol,ou=people,__SUFFIX__
 objectClass: inetOrgPerson
 uid: carol
 cn: Carol Carpenter
@@ -86,7 +69,7 @@ userPassword: carol-password
 # Deliberately outside ou=people. With the base DN set to the whole tree this
 # account appears; narrow it to ou=people and it vanishes. That difference is
 # how a base DN that is too wide or too narrow becomes visible.
-dn: uid=dave,ou=contractors,dc=example,dc=com
+dn: uid=dave,ou=contractors,__SUFFIX__
 objectClass: inetOrgPerson
 uid: dave
 cn: Dave Driver

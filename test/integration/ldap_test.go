@@ -31,7 +31,9 @@ import (
 //	GTR_TEST_LDAP=localhost:5389 go test -tags integration ./test/integration
 //
 // Or `task test:ldap`, which does both. The seed these cases rely on is
-// test/ldap/01-seed.ldif, and each entry in it is there for a case below.
+// test/ldap/people.ldif, and each entry in it is there for a case below. The
+// directory around it - the suffix, ou=people and the bind account - is seeded
+// by the image, which is the deployment one from deploy/ldap.
 
 const ldapEnv = "GTR_TEST_LDAP"
 

@@ -536,7 +536,9 @@ Three things differ from the other overlays:
 - **It needs `deploy/ldap/` beside it.** The image is built rather than pulled,
   because the OpenLDAP images most compose files reach for are withdrawn from
   Docker Hub or archived upstream. Copying `compose.yaml` and `.env` alone is
-  enough for every other arrangement and is not enough for this one.
+  enough for every other arrangement and is not enough for this one. It is also
+  the image the test suite runs against, so every bind and search this
+  repository exercises is exercised against exactly what a deployment starts.
 - **Two passwords in `.env`**, both required and neither defaulted:
   `LDAP_ADMIN_PASSWORD` writes the directory and the application never sees it;
   `LDAP_BIND_PASSWORD` is the read-only account typed into the Settings card.

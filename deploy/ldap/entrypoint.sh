@@ -84,12 +84,37 @@ if [ ! -f "$DATA/data.mdb" ]; then
     # -q skips the index rebuild during the import; slapindex does it once at
     # the end, which is both faster and what makes the indexes usable at all.
     su openldap -s /bin/sh -c "slapadd -q -f $CONF -l /tmp/structure.ldif"
-    su openldap -s /bin/sh -c "slapindex -f $CONF"
 
     rm -f /tmp/structure.ldif
 
     echo "seeded the suffix, ou=people, ou=services and cn=$BINDDN_CN"
-    echo "there are no people in it yet - see deploy/compose.ldap.yaml"
+
+    # Anything mounted at /seed/extra, in name order, after the structure above
+    # so a file can put people into the ou=people it creates.
+    #
+    # Not scaffolding for the tests, though that is what uses it here: standing a
+    # directory up from an export is how anybody would fill an empty one, and
+    # doing it offline with slapadd rather than over the network with ldapadd is
+    # what keeps the server from ever answering half-populated. Substituted like
+    # the structure is, so a seed can be written against __SUFFIX__ rather than
+    # against one installation's own.
+    extra=0
+    for file in "$SEED"/extra/*.ldif; do
+        [ -e "$file" ] || break
+
+        echo "seeding from $(basename "$file")"
+        substitute "$file" /tmp/extra.ldif
+        su openldap -s /bin/sh -c "slapadd -q -f $CONF -l /tmp/extra.ldif"
+        rm -f /tmp/extra.ldif
+
+        extra=$((extra + 1))
+    done
+
+    su openldap -s /bin/sh -c "slapindex -f $CONF"
+
+    if [ "$extra" -eq 0 ]; then
+        echo "there are no people in it yet - see deploy/compose.ldap.yaml"
+    fi
 else
     # Deliberately not re-seeded, and deliberately said out loud: a changed
     # LDAP_SUFFIX or LDAP_BIND_CN in .env does nothing to a directory that
