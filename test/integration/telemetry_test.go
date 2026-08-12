@@ -27,6 +27,7 @@ import (
 // TelemetryOnTheWire mirrors the response shape.
 type TelemetryOnTheWire struct {
 	Configured struct {
+		LogLevel      *string  `json:"logLevel"`
 		MetricsOff    bool     `json:"metricsOff"`
 		TraceExporter *string  `json:"traceExporter"`
 		TracerURL     *string  `json:"tracerUrl"`
@@ -34,6 +35,7 @@ type TelemetryOnTheWire struct {
 	} `json:"configured"`
 
 	Active struct {
+		LogLevel      string  `json:"logLevel"`
 		MetricsServed bool    `json:"metricsServed"`
 		MetricsPort   int     `json:"metricsPort"`
 		MetricsPath   string  `json:"metricsPath"`
@@ -334,5 +336,86 @@ func TestAnAdministeredOffBeatsAnExporterInTheEnvironment(t *testing.T) {
 	if exporter := readTelemetry(t, fresh).Active.TraceExporter; exporter != "" {
 		t.Errorf("the second instance is still exporting to %q, so the stored off lost to the "+
 			"environment", exporter)
+	}
+}
+
+// The log level takes effect while the process runs, and says so.
+//
+// It is the one telemetry setting that does not wait for a restart, and it is
+// the one most worth not waiting for: somebody turns on DEBUG to look at
+// something that is happening now, and being told to restart the application
+// they are diagnosing is being told to make it stop happening. On Windows there
+// is no restart button at all - no execve - so "at the next start" meant finding
+// a shell.
+//
+// It works because the level is applied by the log sink rather than by the
+// framework's logger, which decides from a field every request goroutine reads
+// without synchronisation. This drives the real binary, so what is asserted is
+// the whole seam: saved through the API, applied to the capture, visible in the
+// process output.
+func TestTheLogLevelAppliesWithoutARestart(t *testing.T) {
+	a := start(t, "LOG_LEVEL=WARN")
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	// Nothing below WARN is being written, which is what the file asked for and
+	// what makes the change below visible rather than assumed.
+	if strings.Contains(a.log(), `"level":"DEBUG"`) {
+		t.Fatal("the process is emitting DEBUG while the file says WARN, so this " +
+			"test cannot tell a change from the starting state")
+	}
+
+	var saved TelemetryOnTheWire
+
+	admin.must(admin.api(http.MethodPut, "/settings/telemetry",
+		map[string]any{"logLevel": "DEBUG"}), http.StatusOK).Data(t, &saved)
+
+	// Both halves of "no restart needed": the screen says so, and the readout of
+	// what the process is doing has already moved.
+	if saved.RestartRequired {
+		t.Error("saving only the log level still asks for a restart")
+	}
+
+	if saved.Active.LogLevel != "DEBUG" {
+		t.Errorf("the running process reports %q after the save, want DEBUG - the "+
+			"screen is describing the level this process started with",
+			saved.Active.LogLevel)
+	}
+
+	// And the restart card agrees, because it is a second place that could have
+	// gone on asking.
+	var state struct {
+		Pending []struct {
+			Setting string `json:"setting"`
+		} `json:"pending"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/settings/restart", nil), http.StatusOK).Data(t, &state)
+
+	for _, change := range state.Pending {
+		if change.Setting == "logLevel" {
+			t.Error("the restart card lists the log level as waiting for a restart " +
+				"after it has already been applied")
+		}
+	}
+
+	// The proof: a request made now produces lines the old level would have
+	// dropped. GoFr logs every query at DEBUG, so any authenticated call does.
+	before := len(a.log())
+
+	admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK)
+
+	if !strings.Contains(a.log()[before:], `"level":"DEBUG"`) {
+		t.Errorf("no DEBUG line was written after raising the level, so the change "+
+			"reached the setting and not the log:\n%.600s", a.log()[before:])
+	}
+
+	// Clearing it goes back to what the configuration file said, rather than to
+	// a default nobody chose.
+	admin.must(admin.api(http.MethodPut, "/settings/telemetry",
+		map[string]any{"logLevel": ""}), http.StatusOK).Data(t, &saved)
+
+	if saved.Active.LogLevel != "WARN" {
+		t.Errorf("clearing the field left the level at %q, want the file's WARN",
+			saved.Active.LogLevel)
 	}
 }

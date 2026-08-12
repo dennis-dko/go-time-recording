@@ -394,3 +394,84 @@ func TestTheLevelsOfferedAndTheLevelsEmittedAreTheSame(t *testing.T) {
 		}
 	}
 }
+
+// The administered level decides what is written and kept, from the next line.
+//
+// This is what lets the log level be changed without a restart. The framework
+// decides what to emit from a field every request goroutine reads without
+// synchronisation, so changing that while requests are in flight is a data race;
+// instead the framework is left at its most verbose and the level is applied
+// here, in the one goroutine that drains the captured output.
+func TestTheLevelDecidesWhatIsKept(t *testing.T) {
+	s := New(100)
+	s.SetLevel("WARN")
+
+	for _, line := range []struct{ level, message string }{
+		{"DEBUG", "a query"},
+		{"INFO", "a request"},
+		{"WARN", "something odd"},
+		{"ERROR", "something wrong"},
+	} {
+		if !s.keeps(Record{Level: line.level}) {
+			continue
+		}
+
+		s.appendLine(line.level, line.message)
+	}
+
+	equal(t, messages(s.Query(Query{}).Records),
+		[]string{"something odd", "something wrong"})
+}
+
+// And it can be changed again, which is the whole point.
+func TestTheLevelCanBeRaisedAndLoweredWhileRunning(t *testing.T) {
+	s := New(100)
+
+	s.SetLevel("ERROR")
+
+	if s.keeps(Record{Level: "WARN"}) {
+		t.Error("a WARN line is kept at ERROR")
+	}
+
+	s.SetLevel("DEBUG")
+
+	if !s.keeps(Record{Level: "DEBUG"}) {
+		t.Error("a DEBUG line is dropped at DEBUG, so raising the level did nothing")
+	}
+
+	if got := s.Level(); got != "DEBUG" {
+		t.Errorf("the sink reports %q as the level in force, want DEBUG", got)
+	}
+}
+
+// A line that claimed no level of its own is always kept.
+//
+// A panic trace, a driver writing to stderr, the framework's start-up banner:
+// parse calls those INFO because the record needs something, and acting on that
+// would drop a stack trace because somebody set WARN - which is exactly the line
+// they were about to need.
+func TestALineWithNoLevelOfItsOwnSurvivesAnyThreshold(t *testing.T) {
+	s := New(100)
+	s.SetLevel("FATAL")
+
+	if !s.keeps(parse("panic: runtime error: invalid memory address")) {
+		t.Error("a panic trace is dropped by the log level, which is where it is " +
+			"least affordable")
+	}
+
+	if !s.keeps(parse(`{"level":"MYSTERY","message":"from somewhere else"}`)) {
+		t.Error("a line at a level this does not rank is dropped rather than kept")
+	}
+}
+
+// An empty or unrecognised level filters nothing, which is the safe direction:
+// showing too much is a nuisance and hiding a line somebody needed is the
+// failure this package exists to prevent.
+func TestAnUnrecognisedLevelFiltersNothing(t *testing.T) {
+	s := New(100)
+	s.SetLevel("verbose")
+
+	if !s.keeps(Record{Level: "DEBUG"}) {
+		t.Error("a level nobody recognises hid something")
+	}
+}

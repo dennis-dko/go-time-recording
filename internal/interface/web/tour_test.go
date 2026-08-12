@@ -148,22 +148,29 @@ func TestTheGreetingYieldsToTheWizardAndSkipsTheAdministrator(t *testing.T) {
 	}
 }
 
-// The restart card stays on screen where restarting is not possible at all.
+// The restart card appears when something is waiting for a restart, and not
+// otherwise.
 //
-// Normally it appears only when a setting is waiting for one. On Windows there is
-// no execve, so the button can never work - and with nothing pending the card was
-// hidden, which meant the one screen that explains the limitation was the one
-// nobody could reach. Finding out by pressing a button that never appears is not
-// finding out.
+// It used to stay on screen wherever restarting is impossible - on Windows,
+// which has no execve - whether anything was pending or not, so that nobody
+// could discover the limitation by pressing a button that never appears. The
+// reasoning was sound and the result was not: a warning that is on the screen
+// every time you open it is furniture, read once and looked past thereafter,
+// including on the day it finally has something to say.
+//
+// The limitation is still explained, at the moment it costs something. The first
+// save that needs a restart brings the card up, and the card puts the reason
+// where the button would have been. Nothing is hidden; it is said when it
+// matters instead of always.
 //
 // Checked in the asset rather than in a browser because the browser suite runs on
 // Linux, where restarting is supported and this branch is never taken.
-func TestTheRestartCardSurvivesWhenRestartingIsUnsupported(t *testing.T) {
+func TestTheRestartCardAppearsOnlyWhenSomethingIsWaiting(t *testing.T) {
 	js := asset(t, "/app.js")
 
-	if !strings.Contains(js, "card.hidden = pending.length === 0 && state.supported") {
-		t.Error("the restart card is hidden on an empty pending list regardless of " +
-			"whether restarting is possible, which hides the explanation on Windows")
+	if !strings.Contains(js, "card.hidden = pending.length === 0;") {
+		t.Error("the restart card is shown on an empty pending list, which makes a " +
+			"standing warning out of a screen that should speak up when it has something")
 	}
 
 	// And the explanation is translated rather than shown as the server wrote it,

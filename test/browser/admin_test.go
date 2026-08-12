@@ -231,6 +231,74 @@ func TestTheSettingsScreenFillsTheTelemetryCardAndTheOnesAfterIt(t *testing.T) {
 	}
 }
 
+// The configured logo is on the sign-in screen, not only in the header.
+//
+// Branding is fetched before anything has authenticated precisely so that this
+// screen can carry the instance's own title and logo - somebody arriving at a
+// company's time recording should see the company's mark rather than a default.
+// Whether the image is actually on screen is a question only a browser answers:
+// the element is in the markup, hidden, and it is the script that fills it in and
+// unhides it, so nothing short of running the page can tell "wired up" from
+// "wired up and working".
+func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// A red rectangle, small enough to be a data URI in a test and unmistakable
+	// on a screenshot if this ever needs one.
+	const logo = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSIyNCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjI0IiBmaWxsPSIjYzMzIi8+PC9zdmc+"
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	// Through the API rather than the file picker: what is being checked is
+	// whether a stored logo reaches the sign-in screen, and driving a file input
+	// would be checking the picker instead.
+	var status string
+
+	p.run("store a logo", chromedp.Evaluate(`
+		(async () => {
+			const csrf = document.cookie.split(';').map(c => c.trim())
+				.find(c => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+
+			const r = await fetch('/api/v1/settings/branding', {
+				method: 'PUT',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+				body: JSON.stringify({ title: 'Zeiterfassung', logo: '`+logo+`' }),
+			});
+
+			return String(r.status);
+		})()`, &status, awaitPromise))
+
+	if status != "200" {
+		t.Fatalf("could not store the logo: HTTP %s", status)
+	}
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	// Reloaded, because branding is read once at start-up: without this the page
+	// still holds what it fetched before the logo existed, and the test would be
+	// asserting the state of a screen no visitor ever sees.
+	p.run("reload the sign-in screen", chromedp.Reload(),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	if !p.visible("#login-logo") {
+		t.Error("the configured logo is not shown on the sign-in screen")
+	}
+
+	if src := p.attr("#login-logo", "src"); !strings.HasPrefix(src, "data:image/") {
+		t.Errorf("the sign-in logo has no image behind it: %.40q", src)
+	}
+
+	// The title travels with it, so a wrong one here would mean branding loaded
+	// and only the image failed - a different fault worth telling apart.
+	if got := p.text("#login-screen h2"); got == "" {
+		t.Error("the sign-in card lost its heading, so this screen did not render")
+	}
+}
+
 // ------------------------------------------------------ revealing a password
 
 // The button is added by the script, to fields written in the markup, so
