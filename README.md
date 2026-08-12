@@ -1385,9 +1385,16 @@ time recording on the first synchronisation, named after nobody. The header
 shows the `ldapadd` for a real one.
 
 Unlike the other three files this one needs the source beside it: it builds its
-image from `deploy/ldap/`, because the OpenLDAP images most compose files reach
-for are withdrawn or archived upstream, and this container holds the credentials
-everybody signs in with.
+image from [`deploy/ldap/`](deploy/ldap/), because the OpenLDAP images most
+compose files reach for are withdrawn or archived upstream, and this container
+holds the credentials everybody signs in with.
+
+That is the image the test environment runs too, handed a throwaway password and
+a seed of five invented people — the same arrangement the test PostgreSQL and
+MySQL get, which is the real image with a weak password. It was a near-copy for
+a while, and the copy cost the same forty lines of directory configuration in
+two places while meaning that every bind the suite exercised was exercised
+against something no deployment ever starts.
 
 ### Updating
 

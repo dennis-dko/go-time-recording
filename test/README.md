@@ -212,7 +212,7 @@ looking at.
 
 ## The seeded accounts, and why each one is there
 
-Each entry in [`ldap/01-seed.ldif`](ldap/01-seed.ldif) stands for a case the
+Each entry in [`ldap/people.ldif`](ldap/people.ldif) stands for a case the
 synchronisation has to get right:
 
 | Entry | Password | Stands for |
@@ -222,6 +222,11 @@ synchronisation has to get right:
 | `carol` | `carol-password` | no mail address; must be skipped, not guessed at |
 | `dave` | `dave-password` | outside `ou=people`; appears or not depending on the base DN |
 | `service` | `gtr-test-password` | the bind account — not a person, holds no hours |
+
+`service` is not in that file: the image seeds it, along with the suffix,
+`ou=people` and `ou=services`. It makes the same case `carol` does — an entry
+with no mail attribute is skipped — and a directory bind user turning into a
+person with a timesheet is the version of that which matters.
 
 ### Reproducing the rename case
 
@@ -255,25 +260,38 @@ docker compose --profile ldap exec -T openldap ldapdelete -x -H ldap://127.0.0.1
 
 ## Why the directory is built rather than pulled
 
-[`ldap/Dockerfile`](ldap/Dockerfile) builds a small OpenLDAP on Debian instead
-of using a stock image. Bitnami withdrew their OpenLDAP images from Docker Hub
-in 2025 and the popular osixia image is archived upstream, so a test
-environment depending on either is one deprecation away from not starting —
-which is how this file came to be written in the first place.
+[`deploy/ldap/Dockerfile`](../deploy/ldap/Dockerfile) builds a small OpenLDAP on
+Debian instead of using a stock image. Bitnami withdrew their OpenLDAP images
+from Docker Hub in 2025 and the popular osixia image is archived upstream, so
+anything depending on either is one deprecation away from not starting — which
+is how that file came to be written. The first build takes a minute; after that
+it is cached.
 
-The whole configuration is the three files next to it: [`slapd.conf`](ldap/slapd.conf)
-in the readable single-file form, [`entrypoint.sh`](ldap/entrypoint.sh) which
-seeds offline with `slapadd` before opening the port, and the seed itself. The
-first build takes a minute; after that it is cached.
+**It is the deployment image**, and this is the only service here that is
+treated any differently from PostgreSQL and MySQL: those pull the real image and
+are handed a throwaway password, and so is this one now. There was a near-copy
+of it in this folder, which cost the same forty lines of directory
+configuration in two places and meant every bind these tests exercise was
+exercised against an image no deployment ever runs. The directory was only ever
+built rather than pulled because there is no usable image to pull; now that this
+repository has one, it is the one to test against.
 
-There is a second one under [`deploy/ldap/`](../deploy/ldap/), and the two are
-not interchangeable. This one has its password in a file, no persistence and
-five invented people in it, because it exists to be thrown away between runs.
-That one takes its password from the environment and hashes it, keeps its data
-on a volume, and comes up with no people at all — invented ones would arrive in
-the time recording on the first synchronisation, named after nobody. Read
-[`deploy/compose.ldap.yaml`](../deploy/compose.ldap.yaml) before running that
-one anywhere; most installations should not.
+What differs is inputs, not the image:
+
+| | Here | A deployment |
+| --- | --- | --- |
+| Passwords | `gtr-test-password`, in the compose file | generated, from `.env`, hashed before they reach any file |
+| People | five, from `ldap/people.ldif` mounted into `/seed/extra` | none — invented ones would arrive in the time recording named after nobody |
+| Data | gone with the container | on the `ldap-data` volume |
+
+`/seed/extra` is not a hook that exists for these tests. Standing a directory up
+from an export is how anybody fills an empty one, and doing it offline with
+`slapadd` is what keeps the server from ever answering half-populated. Files
+there are substituted like the structure is, which is why `people.ldif` is
+written against `__SUFFIX__` rather than against one installation's own.
+
+Read [`deploy/compose.ldap.yaml`](../deploy/compose.ldap.yaml) before running
+that image as a deployment; most installations should not.
 
 ## Browsing the directory
 

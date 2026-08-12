@@ -474,7 +474,7 @@ tasks:
         go get go@${GOVERSION#go}
       - go get -u ./...
       - task: test
-      - echo "Done. Remember to bump the base images in Dockerfile and test/ldap/Dockerfile if the toolchain moved."
+      - echo "Done. Remember to bump the base images in Dockerfile and deploy/ldap/Dockerfile if the toolchain moved."
 
   clean:
     desc: 'Upkeep: remove everything testing and building leave behind.'
