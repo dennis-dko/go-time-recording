@@ -19,6 +19,14 @@ Dockerfile* text eol=lf
 *.yml       text eol=lf
 *.yaml      text eol=lf
 
+# And the same files with a suffix on the end, which the globs above do not
+# match: deploy/ldap holds a slapd.conf.template and a structure.ldif.template,
+# both substituted and then read by the same Linux tools as the originals. They
+# fell through to text=auto and would have been checked out with CRLF - which is
+# the LDIF failure described above, arriving by the one route the rule against it
+# did not cover.
+*.template  text eol=lf
+
 # Go tooling writes and expects LF everywhere.
 *.go        text eol=lf
 go.mod      text eol=lf

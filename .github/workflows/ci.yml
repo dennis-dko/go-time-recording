@@ -38,6 +38,53 @@ jobs:
         with:
           version-file: .golangci-lint-version
 
+      # The deployment files are copied to a server and run there, and nothing
+      # in this repository had ever parsed them: a typo in an overlay would be
+      # found by whoever was deploying, at the moment they were deploying.
+      #
+      # `config` needs no daemon - it interpolates, merges the overlays and
+      # validates the result, which is where the mistakes in a file like this
+      # live. Every combination that is offered in the documentation is checked,
+      # because merging is where they interact: compose.tls.yaml replaces the
+      # published ports with !override and the other two only add services, so
+      # the combinations are the thing worth proving rather than each file alone.
+      #
+      # The values come from .env.example plus the ones it deliberately leaves
+      # empty. Those use the ${VAR:?} form, so this also checks that a missing
+      # one is refused rather than defaulted to something nobody chose.
+      - name: Deployment compose files
+        working-directory: deploy
+        run: |
+          cp .env.example .env.ci
+          cat >> .env.ci <<'ENV'
+          DB_PASSWORD=ci-only-not-a-real-password
+          TLS_DOMAINS=time.example.com
+          TLS_EMAIL=ops@example.com
+          LDAP_ADMIN_PASSWORD=ci-only-not-a-real-password
+          LDAP_BIND_PASSWORD=ci-only-not-a-real-password
+          ENV
+
+          for files in \
+            "-f compose.yaml" \
+            "-f compose.yaml -f compose.tls.yaml" \
+            "-f compose.yaml -f compose.tracing.yaml" \
+            "-f compose.yaml -f compose.ldap.yaml" \
+            "-f compose.yaml -f compose.tls.yaml -f compose.tracing.yaml" \
+            "-f compose.yaml -f compose.tls.yaml -f compose.ldap.yaml -f compose.tracing.yaml"
+          do
+            echo "::group::compose $files"
+            docker compose --env-file .env.ci $files config >/dev/null
+            echo "::endgroup::"
+          done
+
+          # And that a required password is actually required. Without this the
+          # loop above would pass just as happily on a file that had quietly
+          # grown a default.
+          if docker compose -f compose.yaml config >/dev/null 2>&1; then
+            echo "compose.yaml started without DB_PASSWORD - the :? guard is gone" >&2
+            exit 1
+          fi
+
   test:
     name: Test
     runs-on: ubuntu-latest
