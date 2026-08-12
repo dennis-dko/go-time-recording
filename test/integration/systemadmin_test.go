@@ -205,6 +205,17 @@ func TestTheAdministratorStillAdministersAndNothingElse(t *testing.T) {
 		t.Errorf("the administrator set working times for itself: %d, want 403", got)
 	}
 
+	// And it carries none either. It was seeded with the default eight, from when
+	// this account recorded time - a figure nothing reads, since it cannot book an
+	// hour or see a balance, and which showed up in the one place accounts are
+	// listed as "8.0" beside every other row saying "default". Nobody could work
+	// out what it meant, because it meant nothing.
+	if self.User.DailyTargetHours != 0 {
+		t.Errorf("the built-in administrator has a daily target of %v; it has no "+
+			"working day to have one for, and the account table shows it",
+			self.User.DailyTargetHours)
+	}
+
 	// The installation itself.
 	admin.must(admin.api(http.MethodGet, "/setup", nil), http.StatusOK)
 	admin.must(admin.api(http.MethodPut, "/settings/operational",

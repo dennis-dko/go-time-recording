@@ -347,3 +347,56 @@ func TestASystemRolesRightsCannotBeTicked(t *testing.T) {
 		t.Error("the name of a system role can be edited")
 	}
 }
+
+// The account table gets the same column, and the one row nobody may delete
+// gets a cell with nothing in it.
+//
+// The mechanism is derived rather than written down - a row that carries a
+// delete button gets a checkbox, and a table with any such row grows the column
+// - so "it works for one table" says nothing about the others. This is the table
+// where that matters most: it is the one with a permanently undeletable row in
+// the middle of it, and a select-all that ticked the built-in administrator
+// would offer a deletion the server refuses.
+func TestTheAccountTableOffersTheSameSelection(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	for _, who := range []string{"eins@example.com", "zwei@example.com"} {
+		p.createOrdinaryAccount(t, who, "another-password-1")
+	}
+
+	p.run("open the accounts", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#table-users", chromedp.ByID))
+
+	p.waitForText("#table-users tbody", "zwei@example.com")
+
+	// The column is there at all, which is the question the screenshot of a table
+	// without it raises.
+	if p.count("#table-users thead th.pick") != 1 {
+		t.Fatal("the account table has no selection column, so several accounts " +
+			"cannot be deleted at once")
+	}
+
+	// Three rows, two of them deletable: the built-in administrator is not, and
+	// it gets a cell so the columns still line up.
+	if got := p.count("#table-users tbody td.pick"); got != 3 {
+		t.Errorf("%d rows carry a selection cell, want 3 - one per account", got)
+	}
+
+	if got := p.count("#table-users tbody input.row-pick"); got != 2 {
+		t.Errorf("%d accounts can be ticked, want 2 - the built-in administrator "+
+			"must not be one of them", got)
+	}
+
+	// Select all reaches exactly those two, rather than the row it cannot delete.
+	p.run("select all", p.click(`#table-users thead input.pick-all`),
+		chromedp.WaitVisible(".bulk-bar.shown", chromedp.ByQuery))
+
+	if got := p.count("#table-users tbody input.row-pick:checked"); got != 2 {
+		t.Errorf("select all ticked %d rows, want 2", got)
+	}
+
+	if count := p.text(".bulk-bar.shown .bulk-count"); !strings.Contains(count, "2") {
+		t.Errorf("the bar says %q, which does not name the two rows that are ticked", count)
+	}
+}

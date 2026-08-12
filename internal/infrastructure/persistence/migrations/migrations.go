@@ -93,7 +93,33 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260813010000: {UP: func(d migration.Datasource) error {
 			return letAdministratorsReachTheSettings(d, dialect)
 		}},
+		20260814010000: {UP: func(d migration.Datasource) error {
+			return clearTheAdministratorsWorkingDay(d, dialect)
+		}},
 	}
+}
+
+// clearTheAdministratorsWorkingDay takes the daily target off the built-in
+// administrator.
+//
+// It was seeded with the default eight, from when that account recorded time
+// like anybody else. It does not: it cannot book an hour, read a figure or open
+// the working-times card, which is hidden for it. So the figure was read by
+// nothing - and shown in exactly one place, the account table, where every other
+// row said "default" and this one said 8.0 for no reason a reader could work
+// out.
+//
+// Zero is not "no target" but "follow the instance default", which is what every
+// account starts on. For this one it is the honest answer: it has no working day
+// to have a target for, and if it ever gained one the instance default is what a
+// new account would get anyway.
+func clearTheAdministratorsWorkingDay(d migration.Datasource, dialect string) error {
+	if _, err := d.SQL.Exec(sqldb.Rebind(dialect,
+		"UPDATE users SET daily_target_hours = 0 WHERE is_system = ?"), true); err != nil {
+		return fmt.Errorf("clearing the built-in administrator's daily target: %w", err)
+	}
+
+	return nil
 }
 
 // letAdministratorsReachTheSettings grants settings:manage to every role that

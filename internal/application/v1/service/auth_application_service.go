@@ -111,6 +111,12 @@ func (s *AuthService) EnsureSystemUser(ctx context.Context) (created bool, err e
 		return false, apperror.Internal(err)
 	}
 
+	// No daily target. It used to be seeded with the default eight, from when
+	// this account recorded time like anybody else - it does not: it cannot book
+	// an hour, read a figure or open the working-times card, which is hidden for
+	// it. So the figure was read by nothing and shown in one place, the account
+	// table, where every other row said "default" and this one said 8.0 for no
+	// reason a reader could work out.
 	_, err = s.users.Save(ctx, &model.User{
 		Name:               SystemUserName,
 		Email:              SystemUserEmail,
@@ -118,7 +124,6 @@ func (s *AuthService) EnsureSystemUser(ctx context.Context) (created bool, err e
 		PasswordHash:       hash,
 		MustChangePassword: true,
 		IsSystem:           true,
-		DailyTargetHours:   model.DefaultDailyTargetHours,
 	})
 	if err != nil {
 		return false, err
