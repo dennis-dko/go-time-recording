@@ -90,7 +90,8 @@ func (h *LDAPSyncHandler) requireSystemAdmin(c *gofr.Context) error {
 		return nil
 	}
 
-	return forbiddenError{msg: "only the built-in administrator may synchronise the directory"}
+	return forbiddenError{msg: "only the built-in administrator may synchronise the directory"}.
+		WithCode("onlyBuiltInAdminSyncs")
 }
 
 func newSyncReportResponse(r *service.SyncReport) SyncReportResponse {

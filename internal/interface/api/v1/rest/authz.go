@@ -240,7 +240,8 @@ func (a *Authorizer) RequireSelf(
 		return principal, nil
 	}
 
-	return nil, forbiddenError{msg: "you may only change your own working times"}
+	return nil, forbiddenError{msg: "you may only change your own working times"}.
+		WithCode("onlyOwnWorkingTimes")
 }
 
 // scopeUserID narrows a requested user filter to what the caller may see, which is
@@ -261,7 +262,8 @@ func (a *Authorizer) scopeUserID(principal *service.Principal, requested uint) (
 	}
 
 	if requested != 0 && requested != principal.User.ID {
-		return 0, forbiddenError{msg: "you may only read your own time entries"}
+		return 0, forbiddenError{msg: "you may only read your own time entries"}.
+			WithCode("onlyOwnEntriesRead")
 	}
 
 	return principal.User.ID, nil
@@ -277,7 +279,8 @@ func (a *Authorizer) requireOwner(principal *service.Principal, ownerID uint) er
 		return nil
 	}
 
-	return forbiddenError{msg: "you may only change your own time entries"}
+	return forbiddenError{msg: "you may only change your own time entries"}.
+		WithCode("onlyOwnEntriesWrite")
 }
 
 // reportScope is whose hours a total covers: the caller's own.
@@ -321,7 +324,8 @@ func (a *Authorizer) requireOwnEntry(principal *service.Principal, ownerID uint)
 		return nil
 	}
 
-	return forbiddenError{msg: "you may only change your own time entries"}
+	return forbiddenError{msg: "you may only change your own time entries"}.
+		WithCode("onlyOwnEntriesWrite")
 }
 
 // mustChangePassword blocks everything except the password change itself

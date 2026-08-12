@@ -441,3 +441,56 @@ func TestARoleMustGrantAtLeastOnePermission(t *testing.T) {
 		"permissions": []string{"users:read"},
 	}), http.StatusCreated, http.StatusOK)
 }
+
+// The directory synchronisation belongs to the built-in administrator, and so
+// does scheduling it.
+//
+// Running it deletes every account the directory no longer holds, together with
+// everything those people recorded, so the two buttons were always the built-in
+// administrator's. The schedule beside them was not: it is the same deletion
+// performed later and unattended, and it sat on the settings the combined role may
+// write - so the safety the buttons were given could be walked around by typing
+// five numbers into the field between them.
+func TestOnlyTheBuiltInAdministratorSchedulesTheDirectoryRun(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	both := a.signInAsWorkingAdmin(admin, "Bothe", "bothe@example.com")
+
+	// The combined role reaches the directory settings, which is what makes this
+	// worth a test rather than being covered by the tab being absent.
+	settings := both.must(both.api(http.MethodGet, "/settings/ldap", nil), http.StatusOK)
+
+	var stored map[string]any
+	settings.Data(t, &stored)
+
+	// The connection is theirs to write.
+	stored["host"] = "directory.example.com"
+	both.must(both.api(http.MethodPut, "/settings/ldap", stored), http.StatusOK)
+
+	// The schedule is not.
+	stored["syncSchedule"] = "0 4 * * *"
+
+	refused := both.api(http.MethodPut, "/settings/ldap", stored)
+	if refused.Status != http.StatusForbidden {
+		t.Fatalf("scheduling the directory run answered %d, want %d",
+			refused.Status, http.StatusForbidden)
+	}
+
+	// Nor by hand, which is the rule this one exists to close the way round.
+	for _, route := range []string{"/settings/ldap/sync/preview", "/settings/ldap/sync"} {
+		if got := both.api(http.MethodPost, route, nil).Status; got != http.StatusForbidden {
+			t.Errorf("%s answered %d, want %d", route, got, http.StatusForbidden)
+		}
+	}
+
+	// And the built-in administrator can do what the other was refused, so this is
+	// not simply a broken endpoint.
+	admin.must(admin.api(http.MethodPut, "/settings/ldap", stored), http.StatusOK)
+
+	// Saving the connection again without touching the schedule still works: the
+	// schedule travels with the rest of the directory settings, so refusing every
+	// payload that carries one would refuse the combined role the connection form.
+	both.must(both.api(http.MethodGet, "/settings/ldap", nil), http.StatusOK).Data(t, &stored)
+	stored["host"] = "directory2.example.com"
+	both.must(both.api(http.MethodPut, "/settings/ldap", stored), http.StatusOK)
+}

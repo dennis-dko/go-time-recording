@@ -71,5 +71,6 @@ func (h *SetupHandler) requireSystemAdmin(c *gofr.Context) error {
 		return nil
 	}
 
-	return forbiddenError{msg: "only the built-in administrator may run the setup wizard"}
+	return forbiddenError{msg: "only the built-in administrator may run the setup wizard"}.
+		WithCode("onlyBuiltInAdminSetsUp")
 }

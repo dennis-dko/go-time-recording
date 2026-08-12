@@ -1245,6 +1245,16 @@ const TRANSLATIONS = {
     'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
     'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
     'err.missingPermission': 'Dafür fehlt die Berechtigung „{0}“.',
+    'err.onlyOwnWorkingTimes': 'Sie können nur Ihre eigenen Arbeitszeiten ändern.',
+    'err.onlyOwnEntriesRead': 'Sie können nur Ihre eigenen Zeiteinträge sehen.',
+    'err.onlyOwnEntriesWrite': 'Sie können nur Ihre eigenen Zeiteinträge ändern.',
+    'err.onlyOwnOvertime': 'Sie können nur Ihren eigenen Überstundenstand sehen.',
+    'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
+      + 'abgleichen.',
+    'err.onlyBuiltInAdminSchedules': 'Nur die eingebaute Administration darf den '
+      + 'Verzeichnisabgleich planen.',
+    'err.onlyBuiltInAdminSetsUp': 'Nur die eingebaute Administration darf die Einrichtung '
+      + 'durchlaufen.',
     'err.restartUnsupported': 'Ein Neustart aus der Anwendung heraus ist auf diesem System nicht möglich. Gespeicherte Einstellungen werden beim nächsten regulären Start wirksam.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
@@ -2611,8 +2621,21 @@ async function loadAdmin() {
     { labelKey: 'label', valueKey: 'name' });
   ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'user';
 
+  // The directory run belongs to the built-in administrator, because it deletes
+  // the accounts the directory no longer holds along with everything they
+  // recorded. Somebody holding settings:manage saw the card and both buttons, and
+  // was refused by the server on pressing either - and could set the schedule that
+  // performs the same deletion unattended, which the server now refuses too.
+  //
+  // data-perm cannot express this: it names a permission, and this is about which
+  // account it is.
+  $('#sync-card').hidden = !isSystemAdmin();
+
   const schedule = $('#form-sync-schedule');
   if (schedule) {
+    // Filled whether the card is on screen or not: the schedule travels with the
+    // rest of the directory settings, so an empty field here would clear it the
+    // next time somebody saved the connection.
     schedule.elements.syncSchedule.value = ldap.syncSchedule ?? '';
 
     // What this process is actually scheduled to do, which is not the stored
