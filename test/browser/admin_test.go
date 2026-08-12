@@ -251,7 +251,9 @@ func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
 
 	// A red rectangle, small enough to be a data URI in a test and unmistakable
 	// on a screenshot if this ever needs one.
-	const logo = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MCIgaGVpZ2h0PSIyNCI+PHJlY3Qgd2lkdGg9IjgwIiBoZWlnaHQ9IjI0IiBmaWxsPSIjYzMzIi8+PC9zdmc+"
+	// 600x120 - a five-to-one wordmark, which is the shape that makes cropping
+	// visible: fitted it stays 5:1, filled it would be cut to the box.
+	const logo = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzFmNGU3OSIvPjwvc3ZnPg=="
 
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-branding", chromedp.ByID))
@@ -295,6 +297,42 @@ func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
 
 	if src := p.attr("#login-logo", "src"); !strings.HasPrefix(src, "data:image/") {
 		t.Errorf("the sign-in logo has no image behind it: %.40q", src)
+	}
+
+	// And it is given the room a sign-in screen has, rather than the 28px that
+	// fits beside the navigation. The same image serves both, so the only thing
+	// separating a banner from a favicon-sized mark is what each place allows it.
+	var box struct {
+		Width   float64 `json:"width"`
+		Height  float64 `json:"height"`
+		Natural float64 `json:"natural"`
+	}
+
+	p.run("measure the banner", chromedp.Evaluate(
+		`(() => {
+			const el = document.querySelector('#login-logo');
+			const r = el.getBoundingClientRect();
+			return { width: r.width, height: r.height,
+				natural: el.naturalWidth / el.naturalHeight };
+		})()`, &box))
+
+	if box.Height <= 40 {
+		t.Errorf("the sign-in logo is %.0fpx tall, which is the header's size - it is "+
+			"meant to be a banner there", box.Height)
+	}
+
+	// Nothing is cut, asked as a property of the image rather than of the fixture:
+	// the box it renders in has the shape the image itself has. A box wider or
+	// taller than that is a box the image has been filled into, and filling a
+	// 5:1 wordmark into anything squarer slices the top and bottom off it.
+	//
+	// A first version compared the box against a hard-coded 3:1 and passed with
+	// object-fit: cover, which crops - the box was still 328x96, because the box
+	// is what CSS said and not what was drawn in it.
+	if ratio := box.Width / box.Height; ratio < box.Natural*0.95 {
+		t.Errorf("the banner renders %.0fx%.0f, a ratio of %.2f, from an image whose "+
+			"own ratio is %.2f - it has been cropped to the box rather than fitted "+
+			"into it", box.Width, box.Height, ratio, box.Natural)
 	}
 
 	// The title travels with it, so a wrong one here would mean branding loaded

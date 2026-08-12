@@ -708,8 +708,23 @@
         <div class="row">
           <label data-i18n="admin.logo">Logo (PNG/SVG, max. 256 KB)<input type="file" id="logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
           </label>
-          <img id="logo-preview" class="logo-preview" alt="" hidden>
           <button type="button" class="secondary" id="logo-clear" data-i18n="admin.logoClear">Remove logo</button>
+        </div>
+        <!-- Both places the one image is used, at the size each of them gives it.
+             A logo that reads in the header can be unreadable as a banner and the
+             other way round, and the only way to know is to see it - so it is
+             shown here rather than discovered on the sign-in screen after saving,
+             which is a screen an administrator does not see again for as long as
+             they stay signed in. -->
+        <div class="logo-uses" id="logo-preview-uses" hidden>
+          <figure class="logo-use">
+            <img id="logo-preview" class="logo-preview" alt="">
+            <figcaption class="muted" data-i18n="admin.logoInHeader">In the header</figcaption>
+          </figure>
+          <figure class="logo-use">
+            <img id="logo-preview-login" class="logo-preview logo-preview-login" alt="">
+            <figcaption class="muted" data-i18n="admin.logoOnSignIn">On the sign-in screen</figcaption>
+          </figure>
         </div>
         <!-- Away from the file picker above it: they sat on adjacent lines and
              read as one pair, which invites pressing Save to mean "take this
