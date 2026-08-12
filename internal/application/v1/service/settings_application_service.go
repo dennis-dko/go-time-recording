@@ -66,6 +66,14 @@ func (s *SettingsService) SaveBranding(ctx context.Context, branding model.Brand
 		return apperror.InvalidFields("companyUrl")
 	}
 
+	// The lengths the form has always shown. All of them at once rather than the
+	// first one over: this is one screen with one Save, and being told about a
+	// long banner, fixing it, and then being told about a long footer is being
+	// told half of what was wrong.
+	if tooLong := overlongBranding(branding); len(tooLong) > 0 {
+		return apperror.InvalidFields(tooLong...)
+	}
+
 	values := map[string]string{
 		model.SettingAppTitle:    strings.TrimSpace(branding.Title),
 		model.SettingBannerText:  branding.Banner,
@@ -325,6 +333,40 @@ func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig)
 	}
 
 	return s.settings.Set(ctx, model.SettingLDAPSettings, string(raw))
+}
+
+// overlongBranding names the labelling fields that are past their limit.
+//
+// By the name the payload uses, because that is what the interface looks each one
+// up under to say it the way the label above the box does.
+// Written out rather than looped over a table of name and limit, so each name is
+// a literal where it is used: the test that checks every rejectable field has a
+// label reads them out of this source, and a name assembled at runtime is a name
+// it cannot see.
+func overlongBranding(branding model.Branding) []string {
+	invalid := make([]string, 0)
+
+	if model.TooLong(branding.Title, model.MaxTitleLength) {
+		invalid = append(invalid, "title")
+	}
+
+	if model.TooLong(branding.Banner, model.MaxBannerLength) {
+		invalid = append(invalid, "banner")
+	}
+
+	if model.TooLong(branding.FooterText, model.MaxFooterTextLength) {
+		invalid = append(invalid, "footerText")
+	}
+
+	if model.TooLong(branding.LegalNotice, model.MaxLegalNoticeLength) {
+		invalid = append(invalid, "legalNotice")
+	}
+
+	if model.TooLong(branding.CompanyName, model.MaxCompanyNameLength) {
+		invalid = append(invalid, "companyName")
+	}
+
+	return invalid
 }
 
 // validateLogo checks the inline image.

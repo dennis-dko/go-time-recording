@@ -211,5 +211,30 @@ func TestAdministeringTheInstanceRefusesWhatCannotBeStored(t *testing.T) {
 				"userFilter": "(uid=%s)", "port": 389, "defaultRole": "sorcerer"}},
 		{"an instance timezone that does not exist", http.MethodPut, "/settings/timezone",
 			map[string]any{"timezone": "Mars/Olympus_Mons"}},
+
+		// The labelling. Each of these carries a maxlength in the form and the
+		// endpoint took whatever it was sent, so the limit applied to whoever used
+		// the screen and to nobody else - and the title and the banner are in the
+		// one response this application hands out before there is a session.
+		{"a title longer than the form allows", http.MethodPut, "/settings/branding",
+			map[string]any{"title": tooLong}},
+		{"a banner longer than the form allows", http.MethodPut, "/settings/branding",
+			map[string]any{"title": "Fine", "banner": tooLong}},
+		{"a footer longer than the form allows", http.MethodPut, "/settings/branding",
+			map[string]any{"title": "Fine", "footerText": tooLong}},
+		{"a legal notice longer than the form allows", http.MethodPut, "/settings/branding",
+			map[string]any{"title": "Fine", "legalNotice": tooLong}},
+		{"a company name longer than the form allows", http.MethodPut, "/settings/branding",
+			map[string]any{"title": "Fine", "companyName": tooLong}},
 	})
+
+	// And what the form does allow is stored, so the limits are the form's rather
+	// than something stricter nobody can reach.
+	admin.must(admin.api(http.MethodPut, "/settings/branding", map[string]any{
+		"title":       strings.Repeat("t", 80),
+		"banner":      strings.Repeat("b", 300),
+		"footerText":  strings.Repeat("f", 200),
+		"legalNotice": strings.Repeat("l", 200),
+		"companyName": strings.Repeat("c", 120),
+	}), http.StatusOK)
 }

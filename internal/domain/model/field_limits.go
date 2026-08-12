@@ -34,6 +34,35 @@ const (
 	MaxDescriptionLength = 2000
 )
 
+// What the installation may call itself.
+//
+// The settings table stores every one of these in a TEXT column, so nothing
+// below is a column width - they are the numbers the form has always claimed. It
+// claimed them alone: each field carries a maxlength and the API accepted
+// anything, which makes a limit a suggestion to whoever uses the screen and no
+// limit at all to whoever uses the endpoint. The banner and the title are read
+// by everyone who opens the sign-in page, before there is a session, so an
+// unbounded one is unbounded in the one response this application hands out
+// freely.
+//
+// A test compares each of these against the maxlength in the markup, so the two
+// cannot drift apart again.
+const (
+	// MaxTitleLength bounds what the browser tab and the header say.
+	MaxTitleLength = 80
+
+	// MaxBannerLength bounds the announcement above the application.
+	MaxBannerLength = 300
+
+	// MaxFooterTextLength and MaxLegalNoticeLength bound the two lines at the
+	// bottom of every screen.
+	MaxFooterTextLength  = 200
+	MaxLegalNoticeLength = 200
+
+	// MaxCompanyNameLength bounds the name beside the footer's link.
+	MaxCompanyNameLength = 120
+)
+
 // TooLong reports whether a value exceeds a column, counting the way a database
 // does.
 //
