@@ -3,6 +3,7 @@
 package rest
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -86,6 +87,46 @@ func (r reason) response() map[string]any {
 	out := map[string]any{"code": r.code}
 	if len(r.values) > 0 {
 		out["values"] = r.values
+	}
+
+	return out
+}
+
+// probeFailure describes a failed connection test in the shape the interface
+// already reads a refusal in.
+//
+// A probe answers 200 with the reason inside it, because a database that cannot
+// be reached is information about the values somebody typed rather than a fault
+// in this application. That put the reason outside the path every other refusal
+// takes, so it arrived as English prose and was shown as English prose - on the
+// one screen where the values being complained about are right there to correct.
+//
+// Half of what comes back is a fixed complaint: a field left empty, a port that
+// is not a number, a dialect nobody has. Those carry a code or a field list and
+// the interface says them in the reader's own words. The other half is whatever
+// the driver said - "connection refused", "password authentication failed" - and
+// that is prose nobody can anticipate, so it travels as the message and is shown
+// as it is.
+func probeFailure(err error) map[string]any {
+	out := map[string]any{"message": err.Error()}
+
+	var detail *apperror.Error
+	if !errors.As(err, &detail) {
+		return out
+	}
+
+	if detail.Code != "" {
+		out["code"] = detail.Code
+
+		if len(detail.Values) > 0 {
+			out["values"] = detail.Values
+		}
+	}
+
+	// Named "param" to match what a rejected field is called everywhere else in
+	// this API, so one function in the interface can render both.
+	if len(detail.Fields) > 0 {
+		out["param"] = detail.Fields
 	}
 
 	return out

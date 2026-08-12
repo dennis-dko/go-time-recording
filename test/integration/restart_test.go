@@ -101,31 +101,62 @@ func TestNothingIsPendingOnAnInstanceThatWasJustStarted(t *testing.T) {
 }
 
 // Saving a start-up setting has to show up as pending, naming both what is
-// running and what was saved - a list that said only "log level" would leave the
-// administrator to remember what they changed it from.
+// running and what was saved - a list that said only "trace exporter" would
+// leave the administrator to remember what they changed it from.
+//
+// The log level used to be this test's example and is no longer a start-up
+// setting at all: it is applied to the running process by the log sink, so it
+// has nothing to wait for. See TestTheLogLevelAppliesWithoutARestart, and
+// TestTheLogLevelIsNotWaitingForAnything below for the other half of that.
 func TestSavingAStartUpSettingIsReportedAsPending(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	// The exporter and its collector travel together: an exporter with nowhere to
+	// send to is refused on the way in, which is a different rule and has its own
+	// test.
+	admin.must(admin.api(http.MethodPut, "/settings/telemetry",
+		map[string]any{"traceExporter": "otlp", "tracerUrl": "collector:4317"}),
+		http.StatusOK)
+
+	running, stored, found := restartState(t, admin).pendingFor("traceExporter")
+	if !found {
+		t.Fatal("a saved trace exporter is not reported as waiting for a restart")
+	}
+
+	if running != "" || stored != "otlp" {
+		t.Errorf("reported %q -> %q, want \"\" -> otlp", running, stored)
+	}
+
+	// Storing what the process is already running with is not a pending change,
+	// or the card would sit there forever telling nobody anything.
+	admin.must(admin.api(http.MethodPut, "/settings/telemetry",
+		map[string]any{"traceExporter": ""}), http.StatusOK)
+
+	if _, _, still := restartState(t, admin).pendingFor("traceExporter"); still {
+		t.Error("storing the exporter already in force is reported as pending")
+	}
+}
+
+// The log level is never waiting for anything, whatever it is set to.
+//
+// It was the most common reason this card appeared: somebody turns on DEBUG to
+// look at something and is told to restart the application they are diagnosing.
+// The sink applies it on the way out now, so by the time the card could report
+// it, it is already in force - and a card listing a change that has already
+// happened is worse than one that says nothing.
+func TestTheLogLevelIsNotWaitingForAnything(t *testing.T) {
 	a := start(t, "LOG_LEVEL=INFO")
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	admin.must(admin.api(http.MethodPut, "/settings/telemetry",
-		map[string]any{"logLevel": "DEBUG"}), http.StatusOK)
+	for _, level := range []string{"DEBUG", "ERROR", "INFO", ""} {
+		admin.must(admin.api(http.MethodPut, "/settings/telemetry",
+			map[string]any{"logLevel": level}), http.StatusOK)
 
-	running, stored, found := restartState(t, admin).pendingFor("logLevel")
-	if !found {
-		t.Fatal("a saved log level is not reported as waiting for a restart")
-	}
-
-	if running != "INFO" || stored != "DEBUG" {
-		t.Errorf("reported %q -> %q, want INFO -> DEBUG", running, stored)
-	}
-
-	// Storing the level the process is already running with is not a pending
-	// change, or the card would sit there forever telling nobody anything.
-	admin.must(admin.api(http.MethodPut, "/settings/telemetry",
-		map[string]any{"logLevel": "INFO"}), http.StatusOK)
-
-	if _, _, still := restartState(t, admin).pendingFor("logLevel"); still {
-		t.Error("storing the level already in force is reported as pending")
+		if _, _, found := restartState(t, admin).pendingFor("logLevel"); found {
+			t.Errorf("setting the level to %q is reported as waiting for a restart, "+
+				"after it has already been applied", level)
+		}
 	}
 }
 
@@ -144,10 +175,17 @@ func TestEveryWaitingSettingIsListed(t *testing.T) {
 
 	state := restartState(t, admin)
 
-	for _, setting := range []string{"logLevel", "metrics", "traceExporter", "tracerUrl"} {
+	// The log level is saved in the same request and is deliberately not here:
+	// it is the one of the four that is already in force.
+	for _, setting := range []string{"metrics", "traceExporter", "tracerUrl"} {
 		if _, _, found := state.pendingFor(setting); !found {
 			t.Errorf("%q was saved but is not reported as waiting: %+v", setting, state.Pending)
 		}
+	}
+
+	if _, _, found := state.pendingFor("logLevel"); found {
+		t.Errorf("the log level is listed as waiting beside settings that really "+
+			"are: %+v", state.Pending)
 	}
 }
 

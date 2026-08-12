@@ -125,6 +125,11 @@ func ApplyTelemetry(telemetry model.Telemetry) error {
 
 	// An empty level would be read by GoFr as INFO rather than as "not set", so
 	// it is treated here as the absence it means and the file keeps deciding.
+	//
+	// Still exported even though the level is now applied by the log sink rather
+	// than by GoFr: the sink only exists where the output is captured, and where
+	// it is not, this is what carries the setting. It is also what
+	// EffectiveLogLevel reads back, so the two cannot answer differently.
 	if telemetry.LogLevel != nil && *telemetry.LogLevel != "" {
 		values["LOG_LEVEL"] = *telemetry.LogLevel
 	}
@@ -143,4 +148,21 @@ func ApplyTelemetry(telemetry model.Telemetry) error {
 	}
 
 	return nil
+}
+
+// EffectiveLogLevel is the level this process should actually emit at.
+//
+// The administered value where there is one, and whatever the configuration
+// file says otherwise - resolved the same way GoFr resolves it, so an
+// unrecognised name is INFO here exactly as it would be there.
+//
+// Called after ApplyTelemetry, which has already exported an administered level
+// into the environment, so reading the environment answers both cases with one
+// lookup rather than repeating the precedence rule in a second place.
+func EffectiveLogLevel(telemetry model.Telemetry) string {
+	if telemetry.LogLevel != nil && strings.TrimSpace(*telemetry.LogLevel) != "" {
+		return logLevel(*telemetry.LogLevel)
+	}
+
+	return logLevel(gofrConfig().Get("LOG_LEVEL"))
 }

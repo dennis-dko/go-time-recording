@@ -39,6 +39,30 @@ type SettingsHandler struct {
 	// maintenance is dropped from cache after a save, so the switch takes effect
 	// on the next request rather than within the cache interval.
 	maintenance MaintenanceState
+
+	// logLevel applies a saved log level to the running process and reports what
+	// is in force. The one telemetry setting that does not wait for a restart:
+	// the log sink decides what is emitted, so changing it is a store in one
+	// place rather than a change to the framework's logger, which is read from
+	// every request goroutine without synchronisation.
+	//
+	// Both nil where the process output is not captured. There is nothing
+	// between the framework and the console to apply a level there, so the
+	// setting keeps needing a restart and the screen keeps saying so.
+	logLevel     func(string)
+	runningLevel func() string
+}
+
+// WithLiveLogLevel lets a saved log level take effect without a restart.
+//
+// Fluent rather than a constructor parameter for the same reason
+// WithMaintenance is: the sink exists before the handlers and the resolution of
+// "follow the configuration file" belongs to main, which knows what the file
+// said before the level was widened to capture everything.
+func (h *SettingsHandler) WithLiveLogLevel(apply func(string), running func() string) *SettingsHandler {
+	h.logLevel, h.runningLevel = apply, running
+
+	return h
 }
 
 // WithMaintenance lets the handler clear the cached maintenance state.
@@ -383,8 +407,12 @@ func (h *SettingsHandler) TestLDAP(c *gofr.Context) (any, error) {
 
 	if err := h.ldap.test(c, config); err != nil {
 		// A failed test is information, not a server fault, so it comes back
-		// as a readable message rather than a 500.
-		return map[string]any{"ok": false, "message": err.Error()}, nil
+		// as a readable message rather than a 500. The same shape the database
+		// probe uses, though what reaches here is almost always the directory's
+		// own words - a bind refused, a name that does not resolve - because a
+		// configuration this cannot use was already refused by bindLDAP above,
+		// as a proper error, translated like any other.
+		return map[string]any{"ok": false, "error": probeFailure(err)}, nil
 	}
 
 	// No message on the way out. What a success is called is the interface's
@@ -565,8 +593,15 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 	}
 
 	if err := appconfig.TestDatasource(c, ds); err != nil {
-		// A failed probe is information, not a server fault.
-		return map[string]any{"ok": false, "message": err.Error()}, nil
+		// A failed probe is information, not a server fault - so it comes back
+		// as a 200 with the reason in it rather than as an error status.
+		//
+		// The reason travels the way a refusal does, because half of these are
+		// refusals: a field left empty is a fixed complaint the interface can
+		// name and translate, and only what the driver says back - "connection
+		// refused", "password authentication failed" - is prose nobody can
+		// anticipate. Both arrive here; the client shows whichever it can.
+		return map[string]any{"ok": false, "error": probeFailure(err)}, nil
 	}
 
 	// No message on the way out. What a success is called is the interface's
@@ -767,7 +802,7 @@ func (h *SettingsHandler) Telemetry(c *gofr.Context) (any, error) {
 
 	return TelemetryResponse{
 		Configured: configured,
-		Active:     newActiveTelemetry(h.activeTelemetry),
+		Active:     h.active(),
 	}, nil
 }
 
@@ -800,9 +835,61 @@ func (h *SettingsHandler) SaveTelemetry(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	// In force from the next line written, rather than from the next start. An
+	// empty value means "follow the configuration file", which is a value only
+	// main knows - so it is passed through as the empty string and resolved
+	// there.
+	if h.logLevel != nil {
+		level := ""
+		if stored.LogLevel != nil {
+			level = *stored.LogLevel
+		}
+
+		h.logLevel(level)
+	}
+
 	return TelemetryResponse{
-		Configured:      stored,
-		Active:          newActiveTelemetry(h.activeTelemetry),
-		RestartRequired: true,
+		Configured: stored,
+		Active:     h.active(),
+
+		// The log level is exempt now, so a save that changed only that needs
+		// nothing further. Everything else here is still built inside gofr.New().
+		RestartRequired: h.logLevel == nil || !onlyLogLevelChanged(stored, h.activeTelemetry),
 	}, nil
+}
+
+// onlyLogLevelChanged reports whether a save left everything that needs a
+// restart exactly as the running process has it.
+func onlyLogLevelChanged(stored model.Telemetry, running appconfig.Telemetry) bool {
+	if stored.MetricsOff && running.MetricsServed() {
+		return false
+	}
+
+	if stored.TraceExporter != nil && *stored.TraceExporter != running.TraceExporter {
+		return false
+	}
+
+	if stored.TracerURL != nil && *stored.TracerURL != running.TracerURL {
+		return false
+	}
+
+	if stored.TracerRatio != nil && *stored.TracerRatio != running.TracerRatio {
+		return false
+	}
+
+	return true
+}
+
+// active is what this process is doing now, with the log level read live where
+// it can be: that one is no longer whatever the process started with.
+func (h *SettingsHandler) active() ActiveTelemetry {
+	out := newActiveTelemetry(h.activeTelemetry)
+
+	if h.runningLevel != nil {
+		if level := h.runningLevel(); level != "" {
+			out.LogLevel = level
+		}
+	}
+
+	return out
 }

@@ -253,6 +253,19 @@ function errorMessage(body) {
   if (!err) return '';
   if (typeof err === 'string') return err;
 
+  return describeRefusal(err);
+}
+
+/**
+ * One refusal, in the reader's language where the server said which rule it was.
+ *
+ * Split out of errorMessage because a refusal does not always arrive as an error
+ * status. The connection test answers 200 with the reason inside it - a database
+ * that cannot be reached is information about what somebody typed, not a fault -
+ * and that put it outside this path, so it was shown as the English prose the
+ * server wrote. Two renderings of one thing is one too many.
+ */
+function describeRefusal(err) {
   // Maintenance is the one refusal whose sentence may not be ours: an
   // administrator who wrote the notice wrote it for the people who will read it.
   // The server sends this code only when nobody did, so the default is the one
@@ -296,7 +309,7 @@ function fillIn(text, values) {
     if (value === undefined || value === null) return whole;
     if (typeof value !== 'number') return String(value);
 
-    return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    return Number.isInteger(value) ? String(value) : fmtNumber(value);
   });
 }
 
@@ -337,6 +350,57 @@ function noticePermissionChange(revision) {
 
   toast(t('msg.rightsChanged',
     'What you may do here has changed. Reload the page to see it.'), 'error');
+}
+
+/**
+ * How often to ask whether this account may still do what it could a minute ago.
+ *
+ * The revision travels on every response, so anybody clicking around finds out
+ * without this. Somebody reading a screen is not clicking around, and the case
+ * that matters is exactly that one: a right is withdrawn while the person it was
+ * withdrawn from is looking at the screen it opened. Without a poll they found
+ * out on their next navigation, which on the overtime screen could be a long
+ * time - and, in the meantime, the buttons they no longer have any business
+ * pressing were still on screen.
+ *
+ * A minute, because this is a notice rather than an enforcement: the API refuses
+ * a withdrawn right on the very next call whatever the interface believes, so
+ * the only thing at stake is how long somebody looks at a screen that has
+ * stopped being true.
+ */
+const PERMISSION_POLL_MS = 60000;
+
+let permissionPoll = null;
+
+/**
+ * Asks periodically, and at once whenever the tab is looked at again.
+ *
+ * /me rather than a dedicated endpoint: every authenticated response carries the
+ * revision header, api() compares it, and this one also happens to be the answer
+ * to "what may I do", so nothing new had to be built or kept in step.
+ *
+ * Not while the tab is hidden. A window left open overnight would otherwise ask
+ * five hundred times to tell nobody anything, and the check on becoming visible
+ * again covers the whole gap in one request - which is the moment somebody would
+ * find out anyway.
+ */
+function startPermissionPolling() {
+  stopPermissionPolling();
+
+  permissionPoll = setInterval(() => {
+    if (document.hidden || !me.user) return;
+
+    // Failures are ignored on purpose. This is a background check nobody asked
+    // for, and a toast about it - on a screen somebody is reading, once a minute
+    // for as long as the network is unhappy - would be worse than the thing it
+    // is watching for.
+    api('/me').catch(() => {});
+  }, PERMISSION_POLL_MS);
+}
+
+function stopPermissionPolling() {
+  clearInterval(permissionPoll);
+  permissionPoll = null;
 }
 
 function toast(message, kind = 'ok') {
@@ -447,14 +511,35 @@ function fmtDate(iso) {
   }).format(at);
 }
 
-const fmtHours = (n) => `${n.toFixed(2)} h`;
+/**
+ * A figure with two decimal places, written the way the reader writes one.
+ *
+ * toFixed always produces a dot, so every hour figure on screen read 5.00 h to a
+ * German reader looking at a screen that was otherwise entirely German - beside
+ * date fields that did use the right convention, which is what made it look like
+ * a rendering fault rather than a decision.
+ *
+ * Display only. Nothing here goes back to the server or into a form field: a
+ * comma would be a different number to JSON, and the one place a comma is read
+ * *in* is the spreadsheet importer, which handles both conventions on the way
+ * through.
+ */
+function fmtNumber(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return String(n ?? '');
+
+  return new Intl.NumberFormat(activeLanguage(), {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(n);
+}
+
+const fmtHours = (n) => `${fmtNumber(n)} h`;
 
 /** Renders a signed balance, coloured as a credit or a debt. */
 function balanceCell(value) {
   const sign = value > 0 ? '+' : '';
   return el('td', {
     class: `num ${value > 0 ? 'plus' : value < 0 ? 'minus' : ''}`,
-    text: `${sign}${value.toFixed(2)} h`,
+    text: `${sign}${fmtHours(value)}`,
   });
 }
 
@@ -1298,6 +1383,8 @@ const TRANSLATIONS = {
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
     'err.unknownPermissionColumn': '„{0}“ ist kein Recht, das diese Anwendung kennt – '
       + 'die Datei stammt vermutlich aus einer anderen Installation.',
+    'err.unsupportedDialect': '„{0}“ ist keine Datenbank, die diese Anwendung öffnen '
+      + 'kann. Möglich sind: {1}.',
     'err.wrongWorkbook': 'Diese Datei enthält etwas anderes – vermutlich der Export einer '
       + 'anderen Tabelle.',
     'err.importStoppedAtRow': 'Abgebrochen bei Zeile {0}. {1} Zeilen wurden geschrieben; '
@@ -1469,7 +1556,7 @@ const TRANSLATIONS = {
     'report.chartKind': 'Diagrammart',
     'report.bars': 'Balken',
     'report.columns': 'Säulen',
-    'report.pie': 'Kuchen',
+    'report.pie': 'Kreis',
     'report.byProject': 'Stunden je Projekt',
     'report.byDay': 'Stunden je Tag',
     'role.create': 'Rolle anlegen',
@@ -2179,7 +2266,7 @@ async function loadTimesheets() {
         class: entry.projectId ? '' : 'empty',
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project'),
       }),
-      el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
+      el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
       el('td', { text: entry.description ?? '–' }),
       actions,
     );
@@ -2361,7 +2448,7 @@ function showCalendarDay(iso, entries) {
   const rows = entries.map((entry) => {
     const row = el('tr', {},
       el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project') }),
-      el('td', { class: 'num', text: entry.durationHours.toFixed(2) }),
+      el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
       el('td', { text: entry.description ?? '–' }),
       timesheetActions(entry),
     );
@@ -2768,12 +2855,16 @@ async function runConnectionTest(result, attempt) {
     const outcome = await attempt();
 
     // A success is named here rather than by the server, which wrote it in
-    // English and had it shown in preference to this sentence. A failure keeps
-    // the server's own text: what went wrong is not a fixed set of reasons that
-    // code could translate.
+    // English and had it shown in preference to this sentence.
+    //
+    // A failure goes through the same renderer as any other refusal. Half of
+    // them are a fixed complaint - a field left empty, a port that is not a
+    // number - and those are said in the reader's language and name the fields
+    // the way the labels above them do. The rest is what the driver said back,
+    // which nobody can anticipate and which is shown as it arrived.
     result.textContent = outcome.ok
       ? t('admin.testOk', 'The connection works.')
-      : outcome.message;
+      : describeRefusal(outcome.error ?? { message: outcome.message });
     result.className = outcome.ok ? 'muted plus' : 'muted minus';
   } catch (err) {
     result.textContent = err.message;
@@ -3162,10 +3253,11 @@ async function doLogout() {
     // Even a failed call should drop the client back to the sign-in screen.
   }
 
-  // Before the state is cleared: the poller checks what this account may do, and
-  // a timer left running would keep asking for the log with no session and paint
-  // the screen with authentication failures.
+  // Before the state is cleared: both pollers ask with the session that is
+  // about to end, and a timer left running would keep asking with none and
+  // paint the screen with authentication failures.
   stopLogPolling();
+  stopPermissionPolling();
 
   me = { user: null, permissions: [], authEnabled: true };
 
@@ -3866,7 +3958,7 @@ async function todayInOneSentence() {
 
     if (hours > 0) {
       return t('welcome.todayHours', '{0} h booked today so far.')
-        .replace('{0}', hours.toFixed(2));
+        .replace('{0}', fmtNumber(hours));
     }
 
     return t('welcome.todayNothing', 'Nothing booked today yet.');
@@ -4338,11 +4430,20 @@ async function loadRestart() {
   const pending = state.pending ?? [];
   restartWaiting = pending.length > 0;
 
-  // Normally the card is only there when something is waiting for a restart.
-  // Where restarting is not possible at all it stays, whether anything is pending
-  // or not: that is a standing property of this installation, and finding it out
-  // by pressing a button that never appears is not finding it out.
-  card.hidden = pending.length === 0 && state.supported;
+  // Only when something is actually waiting.
+  //
+  // It used to stay on screen wherever restarting is impossible - on Windows,
+  // which has no execve - whether anything was pending or not, on the reasoning
+  // that this is a standing property of the installation and worth knowing. It
+  // is worth knowing at the moment it matters, which is when you have just saved
+  // something that needs a restart. A warning that is always there is furniture:
+  // it is read once, and after that it is the thing you look past to reach the
+  // card below it, including on the day it finally has something to say.
+  //
+  // Nothing is lost by waiting. The card explains the refusal in place of the
+  // button whenever it does appear, so the first save that needs a restart is
+  // still where somebody finds out they will have to do it by hand.
+  card.hidden = pending.length === 0;
 
   const list = $('#restart-pending');
   list.replaceChildren(...pending.map((change) => {
@@ -4893,8 +4994,12 @@ async function loadStatistics() {
 
   // Empty days are drawn as empty rows on purpose - a chart of only the days that
   // have entries shows a full week where there were two working days.
+  // Through fmtDate like every other date on screen. These labels were the raw
+  // ISO string the endpoint sends, so the one chart on the Overtime screen wrote
+  // 2026-08-12 beside a table writing 12.08.2026 - the same day, twice, in two
+  // conventions, on one screen.
   drawBarChart($('#chart-days'),
-    days.map((day) => ({ label: day.date, value: day.hours })),
+    days.map((day) => ({ label: fmtDate(day.date), value: day.hours })),
     fmtHours);
 
   drawBarChart($('#chart-projects'),
@@ -5059,7 +5164,7 @@ function renderWorkbookPreview(result) {
     el('td', { text: row.date ? fmtDate(row.date) : '–' }),
     el('td', { text: row.user || '–' }),
     el('td', { text: row.project || t('ts.noProject', 'no project') }),
-    el('td', { class: 'num', text: row.hours ? row.hours.toFixed(2) : '–' }),
+    el('td', { class: 'num', text: row.hours ? fmtNumber(row.hours) : '–' }),
     el('td', { text: row.description || '–' }),
     el('td', { class: row.problem ? 'minus' : 'muted', text: rowProblem(row) || '✓' }),
   ));
@@ -6340,8 +6445,11 @@ function formatLogTime(iso) {
   if (Number.isNaN(at.getTime())) return '';
 
   // The viewer's own zone, which is the one they are comparing against a
-  // clock on the wall while working out what happened when.
-  return at.toLocaleTimeString(undefined, { hour12: false });
+  // clock on the wall while working out what happened when. The reader's
+  // language for the rest, like every other figure on screen - it decides
+  // nothing at all while hour12 is off, and leaving it to the browser was one
+  // more place for the two to disagree later.
+  return at.toLocaleTimeString(activeLanguage(), { hour12: false });
 }
 
 // -------------------------------------------------------- maintenance mode
@@ -6715,6 +6823,11 @@ function firstVisibleView() {
 async function refreshAll() {
   await loadMe();
 
+  // From here on, whether this account may still do what it could a moment ago
+  // is checked on a timer as well as on every response. Started after /me
+  // because that is what establishes the revision to compare against.
+  startPermissionPolling();
+
   // Before the booking date is worked out, because that depends on the zone -
   // and on a first sign-in the zone is the thing being adopted.
   if (await adoptBrowserDefaults()) await loadMe();
@@ -6843,12 +6956,12 @@ function wireForms() {
       // The column used to name the person, which is now always the same person.
       const rows = (report.entries ?? []).map((entry) => el('tr', {},
         el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
-        el('td', { class: 'num', text: entry.hours.toFixed(2) }),
+        el('td', { class: 'num', text: fmtNumber(entry.hours) }),
       ));
 
       fillTable($('#table-report tbody'), rows, 2, t('ot.empty', 'No bookings in this period.'));
       $('#report-total').textContent = t('report.total', '{0} h in total')
-        .replace('{0}', report.totalHours.toFixed(2));
+        .replace('{0}', fmtNumber(report.totalHours));
       $('#report-result').hidden = false;
 
       // The same period as a picture. The figures come from the statistics
@@ -6881,7 +6994,7 @@ function wireForms() {
 
       const total = balance.totalBalance;
       const pill = $('#overtime-total');
-      pill.textContent = `${total > 0 ? '+' : ''}${total.toFixed(2)} h`;
+      pill.textContent = `${total > 0 ? '+' : ''}${fmtHours(total)}`;
       pill.className = `pill ${total > 0 ? 'plus' : total < 0 ? 'minus' : ''}`;
       $('#overtime-meta').textContent = t('ot.meta', '{0} · target {1}/day · booked {2} of {3}')
         .replace('{0}', balance.userName)
@@ -6959,6 +7072,15 @@ async function init() {
   // Appearance is a device setting and needs no session, so the picker works on
   // the sign-in screen too.
   wireTheme();
+
+  // Coming back to a tab is the moment somebody would find out anyway, so it is
+  // the moment to ask - and it covers however long the tab was hidden in one
+  // request, which is why the interval below is allowed to skip while it is.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !me.user) return;
+
+    api('/me').catch(() => {});
+  });
 
   // Branding is public, so the sign-in screen already carries the instance's
   // own title and logo. A failure here must not block signing in.

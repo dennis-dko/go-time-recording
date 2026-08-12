@@ -21,6 +21,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
+
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // DatasourceFile is where the administered database connection is stored.
@@ -53,11 +55,18 @@ func SupportedDialects() []string {
 }
 
 // Validate reports why the connection cannot be used, if it cannot.
+//
+// The complaints name themselves rather than being prose. This is the one
+// validation somebody meets constantly - it fires on every Test connection with
+// a field still empty - and it used to answer "missing: host, user" in English,
+// on a screen that was otherwise entirely German, beside labels that call those
+// fields something else. A field this names is one the interface can mark and
+// translate, because it is the name the payload uses.
 func (d Datasource) Validate() error {
 	switch strings.ToLower(d.Dialect) {
 	case "sqlite":
 		if strings.TrimSpace(d.Name) == "" {
-			return fmt.Errorf("a database name is required")
+			return apperror.InvalidFields("name")
 		}
 
 		return nil
@@ -76,20 +85,26 @@ func (d Datasource) Validate() error {
 			missing = append(missing, "user")
 		}
 
-		if len(missing) > 0 {
-			return fmt.Errorf("missing: %s", strings.Join(missing, ", "))
-		}
-
 		if d.Port != "" {
 			if _, err := strconv.Atoi(d.Port); err != nil {
-				return fmt.Errorf("port must be a number")
+				missing = append(missing, "port")
 			}
+		}
+
+		// All of them at once. Being told about the host, filling it in, and
+		// then being told about the user is being told half of what is wrong -
+		// and the port used to be checked only once the other three were
+		// already right, so a form with an empty host and a port of "prod"
+		// needed two attempts to learn both.
+		if len(missing) > 0 {
+			return apperror.InvalidFields(missing...)
 		}
 
 		return nil
 	default:
-		return fmt.Errorf("unsupported dialect %q; use %s",
-			d.Dialect, strings.Join(SupportedDialects(), ", "))
+		return apperror.Invalidf("unsupported dialect %q; use %s",
+			d.Dialect, strings.Join(SupportedDialects(), ", ")).
+			WithCode("unsupportedDialect", d.Dialect, strings.Join(SupportedDialects(), ", "))
 	}
 }
 

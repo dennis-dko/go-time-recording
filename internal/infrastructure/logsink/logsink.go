@@ -60,6 +60,13 @@ type Record struct {
 
 	// TraceID ties a line to the request that produced it, when there was one.
 	TraceID string
+
+	// unlevelled marks a line that carried no level of its own - a panic trace,
+	// a driver writing to stderr, the framework's start-up banner. Level says
+	// INFO for those because something has to, and the threshold below must not
+	// act on a level nobody claimed: a stack trace dropped because somebody set
+	// WARN is exactly the line they were about to need.
+	unlevelled bool
 }
 
 // Levels are the levels GoFr emits, most to least severe. Exported so the
@@ -82,6 +89,70 @@ type Sink struct {
 	// renderer turns a record back into the line written to the real console.
 	// nil means the captured bytes are forwarded verbatim.
 	renderer func(Record) string
+
+	// threshold is the least severe level that is kept and forwarded. Zero
+	// means everything, which is what an uncaptured or unconfigured sink does.
+	threshold int
+}
+
+// severity ranks the levels GoFr emits. Anything not in here is unranked, and
+// unranked lines are always kept - see Record.unlevelled.
+var severity = map[string]int{
+	"DEBUG": 1, "INFO": 2, "NOTICE": 3, "WARN": 4, "ERROR": 5, "FATAL": 6,
+}
+
+// SetLevel decides what is written and kept from now on.
+//
+// This is what makes the log level administrable while the application runs,
+// and the reason it lives here rather than being handed to the framework: GoFr
+// has a ChangeLevel, and it is a bare assignment to a field every request
+// goroutine reads without synchronisation. A data race is not a reasonable
+// price for saving a restart, and the race detector would be right to say so.
+//
+// So the framework is left at its most verbose and the decision is made on the
+// way out, once, in the single goroutine that drains the pipe. What the console
+// receives is unchanged: the lines below the threshold never reach it. What it
+// costs is that the framework formats a line that is then dropped, which is a
+// few microseconds against a decision an administrator can now make while the
+// thing they are diagnosing is still happening.
+//
+// An empty or unrecognised level means no filtering, which is the safe
+// direction: showing too much is a nuisance, and hiding a line somebody needed
+// is the failure this package exists to prevent.
+func (s *Sink) SetLevel(level string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.threshold = severity[strings.ToUpper(strings.TrimSpace(level))]
+}
+
+// Level reports the threshold in force, for the screen that sets it.
+func (s *Sink) Level() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for name, rank := range severity {
+		if rank == s.threshold {
+			return name
+		}
+	}
+
+	return ""
+}
+
+// keeps reports whether a record passes the threshold.
+func (s *Sink) keeps(r Record) bool {
+	if r.unlevelled {
+		return true
+	}
+
+	s.mu.RLock()
+	threshold := s.threshold
+	s.mu.RUnlock()
+
+	rank, known := severity[r.Level]
+
+	return !known || rank >= threshold
 }
 
 // DefaultCapacity is about an hour of ordinary chatter, and a few minutes of a
@@ -298,6 +369,15 @@ func (s *Sink) drain(from io.Reader, console io.Writer) {
 
 		record := parse(line)
 
+		// Below the administered level: neither written nor kept. The framework
+		// runs at its most verbose so that raising the level costs no restart,
+		// which means this is the only place the level is actually applied - so
+		// a line dropped here is a line the console never had either, exactly as
+		// if the framework had suppressed it.
+		if !s.keeps(record) {
+			continue
+		}
+
 		// The console first, always. Whatever this package does with the
 		// record afterwards must not delay or endanger the output somebody is
 		// watching.
@@ -335,12 +415,12 @@ func parse(line string) Record {
 	trimmed := strings.TrimSpace(line)
 
 	if !strings.HasPrefix(trimmed, "{") {
-		return Record{Time: time.Now(), Level: "INFO", Message: line}
+		return Record{Time: time.Now(), Level: "INFO", Message: line, unlevelled: true}
 	}
 
 	var e entry
 	if err := json.Unmarshal([]byte(trimmed), &e); err != nil {
-		return Record{Time: time.Now(), Level: "INFO", Message: line}
+		return Record{Time: time.Now(), Level: "INFO", Message: line, unlevelled: true}
 	}
 
 	text, traceID := messageText(e.Message)

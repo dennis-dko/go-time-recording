@@ -300,6 +300,45 @@ func main() {
 		}
 	}
 
+	// The log level is the one telemetry setting that does not have to wait for a
+	// restart, and this is what buys that.
+	//
+	// The framework decides what to emit from a field it reads without
+	// synchronisation, so changing it while requests are in flight is a data
+	// race - which is why this does not use its ChangeLevel. Instead the
+	// framework is left at its most verbose and the level is applied on the way
+	// out, in the single goroutine draining the captured output. Raising or
+	// lowering it is then a store in one place with a mutex around it, and takes
+	// effect on the next line.
+	//
+	// Only where the output is actually captured. Without capture there is
+	// nothing between the framework and the console to apply a level, so the
+	// framework keeps deciding and the setting keeps needing a restart - which is
+	// the behaviour every version until now had.
+	//
+	// The file's own level is read first and kept: once LOG_LEVEL has been
+	// widened below, there is no reading it back, and it is what an administrator
+	// clearing the field to "follow the configuration file" is asking for.
+	var applyLogLevel func(string)
+
+	if restoreOutput != nil {
+		fileLogLevel := appconfig.EffectiveLogLevel(model.Telemetry{})
+
+		applyLogLevel = func(level string) {
+			if strings.TrimSpace(level) == "" {
+				level = fileLogLevel
+			}
+
+			logs.SetLevel(level)
+		}
+
+		applyLogLevel(appconfig.EffectiveLogLevel(telemetry))
+
+		if err := os.Setenv("LOG_LEVEL", "DEBUG"); err != nil {
+			die(restoreOutput, "cannot open the log for filtering: %v", err)
+		}
+	}
+
 	// Before gofr.New(), which opens the first connection: the hook has to be in
 	// place before there is anything to configure.
 	makeSQLiteWait()
@@ -567,7 +606,7 @@ func main() {
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      rest.NewSetupHandler(setup, authorizer),
 		Logs:       rest.NewLogHandler(logs, authorizer),
-		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds),
+		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),
@@ -589,7 +628,8 @@ func main() {
 			ldapClient.Configure,
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
 				return ldapClient.TestConnection(ctx, config)
-			}).WithMaintenance(maintenanceState),
+			}).WithMaintenance(maintenanceState).
+			WithLiveLogLevel(applyLogLevel, logs.Level),
 	})
 
 	// Expired sessions would otherwise accumulate forever.

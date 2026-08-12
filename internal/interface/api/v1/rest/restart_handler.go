@@ -40,6 +40,12 @@ type RestartHandler struct {
 	// environment and never comes back.
 	running appconfig.Datasource
 
+	// liveLogLevel says whether a saved log level is already in force, which it
+	// is wherever the process output is captured. Kept as a flag rather than
+	// inferred, because "the sink exists" is main's knowledge and this card's job
+	// is only to report what somebody still has to do.
+	liveLogLevel bool
+
 	// startedAt identifies this process to the screen that asked it to restart.
 	//
 	// Waiting for the application to stop answering and then answer again does
@@ -55,13 +61,15 @@ func NewRestartHandler(
 	authz *Authorizer,
 	active appconfig.Config,
 	running appconfig.Datasource,
+	liveLogLevel bool,
 ) *RestartHandler {
 	return &RestartHandler{
-		settings:  settings,
-		authz:     authz,
-		active:    active,
-		running:   running,
-		startedAt: time.Now(),
+		settings:     settings,
+		authz:        authz,
+		active:       active,
+		running:      running,
+		liveLogLevel: liveLogLevel,
+		startedAt:    time.Now(),
 	}
 }
 
@@ -129,7 +137,19 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 	pending := make([]PendingChange, 0)
 	running := h.active.Telemetry
 
-	if telemetry.LogLevel != nil && *telemetry.LogLevel != "" &&
+	// The log level is deliberately absent. It used to be here, and it was the
+	// most common reason this card appeared at all - somebody turns on DEBUG to
+	// look at something, and is told to restart the application they are in the
+	// middle of diagnosing. It is applied while the process runs now, by the log
+	// sink rather than by the framework's logger, so by the time anything could
+	// read this it is already in force. See SettingsHandler.WithLiveLogLevel.
+	//
+	// Where the output is not captured there is no sink to apply it and the
+	// setting does still wait for a restart - but that installation has no log
+	// viewer either, and its operator is reading the console, where the framework
+	// is emitting everything.
+
+	if telemetry.LogLevel != nil && *telemetry.LogLevel != "" && !h.liveLogLevel &&
 		*telemetry.LogLevel != running.LogLevel {
 		pending = append(pending, PendingChange{
 			Setting: "logLevel", Running: running.LogLevel, Stored: *telemetry.LogLevel,
