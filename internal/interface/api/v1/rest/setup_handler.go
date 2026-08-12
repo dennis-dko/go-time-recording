@@ -67,10 +67,10 @@ func (h *SetupHandler) requireSystemAdmin(c *gofr.Context) error {
 		return err
 	}
 
-	if !h.authz.Enabled() || principal.User.IsSystem {
+	if h.authz.AdministersOnly(principal) {
 		return nil
 	}
 
-	return forbiddenError{msg: "only the built-in administrator may run the setup wizard"}.
-		WithCode("onlyBuiltInAdminSetsUp")
+	return forbiddenError{msg: "only an administrator of this installation may run " +
+		"the setup wizard"}.WithCode("onlyBuiltInAdminSetsUp")
 }

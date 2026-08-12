@@ -127,6 +127,41 @@ func (a *Authorizer) RequireInstallationAdmin(c *gofr.Context) (*service.Princip
 	return nil, missingPermission(model.PermSettingsManage)
 }
 
+// AdministersOnly reports whether this account administers the installation and
+// has no working day of its own.
+//
+// A handful of things belong to that kind of account rather than to anybody who
+// can reach the Settings screen: running or scheduling a directory
+// synchronisation, and the setup wizard. They used to ask whether the caller was
+// the *built-in* administrator, which is a different question with almost the
+// same answer - and the difference is the whole point. An installation that gives
+// somebody the admin role has decided that person administers it; making them
+// sign in as the built-in account for two of those things is how the one account
+// nobody can attribute to a person ends up being the one everybody uses.
+//
+// Asked as "administers and does not work here" rather than by the role's name.
+// The name is a string an installation may have changed, and the property that
+// actually matters is the shape: the admin role holds the administration and none
+// of the working day, which is exactly what makes its holder equivalent to the
+// built-in account. The combined role is deliberately not equivalent - somebody
+// who also books time keeps their own screens, their tour and their working
+// times, and giving them the directory purge as well was never the intent.
+//
+// The built-in account is still named, because it is guaranteed to be this even
+// if an installation edits its way into an odd state.
+func (a *Authorizer) AdministersOnly(principal *service.Principal) bool {
+	if a.open {
+		return true
+	}
+
+	if principal == nil || principal.User == nil {
+		return false
+	}
+
+	return principal.User.IsSystem ||
+		(principal.Can(model.PermSettingsManage) && !principal.Can(model.PermTimesheetWriteOwn))
+}
+
 // missingPermission is the one refusal shape, so every 403 the interface meets
 // carries the same code and can be acted on rather than only shown.
 func missingPermission(permission string) forbiddenError {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -47,13 +48,17 @@ func TestTheFooterShowsTheRunningVersion(t *testing.T) {
 	// from the interface works here and cannot on Windows - so the version alone
 	// does not say what somebody is looking at.
 	//
-	// The suite runs on Linux, which is what makes the expected value knowable.
+	// Against the platform this test is running on rather than a hard-coded
+	// "linux". CI is Linux and a developer's machine is whatever it is - asserting
+	// the former made the suite fail on Windows for saying something true, which
+	// trains whoever runs it locally to expect red and stop reading it.
 	if !strings.Contains(version, "(") || !strings.Contains(version, ")") {
 		t.Errorf("the footer shows %q, without the platform in brackets", version)
 	}
 
-	if !strings.Contains(version, "(linux)") {
-		t.Errorf("the footer shows %q; this suite runs on Linux", version)
+	if want := "(" + runtime.GOOS + ")"; !strings.Contains(version, want) {
+		t.Errorf("the footer shows %q, want %s - the platform the application is "+
+			"actually running on", version, want)
 	}
 
 	// The version itself is still in front of it, rather than having been
@@ -1447,6 +1452,63 @@ func TestSigningInAgainReturnsToTheScreenThatWasOpen(t *testing.T) {
 	if !p.visible("#calendar-days") {
 		t.Errorf("signing in again did not return to the calendar\n\napplication log:\n%s",
 			p.app.Log())
+	}
+}
+
+// Somebody else's sign-in does not land on the screen the last person left.
+//
+// Coming back to where you were is a feature, and it is keyed on the account -
+// but it was not the only thing deciding. switchView writes the screen into the
+// address bar so a reload returns to it and a link can be sent to somebody, and
+// nothing cleared that on the way out. The starting view prefers the address bar
+// over the remembered screen, so the next person to sign in on that machine
+// arrived on the last one's. Signing in as the same account hid it, because both
+// answers agreed.
+//
+// The rows are the half that matters more. Every loader returns early when the
+// right is missing, which is right for loading and wrong for what is already
+// loaded - so an ordinary account arriving after an administrator found the
+// account list still in the document, under a tab that is only hidden.
+func TestAnotherAccountDoesNotInheritTheLastOnesScreen(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.createOrdinaryAccount(t, "nachher@example.com", "another-password-1")
+
+	// Somewhere only an administrator can be, so arriving there as somebody else
+	// would be unmistakable.
+	p.run("go to the accounts", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#table-users", chromedp.ByID))
+
+	p.waitForText("#table-users tbody", "admin@local")
+
+	p.run("sign out", p.click("#logout"), chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	// The address bar let go of it at sign-out, rather than at the next arrival:
+	// until then it sits on the sign-in screen naming where somebody was.
+	if hash := p.location(); strings.Contains(hash, "#users") {
+		t.Errorf("the address bar still names the last screen after signing out: %q", hash)
+	}
+
+	// And the rows went with it. This is checked while nobody is signed in at
+	// all, which is the strongest form of the question: there is no account for
+	// them to belong to.
+	if rows := p.count("#table-users tbody tr"); rows != 0 {
+		t.Errorf("%d account row(s) are still in the document after signing out", rows)
+	}
+
+	p.signIn("nachher@example.com", "another-password-1")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	// The greeting, not the accounts. This account has no tab for them.
+	if p.visible("#view-users") {
+		t.Error("an ordinary account arrived on the administrator's screen")
+	}
+
+	if rows := p.count("#table-users tbody tr"); rows != 0 {
+		t.Errorf("%d account row(s) from the previous session are on screen for an "+
+			"account that may not list accounts", rows)
 	}
 }
 

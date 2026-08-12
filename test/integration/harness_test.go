@@ -354,6 +354,26 @@ func (a *app) signInAsWorkingAdmin(admin *client, name, email string) *client {
 	return user
 }
 
+// signInAsGrantedAdministrator creates an account holding the admin role.
+//
+// Administration and no working day - the same shape as the built-in account,
+// which is what makes it equivalent to it. Not the combined role, which also
+// books time and is deliberately not equivalent.
+func (a *app) signInAsGrantedAdministrator(admin *client, name, email string) *client {
+	a.t.Helper()
+
+	const password = "granted-admin-password-1"
+
+	admin.must(admin.api(http.MethodPost, "/users", map[string]any{
+		"name": name, "email": email, "role": "admin", "password": password,
+	}), http.StatusCreated, http.StatusOK)
+
+	user := a.newClient()
+	user.signIn(email, password)
+
+	return user
+}
+
 // signInAsUser creates an ordinary account and signs in as it.
 //
 // There is no second role any more. Everyone keeps their own time, projects and
