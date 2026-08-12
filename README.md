@@ -159,6 +159,7 @@ missing. That is why "Finish later" is safe to offer.
 | API access | Personal tokens, scoped by the owner's current role |
 | Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second |
 | Own statistics | Hours per day and per project, drawn as charts, for everybody rather than administrators |
+| Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
@@ -219,6 +220,15 @@ specific line of code, and a permission that existed only in the database would
 grant nothing. The role editor therefore offers exactly the permissions that
 are actually enforced.
 
+One of them is the whole administration: `settings:manage` opens the *Settings*
+screen and everything on it — the branding, the operational limits, the instance
+timezone, the database connection, the telemetry, the maintenance notice, the
+log and the restart. It is what the `user-admin` role holds that `user` does
+not, and it is why that role is handed out deliberately rather than assembled
+out of smaller rights. Two things stay outside it and belong to the built-in
+administrator alone: the setup wizard, and running or scheduling a directory
+synchronisation.
+
 ### The administrator does not work here
 
 Running an installation and recording time in it are two different jobs, and the
@@ -269,6 +279,13 @@ administration, so they keep their own hours and still nobody else's.
 
 A project's report totals **your own** hours on it. Everyone sees their own figures
 there and through **My statistics**, and nobody sees anybody else's.
+
+The picture beside the table is the same figures in whichever shape answers the
+question: **bars** for a long list of names, because a name fits beside a bar and
+not under a column; **columns** for comparing a few things; a **pie** for a share of
+a whole. It follows the filter the table follows, so scoping the evaluation to one
+project scopes both — a chart totalling everything next to a table totalling one
+project is two answers on one screen, and no way to tell which was asked for.
 
 Whether somebody may see another person's recorded time is not a permission question,
 because no permission answers yes — not for a list of entries, not for the spreadsheet
@@ -419,6 +436,14 @@ is terminated in front of it and proxied to localhost.
 The administrator configures a directory under **Settings**. When it is
 enabled, passwords are checked against the directory by binding as the user.
 
+This application is a directory *client*. It does not run one and does not need
+one: an installation with an Active Directory or an OpenLDAP points at what it
+already has, and an installation with neither carries on with its own accounts,
+passwords, passkeys and two-factor codes. For the two cases where neither is
+true — trying the feature out, or genuinely wanting a directory and having none
+— [`deploy/compose.ldap.yaml`](deploy/compose.ldap.yaml) runs one beside the
+application, and its header says which fields to type where.
+
 Accounts are also created on first successful sign-in, so someone can start
 working without being provisioned first. Local-only accounts keep working
 alongside directory ones. Roles and permissions always stay local — the
@@ -435,11 +460,23 @@ reconciled with the local accounts:
 
 **The directory is only ever read.** Nothing is written back to LDAP.
 
-Set `LDAP_SYNC_SCHEDULE` to run it automatically; it is empty by default
-because a run destroys recorded work irreversibly. Whatever the schedule, an
-administrator can start a run by hand — and should use **Preview** first, which
-reports exactly which accounts would go and how many time entries each one
-would take with it. The real run asks for confirmation naming those numbers.
+**A run is the built-in administrator's alone** — the preview, the button and
+the schedule beside them. Not because of the connection: anybody holding
+`settings:manage` may edit the directory card, test it and save it, because
+that is configuration. Deleting every account the directory no longer holds,
+along with everything those people recorded, is not, and the card is not shown
+to an account that would be refused it.
+
+The schedule is part of that. It was open to anybody who could reach *Settings*
+while the buttons above it were not, so the caution the buttons were given
+could be walked around by typing five numbers into the field between them.
+
+Set the schedule under *Settings*, or `LDAP_SYNC_SCHEDULE` for a starting value
+in the environment; it is empty by default because a run destroys recorded work
+irreversibly, and an automatic one destroys it with nobody looking. Use
+**Preview** first, which reports exactly which accounts would go and how many
+time entries each one would take with it. The real run asks for confirmation
+naming those numbers.
 
 Four guards make a broken directory answer non-destructive:
 
@@ -518,9 +555,23 @@ organising their hours, not a plan somebody signed off.
 Every table that holds something goes out and comes back as a real **.xlsx**
 workbook, from the tab it belongs to: time entries with the date, the person, the
 project, the hours and the description; projects with their period and status;
-accounts with their role and whether the password lives in the directory. Names rather than identifiers, because a column of user ids is not something
-anybody can fill in by hand; hours as a number, so the column can be totalled in
-Excel.
+accounts with their role and whether the password lives in the directory; roles
+with a column per permission holding yes or no. Names rather than identifiers,
+because a column of user ids is not something anybody can fill in by hand; hours
+as a number, so the column can be totalled in Excel.
+
+A column per right rather than one cell listing them, which is what makes the
+roles sheet honest. A list in a cell reads well and imports badly: a typo in
+`projects:read, projects:wrote` is a right silently dropped, and nothing about
+it looks wrong until somebody cannot open a screen. A column is a question with
+two answers, and a heading naming a right this application does not enforce is
+refused by that name — which also catches a file exported from a different
+installation. A file may leave rights out; a column somebody deleted is simply
+a right the import does not touch.
+
+Two tables deliberately have no sheet. A token's secret exists once, at the
+moment it is created, and is not in the database to export. A passkey is bound
+to the device holding it and means nothing anywhere else.
 
 The column headings are written in the language the export was asked for, and a file
 exported in any of them imports again: the heading row is skipped by position, and
@@ -554,7 +605,16 @@ no way for it to know which existing entry a row was meant to be. Projects are
 matched by name, so importing the same file twice changes nothing the second time.
 Accounts are matched on the mail address and are **changed**, not created: a new
 account needs a password, and a password that arrives in a spreadsheet is a password
-that gets mailed around.
+that gets mailed around. Roles are matched on the name and are both — everything a
+role is fits in a row, so a file can describe one that does not exist yet without
+carrying anything that has no business being in a spreadsheet. The `admin` role is
+the exception the role editor already makes: its rights cannot be changed from a
+cell any more than from the screen.
+
+Why a row was refused is written in the reader's language, like the headings above it
+and the values in it. The reasons are a fixed set, so each one travels as a code with
+whatever its sentence names — the row number, the offending word — rather than as a
+sentence assembled on the server in English.
 
 ## Architecture
 
@@ -704,7 +764,7 @@ nothing sets the variable.
 
 ### What can be changed from the interface, and what cannot
 
-Six of the values above are **operational limits** rather than deployment
+Five of the values above are **operational limits** rather than deployment
 facts, so *Settings → Operation and limits* overrides them while the
 application runs — no restart, no file access. A field left empty keeps
 following the file, and its value is shown as the placeholder, so it is always
@@ -733,7 +793,7 @@ remove the way back in:
 | `TLS_*` | the listener is bound at start-up; a wrong domain or port makes the instance unreachable |
 | `HSTS_MAX_AGE` | a browser told to refuse plain HTTP keeps refusing for as long as the value said, whatever is served later |
 | `DB_*` | it is the connection the settings themselves are read from |
-| `*_SCHEDULE` | cron jobs are registered once at start-up and cannot be re-registered live |
+| `*_SCHEDULE` | a cron job is registered once at start-up and cannot be re-registered live. `LDAP_SYNC_SCHEDULE` is the exception and only half of one: the field is on the directory card, so it can be set without file access, but it waits for a restart like everything else here — and it is the built-in administrator's, not `settings:manage`'s |
 | `HTTP_PORT`, `METRICS_PORT` | bound at start-up — and GoFr refuses to start when something already holds the metrics port, so a port saved from a screen could stop the application together with the screen. *Settings* can only switch the endpoint **off**, which cannot fail |
 
 `APP_NAME` is not administered here either — the instance title under
@@ -763,6 +823,14 @@ endpoint in full so it can be copied. A *Restart* card lists what is waiting —
 each setting with the value in force and the one that will replace it — and
 offers to restart there and then, with the interface waiting for the application
 to come back rather than leaving anyone to guess.
+
+The database is compared whole: the dialect, the host, the port, the name, the
+user and the SSL mode, read as one line rather than as six. A changed password
+is listed as *Database password* and nothing else — the old one is not printed
+beside the new one on an administration screen, so that entry carries no before
+and after and the card shows the name of the setting alone. Saving the form says
+which of the two happened, and says *Settings saved* when nothing changed rather
+than promising a restart to somebody who only opened it to look.
 
 That restart replaces the process image rather than exiting and hoping something
 starts it again. Exiting works under Docker with a restart policy and under
@@ -1099,8 +1167,14 @@ task test:all              # unit, then integration, then browser
 task test:all DB=postgres  # with the integration leg against PostgreSQL
 ```
 
-CI runs all of it on every push and before every release: unit tests with
-`-race`, integration against **all three dialects**, and the browser suite.
+CI runs all of it on every push and before every release, as eight jobs in
+parallel: lint, unit tests with `-race`, integration against **all three
+dialects** as three separate legs, the directory and tracing suites against a
+real OpenLDAP and a real collector, the browser suite in headless Chrome, a
+cross-compile of every published platform, and the Docker image built and
+smoke-tested. Nothing here is only exercised locally — `task test:ldap` and
+`task test:traces` skip themselves without their containers, so CI is where
+they are guaranteed to have run.
 
 `task stage` is what `task dev` is not. Development runs a binary compiled on
 your machine — fast, but not the artifact anyone deploys. Staging goes through
@@ -1269,9 +1343,51 @@ It supplies the collector and configures nothing on the application, because
 tracing is administered in the running application and what is stored there is
 applied over the environment at the next start — a variable set in the compose
 file would be the losing half of a disagreement nobody can see. Switch it on
-under *Settings*: exporter `OTLP`, collector `jaeger:4317`, then restart.
+under *Settings → Logging, metrics and tracing*: exporter `OTLP`, collector
+`jaeger:4317` (the service name, no `http://` in front of it — GoFr hands that
+string to a gRPC dialer, which reads a scheme as part of the host name), the
+recorded share at `1` while investigating something. **Then restart**: the
+exporter is built while the application starts, so a saved setting does nothing
+until it does. The *Restart* card on the same screen says so and offers the
+button.
+
+The trace browser is on `127.0.0.1:16686`, published to the loopback interface
+only — it asks nobody to sign in, and traces carry request paths and the
+identifiers in them. Reach it with `ssh -L 16686:127.0.0.1:16686 <server>`.
 [`deploy/OPERATIONS.md`](deploy/OPERATIONS.md) has the rest, including why the
-traces are held in memory and how to read them through a tunnel.
+traces are held in memory and what that costs.
+
+### A directory, if you have none
+
+A fourth overlay runs an OpenLDAP beside the application:
+
+```bash
+docker compose -f compose.yaml -f compose.ldap.yaml up -d
+```
+
+**Most installations should not use it.** This application is a directory
+client: if there is already an Active Directory or an OpenLDAP, you point at it
+under *Settings* and run no service here — and an installation whose people
+already sign in with a password, a passkey or an authenticator code needs no
+directory at all. Adding one is a second stateful service to back up and a
+second password store to keep, for the same people. It is worth it for two
+cases: seeing what the feature does before pointing it at the real directory,
+and genuinely having no directory and wanting one.
+
+Like the tracing overlay it sets nothing on the application — the connection is
+administered under *Settings*, and the header of
+[`compose.ldap.yaml`](deploy/compose.ldap.yaml) lists every field to fill in,
+including why the id attribute must be `entryUUID` and not the mail address.
+
+It comes up empty on purpose: a suffix, an `ou=people` to put staff in, and the
+read-only account the application binds as. Invented people would arrive in the
+time recording on the first synchronisation, named after nobody. The header
+shows the `ldapadd` for a real one.
+
+Unlike the other three files this one needs the source beside it: it builds its
+image from `deploy/ldap/`, because the OpenLDAP images most compose files reach
+for are withdrawn or archived upstream, and this container holds the credentials
+everybody signs in with.
 
 ### Updating
 
@@ -1289,11 +1405,12 @@ docker compose exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" | gzip > backup
 ### Configuration
 
 `.env` carries only what a deployment must decide: the database password, the
-image version, the instance name, and the TLS settings. Everything operational —
-session lifetime, rate limits, the daily booking cap, the directory connection,
-the timezone — is administered in the running application under *Settings*, and
-takes effect without a restart. See [Configuration](#configuration) for which
-settings live where and why.
+image version, the instance name, the TLS settings, and — only with the
+directory overlay — the two passwords that directory comes up on. Everything
+operational — session lifetime, rate limits, the daily booking cap, the
+directory *connection*, the timezone — is administered in the running
+application under *Settings*, and takes effect without a restart. See
+[Configuration](#configuration) for which settings live where and why.
 
 ### Running it without containers
 

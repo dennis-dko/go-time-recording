@@ -18,6 +18,12 @@ bin/configs/datasource.json
 # example next to it is what belongs in the repository instead.
 deploy/.env
 
+# Written by the compose check in ci.yml and by anybody running that check by
+# hand. It holds invented passwords rather than real ones, which is exactly why
+# it must not be committed: a file of plausible-looking credentials in a
+# deployment folder is one somebody eventually copies.
+deploy/.env.ci
+
 # Personal config override. GoFr loads it automatically when APP_ENV is unset,
 # which makes it the right place for a local database or a debug log level -
 # and the wrong thing to commit, because it silently applies to everyone.

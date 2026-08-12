@@ -1,0 +1,42 @@
+# The empty directory this starts as: a suffix, a place to put people, and the
+# account the application binds as to search.
+#
+# No people. This is the difference between this file and the seed under
+# test/ldap, which invents five of them to exercise the synchronisation. A real
+# directory holds real staff, and inventing any here would put accounts into
+# the time recording on the first synchronisation - named after nobody, holding
+# nobody's hours, and awkward to remove once entries hang off them.
+#
+# Add people with ldapadd once this is running; there is an example in
+# deploy/compose.ldap.yaml. Every entry needs a mail attribute, because that is
+# what an account is keyed on, and one without is skipped rather than guessed
+# at.
+#
+# __SUFFIX__, __DC__, __BINDDN_CN__ and __BINDPW__ are substituted by
+# entrypoint.sh. The bind password arrives hashed.
+
+dn: __SUFFIX__
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: __ORGANISATION__
+dc: __DC__
+
+dn: ou=people,__SUFFIX__
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=services,__SUFFIX__
+objectClass: organizationalUnit
+ou: services
+
+# The account the application binds as before it searches. Kept outside
+# ou=people deliberately: it has no mail attribute, so the synchronisation
+# skips it either way, but a bind account sitting among the staff is one
+# careless base DN away from becoming a person with a timesheet.
+dn: cn=__BINDDN_CN__,ou=services,__SUFFIX__
+objectClass: inetOrgPerson
+cn: __BINDDN_CN__
+sn: Service
+description: Read-only account the time recording binds as to search
+userPassword: __BINDPW__

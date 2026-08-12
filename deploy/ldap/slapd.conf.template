@@ -1,0 +1,57 @@
+# OpenLDAP configuration, completed by entrypoint.sh at first start.
+#
+# The classic single-file form rather than the cn=config tree, because the
+# point of this file is that somebody can read it and see what the server is
+# doing. cn=config is the modern way to run a directory that is reconfigured
+# while it serves; this one is configured once and then answers binds.
+#
+# Three placeholders are substituted before slapd ever reads it: __SUFFIX__,
+# __ROOTDN__ and __ROOTPW__. The password arrives already hashed, so this file
+# never holds the plain one even for the moment between writing and starting.
+
+include		/etc/ldap/schema/core.schema
+include		/etc/ldap/schema/cosine.schema
+include		/etc/ldap/schema/inetorgperson.schema
+include		/etc/ldap/schema/nis.schema
+
+pidfile		/var/run/slapd/slapd.pid
+argsfile	/var/run/slapd/slapd.args
+
+modulepath	/usr/lib/ldap
+moduleload	back_mdb.la
+
+database	mdb
+suffix		"__SUFFIX__"
+rootdn		"__ROOTDN__"
+rootpw		__ROOTPW__
+
+directory	/var/lib/ldap
+
+# 1 GiB. The default is 10 MiB, which is enough for a few hundred entries and
+# then fails writes with "environment mapsize limit reached" - a message that
+# names nothing anybody would search for. Raising it costs nothing until the
+# space is used: mdb sizes the file as it grows.
+maxsize		1073741824
+
+# entryUUID is what the application matches accounts on, so it has to be
+# indexed - and, more to the point, present. slapd assigns it to every entry
+# automatically, which is exactly why it is the right thing to match on: unlike
+# a mail address, nobody can change it, so somebody who marries and changes
+# their address stays the same account with the same recorded hours.
+index		objectClass	eq
+index		uid,mail	eq,sub
+index		entryUUID	eq
+
+# Anonymous callers may not read the directory. The application binds as a
+# service account before it searches, so nothing legitimate needs this open -
+# and a directory that answers unauthenticated searches hands its whole staff
+# list to anything that can reach port 389.
+access to attrs=userPassword
+	by self write
+	by anonymous auth
+	by * none
+
+access to *
+	by self read
+	by users read
+	by * none
