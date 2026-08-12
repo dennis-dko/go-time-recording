@@ -78,6 +78,20 @@ func openWith(t *testing.T, env ...string) *page {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
+
+		// Pinned, because the interface writes figures and dates the way the
+		// reader's own browser writes them - so without this the suite asserts
+		// against whatever locale the machine running it happens to have. Five
+		// cases search the time table for "1.11" and found "1,11" on a German
+		// machine: the application was right and the suite was not portable, which
+		// is worse, because it trains whoever runs it locally to expect red.
+		//
+		// CI is en-US and was passing by luck rather than by decision. Stating it
+		// here makes that a decision, and the one case that is *about* following
+		// the browser compares against that browser's own Intl rather than against
+		// a format written down here, so it holds whatever this is set to.
+		chromedp.Flag("lang", "en-US"),
+
 		// The container images CI uses run as root, where Chrome refuses to
 		// start without this.
 		chromedp.NoSandbox,
@@ -452,6 +466,18 @@ func (p *page) count(selector string) int {
 
 // attr reads an attribute as the browser currently has it, which is not always
 // what the markup said: the reveal button changes an input's type in place.
+// location is the address bar, which the interface writes the current screen
+// into - so it is also what a sign-out has to let go of.
+func (p *page) location() string {
+	p.t.Helper()
+
+	var out string
+
+	p.run("read the address", chromedp.Evaluate(`location.href`, &out))
+
+	return out
+}
+
 func (p *page) attr(selector, name string) string {
 	p.t.Helper()
 

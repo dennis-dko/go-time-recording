@@ -532,7 +532,15 @@ function fmtNumber(n) {
   }).format(n);
 }
 
-const fmtHours = (n) => `${fmtNumber(n)} h`;
+/**
+ * A number of hours, with the unit the reader uses for one.
+ *
+ * The unit was a literal "h" appended here, which is a word - a short one that
+ * happens to be the same in English and German, which is exactly why it survived
+ * every pass over the translations. It is looked up like anything else now, so a
+ * language that abbreviates hours differently has somewhere to say so.
+ */
+const fmtHours = (n) => `${fmtNumber(n)} ${t('unit.hours', 'h')}`;
 
 /** Renders a signed balance, coloured as a credit or a debt. */
 function balanceCell(value) {
@@ -1636,6 +1644,7 @@ const TRANSLATIONS = {
     'ts.edit': 'Eintrag bearbeiten',
     'ts.entries': 'Einträge',
     'ts.noProject': 'ohne Projekt',
+    'unit.hours': 'Std.',
     'user.create': 'Benutzer anlegen',
     'user.empty': 'Noch keine Benutzer angelegt.',
     'user.initialPassword': 'leer = Initialpasswort',
@@ -1751,6 +1760,20 @@ function activeLanguage() {
  * the stored value as a decision there would take the region away permanently,
  * on the strength of a choice that was never made.
  */
+// One thing this cannot reach: the date fields.
+//
+// <input type="date"> renders in the browser's own UI language and nothing on
+// the page changes it. Measured rather than assumed, in Chrome 151, with the
+// same value in three inputs - a bare one, one inside a lang="de-DE" wrapper,
+// and one carrying lang="de-DE" itself. Started with --lang=en-US all three read
+// 08/12/2026; started with --lang=de-DE all three read 12.08.2026, including the
+// one on a page whose lang is "en". The attribute is ignored outright.
+//
+// So a reader who switches this application to a language their browser is not
+// set to gets their own convention in the pickers and the chosen one everywhere
+// else. The only way to close that is to stop using the native field, and what
+// it costs is not obvious in a desktop browser: on a phone this is what becomes
+// a proper date wheel, and it is the accessible default a screen reader knows.
 function activeLocale() {
   const chosen = me.user?.language;
 
@@ -2621,8 +2644,28 @@ function wireTokens() {
 
 // ------------------------------------------------------------ administration
 
-/** Whether the caller may open the administration screen. */
-const isSystemAdmin = () => !me.authEnabled || (me.user?.isSystem ?? false);
+/**
+ * Whether this account administers the installation and has no working day.
+ *
+ * The built-in administrator, and anybody holding the admin role - which is the
+ * same thing said twice: that role is the administration and none of the working
+ * day, and an installation that hands it to somebody has decided that person
+ * administers. This asked whether the caller *was* the built-in account, so the
+ * few things reserved for it stayed reserved for it, and the way to reach them
+ * was to sign in as the one account nobody can attribute to a person.
+ *
+ * Asked as a shape rather than by the role's name, which an installation may have
+ * changed. The combined role is deliberately not this: somebody who also books
+ * time keeps their own screens, their walk through and their working times, and
+ * was never meant to inherit the directory purge with them.
+ *
+ * Mirrors Authorizer.AdministersOnly, and has to: this decides what is offered
+ * and that decides what is answered. A screen offering what the server refuses is
+ * worse than one that offers nothing.
+ */
+const administersOnly = () => !me.authEnabled
+  || (me.user?.isSystem ?? false)
+  || (can('settings:manage') && !can('timesheets:write:own'));
 
 /**
  * Applies the instance branding.
@@ -2785,7 +2828,7 @@ async function loadAdmin() {
   //
   // data-perm cannot express this: it names a permission, and this is about which
   // account it is.
-  $('#sync-card').hidden = !isSystemAdmin();
+  $('#sync-card').hidden = !administersOnly();
 
   const schedule = $('#form-sync-schedule');
   if (schedule) {
@@ -3310,6 +3353,50 @@ async function submitLogin(e) {
   }
 }
 
+/**
+ * Drops everything on screen and in hand that belonged to whoever just left.
+ *
+ * Two things survived a sign-out, and the second is the one that matters.
+ *
+ * The address bar keeps the screen somebody was on - switchView writes it there
+ * so a reload comes back to the same place and a link can be sent to somebody.
+ * Nothing cleared it, and the starting view prefers the address bar over the
+ * screen this account was last on, so signing in as somebody else landed on the
+ * previous person's screen. Signing in as the *same* account hid it, because
+ * both answers agreed.
+ *
+ * And the tables kept their rows. Every loader begins by checking a right and
+ * returning if it is absent, which is correct for loading and wrong for what was
+ * already loaded: an ordinary account signing in after an administrator found
+ * loadUsers returning at once and the administrator's list of accounts still in
+ * the document underneath a tab that is merely hidden. The API never answered
+ * them anything - the rows were already there.
+ *
+ * So both are cleared here rather than at the next sign-in. Sign-out is the
+ * moment this stops being anybody's data, and leaving it to the next arrival
+ * means it sits on the sign-in screen in the meantime.
+ */
+function forgetTheLastAccount() {
+  // replaceState rather than assigning: assigning pushes a history entry, and
+  // Back would then return to a screen belonging to the session that ended.
+  if (currentHashView()) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+
+  cache.users = [];
+  cache.projects = [];
+  cache.roles = [];
+  cache.permissions = [];
+
+  // Emptied rather than left to the next render, which may never come: a table
+  // whose loader returns early keeps whatever it last held.
+  for (const body of $$('table tbody')) body.replaceChildren();
+
+  // The selection bars belong to those rows and would otherwise stand over an
+  // empty table offering to delete three things.
+  for (const bar of $$('.bulk-bar')) bar.remove();
+}
+
 async function doLogout() {
   try {
     await api('/auth/logout', { method: 'POST' });
@@ -3324,6 +3411,8 @@ async function doLogout() {
   stopPermissionPolling();
 
   me = { user: null, permissions: [], authEnabled: true };
+
+  forgetTheLastAccount();
 
   // The screen belongs to nobody now, so it stops speaking the language of
   // whoever just left. activeLanguage() falls back to the browser once me.user
@@ -3921,7 +4010,7 @@ async function maybeWelcome() {
   if (!me.user || me.user.tourSeen) return;
   if (!$('#setup-wizard').hidden) return;
   if (me.user.mustChangePassword) return;
-  if (isSystemAdmin()) return;
+  if (administersOnly()) return;
   if (greetedThisVisit()) return;
 
   await startTour();
@@ -4154,7 +4243,7 @@ let setup = { state: null, index: 0 };
 
 /** Loads the wizard state and shows it if anything is outstanding. */
 async function loadSetup() {
-  if (!isSystemAdmin()) {
+  if (!administersOnly()) {
     $('#setup-wizard').hidden = true;
 
     return;
@@ -6100,6 +6189,15 @@ async function loadPasskeys() {
 
   // The built-in administrator keeps its password on purpose, so it is never
   // offered a passkey it might then come to rely on.
+  //
+  // isSystem here rather than administersOnly, which is the one place the two
+  // deliberately differ. Everything else reserved for the built-in account was
+  // reserved for what it *does*, and an account holding the admin role does the
+  // same things - but this is reserved for what it *is*: the guaranteed way back
+  // in, which a way back in tied to one particular phone would stop being.
+  // Somebody who administers because they were given the role is not that account
+  // and does not carry that guarantee, so withholding a phishing-resistant
+  // sign-in from them would cost security rather than protect it.
   card.hidden = !passkeysAvailable || !me.user || me.user.isSystem;
 
   if (card.hidden) return;

@@ -79,19 +79,26 @@ func (h *LDAPSyncHandler) Run(c *gofr.Context) (any, error) {
 	return newSyncReportResponse(report), nil
 }
 
-// requireSystemAdmin restricts the run to the built-in administrator.
+// requireAdministrator restricts the run to an account that administers this
+// installation and has no working day of its own.
+//
+// The built-in one, and anybody holding the admin role - see
+// Authorizer.AdministersOnly for why those are the same thing and why the
+// combined role is not. It asked for the built-in account alone, which meant an
+// installation that had handed its administration to a person still had to sign
+// in as the account nobody can attribute to one.
 func (h *LDAPSyncHandler) requireSystemAdmin(c *gofr.Context) error {
 	principal, err := h.authz.Principal(c)
 	if err != nil {
 		return err
 	}
 
-	if !h.authz.Enabled() || principal.User.IsSystem {
+	if h.authz.AdministersOnly(principal) {
 		return nil
 	}
 
-	return forbiddenError{msg: "only the built-in administrator may synchronise the directory"}.
-		WithCode("onlyBuiltInAdminSyncs")
+	return forbiddenError{msg: "only an administrator of this installation may " +
+		"synchronise the directory"}.WithCode("onlyBuiltInAdminSyncs")
 }
 
 func newSyncReportResponse(r *service.SyncReport) SyncReportResponse {

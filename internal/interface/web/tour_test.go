@@ -133,7 +133,8 @@ func TestTheGreetingYieldsToTheWizardAndSkipsTheAdministrator(t *testing.T) {
 	for _, guard := range []struct{ needle, why string }{
 		{"#setup-wizard", "the greeting must not appear while the setup wizard is showing"},
 		{"tourSeen", "the greeting must only be offered to someone who has not seen it"},
-		{"isSystemAdmin()", "the built-in administrator must not be greeted with the tour"},
+		{"administersOnly()", "an account that only administers must not be greeted with " +
+			"a tour of booking time, which is a tour of somebody else's job"},
 		{"mustChangePassword", "the greeting must wait until the initial password is replaced"},
 	} {
 		if !strings.Contains(body, guard.needle) {

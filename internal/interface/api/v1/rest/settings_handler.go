@@ -639,7 +639,7 @@ func (h *SettingsHandler) requireAdminForSchedule(c *gofr.Context, wanted model.
 		return err
 	}
 
-	if !h.authz.Enabled() || principal.User.IsSystem {
+	if h.authz.AdministersOnly(principal) {
 		return nil
 	}
 
@@ -653,7 +653,8 @@ func (h *SettingsHandler) requireAdminForSchedule(c *gofr.Context, wanted model.
 	}
 
 	return forbiddenError{
-		msg: "only the built-in administrator may schedule the directory synchronisation",
+		msg: "only an administrator of this installation may schedule the directory " +
+			"synchronisation",
 	}.WithCode("onlyBuiltInAdminSchedules")
 }
 

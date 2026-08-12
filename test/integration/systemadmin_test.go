@@ -505,3 +505,81 @@ func TestOnlyTheBuiltInAdministratorSchedulesTheDirectoryRun(t *testing.T) {
 	stored["host"] = "directory2.example.com"
 	both.must(both.api(http.MethodPut, "/settings/ldap", stored), http.StatusOK)
 }
+
+// An account holding the admin role is the built-in administrator in every way
+// that matters.
+//
+// A handful of things asked whether the caller *was* the built-in account rather
+// than whether it administers: the directory synchronisation, its schedule, and
+// the setup wizard. So an installation that had handed its administration to a
+// person still had to sign in as the account nobody can attribute to one - which
+// is the opposite of what giving somebody the role was for.
+//
+// The test names both halves. What the granted administrator gains, and what the
+// combined role deliberately does not: somebody who also books time keeps their
+// own screens and was never meant to inherit a purge that deletes accounts.
+func TestTheAdminRoleIsTreatedAsTheBuiltInAdministrator(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	granted := a.signInAsGrantedAdministrator(admin, "Gerd", "gerd@example.com")
+	both := a.signInAsWorkingAdmin(admin, "Bothe", "bothe@example.com")
+
+	// The setup wizard.
+	granted.must(granted.api(http.MethodGet, "/setup", nil), http.StatusOK)
+
+	if got := both.api(http.MethodGet, "/setup", nil).Status; got != http.StatusForbidden {
+		t.Errorf("the combined role reached the setup wizard: %d, want %d",
+			got, http.StatusForbidden)
+	}
+
+	// The directory run, both by hand and on a schedule. A preview against no
+	// configured directory fails for its own reasons; what is asserted is that it
+	// is not refused as forbidden, which is the question here.
+	for _, route := range []string{"/settings/ldap/sync/preview", "/settings/ldap/sync"} {
+		if got := granted.api(http.MethodPost, route, nil).Status; got == http.StatusForbidden {
+			t.Errorf("%s refused an account holding the admin role", route)
+		}
+
+		if got := both.api(http.MethodPost, route, nil).Status; got != http.StatusForbidden {
+			t.Errorf("%s answered the combined role %d, want %d",
+				route, got, http.StatusForbidden)
+		}
+	}
+
+	var stored map[string]any
+
+	granted.must(granted.api(http.MethodGet, "/settings/ldap", nil), http.StatusOK).Data(t, &stored)
+	stored["syncSchedule"] = "0 4 * * *"
+
+	granted.must(granted.api(http.MethodPut, "/settings/ldap", stored), http.StatusOK)
+
+	// A different one for the combined role, because only a *change* is refused -
+	// sending back the schedule that is already stored is what somebody editing
+	// the connection does, and refusing that would refuse them the whole form.
+	stored["syncSchedule"] = "0 5 * * *"
+
+	if got := both.api(http.MethodPut, "/settings/ldap", stored).Status; got != http.StatusForbidden {
+		t.Errorf("the combined role scheduled the directory run: %d, want %d",
+			got, http.StatusForbidden)
+	}
+
+	// And it has no working day either, which is the other half of being that
+	// kind of administrator rather than merely reaching the same screens.
+	for _, attempt := range []struct {
+		what   string
+		method string
+		route  string
+		body   map[string]any
+	}{
+		{"book time", http.MethodPost, "/timesheets",
+			map[string]any{"date": "2026-08-03", "durationHours": 2}},
+		{"keep a project", http.MethodPost, "/projects",
+			map[string]any{"name": "Administration", "startDate": "2026-08-01"}},
+	} {
+		if got := granted.api(attempt.method, attempt.route, attempt.body).Status; got == http.StatusOK ||
+			got == http.StatusCreated {
+			t.Errorf("an account with the admin role could %s", attempt.what)
+		}
+	}
+}
