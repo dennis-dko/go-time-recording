@@ -16,6 +16,7 @@ exercise one is a slow way to discover the third does not fit in memory.
 ```bash
 cd test
 
+docker compose --profile dev      up -d      # PostgreSQL, the directory and Jaeger
 docker compose --profile postgres up -d      # PostgreSQL on localhost:55432
 docker compose --profile mysql    up -d      # MySQL      on localhost:53306
 docker compose --profile ldap     up -d      # OpenLDAP   on localhost:5389, browser on :5080
@@ -26,6 +27,9 @@ docker compose --profile stage    up -d      # the shipped image, and the three
 
 docker compose --profile all down -v         # and clean up
 ```
+
+`dev` is the everyday one: everything except MySQL, which is only worth starting
+when the thing being checked is MySQL.
 
 The published ports are deliberately unusual, so a running instance of any of
 these on the default port is left alone.
@@ -92,8 +96,8 @@ DB_NAME=go-time-recording DB_USER=gtr DB_PASSWORD=gtr-test-password \
 DB_SSL_MODE=disable ./go-time-recording
 ```
 
-The directory is configured in the running application under **Settings →
-LDAP**, not through the environment, so:
+The directory is configured in the running application under **Settings → LDAP
+connection**, not through the environment, so:
 
 | Field | Value |
 | --- | --- |
@@ -109,7 +113,7 @@ LDAP**, not through the environment, so:
 Then sign in as `alice` / `alice-password`.
 
 Tracing is configured in the running application too, under **Settings →
-Metrics and tracing**, and applied at the **next start** — GoFr builds the
+Logging, metrics and tracing**, and applied at the **next start** — GoFr builds the
 exporter inside `gofr.New()`, so nothing saved there can reach the process that
 saved it:
 
@@ -261,6 +265,15 @@ The whole configuration is the three files next to it: [`slapd.conf`](ldap/slapd
 in the readable single-file form, [`entrypoint.sh`](ldap/entrypoint.sh) which
 seeds offline with `slapadd` before opening the port, and the seed itself. The
 first build takes a minute; after that it is cached.
+
+There is a second one under [`deploy/ldap/`](../deploy/ldap/), and the two are
+not interchangeable. This one has its password in a file, no persistence and
+five invented people in it, because it exists to be thrown away between runs.
+That one takes its password from the environment and hashes it, keeps its data
+on a volume, and comes up with no people at all — invented ones would arrive in
+the time recording on the first synchronisation, named after nobody. Read
+[`deploy/compose.ldap.yaml`](../deploy/compose.ldap.yaml) before running that
+one anywhere; most installations should not.
 
 ## Browsing the directory
 

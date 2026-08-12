@@ -1,0 +1,192 @@
+# Overlay that runs a directory beside the application, for an installation
+# that has none.
+#
+#   docker compose -f compose.yaml -f compose.ldap.yaml up -d
+#   docker compose -f compose.yaml -f compose.tls.yaml \
+#     -f compose.ldap.yaml -f compose.tracing.yaml up -d
+#
+# Like compose.tracing.yaml it only adds a service and replaces nothing that
+# compose.yaml declares, so it combines with the other overlays in any order.
+#
+# ---------------------------------------------------------------------------
+# Read this part before running it
+# ---------------------------------------------------------------------------
+#
+# Most installations should NOT use this file. The application is a directory
+# *client*: if there is already an Active Directory, an OpenLDAP, a FreeIPA or
+# anything else that speaks LDAP, you need no service here at all - you fill in
+# the directory card under Settings and point it at what you already run. This
+# overlay is for the two cases where that is not true:
+#
+#   - You want to see what the directory feature does before pointing it at the
+#     real one. Nothing here touches the accounts the application already has.
+#   - You genuinely have no directory, and want one - a handful of people, one
+#     place to change a password, and a leaver who disappears from the time
+#     recording when they disappear from the directory.
+#
+# And a case where it is the wrong answer: an installation whose people already
+# sign in here with a password, a passkey or a code from an authenticator app
+# needs no directory. Adding one is another stateful service to back up and
+# another password store to keep, for the same people. Directory accounts do
+# not gain passkeys - a directory account's password lives in the directory,
+# which is the point of it.
+#
+# ---------------------------------------------------------------------------
+# What to do after starting it
+# ---------------------------------------------------------------------------
+#
+# The directory comes up empty. That is deliberate: it holds a suffix, an
+# ou=people to put staff in, and the account the application binds as. Invented
+# people would arrive in the time recording on the first synchronisation, named
+# after nobody.
+#
+# Add somebody, from the host, using the admin password from .env:
+#
+#   docker compose exec -T openldap ldapadd -x \
+#     -H ldap://127.0.0.1:389 \
+#     -D "cn=admin,${LDAP_SUFFIX:-dc=example,dc=com}" \
+#     -w "$LDAP_ADMIN_PASSWORD" <<'EOF'
+#   dn: uid=mmustermann,ou=people,dc=example,dc=com
+#   objectClass: inetOrgPerson
+#   uid: mmustermann
+#   cn: Maria Mustermann
+#   sn: Mustermann
+#   mail: maria.mustermann@example.com
+#   userPassword: choose-something-else
+#   EOF
+#
+# -T matters: without it compose allocates a TTY and swallows the heredoc.
+#
+# A mail attribute is required. It is what an account is keyed on, and an entry
+# without one is skipped rather than guessed at.
+#
+# ---------------------------------------------------------------------------
+# Then, in the running application, under Settings
+# ---------------------------------------------------------------------------
+#
+# This file sets nothing on the application, for the same reason
+# compose.tracing.yaml sets nothing: the directory is administered in the
+# running application and what is stored there is what wins. Two places saying
+# different things, one of them invisible, is how an afternoon gets spent on a
+# host name that was never being read.
+#
+# On the "Directory (LDAP)" card:
+#
+#   - Enabled:            yes
+#   - Host:               openldap - the service name below, no scheme, no
+#                         "ldap://" in front of it
+#   - Port:               389
+#   - StartTLS / LDAPS:   both off. The connection never leaves this compose
+#     network, which is the same reason the database beside it runs without
+#     TLS. Turn them on only if you move this directory onto its own host, and
+#     then it needs certificates this file does not provide.
+#   - Bind DN:            cn=service,ou=services,dc=example,dc=com
+#   - Bind password:      LDAP_BIND_PASSWORD from .env
+#   - Base DN:            ou=people,dc=example,dc=com
+#     Narrower than the suffix on purpose: it is what keeps the bind account
+#     and anything else you put in the tree out of the staff list.
+#   - User filter:        (|(uid=%s)(mail=%s))
+#   - Name attribute:     cn
+#   - Email attribute:    mail
+#   - Id attribute:       entryUUID
+#     Not uid and not mail. slapd assigns entryUUID and nobody can change it,
+#     so somebody who changes their surname and their address stays the same
+#     account with the same recorded hours. Keyed on mail, that person is a
+#     departure and a new arrival, and the synchronisation deletes what the
+#     first one recorded.
+#   - Default role:       whatever a new arrival should hold
+#
+# Press *Test connection* before saving. It binds and searches, and says which
+# of the two failed.
+#
+# Substitute your own suffix everywhere above if LDAP_SUFFIX is not the
+# default.
+#
+# ---------------------------------------------------------------------------
+# Synchronisation
+# ---------------------------------------------------------------------------
+#
+# Signing in against the directory works as soon as the card is saved. The
+# synchronisation is separate and is the built-in administrator's alone - not
+# because of the connection, but because a run deletes every account the
+# directory no longer holds, together with everything those people recorded.
+# Always read the preview first. See deploy/OPERATIONS.md.
+#
+# ---------------------------------------------------------------------------
+# What this file needs that the others do not
+# ---------------------------------------------------------------------------
+#
+# compose.yaml promises that copying it and .env to a server is enough. This
+# overlay breaks that promise: it builds its image from deploy/ldap/, so that
+# directory has to be beside it. Built rather than pulled because Bitnami
+# withdrew their OpenLDAP images in 2025 and the osixia one is archived
+# upstream - a deployment resting on either is one deprecation away from not
+# starting, and this container holds the credentials everybody signs in with.
+
+services:
+  openldap:
+    build: ./ldap
+    restart: unless-stopped
+
+    environment:
+      # No defaults for either. A directory that comes up on a password
+      # somebody did not choose is a directory that stays on it.
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set LDAP_ADMIN_PASSWORD in .env}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:?set LDAP_BIND_PASSWORD in .env}
+
+      # Read once, when the volume is empty. Changing any of these later does
+      # nothing to a directory that already exists - the container says so on
+      # every start rather than letting a changed suffix be discovered from a
+      # failing bind.
+      LDAP_SUFFIX: ${LDAP_SUFFIX:-dc=example,dc=com}
+      LDAP_ORGANISATION: ${LDAP_ORGANISATION:-Example Organisation}
+      LDAP_BIND_CN: ${LDAP_BIND_CN:-service}
+
+    # Deliberately no `ports:`, exactly like the database. The application
+    # reaches this as openldap:389 inside the network and nothing outside needs
+    # to - a published 389 offers the staff list, and the password hashes
+    # behind it, to anything that can reach the host. Use
+    # `docker compose exec openldap ldapsearch ...` to look inside, or an SSH
+    # tunnel if you want a browser such as Apache Directory Studio.
+
+    volumes:
+      # The whole directory. Without this, a container replacement - an image
+      # rebuild, a host reboot, a `docker compose down` - takes every account
+      # with it, and everybody who signed in through the directory is locked
+      # out until somebody notices why.
+      - ldap-data:/var/lib/ldap
+
+    healthcheck:
+      # A real search for a real entry rather than a port check: an empty or
+      # half-seeded directory answers on 389 just as readily as a working one,
+      # and would pass. The bind account is searched for because it is the one
+      # entry this file guarantees exists.
+      #
+      # $$ escapes the compose substitution so the shell inside the container
+      # expands the variables, not compose out here.
+      test:
+        - CMD-SHELL
+        - >-
+          ldapsearch -x -H ldap://127.0.0.1:389
+          -D "cn=$${LDAP_BIND_CN},ou=services,$${LDAP_SUFFIX}"
+          -w "$${LDAP_BIND_PASSWORD}"
+          -b "$${LDAP_SUFFIX}" "(cn=$${LDAP_BIND_CN})" | grep -q '^dn:'
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+# No `depends_on` between the application and this, on purpose - and this one
+# matters more than it does for the collector. A directory that fails its
+# health check must not keep the time recording from starting: the built-in
+# administrator signs in with a local password, and it is the account that has
+# to be able to reach Settings and switch the directory off when the directory
+# is what is broken. Ordering the two would mean a directory outage is an
+# application outage with no way in to fix it.
+
+volumes:
+  ldap-data:

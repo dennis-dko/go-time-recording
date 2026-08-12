@@ -36,6 +36,17 @@ private interface, firewall it, or switch it off under *Settings*.
 A is the normal answer. B if nothing else terminates TLS. C for a small
 installation without Docker, or inside systemd. D mostly for a look.
 
+Two overlays add a service to A or B rather than being a choice of their own,
+and combine with each other in any order:
+
+| Overlay | Adds | Include it when |
+| --- | --- | --- |
+| [`compose.tracing.yaml`](compose.tracing.yaml) | a Jaeger to receive traces | you are about to look at where the time goes |
+| [`compose.ldap.yaml`](compose.ldap.yaml) | an OpenLDAP to sign in against | you have no directory and want one — read its header first, most installations should not |
+
+Neither sets anything on the application. Both are switched on under *Settings*
+in the running instance, because that is where the setting that wins is stored.
+
 ---
 
 ## A · Compose
@@ -283,7 +294,8 @@ They are not interchangeable.
 | [`.env.binary.example`](.env.binary.example) | **the process** | deployment C |
 
 `.env.example` carries only what the compose files interpolate — database
-credentials, the image tag. Several of its values mean nothing beside a binary.
+credentials, the image tag, the TLS domain, and the two directory passwords if
+that overlay is included. Several of its values mean nothing beside a binary.
 `.env.binary.example` lists what the process itself reads, with the value that
 applies when the variable is absent.
 
@@ -365,7 +377,8 @@ list of pending changes with the running value beside the stored one:
 
 | Setting | Why | Shown as pending? |
 | --- | --- | --- |
-| the database connection | never swapped under live requests | **only if the dialect changed** |
+| the database connection | never swapped under live requests | yes — dialect, host, port, name, user and SSL mode |
+| the database password | same | yes, as the name of the setting alone |
 | log level | the logger's level is read at start | yes |
 | metrics off | the port is bound at start | yes |
 | trace exporter, collector URL | the exporter is built at start | yes |
@@ -375,17 +388,29 @@ list of pending changes with the running value beside the stored one:
 Applying immediately: the operational limits, the whole directory connection, the
 instance timezone, branding and the logo, maintenance mode, users and roles.
 
-**The pending list is not a complete account of what is waiting.** Two changes
-need a restart and appear nowhere in it:
+The connection is compared whole. It used to be compared by dialect alone, on
+the grounds that a changed host is a change to the same connection — which
+describes what the card *says* and answers the wrong question, because the
+connection is opened once while the application starts. Moving the database to
+another host is exactly as pending as moving it to another dialect, and it now
+reads as one line: `postgres db:5432/gtr as app` → `postgres db2:5432/gtr as
+app`. A default port and an omitted one are the same connection here as they
+are in fact, so spelling out `5432` is not reported as a change.
 
-- **A database change that keeps the dialect.** Moving to another host, port, user
-  or password is compared only by dialect, so `postgres` → `postgres` shows
-  nothing pending. Reporting more would mean reading a stored password back to
-  compare it. The `restart required` in the answer when you save is the signal.
-- **The trace sample ratio.** It is exported to the tracer at start like the rest
-  of the exporter settings, but it is not among the values compared.
+A changed password appears as *Database password* with nothing beside it. The
+old one is not printed next to the new one on an administration screen, and the
+card renders an entry with no before and after as the name of the setting alone
+rather than as "none → none".
 
-If you changed either and the list is empty, the change is still waiting.
+**One change still needs a restart and appears nowhere in the list**: the trace
+sample ratio. It is exported to the tracer at start like the rest of the
+exporter settings, but it is not among the values compared. If you changed it
+and the list is empty, the change is still waiting.
+
+Saving the database form says which of the two it was. It reports *Settings
+saved* when the comparison finds nothing and *Applied on the next start* when it
+does — it used to promise a restart on every press, including on a form somebody
+had only opened to look at.
 
 **The in-application restart button replaces the process image, and passes the
 current environment on.** That matters in one case: a setting you cleared back to
@@ -449,8 +474,10 @@ The scheme matters: that string goes to a gRPC dialer, which reads `http://` as
 part of the host name and then resolves nothing.
 
 **Then restart the application.** The exporter is built while it starts, so a
-saved setting does nothing until it does — and this is one of the changes the
-pending list does report, so the Settings screen will say so.
+saved setting does nothing until it does. The exporter and the collector address
+are both in the pending list, so the Settings screen says so and offers the
+button. The recorded share is not — change that on its own and nothing on screen
+will mention the restart it still needs.
 
 **Reading the traces.** The browser is on `127.0.0.1:16686` and asks nobody to
 sign in, so it is not published to the network — traces carry request paths and
@@ -476,6 +503,56 @@ are dropped.
 To turn it off again, drop the overlay from the command **and** set the exporter
 back under *Settings*. The stored setting outlives the container, so leaving it
 behind means an application starting up and failing to export, every time.
+
+### A directory, if this installation has none
+
+[`compose.ldap.yaml`](compose.ldap.yaml) is a fourth overlay, and the one to
+think about before including. It runs an OpenLDAP beside the application:
+
+```bash
+docker compose -f compose.yaml -f compose.ldap.yaml up -d
+```
+
+**Most installations should leave it out.** The application is a directory
+client, so an installation that already runs an Active Directory, an OpenLDAP or
+a FreeIPA points at that one under *Settings* and needs no service here. An
+installation whose people sign in with a password, a passkey or an authenticator
+code needs no directory at all — adding one is a second stateful service to back
+up and a second password store to keep, for the same people, and a directory
+account cannot hold a passkey because its password lives in the directory. Two
+cases are worth it: seeing what the feature does before pointing it at the real
+directory, and genuinely having none and wanting one.
+
+Like the collector, it sets nothing on the application: the connection is
+administered under *Settings* and what is stored there is what wins. The header
+of the file lists every field, and one of them is worth repeating here — the id
+attribute must be `entryUUID`, not `uid` and not the mail address. slapd assigns
+it and nobody can change it, so somebody who marries and changes their address
+stays the same account. Keyed on the address, that person is a departure and an
+arrival, and the next synchronisation deletes what the first one recorded.
+
+Three things differ from the other overlays:
+
+- **It needs `deploy/ldap/` beside it.** The image is built rather than pulled,
+  because the OpenLDAP images most compose files reach for are withdrawn from
+  Docker Hub or archived upstream. Copying `compose.yaml` and `.env` alone is
+  enough for every other arrangement and is not enough for this one.
+- **Two passwords in `.env`**, both required and neither defaulted:
+  `LDAP_ADMIN_PASSWORD` writes the directory and the application never sees it;
+  `LDAP_BIND_PASSWORD` is the read-only account typed into the Settings card.
+  They are hashed before they reach any file inside the container.
+- **It comes up empty.** A suffix, an `ou=people`, and the bind account —
+  no people. Invented ones would arrive in the time recording on the first
+  synchronisation, named after nobody and awkward to remove once entries hang
+  off them. The header has the `ldapadd` for a real one; a `mail` attribute is
+  required, because that is what an account is keyed on.
+
+Back it up separately. It is a stateful service on the `ldap-data` volume and is
+not in the database dump below:
+
+```bash
+docker compose exec -T openldap slapcat -f /etc/ldap/slapd.conf | gzip > ldap-$(date +%F).ldif.gz
+```
 
 ## Backup
 
@@ -533,6 +610,32 @@ The connection is configured **in the application**, under *Settings*, not in th
 environment — a second place to write it would only disagree with the first. Only
 two variables exist here: `LDAP_SYNC_SCHEDULE` (empty, so no scheduled run) and
 `LDAP_SYNC_MAX_DELETE_RATIO` (`0.5`).
+
+There is no directory service in `compose.yaml`, because this application is a
+directory client: you point it at the one you already run.
+`compose.ldap.yaml` runs an OpenLDAP beside it for the two installations where
+that is not true — trying the feature out, and having no directory at all.
+Read its header before including it; most deployments should not.
+
+### Who may run one
+
+Editing the directory card, testing the connection and saving it need
+`settings:manage`, like every other setting. Running a synchronisation does
+not: **the preview, the button and the schedule field belong to the built-in
+administrator alone**, and the card is not shown to an account that would be
+refused it.
+
+The distinction is what a run does rather than what it reads. Configuring a
+directory is configuration; deleting every account the directory no longer holds
+along with everything those people recorded is not. The schedule sits on the
+same side of that line — it is the same deletion performed later and unattended
+— and it used to sit on the other one, so the caution the buttons were given
+could be walked around by typing five numbers into the field between them.
+
+An installation whose administration has been handed to a `user-admin` account
+therefore keeps one thing behind the built-in login. That is deliberate: it is
+the account that exists before anybody has chosen anything, and the irreversible
+operation is the right thing to keep there.
 
 A run reads the directory and never writes to it. It creates accounts the
 directory holds and this installation lacks, and it **deletes** directory-backed
