@@ -365,6 +365,13 @@ func TestTheAccountTableOffersTheSameSelection(t *testing.T) {
 		p.createOrdinaryAccount(t, who, "another-password-1")
 	}
 
+	// Reloaded, because the accounts above were created through the API rather
+	// than through the form. The table is filled when the interface loads and
+	// refreshed by what the form does afterwards, so switching to the tab shows
+	// what was there at sign-in - which is neither of them.
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.settleWelcome()
+
 	p.run("open the accounts", p.click(`.tab[data-view="users"]`),
 		chromedp.WaitVisible("#table-users", chromedp.ByID))
 
