@@ -260,12 +260,27 @@ docker compose --profile ldap exec -T openldap ldapdelete -x -H ldap://127.0.0.1
 
 ## Why the directory is built rather than pulled
 
+**It is the only one that is.** PostgreSQL, MySQL and Jaeger are plain `image:`
+lines, pinned to the same versions a deployment runs — and held there by
+[`compose_test.go`](compose_test.go), which fails when the two disagree. A
+version that has drifted quietly undoes the reason for testing against the real
+thing at all: a trace that renders here and not on the server is a version
+difference, and a version difference is the last thing anybody thinks to check.
+
+Jaeger had a `Dockerfile` here too for a while, and it earned nothing. Its whole
+content was a `FROM`, two `ENV`s and a `HEALTHCHECK` — it replaced no image that
+had gone away, and it cost two things: the version sat inside a `FROM` where the
+comparison above could not see it, and this was the one service shaped
+differently from the one a deployment runs, so the two could drift in ways
+nobody could diff. It is a compose block now, next to the same block in
+`deploy/compose.tracing.yaml`.
+
+The directory is the exception because there is nothing to pull.
 [`deploy/ldap/Dockerfile`](../deploy/ldap/Dockerfile) builds a small OpenLDAP on
-Debian instead of using a stock image. Bitnami withdrew their OpenLDAP images
-from Docker Hub in 2025 and the popular osixia image is archived upstream, so
-anything depending on either is one deprecation away from not starting — which
-is how that file came to be written. The first build takes a minute; after that
-it is cached.
+Debian instead. Bitnami withdrew their OpenLDAP images from Docker Hub in 2025
+and the popular osixia image is archived upstream, so anything depending on
+either is one deprecation away from not starting — which is how that file came
+to be written. The first build takes a minute; after that it is cached.
 
 **It is the deployment image**, and this is the only service here that is
 treated any differently from PostgreSQL and MySQL: those pull the real image and

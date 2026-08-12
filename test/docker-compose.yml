@@ -96,7 +96,47 @@ services:
   # collector address it cannot dial, a sampler that records nothing.
   jaeger:
     profiles: [traces, dev, all, stage]
-    build: ./jaeger
+
+    # Pulled, not built. There was a jaeger/Dockerfile here whose whole content
+    # was a FROM, two ENVs and a HEALTHCHECK - it replaced nothing that had gone
+    # away, unlike the directory, and its own comment admitted a bare image line
+    # would work too. What it cost was worse than what it earned: the version
+    # sat inside a FROM where nothing comparing the two environments could see
+    # it, and this service was the only one here shaped differently from the one
+    # a deployment runs, so the two could drift in ways nobody could diff.
+    #
+    # Same image and same version as deploy/compose.tracing.yaml, and a test
+    # holds them level rather than a comment asking somebody to.
+    image: jaegertracing/all-in-one:1.62.0
+
+    environment:
+      # The OTLP receiver is the entire reason this container is here. GoFr's
+      # "otlp" and "jaeger" exporters are one code path - both speak OTLP over
+      # gRPC on 4317 - so the native Jaeger protocol on 14250 is never used.
+      COLLECTOR_OTLP_ENABLED: "true"
+
+      # Bounded, so a test that exports in a loop cannot grow the container
+      # until the host notices. Far more than anything here produces. Lower than
+      # the deployment's, which has to look back across an incident rather than
+      # across one test run.
+      MEMORY_MAX_TRACES: "10000"
+
+    healthcheck:
+      # Asked of the admin port rather than the query port: the query API
+      # answers before the receiver does, and a span exported into that gap is
+      # dropped with no error anybody sees. It answers with a readiness document
+      # rather than a bare 200, which is the difference between "the socket is
+      # open" and "spans will be accepted".
+      #
+      # Far more often than the deployment asks, because a test waiting on this
+      # is waiting on the whole run.
+      test:
+        - CMD-SHELL
+        - wget -q -O - http://127.0.0.1:14269/ | grep -q "Server available"
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
     ports:
       # 4317 is where the application exports to; 51686 serves the query API the
       # tests read back from, and the trace browser for looking at one by hand.
