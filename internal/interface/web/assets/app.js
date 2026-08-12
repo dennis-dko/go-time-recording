@@ -506,7 +506,7 @@ function fmtDate(iso) {
 
   if (Number.isNaN(at.getTime())) return iso;
 
-  return new Intl.DateTimeFormat(activeLanguage(), {
+  return new Intl.DateTimeFormat(activeLocale(), {
     day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
   }).format(at);
 }
@@ -527,7 +527,7 @@ function fmtDate(iso) {
 function fmtNumber(n) {
   if (typeof n !== 'number' || !Number.isFinite(n)) return String(n ?? '');
 
-  return new Intl.NumberFormat(activeLanguage(), {
+  return new Intl.NumberFormat(activeLocale(), {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(n);
 }
@@ -1714,12 +1714,77 @@ function setLeadingText(node, value) {
  * A signed-in user's stored choice wins. Before anyone has signed in - which
  * is exactly the sign-in screen - the browser's own preference decides, so a
  * first-time visitor is not greeted in a language they may not read.
+ *
+ * This is the question "which dictionary", so the answer has to be a language
+ * this application actually ships words for. For "which conventions to write a
+ * date and a figure in", which is a different question with a better answer,
+ * see activeLocale.
  */
 function activeLanguage() {
   if (me.user?.language) return me.user.language;
 
   return detectBrowserLanguage();
 }
+
+/**
+ * The locale to format dates, times and figures with.
+ *
+ * The same rule in the same order - a chosen language wins, the browser decides
+ * otherwise - but the browser's answer is taken whole rather than reduced to a
+ * language this application has a dictionary for.
+ *
+ * That reduction is right for choosing words and wrong for choosing conventions.
+ * There is one English dictionary and there is not one English date: an en-GB
+ * browser was being formatted as plain "en", which Intl reads as the American
+ * order - so the twelfth of August was shown as 08/12/2026 to somebody whose own
+ * browser would have written 12/08/2026. Nothing was mistranslated; the date was
+ * simply wrong by five months for half the year.
+ *
+ * Where the two disagree about the language, the chosen one wins outright:
+ * picking EN on a German browser is a decision about how this application should
+ * read, and a date is part of how it reads.
+ *
+ * Where they agree about the language, the browser's tag is used, because it is
+ * the same answer with a region on it. That case is not an edge: the first
+ * sign-in stores the detected language on the account, so an account whose
+ * language nobody ever chose looks exactly like one where somebody did. Treating
+ * the stored value as a decision there would take the region away permanently,
+ * on the strength of a choice that was never made.
+ */
+function activeLocale() {
+  const chosen = me.user?.language;
+
+  if (!chosen) return BROWSER_LOCALE || detectBrowserLanguage();
+
+  if (BROWSER_LOCALE && primarySubtag(BROWSER_LOCALE) === primarySubtag(chosen)) {
+    return BROWSER_LOCALE;
+  }
+
+  return chosen;
+}
+
+/** The language half of a tag: "de" for "de-AT", "de" for "de". */
+function primarySubtag(tag) {
+  return String(tag).toLowerCase().split('-')[0];
+}
+
+/**
+ * The browser's own first preference, if Intl can use it.
+ *
+ * Validated once, here, rather than at each call: an unusable tag makes every
+ * Intl constructor throw a RangeError, and a date formatter that throws takes
+ * the screen it was rendering with it. Falling back to the language is the same
+ * answer as before this existed, which is a worse date and not a broken page.
+ */
+const BROWSER_LOCALE = (() => {
+  const tag = navigator.languages?.[0] ?? navigator.language ?? '';
+
+  try {
+    return tag && Intl.getCanonicalLocales(tag).length ? tag : '';
+  } catch {
+    return '';
+  }
+})();
 
 /** The language shown when nothing better is known. */
 const FALLBACK_LANGUAGE = 'en';
@@ -1738,8 +1803,7 @@ function detectBrowserLanguage() {
     : [navigator.language ?? FALLBACK_LANGUAGE];
 
   for (const preference of preferences) {
-    const primary = String(preference).toLowerCase().split('-')[0];
-    if (supported.includes(primary)) return primary;
+    if (supported.includes(primarySubtag(preference))) return primarySubtag(preference);
   }
 
   return FALLBACK_LANGUAGE;
@@ -6449,7 +6513,7 @@ function formatLogTime(iso) {
   // language for the rest, like every other figure on screen - it decides
   // nothing at all while hour12 is off, and leaving it to the browser was one
   // more place for the two to disagree later.
-  return at.toLocaleTimeString(activeLanguage(), { hour12: false });
+  return at.toLocaleTimeString(activeLocale(), { hour12: false });
 }
 
 // -------------------------------------------------------- maintenance mode
@@ -6576,7 +6640,7 @@ function availableTimezones() {
 /** The current time in a zone, so a choice can be checked at a glance. */
 function timeIn(timeZone) {
   try {
-    return new Intl.DateTimeFormat(activeLanguage(), {
+    return new Intl.DateTimeFormat(activeLocale(), {
       timeZone, dateStyle: 'medium', timeStyle: 'short',
     }).format(new Date());
   } catch {
