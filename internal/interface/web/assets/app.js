@@ -1006,6 +1006,8 @@ const TRANSLATIONS = {
     'admin.dbHost': 'Host',
     'admin.dbPort': 'Port',
     'admin.logo': 'Logo (PNG/SVG, max. 256 KB)',
+    'admin.logoInHeader': 'In der Kopfzeile',
+    'admin.logoOnSignIn': 'Auf der Anmeldeseite',
     'field.name': 'Name',
     'field.optional': 'optional',
     'field.start': 'Start',
@@ -2848,12 +2850,25 @@ async function loadAdmin() {
 /** The logo travels as a data URI, so it needs no upload endpoint. */
 let pendingLogo = '';
 
+/**
+ * Shows the chosen image at both the sizes it will actually be given.
+ *
+ * One upload, two uses: 28px beside the navigation, and up to 96px across the
+ * sign-in card. A mark that reads at one of those can be unreadable at the other,
+ * and the sign-in screen is the one an administrator does not see again for as
+ * long as they stay signed in - so it is shown here, before saving, rather than
+ * found out the next time somebody signs out.
+ */
 function setLogoPreview(dataURI) {
   pendingLogo = dataURI;
 
-  const preview = $('#logo-preview');
-  preview.src = dataURI || '';
-  preview.hidden = !dataURI;
+  for (const id of ['#logo-preview', '#logo-preview-login']) {
+    const preview = $(id);
+    if (preview) preview.src = dataURI || '';
+  }
+
+  const uses = $('#logo-preview-uses');
+  if (uses) uses.hidden = !dataURI;
 }
 
 function wireAdmin() {

@@ -815,6 +815,26 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   padding: 4px;
 }
 
+/* The two uses side by side, each in a box the shape that use gives it. Wrapping
+ * rather than shrinking on a narrow screen: a preview that has been squeezed is
+ * no longer showing what it is a preview of. */
+.logo-uses {
+  /* start, not the default stretch: the two boxes are deliberately different
+   * heights, and stretching the shorter one leaves its caption floating halfway
+   * down the gap instead of sitting under the thing it names. */
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 4px 0 8px;
+}
+.logo-use { display: grid; gap: 4px; justify-items: start; margin: 0; }
+.logo-use figcaption { font-size: 12px; }
+
+/* The sign-in card's width and the height the banner is allowed there, so what
+ * is on screen here is what will be on screen there. */
+.logo-preview-login { height: 96px; max-width: 328px; width: 328px; }
+
 .site-footer {
   align-items: center;
   border-top: 1px solid var(--border);
@@ -859,7 +879,27 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   }
 }
 
-.login-card .brand-logo { align-self: center; height: 40px; margin-bottom: 4px; }
+/* The same image, given the room a sign-in screen has and a header bar does not.
+ *
+ * Full width of the card and up to 96px tall, so a horizontal wordmark reads as a
+ * banner across the top of it and a square mark is simply a large square mark.
+ * The header keeps 28px, because that is what fits beside the navigation.
+ *
+ * contain rather than cover, deliberately. cover fills the box by cutting
+ * whatever does not fit, and what does not fit in a 380x96 box is the top and
+ * bottom of anything close to square - which for a logo means slicing the mark in
+ * half. An administrator uploading their company's logo has not asked for it to
+ * be cut, and a letterboxed logo reads as deliberate where a beheaded one reads
+ * as broken. Anything wider than the card is scaled down to fit, so the width is
+ * a bound rather than a target. */
+.login-card .brand-logo {
+  align-self: stretch;
+  height: auto;
+  margin-bottom: 4px;
+  max-height: 96px;
+  max-width: 100%;
+  object-fit: contain;
+}
 
 /* The file picker is not a text field, so it must not stretch like one. */
 input[type="file"] { border: none; background: none; padding: 6px 0; }
