@@ -2,7 +2,6 @@ package spreadsheet
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 )
@@ -79,7 +78,7 @@ func ReadUsers(r io.Reader) ([]UserRow, []RowError, error) {
 				continue
 			}
 
-			problems = append(problems, RowError{Number: number, Reason: rowErr.Error()})
+			problems = append(problems, rowErrorFor(number, rowErr))
 
 			continue
 		}
@@ -99,8 +98,8 @@ func parseUserRow(number int, cells []string) (UserRow, error) {
 
 	email := strings.ToLower(value(1))
 	if email == "" {
-		return UserRow{}, errors.New("the email address is missing, and it is what " +
-			"the row is matched on")
+		return UserRow{}, problemf("emailMissing", "the email address is missing, and it "+
+			"is what the row is matched on")
 	}
 
 	// Checked for shape, not merely for being filled in. This column is the key
@@ -110,8 +109,8 @@ func parseUserRow(number int, cells []string) (UserRow, error) {
 	// than reporting forty accounts that do not exist.
 	if !strings.Contains(email, "@") || strings.HasPrefix(email, "@") ||
 		strings.HasSuffix(email, "@") {
-		return UserRow{}, fmt.Errorf("%q is not an email address, and this column is "+
-			"what the row is matched on", value(1))
+		return UserRow{}, problemf("emailInvalid", "%q is not an email address, and this "+
+			"column is what the row is matched on", value(1))
 	}
 
 	return UserRow{

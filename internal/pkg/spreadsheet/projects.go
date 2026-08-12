@@ -2,7 +2,6 @@ package spreadsheet
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"time"
 )
@@ -85,7 +84,7 @@ func ReadProjects(r io.Reader) ([]ProjectRow, []RowError, error) {
 				continue
 			}
 
-			problems = append(problems, RowError{Number: number, Reason: rowErr.Error()})
+			problems = append(problems, rowErrorFor(number, rowErr))
 
 			continue
 		}
@@ -105,7 +104,7 @@ func parseProjectRow(number int, cells []string) (ProjectRow, error) {
 
 	name := value(0)
 	if name == "" {
-		return ProjectRow{}, errors.New("the name is missing")
+		return ProjectRow{}, problemf("nameMissing", "the name is missing")
 	}
 
 	// An empty start is allowed and filled in by the service: a project is one
@@ -116,7 +115,7 @@ func parseProjectRow(number int, cells []string) (ProjectRow, error) {
 	if raw := value(2); raw != "" {
 		parsed, ok := parseOptionalDate(raw)
 		if !ok {
-			return ProjectRow{}, fmt.Errorf("%q is not a start date the importer "+
+			return ProjectRow{}, problemf("startDate", "%q is not a start date the importer "+
 				"understands (use YYYY-MM-DD)", raw)
 		}
 
@@ -128,7 +127,7 @@ func parseProjectRow(number int, cells []string) (ProjectRow, error) {
 	if raw := value(3); raw != "" {
 		parsed, ok := parseOptionalDate(raw)
 		if !ok {
-			return ProjectRow{}, fmt.Errorf("%q is not an end date the importer "+
+			return ProjectRow{}, problemf("endDate", "%q is not an end date the importer "+
 				"understands (use YYYY-MM-DD)", raw)
 		}
 

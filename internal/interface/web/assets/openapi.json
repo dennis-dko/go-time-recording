@@ -1716,7 +1716,7 @@
             "description": "What the file would do, or what it did"
           },
           "400": {
-            "description": "Not a readable workbook of this kind"
+            "description": "Not a readable workbook of this kind, or a permission column naming a right this application does not enforce - that one answers `unknownPermissionColumn` with the offending heading, since the file itself reads perfectly well"
           },
           "409": {
             "description": "Some rows cannot be written, so nothing was"

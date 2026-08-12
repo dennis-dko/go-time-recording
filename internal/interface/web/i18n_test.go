@@ -300,6 +300,16 @@ func TestNoTranslationIsUnused(t *testing.T) {
 				continue
 			}
 
+			// Why one row of an imported file was refused, looked up as
+			// t(`row.${code}`) from the code the server sent with it.
+			// TestEveryImportRowProblemIsTranslated checks these against the Go source
+			// in both directions.
+			if code, isRow := strings.CutPrefix(key, "row."); isRow {
+				if _, known := importRowProblemCodes(t)[code]; known {
+					continue
+				}
+			}
+
 			// The per-table spreadsheet cards, looked up as t(`sheet.${key}.text`)
 			// from the table being built. TestEverySheetCardIsNamed checks these
 			// against the card list in both directions.
@@ -416,6 +426,116 @@ func TestEveryServerErrorCodeIsTranslated(t *testing.T) {
 		t.Errorf("%d German sentence(s) are for codes the server no longer sends: %v",
 			len(orphaned), orphaned)
 	}
+}
+
+// Why one row of an imported file cannot be written, in the reader's language.
+//
+// The preview these land in translates everything else about itself - the
+// headings, and the cells, down to writing a status as the file wrote it - and
+// this one column was English prose on the grounds that what is wrong with row 47
+// of somebody's file is not a fixed set of reasons. It is a fixed set of reasons:
+// they are all in the spreadsheet reader and the two import planners, and this is
+// what keeps them all answered.
+func TestEveryImportRowProblemIsTranslated(t *testing.T) {
+	codes := importRowProblemCodes(t)
+	if len(codes) == 0 {
+		t.Fatal("no row problem codes found; this test is no longer reading the source")
+	}
+
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("app.js has no German dictionary")
+	}
+
+	var untranslated, orphaned []string
+
+	for code := range codes {
+		if _, found := dict["row."+code]; !found {
+			untranslated = append(untranslated, code)
+		}
+	}
+
+	for key := range dict {
+		code, isRow := strings.CutPrefix(key, "row.")
+		if !isRow {
+			continue
+		}
+
+		if _, found := codes[code]; !found {
+			orphaned = append(orphaned, key)
+		}
+	}
+
+	sort.Strings(untranslated)
+	sort.Strings(orphaned)
+
+	if len(untranslated) > 0 {
+		t.Errorf("%d row problem(s) have no German sentence, so a German reader is "+
+			"shown English beside German columns: %v", len(untranslated), untranslated)
+	}
+
+	if len(orphaned) > 0 {
+		t.Errorf("%d German sentence(s) are for row problems nothing reports: %v",
+			len(orphaned), orphaned)
+	}
+}
+
+// importRowProblemCodes collects the codes the row complaints are built with.
+//
+// Three spellings, because the complaint is made in three places: the reader of
+// the workbook, which knows a date is not a date; the planners, which know a
+// project cannot be archived yet; and the time-entry planner, which has a helper
+// of its own from before any of this had codes.
+func importRowProblemCodes(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	codes := map[string]struct{}{}
+	pattern := regexp.MustCompile(`(?:\bproblemf|\bProblemf|\brefuse)\("([^"]+)"`)
+
+	root := filepath.Join("..", "..", "..", "internal")
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") ||
+			strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		source, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+
+		// The doc comments on Problemf and problemf describe them rather than call
+		// them, and a comment showing a code would register as one.
+		for _, match := range pattern.FindAllSubmatch(withoutGoComments(source), -1) {
+			codes[string(match[1])] = struct{}{}
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the source: %v", err)
+	}
+
+	return codes
+}
+
+// withoutGoComments drops // comments so a line describing a call is not read as
+// one.
+func withoutGoComments(source []byte) []byte {
+	lines := strings.Split(string(source), "\n")
+
+	for i, line := range lines {
+		if cut := strings.Index(line, "//"); cut >= 0 {
+			lines[i] = line[:cut]
+		}
+	}
+
+	return []byte(strings.Join(lines, "\n"))
 }
 
 // serverErrorCodes collects the codes attached with WithCode across the Go source.
@@ -889,4 +1009,75 @@ func TestEveryRowDeletionGoesThroughTheSharedButton(t *testing.T) {
 				"buttons are no longer the same decision", needed)
 		}
 	}
+}
+
+// The interface reads the field names the server actually sends.
+//
+// This is not a translation check, but it lives with them because it is the same
+// class of mistake: a name that has to match something outside the file, written
+// from memory. The evaluation's charts read project.project and day.booked -
+// neither of which exists - so every label came out as "no project" and the
+// per-day value was undefined, which threw inside the formatter and left an
+// empty chart behind an error toast. Nothing failed loudly, and no test noticed.
+func TestTheChartsReadFieldsTheStatisticsEndpointSends(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	// The names on the wire, taken from the response type rather than repeated
+	// here: a rename there has to show up as a failure here.
+	source := readSource(t, filepath.Join("..", "api", "v1", "rest", "statistics_handler.go"))
+
+	for _, field := range []string{"date", "hours", "name", "projectId"} {
+		if !strings.Contains(source, `json:"`+field+`"`) {
+			t.Fatalf("statistics_handler.go no longer sends %q; this test is out of date", field)
+		}
+	}
+
+	// Comments stripped first, and word boundaries on the names. The prose above
+	// the fixed code names the wrong fields on purpose, and project.projectId is
+	// a real field that starts with one of them - both would otherwise read as
+	// the bug they describe.
+	code := withoutLineComments(js)
+
+	for _, wrong := range []string{"day.booked", "project.project", "day.total", "project.total"} {
+		if regexp.MustCompile(regexp.QuoteMeta(wrong) + `\b`).MatchString(code) {
+			t.Errorf("a chart reads %s, which the statistics endpoint does not send", wrong)
+		}
+	}
+
+	// And the two the report chart depends on, so a rename cannot quietly break
+	// only the screen no Go test covers.
+	for _, needed := range []string{"day.hours", "project.hours", "project.name"} {
+		if !strings.Contains(js, needed) {
+			t.Errorf("no chart reads %s any more; the report chart needs it", needed)
+		}
+	}
+}
+
+// readSource reads a file from the repository for a test to assert against.
+func readSource(t *testing.T, path string) string {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+
+	return string(raw)
+}
+
+// withoutLineComments drops // comments so a name discussed in prose is not read
+// as a name the code uses.
+func withoutLineComments(js string) string {
+	var out strings.Builder
+
+	for _, line := range strings.Split(js, "\n") {
+		if at := strings.Index(line, "//"); at >= 0 {
+			line = line[:at]
+		}
+
+		out.WriteString(line)
+		out.WriteString("\n")
+	}
+
+	return out.String()
 }

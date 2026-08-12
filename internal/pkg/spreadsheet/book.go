@@ -183,10 +183,77 @@ func tables() []Table { return []Table{timesheets, projects, users, roles} }
 type RowError struct {
 	Number int
 	Reason string
+
+	// Code names which complaint this is, and Values are what its sentence
+	// interpolated, so the interface can say the same thing in the reader's
+	// language. Reason stays as the English wording: it is what a log wants, and
+	// what a client with no translation for the code falls back to.
+	//
+	// This is the same arrangement the refusals from the API use, for the same
+	// reason - the preview translates its headings and its cells, and a German
+	// reader was comparing them against a complaint written in English.
+	Code   string
+	Values []any
 }
 
 func (e RowError) Error() string {
 	return fmt.Sprintf("row %d: %s", e.Number, e.Reason)
+}
+
+// rowProblem is a reason a row cannot be used, carrying the code with it.
+//
+// The parsers return plain errors and the readers turn them into RowErrors, so
+// the code has to travel as part of the error rather than beside it.
+type rowProblem struct {
+	code    string
+	values  []any
+	message string
+}
+
+func (p rowProblem) Error() string { return p.message }
+
+// problemf builds one, formatting the English wording from the same values the
+// translated sentence will interpolate - so {0} in German is what %q was in
+// English, and neither can drift from the other.
+func problemf(code, format string, values ...any) error {
+	return rowProblem{code: code, values: values, message: fmt.Sprintf(format, values...)}
+}
+
+// Problemf is problemf for the service layer.
+//
+// Some complaints about a row cannot be made here: whether a project may be
+// archived, or whether an account exists, is not something a reader of
+// spreadsheets knows. They are still complaints about a row and they end up in
+// the same preview column, so they are built the same way rather than through a
+// second arrangement that would have to be kept level with this one.
+func Problemf(code, format string, values ...any) error {
+	return problemf(code, format, values...)
+}
+
+// ProblemOf reads the code and the interpolated values off a row complaint.
+//
+// Both are empty for an error that does not carry them, which leaves the caller
+// with the English wording - the same fallback the interface makes for a code
+// nobody has translated.
+func ProblemOf(err error) (code string, values []any) {
+	var problem rowProblem
+	if errors.As(err, &problem) {
+		return problem.code, problem.values
+	}
+
+	return "", nil
+}
+
+// rowErrorFor reports a row, with the code if the reason carried one.
+func rowErrorFor(number int, err error) RowError {
+	out := RowError{Number: number, Reason: err.Error()}
+
+	var problem rowProblem
+	if errors.As(err, &problem) {
+		out.Code, out.Values = problem.code, problem.values
+	}
+
+	return out
 }
 
 // errBlankRow marks a row with nothing in it, which is skipped rather than

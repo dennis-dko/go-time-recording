@@ -136,6 +136,12 @@ type ImportRowResponse struct {
 
 	// Problem is empty for a row that would be written.
 	Problem string `json:"problem"`
+
+	// ProblemCode names which refusal it is and ProblemValues are what the English
+	// sentence interpolated, so a client can say the same thing in its reader's
+	// language. Omitted for a row with nothing wrong with it.
+	ProblemCode   string `json:"problemCode,omitempty"`
+	ProblemValues []any  `json:"problemValues,omitempty"`
 }
 
 // ImportResponse is the whole file, understood.
@@ -213,6 +219,7 @@ func (h *WorkbookHandler) Import(c *gofr.Context) (any, error) {
 		item := ImportRowResponse{
 			Row: row.Number, User: row.UserName, Project: row.ProjectName,
 			Hours: row.Hours, Description: row.Description, Problem: row.Problem,
+			ProblemCode: row.Code, ProblemValues: row.Values,
 		}
 
 		// Null rather than the zero date for a row whose date could not be read,

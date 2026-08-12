@@ -1055,6 +1055,36 @@ const TRANSLATIONS = {
     'restart.failed': 'Der Neustart konnte nicht gestartet werden',
     'restart.slow': 'Die Anwendung antwortet noch nicht. Möglicherweise startet sie noch — bitte die Seite gleich neu laden.',
     'restart.none': 'nichts',
+    'restart.dbPassword': 'Datenbank-Passwort',
+
+    // Why a single row of an imported file cannot be written. The server sends a
+    // code and the values its English sentence interpolated, so these say the same
+    // thing in the same order the reader would - see rowProblem.
+    'row.nameMissing': 'Der Name fehlt.',
+    'row.startDate': '„{0}“ ist kein Beginn, den der Import versteht (JJJJ-MM-TT).',
+    'row.endDate': '„{0}“ ist kein Ende, das der Import versteht (JJJJ-MM-TT).',
+    'row.notAStatus': '„{0}“ ist kein Status; möglich sind {1}, {2} oder {3}.',
+    'row.archiveNeedsCompleted': 'Archiviert werden kann erst, was den Status „{0}“ hat; '
+      + '„{1}“ ist „{2}“.',
+    'row.roleNameMissing': 'Der Name fehlt, und daran wird die Zeile erkannt.',
+    'row.systemRole': '„{0}“ ist eine Systemrolle, ihre Rechte lassen sich nicht ändern.',
+    'row.roleGrantsNothing': '„{0}“ würde ohne jedes Recht angelegt – wer die Rolle hätte, '
+      + 'könnte keinen einzigen Bereich öffnen.',
+    'row.emailMissing': 'Die E-Mail-Adresse fehlt, und daran wird die Zeile erkannt.',
+    'row.emailInvalid': '„{0}“ ist keine E-Mail-Adresse, und an dieser Spalte wird die '
+      + 'Zeile erkannt.',
+    'row.noSuchAccount': 'Für „{0}“ gibt es kein Konto; dieser Import ändert Konten und '
+      + 'legt keine an.',
+    'row.noSuchRole': '„{0}“ ist keine Rolle.',
+    'row.dateMissing': 'Das Datum fehlt.',
+    'row.dateNotUnderstood': '„{0}“ ist kein Datum, das der Import versteht (JJJJ-MM-TT).',
+    'row.hoursMissing': 'Die Stunden fehlen.',
+    'row.hoursNotANumber': '„{0}“ ist keine Stundenzahl.',
+    'row.noSuchUser': 'Es gibt niemanden mit dem Namen „{0}“.',
+    'row.notYourTime': 'Sie dürfen nur eigene Zeiten importieren, und diese Zeile gehört '
+      + 'zu {0}.',
+    'row.noSuchProject': 'Es gibt kein Projekt mit dem Namen „{0}“.',
+    'row.projectNotActive': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
 
     'user.directoryAccount': 'aus dem Verzeichnis',
     'user.directoryHint': 'Wird im LDAP verwaltet. Das Passwort liegt dort, und das Entfernen des Eintrags dort entfernt auch dieses Konto.',
@@ -1256,6 +1286,8 @@ const TRANSLATIONS = {
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
     'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
+    'err.unknownPermissionColumn': '„{0}“ ist kein Recht, das diese Anwendung kennt – '
+      + 'die Datei stammt vermutlich aus einer anderen Installation.',
     'err.wrongWorkbook': 'Diese Datei enthält etwas anderes – vermutlich der Export einer '
       + 'anderen Tabelle.',
     'err.importStoppedAtRow': 'Abgebrochen bei Zeile {0}. {1} Zeilen wurden geschrieben; '
@@ -2649,10 +2681,13 @@ function wireAdmin() {
 
     if (body.dialect !== 'postgres') body.sslMode = '';
 
-    mutate(async () => {
-      const result = await api('/settings/datasource', { method: 'PUT', body: JSON.stringify(body) });
-      toast(result.message ?? t('admin.restartNeeded', 'Saved. Applied on the next start.'), 'ok');
-    }, null, loadAdmin); // loadAdmin ends with loadRestart, so the card follows.
+    mutate(
+      () => api('/settings/datasource', { method: 'PUT', body: JSON.stringify(body) }),
+      null,
+      // loadAdmin ends with loadRestart, so the card follows - and announceSave
+      // reads what that just worked out, rather than promising a restart on
+      // every press of a form somebody only opened to look at.
+      async () => { await loadAdmin(); announceSave(); });
   });
 
   $('#form-ldap').addEventListener('submit', (e) => {
@@ -4247,6 +4282,7 @@ function pendingLabel(setting) {
     case 'traceExporter': return t('tel.exporter', 'Trace exporter');
     case 'tracerUrl': return t('tel.url', 'Collector');
     case 'database': return t('admin.database', 'Database connection');
+    case 'databasePassword': return t('restart.dbPassword', 'Database password');
     case 'directorySchedule': return t('sync.scheduleShort', 'Directory schedule');
     default: return setting;
   }
@@ -4281,10 +4317,19 @@ async function loadRestart() {
   card.hidden = pending.length === 0 && state.supported;
 
   const list = $('#restart-pending');
-  list.replaceChildren(...pending.map((change) => el('li', {},
-    el('strong', { text: pendingLabel(change.setting) }),
-    el('span', { class: 'from', text: `: ${pendingValue(change.running)} → ` }),
-    el('strong', { text: pendingValue(change.stored) }))));
+  list.replaceChildren(...pending.map((change) => {
+    const label = el('strong', { text: pendingLabel(change.setting) });
+
+    // One entry deliberately arrives without a before and an after: the database
+    // password changed, and the server will not put the old one beside the new
+    // one on a screen. "Passwort: none → none" reads as a fault rather than as
+    // the discretion it is, so the name of the setting stands on its own.
+    if (!change.running && !change.stored) return el('li', {}, label);
+
+    return el('li', {}, label,
+      el('span', { class: 'from', text: `: ${pendingValue(change.running)} → ` }),
+      el('strong', { text: pendingValue(change.stored) }));
+  }));
 
   // Offered only where pressing it would actually work. Where it would not, the
   // reason is shown instead of a button that fails on click.
@@ -4947,6 +4992,38 @@ async function sendWorkbook(dryRun) {
   return payload?.data ?? null;
 }
 
+/**
+ * Why a row of an imported file cannot be written, in the reader's language.
+ *
+ * The preview around it is translated - the headings, and the cells, down to a
+ * status column reading "archiviert" because that is the word the file used - and
+ * this column was English prose. The server writes it where the rule is enforced,
+ * which is right for the log and wrong for the person who typed the row, so it
+ * sends a code and the values its sentence interpolated as well, exactly as it
+ * does for a refused request.
+ */
+function rowProblem(row) {
+  if (!row.problem) return '';
+  if (!row.problemCode) return row.problem;
+
+  // A row refused for the shape of its values carries the column names, which are
+  // not what the labels above the form say - the same case errorMessage handles,
+  // and named from the same list so both screens use one word per field.
+  if (row.problemCode === 'invalidFields') {
+    const named = (row.problemValues ?? []).map((field) => t(`field.${field}`, field));
+
+    return `${t('msg.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
+  }
+
+  // Two prefixes, because some rows are refused by a rule the form enforces too -
+  // a day over its ceiling is the same refusal whether it arrives one entry at a
+  // time or eighty at once, and it already has a sentence under err.
+  const sentence = t(`row.${row.problemCode}`, '')
+    || t(`err.${row.problemCode}`, row.problem);
+
+  return fillIn(sentence, row.problemValues);
+}
+
 /** Shows what the file would do, row by row. */
 function renderWorkbookPreview(result) {
   const rows = (result?.rows ?? []).map((row) => el('tr', { class: row.problem ? 'rejected' : '' },
@@ -4956,7 +5033,7 @@ function renderWorkbookPreview(result) {
     el('td', { text: row.project || t('ts.noProject', 'no project') }),
     el('td', { class: 'num', text: row.hours ? row.hours.toFixed(2) : '–' }),
     el('td', { text: row.description || '–' }),
-    el('td', { class: row.problem ? 'minus' : 'muted', text: row.problem || '✓' }),
+    el('td', { class: row.problem ? 'minus' : 'muted', text: rowProblem(row) || '✓' }),
   ));
 
   fillTable($('#table-workbook tbody'), rows, 7, t('wb.empty', 'The file has no entries in it.'));
@@ -5036,14 +5113,18 @@ function wireWorkbook() {
  * the whole point: a single pair of buttons somewhere general would have meant
  * guessing which table somebody had in mind.
  *
- * Three tables are deliberately absent, for three different reasons. A token's
+ * Two tables are deliberately absent, for two different reasons. A token's
  * secret exists once, at the moment it is created, and is not in the database to
  * export. A passkey is bound to the device holding it and means nothing anywhere
- * else. A role is a set of permissions, and one spreadsheet cell holding
- * "projects:read,projects:write,..." is a list that has to be exactly right - a typo
- * in it removes a right silently rather than failing, where the role screen shows
- * every permission there is as a checkbox. None of the three is a table a
- * spreadsheet can carry honestly.
+ * else. Neither is a table a spreadsheet can carry honestly.
+ *
+ * Roles were on that list, on the grounds that one cell holding
+ * "projects:read,projects:write,..." is a list that has to be exactly right,
+ * where a typo removes a right silently. That objection was to the format rather
+ * than to the table: the sheet gives every permission a column of its own
+ * holding yes or no, so a typo is a heading that does not match a right the
+ * application enforces, and the import refuses the file by name. Reviewing what
+ * four roles may do is a grid, and the role screen shows one role at a time.
  */
 const SHEET_CARDS = [
   {
@@ -5173,7 +5254,7 @@ function buildSheetCard(spec) {
       // Padded to the column count, because a row the file could not be read at
       // all has no cells and would otherwise leave the table ragged.
       ...columns.map((_, i) => el('td', { text: (row.cells ?? [])[i] || '–' })),
-      el('td', { class: row.problem ? 'minus' : 'muted', text: row.problem || '✓' }),
+      el('td', { class: row.problem ? 'minus' : 'muted', text: rowProblem(row) || '✓' }),
     ));
 
     fillTable(body, rows, columns.length + 2, t('wb.empty', 'The file has no entries in it.'));
@@ -5297,21 +5378,35 @@ async function loadReportChart(from, to, projectId) {
   const container = $('#report-chart');
   if (!container) return;
 
+  // Scoped the way the evaluation was. The endpoint answers for every project
+  // unless told otherwise, so an unscoped chart beside a table totalling one
+  // project is two different numbers on one screen, both offered as the answer.
   const params = new URLSearchParams({ from, to });
+  if (projectId) params.set('projectId', projectId);
+
   const stats = await api(`/me/statistics?${params}`);
 
   const everyProject = !projectId;
 
   if (everyProject) {
+    // The field names are the ones the endpoint sends. This read
+    // project.project and day.booked, and neither exists: every label came out
+    // as "no project", and an undefined value threw inside the hours formatter,
+    // which mutate() turned into an error toast over an empty chart. The chart
+    // under Overtime reads the same answer correctly and is what this should
+    // have been copied from rather than written from memory.
     reportChart.bars = (stats.projects ?? []).map((project) => ({
-      label: project.project || t('ts.noProject', 'no project'),
+      // A project with no name is one deleted since; its hours still count.
+      label: project.projectId
+        ? (project.name || t('stats.deletedProject', 'deleted project'))
+        : t('stats.noProject', 'no project'),
       value: project.hours,
     }));
     reportChart.caption = t('report.byProject', 'Hours per project');
   } else {
     reportChart.bars = (stats.days ?? []).map((day) => ({
       label: fmtDate(day.date),
-      value: day.booked,
+      value: day.hours,
     }));
     reportChart.caption = t('report.byDay', 'Hours per day');
   }
