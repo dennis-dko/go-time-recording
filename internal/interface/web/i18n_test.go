@@ -1135,3 +1135,47 @@ func TestTheFormLimitsAreTheOnesTheServerEnforces(t *testing.T) {
 		})
 	}
 }
+
+// Words come from the language; conventions come from the locale.
+//
+// Two questions that look like one. Which dictionary to read is answered by a
+// language this application ships words for - de or en, and nothing else would
+// resolve. How to write a date is answered by the reader's own locale, which
+// carries a region: there is one English dictionary and there is not one English
+// date, so formatting an en-GB browser as plain "en" writes the twelfth of
+// August as 08/12/2026.
+//
+// The two resolvers differ by one word at the call site, which is exactly how
+// they get mixed up again. This pins each Intl constructor to the locale and the
+// dictionary lookup to the language.
+func TestFormattingFollowsTheLocaleAndWordsFollowTheLanguage(t *testing.T) {
+	js := withoutLineComments(asset(t, "/app.js"))
+
+	// Every Intl constructor and every toLocale* call decides how something is
+	// written, so every one of them takes the locale.
+	formatters := regexp.MustCompile(`(?:new Intl\.\w+|\.toLocale\w+)\(\s*activeLanguage\(\)`)
+	if found := formatters.FindAllString(js, -1); len(found) > 0 {
+		t.Errorf("%d formatter(s) are given the language rather than the locale, so a "+
+			"reader whose browser has a region loses it: %v", len(found), found)
+	}
+
+	// And the dictionary is not looked up by a locale, which would miss: the
+	// table is keyed on "de", and "de-AT" is not a key in it.
+	if strings.Contains(js, "TRANSLATIONS[activeLocale()]") {
+		t.Error("the dictionary is looked up by locale, so any browser with a region " +
+			"falls through to the English fallback for every key")
+	}
+
+	// Both have to still exist and be used, or this passes by them being gone.
+	for _, needed := range []string{"activeLocale()", "activeLanguage()"} {
+		if !strings.Contains(js, needed) {
+			t.Errorf("%s is not called anywhere; this test is no longer checking a "+
+				"distinction the code makes", needed)
+		}
+	}
+
+	if !regexp.MustCompile(`new Intl\.\w+\(\s*activeLocale\(\)`).MatchString(js) {
+		t.Error("no formatter is given the locale, so nothing is actually formatted " +
+			"the reader's way")
+	}
+}

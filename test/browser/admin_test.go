@@ -299,6 +299,78 @@ func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
 	}
 }
 
+// The language switcher decides, and the browser decides when it has not.
+//
+// The rule for everything to do with language, and this is the half that is easy
+// to get subtly wrong: which *dictionary* to read has to collapse to a language
+// this application ships words for, and how to write a *date* must not. There is
+// one English dictionary and there is not one English date - reduced to plain
+// "en", an en-GB browser is formatted in the American order, so the twelfth of
+// August reads as 08/12/2026.
+//
+// Asserted against the browser's own Intl rather than against a hard-coded
+// string: what is being checked is that the page agrees with the reader's
+// machine, and hard-coding a format would only assert what CI's Chrome happens
+// to be set to.
+func TestTheChosenLanguageWinsAndTheBrowserDecidesOtherwise(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// Nothing chosen yet: the built-in administrator's account carries no
+	// language until something stores one, and adoption only runs for an
+	// ordinary first sign-in.
+	var same bool
+
+	p.run("the browser decides", chromedp.Evaluate(`
+		(() => {
+			const wanted = navigator.languages?.[0] ?? navigator.language;
+			const on = new Date(Date.UTC(2026, 7, 12));
+			const shape = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' };
+
+			return new Intl.DateTimeFormat(activeLocale(), shape).format(on)
+				=== new Intl.DateTimeFormat(wanted, shape).format(on);
+		})()`, &same))
+
+	if !same {
+		t.Error("with no language chosen, dates are not written the way the reader's " +
+			"own browser writes them")
+	}
+
+	// And a choice that genuinely disagrees wins outright - picking one language
+	// on a browser asking for another is a decision, and a date is part of how an
+	// application reads.
+	var chosen string
+
+	p.run("a chosen language wins", chromedp.Evaluate(`
+		(() => {
+			const other = (navigator.languages?.[0] ?? 'en').toLowerCase().startsWith('de')
+				? 'en' : 'de';
+
+			me.user = { ...(me.user ?? {}), language: other };
+			const got = activeLocale();
+			delete me.user.language;
+
+			return got + '|' + other;
+		})()`, &chosen))
+
+	parts := strings.Split(chosen, "|")
+	if len(parts) != 2 || parts[0] != parts[1] {
+		t.Errorf("a chosen language did not win: activeLocale gave %q for a chosen %v",
+			parts[0], parts[1:])
+	}
+
+	// The dictionary still collapses to a language there are words for, or every
+	// key would fall through to English for any browser with a region on its tag.
+	var known bool
+
+	p.run("the dictionary is keyed on a language", chromedp.Evaluate(
+		`['de', 'en'].includes(activeLanguage())`, &known))
+
+	if !known {
+		t.Errorf("activeLanguage() answered something the dictionary is not keyed on")
+	}
+}
+
 // ------------------------------------------------------ revealing a password
 
 // The button is added by the script, to fields written in the markup, so
