@@ -38,9 +38,14 @@
 
 services:
   jaeger:
-    # Same version as test/jaeger/Dockerfile on purpose. A trace that renders
+    # Same version as the test environment's, on purpose: a trace that renders
     # in testing but not on the server would be a version difference, and a
     # version difference is the last thing anybody thinks to check.
+    #
+    # A comment used to ask for that and nothing enforced it - worse, the other
+    # half was pinned inside a FROM in test/jaeger/Dockerfile, where no
+    # comparison could reach it. Both sides are a plain image line now, and
+    # test/compose_test.go fails when they disagree.
     image: jaegertracing/all-in-one:1.62.0
     restart: unless-stopped
 
