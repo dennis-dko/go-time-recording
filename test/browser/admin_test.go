@@ -159,6 +159,42 @@ func TestAUserIsNotOfferedTheLog(t *testing.T) {
 	}
 }
 
+// The directory synchronisation is not offered to an administrator who may not
+// perform one.
+//
+// Running it deletes every account the directory no longer holds along with
+// everything those people recorded, so it belongs to the built-in administrator
+// alone - but the Settings tab is opened by anybody holding settings:manage, and
+// the card sat in the middle of it with two buttons the server refuses. A
+// data-perm cannot express this: it names a permission, and this is about which
+// account it is, so only a browser can answer whether the card is there.
+func TestAGrantedAdministratorIsNotOfferedTheDirectoryRun(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+	p.createAccount(t, "bothe@example.com", "both-jobs-password-1", "user-admin")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("bothe@example.com", "both-jobs-password-1")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-ldap", chromedp.ByID))
+
+	if p.visible("#sync-card") {
+		t.Error("an administrator who may not synchronise the directory is offered " +
+			"the buttons that do it")
+	}
+
+	// The connection card above it is theirs to edit, so this is the one card
+	// missing rather than the screen having failed to load.
+	if !p.visible("#form-ldap") {
+		t.Error("the directory connection is missing too, so the screen did not load")
+	}
+}
+
 // ------------------------------------------------------- the Settings cards
 
 // The Settings screen loads its cards in one unbroken chain of awaits, so a card

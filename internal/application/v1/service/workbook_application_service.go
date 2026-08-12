@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -128,11 +129,21 @@ type PlannedRow struct {
 	Hours       float64
 	Description string
 
-	// Problem is empty when the row can be written. Written in English, like every
-	// other message the server produces; the interface shows it as it is, because
-	// what is wrong with row 47 of somebody's file is not a fixed set of reasons
-	// that could be translated by code.
+	// Problem is empty when the row can be written, and written in English
+	// otherwise - which is what a log wants, and the fallback for a client that
+	// cannot do better.
 	Problem string
+
+	// Code names which refusal it is and Values are what its sentence
+	// interpolated, so the interface can say the same thing in the reader's
+	// language.
+	//
+	// This was Problem alone, on the grounds that what is wrong with row 47 of
+	// somebody's file is not a fixed set of reasons that code could translate.
+	// It is - they are all written a few lines below - and the preview it lands in
+	// puts every other column in the reader's language.
+	Code   string
+	Values []any
 }
 
 // Writable reports whether this row would be written.
@@ -176,6 +187,7 @@ func (s *WorkbookService) Plan(
 	for _, problem := range problems {
 		plan.Rows = append(plan.Rows, PlannedRow{
 			Number: problem.Number, Problem: problem.Reason,
+			Code: problem.Code, Values: problem.Values,
 		})
 	}
 
@@ -230,8 +242,38 @@ func (s *WorkbookService) planRow(
 		Description: strings.TrimSpace(row.Description),
 	}
 
-	refuse := func(format string, a ...any) PlannedRow {
+	refuse := func(code, format string, a ...any) PlannedRow {
 		out.Problem = fmt.Sprintf(format, a...)
+		out.Code, out.Values = code, a
+
+		return out
+	}
+
+	// A rule that already names itself keeps its own code and values rather than
+	// being given new ones here: it is the same refusal the form gives, and the
+	// interface has a sentence for it already.
+	refuseAs := func(err error) PlannedRow {
+		out.Problem = err.Error()
+
+		var named *apperror.Error
+		if !errors.As(err, &named) {
+			return out
+		}
+
+		out.Code, out.Values = named.Code, named.Values
+
+		// A refusal that names columns rather than giving a reason. Its English
+		// wording is "invalid field(s): durationHours", which is a database column
+		// in any language; the interface names each one the way the form above it
+		// does, and this is what lets it.
+		if out.Code == "" && len(named.Fields) > 0 {
+			out.Code = "invalidFields"
+			out.Values = make([]any, 0, len(named.Fields))
+
+			for _, field := range named.Fields {
+				out.Values = append(out.Values, field)
+			}
+		}
 
 		return out
 	}
@@ -243,7 +285,7 @@ func (s *WorkbookService) planRow(
 	if name := strings.TrimSpace(row.User); name != "" {
 		found, ok := people[strings.ToLower(name)]
 		if !ok {
-			return refuse("there is no user called %q", name)
+			return refuse("noSuchUser", "there is no user called %q", name)
 		}
 
 		target = found
@@ -252,26 +294,28 @@ func (s *WorkbookService) planRow(
 	out.UserID, out.UserName = target.ID, target.Name
 
 	if target.ID != actor.ID && !mayWriteAll {
-		return refuse("you may only import your own time, and this row is %s's", target.Name)
+		return refuse("notYourTime",
+			"you may only import your own time, and this row is %s's", target.Name)
 	}
 
 	// The project, by name, and only one this person may book against.
 	if name := strings.TrimSpace(row.Project); name != "" {
 		project := findProject(projects, name)
 		if project == nil {
-			return refuse("there is no project called %q", name)
+			return refuse("noSuchProject", "there is no project called %q", name)
 		}
 
 		if !project.VisibleTo(target.ID) {
 			// The same answer somebody would get asking for it directly: its
 			// existence is not something to reveal by a different message.
-			return refuse("there is no project called %q", name)
+			return refuse("noSuchProject", "there is no project called %q", name)
 		}
 
 		// The same condition the booking path applies: a finished project would
 		// have its final figures moved by a late entry.
 		if project.Status != model.ProjectStatusActive {
-			return refuse("project %q is %s and no longer accepts time entries",
+			return refuse("projectNotActive",
+				"project %q is %s and no longer accepts time entries",
 				project.Name, project.Status)
 		}
 
@@ -283,7 +327,7 @@ func (s *WorkbookService) planRow(
 	description := descriptionOrNil(out.Description)
 
 	if err := validateTimesheet(row.Date, row.Hours, description); err != nil {
-		return refuse("%v", err)
+		return refuseAs(err)
 	}
 
 	// The ceiling, counting what the file has already put on this day.
@@ -291,7 +335,7 @@ func (s *WorkbookService) planRow(
 
 	if err := s.entries.checkDailyBudget(ctx, target.ID, row.Date,
 		row.Hours+planned[key], 0); err != nil {
-		return refuse("%v", err)
+		return refuseAs(err)
 	}
 
 	planned[key] += row.Hours

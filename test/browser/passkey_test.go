@@ -189,6 +189,12 @@ func TestTheBuiltInAdministratorIsNotOfferedPasskeys(t *testing.T) {
 // createOrdinaryAccount adds an ordinary account through the API, since the point of
 // these tests is the passkey ceremony and not the staff form.
 func (p *page) createOrdinaryAccount(t *testing.T, email, password string) {
+	p.createAccount(t, email, password, "user")
+}
+
+// createAccount is the same for an account that holds a different role, which is
+// how a screen that differs between two kinds of administrator can be looked at.
+func (p *page) createAccount(t *testing.T, email, password, role string) {
 	t.Helper()
 
 	var status string
@@ -204,7 +210,7 @@ func (p *page) createOrdinaryAccount(t *testing.T, email, password string) {
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
 				body: JSON.stringify({
 					name: `+"`"+`Erika`+"`"+`, email: '`+email+`',
-					role: 'user', password: '`+password+`',
+					role: '`+role+`', password: '`+password+`',
 				}),
 			});
 

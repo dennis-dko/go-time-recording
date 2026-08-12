@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
+	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
@@ -65,10 +66,18 @@ type OwnStatistics struct {
 }
 
 // Own totals the caller's entries between two dates, inclusive at both ends.
+// scope narrows the answer to one project, or to the entries belonging to none.
+//
+// It exists because the evaluation screen draws these figures beside a table that
+// totals one project: an unscoped day series next to a scoped total is two
+// different numbers on one screen, both presented as the answer.
+type scopeOfStatistics = domainservice.ProjectScope
+
 func (s *StatisticsService) Own(
 	ctx context.Context,
 	userID uint,
 	from, to time.Time,
+	scope scopeOfStatistics,
 ) (*OwnStatistics, error) {
 	if userID == 0 {
 		return nil, apperror.InvalidFields("userId")
@@ -82,6 +91,11 @@ func (s *StatisticsService) Own(
 		UserID:    userID,
 		StartDate: &from,
 		EndDate:   &to,
+		// The same tri-state the report uses: a zero id means every project,
+		// which is why "no project" needs a flag of its own rather than an id
+		// nobody has.
+		ProjectID:      scope.ProjectID,
+		WithoutProject: scope.ProjectID == 0 && scope.Unassigned,
 	})
 	if err != nil {
 		return nil, err

@@ -128,7 +128,7 @@ func ReadRoles(r io.Reader, permissions []string) ([]RoleRow, []RowError, error)
 				continue
 			}
 
-			problems = append(problems, RowError{Number: number, Reason: rowErr.Error()})
+			problems = append(problems, rowErrorFor(number, rowErr))
 
 			continue
 		}
@@ -137,6 +137,21 @@ func ReadRoles(r io.Reader, permissions []string) ([]RoleRow, []RowError, error)
 	}
 
 	return rows, problems, nil
+}
+
+// UnknownColumnError is a heading naming a right this application does not
+// enforce.
+//
+// Its own type rather than a formatted error, so the column can be named in the
+// reader's language: this is the one complaint the column-per-right arrangement
+// exists to be able to make, and answering it with "this is not a readable .xlsx
+// workbook" - which is what a plain error was turned into - throws away both the
+// name and the truth, since the file reads perfectly well.
+type UnknownColumnError struct{ Name string }
+
+func (e UnknownColumnError) Error() string {
+	return fmt.Sprintf("%q is not a permission this application enforces; "+
+		"the file may come from another installation", e.Name)
 }
 
 // permissionColumns maps each permission to the column it was found in.
@@ -165,8 +180,7 @@ func permissionColumns(heading, permissions []string) (map[string]int, error) {
 		}
 
 		if !known[name] {
-			return nil, fmt.Errorf("%q is not a permission this application enforces; "+
-				"the file may come from another installation", name)
+			return nil, UnknownColumnError{Name: name}
 		}
 
 		columns[name] = index
@@ -184,8 +198,8 @@ func parseRoleRow(number int, cells []string, columns map[string]int) (RoleRow, 
 
 	name := strings.TrimSpace(value(0))
 	if name == "" {
-		return RoleRow{}, errors.New("the name is missing, and it is what the row is " +
-			"matched on")
+		return RoleRow{}, problemf("roleNameMissing", "the name is missing, and it is what "+
+			"the row is matched on")
 	}
 
 	row := RoleRow{Number: number, Name: name, Description: value(1)}

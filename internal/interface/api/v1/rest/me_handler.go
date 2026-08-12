@@ -118,13 +118,14 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 		// no right that grants it - the id in the path is either yours or the
 		// answer is no.
 		if principal.User.ID != id {
-			return nil, forbiddenError{msg: "you may only read your own overtime balance"}
+			return nil, forbiddenError{msg: "you may only read your own overtime balance"}.
+				WithCode("onlyOwnOvertime")
 		}
 
 		// Reading your own takes the narrow right, which until it was checked here
 		// appeared in the role editor and granted nothing.
 		if !principal.Can(model.PermReportReadOwn) {
-			return nil, forbiddenError{msg: "missing permission: " + model.PermReportReadOwn}
+			return nil, missingPermission(model.PermReportReadOwn)
 		}
 	}
 

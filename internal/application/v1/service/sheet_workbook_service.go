@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -30,10 +29,32 @@ type SheetRow struct {
 
 	Cells []string
 
-	// Problem is empty for a row that would be written. In English, like every
-	// other message the server produces: what is wrong with row 47 of somebody's
-	// file is not a fixed set of reasons that code could translate.
+	// Problem is empty for a row that would be written, and in English otherwise -
+	// which is what a log wants, and the fallback for a client that cannot do
+	// better.
 	Problem string
+
+	// Code names which complaint it is and Values are what its sentence
+	// interpolated, so the interface can put the same thing in the reader's
+	// language.
+	//
+	// This used to be Problem alone, on the grounds that what is wrong with row 47
+	// of somebody's file is not a fixed set of reasons that code could translate.
+	// It is: there are about a dozen of them, they are all written in this package
+	// and in the reader, and the preview they land in translates its headings and
+	// its cells - so the one column that stayed English was the column explaining
+	// why the file was refused.
+	Code   string
+	Values []any
+}
+
+// problemRow builds a rejected row from a complaint that names itself.
+func problemRow(number int, cells []string, err error) SheetRow {
+	code, values := spreadsheet.ProblemOf(err)
+
+	return SheetRow{
+		Number: number, Cells: cells, Problem: err.Error(), Code: code, Values: values,
+	}
 }
 
 // SheetPlan is a whole file, understood.
@@ -218,14 +239,15 @@ func (s *ProjectWorkbookService) PlanProjects(
 	// are rows of somebody's file, and leaving them out would show 62 rows for a
 	// file that has 64.
 	for _, problem := range problems {
-		plan.add(SheetRow{Number: problem.Number, Problem: problem.Reason})
+		plan.add(SheetRow{Number: problem.Number, Problem: problem.Reason,
+			Code: problem.Code, Values: problem.Values})
 	}
 
 	for _, row := range rows {
 		cells := projectCells(language, row)
 
-		if err := checkProjectStatus(row.Status); err != nil {
-			plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: err.Error()})
+		if err := checkProjectStatus(language, row.Status); err != nil {
+			plan.add(problemRow(row.Number, cells, err))
 
 			continue
 		}
@@ -241,8 +263,8 @@ func (s *ProjectWorkbookService) PlanProjects(
 		// the project has now - so a row asking for it has to be refused here
 		// rather than at the write, where it would be a promise the preview had
 		// already made.
-		if err := checkArchiving(planned); err != nil {
-			plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: err.Error()})
+		if err := checkArchiving(language, planned); err != nil {
+			plan.add(problemRow(row.Number, cells, err))
 
 			continue
 		}
@@ -259,15 +281,22 @@ func (s *ProjectWorkbookService) PlanProjects(
 
 // checkProjectStatus keeps an unknown status out of the write, where it would
 // otherwise arrive as a validation error naming a field rather than a row.
-func checkProjectStatus(status string) error {
+func checkProjectStatus(language, status string) error {
 	switch status {
 	case "", model.ProjectStatusActive, model.ProjectStatusArchived,
 		model.ProjectStatusCompleted:
 		return nil
 	}
 
-	return fmt.Errorf("%q is not a status; use %s, %s or %s", status,
-		model.ProjectStatusActive, model.ProjectStatusArchived, model.ProjectStatusCompleted)
+	// The three allowed words in the language the file was read in, because the
+	// preview beside this complaint writes the status column in that language too -
+	// being told to use "archived" while looking at a column of "archiviert" is
+	// being told to use a word the importer would then have to un-translate.
+	return spreadsheet.Problemf("notAStatus", "%q is not a status; use %s, %s or %s",
+		status,
+		spreadsheet.Translate(language, model.ProjectStatusActive),
+		spreadsheet.Translate(language, model.ProjectStatusArchived),
+		spreadsheet.Translate(language, model.ProjectStatusCompleted))
 }
 
 // checkArchiving applies the archiving rule to a planned row.
@@ -276,7 +305,7 @@ func checkProjectStatus(status string) error {
 // archived project and importing the file again was refused: the row says
 // "archived", the project is already archived, and the rule reads a status that is
 // not "completed" and says no - to a change that was not being asked for.
-func checkArchiving(planned plannedProject) error {
+func checkArchiving(language string, planned plannedProject) error {
 	if planned.existingID == 0 || !planned.changesStatus() {
 		return nil
 	}
@@ -286,8 +315,11 @@ func checkArchiving(planned plannedProject) error {
 	}
 
 	if planned.existingStatus != model.ProjectStatusCompleted {
-		return fmt.Errorf("a project can only be archived once its status is %q; %q is %q",
-			model.ProjectStatusCompleted, planned.row.Name, planned.existingStatus)
+		return spreadsheet.Problemf("archiveNeedsCompleted",
+			"a project can only be archived once its status is %q; %q is %q",
+			spreadsheet.Translate(language, model.ProjectStatusCompleted),
+			planned.row.Name,
+			spreadsheet.Translate(language, planned.existingStatus))
 	}
 
 	return nil
@@ -494,7 +526,8 @@ func (s *UserWorkbookService) PlanUsers(
 	plan.Columns = spreadsheet.UserColumns(language)
 
 	for _, problem := range problems {
-		plan.add(SheetRow{Number: problem.Number, Problem: problem.Reason})
+		plan.add(SheetRow{Number: problem.Number, Problem: problem.Reason,
+			Code: problem.Code, Values: problem.Values})
 	}
 
 	for _, row := range rows {
@@ -502,16 +535,16 @@ func (s *UserWorkbookService) PlanUsers(
 
 		person, found := byEmail[row.Email]
 		if !found {
-			plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: fmt.Sprintf(
+			plan.add(problemRow(row.Number, cells, spreadsheet.Problemf("noSuchAccount",
 				"there is no account for %q; this import changes accounts and does "+
-					"not create them", row.Email)})
+					"not create them", row.Email)))
 
 			continue
 		}
 
 		if role := strings.TrimSpace(row.Role); role != "" && !known[strings.ToLower(role)] {
-			plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: fmt.Sprintf(
-				"%q is not a role", role)})
+			plan.add(problemRow(row.Number, cells,
+				spreadsheet.Problemf("noSuchRole", "%q is not a role", role)))
 
 			continue
 		}
@@ -691,7 +724,8 @@ func (s *RoleWorkbookService) PlanRoles(
 	plan.Columns = spreadsheet.RoleColumns(language, permissions)
 
 	for _, problem := range problems {
-		plan.add(SheetRow{Number: problem.Number, Problem: problem.Reason})
+		plan.add(SheetRow{Number: problem.Number, Problem: problem.Reason,
+			Code: problem.Code, Values: problem.Values})
 	}
 
 	for _, row := range rows {
@@ -703,16 +737,16 @@ func (s *RoleWorkbookService) PlanRoles(
 		// one way round that would make the file the widest door into the very
 		// thing the form refuses.
 		if found != nil && found.IsSystem && !sameRights(row.Granted, found.Permissions) {
-			plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: fmt.Sprintf(
-				"%q is a system role, and its permissions cannot be changed", found.Name)})
+			plan.add(problemRow(row.Number, cells, spreadsheet.Problemf("systemRole",
+				"%q is a system role, and its permissions cannot be changed", found.Name)))
 
 			continue
 		}
 
 		if found == nil && len(row.Granted) == 0 {
-			plan.add(SheetRow{Number: row.Number, Cells: cells, Problem: fmt.Sprintf(
+			plan.add(problemRow(row.Number, cells, spreadsheet.Problemf("roleGrantsNothing",
 				"%q would be created granting nothing, so nobody holding it could "+
-					"open a single screen", row.Name)})
+					"open a single screen", row.Name)))
 
 			continue
 		}

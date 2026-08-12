@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"gofr.dev/pkg/gofr"
@@ -29,6 +31,15 @@ type RestartHandler struct {
 	// differ from it are what "pending" means.
 	active appconfig.Config
 
+	// running is the connection this process opened, which is not the same thing
+	// as the file that is on disk now - the file is what the settings screen
+	// writes, and the point of the comparison is the difference between them.
+	//
+	// Kept as its own field rather than read from active, which carries only the
+	// dialect: everything else about the connection is exported into GoFr's
+	// environment and never comes back.
+	running appconfig.Datasource
+
 	// startedAt identifies this process to the screen that asked it to restart.
 	//
 	// Waiting for the application to stop answering and then answer again does
@@ -43,11 +54,13 @@ func NewRestartHandler(
 	settings *service.SettingsService,
 	authz *Authorizer,
 	active appconfig.Config,
+	running appconfig.Datasource,
 ) *RestartHandler {
 	return &RestartHandler{
 		settings:  settings,
 		authz:     authz,
 		active:    active,
+		running:   running,
 		startedAt: time.Now(),
 	}
 }
@@ -159,18 +172,69 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 		})
 	}
 
-	// The database connection lives in a file rather than the settings table,
-	// and only the dialect is worth comparing: a changed host or password is a
-	// change to the same connection, and reporting either would mean reading a
-	// stored password to compare it.
-	if stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok &&
-		stored.Dialect != "" && stored.Dialect != h.active.Dialect {
+	// The database connection lives in a file rather than the settings table, and
+	// is compared whole.
+	//
+	// Only the dialect used to be compared, on the grounds that a changed host or
+	// password is a change to the same connection. That is a fair description of
+	// what the card says and a wrong answer to what it is for: the connection is
+	// opened once, while the application starts, so moving the database to another
+	// host is exactly as pending as moving it to another dialect. And the save on
+	// that screen now promises a restart only when this list is not empty, so a
+	// comparison that misses a change is the interface telling somebody there is
+	// nothing left to do.
+	stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile)
+	if !ok || stored.Dialect == "" {
+		return pending, nil
+	}
+
+	if running, saved := connectionSummary(h.running), connectionSummary(stored); running != saved {
 		pending = append(pending, PendingChange{
-			Setting: "database", Running: h.active.Dialect, Stored: stored.Dialect,
+			Setting: "database", Running: running, Stored: saved,
 		})
 	}
 
+	// The password is compared and never shown, on either side. What is pending is
+	// that it changed; printing the old one next to the new one on a screen would
+	// be a worse answer than the empty one the interface renders for this.
+	if stored.Password != h.running.Password {
+		pending = append(pending, PendingChange{Setting: "databasePassword"})
+	}
+
 	return pending, nil
+}
+
+// connectionSummary describes a connection in one line, without its password.
+//
+// The card shows what a restart would change, so the description has to carry
+// everything that is compared against it - a comparison that includes the port
+// and a description that does not would put "postgres → postgres" on screen and
+// call it an explanation.
+//
+// The port is defaulted through the same function that fills it in for GoFr, so
+// a connection that leaves it empty and one that spells out the default it would
+// have been given are the same connection here as well as in fact.
+func connectionSummary(ds appconfig.Datasource) string {
+	dialect := strings.ToLower(ds.Dialect)
+
+	// A file on disk: host, port and user say nothing about it, and the name is
+	// the path.
+	if dialect != "postgres" && dialect != "mysql" {
+		return strings.TrimSpace(dialect + " " + ds.Name)
+	}
+
+	summary := fmt.Sprintf("%s %s:%s/%s",
+		dialect, ds.Host, appconfig.DefaultPortFor(ds.Dialect, ds.Port), ds.Name)
+
+	if ds.User != "" {
+		summary += " as " + ds.User
+	}
+
+	if ds.SSLMode != "" {
+		summary += " (" + ds.SSLMode + ")"
+	}
+
+	return summary
 }
 
 // restartGrace is how long the process waits before replacing itself.

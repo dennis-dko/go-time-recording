@@ -104,7 +104,8 @@ func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
 	}
 
 	if h.authz.Enabled() && result.Result.UserID != principal.User.ID {
-		return nil, forbiddenError{msg: "you may only read your own time entries"}
+		return nil, forbiddenError{msg: "you may only read your own time entries"}.
+			WithCode("onlyOwnEntriesRead")
 	}
 
 	return newTimesheetResponse(result.Result), nil

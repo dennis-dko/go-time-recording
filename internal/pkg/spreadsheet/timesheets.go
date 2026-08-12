@@ -13,7 +13,6 @@ package spreadsheet
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -109,7 +108,7 @@ func Read(r io.Reader) ([]Row, []RowError, error) {
 				continue
 			}
 
-			problems = append(problems, RowError{Number: number, Reason: rowErr.Error()})
+			problems = append(problems, rowErrorFor(number, rowErr))
 
 			continue
 		}
@@ -155,15 +154,15 @@ func parseRow(number int, cells []string) (Row, error) {
 // mean refusing files that look perfectly correct on screen.
 func parseDate(raw string) (time.Time, error) {
 	if raw == "" {
-		return time.Time{}, errors.New("the date is missing")
+		return time.Time{}, problemf("dateMissing", "the date is missing")
 	}
 
 	if parsed, ok := parseOptionalDate(raw); ok {
 		return parsed, nil
 	}
 
-	return time.Time{}, fmt.Errorf("%q is not a date the importer understands "+
-		"(use YYYY-MM-DD)", raw)
+	return time.Time{}, problemf("dateNotUnderstood",
+		"%q is not a date the importer understands (use YYYY-MM-DD)", raw)
 }
 
 // parseOptionalDate is parseDate for a column that may be empty, which returns
@@ -194,12 +193,12 @@ func parseOptionalDate(raw string) (time.Time, bool) {
 // to be under 24, so accepting both is unambiguous here.
 func parseHours(raw string) (float64, error) {
 	if raw == "" {
-		return 0, errors.New("the hours are missing")
+		return 0, problemf("hoursMissing", "the hours are missing")
 	}
 
 	hours, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
 	if err != nil {
-		return 0, fmt.Errorf("%q is not a number of hours", raw)
+		return 0, problemf("hoursNotANumber", "%q is not a number of hours", raw)
 	}
 
 	return hours, nil

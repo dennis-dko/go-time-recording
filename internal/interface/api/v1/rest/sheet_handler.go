@@ -53,6 +53,13 @@ type SheetImportRow struct {
 
 	// Problem is empty for a row that would be written.
 	Problem string `json:"problem"`
+
+	// ProblemCode names which complaint it is and ProblemValues are what the
+	// English sentence interpolated, so a client can say the same thing in its
+	// reader's language. The same arrangement as the error codes, and omitted
+	// entirely for a row with nothing wrong with it.
+	ProblemCode   string `json:"problemCode,omitempty"`
+	ProblemValues []any  `json:"problemValues,omitempty"`
 }
 
 // SheetImportResponse is a whole file, understood.
@@ -297,6 +304,7 @@ func sheetResponse(dryRun bool, plan *service.SheetPlan) SheetImportResponse {
 
 		out.Rows = append(out.Rows, SheetImportRow{
 			Row: row.Number, Cells: cells, Problem: row.Problem,
+			ProblemCode: row.Code, ProblemValues: row.Values,
 		})
 	}
 
@@ -347,6 +355,16 @@ func unreadableWorkbook(err error) error {
 	if errors.Is(err, spreadsheet.ErrWrongSheet) {
 		return toHTTPError(apperror.Invalidf(
 			"this workbook holds something else: %v", err).WithCode("wrongWorkbook"))
+	}
+
+	// A roles sheet whose columns name a right nobody enforces. The file reads
+	// perfectly well, so calling it unreadable is untrue as well as unhelpful -
+	// and the name of the column is the one thing the reader needs, so it travels
+	// as a value rather than only inside the English sentence.
+	var unknown spreadsheet.UnknownColumnError
+	if errors.As(err, &unknown) {
+		return toHTTPError(apperror.Invalidf("%v", err).
+			WithCode("unknownPermissionColumn", unknown.Name))
 	}
 
 	return toHTTPError(apperror.Invalidf(

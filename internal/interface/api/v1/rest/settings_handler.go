@@ -350,6 +350,10 @@ func (h *SettingsHandler) SaveLDAP(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
+	if err := h.requireAdminForSchedule(c, config); err != nil {
+		return nil, err
+	}
+
 	if err := h.settings.SaveLDAP(c, config); err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -580,6 +584,42 @@ func (h *SettingsHandler) requireAdmin(c *gofr.Context) error {
 	_, err := h.authz.RequireInstallationAdmin(c)
 
 	return err
+}
+
+// requireAdminForSchedule keeps the automatic directory run with the account that
+// may perform one by hand.
+//
+// Running the synchronisation is the built-in administrator's alone, because it
+// deletes the accounts the directory no longer holds and everything they
+// recorded. Scheduling it is the same act performed later and unattended, and it
+// was open to anybody holding settings:manage - so the safety the button was
+// given could be walked around by typing five numbers into the field beside it.
+//
+// Only a change is refused. The schedule travels with the rest of the directory
+// settings, so somebody editing the connection sends the stored value back
+// unchanged, and refusing that would refuse them the connection form as well.
+func (h *SettingsHandler) requireAdminForSchedule(c *gofr.Context, wanted model.LDAPConfig) error {
+	principal, err := h.authz.Principal(c)
+	if err != nil {
+		return err
+	}
+
+	if !h.authz.Enabled() || principal.User.IsSystem {
+		return nil
+	}
+
+	stored, err := h.settings.LDAP(c)
+	if err != nil {
+		return toHTTPError(err)
+	}
+
+	if wanted.SyncSchedule == stored.SyncSchedule {
+		return nil
+	}
+
+	return forbiddenError{
+		msg: "only the built-in administrator may schedule the directory synchronisation",
+	}.WithCode("onlyBuiltInAdminSchedules")
 }
 
 func newBrandingResponse(b model.Branding) BrandingResponse {

@@ -75,7 +75,14 @@ func (h *StatisticsHandler) Own(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	stats, err := h.statistics.Own(c, principal.User.ID, from, to)
+	// The same projectId the evaluation screen sends, read by the same helper, so
+	// the chart and the total beside it are answers to one question.
+	scope, err := reportScope(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	stats, err := h.statistics.Own(c, principal.User.ID, from, to, scope)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
