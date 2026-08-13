@@ -748,6 +748,61 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 .pw-toggle svg { height: 18px; width: 18px; }
 
+/* --- date fields ---
+ *
+ * The native input is still there and still holds the value; it is the picker,
+ * and on a phone it is the date wheel. What is on screen is a text field written
+ * in the reader's own convention, because the native one renders in the
+ * browser's language and ignores the page.
+ *
+ * Off-screen rather than display:none: a field that is not rendered cannot be
+ * given focus and showPicker() refuses to open on it. Kept at the same place as
+ * the visible field so the picker opens where the eye already is.
+ */
+.date-wrap { display: block; position: relative; }
+
+.date-native {
+  border: 0;
+  bottom: 0;
+  clip-path: inset(50%);
+  height: 1px;
+  padding: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 36px;
+  width: 1px;
+}
+
+.date-shown { padding-right: 40px; width: 100%; }
+
+.date-open {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+}
+
+.date-open:hover { background: none; color: var(--text); filter: none; }
+
+/* A finger, not a mouse. 30x32 is comfortable with a pointer and small for a
+ * thumb, so on anything without a fine pointer the target grows to the size a
+ * touch guideline asks for - without moving the icon, which stays centred. */
+@media (pointer: coarse) {
+  .date-open { height: 44px; width: 44px; right: 0; }
+  .date-shown { padding-right: 48px; }
+}
+
 /* --- calendar --- */
 
 .cal-grid {

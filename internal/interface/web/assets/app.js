@@ -691,8 +691,10 @@ function ensureBulkBar(table) {
   const bar = el('div', { class: 'bulk-bar', 'data-for': table.id },
     el('span', { class: 'bulk-count' }),
     el('button', {
+      // No text here: refreshBulkBar writes it, and writes it again every time
+      // the bar is refreshed. Set once at creation it survived a language change
+      // as the old language's word, over a count beside it in the new one.
       class: 'danger',
-      text: t('bulk.delete', 'Delete selected'),
       onclick: () => runBulkDelete(table),
     }));
 
@@ -713,6 +715,7 @@ function refreshBulkBar(table) {
   bar.classList.toggle('shown', picked.length > 0);
   bar.querySelector('.bulk-count').textContent = t('bulk.count', '{n} selected')
     .replace('{n}', String(picked.length));
+  bar.querySelector('button').textContent = t('bulk.delete', 'Delete selected');
 
   const all = table.querySelector('thead .pick-all');
   if (all) {
@@ -898,6 +901,212 @@ function formData(form) {
     if (value !== '') out[key] = value;
   }
   return out;
+}
+
+/**
+ * Makes every date field read and accept the reader's own convention.
+ *
+ * <input type="date"> renders in the *browser's* UI language and ignores the
+ * page entirely - measured in Chrome 151 with the same value in three inputs,
+ * one of them carrying lang="de-DE" itself: started with --lang=en-US all three
+ * read 08/12/2026, with --lang=de-DE all three read 12.08.2026. So an English
+ * screen on a German machine asked for a date as TT.MM.JJJJ, and a German screen
+ * on an English one asked American-first.
+ *
+ * The native field is kept rather than replaced. It is what a phone turns into a
+ * date wheel and what a screen reader already knows how to announce, and writing
+ * a calendar that does both of those as well as the browser does is not a trade
+ * worth making for a format string. It becomes the picker: off-screen, opened by
+ * the button beside the field, and its value is still the value.
+ *
+ * What is added is the part that was wrong - a text field, written and read in
+ * the reader's own convention. Typing is honoured, because a date field somebody
+ * cannot type into is worse than one in the wrong order.
+ *
+ * The named element stays the native one, so every form read, every
+ * form.elements lookup and every getElementById keeps working unchanged. Setting
+ * one from code goes through setDateField.
+ */
+function enhanceDateFields(root = document) {
+  for (const native of $$('input[type="date"]', root)) {
+    if (native.dataset.enhanced) continue;
+
+    native.dataset.enhanced = '1';
+    native.classList.add('date-native');
+    native.tabIndex = -1;
+    native.setAttribute('aria-hidden', 'true');
+
+    const shown = el('input', {
+      type: 'text',
+      class: 'date-shown',
+      // A date is digits and separators; on a phone this is the difference
+      // between the number pad and the whole keyboard.
+      inputmode: 'numeric',
+      autocomplete: 'off',
+      spellcheck: 'false',
+    });
+
+    const open = el('button', {
+      type: 'button',
+      class: 'date-open',
+      tabindex: '-1',
+      'aria-hidden': 'true',
+    });
+
+    open.append(calendarIcon());
+
+    const wrap = el('span', { class: 'date-wrap' });
+    native.replaceWith(wrap);
+    wrap.append(shown, native, open);
+
+    if (native.required) shown.required = true;
+
+    const draw = () => {
+      shown.value = native.value ? fmtDate(native.value) : '';
+      shown.placeholder = datePattern();
+      shown.setAttribute('aria-label', dateFieldLabel(wrap));
+    };
+
+    native.addEventListener('change', draw);
+    native.addEventListener('input', draw);
+
+    // Typed by hand. Parsed on every keystroke so a complete date takes effect
+    // at once, and left alone while it is still half-written.
+    shown.addEventListener('input', () => {
+      const iso = parseTypedDate(shown.value);
+      if (iso !== null) native.value = iso;
+      else if (shown.value.trim() === '') native.value = '';
+    });
+
+    // On the way out, the box is made to agree with what is stored - so half a
+    // date, or one nobody could parse, does not sit there looking accepted.
+    shown.addEventListener('blur', draw);
+
+    const showPicker = () => {
+      if (typeof native.showPicker !== 'function') return;
+
+      try {
+        native.showPicker();
+      } catch {
+        // Chrome throws without a user gesture. Not worth a message: typing
+        // still works, which is why this is a text field.
+      }
+    };
+
+    // mousedown rather than click: focus would move first and close the picker
+    // in the same breath.
+    open.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      shown.focus();
+      showPicker();
+    });
+
+    // The keyboard way in, on the field itself - the button is out of the tab
+    // order because it would double every date field's stops for no gain.
+    shown.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown' && (event.altKey || event.metaKey)) {
+        event.preventDefault();
+        showPicker();
+      }
+    });
+
+    draw();
+
+    // Redrawn when the language changes, like everything else that was written
+    // into the page rather than translated in it.
+    redraws.set('dateField:' + redraws.size, draw);
+  }
+}
+
+/** The pattern a date is written in here, as a placeholder. */
+function datePattern() {
+  // Read off a date whose parts cannot be mistaken for one another, so the order
+  // and the separators come from the locale rather than from a guess.
+  return new Intl.DateTimeFormat(activeLocale(), {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
+  }).formatToParts(new Date(Date.UTC(2026, 10, 22))).map((part) => {
+    if (part.type === 'day') return t('date.day', 'DD');
+    if (part.type === 'month') return t('date.month', 'MM');
+    if (part.type === 'year') return t('date.year', 'YYYY');
+
+    return part.value;
+  }).join('');
+}
+
+/** Which of day, month and year comes first, second and third here. */
+function dateOrder() {
+  return new Intl.DateTimeFormat(activeLocale(), {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
+  }).formatToParts(new Date(Date.UTC(2026, 10, 22)))
+    .filter((part) => ['day', 'month', 'year'].includes(part.type))
+    .map((part) => part.type);
+}
+
+/**
+ * Reads a date somebody typed, in the order this locale writes them.
+ *
+ * Null for anything incomplete, which is what leaves a half-typed date alone
+ * instead of storing a guess at it.
+ */
+function parseTypedDate(text) {
+  const groups = String(text).match(/\d+/g);
+  if (!groups || groups.length < 3) return null;
+
+  const order = dateOrder();
+  const read = {};
+  order.forEach((type, index) => { read[type] = groups[index]; });
+
+  // A two-digit year is ambiguous and this is not the place to decide it.
+  if (!read.year || read.year.length !== 4) return null;
+
+  const year = Number(read.year);
+  const month = Number(read.month);
+  const day = Number(read.day);
+
+  if (!year || !month || !day) return null;
+
+  // Round-tripped through a real date, so the thirtieth of February is refused
+  // rather than silently becoming the second of March.
+  const at = new Date(Date.UTC(year, month - 1, day));
+  if (at.getUTCFullYear() !== year || at.getUTCMonth() !== month - 1
+    || at.getUTCDate() !== day) {
+    return null;
+  }
+
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
+    + `-${String(day).padStart(2, '0')}`;
+}
+
+/** What to call a date field to a screen reader, taken from its own label. */
+function dateFieldLabel(wrap) {
+  const label = wrap.closest('label');
+  const text = label ? leadingText(label).trim() : '';
+
+  return text || t('field.date', 'Date');
+}
+
+/** Sets a date field from code, so both halves of it agree. */
+function setDateField(native, iso) {
+  if (!native) return;
+
+  native.value = iso ?? '';
+  native.dispatchEvent(new Event('change'));
+}
+
+function calendarIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('fill', 'currentColor');
+  path.setAttribute('d', 'M7 2v2H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm12 7v10H5V9h14z');
+
+  svg.append(path);
+
+  return svg;
 }
 
 /**
@@ -1465,6 +1674,9 @@ const TRANSLATIONS = {
     'field.tracerUrl': 'Trace-Adresse',
     'field.userFilter': 'Benutzerfilter',
     'field.userId': 'Benutzer',
+    'date.day': 'TT',
+    'date.month': 'MM',
+    'date.year': 'JJJJ',
     'field.date': 'Datum',
     'field.default': 'Standard',
     'field.description': 'Beschreibung',
@@ -2310,7 +2522,7 @@ function editTimesheet(entry) {
 
   form.elements.id.value = String(entry.id);
   form.elements.projectId.value = entry.projectId ? String(entry.projectId) : '';
-  form.elements.date.value = entry.date;
+  setDateField(form.elements.date, entry.date);
   form.elements.durationHours.value = String(entry.durationHours);
   form.elements.description.value = entry.description ?? '';
 
@@ -2454,7 +2666,7 @@ function resetBookingDate() {
 
   if (field.value === '' || field.value === autofilledDate) {
     autofilledDate = todayISO();
-    field.value = autofilledDate;
+    setDateField(field, autofilledDate);
   }
 }
 
@@ -5198,8 +5410,8 @@ async function loadStatistics() {
 
   const range = defaultStatisticsRange();
 
-  if (!$('#statistics-from').value) $('#statistics-from').value = range.from;
-  if (!$('#statistics-to').value) $('#statistics-to').value = range.to;
+  if (!$('#statistics-from').value) setDateField($('#statistics-from'), range.from);
+  if (!$('#statistics-to').value) setDateField($('#statistics-to'), range.to);
 
   const params = new URLSearchParams({
     from: $('#statistics-from').value,
@@ -7330,6 +7542,10 @@ async function init() {
   // submit handler was never attached, which would silently reload the page.
   $('#form-login').addEventListener('submit', submitLogin);
   enhancePasswordFields();
+
+  // Beside the password fields, and for the same reason: a field added later is
+  // covered without anybody remembering to come back here.
+  enhanceDateFields();
 
   // Appearance is a device setting and needs no session, so the picker works on
   // the sign-in screen too.
