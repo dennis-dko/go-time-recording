@@ -290,7 +290,12 @@
     <section id="view-calendar" class="view" hidden>
       <div class="card">
         <div class="card-head">
-          <h2 id="calendar-title" data-i18n="cal.title">Calendar</h2>
+          <!-- No data-i18n: the script owns this text, and writes the month and
+               year into it. Carrying a key as well meant applyLanguage put the
+               static word "Kalender" over "August 2026" on every language change,
+               and only the calendar being reloaded afterwards put the month back -
+               so the heading was correct by luck of ordering. -->
+          <h2 id="calendar-title">Calendar</h2>
           <div class="filters">
             <button type="button" class="secondary" id="calendar-prev" aria-label="&#8592;">&#8592;</button>
             <button type="button" class="secondary" id="calendar-today" data-i18n="cal.today">Today</button>

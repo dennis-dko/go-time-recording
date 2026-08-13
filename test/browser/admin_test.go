@@ -1825,3 +1825,167 @@ func TestTheStripGoesAwayWhenARequestLandsDuringItsFade(t *testing.T) {
 			"is drawn, and stays that way until something puts the strip up again")
 	}
 }
+
+// Switching the language reaches what is already on screen.
+//
+// Most of the interface is markup, and applyLanguage translates that. What it did
+// not reach was everything the script had already written into the page - and
+// those are precisely the screens somebody has to ask for: an evaluation, an
+// overtime balance, an import preview. Drawn once, from an answer that arrived
+// once, and never looked up again.
+//
+// So a screen ended up half translated in a way that reads as a bug in the
+// translations rather than in the redrawing: the table heading said "Zeitraum"
+// above a cell saying 07/14/2026, beside a total reading "5.01 h in total". Every
+// key involved had a German entry. None of them was asked for a second time.
+//
+// Only a browser can show this. It is not what the strings are, it is when they
+// were looked up.
+func TestSwitchingLanguageRedrawsWhatIsAlreadyOnScreen(t *testing.T) {
+	p := open(t)
+	p.readyWorker()
+
+	p.run("book an hour", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
+		chromedp.SetValue(`#form-timesheet input[name="durationHours"]`, "5.01",
+			chromedp.ByQuery),
+		p.click(`#form-timesheet button[type="submit"]`))
+
+	p.waitForText("#table-timesheets tbody", "5.01")
+
+	p.run("evaluate", p.click(`.tab[data-view="report"]`),
+		chromedp.WaitVisible("#form-report", chromedp.ByID),
+		p.click(`#form-report button[type="submit"]`),
+		chromedp.WaitVisible("#report-result", chromedp.ByID))
+
+	// English first, so the change below is a change rather than the starting
+	// state. The suite pins the browser to en-US and this account has chosen
+	// nothing, so this is what it renders in.
+	if total := p.text("#report-total"); !strings.Contains(total, "in total") {
+		t.Fatalf("the total reads %q before the switch, which is not English - this "+
+			"case cannot tell a redraw from the starting state", total)
+	}
+
+	p.run("switch to German",
+		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
+		chromedp.Evaluate(
+			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+
+	// The heading is markup and was always translated; the total is the script's
+	// and was not. Both are checked, so a redraw that somehow lost the markup
+	// would not pass either.
+	p.waitForText("#table-report thead", "Zeitraum")
+
+	if total := p.text("#report-total"); !strings.Contains(total, "gesamt") {
+		t.Errorf("the total still reads %q after switching to German", total)
+	}
+
+	// The figure with it: a German reader writes 5,01 rather than 5.01, and that
+	// is drawn by the same call that writes the words around it.
+	if total := p.text("#report-total"); !strings.Contains(total, "5,01") {
+		t.Errorf("the total reads %q, which is not a German figure", total)
+	}
+
+	// The date in the table, which was showing the American order on a German
+	// screen.
+	if period := p.text("#table-report tbody td"); strings.Contains(period, "/") {
+		t.Errorf("the period reads %q, which is still not written the German way",
+			period)
+	}
+
+	// And the chart beside it, whose caption and labels were translated when the
+	// answer arrived rather than when it is drawn.
+	if caption := p.text("#report-chart-caption"); !strings.Contains(caption, "Stunden") {
+		t.Errorf("the chart caption still reads %q", caption)
+	}
+}
+
+// Nothing that has a German entry is still showing its English source.
+//
+// The dictionary tests prove every key has a translation. They cannot prove the
+// translation reached the page, and those are different failures: a card built by
+// the script after applyLanguage has already run keeps its English until
+// something runs it again, and a screen drawn from an answer that arrived earlier
+// keeps whatever it was drawn with.
+//
+// So this asks the page itself, in German, across every view: for each element
+// carrying a data-i18n whose key the German dictionary has, is the text on screen
+// the German one? That is the whole question, asked as a property rather than as a
+// list of words somebody remembered to look for.
+func TestNothingOnScreenKeepsItsEnglishWhenGermanIsChosen(t *testing.T) {
+	// Both kinds of account, because they see different halves of the application
+	// and neither half is the whole of it: the administrator has the settings and
+	// the spreadsheet cards, and somebody who works here has the time, the
+	// calendar, the evaluation and the overtime balance - which is where this was
+	// reported.
+	t.Run("administrator", func(t *testing.T) {
+		checkGermanEverywhere(t, func(p *page) { p.readyAdmin() })
+	})
+
+	t.Run("works here", func(t *testing.T) {
+		checkGermanEverywhere(t, func(p *page) { p.readyWorker() })
+	})
+}
+
+func checkGermanEverywhere(t *testing.T, signIn func(*page)) {
+	t.Helper()
+
+	p := open(t)
+	signIn(p)
+
+	p.run("switch to German",
+		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
+		chromedp.Evaluate(
+			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+
+	p.waitForText("#tabs", "Einstellungen")
+
+	// Every view, because a tab nobody opened is a tab nobody looked at - and the
+	// spreadsheet cards in particular are built by the script rather than written
+	// in the markup.
+	var views []string
+
+	p.run("list the tabs", chromedp.Evaluate(
+		`Array.from(document.querySelectorAll('.tab[data-view]'))
+			.filter(t => !t.hidden).map(t => t.dataset.view)`, &views))
+
+	if len(views) < 3 {
+		t.Fatalf("only %d tabs are open to this account; this proves little", len(views))
+	}
+
+	for _, view := range views {
+		p.run("open "+view, p.click(`.tab[data-view="`+view+`"]`),
+			chromedp.WaitVisible(`#view-`+view, chromedp.ByID))
+
+		var untranslated []string
+
+		p.run("check "+view, chromedp.Evaluate(`
+			(() => {
+				const german = TRANSLATIONS.de ?? {};
+				const bad = [];
+
+				for (const node of document.querySelectorAll('[data-i18n]')) {
+					if (!node.offsetParent && node.offsetHeight === 0) continue;
+
+					const wanted = german[node.dataset.i18n];
+					if (wanted === undefined) continue;
+
+					// Labels wrap their input, so the text is the first text node -
+					// textContent would drag the field's own value in with it.
+					const first = node.firstChild;
+					const shown = first && first.nodeType === Node.TEXT_NODE
+						? first.nodeValue : node.textContent;
+
+					if (shown.trim() !== wanted.trim()) {
+						bad.push(node.dataset.i18n + ': shows ' + JSON.stringify(shown.trim().slice(0, 60)));
+					}
+				}
+
+				return bad;
+			})()`, &untranslated))
+
+		for _, one := range untranslated {
+			t.Errorf("%s: %s", view, one)
+		}
+	}
+}
