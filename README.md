@@ -328,7 +328,11 @@ Implemented, and verified against a running instance:
 
 - **Session cookies** are `HttpOnly` and `SameSite=Lax`, and `Secure` whenever
   the connection is HTTPS. Sessions live in the database, so a restart does not
-  sign everyone out. Changing a password ends every session of that user.
+  sign everyone out. Changing a password ends every *other* session of that user
+  — one opened with the old password on another device stops working
+  immediately, and the device that just proved it knew the old password carries
+  on. Ending that one as well signed people out of the setup wizard between two
+  of its own steps.
 - **CSRF protection** on every request that changes something. Two independent
   checks have to pass: the `Origin` (or, failing that, the `Referer`) must name
   this host, and the `X-CSRF-Token` header must equal the `gtr_csrf` cookie.
