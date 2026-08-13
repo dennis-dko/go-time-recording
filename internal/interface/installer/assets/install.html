@@ -197,6 +197,23 @@
       + 'antwortet.',
     'msg.slow': 'Die Anwendung ist nach zwei Minuten nicht erreichbar. Bitte das Protokoll '
       + 'dieses Prozesses prüfen.',
+
+    // What a refusal is called. The server writes its reasons in English at the
+    // point the rule is enforced, which is right for its log and wrong for the
+    // only screen this process has - so "invalid field(s): name" was shown on an
+    // otherwise German page, naming a field by the key the payload uses rather
+    // than by the label above it.
+    'err.fields': 'Bitte ausfüllen: {0}',
+    'err.unsupportedDialect': '„{0}“ ist keine Datenbank, die diese Anwendung öffnen kann. '
+      + 'Möglich sind: {1}.',
+    'err.wrongSetupToken': 'Das Einrichtungs-Token stimmt nicht. Es steht im Protokoll '
+      + 'dieses Prozesses.',
+
+    // By the label above the field, which is the only name a reader can act on.
+    'field.name': 'Datenbankname',
+    'field.host': 'Host',
+    'field.port': 'Port',
+    'field.user': 'Benutzer',
   };
 
   // The browser's own preference, which is the only thing there is to go on: no
@@ -278,6 +295,36 @@
     note.hidden = !text;
   }
 
+  /**
+   * A refusal, in the reader's language where the server said which rule it was.
+   *
+   * Three shapes, in the order they are worth showing: the fields that were not
+   * filled in, which is nearly always what this is; a named rule with the values
+   * its sentence interpolated; and otherwise whatever English the server wrote,
+   * which is still better than a status code.
+   */
+  function refusal(body, status) {
+    if (Array.isArray(body.param) && body.param.length) {
+      const named = body.param.map((f) => t('field.' + f, f));
+
+      return t('err.fields', 'Please fill in: {0}').replace('{0}', named.join(', '));
+    }
+
+    if (body.code) {
+      const sentence = t('err.' + body.code, '');
+
+      if (sentence) {
+        return sentence.replace(/\{(\d+)\}/g, (whole, i) => {
+          const value = (body.values || [])[Number(i)];
+
+          return value === undefined || value === null ? whole : String(value);
+        });
+      }
+    }
+
+    return body.error || `Error ${status}`;
+  }
+
   async function call(path) {
     const res = await fetch(path, {
       method: 'POST',
@@ -288,7 +335,7 @@
     let body = {};
     try { body = await res.json(); } catch { /* a non-JSON error page */ }
 
-    if (!res.ok) throw new Error(body.error || `Error ${res.status}`);
+    if (!res.ok) throw new Error(refusal(body, res.status));
 
     return body;
   }

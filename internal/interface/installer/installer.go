@@ -39,6 +39,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -47,6 +48,7 @@ import (
 	"time"
 
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 //go:embed assets/install.html
@@ -271,7 +273,7 @@ func (s *server) test(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := appconfig.TestDatasource(r.Context(), ds); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, err)
 
 		return
 	}
@@ -289,13 +291,14 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	// work would leave the process unable to start and unable to serve the
 	// screen that could fix it - the one state this design must not reach.
 	if err := appconfig.TestDatasource(r.Context(), ds); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, err)
 
 		return
 	}
 
 	if err := appconfig.SaveDatasource(s.cfg.DatasourceFile, ds); err != nil {
-		writeError(w, http.StatusInternalServerError, "cannot save the connection: "+err.Error())
+		writeError(w, http.StatusInternalServerError,
+			fmt.Errorf("cannot save the connection: %w", err))
 
 		return
 	}
@@ -317,7 +320,7 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 func (s *server) accept(w http.ResponseWriter, r *http.Request) (appconfig.Datasource, bool) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		writeError(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 
 		return appconfig.Datasource{}, false
 	}
@@ -326,8 +329,11 @@ func (s *server) accept(w http.ResponseWriter, r *http.Request) (appconfig.Datas
 	// rejection took.
 	given := strings.TrimSpace(r.Header.Get("X-Setup-Token"))
 	if subtle.ConstantTimeCompare([]byte(given), []byte(s.cfg.Token)) != 1 {
+		// Coded, because it is the refusal somebody meets most: the token is a
+		// hex string copied out of a log, and copying it wrongly is easy.
 		writeError(w, http.StatusUnauthorized,
-			"the setup token is wrong - it is printed in this process's log")
+			apperror.Invalidf("the setup token is wrong - it is printed in this "+
+				"process's log").WithCode("wrongSetupToken"))
 
 		return appconfig.Datasource{}, false
 	}
@@ -338,13 +344,14 @@ func (s *server) accept(w http.ResponseWriter, r *http.Request) (appconfig.Datas
 	// the check has already happened, but a connection description is a few
 	// hundred bytes and there is no reason to read more.
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8*1024)).Decode(&ds); err != nil {
-		writeError(w, http.StatusBadRequest, "the request is not a connection description")
+		writeError(w, http.StatusBadRequest,
+			errors.New("the request is not a connection description"))
 
 		return appconfig.Datasource{}, false
 	}
 
 	if err := ds.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusBadRequest, err)
 
 		return appconfig.Datasource{}, false
 	}
@@ -360,8 +367,36 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+// writeError answers a refusal, with whatever of it the page can translate.
+//
+// The message is English prose written where the rule is enforced, which is
+// right for a log and wrong for the only screen this server has - and that
+// screen had no choice but to print it. So "invalid field(s): name" was shown to
+// somebody whose installer was otherwise entirely German, naming a field by the
+// key the payload uses rather than by the label above it.
+//
+// The same arrangement the application makes: a field list, or a code and the
+// values its sentence interpolated, beside the English. This page has its own
+// small dictionary and renders whichever of the three it can.
+func writeError(w http.ResponseWriter, status int, err error) {
+	body := map[string]any{"error": err.Error()}
+
+	var detail *apperror.Error
+	if errors.As(err, &detail) {
+		if len(detail.Fields) > 0 {
+			body["param"] = detail.Fields
+		}
+
+		if detail.Code != "" {
+			body["code"] = detail.Code
+
+			if len(detail.Values) > 0 {
+				body["values"] = detail.Values
+			}
+		}
+	}
+
+	writeJSON(w, status, body)
 }
 
 // newToken returns a token short enough to retype and long enough that guessing

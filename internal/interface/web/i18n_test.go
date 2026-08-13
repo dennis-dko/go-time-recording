@@ -566,6 +566,16 @@ func serverErrorCodes(t *testing.T) map[string]struct{} {
 				return nil
 			}
 
+			// The installer is a different screen with a different dictionary. It
+			// runs before there is a database to ask anything, so it carries its
+			// own translations inside its one self-contained page - and the codes
+			// it sends are shown there and nowhere else. Sweeping them up here
+			// asked app.js for a sentence it would never have a use for.
+			// TestTheInstallerTranslatesItsOwnRefusals is the guard for those.
+			if strings.Contains(path, filepath.Join("interface", "installer")) {
+				return nil
+			}
+
 			source, readErr := os.ReadFile(path)
 			if readErr != nil {
 				return readErr
@@ -1177,5 +1187,94 @@ func TestFormattingFollowsTheLocaleAndWordsFollowTheLanguage(t *testing.T) {
 	if !regexp.MustCompile(`new Intl\.\w+\(\s*activeLocale\(\)`).MatchString(js) {
 		t.Error("no formatter is given the locale, so nothing is actually formatted " +
 			"the reader's way")
+	}
+}
+
+// One word for an hour, everywhere it is written.
+//
+// The unit is looked up as unit.hours, and it was also spelled out inside half a
+// dozen sentences - so German read "5,01 h gesamt" beside a table writing
+// "5,01 Std.", because the sentence and the dictionary were two places to
+// remember the same word and only one of them was updated.
+//
+// The sentences that could drop it did: their call sites pass a figure that
+// already carries its unit. The two that cannot are the refusals whose numbers
+// come from the server, where one of the interpolated values is a date rather
+// than an amount - those keep the word, and this is what keeps it the same word.
+func TestOneWordForAnHour(t *testing.T) {
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("app.js has no German dictionary")
+	}
+
+	unit, ok := dict["unit.hours"]
+	if !ok {
+		t.Fatal("unit.hours is gone; the hour unit is no longer translated at all")
+	}
+
+	// The stored form is a JavaScript literal, quotes and all.
+	unit = strings.Trim(unit, "'")
+
+	// A bare "h" used as a unit: after a placeholder, or after a figure, and
+	// followed by the end, a bracket or a space. Deliberately narrow - "h" occurs
+	// inside plenty of German words, and this is only looking for the unit.
+	bare := regexp.MustCompile(`\{\d\}\s+h\b|\d\s+h\b`)
+
+	for key, value := range dict {
+		if key == "unit.hours" || !bare.MatchString(value) {
+			continue
+		}
+
+		if strings.Contains(value, unit) {
+			continue
+		}
+
+		t.Errorf("%s writes the hour unit as a bare \"h\" while unit.hours is %q, so "+
+			"one screen says one and one says the other: %s", key, unit, value)
+	}
+}
+
+// The installer's own refusals have their own translations.
+//
+// It cannot use the dictionary in app.js: it runs before there is a database, so
+// nothing of the application is loaded, and it is served as one self-contained
+// page on purpose. So it carries a small table of its own - and a code it sends
+// without an entry there is shown as the English the server wrote, on a screen
+// that is otherwise translated.
+func TestTheInstallerTranslatesItsOwnRefusals(t *testing.T) {
+	root := filepath.Join("..", "installer")
+
+	source, err := os.ReadFile(filepath.Join(root, "installer.go"))
+	if err != nil {
+		t.Fatalf("reading the installer: %v", err)
+	}
+
+	page, err := os.ReadFile(filepath.Join(root, "assets", "install.html"))
+	if err != nil {
+		t.Fatalf("reading the installer page: %v", err)
+	}
+
+	codes := regexp.MustCompile(`WithCode\("([^"]+)"`).FindAllSubmatch(source, -1)
+	if len(codes) == 0 {
+		t.Fatal("the installer sends no coded refusals; this test is reading nothing")
+	}
+
+	for _, match := range codes {
+		key := "'err." + string(match[1]) + "'"
+
+		if !strings.Contains(string(page), key) {
+			t.Errorf("the installer sends %s and its page has no %s, so a German "+
+				"reader is shown the English sentence", match[1], key)
+		}
+	}
+
+	// The fields it refuses, which is the other half and the half that was
+	// reported: "invalid field(s): name" named the payload key rather than the
+	// label above the box.
+	for _, field := range []string{"name", "host", "port", "user"} {
+		if !strings.Contains(string(page), "'field."+field+"'") {
+			t.Errorf("the installer can refuse %q and its page cannot name that field",
+				field)
+		}
 	}
 }
