@@ -435,3 +435,42 @@ func TestChangingTheAdministratorPasswordCannotBeSkipped(t *testing.T) {
 		}
 	}
 }
+
+// Changing a password ends every other session, and keeps this one.
+//
+// Both halves matter and they pull in opposite directions. A session opened with
+// the old password on another device has to stop working at once, or changing a
+// password after losing a laptop achieves nothing. The session doing the changing
+// has to survive, because it just proved it knew the old password - and because
+// ending it signed people out of the setup wizard between two of its own steps,
+// which is where this rule was first got wrong.
+//
+// Written down because the README described it as ending *every* session, which
+// is the behaviour this replaced and not the one the code has.
+func TestChangingAPasswordEndsTheOtherSessionsAndKeepsThisOne(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	worker := a.signInAsUser(admin, "Wera", "wera@example.com")
+
+	// The same account, signed in twice - a second device.
+	elsewhere := a.newClient()
+	elsewhere.signIn("wera@example.com", "another-password-1")
+	elsewhere.must(elsewhere.api(http.MethodGet, "/me", nil), http.StatusOK)
+
+	worker.must(worker.api(http.MethodPut, "/me/password", map[string]any{
+		"currentPassword": "another-password-1",
+		"newPassword":     "a-third-password-1",
+	}), http.StatusOK)
+
+	// This one carries on. Anything else and the wizard cannot finish itself.
+	if got := worker.api(http.MethodGet, "/me", nil).Status; got != http.StatusOK {
+		t.Errorf("the session that changed the password answers %d; it has to survive "+
+			"its own change", got)
+	}
+
+	// The other one does not, which is the point of ending them at all.
+	if got := elsewhere.api(http.MethodGet, "/me", nil).Status; got == http.StatusOK {
+		t.Error("a session opened with the old password on another device still works")
+	}
+}
