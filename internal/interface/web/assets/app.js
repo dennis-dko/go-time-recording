@@ -1355,7 +1355,7 @@ const TRANSLATIONS = {
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
     'err.noSession': 'Keine Sitzung.',
     'err.noTimerRunning': 'Es läuft keine Stoppuhr.',
-    'err.overDailyLimit': '{0} h würden am {2} zusammen {1} h ergeben und damit das Tagesmaximum von {3} h überschreiten.',
+    'err.overDailyLimit': '{0} Std. würden am {2} zusammen {1} Std. ergeben und damit das Tagesmaximum von {3} Std. überschreiten.',
     'err.passkeyKnown': 'Dieser Anmeldeschlüssel ist bereits registriert.',
     'err.passkeyRejected': 'Der Anmeldeschlüssel wurde nicht akzeptiert.',
     'err.passkeyUnverified': 'Der Anmeldeschlüssel konnte nicht geprüft werden.',
@@ -1373,7 +1373,7 @@ const TRANSLATIONS = {
     'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
     'err.systemRoleRightsFixed': 'Die Rechte der Systemrolle „{0}“ lassen sich nicht ändern – weder entziehen noch hinzufügen. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'err.roleGrantsNothing': 'Eine Rolle muss mindestens ein Recht gewähren.',
-    'err.targetOverMaximum': 'Das Tagesziel ({0} h) darf das Tagesmaximum ({1} h) nicht überschreiten.',
+    'err.targetOverMaximum': 'Das Tagesziel ({0} Std.) darf das Tagesmaximum ({1} Std.) nicht überschreiten.',
     'err.timerTooLong': 'Die Stoppuhr läuft seit {0} Stunden, mehr als ein Eintrag aufnehmen kann. Bitte von Hand buchen und die Stoppuhr verwerfen.',
     'err.timerTooShort': 'Die Stoppuhr läuft kürzer als die kleinste buchbare Dauer. Bitte stattdessen verwerfen.',
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
@@ -1430,7 +1430,7 @@ const TRANSLATIONS = {
     'welcome.goTo': 'Zur Willkommensseite',
     'welcome.text': 'Hier wird deine Arbeitszeit erfasst. Ein kurzer Rundgang dauert etwa eine Minute; du kannst ihn jederzeit unter „Mein Konto“ erneut starten.',
     'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Unter „Zeiteinträge“ stoppen, um die Zeit zu buchen.',
-    'welcome.todayHours': 'Heute bislang {0} h gebucht.',
+    'welcome.todayHours': 'Heute bislang {0} gebucht.',
     'welcome.todayNothing': 'Heute noch nichts gebucht.',
     'welcome.tour': 'Rundgang starten',
     'field.banner': 'Banner-Text',
@@ -1559,7 +1559,7 @@ const TRANSLATIONS = {
     'pw.hide': 'Passwort verbergen',
     'pw.show': 'Passwort anzeigen',
     'report.result': 'Ergebnis',
-    'report.total': '{0} h gesamt',
+    'report.total': '{0} gesamt',
     'report.title': 'Auswertung',
     'report.noProject': 'Ohne Projekt',
     'report.chartKind': 'Diagrammart',
@@ -4175,8 +4175,12 @@ async function todayInOneSentence() {
     const hours = entries.reduce((sum, entry) => sum + entry.durationHours, 0);
 
     if (hours > 0) {
-      return t('welcome.todayHours', '{0} h booked today so far.')
-        .replace('{0}', fmtNumber(hours));
+      // fmtHours rather than fmtNumber with an "h" in the sentence: the unit is
+      // a word, and a sentence that spells it out is a second place a translator
+      // has to remember it - which is how this one came to say "h" while the
+      // dictionary's own unit said "Std."
+      return t('welcome.todayHours', '{0} booked today so far.')
+        .replace('{0}', fmtHours(hours));
     }
 
     return t('welcome.todayNothing', 'Nothing booked today yet.');
@@ -7193,8 +7197,8 @@ function wireForms() {
     ));
 
     fillTable($('#table-report tbody'), rows, 2, t('ot.empty', 'No bookings in this period.'));
-    $('#report-total').textContent = t('report.total', '{0} h in total')
-      .replace('{0}', fmtNumber(report.totalHours));
+    $('#report-total').textContent = t('report.total', '{0} in total')
+      .replace('{0}', fmtHours(report.totalHours));
     $('#report-result').hidden = false;
   }
 
