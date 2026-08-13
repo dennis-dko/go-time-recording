@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/test/harness"
 )
@@ -403,6 +404,21 @@ func TestTheLogLevelAppliesWithoutARestart(t *testing.T) {
 	before := len(a.log())
 
 	admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK)
+
+	// Waited for rather than read once. The log reaches this test through the
+	// process's own output and a pipe drained by a goroutine, so a request having
+	// returned says nothing about its lines having been written, flushed, read and
+	// appended. Reading immediately passed locally and on three CI runs before
+	// failing on the fourth, which is what a race looks like while it is still
+	// losing slowly.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(a.log()[before:], `"level":"DEBUG"`) {
+			break
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	if !strings.Contains(a.log()[before:], `"level":"DEBUG"`) {
 		t.Errorf("no DEBUG line was written after raising the level, so the change "+

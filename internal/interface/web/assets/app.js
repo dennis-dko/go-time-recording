@@ -1319,7 +1319,6 @@ const TRANSLATIONS = {
     'cal.clickToEdit': 'Zum Bearbeiten auf einen Eintrag klicken.',
     'cal.monthTotal': 'Gesamt im Monat',
     'cal.months': 'Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember',
-    'cal.title': 'Kalender',
     'cal.today': 'Heute',
     'cal.weekdays': 'Mo,Di,Mi,Do,Fr,Sa,So',
     'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
@@ -1698,6 +1697,52 @@ function applyLanguage(language) {
     const translated = dict[node.dataset.i18nAria];
     if (translated) node.setAttribute('aria-label', translated);
   }
+
+  redrawAll();
+}
+
+/**
+ * How to draw each screen that only renders when somebody asks it to.
+ *
+ * Everything above translates the markup, which is most of the interface and not
+ * the part that goes wrong. What goes wrong is what the script has already
+ * written into the page: an evaluation, an overtime balance, an import preview.
+ * Those are drawn once, from an answer that arrived once, and nothing translated
+ * them again - so switching the language left a screen whose table heading said
+ * "Zeitraum" above a cell saying 07/14/2026, beside a total reading "5.01 h in
+ * total". Every key was translated; none of them was looked up a second time.
+ *
+ * The screens that refreshAll reloads do not need this - they are drawn again
+ * from a new request. These are the ones nobody asked to reload, and re-fetching
+ * them on a language change would fire requests somebody did not ask for and
+ * could fail on a form they have since edited. So the answer is kept and drawn
+ * again from what is already in hand.
+ *
+ * Keyed, so a second answer for the same screen replaces the first rather than
+ * accumulating closures over responses nobody can see any more.
+ */
+const redraws = new Map();
+
+/** Draws a screen now, and again whenever the language changes. */
+function redrawable(key, draw) {
+  redraws.set(key, draw);
+  draw();
+}
+
+/** Forgets a screen's last answer, for one that has been emptied. */
+function stopRedrawing(key) {
+  redraws.delete(key);
+}
+
+function redrawAll() {
+  for (const draw of redraws.values()) draw();
+
+  // The greeting is written entirely by the script and is drawn on arrival
+  // rather than by any loader, so nothing else would put it back into the
+  // language now in force. Only while it is the screen somebody is looking at:
+  // drawing a hidden one costs a request for today's figures that nobody asked
+  // for.
+  if (me.user && !$('#view-welcome')?.hidden) renderWelcome();
 }
 
 /**
@@ -3005,7 +3050,12 @@ function wireDirectorySync() {
   const status = $('#sync-status');
   const result = $('#sync-result');
 
-  const show = (report) => {
+  // Drawn through redrawable, because everything it says is translated - the
+  // counts, the abort reason, the empty row - and a language change is not a
+  // reason to run a directory synchronisation again.
+  const show = (report) => redrawable('directorySync', () => draw(report));
+
+  const draw = (report) => {
     const rows = report.candidates.map((c) => el('tr', {},
       el('td', { text: c.name }),
       el('td', { text: c.email }),
@@ -5358,6 +5408,9 @@ function resetWorkbookCard() {
   const input = $('#wb-file');
   if (input) input.value = '';
 
+  // The preview it described is gone, so there is nothing to draw again.
+  stopRedrawing('workbookPreview');
+
   $('#wb-preview').hidden = true;
   $('#wb-import').hidden = true;
   $('#wb-clear').hidden = true;
@@ -5385,9 +5438,12 @@ function wireWorkbook() {
       : '';
   });
 
+  // Through redrawable, because the preview's columns and its refusals are
+  // translated and the file it describes is not going to be sent again on a
+  // language change.
   $('#wb-preview').addEventListener('click', () => mutate(
     () => sendWorkbook(true), null,
-    (result) => renderWorkbookPreview(result)));
+    (result) => redrawable('workbookPreview', () => renderWorkbookPreview(result))));
 
   $('#wb-import').addEventListener('click', () => mutate(
     () => sendWorkbook(false),
@@ -5496,6 +5552,8 @@ function buildSheetCard(spec) {
   const reset = () => {
     file.value = '';
 
+    stopRedrawing(`sheetPreview:${spec.key}`);
+
     for (const button of [check, write, cancel]) button.hidden = true;
 
     wrap.hidden = true;
@@ -5596,7 +5654,10 @@ function buildSheetCard(spec) {
     summary.textContent = chosen ? t('wb.chosen', 'Check the file to see what it would do.') : '';
   });
 
-  check.addEventListener('click', () => mutate(() => send(true), null, preview));
+  // Keyed per card, so four spreadsheet cards keep four previews rather than
+  // overwriting each other's.
+  check.addEventListener('click', () => mutate(() => send(true), null,
+    (result) => redrawable(`sheetPreview:${spec.key}`, () => preview(result))));
 
   write.addEventListener('click', () => mutate(() => send(false),
     t('wb.imported', 'The file was imported'),
@@ -5664,7 +5725,13 @@ function wireSheetCards() {
  * The shape is remembered for the session rather than reset on every
  * evaluation: somebody who prefers a pie prefers it for the next period too.
  */
-const reportChart = { kind: 'bars', bars: [], caption: '' };
+// The chart's state, kept as the answer rather than as the drawing.
+//
+// It held finished labels and a finished caption, both translated at the moment
+// the answer arrived - so a language change left "Hours per project" over bars
+// labelled "no project" on an otherwise German screen. The words are made at
+// drawing time now, which is also the only time they are needed.
+const reportChart = { kind: 'bars', scope: 'projects', projects: [], days: [] };
 
 /**
  * Fetches the breakdown for the period just evaluated and draws it.
@@ -5689,30 +5756,17 @@ async function loadReportChart(from, to, projectId) {
 
   const everyProject = !projectId;
 
-  if (everyProject) {
-    // The field names are the ones the endpoint sends. This read
-    // project.project and day.booked, and neither exists: every label came out
-    // as "no project", and an undefined value threw inside the hours formatter,
-    // which mutate() turned into an error toast over an empty chart. The chart
-    // under Overtime reads the same answer correctly and is what this should
-    // have been copied from rather than written from memory.
-    reportChart.bars = (stats.projects ?? []).map((project) => ({
-      // A project with no name is one deleted since; its hours still count.
-      label: project.projectId
-        ? (project.name || t('stats.deletedProject', 'deleted project'))
-        : t('stats.noProject', 'no project'),
-      value: project.hours,
-    }));
-    reportChart.caption = t('report.byProject', 'Hours per project');
-  } else {
-    reportChart.bars = (stats.days ?? []).map((day) => ({
-      label: fmtDate(day.date),
-      value: day.hours,
-    }));
-    reportChart.caption = t('report.byDay', 'Hours per day');
-  }
+  // The field names are the ones the endpoint sends. This read project.project
+  // and day.booked, and neither exists: every label came out as "no project",
+  // and an undefined value threw inside the hours formatter, which mutate()
+  // turned into an error toast over an empty chart. The chart under Overtime
+  // reads the same answer correctly and is what this should have been copied
+  // from rather than written from memory.
+  reportChart.scope = everyProject ? 'projects' : 'days';
+  reportChart.projects = stats.projects ?? [];
+  reportChart.days = stats.days ?? [];
 
-  drawReportChart();
+  redrawable('reportChart', drawReportChart);
 }
 
 /** Draws the breakdown in whichever shape is selected. */
@@ -5725,7 +5779,23 @@ function drawReportChart() {
     button.classList.toggle('secondary', button.dataset.chart !== reportChart.kind);
   }
 
-  $('#report-chart-caption').textContent = reportChart.caption;
+  // The words, made now rather than when the answer arrived, so a language change
+  // reaches them.
+  const byProject = reportChart.scope === 'projects';
+
+  const bars = byProject
+    ? reportChart.projects.map((project) => ({
+      // A project with no name is one deleted since; its hours still count.
+      label: project.projectId
+        ? (project.name || t('stats.deletedProject', 'deleted project'))
+        : t('stats.noProject', 'no project'),
+      value: project.hours,
+    }))
+    : reportChart.days.map((day) => ({ label: fmtDate(day.date), value: day.hours }));
+
+  $('#report-chart-caption').textContent = byProject
+    ? t('report.byProject', 'Hours per project')
+    : t('report.byDay', 'Hours per day');
 
   const draw = {
     bars: drawBarChart,
@@ -5733,7 +5803,7 @@ function drawReportChart() {
     pie: drawPieChart,
   }[reportChart.kind] ?? drawBarChart;
 
-  draw(container, reportChart.bars, fmtHours);
+  draw(container, bars, fmtHours);
 }
 
 function wireReportChart() {
@@ -7114,6 +7184,20 @@ function wireForms() {
 
   $('#timesheet-cancel').addEventListener('click', resetTimesheetForm);
 
+  // One row, because the total covers the reader's own hours and nobody else's.
+  // The column used to name the person, which is now always the same person.
+  function renderReport(report) {
+    const rows = (report.entries ?? []).map((entry) => el('tr', {},
+      el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
+      el('td', { class: 'num', text: fmtNumber(entry.hours) }),
+    ));
+
+    fillTable($('#table-report tbody'), rows, 2, t('ot.empty', 'No bookings in this period.'));
+    $('#report-total').textContent = t('report.total', '{0} h in total')
+      .replace('{0}', fmtNumber(report.totalHours));
+    $('#report-result').hidden = false;
+  }
+
   $('#form-report').addEventListener('submit', (e) => {
     e.preventDefault();
     const { projectId, from, to } = formData(e.target);
@@ -7129,17 +7213,9 @@ function wireForms() {
       // means the hours that never got one, and neither fits in a path.
       const report = await api(`/reports${suffix}`);
 
-      // One row, because the total covers the reader's own hours and nobody else's.
-      // The column used to name the person, which is now always the same person.
-      const rows = (report.entries ?? []).map((entry) => el('tr', {},
-        el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
-        el('td', { class: 'num', text: fmtNumber(entry.hours) }),
-      ));
-
-      fillTable($('#table-report tbody'), rows, 2, t('ot.empty', 'No bookings in this period.'));
-      $('#report-total').textContent = t('report.total', '{0} h in total')
-        .replace('{0}', fmtNumber(report.totalHours));
-      $('#report-result').hidden = false;
+      // Drawn through redrawable, so a language change draws it again from this
+      // same answer rather than leaving an English total under a German heading.
+      redrawable('report', () => renderReport(report));
 
       // The same period as a picture. The figures come from the statistics
       // endpoint rather than the report, because a total is one number and a
@@ -7148,6 +7224,28 @@ function wireForms() {
       await loadReportChart(report.from, report.to, projectId);
     }, null, null);
   });
+
+  function renderOvertime(balance) {
+    const rows = (balance.days ?? []).map((d) => el('tr', {},
+      el('td', { text: fmtDate(d.date) }),
+      el('td', { class: 'num', text: fmtHours(d.booked) }),
+      el('td', { class: 'num', text: fmtHours(d.target) }),
+      balanceCell(d.balance),
+    ));
+
+    fillTable($('#table-overtime tbody'), rows, 4, t('ot.empty', 'No bookings in this period.'));
+
+    const total = balance.totalBalance;
+    const pill = $('#overtime-total');
+    pill.textContent = `${total > 0 ? '+' : ''}${fmtHours(total)}`;
+    pill.className = `pill ${total > 0 ? 'plus' : total < 0 ? 'minus' : ''}`;
+    $('#overtime-meta').textContent = t('ot.meta', '{0} · target {1}/day · booked {2} of {3}')
+      .replace('{0}', balance.userName)
+      .replace('{1}', fmtHours(balance.dailyTarget))
+      .replace('{2}', fmtHours(balance.totalBooked))
+      .replace('{3}', fmtHours(balance.totalTarget));
+    $('#overtime-result').hidden = false;
+  }
 
   $('#form-overtime').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -7161,25 +7259,8 @@ function wireForms() {
       // Your own balance. The id is still in the path because the endpoint takes
       // one, and any other id is refused rather than answered.
       const balance = await api(`/users/${me.user.id}/overtime${suffix}`);
-      const rows = (balance.days ?? []).map((d) => el('tr', {},
-        el('td', { text: fmtDate(d.date) }),
-        el('td', { class: 'num', text: fmtHours(d.booked) }),
-        el('td', { class: 'num', text: fmtHours(d.target) }),
-        balanceCell(d.balance),
-      ));
-      fillTable($('#table-overtime tbody'), rows, 4, t('ot.empty', 'No bookings in this period.'));
 
-      const total = balance.totalBalance;
-      const pill = $('#overtime-total');
-      pill.textContent = `${total > 0 ? '+' : ''}${fmtHours(total)}`;
-      pill.className = `pill ${total > 0 ? 'plus' : total < 0 ? 'minus' : ''}`;
-      $('#overtime-meta').textContent = t('ot.meta', '{0} · target {1}/day · booked {2} of {3}')
-        .replace('{0}', balance.userName)
-        .replace('{1}', fmtHours(balance.dailyTarget))
-        .replace('{2}', fmtHours(balance.totalBooked))
-        .replace('{3}', fmtHours(balance.totalTarget));
-      $('#overtime-result').hidden = false;
-
+      redrawable('overtime', () => renderOvertime(balance));
     }, null, null);
   });
 
