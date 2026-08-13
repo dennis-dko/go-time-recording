@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 
 	"github.com/dennis-dko/go-time-recording/test/harness"
@@ -35,6 +36,26 @@ func TestTheInstallerRefusesInTheReadersLanguage(t *testing.T) {
 		chromedp.NoSandbox,
 	)
 
+	// --lang is not enough on its own. It sets what Chrome asks servers for, and
+	// on a machine that has the locale it also moves navigator.languages - but the
+	// container CI runs has no German locale data, so the flag was accepted and
+	// the page still saw an English browser. It passed here and failed there,
+	// which is the least useful way for a test to be wrong.
+	//
+	// So the one thing this page reads is stated outright, before its own script
+	// runs. That is also closer to what is being checked: not whether Chrome can
+	// be talked into German, but whether the page does the right thing when the
+	// browser asks for it.
+	speakGerman := chromedp.ActionFunc(func(ctx context.Context) error {
+		_, err := cdppage.AddScriptToEvaluateOnNewDocument(
+			`Object.defineProperty(navigator, 'languages',
+				{ get: () => ['de-DE', 'de'], configurable: true });
+			 Object.defineProperty(navigator, 'language',
+				{ get: () => 'de-DE', configurable: true });`).Do(ctx)
+
+		return err
+	})
+
 	if path := os.Getenv("CHROME_PATH"); path != "" {
 		opts = append(opts, chromedp.ExecPath(path))
 	}
@@ -51,6 +72,7 @@ func TestTheInstallerRefusesInTheReadersLanguage(t *testing.T) {
 	var wrongToken, emptyName string
 
 	if err := chromedp.Run(ctx,
+		speakGerman,
 		chromedp.Navigate(app.BaseURL()),
 		chromedp.WaitVisible("#heading", chromedp.ByID),
 
