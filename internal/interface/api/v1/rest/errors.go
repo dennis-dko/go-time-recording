@@ -9,8 +9,6 @@ import (
 	"math/big"
 	"strings"
 
-	gofrHTTP "gofr.dev/pkg/gofr/http"
-
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
@@ -30,7 +28,18 @@ func toHTTPError(err error) error {
 
 	switch detail.Kind {
 	case apperror.KindNotFound:
-		return gofrHTTP.ErrorEntityNotFound{Name: detail.Entity, Value: detail.ID}
+		// A local type rather than GoFr's ErrorEntityNotFound, for the reason that
+		// keeps coming up: that one carries prose and nothing else, so "timesheet
+		// with id 42 not found" was the whole answer and a German reader got it
+		// exactly like that. The two parts travel as values now, and the sentence
+		// is assembled in whichever language is reading it.
+		return notFoundError{
+			reason: reason{
+				message: detail.Error(),
+				code:    apperror.CodeNotFound,
+				values:  []any{detail.Entity, detail.ID},
+			},
+		}
 	case apperror.KindInvalid:
 		if len(detail.Fields) > 0 {
 			// A local type rather than GoFr's ErrorInvalidParam for a reason worth
@@ -158,6 +167,20 @@ func (e internalError) Response() map[string]any {
 
 	return out
 }
+
+// notFoundError renders a 404 that names what was looked for as data rather than
+// only in a sentence.
+type notFoundError struct {
+	reason
+}
+
+func (e notFoundError) Error() string { return e.message }
+
+// StatusCode is what GoFr's responder looks for to pick the HTTP status.
+func (notFoundError) StatusCode() int { return 404 }
+
+// Response is GoFr's ResponseMarshaller.
+func (e notFoundError) Response() map[string]any { return e.response() }
 
 // reason is a refusal in a form something other than an English reader can act
 // on: the sentence as written, plus the name of the rule and the values it
@@ -303,6 +326,10 @@ func (e invalidFieldsError) Error() string {
 func (invalidFieldsError) StatusCode() int { return 400 }
 
 // Response is GoFr's ResponseMarshaller.
+//
+// The names and a code, not only the names. The interface has always been able to
+// label the fields; what it could not do was say the sentence around them in the
+// reader's language, because there was nothing to look one up by.
 func (e invalidFieldsError) Response() map[string]any {
-	return map[string]any{"param": e.fields}
+	return map[string]any{"param": e.fields, "code": apperror.CodeInvalidFields}
 }

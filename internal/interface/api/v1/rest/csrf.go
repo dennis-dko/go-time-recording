@@ -4,10 +4,13 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // CSRFCookieName carries the token the browser must echo back. Unlike the
@@ -206,8 +209,33 @@ func originHost(value string) string {
 
 // rejectCSRF answers in the same error shape the rest of the API uses, so the
 // interface can show the reason like any other failure.
+//
+// Named, with the reason kept beside the name rather than as it. The reason is
+// written here, in English, and says which check failed - a missing token, an
+// origin that is not ours. That is what somebody diagnosing this needs and is no
+// use at all to the person looking at the screen, who gets the sentence the code
+// stands for: this page has been open too long, load it again.
+//
+// Encoded rather than concatenated. The old line put the reason straight into a
+// JSON string with no escaping - every reason is a literal from this file today,
+// so nothing was broken, and the next one to include a quoted origin would have
+// produced a body no client could parse.
 func rejectCSRF(w http.ResponseWriter, reason string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
-	_, _ = w.Write([]byte(`{"error":{"message":"` + reason + `"}}` + "\n"))
+
+	body, err := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"message": reason,
+			"code":    apperror.CodeCSRFRejected,
+			"detail":  reason,
+		},
+	})
+	if err != nil {
+		// The map above cannot fail to encode. A refusal with no body is still a
+		// refusal, and the status is the part that matters.
+		return
+	}
+
+	_, _ = w.Write(append(body, '\n'))
 }

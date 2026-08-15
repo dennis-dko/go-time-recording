@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // A refusal has to say which rule was broken, not only say so in English.
@@ -136,13 +138,20 @@ func TestInvalidInputCarriesItsReasonAndValues(t *testing.T) {
 	}
 }
 
-// An error nobody has annotated keeps exactly the body it had, so adding the
-// mechanism cannot have changed what an unannotated refusal looks like.
-func TestAnUnannotatedRefusalIsUnchanged(t *testing.T) {
+// A rejected field says which field, and says so with a name beside it.
+//
+// This used to assert the opposite - that a field rejection carried no code at
+// all - and it was right at the time: the names were the whole of what it said,
+// and the sentence around them came from GoFr in English. That was the last
+// refusal in the API with nothing to look a translation up by.
+//
+// Both halves are now checked, because both are needed and they fail
+// independently: the code without the names gives a sentence that cannot say
+// which field, and the names without the code give a list nobody can put a
+// sentence around.
+func TestAFieldRejectionIsNamedAndSaysWhichField(t *testing.T) {
 	_, _, worker := startWithWorker(t)
 
-	// A field-level rejection, which travels as a list of field names rather than
-	// as a coded sentence.
 	refused := worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": "2026-08-03", "durationHours": -1,
 	})
@@ -151,9 +160,9 @@ func TestAnUnannotatedRefusalIsUnchanged(t *testing.T) {
 		t.Fatalf("negative hours answered %d, want 400: %s", refused.Status, refused.Body)
 	}
 
-	if reason := refusalOf(t, refused); reason.Code != "" {
-		t.Errorf("a field rejection now carries the code %q; it names fields instead",
-			reason.Code)
+	if reason := refusalOf(t, refused); reason.Code != apperror.CodeInvalidFields {
+		t.Errorf("a field rejection is named %q, want %q",
+			reason.Code, apperror.CodeInvalidFields)
 	}
 
 	var body struct {
