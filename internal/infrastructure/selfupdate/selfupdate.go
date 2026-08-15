@@ -254,11 +254,6 @@ func InContainer() bool {
 // available at all - so the caller decides what to do once the bytes are in
 // place, and the screen says which of the two it is.
 func (s *Source) Install(ctx context.Context, release Release) error {
-	if !release.HasBinary() {
-		return fmt.Errorf("release %s published nothing for %s/%s",
-			release.Version, runtime.GOOS, runtime.GOARCH)
-	}
-
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot find this program's own file: %w", err)
@@ -268,6 +263,21 @@ func (s *Source) Install(ctx context.Context, release Release) error {
 	// the link to it.
 	if resolved, err := filepath.EvalSymlinks(self); err == nil {
 		self = resolved
+	}
+
+	return s.InstallOver(ctx, release, self)
+}
+
+// InstallOver is Install against a named file.
+//
+// Separate from Install so the download, the checksum and the swap can be driven
+// by a test - the riskiest thing this application does is replace its own binary,
+// and a test that had to replace the test binary to check it would be worse than
+// no test. Install is then the one line that says which file that is.
+func (s *Source) InstallOver(ctx context.Context, release Release, self string) error {
+	if !release.HasBinary() {
+		return fmt.Errorf("release %s published nothing for %s/%s",
+			release.Version, runtime.GOOS, runtime.GOARCH)
 	}
 
 	want, err := s.checksum(ctx, release)

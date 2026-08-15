@@ -1873,7 +1873,6 @@ const TRANSLATIONS = {
     'update.current': '{0} ist die neueste Version.',
     'update.found': '{0} ist verfügbar. Diese Installation läuft mit {1}.',
     'update.install': 'Herunterladen und installieren',
-    'update.installed': 'Die neue Version liegt bereit.',
     'update.notes': 'Was sich geändert hat ↗',
     'update.pending': '{0} ist heruntergeladen und startet mit dem nächsten Neustart.',
     'update.pendingRestart': 'Den Neustart unten verwenden oder die Anwendung selbst neu starten.',
@@ -1887,6 +1886,12 @@ const TRANSLATIONS = {
       + 'docker compose pull && docker compose up -d',
     'update.off': 'Die Suche nach neuen Versionen ist auf dieser Installation '
       + 'abgeschaltet (UPDATE_CHECK).',
+    'update.confirm': 'Die neue Version herunterladen und installieren? '
+      + 'Die Anwendung startet danach neu.',
+    'update.downloading': 'Die neue Version wird heruntergeladen und geprüft …',
+    'update.done': 'Die neue Version läuft.',
+    'update.installedRestart': 'Die neue Version liegt bereit. Zum Verwenden die '
+      + 'Anwendung neu starten.',
     'update.unversioned': 'Dieser Stand wurde nicht aus einem Release gebaut, es gibt '
       + 'also nichts zu vergleichen. Die neueste veröffentlichte Version ist {0}.',
     'update.unversionedAlone': 'Dieser Stand wurde nicht aus einem Release gebaut.',
@@ -4991,15 +4996,87 @@ function wireUpdate() {
   const button = $('#update-now');
   if (!button) return;
 
-  button.addEventListener('click', () => {
-    // No success message of its own: what happened is on the card, and it
-    // differs by platform.
-    mutate(() => api('/settings/update', { method: 'POST' }), null, async () => {
+  button.addEventListener('click', async () => {
+    const proceed = await confirmDialog({
+      title: t('update.title', 'Version'),
+      text: t('update.confirm',
+        'Download the new version and install it? The application restarts afterwards.'),
+      confirmLabel: t('update.install', 'Download and install'),
+    });
+
+    if (!proceed) return;
+
+    // The same overlay a restart uses, and for the same reason: this takes tens
+    // of seconds - a thirty-megabyte download and a hash over it - and the thin
+    // strip at the top of the page is not enough to say "do not press that
+    // again". It also keeps the screen from being used while the binary
+    // underneath it is being replaced.
+    const overlay = $('#restart-overlay');
+    const status = $('#restart-status');
+    const previous = restartStartedAt;
+
+    overlay.hidden = false;
+    status.textContent = t('update.downloading',
+      'Downloading and checking the new version …');
+
+    let state;
+
+    try {
+      state = await api('/settings/update', { method: 'POST' });
+    } catch (err) {
+      overlay.hidden = true;
+      toast(err.message, 'error');
+
+      return;
+    }
+
+    // In place. What happens next is the difference this card exists to say: a
+    // platform that can replace its own process does it now, and one that
+    // cannot has to be restarted by somebody.
+    if (!state?.restartable) {
+      overlay.hidden = true;
       await loadUpdate();
       await loadRestart();
 
-      toast(t('update.installed', 'The new version is in place.'), 'ok');
-    });
+      toast(t('update.installedRestart',
+        'The new version is in place. Restart the application to use it.'), 'ok');
+
+      return;
+    }
+
+    status.textContent = t('restart.waitingHint',
+      'Waiting for the application to come back …');
+
+    try {
+      await api('/settings/restart', { method: 'POST' });
+    } catch (err) {
+      overlay.hidden = true;
+      await loadUpdate();
+
+      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`,
+        'error');
+
+      return;
+    }
+
+    if (await waitForRestart(previous)) {
+      overlay.hidden = true;
+
+      // refreshAll rather than location.reload(): it reloads every screen from
+      // the new process and leaves the reader where they were, which a reload
+      // would not - and the version in the footer is part of what it refreshes,
+      // so the proof that it worked is on screen.
+      await refreshAll();
+
+      toast(t('update.done', 'The new version is running.'), 'ok');
+
+      return;
+    }
+
+    overlay.hidden = true;
+    toast(t('restart.slow',
+      'The application is not answering yet. It may still be starting - please '
+      + 'reload the page in a moment.'), 'error');
   });
 }
 
