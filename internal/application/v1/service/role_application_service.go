@@ -140,6 +140,23 @@ func (s *RoleApplicationService) DeleteRole(ctx context.Context, id uint) error 
 			WithCode("systemRoleUndeletable", role.Name)
 	}
 
+	// The other shipped roles go the same way, and for a plainer reason than the
+	// admin role's.
+	//
+	// They are ordinary roles - what they grant is this installation's business
+	// and can be edited - but they are also the furniture: the role every account
+	// is given on arrival, and the one the directory synchronisation assigns by
+	// default. Deleting one leaves those without an answer, and putting it back by
+	// hand means reproducing a list of permissions exactly from memory.
+	//
+	// Undeletable rather than untouchable, which is the difference from IsSystem:
+	// an installation may still decide what its own users may do.
+	if role.IsDefault() {
+		return apperror.Conflictf("%q is one of the roles this application ships "+
+			"with and cannot be deleted", role.Name).
+			WithCode("defaultRoleUndeletable", role.Name)
+	}
+
 	inUse, err := s.roles.CountUsers(ctx, id)
 	if err != nil {
 		return err

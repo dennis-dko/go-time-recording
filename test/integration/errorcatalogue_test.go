@@ -4,6 +4,7 @@ package integration
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -212,4 +213,87 @@ func errorCode(t *testing.T, res response) string {
 	}
 
 	return body.Error.Code
+}
+
+// The roles a fresh installation ships with cannot be deleted.
+//
+// Two different reasons, and they are worth telling apart. The admin role is
+// fixed outright: an installation that loses it loses the way back into its own
+// settings, so it cannot be renamed, stripped or removed.
+//
+// The other two are ordinary roles - what they grant is this installation's
+// business and can be edited - and they are also the furniture. One is what every
+// new account is given; both are what the directory synchronisation assigns by
+// default. Deleting one leaves those without an answer, and putting it back means
+// reproducing a list of permissions exactly from memory.
+func TestTheShippedRolesCannotBeDeleted(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	var roles struct {
+		Items []struct {
+			ID        uint   `json:"id"`
+			Name      string `json:"name"`
+			IsSystem  bool   `json:"isSystem"`
+			IsDefault bool   `json:"isDefault"`
+		} `json:"items"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/roles", nil), http.StatusOK).Data(t, &roles)
+
+	if len(roles.Items) < 3 {
+		t.Fatalf("a fresh installation has %d role(s), want the three it ships with",
+			len(roles.Items))
+	}
+
+	shipped := 0
+
+	for _, role := range roles.Items {
+		if !role.IsDefault {
+			continue
+		}
+
+		shipped++
+
+		got := admin.api(http.MethodDelete, fmt.Sprintf("/roles/%d", role.ID), nil)
+
+		if got.Status != http.StatusConflict {
+			t.Errorf("deleting the shipped role %q answered %d, want %d\n%s",
+				role.Name, got.Status, http.StatusConflict, got.Body)
+		}
+
+		// Named, so the interface can say which role and why in the reader's
+		// language rather than showing the English sentence.
+		want := "defaultRoleUndeletable"
+		if role.IsSystem {
+			want = "systemRoleUndeletable"
+		}
+
+		if code := errorCode(t, got); code != want {
+			t.Errorf("refusing to delete %q is named %q, want %q", role.Name, code, want)
+		}
+	}
+
+	if shipped != 3 {
+		t.Errorf("%d of the roles are marked as shipped, want 3", shipped)
+	}
+
+	// A role somebody made is still deletable, which is the half that must not
+	// have been broken by the half above.
+	created := admin.api(http.MethodPost, "/roles", map[string]any{
+		"name": "Aushilfe", "description": "Temporary", "permissions": []string{"timesheets:read:own"},
+	})
+
+	var made struct {
+		ID uint `json:"id"`
+	}
+
+	admin.must(created, http.StatusCreated).Data(t, &made)
+
+	deleted := admin.api(http.MethodDelete, fmt.Sprintf("/roles/%d", made.ID), nil)
+
+	if deleted.Status != http.StatusNoContent && deleted.Status != http.StatusOK {
+		t.Errorf("a role somebody created answered %d when deleted\n%s",
+			deleted.Status, deleted.Body)
+	}
 }

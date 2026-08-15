@@ -525,6 +525,27 @@ td.pick input, th.pick input { cursor: pointer; margin: 0; }
  * Quiet on purpose: it is below the sentence somebody actually needs, and the
  * people who want it know they want it. A summary that shouted would put the one
  * untranslatable line on the screen back at the top of the reading order. */
+/* The list of what may be written in the configured texts. Folded away, because
+   it is read once when somebody first writes a footer and never again. */
+.markup-legend { margin-bottom: 14px; font-size: 13px; }
+
+.markup-legend > summary { color: var(--muted); cursor: pointer; }
+
+.markup-legend > summary:hover { color: var(--text); }
+
+.markup-table { margin: 8px 0; width: auto; }
+
+.markup-table td { border-bottom: none; padding: 3px 14px 3px 0; white-space: normal; }
+
+.markup-table code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
 .refusal-detail { margin-top: 6px; font-size: 12px; }
 
 .refusal-detail > summary {
@@ -717,6 +738,48 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   padding: 10px 20px;
   font-size: 14px;
 }
+
+/* The release banner carries two controls, so it is a row rather than a line of
+   text. */
+#release-banner {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+#release-banner[hidden] { display: none; }
+
+#release-text { flex: 1 1 auto; }
+
+/* A button that reads as a link: this one goes somewhere rather than doing
+   something, and a filled button beside a sentence would outweigh the sentence. */
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.link-button:hover { color: var(--text); }
+
+/* Dismissal. Quiet, because the notice is worth reading once and the way to make
+   somebody read it is not to make the way out loud. */
+.banner-dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.6;
+  padding: 0 4px;
+}
+
+.banner-dismiss:hover { opacity: 1; }
 
 /* Maintenance is not the same kind of news as an announcement, so it does not
    look the same. Stronger, and it sits above the announcement banner. */

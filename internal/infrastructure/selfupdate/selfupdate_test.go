@@ -12,8 +12,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Which of two versions is newer.
@@ -71,7 +73,7 @@ func TestReadingTheReleaseFeed(t *testing.T) {
 	}))
 	defer feed.Close()
 
-	release, err := New(feed.URL).Latest(context.Background())
+	release, err := New(feed.URL, "").Latest(context.Background())
 	if err != nil {
 		t.Fatalf("reading the feed: %v", err)
 	}
@@ -98,7 +100,7 @@ func TestAReleaseWithoutThisPlatformIsNotOffered(t *testing.T) {
 	}))
 	defer feed.Close()
 
-	release, err := New(feed.URL).Latest(context.Background())
+	release, err := New(feed.URL, "").Latest(context.Background())
 	if err != nil {
 		t.Fatalf("reading the feed: %v", err)
 	}
@@ -185,7 +187,7 @@ func stagedRelease(t *testing.T, version, sum string, body []byte) (*Source, Rel
 
 	t.Cleanup(server.Close)
 
-	return New(server.URL), Release{
+	return New(server.URL, ""), Release{
 		Version: version,
 		asset:   server.URL + "/bin",
 		sums:    server.URL + "/sums",
@@ -498,5 +500,102 @@ func TestStartingTheNewVersionKeepsThePreviousOne(t *testing.T) {
 
 	if _, err := os.Stat(self + ".old"); err != nil {
 		t.Error("starting the new version threw away the one to go back to")
+	}
+}
+
+// A refusal from the feed says what the feed said.
+//
+// "the release feed answered 403" was the whole message, and it reads as a
+// permission problem this installation could do something about. It almost never
+// is: sixty checks an hour are counted per address, so every instance behind one
+// office connection draws from the same sixty, and running out answers 403.
+//
+// GitHub puts the reason in the body and the counters in the headers, and both
+// were read and discarded.
+func TestARefusedFeedExplainsItself(t *testing.T) {
+	reset := time.Now().Add(37 * time.Minute).Unix()
+
+	for name, tc := range map[string]struct {
+		status    int
+		remaining string
+		body      string
+		expect    []string
+	}{
+		"used up the hour's checks": {
+			status:    http.StatusForbidden,
+			remaining: "0",
+			body:      `{"message":"API rate limit exceeded for 203.0.113.7."}`,
+			expect:    []string{"per hour", "used them up"},
+		},
+		"refused for another reason": {
+			status:    http.StatusForbidden,
+			remaining: "58",
+			body:      `{"message":"Repository access blocked"}`,
+			expect:    []string{"403", "Repository access blocked"},
+		},
+		"nothing to say": {
+			status:    http.StatusInternalServerError,
+			remaining: "58",
+			body:      ``,
+			expect:    []string{"500"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			feed := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					// Identified, which the feed asks of every caller and refuses
+					// some that do not.
+					if agent := r.Header.Get("User-Agent"); !strings.Contains(agent, "time-recording") {
+						t.Errorf("the check identifies itself as %q", agent)
+					}
+
+					w.Header().Set("X-RateLimit-Remaining", tc.remaining)
+					w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+					w.WriteHeader(tc.status)
+					_, _ = w.Write([]byte(tc.body))
+				}))
+
+			t.Cleanup(feed.Close)
+
+			_, err := New(feed.URL, "").Latest(context.Background())
+			if err == nil {
+				t.Fatal("a refused feed was reported as a release")
+			}
+
+			for _, want := range tc.expect {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the explanation %q does not mention %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// A token is sent where the installation has one, and nothing is sent where it
+// has not - which is every installation by default.
+func TestATokenIsSentOnlyWhenThereIsOne(t *testing.T) {
+	for name, token := range map[string]string{"with a token": "secret-token", "without one": ""} {
+		t.Run(name, func(t *testing.T) {
+			var seen string
+
+			feed := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					seen = r.Header.Get("Authorization")
+					w.WriteHeader(http.StatusInternalServerError)
+				}))
+
+			t.Cleanup(feed.Close)
+
+			_, _ = New(feed.URL, token).Latest(context.Background())
+
+			want := ""
+			if token != "" {
+				want = "Bearer " + token
+			}
+
+			if seen != want {
+				t.Errorf("the feed was sent %q, want %q", seen, want)
+			}
+		})
 	}
 }

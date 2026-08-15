@@ -44,6 +44,16 @@ type Config struct {
 	// rather than having to switch the whole thing off.
 	UpdateFeed string
 
+	// UpdateToken identifies this installation to the release feed. Optional, and
+	// empty on almost every installation: checking for a release needs no
+	// credentials.
+	//
+	// It exists because the limit is counted per address rather than per
+	// installation - sixty checks an hour, shared by everything behind one office
+	// connection - and running out answers 403, which reads as a permission
+	// problem nobody can fix by changing a permission.
+	UpdateToken string
+
 	// UIEnabled serves the embedded web interface. Turn it off to run the
 	// binary as a headless API.
 	UIEnabled bool
@@ -254,6 +264,7 @@ func Load(p Provider) Config {
 		UIEnabled:   boolOr(p.GetOrDefault("UI_ENABLED", "true"), true),
 		UpdateCheck: boolOr(p.GetOrDefault("UPDATE_CHECK", "true"), true),
 		UpdateFeed:  p.Get("UPDATE_FEED"),
+		UpdateToken: p.Get("UPDATE_TOKEN"),
 		// Defaults to on: an instance that quietly serves everyone full
 		// administrative rights should be a deliberate choice, not an oversight.
 		AuthRequired:    boolOr(p.GetOrDefault("AUTH_ENABLED", "true"), true),

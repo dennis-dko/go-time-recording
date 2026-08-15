@@ -189,6 +189,12 @@ type RoleResponse struct {
 	Description string   `json:"description"`
 	IsSystem    bool     `json:"isSystem"`
 	Permissions []string `json:"permissions"`
+
+	// IsDefault marks one of the roles a fresh installation is seeded with. Sent
+	// so the interface does not offer a delete the server will refuse: these can
+	// be edited like any other role and cannot be removed, because they are what
+	// every new account and every synchronised one is assigned.
+	IsDefault bool `json:"isDefault"`
 }
 
 // RoleRequest creates or updates a role.
@@ -209,6 +215,7 @@ func newRoleResponse(r *model.Role) RoleResponse {
 		Name:        r.Name,
 		Description: r.Description,
 		IsSystem:    r.IsSystem,
+		IsDefault:   r.IsDefault(),
 		Permissions: permissions,
 	}
 }

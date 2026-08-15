@@ -758,6 +758,9 @@ nothing sets the variable.
 | `TLS_STAGING` | `false` | Let's Encrypt test authority |
 | `HSTS_MAX_AGE` | `8760h` | only sent over HTTPS |
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client. **Administered under Settings**; not in `configs/.env` |
+| `UPDATE_CHECK` | `true` | ask the release feed whether a newer version exists. `false` for an installation that must not reach the internet |
+| `UPDATE_FEED` | GitHub | where to ask — a mirror, a proxy, or a fork's own releases |
+| `UPDATE_TOKEN` | empty | identifies this installation to the feed. Almost never needed: checking takes no credentials. The limit is counted **per address**, so a dozen instances behind one office connection share sixty checks an hour, and running out answers `403` |
 | `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only. Administered under *Settings* as well, where what is saved wins from the next start |
 | `LDAP_SYNC_MAX_DELETE_RATIO` | `0.5` | refuse a run removing more than this share of directory accounts. **Administered under Settings**; not in `configs/.env` |
 | `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day. **Administered under Settings**; not in `configs/.env` |
@@ -1175,6 +1178,7 @@ that make the synchronisation's edge cases reproducible.
 task test                # unit tests
 task test:integration    # the real binary, driven over HTTP, end to end
 task test:browser        # the real interface, driven in a real browser
+task test:firefox        # the same interface, in a second engine
 task stage               # the real image, against real services, on :8080
 task stage:logs          # follow its log
 task stage:down          # stop it and delete the data
@@ -1206,11 +1210,28 @@ and the application unusable. This project shipped exactly that once.
 task test:browser
 ```
 
-Or all three at once, in the order that fails fastest — a compile error should
+**Firefox tests** ([`test/firefox/`](test/firefox/)) run the same application in
+a second engine. Chrome and Edge are both Blink, so the suite above covers two
+browsers and one renderer — and the difference is not academic: bulk deletion was
+invisible in Firefox for as long as it existed, because one CSS rule written for
+form fields reached a checkbox in a table cell and made it nought pixels wide.
+Every Blink test passed throughout; they ask the document what is there, and the
+document was right.
+
+So this suite asks what size things are, and whether the page declares one icon
+or two. It speaks WebDriver BiDi over a WebSocket that Firefox opens itself, so
+there is no geckodriver to install or keep in step with the browser.
+
+```bash
+task test:firefox                      # skips itself where there is no Firefox
+FIREFOX_PATH=/path/to/firefox task test:firefox
+```
+
+Or all of them at once, in the order that fails fastest — a compile error should
 not be found after twenty minutes of browser automation:
 
 ```bash
-task test:all              # unit, then integration, then browser
+task test:all              # unit, then integration, then browser, then Firefox
 task test:all DB=postgres  # with the integration leg against PostgreSQL
 ```
 
