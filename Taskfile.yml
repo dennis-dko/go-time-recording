@@ -125,6 +125,7 @@ tasks:
         task test:ldap          against a real directory        (docker)
         task test:traces        against a real collector        (docker)
         task test:browser       the real interface in a real browser
+        task test:firefox       the same, in a second engine
 
       The last two need containers, and are here rather than on the side because
       the two things they cover fail silently by nature. A directory entry that
@@ -179,6 +180,7 @@ tasks:
       - task: test:ldap
       - task: test:traces
       - task: test:browser
+      - task: test:firefox
       - echo "All suites passed, including the directory and the trace collector."
       - echo "Containers and their data are gone; task stage is what leaves an environment standing."
 
@@ -304,6 +306,31 @@ tasks:
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
       - go test -tags browser -count=1 -timeout 20m ./test/browser/
+
+  test:firefox:
+    desc: 'Verify: drive the real interface in a second engine.'
+    summary: |
+      The same application in Firefox. Set FIREFOX_PATH if it lives somewhere
+      unusual; the suite skips itself where there is no Firefox at all.
+
+      Chrome and Edge are both Blink, so `task test:browser` covers two browsers
+      and one renderer. Gecko is a different renderer, and the difference is not
+      theoretical: bulk deletion was invisible in Firefox for as long as it
+      existed, because one CSS rule written for form fields reached a checkbox in
+      a table cell and made it nought pixels wide. Every Blink test passed
+      throughout - they ask the document what is there, and the document was
+      right.
+
+      What this suite asks instead is what size things are on the screen.
+
+      Speaks WebDriver BiDi to Firefox over a WebSocket that Firefox opens
+      itself, so there is no geckodriver to install or to keep in step.
+    env:
+      GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
+    cmds:
+      - mkdir -p {{.TMP_DIR}}
+      - defer: rm -rf {{.TMP_DIR}}
+      - go test -tags firefox -count=1 -timeout 20m ./test/firefox/
 
   stage:
     desc: 'Verify: run the shipped container image against all of it - database, directory, collector.'
