@@ -340,6 +340,75 @@ func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
 	if got := p.text("#login-screen h2"); got == "" {
 		t.Error("the sign-in card lost its heading, so this screen did not render")
 	}
+
+	// The same image is the tab icon. It is one line in the script and it is
+	// reached from one place, which is the sort of thing that stops being called
+	// without anything else noticing - the screen still shows the logo, the tab
+	// quietly shows a stopwatch.
+	if icon := p.attr(`link[rel="icon"]`, "href"); !strings.HasPrefix(icon, "data:image/") {
+		t.Errorf("the browser tab shows %.40q rather than the configured logo", icon)
+	}
+}
+
+// Clearing the logo puts the shipped mark back in the tab.
+//
+// The other half, and the half that fails silently: an installation that tries a
+// logo and takes it off again would keep the old one in the tab for as long as
+// the page stayed open, because nothing would have told the tab. The rule asked
+// for was the logo "otherwise always the default as before", which is a
+// statement about both directions.
+func TestClearingTheLogoRestoresTheDefaultFavicon(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	const logo = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzFmNGU3OSIvPjwvc3ZnPg=="
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.storeBranding(t, logo)
+	p.run("reload with the logo", chromedp.Reload(),
+		chromedp.WaitVisible("#who", chromedp.ByID))
+
+	if icon := p.attr(`link[rel="icon"]`, "href"); !strings.HasPrefix(icon, "data:image/") {
+		t.Fatalf("the logo never reached the tab (%.40q), so this case cannot show "+
+			"it being cleared", icon)
+	}
+
+	p.storeBranding(t, "")
+	p.run("reload without it", chromedp.Reload(),
+		chromedp.WaitVisible("#who", chromedp.ByID))
+
+	if icon := p.attr(`link[rel="icon"]`, "href"); !strings.HasSuffix(icon, "/favicon.svg") {
+		t.Errorf("after clearing the logo the tab still shows %.60q", icon)
+	}
+}
+
+// storeBranding writes the instance's logo through the API, as the Settings form
+// does. An empty string clears it.
+func (p *page) storeBranding(t *testing.T, logo string) {
+	t.Helper()
+
+	var status string
+
+	p.run("store the branding", chromedp.Evaluate(`
+		(async () => {
+			const csrf = document.cookie.split(';').map(c => c.trim())
+				.find(c => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+
+			const r = await fetch('/api/v1/settings/branding', {
+				method: 'PUT',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+				body: JSON.stringify({ title: 'Zeiterfassung', logo: '`+logo+`' }),
+			});
+
+			return String(r.status);
+		})()`, &status, awaitPromise))
+
+	if status != "200" {
+		t.Fatalf("could not store the branding: HTTP %s", status)
+	}
 }
 
 // The language switcher decides, and the browser decides when it has not.
@@ -2007,5 +2076,150 @@ func checkGermanEverywhere(t *testing.T, signIn func(*page)) {
 		for _, one := range untranslated {
 			t.Errorf("%s: %s", view, one)
 		}
+	}
+}
+
+// The evaluation can be read as bars, as columns, or as a circle.
+//
+// Three shapes were asked for and three shapes were built, and nothing looked at
+// them again. The switch is one listener writing a field and calling the drawing
+// function, which is exactly the kind of thing that survives a refactor by being
+// silently disconnected: the buttons stay, the labels stay, and pressing them
+// stops changing the picture. Only a browser notices, because the failure is that
+// the same SVG comes back.
+func TestTheEvaluationDrawsInWhicheverShapeIsChosen(t *testing.T) {
+	p := open(t)
+	p.readyWorker()
+
+	p.run("book an hour", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
+		chromedp.SetValue(`#form-timesheet input[name="durationHours"]`, "2.5",
+			chromedp.ByQuery),
+		p.click(`#form-timesheet button[type="submit"]`))
+
+	p.waitForText("#table-timesheets tbody", "2.5")
+
+	p.run("evaluate", p.click(`.tab[data-view="report"]`),
+		chromedp.WaitVisible("#form-report", chromedp.ByID),
+		p.click(`#form-report button[type="submit"]`),
+		chromedp.WaitVisible("#report-result", chromedp.ByID))
+
+	// Bars to begin with, which is the remembered default.
+	if shape := p.chartShape(); shape != "rect" {
+		t.Errorf("the evaluation opens as %q rather than as bars", shape)
+	}
+
+	p.run("draw it as a circle", p.click(`#report-chart-switch button[data-chart="pie"]`))
+
+	// A circle is drawn as paths, or as one circle where a single part is the
+	// whole. Either says the shape changed; a rect says the press did nothing.
+	if shape := p.chartShape(); shape != "path" && shape != "circle" {
+		t.Errorf("pressing the circle drew %q", shape)
+	}
+
+	p.run("draw it as columns", p.click(`#report-chart-switch button[data-chart="columns"]`))
+
+	if shape := p.chartShape(); shape != "rect" {
+		t.Errorf("pressing columns drew %q", shape)
+	}
+
+	// And the pressed one says so, for anybody reading the page rather than
+	// looking at it.
+	p.run("draw it as a circle again", p.click(`#report-chart-switch button[data-chart="pie"]`))
+
+	var pressed string
+
+	p.run("read which button is pressed", chromedp.Evaluate(
+		`document.querySelector('#report-chart-switch button[aria-pressed="true"]')
+			?.dataset.chart ?? ''`, &pressed))
+
+	if pressed != "pie" {
+		t.Errorf("the pressed button is %q while a circle is drawn", pressed)
+	}
+
+	// The German word is "Kreis" and not "Kuchen", which is what it used to say.
+	p.run("switch to German",
+		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
+		chromedp.Evaluate(
+			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+
+	p.waitForText("#report-chart-switch", "Kreis")
+
+	if labels := p.text("#report-chart-switch"); strings.Contains(labels, "Kuchen") {
+		t.Errorf("the chart switch reads %q", labels)
+	}
+
+	// And the shape survived the language change rather than falling back to the
+	// default, because the redraw goes through the same state the buttons write.
+	if shape := p.chartShape(); shape != "path" && shape != "circle" {
+		t.Errorf("switching language redrew the chart as %q, losing the chosen shape",
+			shape)
+	}
+}
+
+// chartShape names the element the evaluation's chart is currently drawn with.
+func (p *page) chartShape() string {
+	p.t.Helper()
+
+	var shape string
+
+	p.run("read the chart's shape", chromedp.Evaluate(
+		`(() => {
+			const svg = document.querySelector('#report-chart svg');
+			if (!svg) return 'nothing';
+
+			for (const name of ['path', 'circle', 'rect']) {
+				if (svg.querySelector(name)) return name;
+			}
+
+			return 'unknown';
+		})()`, &shape))
+
+	return shape
+}
+
+// A reload leaves you on the screen you were reading.
+//
+// The address bar carries the open screen, so a reload has something to go back
+// to and a link to a screen is a link. Without it every reload landed on the
+// greeting, which is the wrong answer twice: it loses the place, and it does so
+// at the moment somebody pressed F5 because a screen looked stale.
+//
+// Reachable only through a browser: the state lives in the address bar and is
+// applied while the page boots.
+func TestAReloadStaysOnTheScreenThatWasOpen(t *testing.T) {
+	p := open(t)
+	p.readyWorker()
+
+	p.run("open the calendar", p.click(`.tab[data-view="calendar"]`),
+		chromedp.WaitVisible("#view-calendar", chromedp.ByID))
+
+	// The address bar names it, which is what survives the reload.
+	var hash string
+
+	p.run("read the address", chromedp.Evaluate(`window.location.hash`, &hash))
+
+	if !strings.Contains(hash, "calendar") {
+		t.Fatalf("the address bar reads %q after opening the calendar, so a reload "+
+			"has nothing to go back to", hash)
+	}
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.waitGone("#login-screen")
+
+	// The calendar again, and not the greeting.
+	p.run("wait for the calendar", chromedp.WaitVisible("#view-calendar", chromedp.ByID))
+
+	if p.visible("#view-welcome") {
+		t.Error("the reload landed on the greeting rather than on the calendar")
+	}
+
+	var open string
+
+	p.run("read which tab is current", chromedp.Evaluate(
+		`document.querySelector('.tab[aria-current="true"]')?.dataset.view ?? ''`, &open))
+
+	if open != "calendar" {
+		t.Errorf("the navigation marks %q as the open screen after the reload", open)
 	}
 }
