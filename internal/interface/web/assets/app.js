@@ -734,27 +734,53 @@ const DEFAULT_FAVICON = '/favicon.svg';
  */
 function applyFavicon(logo) {
   const usable = typeof logo === 'string' && logo.startsWith('data:image/');
-  const href = usable ? logo : DEFAULT_FAVICON;
 
-  const existing = [...document.querySelectorAll('link[rel="icon"]')];
+  // Every icon this page declares, not only the one whose rel is exactly "icon".
+  //
+  // The page ships two: an SVG, and an .ico beside it as `rel="alternate icon"`
+  // for anything that cannot read the first. `link[rel="icon"]` matches the
+  // former and not the latter - an attribute selector compares the whole value -
+  // so the configured logo was added, the SVG was removed, and the .ico was left
+  // standing. Two icons were then declared and each engine picked by its own
+  // rules: Chrome took the logo and looked correct, Firefox kept the .ico and
+  // looked broken. Nothing was wrong with the logo, and the tests asked about the
+  // element that had been replaced rather than the one that had not.
+  //
+  // ~= is the selector for a whitespace-separated list, which is what rel is.
+  const existing = [...document.querySelectorAll('link[rel~="icon"]')];
+
+  const wanted = usable
+    ? [{ href: logo }]
+    : [{ href: DEFAULT_FAVICON, type: 'image/svg+xml' },
+      { href: '/favicon.ico', rel: 'alternate icon' }];
 
   // Unchanged is left alone, so a redraw for some other reason does not make
   // every browser refetch its tab icon.
-  if (existing.length === 1 && existing[0].getAttribute('href') === href) return;
+  const same = existing.length === wanted.length
+    && existing.every((link, i) => link.getAttribute('href') === wanted[i].href);
 
-  const link = document.createElement('link');
-  link.rel = 'icon';
-  link.href = href;
+  if (same) return;
 
-  // The type only for the shipped mark, which is SVG. A configured logo may be a
-  // PNG, a JPEG or an SVG, and the data URI already says which - declaring the
-  // wrong one here is how a perfectly good logo does not render.
-  if (!usable) link.type = 'image/svg+xml';
+  // The new ones first, so there is no instant in which the page declares no icon
+  // at all.
+  const added = wanted.map((spec) => {
+    const link = document.createElement('link');
+    link.rel = spec.rel ?? 'icon';
+    link.href = spec.href;
 
-  document.head.append(link);
+    // A type only where it is known. A configured logo may be a PNG, a JPEG or an
+    // SVG and its data URI already says which; declaring the wrong one is how a
+    // perfectly good logo does not render.
+    if (spec.type) link.type = spec.type;
 
-  // After the new one is in place, so there is no instant with no icon at all.
+    document.head.append(link);
+
+    return link;
+  });
+
   for (const old of existing) old.remove();
+
+  return added;
 }
 
 function fmtDate(iso) {
