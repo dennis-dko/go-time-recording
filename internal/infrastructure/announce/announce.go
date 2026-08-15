@@ -71,6 +71,10 @@ type Hub struct {
 	subscribers map[int]chan Announcement
 	next        int
 
+	// closed is set when the process is shutting down, so no new stream is
+	// handed out that would have to be waited for.
+	closed bool
+
 	// last is what was said most recently, handed to anybody who connects
 	// afterwards. A browser that opened its connection one second after the
 	// announcement would otherwise never hear it - and reconnecting is exactly
@@ -87,6 +91,16 @@ func New() *Hub {
 func (h *Hub) Subscribe() (<-chan Announcement, func()) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	if h.closed {
+		// Already shutting down. A closed channel rather than a live one, so the
+		// handler that asked for it returns at once instead of waiting for a
+		// process that is on its way out.
+		empty := make(chan Announcement)
+		close(empty)
+
+		return empty, func() {}
+	}
 
 	h.next++
 	id := h.next
@@ -164,4 +178,28 @@ func (h *Hub) Subscribers() int {
 	defer h.mu.Unlock()
 
 	return len(h.subscribers)
+}
+
+// Close ends every open stream, so a shutdown is not held up by connections that
+// were never going to end on their own.
+//
+// This is the cost of the whole arrangement, and it has to be paid explicitly.
+// Every other request finishes by itself, which is what lets an HTTP server drain
+// before exiting; these do not, by design. Without this a graceful shutdown waits
+// out its whole timeout on connections that are behaving exactly as intended, and
+// on the restart path that timeout is added to the time the application is down.
+func (h *Hub) Close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.closed {
+		return
+	}
+
+	h.closed = true
+
+	for id, stream := range h.subscribers {
+		delete(h.subscribers, id)
+		close(stream)
+	}
 }

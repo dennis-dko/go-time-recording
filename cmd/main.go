@@ -599,6 +599,22 @@ func main() {
 	// happen, and the stream middleware, which carries it.
 	hub := announce.New()
 
+	// And its end. Every other request finishes by itself, which is what lets the
+	// HTTP server drain before exiting; an announcement stream does not, by
+	// design, so a shutdown would sit out its whole timeout on connections that
+	// are behaving exactly as intended. On the restart path that would be added
+	// straight onto the time the application is unavailable.
+	//
+	// A second listener for the same signals GoFr handles. signal.Notify supports
+	// that, and the alternative is reaching into how GoFr shuts down.
+	go func() {
+		stopping := make(chan os.Signal, 1)
+		signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
+
+		<-stopping
+		hub.Close()
+	}()
+
 	app.UseMiddleware(rest.SecurityHeaders(cfg.HSTSMaxAge))
 	app.UseMiddleware(rest.NewRateLimiter(cfg.RateLimit, cfg.RateLimitWindow).
 		WithLimits(limits.RateLimit).Middleware())

@@ -127,3 +127,53 @@ func TestClosingAStreamRemovesIt(t *testing.T) {
 	// request, and a request can end more than one way.
 	done()
 }
+
+// Shutting down ends every stream rather than leaving them to be waited for.
+//
+// The property that makes this worth its own test: the connections this package
+// hands out are the only ones in the application that never end by themselves.
+// An HTTP server draining before it exits waits for exactly that, so without this
+// a shutdown sits out its whole timeout on connections that are behaving as
+// intended - and on the restart path that time is added to the time the
+// application is down.
+func TestShuttingDownEndsEveryStream(t *testing.T) {
+	hub := New()
+
+	first, closeFirst := hub.Subscribe()
+	defer closeFirst()
+
+	second, closeSecond := hub.Subscribe()
+	defer closeSecond()
+
+	hub.Close()
+
+	for name, stream := range map[string]<-chan Announcement{
+		"the first": first, "the second": second,
+	} {
+		select {
+		case _, open := <-stream:
+			if open {
+				t.Errorf("%s stream carried something instead of ending", name)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("%s stream was left open by the shutdown", name)
+		}
+	}
+
+	// And a request that arrives during the shutdown is not handed a stream that
+	// would have to be waited for either.
+	late, done := hub.Subscribe()
+	defer done()
+
+	select {
+	case _, open := <-late:
+		if open {
+			t.Error("a stream opened during the shutdown is live")
+		}
+	case <-time.After(time.Second):
+		t.Error("a stream opened during the shutdown would be waited for")
+	}
+
+	// Twice is not a panic: the signal handler and a test can both arrive here.
+	hub.Close()
+}
