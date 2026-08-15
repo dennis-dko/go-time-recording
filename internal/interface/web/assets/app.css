@@ -435,6 +435,41 @@ td.pick input, th.pick input { cursor: pointer; margin: 0; }
 
 .bulk-count { color: var(--muted); font-size: 13px; }
 
+/* What a refusal could not say in the reader's language, folded away.
+ *
+ * Quiet on purpose: it is below the sentence somebody actually needs, and the
+ * people who want it know they want it. A summary that shouted would put the one
+ * untranslatable line on the screen back at the top of the reading order. */
+.refusal-detail { margin-top: 6px; font-size: 12px; }
+
+.refusal-detail > summary {
+  color: var(--muted);
+  cursor: pointer;
+  list-style: revert;
+}
+
+.refusal-detail > summary:hover { color: var(--text); }
+
+/* Whatever the driver said, as it said it. Wrapped rather than scrolled
+   sideways - these are one long line more often than they are many - and in a
+   monospace face because half of them are host names, ports and paths. */
+.refusal-text {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* In the corner it has less room, and the notice must not grow past it. */
+.toast-note .refusal-text { max-height: 140px; }
+
 tbody tr:last-child td { border-bottom: none; }
 
 /* A row that opens its entry for editing. The pointer and the hover are the only

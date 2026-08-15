@@ -548,7 +548,12 @@ func serverErrorCodes(t *testing.T) map[string]struct{} {
 	// From this package up to the module root, which is where internal/ lives.
 	root := filepath.Join("..", "..", "..")
 	codes := map[string]struct{}{}
-	pattern := regexp.MustCompile(`WithCode\("([^"]+)"`)
+	// Two ways a code is declared, and both have to be seen or this test reports
+	// the other one as an orphan. WithCode names a rule where it is enforced;
+	// the constants in apperror name the generic reasons that are not rules at
+	// all - an internal failure, a connection that did not get through - and
+	// those are shared by everything that can hit them.
+	pattern := regexp.MustCompile(`WithCode\("([^"]+)"|Code[A-Z]\w*\s*=\s*"([^"]+)"`)
 
 	err := filepath.WalkDir(filepath.Join(root, "internal"),
 		func(path string, entry fs.DirEntry, err error) error {
@@ -557,6 +562,13 @@ func serverErrorCodes(t *testing.T) map[string]struct{} {
 			}
 
 			if entry.IsDir() || !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+
+			// Tests invent codes as fixtures. One of them named a code the server
+			// does not send, and this reported it as a translation somebody had
+			// forgotten to write - which is the opposite of what it means.
+			if strings.HasSuffix(path, "_test.go") {
 				return nil
 			}
 
@@ -582,7 +594,13 @@ func serverErrorCodes(t *testing.T) map[string]struct{} {
 			}
 
 			for _, match := range pattern.FindAllSubmatch(source, -1) {
-				codes[string(match[1])] = struct{}{}
+				// Whichever of the two alternatives matched. A WithCode call fills
+				// the first group and a constant declaration the second.
+				for _, group := range match[1:] {
+					if len(group) > 0 {
+						codes[string(group)] = struct{}{}
+					}
+				}
 			}
 
 			return nil

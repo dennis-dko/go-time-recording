@@ -15,11 +15,19 @@ import (
 // UpdateHandler reports whether a newer release exists, and installs it where
 // installing is a thing that lasts.
 //
-// Guarded by AdministersOnly rather than by settings:manage, and it is the only
-// screen here that is. Everything else on Settings changes what the application
-// does; this one changes what the application *is* - the bytes that will be
-// executed after the next start. That is the built-in administrator's decision,
-// or that of somebody the installation deliberately made equivalent to it.
+// Guarded like the rest of the Settings screen: whoever may configure this
+// installation may also update it.
+//
+// It was narrower - the built-in administrator, or somebody who administers and
+// records no time - on the argument that this changes what the application *is*
+// rather than what it does, and that is a different kind of decision from
+// changing a setting. The argument is sound and it lost to a plainer one: the
+// screen is reached by holding settings:manage, everything else on it is
+// available to whoever got there, and one card that appears for some of those
+// people and not others is a screen that cannot be described in a sentence.
+//
+// Anybody who could reach this could already grant themselves the narrower right
+// anyway, by ticking a permission on a role - so the gate was a step, not a wall.
 type UpdateHandler struct {
 	authz  *Authorizer
 	source *selfupdate.Source
@@ -111,14 +119,8 @@ type UpdateResponse struct {
 
 // State handles GET /api/v1/settings/update.
 func (h *UpdateHandler) State(c *gofr.Context) (any, error) {
-	principal, err := h.authz.Principal(c)
-	if err != nil {
+	if _, err := h.authz.RequireInstallationAdmin(c); err != nil {
 		return nil, err
-	}
-
-	if !h.authz.AdministersOnly(principal) {
-		return nil, forbiddenError{msg: "only an administrator of this installation may " +
-			"update it"}.WithCode("onlyBuiltInAdminUpdates")
 	}
 
 	return h.describe(c), nil
@@ -185,14 +187,8 @@ func (h *UpdateHandler) latest(c *gofr.Context) (selfupdate.Release, error) {
 
 // Apply handles POST /api/v1/settings/update.
 func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
-	principal, err := h.authz.Principal(c)
-	if err != nil {
+	if _, err := h.authz.RequireInstallationAdmin(c); err != nil {
 		return nil, err
-	}
-
-	if !h.authz.AdministersOnly(principal) {
-		return nil, forbiddenError{msg: "only an administrator of this installation may " +
-			"update it"}.WithCode("onlyBuiltInAdminUpdates")
 	}
 
 	if !h.enabled {

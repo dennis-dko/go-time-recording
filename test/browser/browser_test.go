@@ -27,9 +27,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	cdplog "github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
@@ -58,6 +60,11 @@ type page struct {
 	t   *testing.T
 	ctx context.Context
 	app *harness.App
+
+	// What the page threw, collected as it happens. Guarded because the listener
+	// runs on chromedp's own goroutine.
+	mu           sync.Mutex
+	scriptErrors []string
 }
 
 // open starts an instance and a browser, and loads the interface.
@@ -111,13 +118,77 @@ func openWith(t *testing.T, env ...string) *page {
 	t.Cleanup(cancelTimeout)
 
 	p := &page{t: t, ctx: ctx, app: app}
+	p.watchForScriptErrors()
 
 	p.run("load the interface",
+		// So the browser reports what it objects to. Without it a script that
+		// cannot be parsed is silent here and shows up as every case timing out.
+		cdplog.Enable(),
 		chromedp.Navigate(app.BaseURL()),
 		chromedp.WaitVisible("#form-login", chromedp.ByID),
 	)
 
 	return p
+}
+
+// watchForScriptErrors records anything the page throws.
+//
+// Without this a script that will not parse looks like this: every case in the
+// suite fails, each after ninety seconds, saying "load the interface: context
+// deadline exceeded" - which describes a page that did not appear and says
+// nothing about why. The browser knew exactly why, and threw it away.
+//
+// A missing semicolon cost two runs of the whole suite before anyone looked at
+// the file itself. The engine had the answer at once: SyntaxError, with the line
+// number.
+//
+// Cheap, and it applies to every failure rather than to syntax: an exception in a
+// click handler leaves a screen that simply does not respond, which reads exactly
+// like a selector that no longer matches.
+func (p *page) watchForScriptErrors() {
+	chromedp.ListenTarget(p.ctx, func(event any) {
+		var recorded string
+
+		switch e := event.(type) {
+		case *runtime.EventExceptionThrown:
+			// Something that ran and threw: a click handler, a failed await.
+			details := e.ExceptionDetails
+			recorded = fmt.Sprintf("%s (%s:%d:%d)",
+				details.Text, details.URL, details.LineNumber, details.ColumnNumber)
+
+		case *cdplog.EventEntryAdded:
+			// Everything the browser itself complains about, and the one that
+			// matters most is here rather than above: a script that will not
+			// *parse* never runs, so it throws nothing. It is reported as a log
+			// entry, which is why listening only for thrown exceptions caught none
+			// of it - and a script that does not parse is the failure that takes
+			// the whole suite down at once.
+			if e.Entry == nil || e.Entry.Level != cdplog.LevelError {
+				return
+			}
+
+			recorded = fmt.Sprintf("%s (%s:%d)", e.Entry.Text, e.Entry.URL, e.Entry.LineNumber)
+		default:
+			return
+		}
+
+		p.mu.Lock()
+		defer p.mu.Unlock()
+
+		p.scriptErrors = append(p.scriptErrors, recorded)
+	})
+}
+
+// thrown is what the page threw, if anything.
+func (p *page) thrown() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.scriptErrors) == 0 {
+		return ""
+	}
+
+	return "\n\nthe page threw:\n" + strings.Join(p.scriptErrors, "\n")
 }
 
 // run executes actions and fails the test with the application's log attached,
@@ -126,7 +197,8 @@ func (p *page) run(what string, actions ...chromedp.Action) {
 	p.t.Helper()
 
 	if err := chromedp.Run(p.ctx, actions...); err != nil {
-		p.t.Fatalf("%s: %v\n\napplication log:\n%s", what, err, p.app.Log())
+		p.t.Fatalf("%s: %v%s\n\napplication log:\n%s",
+			what, err, p.thrown(), p.app.Log())
 	}
 }
 

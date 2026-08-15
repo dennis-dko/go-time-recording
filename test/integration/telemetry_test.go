@@ -489,17 +489,36 @@ func TestTheUpdateCheckAnswersAndIsGuarded(t *testing.T) {
 		t.Error("a release with no assets at all is offered as installable")
 	}
 
-	// Somebody who administers but is not that kind of administrator is refused,
-	// and so is somebody who only works here.
+	// Everybody who may configure this installation may also update it, including
+	// somebody who administers and books their own time.
+	//
+	// It was narrower once - the built-in administrator, or an account that
+	// administers and records nothing - on the argument that replacing the bytes
+	// that will be executed is a different kind of decision from changing a
+	// setting. What settled it the other way: the screen is reached by holding
+	// settings:manage, everything else on it belongs to whoever got there, and a
+	// card that appears for some of those people and not others is a rule nobody
+	// can hold in their head. Anyone who could reach it could tick the narrower
+	// right onto a role for themselves in any case.
 	both := a.signInAsWorkingAdmin(admin, "Bothe", "bothe@example.com")
 
-	if got := both.api(http.MethodGet, "/settings/update", nil).Status; got != http.StatusForbidden {
-		t.Errorf("the combined role reached the update check: %d, want %d",
-			got, http.StatusForbidden)
+	if got := both.api(http.MethodGet, "/settings/update", nil).Status; got != http.StatusOK {
+		t.Errorf("somebody who administers and also books time cannot see the "+
+			"version: %d, want %d", got, http.StatusOK)
 	}
 
-	if got := both.api(http.MethodPost, "/settings/update", nil).Status; got != http.StatusForbidden {
-		t.Errorf("the combined role could ask for an update: %d, want %d",
+	// Refused for want of anything to install rather than for who is asking:
+	// this feed publishes no binary for this platform.
+	if got := both.api(http.MethodPost, "/settings/update", nil).Status; got == http.StatusForbidden {
+		t.Error("the same account is refused the update it can see")
+	}
+
+	// Somebody who only works here is refused, which is the boundary that has
+	// not moved.
+	worker := a.signInAsUser(admin, "Wera", "wera@example.com")
+
+	if got := worker.api(http.MethodGet, "/settings/update", nil).Status; got != http.StatusForbidden {
+		t.Errorf("an ordinary account reached the update check: %d, want %d",
 			got, http.StatusForbidden)
 	}
 

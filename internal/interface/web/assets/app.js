@@ -230,6 +230,14 @@ async function api(path, options = {}) {
     // viewer's poller needs exactly that distinction: on a 401 it has to stop
     // rather than keep asking every few seconds forever.
     err.status = res.status;
+
+    // The refusal itself, kept whole beside the sentence made from it. The
+    // sentence is what a person reads; the object holds what could not be turned
+    // into one - the words of whatever actually failed, and the reference that
+    // finds the matching log line. A caller that has somewhere to fold that away
+    // wants it, and every caller that does not can go on using err.message.
+    err.refusal = body?.error ?? null;
+
     throw err;
   }
 
@@ -292,6 +300,64 @@ function describeRefusal(err) {
   if (err.message) return err.message;
 
   return JSON.stringify(err);
+}
+
+/**
+ * The part of a refusal that was never going to be translatable.
+ *
+ * A driver's "dial tcp 10.0.0.4:5432: connect: connection refused", a directory
+ * library's own wording, a file system's "permission denied". None of it is this
+ * application's prose - it is written by somebody else, in English, and the list
+ * of sentences it can produce has no end, so no dictionary here can cover it.
+ *
+ * Which leaves two bad options and one good one. Showing it is showing a German
+ * reader a line they cannot use, on the screen where the problem is. Hiding it
+ * is throwing away the only text that says what actually happened. Folding it
+ * away serves both: the sentence on screen is in the reader's language, and the
+ * words an administrator needs are one click below it.
+ *
+ * The reference goes with it. The same string is in the log line the server
+ * wrote, so somebody reading a screenshot and somebody reading the log are
+ * looking at the same occurrence - which is exactly what a generic message
+ * otherwise costs.
+ */
+function refusalDetail(err) {
+  if (!err || typeof err !== 'object') return '';
+
+  const parts = [];
+
+  if (err.detail) parts.push(err.detail);
+
+  if (err.ref) {
+    parts.push(fillIn(t('detail.reference', 'Reference: {0}'), [err.ref]));
+  }
+
+  return parts.join('\n\n');
+}
+
+/** A fold-away block of text that is not in the reader's language. */
+function detailDisclosure(detail) {
+  const box = el('details', { class: 'refusal-detail' },
+    el('summary', { text: t('detail.show', 'Technical details') }),
+    el('pre', { class: 'refusal-text', text: detail }));
+
+  return box;
+}
+
+/**
+ * Writes a refusal into an element: the sentence, and the detail under it.
+ *
+ * One function because there are two places a refusal lands - a notice in the
+ * corner and a line under a form - and they had drifted into saying the same
+ * thing two different ways.
+ */
+function showRefusal(target, err) {
+  if (!target) return;
+
+  target.replaceChildren(el('span', { text: describeRefusal(err) }));
+
+  const detail = refusalDetail(err);
+  if (detail) target.append(detailDisclosure(detail));
 }
 
 /**
@@ -552,7 +618,7 @@ function duringARestart() {
   return announced === 'update.restarting';
 }
 
-function toast(message, kind = 'ok') {
+function toast(message, kind = 'ok', detail = '') {
   const stack = $('#toast');
   if (!stack) return;
 
@@ -563,6 +629,12 @@ function toast(message, kind = 'ok') {
   note.setAttribute('role', kind === 'error' ? 'alert' : 'status');
 
   note.append(el('span', { class: 'toast-text', text: message }));
+
+  // The words of whatever actually failed, folded away. Shown open it would be a
+  // paragraph of somebody else's English across the corner of the screen for
+  // every reader who cannot use it; left out altogether it would be gone by the
+  // time the person who can use it is asked.
+  if (detail) note.append(detailDisclosure(detail));
 
   const dismiss = el('button', {
     class: 'toast-close',
@@ -584,7 +656,14 @@ function toast(message, kind = 'ok') {
   // and not for a sentence explaining why a directory refused a bind.
   const linger = Math.min(TOAST_MAX_MS, TOAST_MIN_MS + message.length * TOAST_MS_PER_CHAR);
 
-  setTimeout(() => note.remove(), linger);
+  setTimeout(() => {
+    // Not while somebody is reading the detail they just opened. The timer is
+    // there so a notice nobody is looking at goes away by itself, and one that
+    // has been unfolded is the opposite of that.
+    if (note.querySelector('details[open]')) return;
+
+    note.remove();
+  }, linger);
 }
 
 /** How many notices may be on screen, and how long each one stays. */
@@ -637,14 +716,40 @@ const DEFAULT_FAVICON = '/favicon.svg';
  * by the Content-Security-Policy - which allows data: images for exactly this
  * reason. Anything else is refused rather than set: a logo that is a link to
  * somewhere else would make the tab icon a request to that somewhere.
+ *
+ * The link element is replaced rather than pointed elsewhere. Setting .href on
+ * the existing one is what this did, and it is the version that looks right in
+ * every test and fails in practice: browsers treat the tab icon as decided at
+ * parse time and skip re-reading a link whose attribute merely changed. Removing
+ * the element and inserting a new one is the mutation they all act on.
+ *
+ * Worth knowing why the tests did not catch it: they asked what the href was, and
+ * the href was always correct. What was wrong was the picture in the tab, which
+ * no automated browser will report.
  */
 function applyFavicon(logo) {
-  const link = document.querySelector('link[rel="icon"]');
-  if (!link) return;
-
   const usable = typeof logo === 'string' && logo.startsWith('data:image/');
+  const href = usable ? logo : DEFAULT_FAVICON;
 
-  link.href = usable ? logo : DEFAULT_FAVICON;
+  const existing = [...document.querySelectorAll('link[rel="icon"]')];
+
+  // Unchanged is left alone, so a redraw for some other reason does not make
+  // every browser refetch its tab icon.
+  if (existing.length === 1 && existing[0].getAttribute('href') === href) return;
+
+  const link = document.createElement('link');
+  link.rel = 'icon';
+  link.href = href;
+
+  // The type only for the shipped mark, which is SVG. A configured logo may be a
+  // PNG, a JPEG or an SVG, and the data URI already says which - declaring the
+  // wrong one here is how a perfectly good logo does not render.
+  if (!usable) link.type = 'image/svg+xml';
+
+  document.head.append(link);
+
+  // After the new one is in place, so there is no instant with no icon at all.
+  for (const old of existing) old.remove();
 }
 
 function fmtDate(iso) {
@@ -1673,6 +1778,10 @@ const TRANSLATIONS = {
     'admin.userFilter': 'Benutzer-Filter (%s = Anmeldename)',
     'app.language': 'Sprache',
     'banner.password': 'Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleibt die übrige Anwendung gesperrt.',
+    'detail.show': 'Technische Details',
+    'detail.reference': 'Referenz: {0}',
+    'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
+    'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden.',
     'announce.installing': 'Eine neue Version ({0}) wird installiert. Du kannst weiterarbeiten; die Anwendung startet gleich neu.',
     'announce.restarting': 'Die Anwendung startet gerade in Version {0}. Diese Seite lädt sich gleich von selbst neu.',
     'announce.pending': 'Version {0} ist installiert und wird beim nächsten Start der Anwendung aktiv. Bis dahin ändert sich nichts.',
@@ -1707,8 +1816,6 @@ const TRANSLATIONS = {
     'err.onlyOwnOvertime': 'Sie können nur Ihren eigenen Überstundenstand sehen.',
     'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
       + 'abgleichen.',
-    'err.onlyBuiltInAdminUpdates': 'Nur die Administration dieser Installation darf sie '
-      + 'aktualisieren.',
     'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
     'err.updateInContainer': 'Dies läuft in einem Container. Dort wäre ein ausgetauschtes '
       + 'Programm beim nächsten Neuaufbau wieder weg — bitte das Abbild aktualisieren.',
@@ -3432,15 +3539,24 @@ async function runConnectionTest(result, attempt) {
     // them are a fixed complaint - a field left empty, a port that is not a
     // number - and those are said in the reader's language and name the fields
     // the way the labels above them do. The rest is what the driver said back,
-    // which nobody can anticipate and which is shown as it arrived.
-    result.textContent = outcome.ok
-      ? t('admin.testOk', 'The connection works.')
-      : describeRefusal(outcome.error ?? { message: outcome.message });
+    // which nobody can anticipate and nobody can translate: that gets a generic
+    // sentence in the reader's language, with the driver's own words folded away
+    // underneath for whoever is going to act on them.
+    if (outcome.ok) {
+      // A success is named here rather than by the server, which wrote it in
+      // English and had it shown in preference to this sentence.
+      result.replaceChildren(el('span', {
+        text: t('admin.testOk', 'The connection works.'),
+      }));
+    } else {
+      showRefusal(result, outcome.error ?? { message: outcome.message });
+    }
+
     result.className = outcome.ok ? 'muted plus' : 'muted minus';
   } catch (err) {
-    result.textContent = err.message;
+    showRefusal(result, err.refusal ?? { message: err.message });
     result.className = 'muted minus';
-    toast(err.message, 'error');
+    toast(err.message, 'error', refusalDetail(err.refusal));
   }
 }
 
@@ -3588,7 +3704,7 @@ async function mutate(fn, successMessage, after) {
     // banner is the message; these would be noise piled on it.
     if (duringARestart()) return;
 
-    toast(err.message, 'error');
+    toast(err.message, 'error', refusalDetail(err.refusal));
   }
 }
 
@@ -5038,9 +5154,11 @@ async function loadUpdate() {
   const card = $('#update-card');
   if (!card) return;
 
-  // Only for the account that may take one. Everybody else holding
-  // settings:manage gets no card rather than a card that refuses.
-  if (!administersOnly()) {
+  // Everybody who can reach this screen. It used to be narrower - the account
+  // that administers and records no time - and that made one card on the screen
+  // appear for some of the people who got here and not others, which is a rule
+  // nobody can hold in their head while using it.
+  if (!can('settings:manage')) {
     card.hidden = true;
 
     return;
