@@ -33,6 +33,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -297,7 +298,92 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 		return err
 	}
 
-	return swap(self, staged)
+	// Run before it is installed, not after it is restarted into.
+	//
+	// The checksum proves the bytes are the ones the release published. It says
+	// nothing about whether they run here: a build for the wrong libc, an
+	// architecture that looked right, a release that is simply broken. Any of
+	// those replaced the binary and then took the application down on the
+	// restart - and the screen that could have put the old one back went with it.
+	//
+	// So the downloaded file is asked what version it is, which is the smallest
+	// thing that requires it to load, link and reach main.
+	if err := runnable(ctx, staged); err != nil {
+		_ = os.Remove(staged)
+
+		return err
+	}
+
+	if err := swap(self, staged); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// runnable reports whether the downloaded file can actually start here.
+func runnable(ctx context.Context, path string) error {
+	// Short: this loads a binary and prints one line. Anything slower than this
+	// is not a program that is about to serve requests.
+	probe, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(probe, path, "--version").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("the downloaded version does not run on this machine "+
+			"(%v: %.200s); the update was not installed", err, out)
+	}
+
+	if strings.TrimSpace(string(out)) == "" {
+		return fmt.Errorf("the downloaded version answered nothing when asked what " +
+			"it is; the update was not installed")
+	}
+
+	return nil
+}
+
+// Rollback puts the previous binary back.
+//
+// The other half of keeping it. An update that installs and then will not serve
+// is the failure the whole arrangement is shaped around, and on that path the
+// application is not running to offer a button - so this is what a person reaches
+// for from a shell, and what the operations manual points at.
+func Rollback() error {
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	if resolved, err := filepath.EvalSymlinks(self); err == nil {
+		self = resolved
+	}
+
+	return RollbackOver(self)
+}
+
+// RollbackOver is Rollback against a named file.
+func RollbackOver(self string) error {
+	old := self + ".old"
+
+	if _, err := os.Stat(old); err != nil {
+		return fmt.Errorf("there is no previous version beside %s to go back to", self)
+	}
+
+	// The one being replaced is kept rather than dropped: whoever is rolling back
+	// may want to look at what they rolled back from, and it is one file.
+	failed := self + ".failed"
+	_ = os.Remove(failed)
+	_ = os.Rename(self, failed)
+
+	if err := os.Rename(old, self); err != nil {
+		_ = os.Rename(failed, self)
+
+		return fmt.Errorf("cannot put the previous version back: %w", err)
+	}
+
+	_ = os.Remove(self + ".pending")
+
+	return nil
 }
 
 // checksum reads the published hash for this platform's asset.
