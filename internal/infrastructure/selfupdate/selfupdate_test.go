@@ -216,3 +216,96 @@ func TestTheDownloadIsExecutable(t *testing.T) {
 		t.Errorf("the downloaded binary is %v, which cannot be run", info.Mode().Perm())
 	}
 }
+
+// The whole of an install: download, check, and put it where the old one was.
+//
+// The riskiest thing this application does. A swap that half works leaves an
+// installation with no binary at its own path, which is the one state from which
+// nothing on the administration screen can help - so this drives it end to end
+// against a file that is not the test binary.
+func TestAnInstallReplacesTheFileItWasGiven(t *testing.T) {
+	const version = "v9.9.9"
+
+	newBinary := []byte("the new version")
+	sum := sha256.Sum256(newBinary)
+
+	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
+
+	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+
+	if err := os.WriteFile(self, []byte("the old version"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := source.InstallOver(context.Background(), release, self); err != nil {
+		t.Fatalf("installing: %v", err)
+	}
+
+	got, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatalf("the binary is not at its own path any more: %v", err)
+	}
+
+	if string(got) != string(newBinary) {
+		t.Errorf("the file holds %q after the update", got)
+	}
+
+	// The staging file is gone rather than left beside the binary.
+	if _, err := os.Stat(self + ".new"); err == nil {
+		t.Error("the staged download is still lying beside the binary")
+	}
+
+	// And the note saying which version is waiting, which is what keeps the card
+	// from offering the same update again before the restart.
+	pending, err := os.ReadFile(self + ".pending")
+	if err != nil || strings.TrimSpace(string(pending)) != version {
+		t.Errorf("the pending version reads %q (%v), want %s", pending, err, version)
+	}
+}
+
+// A failed install leaves the old binary where it was.
+//
+// The download is checked before anything is moved, so a release that does not
+// match its own checksum costs nothing. An installation left with neither the old
+// binary nor a working new one is the failure this ordering exists to prevent.
+func TestAFailedInstallLeavesTheOldBinaryInPlace(t *testing.T) {
+	const version = "v9.9.9"
+
+	// A checksum for something else entirely.
+	wrong := sha256.Sum256([]byte("not what is served"))
+
+	source, release, _ := stagedRelease(t, version, hex.EncodeToString(wrong[:]),
+		[]byte("the new version"))
+
+	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	old := []byte("the old version")
+
+	if err := os.WriteFile(self, old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := source.InstallOver(context.Background(), release, self); err == nil {
+		t.Fatal("an install whose download does not match its checksum reported success")
+	}
+
+	got, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatalf("the old binary is gone after a failed install: %v", err)
+	}
+
+	if string(got) != string(old) {
+		t.Errorf("the old binary was replaced anyway, and now holds %q", got)
+	}
+
+	if _, err := os.Stat(self + ".new"); err == nil {
+		t.Error("the refused download is still lying beside the binary")
+	}
+}
+
+func exeSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+
+	return ""
+}
