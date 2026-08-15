@@ -621,6 +621,28 @@ the swap, and discarded if it will not answer. This is the cheapest possible
 question and it catches the failure that would otherwise be discovered by the
 application not coming back.
 
+### The file keeps its name
+
+A release is published as `go-time-recording_v1.2.3_windows_amd64.exe`, so a
+manual download says which version it is in its own name. An update installed
+from the interface does not rename anything: the new version is written to the
+path the running one already occupies, whatever that path is called.
+
+That is deliberate and not negotiable. The path is the installation - a systemd
+unit, a Windows service, a shortcut, a scheduled task and whatever scripts exist
+all name it. An update that renamed the file would be an update that takes the
+application offline and leaves no obvious reason why.
+
+Which version a file is stays answerable three ways:
+
+```bash
+./go-time-recording --version
+```
+
+On Windows, right-click → *Properties* → *Details*: the published binaries carry
+a version resource, so Explorer shows the new version after an update without
+being asked. And the footer of the interface names it beside the platform.
+
 ### Going back
 
 The version being replaced is kept, on both platforms, beside the binary as

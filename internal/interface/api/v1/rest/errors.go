@@ -3,8 +3,10 @@
 package rest
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	gofrHTTP "gofr.dev/pkg/gofr/http"
@@ -49,10 +51,112 @@ func toHTTPError(err error) error {
 		// local type that keeps the 409 and the explanation.
 		return conflictError{reason: reasonOf(detail)}
 	case apperror.KindInternal:
-		return err
+		return newInternalError(detail)
 	default:
 		return err
 	}
+}
+
+// newInternalError turns something that went wrong inside into an answer a reader
+// can act on.
+//
+// What used to go out was whatever the failure said: a driver's "dial tcp
+// 10.0.0.4:5432: connect: connection refused", a file system's "permission
+// denied", the LDAP library's own wording. Every one of them is written in
+// English by somebody else's library, and no dictionary here can ever cover them
+// - they are not this application's sentences, and the list has no end.
+//
+// So the answer has three parts, and they are three because they have three
+// different audiences. A generic sentence, translated, for the person reading the
+// screen. A code, for anything deciding what to do about it. And the original
+// text, unchanged, for whoever is going to fix it - kept out of the way behind a
+// disclosure rather than thrown at somebody who cannot use it.
+//
+// The reference ties the three together. It goes into Error(), which is what
+// GoFr writes to the log, and into the body, which is what appears on screen - so
+// "something went wrong (A7F3C2)" on somebody's screen and the log line holding
+// the stack are findable from each other. That is the one thing a generic message
+// otherwise costs you.
+func newInternalError(detail *apperror.Error) internalError {
+	code := detail.Code
+	if code == "" {
+		code = apperror.CodeInternal
+	}
+
+	// The original, which is the wrapped error where there is one and the
+	// message where the error was made here.
+	original := detail.Error()
+	if detail.Err != nil {
+		original = detail.Err.Error()
+	}
+
+	return internalError{
+		reason:   reason{message: "the request could not be completed", code: code},
+		ref:      newReference(),
+		original: original,
+	}
+}
+
+// referenceAlphabet has no vowels and no characters that are read as each other.
+// This gets read out over a telephone.
+const referenceAlphabet = "0123456789ACDEFGHJKLMNPQRTUVWXY"
+
+// newReference is a short identifier for one occurrence.
+func newReference() string {
+	out := make([]byte, 6)
+
+	for i := range out {
+		// Not a secret and not a key: it only has to be different from the last
+		// one somebody is looking at. crypto/rand because it is what this
+		// application has, and six characters of it is nothing.
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(referenceAlphabet))))
+		if err != nil {
+			// Cannot happen on any platform this runs on, and a reference is not
+			// worth failing a response over.
+			return "UNKNOWN"
+		}
+
+		out[i] = referenceAlphabet[n.Int64()]
+	}
+
+	return string(out)
+}
+
+// internalError renders a 500 that says what happened twice: once in a sentence
+// anybody can read, and once in the words of whatever actually failed.
+type internalError struct {
+	reason
+
+	ref      string
+	original string
+}
+
+// Error is what reaches the log, and it carries the reference and the original
+// wording - the log is where the person who can fix this will be looking, and
+// nothing about it should be generic.
+func (e internalError) Error() string {
+	return fmt.Sprintf("%s [%s]: %s", e.message, e.ref, e.original)
+}
+
+// StatusCode is what GoFr's responder looks for to pick the HTTP status.
+func (internalError) StatusCode() int { return 500 }
+
+// Response is GoFr's ResponseMarshaller.
+func (e internalError) Response() map[string]any {
+	out := e.response()
+	if out == nil {
+		out = map[string]any{}
+	}
+
+	out["ref"] = e.ref
+
+	// Only when it says something the generic sentence does not. An empty one
+	// would put an expander on screen with nothing behind it.
+	if e.original != "" {
+		out["detail"] = e.original
+	}
+
+	return out
 }
 
 // reason is a refusal in a form something other than an English reader can act
@@ -103,16 +207,31 @@ func (r reason) response() map[string]any {
 //
 // Half of what comes back is a fixed complaint: a field left empty, a port that
 // is not a number, a dialect nobody has. Those carry a code or a field list and
-// the interface says them in the reader's own words. The other half is whatever
-// the driver said - "connection refused", "password authentication failed" - and
-// that is prose nobody can anticipate, so it travels as the message and is shown
-// as it is.
+// the interface says them in the reader's own words.
+//
+// The other half is whatever the driver said - "connection refused", "password
+// authentication failed", "x509: certificate signed by unknown authority". That
+// prose cannot be anticipated and cannot be translated: it is written by somebody
+// else's library, in English, and the list of possible sentences has no end. It
+// used to be shown as it arrived, which on a German screen is the one line nobody
+// can read on the one screen where reading it is the whole point.
+//
+// So it becomes the detail. The reader gets "the connection could not be
+// established", in their own language, and the driver's own words are one click
+// away for whoever is going to act on them - which, on this screen, is often the
+// same person a moment later.
 func probeFailure(err error) map[string]any {
 	out := map[string]any{"message": err.Error()}
 
 	var detail *apperror.Error
 	if !errors.As(err, &detail) {
-		return out
+		// Not one of ours at all: everything it says is the driver's, so all of it
+		// is detail and the sentence is the generic one.
+		return map[string]any{
+			"message": "the connection could not be established",
+			"code":    apperror.CodeProbeFailed,
+			"detail":  err.Error(),
+		}
 	}
 
 	if detail.Code != "" {
@@ -121,6 +240,13 @@ func probeFailure(err error) map[string]any {
 		if len(detail.Values) > 0 {
 			out["values"] = detail.Values
 		}
+	} else if len(detail.Fields) == 0 {
+		// Ours, but with nothing named - which means the sentence in it came from
+		// underneath. A field list is different: that is a complaint this
+		// application made about what somebody typed, and it already translates.
+		out["message"] = "the connection could not be established"
+		out["code"] = apperror.CodeProbeFailed
+		out["detail"] = detail.Error()
 	}
 
 	// Named "param" to match what a rejected field is called everywhere else in
