@@ -37,3 +37,10 @@ dist/
 # The toolchain links any .syso in the package directory, so a committed one
 # would be linked with whatever version it was written with, for ever.
 *.syso
+
+# Screenshots the browser suite writes while it works.
+#
+# A case that measures something visual saves the picture it measured, which is
+# what makes a failure readable - and none of them belongs in the repository. One
+# reached it by way of `git add -A`, which is exactly the accident this prevents.
+test/browser/*.png
