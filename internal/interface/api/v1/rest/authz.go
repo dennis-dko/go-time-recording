@@ -94,6 +94,14 @@ func (unauthorizedError) Error() string { return "not authenticated" }
 // StatusCode is what GoFr's responder reads to pick the HTTP status.
 func (unauthorizedError) StatusCode() int { return http.StatusUnauthorized }
 
+// Response names it, like every other refusal. This one had no code for as long
+// as it existed, on the reasoning that a 401 is unambiguous - and it is, to
+// something reading the status. What reads the body is a person, and they were
+// reading "not authenticated" in English on a German screen.
+func (unauthorizedError) Response() map[string]any {
+	return reason{code: apperror.CodeUnauthenticated}.response()
+}
+
 // RequireInstallationAdmin returns the caller only if they may configure the
 // installation: the built-in administrator, or somebody holding
 // model.PermSettingsManage.

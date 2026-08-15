@@ -2,10 +2,13 @@ package rest
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // SecurityHeaders sets the response headers that a browser needs in order to
@@ -161,10 +164,28 @@ func (l *RateLimiter) Middleware() func(http.Handler) http.Handler {
 			limit, window := l.budget(r.Context())
 
 			if !l.allow(clientKey(r), limit, window) {
-				w.Header().Set("Retry-After", itoa(int(window.Seconds())))
+				seconds := int(window.Seconds())
+
+				w.Header().Set("Retry-After", itoa(seconds))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				_, _ = w.Write([]byte(`{"error":{"message":"too many requests, please slow down"}}` + "\n"))
+
+				// Named, and carrying how long to wait. Retry-After already says
+				// it, and a header is not something a screen can put into a
+				// sentence - "try again in a minute" is the whole of what the
+				// person held up by this wants to know.
+				body, err := json.Marshal(map[string]any{
+					"error": map[string]any{
+						"message": "too many requests, please slow down",
+						"code":    apperror.CodeRateLimited,
+						"values":  []any{seconds},
+					},
+				})
+				if err != nil {
+					return
+				}
+
+				_, _ = w.Write(append(body, '\n'))
 
 				return
 			}

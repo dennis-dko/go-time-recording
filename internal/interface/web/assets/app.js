@@ -280,21 +280,26 @@ function describeRefusal(err) {
   // thing translated here - and it is the sentence the banner already carries, so
   // both say the same words.
   if (err.code === 'maintenance') {
-    return t('maint.default', 'This installation is temporarily unavailable for maintenance.');
+    return t('err.maintenance',
+      'This installation is temporarily unavailable for maintenance.');
+  }
+
+  // The named fields first, and before the code, which is the ordering this got
+  // wrong the moment a code was added to them: a rejection that says which fields
+  // is strictly more use than the sentence it would otherwise fall back to, and
+  // the sentence was winning simply because it was tested for first.
+  //
+  // The fields are labelled the way the form labels them rather than by their
+  // column names, which is the whole reason they travel as data.
+  if (Array.isArray(err.param) && err.param.length) {
+    const named = err.param.map((field) => t(`field.${field}`, field));
+
+    return `${t('err.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
   }
 
   if (err.code) {
     const translated = t(`err.${err.code}`, err.message ?? '');
     if (translated) return fillIn(translated, err.values);
-  }
-
-  // Before the message, which for these is GoFr's "'1' invalid parameter(s):
-  // dailyTargetHours" - a count nobody asked for and a column name rather than the
-  // label above the field.
-  if (Array.isArray(err.param) && err.param.length) {
-    const named = err.param.map((field) => t(`field.${field}`, field));
-
-    return `${t('msg.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
   }
 
   if (err.message) return err.message;
@@ -1780,6 +1785,12 @@ const TRANSLATIONS = {
     'banner.password': 'Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleibt die übrige Anwendung gesperrt.',
     'detail.show': 'Technische Details',
     'detail.reference': 'Referenz: {0}',
+    'err.unauthenticated': 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',
+    'err.notFound': '{0} mit der Kennung {1} wurde nicht gefunden.',
+    'err.invalidFields': 'Ungültige Felder',
+    'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
+    'err.csrfRejected': 'Diese Seite ist zu lange geöffnet gewesen. Bitte neu laden und noch einmal versuchen.',
+    'err.maintenance': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
     'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
     'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden.',
     'announce.installing': 'Eine neue Version ({0}) wird installiert. Du kannst weiterarbeiten; die Anwendung startet gleich neu.',
@@ -1989,7 +2000,6 @@ const TRANSLATIONS = {
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.entrySaved': 'Eintrag gespeichert',
     'maint.confirm': 'Installation außer Betrieb nehmen? Alle außer diesem Konto werden abgewiesen.',
-    'maint.default': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
     'maint.enabled': 'Außer Betrieb',
     'maint.hint': 'Weist alle anderen mit einem Hinweis ab, während die Installation weiterläuft. Vor dem Wiederherstellen oder Verschieben der Datenbank zu benutzen: in diesem Zeitraum erfasste Zeiten sind verloren, sobald der Stand zurückgespielt wird, und wer sie erfasst hat, erfährt es nicht.',
     'maint.message': 'Hinweis für alle anderen',
@@ -2002,7 +2012,6 @@ const TRANSLATIONS = {
     'msg.initFailed': 'Initialisierung fehlgeschlagen',
     'msg.loadFailed': 'Konnte nicht alles laden',
     'msg.rightsChanged': 'Deine Berechtigungen haben sich geändert. Bitte die Seite neu laden.',
-    'msg.invalidFields': 'Ungültige Felder',
     'msg.passwordChanged': 'Passwort geändert. Bitte neu anmelden.',
     'msg.projectArchived': 'Projekt archiviert',
     'msg.projectCompleted': 'Projekt abgeschlossen',
@@ -6119,7 +6128,7 @@ function rowProblem(row) {
   if (row.problemCode === 'invalidFields') {
     const named = (row.problemValues ?? []).map((field) => t(`field.${field}`, field));
 
-    return `${t('msg.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
+    return `${t('err.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
   }
 
   // Two prefixes, because some rows are refused by a rule the form enforces too -
@@ -7480,7 +7489,8 @@ async function loadMaintenance() {
   }
 
   const notice = state.enabled
-    ? (state.message || t('maint.default', 'This installation is temporarily unavailable for maintenance.'))
+    ? (state.message || t('err.maintenance',
+      'This installation is temporarily unavailable for maintenance.'))
     : '';
 
   banner.textContent = notice;

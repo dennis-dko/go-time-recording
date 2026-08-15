@@ -202,6 +202,69 @@ func (c *client) do(method, path string, body any) response {
 	return response{Status: resp.StatusCode, Body: data}
 }
 
+// raw sends a body exactly as given, so a malformed one can be sent on purpose.
+//
+// do() encodes whatever it is handed, which makes "not JSON" unsendable through
+// it - and that is one of the cases worth covering: a client that sends rubbish
+// should be told what is wrong with the request rather than shown a failure from
+// inside the decoder.
+func (c *client) raw(method, path string, body []byte) response {
+	c.t.Helper()
+
+	req, err := http.NewRequestWithContext(context.Background(), method,
+		c.app.BaseURL()+path, bytes.NewReader(body))
+	if err != nil {
+		c.t.Fatalf("cannot build the request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", c.app.BaseURL())
+	req.Header.Set("X-CSRF-Token", c.csrfToken())
+
+	return c.send(req, method, path)
+}
+
+// withoutCSRF sends a request that carries no token, the way a page left open
+// past its cookie's life does.
+func (c *client) withoutCSRF(method, path string, body any) response {
+	c.t.Helper()
+
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		c.t.Fatalf("cannot encode the request body: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), method,
+		c.app.BaseURL()+path, bytes.NewReader(encoded))
+	if err != nil {
+		c.t.Fatalf("cannot build the request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", c.app.BaseURL())
+
+	return c.send(req, method, path)
+}
+
+// send performs a prepared request and reads the whole answer.
+func (c *client) send(req *http.Request, method, path string) response {
+	c.t.Helper()
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.t.Fatalf("%s %s failed: %v\n%s", method, path, err, c.app.log())
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.t.Fatalf("cannot read the response: %v", err)
+	}
+
+	return response{Status: resp.StatusCode, Body: data}
+}
+
 // api is do() with the /api/v1 prefix, which is every call but the assets.
 func (c *client) api(method, path string, body any) response {
 	c.t.Helper()

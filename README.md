@@ -886,6 +886,49 @@ the framework starts, which is the same reason the ports are not.
 Responses are wrapped by the framework: `{"data": ...}` or `{"error": ...}`.
 The full reference is at `/api-docs`; the highlights:
 
+### What a refusal looks like
+
+Every refusal names itself. The name is what something other than an English
+reader can act on — the interface looks up a sentence in the reader's own
+language, and a support conversation has a stable word for a thing rather than a
+paraphrase of a message that has since been reworded.
+
+```json
+{
+  "error": {
+    "code": "probeFailed",
+    "message": "the connection could not be established",
+    "detail": "cannot reach the database: dial tcp 10.0.0.4:5432: connect: connection refused",
+    "ref": "A7F3C2"
+  }
+}
+```
+
+| Field | Always? | What it is |
+| --- | --- | --- |
+| `code` | yes | Why, as a stable name. Never changes meaning. |
+| `message` | yes | The same thing in English, for a client with no dictionary. |
+| `values` | sometimes | What the sentence interpolated, kept apart so a translation can put them in its own word order. |
+| `param` | field rejections | Which fields, by name, so a form can label them the way it labels everything else. |
+| `detail` | failures from underneath | The original wording of whatever actually failed — a driver, a directory, a file system. Untranslatable by nature, so it is carried rather than shown. |
+| `ref` | internal failures | The same string as in the log line. This is how a screenshot and a log entry are matched up. |
+
+Two kinds of `code`. Specific ones are declared where the rule is enforced
+(`projectHasEntries`, `timesheetLocked`). The generic ones — the refusals that
+belong to no single rule — are declared once in
+[`apperror/codes.go`](internal/pkg/apperror/codes.go): `internal`, `probeFailed`,
+`unauthenticated`, `notFound`, `invalidFields`, `rateLimited`, `csrfRejected`,
+`maintenance`.
+
+Words rather than numbers, deliberately. A numbered scheme is right where the
+code is all you get — a return value in a register with a table somewhere else.
+These travel in a JSON body with room beside them, so the property worth having
+is that the code says what it means where it is read. What is borrowed from the
+numbered systems is the part that makes them work: the set is closed and nothing
+may emit a reason outside it, which
+`TestEveryErrorTheAPICanGiveIsNamed` checks by provoking each one against a
+running instance.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/v1/auth/login`, `/auth/logout` | Sign in and out |
