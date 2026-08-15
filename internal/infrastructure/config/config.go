@@ -29,6 +29,21 @@ type Config struct {
 	// syntax and "insert returning id" differ per dialect.
 	Dialect string
 
+	// UpdateCheck asks the release feed whether a newer version exists, and is
+	// what makes the update card on the administration screen say anything.
+	//
+	// On by default: an installation that never learns a fix exists is not safer
+	// for it. Off is for a deployment that must not reach the internet at all,
+	// where the check would fail on every visit to that screen and say nothing
+	// useful anyway - the same reasoning as the framework's own call home, and
+	// the same switch shape.
+	UpdateCheck bool
+
+	// UpdateFeed is where to ask. Its own setting so an installation behind a
+	// proxy, or one running its own fork, can point it somewhere reachable
+	// rather than having to switch the whole thing off.
+	UpdateFeed string
+
 	// UIEnabled serves the embedded web interface. Turn it off to run the
 	// binary as a headless API.
 	UIEnabled bool
@@ -234,9 +249,11 @@ func splitList(raw string) []string {
 // run with no configuration at all.
 func Load(p Provider) Config {
 	return Config{
-		Dialect:   strings.ToLower(p.GetOrDefault("DB_DIALECT", defaultDialect)),
-		AppName:   p.GetOrDefault("APP_NAME", "Time Recording"),
-		UIEnabled: boolOr(p.GetOrDefault("UI_ENABLED", "true"), true),
+		Dialect:     strings.ToLower(p.GetOrDefault("DB_DIALECT", defaultDialect)),
+		AppName:     p.GetOrDefault("APP_NAME", "Time Recording"),
+		UIEnabled:   boolOr(p.GetOrDefault("UI_ENABLED", "true"), true),
+		UpdateCheck: boolOr(p.GetOrDefault("UPDATE_CHECK", "true"), true),
+		UpdateFeed:  p.Get("UPDATE_FEED"),
 		// Defaults to on: an instance that quietly serves everyone full
 		// administrative rights should be a deliberate choice, not an oversight.
 		AuthRequired:    boolOr(p.GetOrDefault("AUTH_ENABLED", "true"), true),

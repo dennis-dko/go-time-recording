@@ -22,6 +22,7 @@ type Handlers struct {
 	Passkeys   *rest.PasskeyHandler
 	Logs       *rest.LogHandler
 	Restart    *rest.RestartHandler
+	Update     *rest.UpdateHandler
 	Timers     *rest.TimerHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
@@ -86,6 +87,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// changing while the installation is out of service.
 	app.GET(base+"/settings/restart", h.Restart.State)
 	app.POST(base+"/settings/restart", h.Restart.Restart)
+
+	// Guarded harder than the rest of Settings: this one replaces the bytes that
+	// will be executed after the next start. See UpdateHandler.
+	app.GET(base+"/settings/update", h.Update.State)
+	app.POST(base+"/settings/update", h.Update.Apply)
 
 	// The process log. Under /admin rather than /settings because it changes
 	// nothing - and behind the built-in administrator, because it carries
