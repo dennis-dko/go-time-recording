@@ -205,6 +205,19 @@ func (w *cookieWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+// Unwrap hands http.ResponseController the writer underneath.
+//
+// Embedding a ResponseWriter satisfies the interface and hides everything the
+// real one can do beyond it - flushing, hijacking, setting a deadline. For an
+// ordinary response nobody notices, because nothing asks. The announcement
+// stream asks: it flushes after every line, and without this it reached a writer
+// that could not, closed the connection at once, and delivered a perfectly
+// well-formed event stream containing nothing, for ever.
+//
+// One method, and the reason it is easy to leave out is that everything works
+// until something needs the connection rather than the response.
+func (w *cookieWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (w *cookieWriter) flush() {
 	if w.written {
 		return

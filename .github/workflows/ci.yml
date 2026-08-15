@@ -278,6 +278,34 @@ jobs:
         # timeout, with nothing to say which click never landed.
         run: go test -tags browser -count=1 -timeout 20m -v ./test/browser/
 
+  firefox:
+    name: Firefox
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # A second engine, and the whole reason this job exists separately from the
+      # one above. Chrome and Edge are both Blink, so the browser job covers two
+      # browsers and one renderer; bulk deletion was invisible in Firefox for as
+      # long as it existed while every Blink test passed.
+      #
+      # No geckodriver: Firefox opens a WebDriver BiDi port itself, so there is
+      # nothing here to keep in step with the browser version.
+      - uses: browser-actions/setup-firefox@v1
+        id: firefox
+        with:
+          firefox-version: latest
+
+      - name: Firefox tests
+        env:
+          FIREFOX_PATH: ${{ steps.firefox.outputs.firefox-path }}
+        run: go test -tags firefox -count=1 -timeout 20m -v ./test/firefox/
+
   build:
     name: Build
     runs-on: ubuntu-latest

@@ -249,6 +249,22 @@ input, select {
   width: 100%;
 }
 
+/* A tick box is its own size, never the width of what holds it.
+ *
+ * The rule above is written for the fields a form is made of, where filling the
+ * row is exactly right. A checkbox is not one of those, and stretching one is
+ * meaningless everywhere - but only visibly wrong in some engines. In a selection
+ * column, whose cell is asked to be as narrow as its content, Firefox resolves
+ * that 100% against a cell that has no width yet and arrives at nought: the box
+ * is 14px tall, 0px wide, and simply not on the screen. Blink resolves it the
+ * other way round and it looks correct.
+ *
+ * That is what made bulk deletion invisible in Firefox while working in Chrome,
+ * for as long as bulk deletion had existed. The same fix had already been made
+ * once, on the permission grid alone, which is part of why it stayed hidden - the
+ * second place to need it was written later and could not know. */
+input[type="checkbox"], input[type="radio"] { width: auto; }
+
 input:focus, select:focus {
   border-color: var(--accent);
   outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
@@ -618,7 +634,7 @@ button.secondary {
   gap: 8px;
 }
 
-.perm-grid input[type="checkbox"] { accent-color: var(--accent); margin: 0; width: auto; }
+.perm-grid input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 
 /* An overtime balance reads as a credit or a debt, so the sign is coloured. */
 .plus { color: #2e9e5b; font-weight: 600; }

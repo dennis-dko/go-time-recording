@@ -27,6 +27,7 @@ import (
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/announce"
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/directory"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
@@ -593,6 +594,27 @@ func main() {
 	// security headers first so they are set even on a rejected request, then
 	// the rate limit, then the cookie queue wrapping the two authentication
 	// paths, and only then the UI.
+	// Where an announcement to everybody starts. One per process, held here
+	// because two things need it: the update handler, which says what is about to
+	// happen, and the stream middleware, which carries it.
+	hub := announce.New()
+
+	// And its end. Every other request finishes by itself, which is what lets the
+	// HTTP server drain before exiting; an announcement stream does not, by
+	// design, so a shutdown would sit out its whole timeout on connections that
+	// are behaving exactly as intended. On the restart path that would be added
+	// straight onto the time the application is unavailable.
+	//
+	// A second listener for the same signals GoFr handles. signal.Notify supports
+	// that, and the alternative is reaching into how GoFr shuts down.
+	go func() {
+		stopping := make(chan os.Signal, 1)
+		signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
+
+		<-stopping
+		hub.Close()
+	}()
+
 	app.UseMiddleware(rest.SecurityHeaders(cfg.HSTSMaxAge))
 	app.UseMiddleware(rest.NewRateLimiter(cfg.RateLimit, cfg.RateLimitWindow).
 		WithLimits(limits.RateLimit).Middleware())
@@ -610,6 +632,11 @@ func main() {
 	// it would turn away the only people who can end maintenance mode. Before the
 	// UI, so the assets are still served and the page can render the notice.
 	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState))
+
+	// The one thing this application says without being asked. After the session
+	// middleware, which is what makes a stream belong to somebody, and before the
+	// interface, which would otherwise answer for a path it does not own.
+	app.UseMiddleware(rest.EventStream(hub))
 
 	if cfg.UIEnabled {
 		// GoFr's AddStaticFiles only serves a directory from disk, which would
@@ -643,7 +670,7 @@ func main() {
 		Logs:       rest.NewLogHandler(logs, authorizer),
 		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil),
 		Update: rest.NewUpdateHandler(authorizer,
-			selfupdate.New(cfg.UpdateFeed), version, cfg.UpdateCheck),
+			selfupdate.New(cfg.UpdateFeed), hub, version, cfg.UpdateCheck),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),

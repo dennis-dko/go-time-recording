@@ -403,6 +403,155 @@ function stopPermissionPolling() {
   permissionPoll = null;
 }
 
+// --------------------------------------------------------------- announcements
+
+/**
+ * The open connection the server writes down when something is about to happen
+ * to the application itself.
+ *
+ * Everything else here is a question this page asked. This is the one thing that
+ * cannot be: an update replaces the binary underneath and, where the platform
+ * allows it, restarts into it seconds later. Somebody in the middle of typing an
+ * entry finds out by the application vanishing.
+ *
+ * EventSource rather than a shorter poll. A poll fast enough to be a warning is a
+ * request per second per open tab, for ever, to say "nothing" - and it would
+ * still be late. This costs one idle connection and arrives at once. It also
+ * reconnects by itself, which is what turns the restart into something the page
+ * can notice and recover from rather than a wall of failed requests.
+ */
+let announcements = null;
+
+/** What was last announced, so a reconnection knows what it is coming back from. */
+let announced = null;
+
+function startAnnouncements() {
+  stopAnnouncements();
+
+  if (!me.user || typeof EventSource !== 'function') return;
+
+  announcements = new EventSource('/api/v1/events');
+
+  announcements.addEventListener('announcement', (event) => {
+    let announcement;
+
+    try {
+      announcement = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    applyAnnouncement(announcement);
+  });
+
+  // The connection dropping is not an error to report. It is the ordinary way a
+  // restart looks from here, and the browser is already reconnecting - which is
+  // handled where the reconnection succeeds rather than here, because a failure
+  // to reconnect means the application is not back yet and there is nothing to
+  // say to anybody about that.
+  announcements.addEventListener('error', () => {});
+
+  announcements.addEventListener('open', () => {
+    // Back. If the last thing said was that a restart was coming, this is the
+    // other side of it: the application is answering again, and it is a different
+    // version from the one this page was loaded from.
+    //
+    // Reloading is the only honest thing to do. The script, the stylesheet and
+    // the markup in this tab all came from the previous version, and carrying on
+    // with them against a new API is how a page ends up half working in ways
+    // nobody can reproduce.
+    if (announced === 'update.restarting') {
+      announced = null;
+      window.location.reload();
+    }
+  });
+}
+
+function stopAnnouncements() {
+  if (announcements) announcements.close();
+  announcements = null;
+  announced = null;
+
+  stopRedrawing('announcement');
+
+  const banner = $('#update-banner');
+  if (banner) banner.hidden = true;
+}
+
+/**
+ * Puts an announcement on screen.
+ *
+ * A banner rather than a toast: a toast fades, and this has to be true for as
+ * long as it is true. Nothing is dismissable either - what it describes does not
+ * stop being the case because somebody closed it.
+ */
+function applyAnnouncement(announcement) {
+  announced = announcement.kind;
+
+  // Through the redraw registry, so a language change reaches it like everything
+  // else the script writes. Without this the banner kept whatever words it was
+  // built with while the page around it changed language - and this is the one
+  // message on the screen that somebody may be reading precisely because they do
+  // not understand what is happening.
+  redrawable('announcement', () => drawAnnouncement(announcement));
+}
+
+/** Writes one announcement into the banner, in the language now in force. */
+function drawAnnouncement(announcement) {
+  const banner = $('#update-banner');
+  if (!banner) return;
+
+  const version = announcement.version || '';
+
+  const words = {
+    'update.installing': () => t('announce.installing',
+      'A new version ({0}) is being installed. You can carry on working; ' +
+      'the application will restart shortly.'),
+    'update.restarting': () => t('announce.restarting',
+      'The application is restarting into version {0}. This page will reload ' +
+      'by itself in a moment.'),
+    'update.pending': () => t('announce.pending',
+      'Version {0} has been installed and takes effect the next time the ' +
+      'application is started. Nothing changes until then.'),
+    'update.cancelled': () => t('announce.cancelled',
+      'The update was not installed and nothing has changed. The application ' +
+      'keeps running as before.'),
+  }[announcement.kind];
+
+  if (!words) {
+    banner.hidden = true;
+
+    return;
+  }
+
+  banner.textContent = fillIn(words(), [version]);
+  banner.hidden = false;
+
+  // The two that are over: an update that was abandoned, and one that will not
+  // happen until somebody restarts the application by hand. Both are worth
+  // saying once and neither is worth a permanent stripe across the screen.
+  if (announcement.kind === 'update.cancelled' || announcement.kind === 'update.pending') {
+    setTimeout(() => {
+      if (announced !== announcement.kind) return;
+
+      banner.hidden = true;
+      stopRedrawing('announcement');
+      announced = null;
+    }, 30000);
+  }
+}
+
+/**
+ * Whether a failed request is the restart everybody was just warned about.
+ *
+ * During those few seconds every request fails, and each one would otherwise
+ * raise its own red toast on top of a banner that already explains it. The
+ * banner is the message; the toasts would be noise on top of it.
+ */
+function duringARestart() {
+  return announced === 'update.restarting';
+}
+
 function toast(message, kind = 'ok') {
   const stack = $('#toast');
   if (!stack) return;
@@ -1524,6 +1673,10 @@ const TRANSLATIONS = {
     'admin.userFilter': 'Benutzer-Filter (%s = Anmeldename)',
     'app.language': 'Sprache',
     'banner.password': 'Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleibt die übrige Anwendung gesperrt.',
+    'announce.installing': 'Eine neue Version ({0}) wird installiert. Du kannst weiterarbeiten; die Anwendung startet gleich neu.',
+    'announce.restarting': 'Die Anwendung startet gerade in Version {0}. Diese Seite lädt sich gleich von selbst neu.',
+    'announce.pending': 'Version {0} ist installiert und wird beim nächsten Start der Anwendung aktiv. Bis dahin ändert sich nichts.',
+    'announce.cancelled': 'Das Update wurde nicht installiert, es hat sich nichts geändert. Die Anwendung läuft unverändert weiter.',
     'cal.close': 'schließen',
     'cal.clickToEdit': 'Zum Bearbeiten auf einen Eintrag klicken.',
     'cal.monthTotal': 'Gesamt im Monat',
@@ -3429,6 +3582,12 @@ async function mutate(fn, successMessage, after) {
     if (successMessage) toast(successMessage, 'ok');
     if (after) await after(result);
   } catch (err) {
+    // Silent while the application is restarting into a new version. Every
+    // request fails for those few seconds, and each one would raise its own red
+    // toast on top of a banner that already says exactly what is happening. The
+    // banner is the message; these would be noise piled on it.
+    if (duringARestart()) return;
+
     toast(err.message, 'error');
   }
 }
@@ -3722,9 +3881,12 @@ async function doLogout() {
 
   // Before the state is cleared: both pollers ask with the session that is
   // about to end, and a timer left running would keep asking with none and
-  // paint the screen with authentication failures.
+  // paint the screen with authentication failures. The announcement stream goes
+  // the same way - the server turns an unauthenticated one away, and EventSource
+  // would keep reopening it.
   stopLogPolling();
   stopPermissionPolling();
+  stopAnnouncements();
 
   me = { user: null, permissions: [], authEnabled: true };
 
@@ -7550,6 +7712,11 @@ async function refreshAll() {
   // is checked on a timer as well as on every response. Started after /me
   // because that is what establishes the revision to compare against.
   startPermissionPolling();
+
+  // And the connection the server writes down when the application itself is
+  // about to change underneath this page. Only for somebody signed in: it is the
+  // sign-in screen's business what happens after they get there.
+  startAnnouncements();
 
   // Before the booking date is worked out, because that depends on the zone -
   // and on a first sign-in the zone is the thing being adopted.

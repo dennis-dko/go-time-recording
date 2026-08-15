@@ -61,6 +61,13 @@
        installation is in - and it has to be visible on the sign-in screen too. -->
   <div id="maintenance-banner" class="banner banner-warn" hidden></div>
 
+  <!-- What is happening to the application itself, right now: a version being
+       installed, a restart seconds away. Not set under Settings and not dismissable
+       - it is pushed from the server over an open stream, and it goes when the
+       thing it describes is over. Above the instance's own announcement because a
+       restart in ninety seconds outranks anything an administrator typed. -->
+  <div id="update-banner" class="banner banner-warn" hidden></div>
+
   <!-- The instance's own announcement, set under Settings. -->
   <div id="instance-banner" class="banner" hidden></div>
 

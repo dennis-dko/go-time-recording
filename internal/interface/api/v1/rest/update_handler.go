@@ -6,6 +6,7 @@ import (
 
 	"gofr.dev/pkg/gofr"
 
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/announce"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/restart"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
@@ -22,6 +23,11 @@ import (
 type UpdateHandler struct {
 	authz  *Authorizer
 	source *selfupdate.Source
+
+	// hub tells every open browser what is about to happen to the application
+	// underneath it. An update is the one thing here that cannot wait for
+	// somebody to ask.
+	hub *announce.Hub
 
 	// version is what this process was built as. "dev" for anything not built
 	// from a tag, which is why the answer below says whether it could compare at
@@ -43,9 +49,11 @@ type UpdateHandler struct {
 }
 
 // NewUpdateHandler creates the handler.
-func NewUpdateHandler(authz *Authorizer, source *selfupdate.Source, version string,
-	enabled bool) *UpdateHandler {
-	return &UpdateHandler{authz: authz, source: source, version: version, enabled: enabled}
+func NewUpdateHandler(authz *Authorizer, source *selfupdate.Source, hub *announce.Hub,
+	version string, enabled bool) *UpdateHandler {
+	return &UpdateHandler{
+		authz: authz, source: source, hub: hub, version: version, enabled: enabled,
+	}
 }
 
 // updateCacheFor is how long an answer from the release feed is reused.
@@ -210,12 +218,38 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 			h.version).WithCode("updateNotNewer", h.version))
 	}
 
+	// Everybody, before it starts rather than after it finished.
+	//
+	// The download and its checks take tens of seconds, and on a platform that can
+	// replace its own process the restart follows immediately. Whoever pressed the
+	// button knows all this; nobody else does, and they are the ones for whom it
+	// arrives as the application vanishing mid-sentence. Announced first, so that
+	// notice is the length of the download rather than nothing.
+	h.hub.Publish(announce.Installing, release.Version)
+
 	if err := h.source.Install(c, release); err != nil {
+		// And taken back. The banner promises a restart, and no restart is coming:
+		// left standing it would be a permanent lie on everybody's screen.
+		h.hub.Publish(announce.Cancelled, release.Version)
+		h.hub.Forget()
+
 		return nil, toHTTPError(apperror.Internal(err))
 	}
 
 	// Downloaded and in place. Whether it takes effect now or when somebody walks
 	// over to the machine is the restart card's question, and the answer differs
 	// per platform - so it is reported rather than decided here.
-	return h.describe(c), nil
+	state := h.describe(c)
+
+	// Which of the two it is, said plainly, because the two mean opposite things
+	// to somebody in the middle of typing. A restart that is seconds away is worth
+	// stopping for; one that waits for a person to walk to a machine is not worth
+	// a banner at all beyond saying so once.
+	if state.Restartable {
+		h.hub.Publish(announce.Restarting, release.Version)
+	} else {
+		h.hub.Publish(announce.Pending, release.Version)
+	}
+
+	return state, nil
 }
