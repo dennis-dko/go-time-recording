@@ -1554,6 +1554,12 @@ const TRANSLATIONS = {
     'err.onlyOwnOvertime': 'Sie können nur Ihren eigenen Überstundenstand sehen.',
     'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
       + 'abgleichen.',
+    'err.onlyBuiltInAdminUpdates': 'Nur die Administration dieser Installation darf sie '
+      + 'aktualisieren.',
+    'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
+    'err.updateInContainer': 'Dies läuft in einem Container. Dort wäre ein ausgetauschtes '
+      + 'Programm beim nächsten Neuaufbau wieder weg — bitte das Abbild aktualisieren.',
+    'err.updateNotNewer': 'Diese Installation läuft bereits mit {0}.',
     'err.onlyBuiltInAdminSchedules': 'Nur die eingebaute Administration darf den '
       + 'Verzeichnisabgleich planen.',
     'err.onlyBuiltInAdminSetsUp': 'Nur die eingebaute Administration darf die Einrichtung '
@@ -1858,6 +1864,33 @@ const TRANSLATIONS = {
     'ts.entries': 'Einträge',
     'ts.noProject': 'ohne Projekt',
     'unit.hours': 'Std.',
+
+    // Updating. The card says something true on every deployment, which is why
+    // there are three endings rather than one: this can restart itself, this
+    // cannot, and this is a container where replacing the binary would be undone.
+    'update.title': 'Version',
+    'update.running': 'Diese Installation läuft mit {0}',
+    'update.current': '{0} ist die neueste Version.',
+    'update.found': '{0} ist verfügbar. Diese Installation läuft mit {1}.',
+    'update.install': 'Herunterladen und installieren',
+    'update.installed': 'Die neue Version liegt bereit.',
+    'update.notes': 'Was sich geändert hat ↗',
+    'update.pending': '{0} ist heruntergeladen und startet mit dem nächsten Neustart.',
+    'update.pendingRestart': 'Den Neustart unten verwenden oder die Anwendung selbst neu starten.',
+    'update.willRestart': 'Der Download wird gegen die Prüfsumme des Releases geprüft. '
+      + 'Die Anwendung startet sich danach selbst neu.',
+    'update.willAskRestart': 'Der Download wird gegen die Prüfsumme des Releases geprüft. '
+      + 'Danach muss die Anwendung von Hand neu gestartet werden — dieses System kann '
+      + 'sich nicht selbst neu starten.',
+    'update.inContainer': 'Dies läuft in einem Container. Ein ausgetauschtes Programm wäre '
+      + 'beim nächsten Neuaufbau wieder weg — stattdessen das Abbild aktualisieren: '
+      + 'docker compose pull && docker compose up -d',
+    'update.off': 'Die Suche nach neuen Versionen ist auf dieser Installation '
+      + 'abgeschaltet (UPDATE_CHECK).',
+    'update.unversioned': 'Dieser Stand wurde nicht aus einem Release gebaut, es gibt '
+      + 'also nichts zu vergleichen. Die neueste veröffentlichte Version ist {0}.',
+    'update.unversionedAlone': 'Dieser Stand wurde nicht aus einem Release gebaut.',
+    'update.unreachable': 'Die neueste Version konnte nicht abgefragt werden',
     'user.create': 'Benutzer anlegen',
     'user.empty': 'Noch keine Benutzer angelegt.',
     'user.initialPassword': 'leer = Initialpasswort',
@@ -3039,6 +3072,7 @@ async function loadAdmin() {
   setLogoPreview(branding.logo ?? '');
 
   await loadOperational();
+  await loadUpdate();
 
   const timezone = await api('/settings/timezone');
   const instanceSelect = $('#instance-timezone');
@@ -4818,6 +4852,155 @@ function wireOperational() {
 
 async function loadOperational() {
   fillOperationalForm(await api('/settings/operational'));
+}
+
+// ----------------------------------------------------------------- updating
+
+/**
+ * What version is running, whether a newer one exists, and what can be done
+ * about it here.
+ *
+ * The card says something true on every deployment, which is the whole
+ * difficulty: a single binary can fetch its successor and put it in its own
+ * place, and a container cannot - a binary swapped inside one is undone by the
+ * next recreate, which is the moment somebody is most certain the update took.
+ * So where installing would not last, the card says what to run instead rather
+ * than offering a button that reverts itself.
+ */
+async function loadUpdate() {
+  const card = $('#update-card');
+  if (!card) return;
+
+  // Only for the account that may take one. Everybody else holding
+  // settings:manage gets no card rather than a card that refuses.
+  if (!administersOnly()) {
+    card.hidden = true;
+
+    return;
+  }
+
+  let state;
+
+  try {
+    state = await api('/settings/update');
+  } catch {
+    // A failed lookup is not a broken installation, and this is the one card on
+    // the screen that depends on somebody else's service being up.
+    card.hidden = true;
+
+    return;
+  }
+
+  card.hidden = false;
+  redrawable('update', () => renderUpdate(state));
+}
+
+function renderUpdate(state) {
+  const running = t('update.running', 'This installation runs {0}')
+    .replace('{0}', state.running);
+
+  const line = $('#update-state');
+  const hint = $('#update-hint');
+  const button = $('#update-now');
+  const notes = $('#update-notes');
+  const problem = $('#update-problem');
+
+  button.hidden = !state.available;
+  notes.hidden = !state.url;
+
+  if (state.url) notes.href = state.url;
+
+  problem.hidden = !state.problem;
+
+  // The server's own words for a lookup that failed - what went wrong reaching
+  // somebody else's service is not a fixed set of sentences.
+  if (state.problem) {
+    problem.textContent = `${t('update.unreachable', 'Could not ask for the newest version')}: ${state.problem}`;
+  }
+
+  hint.hidden = false;
+
+  if (!state.enabled) {
+    line.textContent = running;
+    hint.textContent = t('update.off',
+      'Checking for new versions is switched off on this installation (UPDATE_CHECK).');
+
+    return;
+  }
+
+  // Already downloaded and waiting. Said before anything else, or somebody who
+  // has taken the update is offered it again.
+  if (state.pending) {
+    line.textContent = t('update.pending', '{0} is downloaded and starts with the next restart.')
+      .replace('{0}', state.pending);
+
+    hint.textContent = state.restartable
+      ? t('update.pendingRestart', 'Use the restart below, or restart the application yourself.')
+      : t(`restart.unsupported.${state.restartCode || 'other'}`,
+        'Restart the application the way it was started.');
+
+    return;
+  }
+
+  // A build not made from a release calls itself "dev" and cannot be ranked
+  // against anything. Saying "dev is the newest version" would be untrue, and
+  // the sort of untrue that stops somebody looking further.
+  if (!state.comparable) {
+    line.textContent = running;
+    hint.textContent = state.latest
+      ? t('update.unversioned', 'This build was not made from a release, so there is '
+        + 'nothing to compare. The newest published version is {0}.')
+        .replace('{0}', state.latest)
+      : t('update.unversionedAlone', 'This build was not made from a release.');
+
+    return;
+  }
+
+  if (!state.newer) {
+    line.textContent = state.latest
+      ? t('update.current', '{0} is the newest version.').replace('{0}', state.running)
+      : running;
+
+    hint.hidden = true;
+
+    return;
+  }
+
+  line.textContent = t('update.found', '{0} is available. This installation runs {1}.')
+    .replace('{0}', state.latest).replace('{1}', state.running);
+
+  // Newer, but not from here. The command is the honest answer rather than a
+  // button that would be undone.
+  if (!state.installable) {
+    hint.textContent = t('update.inContainer',
+      'This runs in a container, where replacing the binary would be undone by the '
+      + 'next recreate. Update the image instead: docker compose pull && docker compose up -d');
+
+    return;
+  }
+
+  hint.textContent = state.restartable
+    ? t('update.willRestart', 'The download is checked against the release’s own checksum. '
+      + 'The application restarts itself afterwards.')
+    : t('update.willAskRestart', 'The download is checked against the release’s own '
+      + 'checksum. Afterwards the application has to be restarted by hand — this '
+      + 'platform cannot restart itself.');
+}
+
+function wireUpdate() {
+  const button = $('#update-now');
+  if (!button) return;
+
+  button.addEventListener('click', () => {
+    // No success message of its own: what happened is on the card, and it
+    // differs by platform.
+    mutate(() => api('/settings/update', { method: 'POST' }), null, async () => {
+      await loadUpdate();
+      await loadRestart();
+
+      toast(t('update.installed', 'The new version is in place.'), 'ok');
+    });
+  });
 }
 
 // ----------------------------------------------------------------- restart
@@ -7588,6 +7771,7 @@ async function init() {
     wireOperational();
     wireTelemetry();
     wireRestart();
+    wireUpdate();
     wireTimer();
     wireStatistics();
     wireReportChart();

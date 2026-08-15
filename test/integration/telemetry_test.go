@@ -4,6 +4,7 @@ package integration
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -433,5 +434,115 @@ func TestTheLogLevelAppliesWithoutARestart(t *testing.T) {
 	if saved.Active.LogLevel != "WARN" {
 		t.Errorf("clearing the field left the level at %q, want the file's WARN",
 			saved.Active.LogLevel)
+	}
+}
+
+// The update card answers on every deployment, and only to the account that may
+// act on it.
+//
+// It is the one thing on the administration screen guarded harder than
+// settings:manage. Everything else there changes what the application does; this
+// changes what it *is* - the bytes that will be executed after the next start.
+func TestTheUpdateCheckAnswersAndIsGuarded(t *testing.T) {
+	// A feed of our own, because the point is the answer's shape and not whether
+	// GitHub is up - and a test that reaches the internet is a test that fails on
+	// a train.
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"tag_name":"v99.0.0","body":"much better",` +
+			`"html_url":"https://example.invalid/r","assets":[]}`))
+	}))
+	defer feed.Close()
+
+	a := start(t, "UPDATE_FEED="+feed.URL)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	var state struct {
+		Running     string `json:"running"`
+		Latest      string `json:"latest"`
+		Newer       bool   `json:"newer"`
+		Available   bool   `json:"available"`
+		Installable bool   `json:"installable"`
+		Enabled     bool   `json:"enabled"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/settings/update", nil), http.StatusOK).Data(t, &state)
+
+	if !state.Enabled {
+		t.Error("the check reports itself switched off although nothing switched it off")
+	}
+
+	if state.Latest != "v99.0.0" {
+		t.Errorf("the feed said v99.0.0 and the answer says %q", state.Latest)
+	}
+
+	// The harness builds without a tag, so this process calls itself "dev" - and
+	// "dev" cannot be compared with anything. That is deliberate: an update
+	// offered on the strength of a version nobody can read is worse than one not
+	// offered.
+	if state.Running != "dev" {
+		t.Logf("this build calls itself %q", state.Running)
+	}
+
+	// Whatever the comparison said, a release that published no binary for this
+	// platform is never installable.
+	if state.Available {
+		t.Error("a release with no assets at all is offered as installable")
+	}
+
+	// Somebody who administers but is not that kind of administrator is refused,
+	// and so is somebody who only works here.
+	both := a.signInAsWorkingAdmin(admin, "Bothe", "bothe@example.com")
+
+	if got := both.api(http.MethodGet, "/settings/update", nil).Status; got != http.StatusForbidden {
+		t.Errorf("the combined role reached the update check: %d, want %d",
+			got, http.StatusForbidden)
+	}
+
+	if got := both.api(http.MethodPost, "/settings/update", nil).Status; got != http.StatusForbidden {
+		t.Errorf("the combined role could ask for an update: %d, want %d",
+			got, http.StatusForbidden)
+	}
+
+	// And installing is refused when there is nothing newer to install, rather
+	// than downloading whatever the feed happens to name.
+	if got := admin.api(http.MethodPost, "/settings/update", nil).Status; got == http.StatusOK {
+		t.Error("an update was installed from a release with no binary for this platform")
+	}
+}
+
+// Switched off means switched off: no lookup, and no install.
+func TestUpdatingCanBeSwitchedOff(t *testing.T) {
+	reached := false
+
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		_, _ = w.Write([]byte(`{"tag_name":"v99.0.0"}`))
+	}))
+	defer feed.Close()
+
+	a := start(t, "UPDATE_CHECK=false", "UPDATE_FEED="+feed.URL)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	var state struct {
+		Enabled bool   `json:"enabled"`
+		Latest  string `json:"latest"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/settings/update", nil), http.StatusOK).Data(t, &state)
+
+	if state.Enabled {
+		t.Error("UPDATE_CHECK=false and the answer says the check is on")
+	}
+
+	if state.Latest != "" {
+		t.Errorf("the feed was asked anyway, and answered %q", state.Latest)
+	}
+
+	if reached {
+		t.Error("an installation that asked not to call out called out")
+	}
+
+	if got := admin.api(http.MethodPost, "/settings/update", nil).Status; got == http.StatusOK {
+		t.Error("an update was installed although checking is switched off")
 	}
 }

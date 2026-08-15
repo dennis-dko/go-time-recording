@@ -32,6 +32,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/tlsserver"
 	v1 "github.com/dennis-dko/go-time-recording/internal/interface/api/v1"
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
@@ -242,6 +243,11 @@ func main() {
 	} else {
 		defer restoreOutput()
 	}
+
+	// What a previous update left behind, now that this process is the new
+	// version. On Windows the old binary cannot be deleted while it is running,
+	// so the swap renames it aside and this is the first moment it can go.
+	selfupdate.Cleanup()
 
 	// An administered database connection is exported into the environment
 	// before GoFr reads its configuration: GoFr lets real environment
@@ -607,6 +613,8 @@ func main() {
 		Setup:      rest.NewSetupHandler(setup, authorizer),
 		Logs:       rest.NewLogHandler(logs, authorizer),
 		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil),
+		Update: rest.NewUpdateHandler(authorizer,
+			selfupdate.New(cfg.UpdateFeed), version, cfg.UpdateCheck),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),

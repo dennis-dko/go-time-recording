@@ -671,6 +671,20 @@
     </section>
     <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
+      <!-- Above the restart card, because taking an update is the thing that
+           produces something waiting for a restart. -->
+      <div id="update-card" class="card" hidden>
+        <h2 data-i18n="update.title">Version</h2>
+        <p class="muted" id="update-state"></p>
+        <p class="muted" id="update-hint" hidden></p>
+        <div class="row">
+          <button type="button" id="update-now" hidden data-i18n="update.install">Download and install</button>
+          <a id="update-notes" class="tab" href="#" target="_blank" rel="noopener" hidden
+             data-i18n="update.notes">What changed ↗</a>
+        </div>
+        <p class="muted minus" id="update-problem" hidden></p>
+      </div>
+
       <div id="restart-card" class="card" hidden>
         <h2 data-i18n="restart.title">Restart</h2>
         <p class="muted" id="restart-hint" data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>

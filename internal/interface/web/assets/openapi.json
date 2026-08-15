@@ -1877,6 +1877,44 @@
           }
         }
       }
+    },
+    "/settings/update": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "What version is running, and whether a newer one exists",
+        "description": "Answers on every deployment, and says which kind it is. `available` is the only field a button should key on: it means a newer version exists, it published a binary for this platform, this deployment is one where installing lasts, and it has not already been downloaded. `installable` is false in a container - a binary swapped inside one is undone by the next recreate, so the image is what gets updated there. `pending` names a version already on disk and waiting for a restart. A lookup that failed comes back as `problem` with a 200 rather than as an error: the release feed being unreachable is not this application being broken. Needs the rights the built-in administrator has, not merely settings:manage.",
+        "responses": {
+          "200": {
+            "description": "The running version and what is available"
+          },
+          "403": {
+            "description": "Not an administrator of this installation"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Download and install the newest release",
+        "description": "Downloads the release's binary for this platform, checks it against the SHA256SUMS published beside it, and puts it where this process's own file is. Nothing is written into place until the hash matches - this is code that will be executed as the application on the next start. It does not restart: replacing the file and replacing the process are separate acts, and Windows cannot do the second at all, so the answer says which case this is. Refused in a container and when the check is switched off.",
+        "responses": {
+          "200": {
+            "description": "In place; the answer says whether a restart is needed or possible"
+          },
+          "400": {
+            "description": "Already current, switched off, or running in a container"
+          },
+          "403": {
+            "description": "Not an administrator of this installation"
+          },
+          "500": {
+            "description": "The download or the checksum failed"
+          }
+        }
+      }
     }
   },
   "components": {

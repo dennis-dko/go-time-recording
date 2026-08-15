@@ -556,6 +556,55 @@ not in the database dump below:
 docker compose exec -T openldap slapcat -f /etc/ldap/slapd.conf | gzip > ldap-$(date +%F).ldif.gz
 ```
 
+## Updating from the interface
+
+*Settings* carries a **Version** card. It says what is running, what the newest
+release is, and what can be done about it here - which differs by deployment, and
+that difference is the whole of it.
+
+| | What the card offers |
+| --- | --- |
+| **C** Single binary | A button. It downloads the release's binary for this platform, checks it against the `SHA256SUMS` published beside it, and puts it where the running file is. |
+| **A/B/D** Container | No button, and the command to run instead. |
+
+**Why no button in a container.** A binary swapped inside a container is undone by
+the next `docker compose up` - which is the moment somebody is most certain the
+update took. Offering it there would be offering an update that silently reverts,
+so the card says `docker compose pull && docker compose up -d` instead. That is
+not a gap in the feature; it is what updating a container is.
+
+**Nothing is written into place unverified.** The download is hashed while it is
+written and compared against the release's own `SHA256SUMS`, read from the same
+release. This is code that will be executed as the application on the next start.
+
+**It does not restart by itself.** Replacing the file and replacing the process
+are separate acts with separate failure modes, and on Windows the second one does
+not exist - so the card says which case it is. On Linux the restart button below
+it applies the new version; on Windows the application has to be started again by
+hand, and the card says so. Until then the card reports the downloaded version as
+waiting rather than offering the same update twice.
+
+On Windows the running binary is renamed aside rather than deleted, because
+Windows will not delete a file it is executing. The leftover is cleared on the
+next start.
+
+### Switching it off
+
+```bash
+# An installation that must not reach the internet at all. On by default: an
+# installation that never learns a fix exists is not safer for it.
+UPDATE_CHECK=false
+
+# Or point it somewhere reachable - a mirror, a proxy, a fork's own releases -
+# rather than switching the whole thing off.
+UPDATE_FEED=https://api.github.com/repos/you/your-fork/releases/latest
+```
+
+Only an account that administers the installation and has no working day of its
+own sees the card at all - the built-in administrator, or somebody holding the
+admin role. Not the combined role: this replaces the bytes that will be executed,
+which is a different kind of decision from changing a setting.
+
 ## Backup
 
 There is **no backup feature in the application**. No button, no endpoint, no
