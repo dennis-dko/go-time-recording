@@ -584,6 +584,35 @@ it applies the new version; on Windows the application has to be started again b
 hand, and the card says so. Until then the card reports the downloaded version as
 waiting rather than offering the same update twice.
 
+### What everybody else sees
+
+Everyone signed in is told, at the moment the update starts rather than after it
+finished. Each browser holds one connection open to `/api/v1/events`, and the
+update writes down it - so the notice arrives in the same second, on an idle
+screen, without anybody polling for it.
+
+There are three things it can say, and they mean different things to somebody in
+the middle of typing:
+
+| | What is said | Can they keep working? |
+| --- | --- | --- |
+| **Installing** | A new version is being downloaded and checked. | **Yes, entirely.** This takes tens of seconds and changes nothing about the running application. |
+| **Restarting** | The new version is in place and this process is about to be replaced. | **For a few seconds, no.** Requests in flight fail; the page reloads itself when the application answers again. |
+| **Pending** | Installed, and waiting for somebody to restart the application by hand. Windows. | **Yes.** Nothing changes until that restart happens. |
+
+An update that fails its checks says so too, and the banner goes: a promise of a
+restart that is not coming is worse than no notice at all.
+
+**Nothing is lost that had been saved.** The restart is a process being replaced,
+not a database being touched - every entry already submitted is on disk. What is
+lost is a form somebody had filled in and not yet submitted, which is why the
+warning comes before the download rather than with the restart: the download is
+the notice period.
+
+Requests that fail during those seconds do not raise errors on screen. The banner
+already says what is happening, and a dozen red toasts on top of it would only
+obscure it.
+
 **Nothing is installed that has not been run once.** The checksum proves the
 bytes are the ones the release published; it says nothing about whether they run
 *here* - a build for the wrong libc, an architecture that looked right, a release
