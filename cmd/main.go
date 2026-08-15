@@ -221,6 +221,35 @@ func unavailable(db container.DB) bool {
 }
 
 func main() {
+	// Before anything else, and before the log is captured: this answers and
+	// exits.
+	//
+	// It exists for the update to use. Replacing a binary and then restarting
+	// into it is a bet that the new one runs at all, and if it does not, the
+	// screen that could have put the old one back has gone with it. So the
+	// update runs the downloaded file with this first and only keeps it if it
+	// answers - which is a small thing to ask of a program about to become this
+	// one. Being able to ask a binary what it is from a shell is worth having
+	// anyway.
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
+		fmt.Println(version)
+		os.Exit(0)
+	}
+
+	// The way back, and it has to be here rather than behind the interface: the
+	// case it exists for is a version that installed and will not serve, where
+	// there is no interface to press anything in. One flag, no database, no
+	// configuration - it moves two files and says what it did.
+	if len(os.Args) > 1 && (os.Args[1] == "--rollback" || os.Args[1] == "-rollback") {
+		if err := selfupdate.Rollback(); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+
+		fmt.Println("the previous version is back in place; start it again")
+		os.Exit(0)
+	}
+
 	// Capture the process output before anything writes to it. GoFr's logger
 	// takes os.Stdout when gofr.New() constructs it and keeps it for the life
 	// of the process, so this is the only moment at which the log viewer can be

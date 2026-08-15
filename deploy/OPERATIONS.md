@@ -584,9 +584,42 @@ it applies the new version; on Windows the application has to be started again b
 hand, and the card says so. Until then the card reports the downloaded version as
 waiting rather than offering the same update twice.
 
+**Nothing is installed that has not been run once.** The checksum proves the
+bytes are the ones the release published; it says nothing about whether they run
+*here* - a build for the wrong libc, an architecture that looked right, a release
+that is simply broken. So the downloaded file is executed with `--version` before
+the swap, and discarded if it will not answer. This is the cheapest possible
+question and it catches the failure that would otherwise be discovered by the
+application not coming back.
+
+### Going back
+
+The version being replaced is kept, on both platforms, beside the binary as
+`go-time-recording.old`. It stays there until the *next* update, which removes it
+as its first act - so there is always exactly one version to go back to, and
+never two.
+
+That matters because starting is not serving. A new version can run, pass the
+check above, replace the old one, and still fail on a migration, a port already
+taken, or a certificate it cannot read. At that point there is no interface to
+press anything in, which is why the way back is a flag rather than a button:
+
+```bash
+./go-time-recording --rollback
+# the previous version is back in place; start it again
+```
+
+It moves two files: the version that would not serve becomes
+`go-time-recording.failed`, kept so it can be looked at, and `.old` takes its
+name back. No database, no configuration, nothing else touched. Start it as you
+normally would.
+
+Under systemd, `systemctl stop`, roll back, `systemctl start` - the unit file
+still points at the same path.
+
 On Windows the running binary is renamed aside rather than deleted, because
-Windows will not delete a file it is executing. The leftover is cleared on the
-next start.
+Windows will not delete a file it is executing, so the same arrangement falls out
+of the platform rather than being arranged.
 
 ### Switching it off
 

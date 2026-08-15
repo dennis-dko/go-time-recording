@@ -36,8 +36,15 @@ func swap(self, staged string) error {
 	return markPending(self)
 }
 
-// removeLeftovers clears what the swap could not, now that it is not running.
+// removeLeftovers clears the note that an update is waiting, now that this
+// process is the version it was waiting for.
+//
+// The binary moved aside by the swap stays, and not only because Windows would
+// not have let it go earlier. Starting is not serving: a version can come up far
+// enough to run this line and still fail on the migration, on the port, on the
+// certificate - and clearing it here would throw the way back away at the one
+// moment it starts to be needed. It costs one file, and the next update removes
+// it as its first act.
 func removeLeftovers(self string) {
-	_ = os.Remove(self + ".old")
 	_ = os.Remove(self + ".pending")
 }

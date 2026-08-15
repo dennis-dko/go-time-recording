@@ -885,3 +885,38 @@ func TestACalendarEntryOpensForEditing(t *testing.T) {
 		t.Errorf("the form is still pointed at entry %s after saving", id)
 	}
 }
+
+// waitSignedIn blocks until the session is one the API will actually accept.
+//
+// The login screen disappearing says the sign-in answered. It does not say the
+// cookies it set have made it back into the browser and are being attached to
+// requests, and a test that fires an API call in that gap gets "not
+// authenticated" - rarely, on a loaded machine, and reported as whatever the
+// call was trying to do rather than as the race it is. Asking the API who is
+// signed in is the same question the browser will be asked a moment later.
+func (p *page) waitSignedIn(t *testing.T) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for {
+		var status int
+
+		p.run("ask whether the session is established", chromedp.Evaluate(`
+			(async () => {
+				const r = await fetch('/api/v1/me', { credentials: 'same-origin' });
+				return r.status;
+			})()`, &status, awaitPromise))
+
+		if status == 200 {
+			return
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("the session never became usable: /api/v1/me answers %d\n\n"+
+				"application log:\n%s", status, p.app.Log())
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+}

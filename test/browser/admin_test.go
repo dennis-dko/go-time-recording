@@ -546,7 +546,20 @@ func TestAPasskeySignsInWithoutATwoFactorCodeEvenWhenTOTPIsOn(t *testing.T) {
 func (p *page) enableTOTP(t *testing.T) string {
 	t.Helper()
 
-	var secret string
+	// The session first, and waited for rather than assumed.
+	//
+	// The login screen going away means the sign-in answered, not that every
+	// cookie it set is back in the browser and being attached to fetches. Firing
+	// straight into an enrolment lost that race about once in a suite run, and
+	// then reported it as "no secret was issued" - which describes the symptom and
+	// points nowhere near the cause.
+	p.waitSignedIn(t)
+
+	var answer struct {
+		Status int    `json:"status"`
+		Secret string `json:"secret"`
+		Body   string `json:"body"`
+	}
 
 	p.run("begin two-factor enrolment", chromedp.Evaluate(`
 		(async () => {
@@ -559,13 +572,20 @@ func (p *page) enableTOTP(t *testing.T) string {
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
 			});
 
-			const body = await r.json();
-			return body?.data?.secret ?? '';
-		})()`, &secret, awaitPromise))
+			const body = await r.text();
 
-	if secret == "" {
-		t.Fatalf("no two-factor secret was issued\n\napplication log:\n%s", p.app.Log())
+			let secret = '';
+			try { secret = JSON.parse(body)?.data?.secret ?? ''; } catch {}
+
+			return { status: r.status, secret, body: body.slice(0, 400) };
+		})()`, &answer, awaitPromise))
+
+	if answer.Secret == "" {
+		t.Fatalf("no two-factor secret was issued: HTTP %d, %s\n\napplication log:\n%s",
+			answer.Status, answer.Body, p.app.Log())
 	}
+
+	secret := answer.Secret
 
 	code, err := security.CurrentTOTPCode(secret)
 	if err != nil {

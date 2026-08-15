@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -226,7 +227,7 @@ func TestTheDownloadIsExecutable(t *testing.T) {
 func TestAnInstallReplacesTheFileItWasGiven(t *testing.T) {
 	const version = "v9.9.9"
 
-	newBinary := []byte("the new version")
+	newBinary := workingProgram(t, "the new version")
 	sum := sha256.Sum256(newBinary)
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
@@ -247,7 +248,14 @@ func TestAnInstallReplacesTheFileItWasGiven(t *testing.T) {
 	}
 
 	if string(got) != string(newBinary) {
-		t.Errorf("the file holds %q after the update", got)
+		t.Error("the file does not hold the downloaded bytes after the update")
+	}
+
+	// The version it replaced, kept so there is something to go back to. Losing
+	// it is the failure the whole arrangement is shaped around: an update that
+	// installs and then will not serve leaves no screen to press a button on.
+	if _, err := os.Stat(self + ".old"); err != nil {
+		t.Error("the previous binary was not kept, so a rollback is impossible")
 	}
 
 	// The staging file is gone rather than left beside the binary.
@@ -275,7 +283,7 @@ func TestAFailedInstallLeavesTheOldBinaryInPlace(t *testing.T) {
 	wrong := sha256.Sum256([]byte("not what is served"))
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(wrong[:]),
-		[]byte("the new version"))
+		workingProgram(t, "the new version"))
 
 	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
 	old := []byte("the old version")
@@ -308,4 +316,187 @@ func exeSuffix() string {
 	}
 
 	return ""
+}
+
+// workingProgram is a file that runs and answers --version, which is what the
+// install now requires of anything it is about to make the application.
+//
+// A real program rather than a string of bytes: the check runs it, so a test
+// that handed it text would be testing the check's error path and calling it the
+// success one.
+func workingProgram(t *testing.T, marker string) []byte {
+	t.Helper()
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "main.go")
+
+	program := `package main
+
+import "fmt"
+
+func main() { fmt.Println("MARKER") }
+`
+
+	program = strings.Replace(program, "MARKER", marker, 1)
+
+	if err := os.WriteFile(source, []byte(program), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	built := filepath.Join(dir, "built"+exeSuffix())
+
+	build := exec.Command("go", "build", "-o", built, source)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building the stand-in: %v; %s", err, out)
+	}
+
+	body, err := os.ReadFile(built)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return body
+}
+
+// A download that cannot run here is not installed.
+//
+// The checksum proves the bytes are the ones the release published. It says
+// nothing about whether they run on this machine - a build for the wrong libc,
+// an architecture that looked right, a release that is simply broken. Every one
+// of those used to replace the binary and take the application down on the
+// restart, at which point the screen that could have put the old one back was
+// gone too.
+func TestADownloadThatCannotRunIsNotInstalled(t *testing.T) {
+	const version = "v9.9.9"
+
+	broken := []byte("this is not a program")
+	sum := sha256.Sum256(broken)
+
+	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), broken)
+
+	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	old := workingProgram(t, "the old version")
+
+	if err := os.WriteFile(self, old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := source.InstallOver(context.Background(), release, self)
+	if err == nil {
+		t.Fatal("a download that cannot run was installed")
+	}
+
+	if !strings.Contains(err.Error(), "not installed") {
+		t.Errorf("the refusal reads %q, which does not say the update did not happen", err)
+	}
+
+	got, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatalf("the old binary is gone: %v", err)
+	}
+
+	if string(got) != string(old) {
+		t.Error("the old binary was replaced by one that cannot run")
+	}
+}
+
+// And when everything passed and the new version still will not serve, the old
+// one goes back.
+//
+// On that path the application is not running to offer a button, so this is what
+// somebody reaches for from a shell - and it has to work without the application.
+func TestARollbackPutsThePreviousVersionBack(t *testing.T) {
+	const version = "v9.9.9"
+
+	newBinary := workingProgram(t, "the new version")
+	sum := sha256.Sum256(newBinary)
+
+	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
+
+	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	old := workingProgram(t, "the old version")
+
+	if err := os.WriteFile(self, old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := source.InstallOver(context.Background(), release, self); err != nil {
+		t.Fatalf("installing: %v", err)
+	}
+
+	if err := RollbackOver(self); err != nil {
+		t.Fatalf("rolling back: %v", err)
+	}
+
+	got, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(got) != string(old) {
+		t.Error("the previous version is not back at its own path")
+	}
+
+	// The one rolled back from is kept rather than dropped: whoever is doing this
+	// may want to look at what they rolled back from, and it is one file.
+	if _, err := os.Stat(self + ".failed"); err != nil {
+		t.Error("the version that was rolled back from was thrown away")
+	}
+
+	// And the note saying an update is waiting goes, or the card would keep
+	// promising a version that is no longer on disk.
+	if _, err := os.Stat(self + ".pending"); err == nil {
+		t.Error("the pending note survived the rollback")
+	}
+}
+
+// With nothing to go back to, a rollback says so rather than removing the
+// working binary.
+func TestARollbackWithNothingToGoBackToIsRefused(t *testing.T) {
+	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+
+	if err := os.WriteFile(self, []byte("the only version"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RollbackOver(self); err == nil {
+		t.Fatal("a rollback with no previous version reported success")
+	}
+
+	if _, err := os.Stat(self); err != nil {
+		t.Error("the only binary was moved aside by a rollback that had nowhere to go")
+	}
+}
+
+// Starting the new version clears the note, and keeps the way back.
+//
+// The tempting version of this clears both: the update is done, the process is
+// the new version, tidy up. It is wrong, and quietly - starting is not serving.
+// A version that comes up far enough to reach the start-up tidy and then fails
+// on the migration, on the port, or on a certificate has already destroyed the
+// binary somebody would have gone back to, in the same second it became the
+// thing they needed.
+func TestStartingTheNewVersionKeepsThePreviousOne(t *testing.T) {
+	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+
+	for name, body := range map[string]string{
+		"":         "the new version",
+		".old":     "the version before it",
+		".pending": "v9.9.9",
+	} {
+		if err := os.WriteFile(self+name, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	removeLeftovers(self)
+
+	if _, err := os.Stat(self + ".pending"); err == nil {
+		t.Error("the update is still reported as waiting after the version it " +
+			"installed has started")
+	}
+
+	if _, err := os.Stat(self + ".old"); err != nil {
+		t.Error("starting the new version threw away the one to go back to")
+	}
 }
