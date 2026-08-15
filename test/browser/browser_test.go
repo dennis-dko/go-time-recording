@@ -23,6 +23,7 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -189,6 +190,23 @@ func (p *page) thrown() string {
 	}
 
 	return "\n\nthe page threw:\n" + strings.Join(p.scriptErrors, "\n")
+}
+
+// evalJSON runs an expression that returns JSON and unpacks it.
+//
+// Walking a map[string]any of chromedp's structured values in Go is far less
+// readable than the thing being asserted deserves. The page stringifies, this
+// unpacks, and the case reads like a case.
+func (p *page) evalJSON(expression string, into any) {
+	p.t.Helper()
+
+	var raw string
+
+	p.run("read the page's answer", chromedp.Evaluate(expression, &raw))
+
+	if err := json.Unmarshal([]byte(raw), into); err != nil {
+		p.t.Fatalf("reading the page's answer: %v\n\n%.400s", err, raw)
+	}
 }
 
 // run executes actions and fails the test with the application's log attached,

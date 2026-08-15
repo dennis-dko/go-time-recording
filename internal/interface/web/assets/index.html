@@ -707,7 +707,7 @@
         <p class="muted" data-i18n="maint.hint">Turns everyone else away with a notice while the installation stays running. Use it before restoring or moving the database: time recorded during that window is lost when the snapshot goes back, and whoever recorded it has no way to know.</p>
         <p class="muted minus" data-i18n="maint.who">While it is on, only this built-in administrator can work. Everyone else, including other administrators, is turned away — that is the point.</p>
         <div class="grid">
-          <label><input type="checkbox" name="enabled"><span data-i18n="maint.enabled">Out of service</span></label>
+          <label class="switch"><input type="checkbox" name="enabled"><span class="switch-track"></span><span class="switch-label" data-i18n="maint.enabled">Out of service</span></label>
           <label class="wide" data-i18n="maint.message">Notice shown to everyone else<input type="text" name="message" maxlength="300" data-i18n-placeholder="maint.messagePlaceholder" placeholder="Back at 14:00">
           </label>
         </div>
@@ -890,10 +890,10 @@
         <h2 data-i18n="admin.ldap">LDAP connection</h2>
         <p class="muted" data-i18n="admin.ldapHint">When enabled, passwords are checked against the directory. Unknown users are created locally on their first successful sign-in.</p>
         <div class="perm-grid">
-          <label><input type="checkbox" name="enabled"><span data-i18n="admin.ldapEnabled">Enabled</span></label>
-          <label><input type="checkbox" name="startTls"><span>StartTLS</span></label>
-          <label><input type="checkbox" name="useTls"><span>LDAPS</span></label>
-          <label><input type="checkbox" name="skipVerify"><span data-i18n="admin.skipVerify">Do not verify certificate (unsafe)</span></label>
+          <label class="switch"><input type="checkbox" name="enabled"><span class="switch-track"></span><span class="switch-label" data-i18n="admin.ldapEnabled">Enabled</span></label>
+          <label class="switch"><input type="checkbox" name="startTls"><span class="switch-track"></span><span class="switch-label">StartTLS</span></label>
+          <label class="switch"><input type="checkbox" name="useTls"><span class="switch-track"></span><span class="switch-label">LDAPS</span></label>
+          <label class="switch"><input type="checkbox" name="skipVerify"><span class="switch-track"></span><span class="switch-label" data-i18n="admin.skipVerify">Do not verify certificate (unsafe)</span></label>
         </div>
         <div class="grid">
           <label data-i18n="admin.dbHost">Host<input type="text" name="host"></label>
@@ -982,8 +982,10 @@
           <div class="row log-buttons">
             <button type="button" class="secondary" id="log-pause" data-i18n="log.pause">Pause</button>
             <button type="button" class="secondary" id="log-clear" data-i18n="log.clear">Clear view</button>
-            <label class="log-follow" data-i18n="log.follow">
-              <input type="checkbox" id="log-follow" checked> Follow
+            <label class="switch log-follow">
+              <input type="checkbox" id="log-follow" checked>
+              <span class="switch-track"></span>
+              <span class="switch-label" data-i18n="log.follow">Follow</span>
             </label>
           </div>
         </div>
