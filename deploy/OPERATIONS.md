@@ -682,7 +682,31 @@ UPDATE_CHECK=false
 # Or point it somewhere reachable - a mirror, a proxy, a fork's own releases -
 # rather than switching the whole thing off.
 UPDATE_FEED=https://api.github.com/repos/you/your-fork/releases/latest
+
+# Only if the check starts answering 403. See below for why it would.
+UPDATE_TOKEN=
 ```
+
+### When the check says 403
+
+The feed allows a number of checks per hour **per address**, not per
+installation. A dozen instances behind one office connection draw from the same
+allowance, and so does everything else on that connection that talks to the same
+service. Running out answers `403`, which reads as a permission problem and is
+not one — nothing about this installation's rights has changed.
+
+The card says so in those words, with what the feed itself replied folded away
+underneath. Three ways out, in order of how much trouble they are:
+
+1. **Wait.** The allowance refills each hour, and the message says when.
+2. **Set `UPDATE_TOKEN`.** Any token the feed accepts; the count is then per
+   token and far larger. It needs no permissions — this only reads a public
+   release list.
+3. **Point `UPDATE_FEED` at a mirror** you control, which is the answer for an
+   installation that should not be asking a public service on a schedule anyway.
+
+Nothing is broken while this lasts. The application runs on the version it has;
+only the question "is there a newer one" goes unanswered.
 
 Only an account that administers the installation and has no working day of its
 own sees the card at all - the built-in administrator, or somebody holding the

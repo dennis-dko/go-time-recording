@@ -72,19 +72,30 @@ type Source struct {
 	// Client is who does the asking. Given a short timeout by New, because this
 	// runs inside a request somebody is waiting on.
 	Client *http.Client
+
+	// Token identifies this installation to the feed, where it has been given
+	// one. Optional and empty by default: checking for a release needs no
+	// credentials and asking for one would be asking every installation to create
+	// an account somewhere to be told a version number.
+	//
+	// What it buys is headroom. Sixty checks an hour are counted per address, not
+	// per installation, so a dozen instances behind one office connection share
+	// sixty between them; with a token the count is per token and far larger.
+	Token string
 }
 
 // DefaultAPI is where the releases of this project live.
 const DefaultAPI = "https://api.github.com/repos/dennis-dko/go-time-recording/releases/latest"
 
 // New creates a source with sensible limits.
-func New(api string) *Source {
+func New(api, token string) *Source {
 	if strings.TrimSpace(api) == "" {
 		api = DefaultAPI
 	}
 
 	return &Source{
-		API: api,
+		API:   api,
+		Token: strings.TrimSpace(token),
 
 		// Short, and no keep-alive worth speaking of: this is a courtesy lookup
 		// on an administration screen, not something the application needs.
@@ -116,6 +127,19 @@ func (s *Source) Latest(ctx context.Context) (Release, error) {
 
 	req.Header.Set("Accept", "application/vnd.github+json")
 
+	// GitHub asks every caller to identify itself and refuses some that do not.
+	// Go sends "Go-http-client/1.1" by default, which is a caller nobody can tell
+	// apart from any other Go program on the same address.
+	req.Header.Set("User-Agent", "go-time-recording")
+
+	// A token where the installation has one. Unauthenticated callers get sixty
+	// requests an hour *per address*, which is generous for one instance and not
+	// generous at all for a dozen behind one office address - and the answer when
+	// it runs out is a 403 that looks like a permission problem.
+	if s.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.Token)
+	}
+
 	res, err := s.Client.Do(req)
 	if err != nil {
 		return Release{}, fmt.Errorf("cannot reach the release feed: %w", err)
@@ -124,7 +148,7 @@ func (s *Source) Latest(ctx context.Context) (Release, error) {
 	defer func() { _ = res.Body.Close() }()
 
 	if res.StatusCode != http.StatusOK {
-		return Release{}, fmt.Errorf("the release feed answered %d", res.StatusCode)
+		return Release{}, feedRefusal(res)
 	}
 
 	var body struct {
@@ -527,4 +551,55 @@ func Cleanup() {
 	}
 
 	removeLeftovers(self)
+}
+
+// feedRefusal explains what the release feed said, rather than only its number.
+//
+// A bare "the release feed answered 403" was the whole message, and it reads as a
+// permission problem this installation could do something about. It almost never
+// is. GitHub allows sixty unauthenticated requests an hour per address, and every
+// instance behind one office connection draws from the same sixty - so the usual
+// cause is arithmetic rather than authorisation, and the answer says so.
+//
+// GitHub puts the reason in the body and the counters in the headers. Both were
+// being read and thrown away.
+func feedRefusal(res *http.Response) error {
+	// Bounded: this is somebody else's service answering, and the interesting part
+	// is a sentence.
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+
+	var said struct {
+		Message string `json:"message"`
+	}
+
+	_ = json.Unmarshal(body, &said)
+
+	// The counters, which say plainly whether this was the limit.
+	remaining := res.Header.Get("X-RateLimit-Remaining")
+	limited := res.StatusCode == http.StatusForbidden && remaining == "0"
+
+	if !limited && res.StatusCode == http.StatusTooManyRequests {
+		limited = true
+	}
+
+	if limited {
+		when := "shortly"
+
+		if reset := res.Header.Get("X-RateLimit-Reset"); reset != "" {
+			if seconds, err := strconv.ParseInt(reset, 10, 64); err == nil {
+				when = "at " + time.Unix(seconds, 0).UTC().Format("15:04 MST")
+			}
+		}
+
+		return fmt.Errorf("the release feed allows only so many checks per hour from "+
+			"one address and this one has used them up; it will answer again %s "+
+			"(%s)", when, strings.TrimSpace(said.Message))
+	}
+
+	if said.Message != "" {
+		return fmt.Errorf("the release feed answered %d: %s",
+			res.StatusCode, strings.TrimSpace(said.Message))
+	}
+
+	return fmt.Errorf("the release feed answered %d", res.StatusCode)
 }

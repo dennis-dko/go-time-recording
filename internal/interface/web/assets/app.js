@@ -15,6 +15,15 @@ const API = '/api/v1';
 /** Cached lookups so tables can show names instead of raw ids. */
 const cache = { users: [], projects: [], roles: [], permissions: [] };
 
+/**
+ * The branding as it was last read.
+ *
+ * Kept because the configured texts can refer to it - a footer saying "{instance}
+ * {version}" is drawn from here - and because a language change redraws those
+ * texts without asking the server again.
+ */
+let lastBranding = {};
+
 /** The signed-in user, their permissions, and whether auth is on at all. */
 let me = { user: null, permissions: [], authEnabled: false };
 
@@ -474,6 +483,130 @@ function stopPermissionPolling() {
   permissionPoll = null;
 }
 
+/**
+ * Tells whoever may install one that a newer version exists.
+ *
+ * The version card says the same thing and says it on one screen, which nobody
+ * visits to find out. An installation can sit three releases behind because the
+ * only place that mentions it is the place you go once a quarter.
+ *
+ * A banner rather than a toast, because a toast fades and this is not urgent
+ * enough to interrupt but is worth not losing. Dismissable, because it is news
+ * rather than a state - the application works perfectly well on the version it is
+ * on - and the dismissal is remembered against that version rather than for ever,
+ * so the next release says so again.
+ *
+ * Per device rather than per account: what somebody has already seen is a fact
+ * about the screen in front of them.
+ */
+const RELEASE_SEEN_KEY = 'gtr.releaseSeen';
+
+/** How often an open tab asks again. A day left open should notice a release. */
+const RELEASE_POLL_MS = 60 * 60 * 1000;
+
+let releasePoll = null;
+
+/** The version the banner is currently about, so dismissing names the right one. */
+let offeredRelease = '';
+
+function startReleaseWatch() {
+  stopReleaseWatch();
+
+  // Only for the people who can act on it. Everybody else would be told about
+  // work they cannot do, by an application that will not stop mentioning it.
+  if (!can('settings:manage')) return;
+
+  checkForRelease();
+
+  releasePoll = setInterval(() => {
+    if (document.hidden) return;
+
+    checkForRelease();
+  }, RELEASE_POLL_MS);
+}
+
+function stopReleaseWatch() {
+  clearInterval(releasePoll);
+  releasePoll = null;
+
+  const banner = $('#release-banner');
+  if (banner) banner.hidden = true;
+}
+
+async function checkForRelease() {
+  let state;
+
+  try {
+    state = await api('/settings/update');
+  } catch {
+    // A feed that cannot be reached is not this installation being broken, and
+    // the version card says so where somebody has gone looking. A banner about
+    // it would be a banner about somebody else's service.
+    return;
+  }
+
+  // Newer rather than installable: a container cannot install it from here, and
+  // the person reading this is still the one who should know.
+  if (!state?.newer || !state.latest || dismissedRelease() === state.latest) {
+    $('#release-banner').hidden = true;
+    stopRedrawing('release');
+
+    return;
+  }
+
+  offeredRelease = state.latest;
+
+  // Through the redraw registry, so the sentence follows a language change like
+  // everything else the script writes.
+  redrawable('release', () => drawReleaseBanner(state));
+}
+
+/** What was last dismissed, if anything. */
+function dismissedRelease() {
+  try {
+    return localStorage.getItem(RELEASE_SEEN_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function drawReleaseBanner(state) {
+  const banner = $('#release-banner');
+  if (!banner) return;
+
+  $('#release-text').textContent = fillIn(
+    t('update.available', 'Version {0} is available. This installation runs {1}.'),
+    [state.latest, state.running]);
+
+  banner.hidden = false;
+}
+
+function wireReleaseBanner() {
+  const banner = $('#release-banner');
+  if (!banner) return;
+
+  $('#release-dismiss').addEventListener('click', () => {
+    banner.hidden = true;
+    stopRedrawing('release');
+
+    // Against the version, so this is "I know about that one" rather than "stop
+    // telling me anything".
+    try {
+      localStorage.setItem(RELEASE_SEEN_KEY, offeredRelease);
+    } catch {
+      // Storage refused: the banner comes back on the next load, which is a
+      // smaller failure than never showing it.
+    }
+  });
+
+  $('#release-open').addEventListener('click', () => {
+    switchView('admin');
+
+    const card = $('#update-card');
+    if (card) card.scrollIntoView({ block: 'center' });
+  });
+}
+
 // --------------------------------------------------------------- announcements
 
 /**
@@ -676,6 +809,120 @@ const TOAST_LIMIT = 4;
 const TOAST_MIN_MS = 4000;
 const TOAST_MAX_MS = 20000;
 const TOAST_MS_PER_CHAR = 60;
+
+/**
+ * The placeholders an administrator may put in the texts they configure.
+ *
+ * The banner, the footer and the legal notice are written once and then read for
+ * years, and the things that date them are exactly the things nobody remembers to
+ * come back and change: a copyright year, a version number, the instance's own
+ * name after somebody renames it. So those are written as a placeholder and
+ * worked out when the page is drawn.
+ *
+ * Deliberately few. Every one of these is a thing somebody would otherwise type
+ * as a literal and be wrong about later; anything else belongs in the text
+ * itself.
+ */
+function placeholderValues() {
+  const now = new Date();
+
+  return {
+    year: String(now.getFullYear()),
+    date: fmtDate(todayISO()),
+    time: new Intl.DateTimeFormat(activeLocale(), {
+      hour: '2-digit', minute: '2-digit',
+    }).format(now),
+    version: lastBranding.version ?? '',
+    instance: lastBranding.title || 'Time Recording',
+  };
+}
+
+/**
+ * Writes a configured text into an element: placeholders filled in, links made
+ * into links, and everything else left as the words somebody typed.
+ *
+ * Not a rich text editor, and not HTML. The three texts this renders are shown on
+ * the sign-in screen, before anybody has authenticated - so whatever an
+ * administrator writes here is rendered for every visitor, including the next
+ * administrator. Accepting HTML would mean accepting a script tag from anyone
+ * holding settings:manage, and sanitising HTML correctly is a problem that is
+ * never finished.
+ *
+ * What is actually wanted is a date that stays current and the occasional link.
+ * Both fit in a grammar small enough to read in one line: [words](address). It is
+ * built as DOM nodes rather than markup, so there is no parser to be wrong and
+ * nothing is ever assigned as innerHTML.
+ */
+function renderConfiguredText(target, text) {
+  if (!target) return;
+
+  target.replaceChildren();
+
+  const filled = fillPlaceholders(text ?? '');
+
+  if (!filled) {
+    target.hidden = true;
+
+    return;
+  }
+
+  target.hidden = false;
+
+  // [label](url), and everything between the matches as plain text.
+  const pattern = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+  let at = 0;
+
+  for (const match of filled.matchAll(pattern)) {
+    if (match.index > at) {
+      target.append(document.createTextNode(filled.slice(at, match.index)));
+    }
+
+    target.append(configuredLink(match[1], match[2]));
+    at = match.index + match[0].length;
+  }
+
+  if (at < filled.length) target.append(document.createTextNode(filled.slice(at)));
+}
+
+/** Replaces {year} and its companions with what they mean right now. */
+function fillPlaceholders(text) {
+  const values = placeholderValues();
+
+  return String(text).replace(/\{(\w+)\}/g, (whole, name) => (
+    Object.hasOwn(values, name) ? values[name] : whole
+  ));
+}
+
+/**
+ * One link, or the words on their own where the address is not one this should
+ * follow.
+ *
+ * Three schemes and no others. javascript: is the obvious one to refuse and data:
+ * is the one that gets forgotten - both would turn a line of configured text into
+ * something that runs.
+ */
+function configuredLink(label, url) {
+  let parsed;
+
+  try {
+    parsed = new URL(url, window.location.origin);
+  } catch {
+    return document.createTextNode(label);
+  }
+
+  if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+    return document.createTextNode(label);
+  }
+
+  return el('a', {
+    href: parsed.href,
+    text: label,
+    // Somebody else's page opened from ours has no business reaching back into
+    // it, and an administrator's link is still somebody else's page.
+    rel: 'noreferrer noopener',
+    target: '_blank',
+  });
+}
 
 /** Builds an element; text is assigned via textContent, never innerHTML. */
 function el(tag, props = {}, ...children) {
@@ -1817,8 +2064,11 @@ const TRANSLATIONS = {
     'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
     'err.csrfRejected': 'Diese Seite ist zu lange geöffnet gewesen. Bitte neu laden und noch einmal versuchen.',
     'err.maintenance': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
+    'err.defaultRoleUndeletable': '„{0}“ ist eine mitgelieferte Rolle und kann nicht gelöscht werden.',
     'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
     'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden.',
+    'update.available': 'Version {0} ist verfügbar. Diese Installation läuft mit {1}.',
+    'update.open': 'Zu den Einstellungen',
     'announce.installing': 'Eine neue Version ({0}) wird installiert. Du kannst weiterarbeiten; die Anwendung startet gleich neu.',
     'announce.restarting': 'Die Anwendung startet gerade in Version {0}. Diese Seite lädt sich gleich von selbst neu.',
     'announce.pending': 'Version {0} ist installiert und wird beim nächsten Start der Anwendung aktiv. Bis dahin ändert sich nichts.',
@@ -2026,6 +2276,14 @@ const TRANSLATIONS = {
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.entrySaved': 'Eintrag gespeichert',
     'maint.confirm': 'Installation außer Betrieb nehmen? Alle außer diesem Konto werden abgewiesen.',
+    'admin.markupLegend': 'Was in Banner, Fußzeile und rechtlichem Hinweis möglich ist',
+    'markup.year': 'Das aktuelle Jahr — eine Copyright-Zeile bleibt richtig, ohne dass jemand sie ändert',
+    'markup.date': 'Das heutige Datum, geschrieben wie es die lesende Person schreibt',
+    'markup.time': 'Die aktuelle Uhrzeit',
+    'markup.version': 'Die hier laufende Version',
+    'markup.instance': 'Der oben eingestellte Titel',
+    'markup.link': 'Ein Link. Nur http-, https- und mailto-Adressen werden zu Links; alles andere wird als der geschriebene Text angezeigt',
+    'markup.note': 'Alles Übrige wird genau so angezeigt, wie es getippt wurde. Diese Texte lesen auch Personen, die noch nicht angemeldet sind — deshalb ist es kein HTML.',
     'maint.enabled': 'Außer Betrieb',
     'maint.hint': 'Weist alle anderen mit einem Hinweis ab, während die Installation weiterläuft. Vor dem Wiederherstellen oder Verschieben der Datenbank zu benutzen: in diesem Zeitraum erfasste Zeiten sind verloren, sobald der Stand zurückgespielt wird, und wer sie erfasst hat, erfährt es nicht.',
     'maint.message': 'Hinweis für alle anderen',
@@ -2087,6 +2345,7 @@ const TRANSLATIONS = {
     'role.empty': 'Keine Rollen vorhanden.',
     'role.permissions': 'Berechtigungen',
     'role.rights': 'Rechte',
+    'role.shippedRole': 'Mitgelieferte Rolle',
     'role.systemRole': 'Systemrolle',
     'role.desc.admin': 'Verwaltet die Installation, ihre Konten und deren Rollen – und erfasst selbst keine Zeit.',
     'role.desc.user': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
@@ -2648,7 +2907,11 @@ async function loadRoles() {
         onclick: () => editRole(role),
       }));
 
-      if (!role.isSystem) {
+      // Shipped roles are not offered a delete, because the server refuses one.
+      // The admin role is fixed outright; the other two can be edited and cannot
+      // be removed, since they are what every new account and every synchronised
+      // one is assigned.
+      if (!role.isSystem && !role.isDefault) {
         actions.append(deleteButton({
           label: `${t('field.role', 'Role')} "${roleTitle(role.name)}"`,
           path: `/roles/${role.id}`,
@@ -2658,7 +2921,14 @@ async function loadRoles() {
       }
     }
 
-    if (role.isSystem) actions.append(el('span', { class: 'muted', text: t('role.systemRole', 'System role') }));
+    if (role.isSystem) {
+      actions.append(el('span', { class: 'muted', text: t('role.systemRole', 'System role') }));
+    } else if (role.isDefault) {
+      actions.append(el('span', {
+        class: 'muted',
+        text: t('role.shippedRole', 'Shipped role'),
+      }));
+    }
 
     return el('tr', {},
       // The title, and the identifier under it for the three that have both: the
@@ -3268,6 +3538,21 @@ const administersOnly = () => !me.authEnabled
 async function loadBranding() {
   const branding = await api('/branding');
 
+  lastBranding = branding;
+
+  // Remembered on the device, so the next load has the instance's own name and
+  // mark before it is painted rather than a second later. theme.js reads this;
+  // see the note there for why a reload otherwise flickers back to a name nobody
+  // chose.
+  try {
+    localStorage.setItem('gtr.branding', JSON.stringify({
+      title: branding.title ?? '',
+      logo: branding.logo ?? '',
+    }));
+  } catch {
+    // Private browsing refuses storage outright, which costs only the flicker.
+  }
+
   document.title = branding.title || 'Time Recording';
   $('#app-title').textContent = branding.title || 'Time Recording';
 
@@ -3281,12 +3566,12 @@ async function loadBranding() {
   }
 
   // The announcement banner is separate from the "change your password" one.
-  const banner = $('#instance-banner');
-  banner.textContent = branding.banner ?? '';
-  banner.hidden = !branding.banner;
-
-  $('#footer-text').textContent = branding.footerText ?? '';
-  $('#footer-legal').textContent = branding.legalNotice ?? '';
+  // Through the renderer, so a {year} in a copyright line stays right and a link
+  // in a footer is a link. Drawn rather than assigned, because none of this is
+  // HTML - see renderConfiguredText for why it must not be.
+  renderConfiguredText($('#instance-banner'), branding.banner);
+  renderConfiguredText($('#footer-text'), branding.footerText);
+  renderConfiguredText($('#footer-legal'), branding.legalNotice);
 
   const company = $('#footer-company');
   company.textContent = branding.companyName ?? '';
@@ -4038,6 +4323,7 @@ async function doLogout() {
   stopLogPolling();
   stopPermissionPolling();
   stopAnnouncements();
+  stopReleaseWatch();
 
   me = { user: null, permissions: [], authEnabled: true };
 
@@ -5235,7 +5521,15 @@ function renderUpdate(state) {
   // The server's own words for a lookup that failed - what went wrong reaching
   // somebody else's service is not a fixed set of sentences.
   if (state.problem) {
-    problem.textContent = `${t('update.unreachable', 'Could not ask for the newest version')}: ${state.problem}`;
+    // The sentence in the reader's language, and whatever the feed actually said
+    // folded away underneath - the same shape every other failure here takes.
+    // It used to be pasted on the end, so a German screen ended with a line of
+    // somebody else's English: "… konnte nicht abgefragt werden: the release feed
+    // answered 403".
+    showRefusal(problem, {
+      message: t('update.unreachable', 'Could not ask for the newest version'),
+      detail: state.problem,
+    });
   }
 
   hint.hidden = false;
@@ -7872,6 +8166,9 @@ async function refreshAll() {
   // sign-in screen's business what happens after they get there.
   startAnnouncements();
 
+  // Whether a newer version exists, for whoever may do something about it.
+  startReleaseWatch();
+
   // Before the booking date is worked out, because that depends on the zone -
   // and on a first sign-in the zone is the thing being adopted.
   if (await adoptBrowserDefaults()) await loadMe();
@@ -8170,6 +8467,7 @@ async function init() {
     wireTelemetry();
     wireRestart();
     wireUpdate();
+    wireReleaseBanner();
     wireTimer();
     wireStatistics();
     wireReportChart();
