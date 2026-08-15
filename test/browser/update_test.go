@@ -5,7 +5,6 @@ package browser
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -62,9 +61,6 @@ func TestTheUpdateCardOffersWhatThisDeploymentCanDo(t *testing.T) {
 		t.Error("the card does not link to the release itself")
 	}
 
-	var shot []byte
-	p.run("shoot", chromedp.Screenshot("#update-card", &shot, chromedp.ByID))
-	_ = os.WriteFile("update-card.png", shot, 0o600)
 }
 
 // Somebody who administers but is not that kind of administrator gets no card at
