@@ -93,8 +93,19 @@
  *
  * Reserving the bar's height here fixes all of them at once. Found by a browser
  * test whose click on a submit button landed on a navigation tab instead.
+ *
+ * Measured rather than written down. The number used to be 76, which was the
+ * bar's height when somebody looked - and the bar is a wrapping flex row, so its
+ * height depends on the window's width and on everything in it. A narrow window
+ * wraps it into three rows and 180px; growing the logo by twelve pixels moves it
+ * too. Both of those are changes nobody would think to check a scroll offset
+ * against, and the symptom is a click that lands on the bar instead of the thing
+ * under it - which reads as a control that does not work.
+ *
+ * app.js keeps --topbar-height in step with the real bar. The fallback is the old
+ * number, for the moment before the script runs.
  */
-html { scroll-padding-top: 76px; }
+html { scroll-padding-top: var(--topbar-height, 76px); }
 
 /*
  * The `hidden` attribute must beat every layout rule below. Without this,
@@ -856,6 +867,19 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   padding: 20px;
   position: fixed;
   z-index: 30;
+
+  /* Reachable on a short window.
+   *
+   * A fixed overlay that centres its contents clips whatever does not fit, at
+   * both ends, and nothing scrolls it back into view - so on a laptop with a
+   * toolbar, or a phone held sideways, the submit button can simply not be
+   * there. Nothing looks wrong: the form is on the screen, one button short of
+   * the bottom of it.
+   *
+   * Found when the shipped mark started appearing above the card and pushed a
+   * sign-in past the bottom of a short window. Anything that grows this screen
+   * would have done it. */
+  overflow: auto;
 }
 
 /* Bounded to the card's width so a long notice does not stretch across a wide
@@ -1077,6 +1101,13 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    its own: a wordmark at 28px is a smudge, and this is the one place the
    installation says whose it is. */
 .brand-logo { height: 40px; max-width: 220px; object-fit: contain; }
+
+/* The shipped mark is drawn square for a tab, so it is given a square's room.
+   Left at a banner's width it would sit in a box four times too wide, with the
+   header's words pushed away from a mark that is not there. */
+.shipped-mark { max-width: 40px; }
+
+.login-card .shipped-mark { height: 64px; max-width: 64px; width: 64px; }
 
 .logo-preview {
   background: var(--bg);

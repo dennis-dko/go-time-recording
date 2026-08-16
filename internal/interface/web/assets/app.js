@@ -1021,6 +1021,46 @@ function faviconFingerprint(logo) {
   return serverFaviconVersion;
 }
 
+/**
+ * Keeps the reserved space under the sticky bar equal to the bar.
+ *
+ * The stylesheet reserves scroll-padding-top so that anything scrolled to the top
+ * of the window lands below the bar rather than behind it - a click, a keyboard
+ * focus, an in-page anchor, scrollIntoView. That reservation was a number
+ * somebody measured once.
+ *
+ * The bar is a wrapping flex row. Its height depends on the width of the window
+ * and on everything in it, so a narrow window turns one row into three, and the
+ * reservation silently stops covering it. What that looks like is a tab that does
+ * not open: the click lands on the bar sitting over it.
+ *
+ * So it is measured, and re-measured whenever the bar changes shape.
+ */
+function trackTopbarHeight() {
+  const bar = document.querySelector('.topbar');
+  if (!bar) return;
+
+  const apply = () => {
+    const height = Math.ceil(bar.getBoundingClientRect().height);
+    if (height > 0) document.documentElement.style.setProperty('--topbar-height', `${height}px`);
+  };
+
+  apply();
+
+  // Everything that changes it: the window's width, a logo arriving, a tab
+  // appearing when rights change, a language whose words are longer.
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(apply).observe(bar);
+
+    return;
+  }
+
+  window.addEventListener('resize', apply);
+}
+
+/** The mark an instance carries when nobody has configured one. */
+const SHIPPED_MARK = '/favicon.svg';
+
 /** What the icon currently shown was made from. */
 let lastFaviconLogo = null;
 
@@ -2450,6 +2490,7 @@ const TRANSLATIONS = {
     'user.empty': 'Noch keine Benutzer angelegt.',
     'user.initialPassword': 'leer = Initialpasswort',
     'user.deleteConfirm': 'Trotzdem löschen? Die erfassten Zeiten sind danach unwiederbringlich verloren.',
+    'user.ownAccount': 'Inhaberkonto',
     'user.systemAccount': 'Systemkonto',
   },
 };
@@ -2837,7 +2878,22 @@ async function loadUsers() {
       }));
     }
 
-    if (u.isSystem) actions.append(el('span', { class: 'muted', text: t('user.systemAccount', 'System account') }));
+    // What this row is, where it is not simply another account. The two are
+    // different facts and were being told apart by whichever came first: the
+    // built-in administrator is the installation's own account, and the row
+    // somebody is reading their own name in is theirs. Both can be true, and the
+    // one that matters to the person looking is which one is theirs.
+    if (u.id === me.user?.id) {
+      actions.append(el('span', {
+        class: 'muted',
+        text: t('user.ownAccount', 'Your account'),
+      }));
+    } else if (u.isSystem) {
+      actions.append(el('span', {
+        class: 'muted',
+        text: t('user.systemAccount', 'System account'),
+      }));
+    }
 
     // A directory account shown as an ordinary one invites two useless
     // actions: setting a password that is never checked, and a deletion the
@@ -2986,8 +3042,13 @@ function editRole(role) {
   form.elements.id.value = String(role.id);
   form.elements.name.value = role.name;
   form.elements.description.value = role.description ?? '';
-  form.elements.name.readOnly = role.isSystem;
-  renderPermissionCheckboxes(role.permissions, { fixed: role.isSystem });
+  // Every shipped role, not only the administrator's: the server refuses a
+  // rename or a changed right on all three, and a form that offers what the
+  // server refuses is worse than one that does not offer it.
+  const shipped = role.isSystem || role.isDefault;
+
+  form.elements.name.readOnly = shipped;
+  renderPermissionCheckboxes(role.permissions, { fixed: shipped });
   $('#role-form-title').textContent = t('role.edit', 'Edit role')
     .replace('{0}', roleTitle(role.name));
   switchView('roles');
@@ -3570,13 +3631,24 @@ async function loadBranding() {
   document.title = branding.title || 'Time Recording';
   $('#app-title').textContent = branding.title || 'Time Recording';
 
+  // The shipped mark where nothing has been configured, in both places.
+  //
+  // They used to be empty until somebody uploaded something, which left a header
+  // that was words alone and a sign-in screen with a gap where a mark goes - on
+  // an installation that has simply not got round to it, which is most of them on
+  // the first day. The tab has had a default all along; these two now have the
+  // same one.
   for (const holder of ['#brand-logo', '#login-logo']) {
     const img = $(holder);
     if (!img) continue;
 
-    img.src = branding.logo || '';
-    img.hidden = !branding.logo;
+    img.src = branding.logo || SHIPPED_MARK;
+    img.hidden = false;
     img.alt = branding.title || '';
+
+    // The shipped mark is a square drawn for a tab, so it is given the room a
+    // square needs rather than the width a wordmark banner is allowed.
+    img.classList.toggle('shipped-mark', !branding.logo);
   }
 
   // The announcement banner is separate from the "change your password" one.
@@ -3788,9 +3860,28 @@ function wireAdmin() {
   $('#form-branding').addEventListener('submit', (e) => {
     e.preventDefault();
     const body = { ...formData(e.target), logo: pendingLogo };
+    // Whether the tab's own identity is changing, decided before the save so the
+    // comparison is against what is currently on screen.
+    const markChanged = (lastBranding.logo ?? '') !== (pendingLogo ?? '');
+
     mutate(() => api('/settings/branding', { method: 'PUT', body: JSON.stringify(body) }),
       t('admin.saved', 'Settings saved'),
-      async () => { await loadBranding(); await loadAdmin(); });
+      async () => {
+        await loadBranding();
+        await loadAdmin();
+
+        // A changed mark means the page is reloaded, and it is the one setting
+        // that needs it. Every engine takes the tab icon from the document it was
+        // given; Firefox in particular ignores an icon link inserted afterwards
+        // entirely, so taking a logo off and saving left the old one in the tab
+        // until something else caused a load. Chrome honours the swap, which is
+        // why this looked finished.
+        //
+        // Only for the mark, and only when it actually changed - reloading after
+        // every save on this screen would throw away whatever else was being
+        // edited for no reason at all.
+        if (markChanged) window.location.reload();
+      });
   });
 
   $('#form-datasource').elements.dialect.addEventListener('change', syncDatasourceFields);
@@ -8482,6 +8573,7 @@ async function init() {
     wireRestart();
     wireUpdate();
     wireReleaseBanner();
+    trackTopbarHeight();
     wireTimer();
     wireStatistics();
     wireReportChart();

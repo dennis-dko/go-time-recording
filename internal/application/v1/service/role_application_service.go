@@ -88,15 +88,28 @@ func (s *RoleApplicationService) UpdateRole(
 	//
 	// The way to let somebody both work here and administer is to give a person the
 	// combined role. That is a decision about a colleague, which is the point.
-	if role.IsSystem {
+	// Every role this application ships with, not only the administrator's.
+	//
+	// It was the administrator's alone at first, on the reasoning that the other
+	// two are ordinary roles whose rights an installation may want to adjust. What
+	// that misses is that they are also the answer to questions asked elsewhere:
+	// the role every new account is given, the one the directory synchronisation
+	// assigns, and the pair the interface names in its own words. A shipped role
+	// renamed or emptied breaks those quietly, and the installation is left with a
+	// role called something else granting something else under a name the
+	// interface still translates.
+	//
+	// A role that should grant something different is a new role. Making one is a
+	// minute's work and it says what it is.
+	if role.IsDefault() {
 		if name != nil && *name != role.Name {
-			return nil, apperror.Conflictf("the system role %q cannot be renamed", role.Name).
+			return nil, apperror.Conflictf("the shipped role %q cannot be renamed", role.Name).
 				WithCode("systemRoleUnrenamable", role.Name)
 		}
 
 		if permissions != nil && !sameRights(permissions, role.Permissions) {
 			return nil, apperror.Conflictf(
-				"the permissions of the system role %q cannot be changed", role.Name).
+				"the permissions of the shipped role %q cannot be changed", role.Name).
 				WithCode("systemRoleRightsFixed", role.Name)
 		}
 	}

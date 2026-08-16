@@ -100,6 +100,16 @@ func openWith(t *testing.T, env ...string) *page {
 		// a format written down here, so it holds whatever this is set to.
 		chromedp.Flag("lang", "en-US"),
 
+		// A window somebody might actually use.
+		//
+		// chromedp's default is 764px wide, which is narrower than any desktop and
+		// wide enough not to be a phone. The interface is responsive, so nothing
+		// was broken by it - but the top bar wraps into three rows at that width,
+		// and a suite whose geometry is an accident of a default is a suite that
+		// disagrees with the machine next to it. The one case that is about narrow
+		// screens sets its own size.
+		chromedp.WindowSize(1280, 900),
+
 		// The container images CI uses run as root, where Chrome refuses to
 		// start without this.
 		chromedp.NoSandbox,
