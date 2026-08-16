@@ -193,6 +193,20 @@ type BrandingResponse struct {
 	CompanyName string `json:"companyName"`
 	CompanyURL  string `json:"companyUrl"`
 	LegalNotice string `json:"legalNotice"`
+
+	// Translations carries the same four texts per language, for the interface to
+	// pick from. Sent whole rather than resolved here: which language a reader
+	// wants is decided in the browser - the switcher first, the browser's own
+	// setting otherwise - and this endpoint answers before anyone has signed in.
+	Translations map[string]BrandingTextResponse `json:"translations,omitempty"`
+}
+
+// BrandingTextResponse is one language's version of the texts.
+type BrandingTextResponse struct {
+	Title       string `json:"title"`
+	Banner      string `json:"banner"`
+	FooterText  string `json:"footerText"`
+	LegalNotice string `json:"legalNotice"`
 }
 
 // InstanceResponse is the branding plus the build serving it.
@@ -256,6 +270,31 @@ func (h *SettingsHandler) SaveBranding(c *gofr.Context) (any, error) {
 		CompanyName: req.CompanyName,
 		CompanyURL:  req.CompanyURL,
 		LegalNotice: req.LegalNotice,
+		Translations: func() map[string]model.BrandingText {
+			if len(req.Translations) == 0 {
+				return nil
+			}
+
+			out := make(map[string]model.BrandingText, len(req.Translations))
+
+			for language, text := range req.Translations {
+				// Only languages the interface has words for. A translation for a
+				// language nothing can select is a row nobody will ever read, and
+				// this is the one place a caller names the key.
+				if !model.IsSupportedLanguage(language) {
+					continue
+				}
+
+				out[language] = model.BrandingText{
+					Title:       text.Title,
+					Banner:      text.Banner,
+					FooterText:  text.FooterText,
+					LegalNotice: text.LegalNotice,
+				}
+			}
+
+			return out
+		}(),
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -667,6 +706,24 @@ func newBrandingResponse(b model.Branding) BrandingResponse {
 		CompanyName: b.CompanyName,
 		CompanyURL:  b.CompanyURL,
 		LegalNotice: b.LegalNotice,
+		Translations: func() map[string]BrandingTextResponse {
+			if len(b.Translations) == 0 {
+				return nil
+			}
+
+			out := make(map[string]BrandingTextResponse, len(b.Translations))
+
+			for language, text := range b.Translations {
+				out[language] = BrandingTextResponse{
+					Title:       text.Title,
+					Banner:      text.Banner,
+					FooterText:  text.FooterText,
+					LegalNotice: text.LegalNotice,
+				}
+			}
+
+			return out
+		}(),
 	}
 }
 

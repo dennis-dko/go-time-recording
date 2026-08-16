@@ -280,3 +280,93 @@ func TestTheSignInScreenIsUsableOnAShortWindow(t *testing.T) {
 			"scrolling to the bottom", out.ButtonBottom, out.Viewport)
 	}
 }
+
+// The texts an installation writes about itself can be written twice.
+//
+// A title, a banner, a footer and a legal notice are the only words on the screen
+// this application does not supply, so they were the only ones a language switch
+// could not reach: a German reader got the English banner because there was only
+// one banner.
+//
+// One language at a time on the form, because eight fields at once is a grid to
+// squint at - and an installation working in one language never opens the
+// switcher at all.
+func TestTheConfiguredTextsFollowTheReadersLanguage(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	// English first, which is the base: what a reader gets when their own
+	// language has nothing written for it.
+	p.run("write the English texts",
+		p.chooseOption("#branding-language", "en"),
+		chromedp.SetValue(`#form-branding input[name="banner"]`, "Company outing on Friday",
+			chromedp.ByQuery),
+		chromedp.SetValue(`#form-branding input[name="footerText"]`, "Made in Osnabrück",
+			chromedp.ByQuery))
+
+	p.run("and the German ones",
+		p.chooseOption("#branding-language", "de"),
+		chromedp.SetValue(`#form-branding input[name="banner"]`, "Betriebsausflug am Freitag",
+			chromedp.ByQuery),
+		chromedp.SetValue(`#form-branding input[name="footerText"]`, "Gemacht in Osnabrück",
+			chromedp.ByQuery),
+		p.click(`#form-branding button[type="submit"]`))
+
+	p.waitForText("#instance-banner", "outing")
+
+	// The reader is on English, so that is what they get.
+	if got := p.text("#instance-banner"); !strings.Contains(got, "Company outing") {
+		t.Errorf("an English reader is shown %q", got)
+	}
+
+	p.run("switch to German",
+		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
+		chromedp.Evaluate(
+			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+
+	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
+
+	// And the banner follows, without asking the server again or reloading.
+	p.waitForText("#instance-banner", "Betriebsausflug")
+
+	if got := p.text("#footer-text"); !strings.Contains(got, "Gemacht") {
+		t.Errorf("the footer still reads %q after switching to German", got)
+	}
+}
+
+// A language nobody has written for falls back to the base rather than to
+// nothing.
+//
+// The case that decides whether this feature is safe to have at all: an
+// installation that fills in one language and never opens the switcher must go on
+// working exactly as it did, for every reader.
+func TestALanguageWithNoTextsFallsBackRatherThanEmptying(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.run("write one language only",
+		p.chooseOption("#branding-language", "en"),
+		chromedp.SetValue(`#form-branding input[name="banner"]`, "One banner for everybody",
+			chromedp.ByQuery),
+		p.click(`#form-branding button[type="submit"]`))
+
+	p.waitForText("#instance-banner", "One banner")
+
+	p.run("switch to German",
+		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
+		chromedp.Evaluate(
+			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+
+	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
+
+	if got := p.text("#instance-banner"); !strings.Contains(got, "One banner") {
+		t.Errorf("a German reader is shown %q where nothing German was written; "+
+			"the banner should still be the one that exists", got)
+	}
+}

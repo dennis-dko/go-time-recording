@@ -166,6 +166,31 @@ func (s *UserApplicationService) UpdateUser(
 		return nil, err
 	}
 
+	// An account the directory owns is edited in the directory, with one
+	// exception.
+	//
+	// The name and the address are copied from the entry on every
+	// synchronisation, so changing them here lasts until the next run and then
+	// silently reverts - which is worse than being refused, because it looks like
+	// it worked. The role is the exception because the directory has no opinion
+	// about it: it is decided here, for a person the directory only says exists.
+	if existingUser.IsExternal {
+		if cmd.Name != nil && *cmd.Name != existingUser.Name {
+			return nil, apperror.Conflictf(
+				"%q comes from the directory; the name is kept in step with the entry "+
+					"there and changing it here would last until the next "+
+					"synchronisation", existingUser.Email).
+				WithCode("directoryAccountReadOnly", existingUser.Email)
+		}
+
+		if cmd.Email != nil && normalizeEmail(*cmd.Email) != existingUser.Email {
+			return nil, apperror.Conflictf(
+				"%q comes from the directory; the address is what the synchronisation "+
+					"matches on and is not changed here", existingUser.Email).
+				WithCode("directoryAccountReadOnly", existingUser.Email)
+		}
+	}
+
 	if cmd.Name != nil {
 		existingUser.Name = *cmd.Name
 	}
@@ -264,6 +289,20 @@ func (s *UserApplicationService) DeleteUser(ctx context.Context, cmd command.Del
 	if user.IsSystem {
 		return apperror.Conflictf("the built-in administrator cannot be deleted").
 			WithCode("adminUndeletable")
+	}
+
+	// An account the directory owns is removed by removing the entry there.
+	//
+	// Deleting it here removes a person and, with --purge, everything they
+	// recorded - and the next synchronisation creates the account again from the
+	// entry that is still in the directory. So the hours are gone, the account is
+	// back, and nothing about the directory has changed. Whoever meant to remove
+	// this person did not mean that.
+	if user.IsExternal {
+		return apperror.Conflictf(
+			"%q comes from the directory; remove the entry there and the next "+
+				"synchronisation removes this account", user.Email).
+			WithCode("directoryAccountUndeletable", user.Email)
 	}
 
 	// How much of the person's work is about to go with the account.
