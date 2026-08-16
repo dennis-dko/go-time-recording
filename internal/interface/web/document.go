@@ -159,7 +159,19 @@ func serveIcon(
 	body, contentType := shipped, "image/svg+xml"
 
 	if branding != nil {
-		logo := branding(r.Context()).Logo
+		current := branding(r.Context())
+
+		// Already the right size and shape, made when it was saved. Nothing to
+		// decide, nothing to scale, and the same bytes after a restart.
+		if decoded, kind, ok := decodeDataURI(current.Icon); ok {
+			serveImage(w, r, decoded, kind)
+
+			return
+		}
+
+		// An installation whose logo was saved before the sizes were derived. The
+		// original is a wordmark, so it is converted rather than served.
+		logo := current.Logo
 
 		if decoded, _, ok := decodeDataURI(logo); ok {
 			// A logo that cannot be converted leaves the shipped mark in place: a
@@ -171,6 +183,11 @@ func serveIcon(
 		}
 	}
 
+	serveImage(w, r, body, contentType)
+}
+
+// serveImage writes one image, cached hard against a fingerprint of itself.
+func serveImage(w http.ResponseWriter, r *http.Request, body []byte, contentType string) {
 	if len(body) == 0 {
 		http.NotFound(w, r)
 

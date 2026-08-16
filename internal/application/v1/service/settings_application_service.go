@@ -8,6 +8,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/imaging"
 )
 
 // maxLogoBytes caps the inline logo. It is stored as a data URI in the
@@ -48,6 +49,9 @@ func (s *SettingsService) Branding(ctx context.Context) (model.Branding, error) 
 
 	branding.Banner = all[model.SettingBannerText]
 	branding.LogoDataURI = all[model.SettingLogoDataURI]
+	branding.LogoHeader = all[model.SettingLogoHeader]
+	branding.LogoBanner = all[model.SettingLogoBanner]
+	branding.LogoIcon = all[model.SettingLogoIcon]
 	branding.FooterText = all[model.SettingFooterText]
 	branding.CompanyName = all[model.SettingCompanyName]
 	branding.CompanyURL = all[model.SettingCompanyURL]
@@ -99,10 +103,23 @@ func (s *SettingsService) SaveBranding(ctx context.Context, branding model.Brand
 		return apperror.InvalidFields(tooLong...)
 	}
 
+	// Derived here, once, rather than every time a page is loaded. The three are
+	// what every screen is actually given; the original is kept beside them so a
+	// later change of size is a re-derivation rather than a request to every
+	// installation to upload their logo again.
+	//
+	// A logo that cannot be converted is stored with no derivatives, and the
+	// readers fall back to the original - which is also the state of every
+	// installation whose logo predates this.
+	header, banner, icon := deriveLogoSizes(branding.LogoDataURI)
+
 	values := map[string]string{
 		model.SettingAppTitle:    strings.TrimSpace(branding.Title),
 		model.SettingBannerText:  branding.Banner,
 		model.SettingLogoDataURI: branding.LogoDataURI,
+		model.SettingLogoHeader:  header,
+		model.SettingLogoBanner:  banner,
+		model.SettingLogoIcon:    icon,
 		model.SettingFooterText:  branding.FooterText,
 		model.SettingCompanyName: branding.CompanyName,
 		model.SettingCompanyURL:  branding.CompanyURL,
@@ -485,4 +502,37 @@ func isRasterImage(dataURI string) bool {
 
 func isHTTPURL(raw string) bool {
 	return strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://")
+}
+
+// deriveLogoSizes makes the three shown versions of a logo.
+//
+// Failures are silent on purpose: this runs inside saving the appearance, and a
+// logo that scales badly is not a reason to refuse the title beside it. What
+// happens instead is that the derivatives are empty and every reader falls back
+// to the original, which is exactly what an installation whose logo predates this
+// already does.
+func deriveLogoSizes(logo string) (header, banner, icon string) {
+	if strings.TrimSpace(logo) == "" {
+		return "", "", ""
+	}
+
+	fit := func(width, height int) string {
+		out, err := imaging.Fit(logo, width, height)
+		if err != nil {
+			return ""
+		}
+
+		return out
+	}
+
+	// The tab's is padded out to the square, which the other two must not be -
+	// see FitIcon.
+	tab, err := imaging.FitIcon(logo)
+	if err != nil {
+		tab = ""
+	}
+
+	return fit(imaging.HeaderWidth, imaging.HeaderHeight),
+		fit(imaging.BannerWidth, imaging.BannerHeight),
+		tab
 }

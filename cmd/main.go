@@ -871,6 +871,10 @@ func brandingFor(settings *appservice.SettingsService) web.BrandingFunc {
 			return web.Branding{}
 		}
 
-		return web.Branding{Title: branding.Title, Logo: branding.LogoDataURI}
+		return web.Branding{
+			Title: branding.Title,
+			Logo:  branding.LogoDataURI,
+			Icon:  branding.LogoIcon,
+		}
 	}
 }
