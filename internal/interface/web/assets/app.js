@@ -1021,6 +1021,43 @@ function faviconFingerprint(logo) {
   return serverFaviconVersion;
 }
 
+/**
+ * Keeps the reserved space under the sticky bar equal to the bar.
+ *
+ * The stylesheet reserves scroll-padding-top so that anything scrolled to the top
+ * of the window lands below the bar rather than behind it - a click, a keyboard
+ * focus, an in-page anchor, scrollIntoView. That reservation was a number
+ * somebody measured once.
+ *
+ * The bar is a wrapping flex row. Its height depends on the width of the window
+ * and on everything in it, so a narrow window turns one row into three, and the
+ * reservation silently stops covering it. What that looks like is a tab that does
+ * not open: the click lands on the bar sitting over it.
+ *
+ * So it is measured, and re-measured whenever the bar changes shape.
+ */
+function trackTopbarHeight() {
+  const bar = document.querySelector('.topbar');
+  if (!bar) return;
+
+  const apply = () => {
+    const height = Math.ceil(bar.getBoundingClientRect().height);
+    if (height > 0) document.documentElement.style.setProperty('--topbar-height', `${height}px`);
+  };
+
+  apply();
+
+  // Everything that changes it: the window's width, a logo arriving, a tab
+  // appearing when rights change, a language whose words are longer.
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(apply).observe(bar);
+
+    return;
+  }
+
+  window.addEventListener('resize', apply);
+}
+
 /** The mark an instance carries when nobody has configured one. */
 const SHIPPED_MARK = '/favicon.svg';
 
@@ -8536,6 +8573,7 @@ async function init() {
     wireRestart();
     wireUpdate();
     wireReleaseBanner();
+    trackTopbarHeight();
     wireTimer();
     wireStatistics();
     wireReportChart();

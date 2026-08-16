@@ -93,8 +93,19 @@
  *
  * Reserving the bar's height here fixes all of them at once. Found by a browser
  * test whose click on a submit button landed on a navigation tab instead.
+ *
+ * Measured rather than written down. The number used to be 76, which was the
+ * bar's height when somebody looked - and the bar is a wrapping flex row, so its
+ * height depends on the window's width and on everything in it. A narrow window
+ * wraps it into three rows and 180px; growing the logo by twelve pixels moves it
+ * too. Both of those are changes nobody would think to check a scroll offset
+ * against, and the symptom is a click that lands on the bar instead of the thing
+ * under it - which reads as a control that does not work.
+ *
+ * app.js keeps --topbar-height in step with the real bar. The fallback is the old
+ * number, for the moment before the script runs.
  */
-html { scroll-padding-top: 76px; }
+html { scroll-padding-top: var(--topbar-height, 76px); }
 
 /*
  * The `hidden` attribute must beat every layout rule below. Without this,

@@ -107,3 +107,49 @@ func (p *page) switchIsOn(selector string) bool {
 
 	return on
 }
+
+// The space reserved under the sticky bar is the space the bar takes.
+//
+// The bar is a wrapping flex row: its height depends on the width of the window
+// and on everything in it. The stylesheet reserves that height so anything
+// scrolled to the top of the window lands below the bar rather than behind it -
+// a click, a focus, an anchor, scrollIntoView.
+//
+// That reservation was a number somebody measured once, and it stopped being
+// true twice over: a narrow window wraps the bar into three rows and 180px
+// against 76 reserved, and growing the header's mark moved it again. What it
+// looks like is a tab that will not open, because the click lands on the bar
+// sitting over it - which reads as a broken control and is a wrong number.
+//
+// Checked at a width where the bar wraps, since that is the case a fixed number
+// gets wrong.
+func TestTheStickyBarReservesItsOwnHeight(t *testing.T) {
+	p := open(t)
+	p.readyWorker()
+
+	for _, width := range []int{1280, 900, 700} {
+		p.run("resize", chromedp.EmulateViewport(int64(width), 800))
+		p.settleWelcome()
+
+		var out struct {
+			Bar      float64 `json:"bar"`
+			Reserved float64 `json:"reserved"`
+		}
+
+		p.evalJSON(`JSON.stringify((() => {
+			const bar = document.querySelector('.topbar');
+			const reserved = getComputedStyle(document.documentElement).scrollPaddingTop;
+
+			return {
+				bar: bar.getBoundingClientRect().height,
+				reserved: parseFloat(reserved) || 0,
+			};
+		})())`, &out)
+
+		if out.Reserved < out.Bar {
+			t.Errorf("at %dpx wide the bar is %.0fpx tall and %.0fpx is reserved "+
+				"under it, so anything scrolled to the top lands behind it",
+				width, out.Bar, out.Reserved)
+		}
+	}
+}
