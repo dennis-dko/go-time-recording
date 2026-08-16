@@ -145,13 +145,29 @@ func shippedIcon(sub fs.FS) []byte {
 	return body
 }
 
-// serveIcon answers the tab icon: the configured logo, or the shipped mark.
-func serveIcon(w http.ResponseWriter, r *http.Request, branding BrandingFunc, shipped []byte) {
+// serveIcon answers the tab icon: the configured logo, converted, or the shipped
+// mark.
+//
+// Converted rather than passed through. What an installation uploads is a
+// wordmark made for a header - a few thousand pixels across, twice as wide as it
+// is tall - and handing that to a browser as a tab icon leaves every decision to
+// the browser, including whether to use it at all. See toIcon.
+func serveIcon(
+	w http.ResponseWriter, r *http.Request,
+	branding BrandingFunc, shipped []byte, cache *icons,
+) {
 	body, contentType := shipped, "image/svg+xml"
 
 	if branding != nil {
-		if decoded, kind, ok := decodeDataURI(branding(r.Context()).Logo); ok {
-			body, contentType = decoded, kind
+		logo := branding(r.Context()).Logo
+
+		if decoded, _, ok := decodeDataURI(logo); ok {
+			// A logo that cannot be converted leaves the shipped mark in place: a
+			// tab with the wrong picture is a small wrong thing, and a tab with no
+			// picture is the thing being fixed.
+			if converted := cache.convert(logo, decoded); converted != nil {
+				body, contentType = converted, "image/png"
+			}
 		}
 	}
 

@@ -81,6 +81,7 @@ func Handler(branding BrandingFunc) func(http.Handler) http.Handler {
 	tags := buildETags(sub)
 	document := newDocument(sub)
 	shipped := shippedIcon(sub)
+	converted := &icons{}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +101,7 @@ func Handler(branding BrandingFunc) func(http.Handler) http.Handler {
 			// is not a file to "/" - and this is not a file. Left after it, every
 			// request for the tab icon was answered with the page.
 			if path(r) == iconPath {
-				serveIcon(w, r, branding, shipped)
+				serveIcon(w, r, branding, shipped, converted)
 
 				return
 			}

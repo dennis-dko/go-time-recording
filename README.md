@@ -143,6 +143,27 @@ undone makes its step outstanding again, and dismissing the wizard settles the
 optional steps only: it comes back on its own while anything required is
 missing. That is why "Finish later" is safe to offer.
 
+## The logo, and what a tab does with it
+
+A logo is a **PNG or a JPEG**, up to 256 KB. Not an SVG: the same file that
+renders perfectly in the header and on the sign-in screen can be refused as a tab
+icon, silently, by an engine with its own rules about what it will rasterise —
+nothing in the response says so, and the tab is simply empty.
+
+**It is converted before it is served as an icon.** What an installation uploads
+is a wordmark made for a header: a few thousand pixels across, often twice as
+wide as it is tall. Handed to a browser at that size, every decision is the
+browser's — whether to accept it at all, how to fit two-to-one into a square,
+whether to bother — and the answers differ by engine. So the application makes
+that decision once: the logo is fitted into a transparent 64×64 square and served
+as a PNG, which every engine treats identically.
+
+Fitted, not cropped: nothing of the logo is cut. That does mean a wide wordmark
+becomes a thin strip at the sixteen pixels a tab draws, which is a fact about
+wordmarks rather than about this. The appearance screen shows the logo at exactly
+that size beside the header and sign-in previews, so it is seen before saving. A
+square mark is what reads best there — many companies keep one for exactly this.
+
 ## Windows says "unknown publisher"
 
 Running the released `.exe` for the first time shows a blue SmartScreen dialog:

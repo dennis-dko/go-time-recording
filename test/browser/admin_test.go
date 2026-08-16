@@ -349,6 +349,14 @@ func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
 	if !p.iconIsTheLogo(t) {
 		t.Error("the browser tab is not served the configured logo")
 	}
+
+	// And it is served converted rather than passed through: 64px square,
+	// whatever was uploaded. A wordmark handed to a browser at its own size is
+	// what left the decision to the browser, which is where the tab icon kept
+	// going wrong.
+	if width := p.iconWidth(t); width != 64 {
+		t.Errorf("the tab is served a %dpx icon; a converted one is 64 square", width)
+	}
 }
 
 // Clearing the logo puts the shipped mark back in the tab.
@@ -410,13 +418,18 @@ func (p *page) iconIsTheLogo(t *testing.T) bool {
 			return r.headers.get('content-type') ?? '';
 		})()`, &kind, awaitPromise))
 
-	// The fixture is an SVG rectangle; the shipped mark is an SVG too, so the type
-	// alone cannot tell them apart - the width can, and it is in the markup the
-	// server sends back.
-	return strings.Contains(kind, "image/") && p.iconWidth(t) == 600
+	// The type tells them apart now. A configured logo is converted into a square
+	// PNG before it is served - see toIcon for why - and the shipped mark is the
+	// SVG that ships with the application, so what comes back says which of the
+	// two the tab is being given.
+	return strings.Contains(kind, "image/png")
 }
 
 // iconWidth is the intrinsic width of whatever the tab icon is served as.
+//
+// A converted logo is always square and small, so this is what proves the
+// conversion happened at all rather than the original having been passed
+// through.
 func (p *page) iconWidth(t *testing.T) int {
 	t.Helper()
 

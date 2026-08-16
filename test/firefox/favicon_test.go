@@ -49,10 +49,11 @@ func TestTheConfiguredLogoIsTheOnlyIconDeclared(t *testing.T) {
 			len(icons), icons)
 	}
 
-	// And what that one address answers with is the logo, which is the question
-	// the tab actually asks. A href that looks right while the shipped mark comes
-	// back is exactly the shape this bug had twice.
-	if width := iconWidth(t, b); width != 600 {
+	// And what that one address answers with is the logo, converted: 64px square,
+	// which is what the application makes of whatever was uploaded. The width is
+	// what proves it was converted rather than passed through - a wordmark is
+	// thousands of pixels across and twice as wide as it is tall.
+	if width := iconWidth(t, b); width != 64 {
 		t.Errorf("the tab icon is served at %dpx wide; the configured logo is 600", width)
 	}
 
@@ -69,8 +70,10 @@ func TestTheConfiguredLogoIsTheOnlyIconDeclared(t *testing.T) {
 		t.Fatal("clearing the logo left the page with no icon declared at all")
 	}
 
-	if width := iconWidth(t, b); width == 600 {
-		t.Error("after clearing the logo the tab is still served it")
+	// The shipped mark is an SVG, which reports its own intrinsic size rather
+	// than the converted 64.
+	if width := iconWidth(t, b); width == 64 {
+		t.Error("after clearing the logo the tab is still served the converted one")
 	}
 
 	if width := iconWidth(t, b); width == 0 {
@@ -141,9 +144,10 @@ func TestAWideDarkWordmarkStillReachesTheTab(t *testing.T) {
 		t.Fatalf("the page declares %d icons", len(icons))
 	}
 
-	// 2000 is the wordmark's own width: Firefox fetched it, decoded it, and knows
-	// how big it is. Anything else means it never became an image.
-	if width := iconWidth(t, b); width != 2000 {
+	// 64 is what the application converts a wordmark to. Firefox fetched it,
+	// decoded it, and knows how big it is - and it is the converted one rather
+	// than the two-thousand-pixel original.
+	if width := iconWidth(t, b); width != 64 {
 		t.Errorf("Firefox reads the tab icon as %dpx wide; the logo is 2000, so it "+
 			"was not fetched or not decoded", width)
 	}
