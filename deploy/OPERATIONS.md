@@ -134,6 +134,22 @@ it decides where `configs/datasource.json` is written, where a relative SQLite
 file lands, and where the default TLS cache `configs/certs` goes. Start it from
 the same directory every time.
 
+**On Windows, the first run is refused by SmartScreen** — *unknown publisher*,
+with *Run anyway* behind *More info*. Every unsigned executable gets that, and no
+build setting removes it; only a code signing certificate does. Check the
+download against `SHA256SUMS`, then either press through the dialog or clear the
+download mark first:
+
+```powershell
+Get-FileHash .\go-time-recording_v1.2.3_windows_amd64.exe -Algorithm SHA256
+Unblock-File .\go-time-recording_v1.2.3_windows_amd64.exe
+```
+
+Rolling this out to more than a handful of machines is the point at which a
+certificate is worth its yearly cost — the README weighs the three kinds under
+*Windows says "unknown publisher"*. A Windows service installed with `sc create`
+or NSSM does not show the dialog at all, because nobody double-clicks it.
+
 A systemd unit that gets that right:
 
 ```ini

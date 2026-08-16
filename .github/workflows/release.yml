@@ -281,8 +281,68 @@ jobs:
 
           build darwin  arm64
 
+      # Signing goes here: after the Windows binary exists and before anything
+      # measures it.
+      #
+      # Windows shows "unknown publisher" for software nobody has signed, and
+      # SmartScreen turns the first run into a dialog with "run anyway" hidden
+      # behind "more info". Nothing in a build can remove that - it is not a flag,
+      # a manifest or a resource. Only a signature from a certificate authority
+      # Windows already trusts does, and reputation attaches to the certificate
+      # rather than to the file.
+      #
+      # Skipped entirely where there is no certificate, which is every fork and
+      # this repository until somebody buys one. The release is then exactly what
+      # it was before this step existed.
+      #
+      # The ordering is the part worth writing down: signing changes the bytes, so
+      # it has to happen before SHA256SUMS is written. Sign afterwards and every
+      # checksum in the release describes a file that no longer exists - which the
+      # self-update checks, and would refuse.
+      - name: Sign the Windows binary
+        env:
+          PFX: ${{ secrets.WINDOWS_SIGNING_PFX }}
+          PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Checked here rather than in an `if:` on purpose. A step condition that
+          # reads a secret is one of the places the expression parser is fussy
+          # about, and getting it wrong fails the whole workflow - which would
+          # break every release for the sake of a step that does nothing on most
+          # of them.
+          if [ -z "${PFX}" ]; then
+            echo "no signing certificate configured; publishing unsigned"
+            echo "Windows will show 'unknown publisher' - see README, Signing"
+            exit 0
+          fi
+
+          sudo apt-get update
+          sudo apt-get install -y osslsigncode
+
+          printf '%s' "$PFX" | base64 -d > /tmp/signing.pfx
+
+          exe="dist/go-time-recording_${VERSION}_windows_amd64.exe"
+
+          # RFC 3161 timestamping, so the signature outlives the certificate: an
+          # unstamped signature stops being valid the day the certificate expires,
+          # including on copies downloaded years earlier.
+          osslsigncode sign             -pkcs12 /tmp/signing.pfx -pass "$PFX_PASSWORD"             -n "go-time-recording"             -i "https://github.com/dennis-dko/go-time-recording"             -ts "http://timestamp.digicert.com"             -h sha256             -in "$exe" -out "${exe}.signed"
+
+          mv "${exe}.signed" "$exe"
+
+          shred -u /tmp/signing.pfx
+
+          osslsigncode verify -in "$exe"
+
+      - name: Measure what will be published
+        run: |
+          set -euo pipefail
+
           # Checksums, so a download can be checked against something the release
-          # itself carries.
+          # itself carries. Last, because signing changes the file and the
+          # self-update compares what it downloaded against exactly this.
           ( cd dist && sha256sum -- * > SHA256SUMS )
           cat dist/SHA256SUMS
 
