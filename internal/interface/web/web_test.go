@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,7 +18,19 @@ func newServer() http.Handler {
 		_, _ = w.Write([]byte(nextMarker))
 	})
 
-	return web.Handler()(next)
+	// nil branding: these cases are about caching, routing and what is shadowed,
+	// none of which depends on what the instance calls itself. The cases that do
+	// pass one.
+	return web.Handler(nil)(next)
+}
+
+// brandedServer is newServer with an installation that has named itself.
+func brandedServer(branding web.Branding) http.Handler {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(nextMarker))
+	})
+
+	return web.Handler(func(context.Context) web.Branding { return branding })(next)
 }
 
 func get(t *testing.T, method, path string) *httptest.ResponseRecorder {

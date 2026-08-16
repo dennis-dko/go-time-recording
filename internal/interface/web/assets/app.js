@@ -955,80 +955,74 @@ function statusBadge(status) {
  * behind the line cannot shift it to the previous day: the string is a calendar
  * day, not a moment.
  */
-/** The built-in mark: a stopwatch, drawn rather than fetched. */
-// The shipped file rather than an inline copy of it. There used to be a data URI
-// here holding a ⏱ character, which had to be kept in step with the one in the
-// markup by hand and drew a different picture on every platform.
-const DEFAULT_FAVICON = '/favicon.svg';
 
 /**
- * Points the browser tab at the instance's logo.
+ * Points the browser tab at the instance's logo, after it has just changed.
  *
- * The logo is stored as a data URI, so it needs no request and cannot be blocked
- * by the Content-Security-Policy - which allows data: images for exactly this
- * reason. Anything else is refused rather than set: a logo that is a link to
- * somewhere else would make the tab icon a request to that somewhere.
+ * The document already arrives with the right icon: the server writes the link
+ * into the page, at an address carrying a fingerprint of what it answers with. So
+ * on every load there is nothing to do here, and this exists for the one moment
+ * that is not a load - somebody has just saved a new logo and is still looking at
+ * the page they saved it from.
  *
- * The link element is replaced rather than pointed elsewhere. Setting .href on
- * the existing one is what this did, and it is the version that looks right in
- * every test and fails in practice: browsers treat the tab icon as decided at
- * parse time and skip re-reading a link whose attribute merely changed. Removing
- * the element and inserting a new one is the mutation they all act on.
- *
- * Worth knowing why the tests did not catch it: they asked what the href was, and
- * the href was always correct. What was wrong was the picture in the tab, which
- * no automated browser will report.
+ * This used to do the whole job, and could not. An icon patched in after the
+ * document was parsed is honoured by some engines and ignored by others; the logo
+ * was correct in the DOM, correct in the tests, and not in the tab. What every
+ * engine does honour is a fetch of a URL it has not seen before, which is what
+ * changing the fingerprint gives it.
  */
 function applyFavicon(logo) {
-  const usable = typeof logo === 'string' && logo.startsWith('data:image/');
+  const link = document.querySelector('link[rel~="icon"]');
+  if (!link) return;
 
-  // Every icon this page declares, not only the one whose rel is exactly "icon".
-  //
-  // The page ships two: an SVG, and an .ico beside it as `rel="alternate icon"`
-  // for anything that cannot read the first. `link[rel="icon"]` matches the
-  // former and not the latter - an attribute selector compares the whole value -
-  // so the configured logo was added, the SVG was removed, and the .ico was left
-  // standing. Two icons were then declared and each engine picked by its own
-  // rules: Chrome took the logo and looked correct, Firefox kept the .ico and
-  // looked broken. Nothing was wrong with the logo, and the tests asked about the
-  // element that had been replaced rather than the one that had not.
-  //
-  // ~= is the selector for a whitespace-separated list, which is what rel is.
-  const existing = [...document.querySelectorAll('link[rel~="icon"]')];
+  const wanted = `/favicon?v=${faviconFingerprint(logo ?? '')}`;
 
-  const wanted = usable
-    ? [{ href: logo }]
-    : [{ href: DEFAULT_FAVICON, type: 'image/svg+xml' },
-      { href: '/favicon.ico', rel: 'alternate icon' }];
+  if (link.getAttribute('href') === wanted) return;
 
-  // Unchanged is left alone, so a redraw for some other reason does not make
-  // every browser refetch its tab icon.
-  const same = existing.length === wanted.length
-    && existing.every((link, i) => link.getAttribute('href') === wanted[i].href);
+  // Replaced rather than pointed elsewhere: setting .href on the existing element
+  // is the mutation engines disagree about honouring.
+  const fresh = document.createElement('link');
+  fresh.rel = 'icon';
+  fresh.href = wanted;
 
-  if (same) return;
-
-  // The new ones first, so there is no instant in which the page declares no icon
-  // at all.
-  const added = wanted.map((spec) => {
-    const link = document.createElement('link');
-    link.rel = spec.rel ?? 'icon';
-    link.href = spec.href;
-
-    // A type only where it is known. A configured logo may be a PNG, a JPEG or an
-    // SVG and its data URI already says which; declaring the wrong one is how a
-    // perfectly good logo does not render.
-    if (spec.type) link.type = spec.type;
-
-    document.head.append(link);
-
-    return link;
-  });
-
-  for (const old of existing) old.remove();
-
-  return added;
+  document.head.append(fresh);
+  link.remove();
 }
+
+/**
+ * The same fingerprint the server puts in the address.
+ *
+ * It has to match, or every load would swap the link the document arrived with
+ * for an identical one - a fetch, a repaint and a flicker for nothing. The server
+ * hashes the logo; this cannot, so it keeps what the server sent and compares
+ * against that.
+ */
+let serverFaviconVersion = null;
+
+function faviconFingerprint(logo) {
+  if (serverFaviconVersion === null) {
+    const link = document.querySelector('link[rel~="icon"]');
+    const href = link?.getAttribute('href') ?? '';
+
+    serverFaviconVersion = new URLSearchParams(href.split('?')[1] ?? '').get('v') ?? '';
+    lastFaviconLogo = logo;
+  }
+
+  // Unchanged since the document was served: keep the server's own version, so
+  // nothing is refetched.
+  if (logo === lastFaviconLogo) return serverFaviconVersion;
+
+  lastFaviconLogo = logo;
+
+  // Changed while the page was open. The value only has to differ from the last
+  // one for the browser to fetch again; the server decides what comes back.
+  serverFaviconVersion = String(Date.now());
+
+  return serverFaviconVersion;
+}
+
+/** What the icon currently shown was made from. */
+let lastFaviconLogo = null;
 
 function fmtDate(iso) {
   if (!iso) return '–';
@@ -1748,6 +1742,7 @@ const TRANSLATIONS = {
     'admin.dbPort': 'Port',
     'admin.logo': 'Logo (PNG/SVG, max. 256 KB)',
     'admin.logoInHeader': 'In der Kopfzeile',
+    'admin.logoAsFavicon': 'Im Browser-Tab',
     'admin.logoOnSignIn': 'Auf der Anmeldeseite',
     'field.name': 'Name',
     'field.optional': 'optional',
@@ -2064,6 +2059,7 @@ const TRANSLATIONS = {
     'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
     'err.csrfRejected': 'Diese Seite ist zu lange geöffnet gewesen. Bitte neu laden und noch einmal versuchen.',
     'err.maintenance': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
+    'err.cannotDeleteSelf': 'Das Konto, mit dem du angemeldet bist, kann nicht gelöscht werden.',
     'err.defaultRoleUndeletable': '„{0}“ ist eine mitgelieferte Rolle und kann nicht gelöscht werden.',
     'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
     'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden.',
@@ -2825,7 +2821,10 @@ async function loadUsers() {
   const rows = cache.users.map((u) => {
     const actions = el('td', { class: 'actions' });
 
-    if (can('users:delete') && !u.isSystem) {
+    // Not your own, which the server refuses too: deleting it would end the
+    // session the request arrived on and leave whoever pressed it looking at a
+    // sign-in screen for an account that no longer exists.
+    if (can('users:delete') && !u.isSystem && u.id !== me.user?.id) {
       actions.append(deleteButton({
         label: `${u.name} <${u.email}>`,
         path: `/users/${u.id}`,
@@ -3030,8 +3029,23 @@ async function loadProjects() {
     value: 'none', text: t('report.noProject', 'No project assigned'),
   }));
   reportProject.value = chosenScope;
-  fillSelect($('#filter-ts-project'), cache.projects,
+  // The same three choices the evaluation offers, and for the same reason: the
+  // hours that never got a project are the ones somebody goes looking for, and
+  // "all projects" cannot narrow to them.
+  //
+  // Appended after the projects and the choice restored by hand, because
+  // fillSelect restores before this option exists and would drop it every reload.
+  const timesheetProject = $('#filter-ts-project');
+  const chosenProject = timesheetProject.value;
+
+  fillSelect(timesheetProject, cache.projects,
     { placeholder: t('filter.allProjects', 'All projects') });
+
+  timesheetProject.append(el('option', {
+    value: 'none', text: t('report.noProject', 'No project assigned'),
+  }));
+
+  timesheetProject.value = chosenProject;
 
   const rows = cache.projects.map((p) => {
     const actions = el('td', { class: 'actions' });
@@ -3738,7 +3752,7 @@ let pendingLogo = '';
 function setLogoPreview(dataURI) {
   pendingLogo = dataURI;
 
-  for (const id of ['#logo-preview', '#logo-preview-login']) {
+  for (const id of ['#logo-preview', '#logo-preview-login', '#logo-preview-icon']) {
     const preview = $(id);
     if (preview) preview.src = dataURI || '';
   }

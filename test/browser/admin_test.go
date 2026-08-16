@@ -341,22 +341,22 @@ func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
 		t.Error("the sign-in card lost its heading, so this screen did not render")
 	}
 
-	// The same image is the tab icon. It is one line in the script and it is
-	// reached from one place, which is the sort of thing that stops being called
-	// without anything else noticing - the screen still shows the logo, the tab
-	// quietly shows a stopwatch.
-	if icon := p.attr(`link[rel="icon"]`, "href"); !strings.HasPrefix(icon, "data:image/") {
-		t.Errorf("the browser tab shows %.40q rather than the configured logo", icon)
+	// The same image is the tab icon, fetched from the address the server wrote
+	// into the document. Asked of what the address answers with rather than of the
+	// address itself: what a browser draws in a tab is the bytes, and an href that
+	// looks right while serving the shipped mark is exactly the failure this went
+	// through twice.
+	if !p.iconIsTheLogo(t) {
+		t.Error("the browser tab is not served the configured logo")
 	}
 }
 
 // Clearing the logo puts the shipped mark back in the tab.
 //
 // The other half, and the half that fails silently: an installation that tries a
-// logo and takes it off again would keep the old one in the tab for as long as
-// the page stayed open, because nothing would have told the tab. The rule asked
-// for was the logo "otherwise always the default as before", which is a
-// statement about both directions.
+// logo and takes it off again would keep the old one for as long as anything
+// cached it. The rule asked for was the logo "otherwise always the default as
+// before", which is a statement about both directions.
 func TestClearingTheLogoRestoresTheDefaultFavicon(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
@@ -370,18 +370,90 @@ func TestClearingTheLogoRestoresTheDefaultFavicon(t *testing.T) {
 	p.run("reload with the logo", chromedp.Reload(),
 		chromedp.WaitVisible("#who", chromedp.ByID))
 
-	if icon := p.attr(`link[rel="icon"]`, "href"); !strings.HasPrefix(icon, "data:image/") {
-		t.Fatalf("the logo never reached the tab (%.40q), so this case cannot show "+
-			"it being cleared", icon)
+	if !p.iconIsTheLogo(t) {
+		t.Fatal("the logo never reached the tab, so this case cannot show it " +
+			"being cleared")
 	}
 
 	p.storeBranding(t, "")
 	p.run("reload without it", chromedp.Reload(),
 		chromedp.WaitVisible("#who", chromedp.ByID))
 
-	if icon := p.attr(`link[rel="icon"]`, "href"); !strings.HasSuffix(icon, "/favicon.svg") {
-		t.Errorf("after clearing the logo the tab still shows %.60q", icon)
+	if p.iconIsTheLogo(t) {
+		t.Error("after clearing the logo the tab is still served it")
 	}
+
+	// And it is served something rather than nothing: an instance with no logo
+	// keeps the shipped mark.
+	if kind := p.iconContentType(t); !strings.Contains(kind, "svg") {
+		t.Errorf("with no logo the tab icon is served as %q", kind)
+	}
+}
+
+// iconIsTheLogo fetches whatever the document points its icon at and reports
+// whether it is the image this case stored.
+//
+// The bytes rather than the address. Two attempts at this bug looked correct in
+// the DOM and wrong in the tab, and both times the test was reading the element
+// that had been changed rather than the picture that had not.
+func (p *page) iconIsTheLogo(t *testing.T) bool {
+	t.Helper()
+
+	var kind string
+
+	p.run("fetch the tab icon", chromedp.Evaluate(`
+		(async () => {
+			const link = document.querySelector('link[rel~="icon"]');
+			if (!link) return 'no icon declared';
+
+			const r = await fetch(link.href);
+			return r.headers.get('content-type') ?? '';
+		})()`, &kind, awaitPromise))
+
+	// The fixture is an SVG rectangle; the shipped mark is an SVG too, so the type
+	// alone cannot tell them apart - the width can, and it is in the markup the
+	// server sends back.
+	return strings.Contains(kind, "image/") && p.iconWidth(t) == 600
+}
+
+// iconWidth is the intrinsic width of whatever the tab icon is served as.
+func (p *page) iconWidth(t *testing.T) int {
+	t.Helper()
+
+	var width int
+
+	p.run("measure the tab icon", chromedp.Evaluate(`
+		(async () => {
+			const link = document.querySelector('link[rel~="icon"]');
+			if (!link) return 0;
+
+			return await new Promise((resolve) => {
+				const probe = new Image();
+				probe.onload = () => resolve(probe.naturalWidth);
+				probe.onerror = () => resolve(0);
+				probe.src = link.href;
+			});
+		})()`, &width, awaitPromise))
+
+	return width
+}
+
+// iconContentType is what the tab icon is served as.
+func (p *page) iconContentType(t *testing.T) string {
+	t.Helper()
+
+	var kind string
+
+	p.run("read the icon's type", chromedp.Evaluate(`
+		(async () => {
+			const link = document.querySelector('link[rel~="icon"]');
+			if (!link) return '';
+
+			const r = await fetch(link.href);
+			return r.headers.get('content-type') ?? '';
+		})()`, &kind, awaitPromise))
+
+	return kind
 }
 
 // storeBranding writes the instance's logo through the API, as the Settings form
@@ -1411,7 +1483,7 @@ func TestAFirstSignInIsWalkedThroughTheApplication(t *testing.T) {
 		chromedp.WaitVisible("#form-user", chromedp.ByID),
 		chromedp.SendKeys(`#form-user input[name="name"]`, "Rieke", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="email"]`, "rieke@example.com", chromedp.ByQuery),
-		chromedp.SetValue(`#form-user select[name="role"]`, "user", chromedp.ByQuery),
+		p.chooseOption(`#form-user select[name="role"]`, "user"),
 		chromedp.SendKeys(`#form-user input[name="password"]`, "rieke-password-1", chromedp.ByQuery),
 		p.click(`#form-user button[type="submit"]`),
 	)
@@ -1495,7 +1567,7 @@ func TestTheGreetingIsAScreenReachableFromTheTitle(t *testing.T) {
 		chromedp.WaitVisible("#form-user", chromedp.ByID),
 		chromedp.SendKeys(`#form-user input[name="name"]`, "Sven", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="email"]`, "sven@example.com", chromedp.ByQuery),
-		chromedp.SetValue(`#form-user select[name="role"]`, "user", chromedp.ByQuery),
+		p.chooseOption(`#form-user select[name="role"]`, "user"),
 		chromedp.SendKeys(`#form-user input[name="password"]`, "sven-password-1", chromedp.ByQuery),
 		p.click(`#form-user button[type="submit"]`),
 	)

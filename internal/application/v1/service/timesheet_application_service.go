@@ -116,10 +116,11 @@ func (s *TimesheetApplicationService) ListTimesheets(
 	q query.ListTimesheetsQuery,
 ) (*query.ListTimesheetsQueryResult, error) {
 	allTimesheets, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
-		UserID:    q.UserID,
-		ProjectID: q.ProjectID,
-		StartDate: q.StartDate,
-		EndDate:   q.EndDate,
+		UserID:         q.UserID,
+		ProjectID:      q.ProjectID,
+		WithoutProject: q.WithoutProject,
+		StartDate:      q.StartDate,
+		EndDate:        q.EndDate,
 	})
 	if err != nil {
 		return nil, err

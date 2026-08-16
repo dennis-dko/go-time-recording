@@ -194,7 +194,7 @@ func TestARowThatCannotBeDeletedHasNoCheckboxButKeepsItsPlace(t *testing.T) {
 		chromedp.SendKeys(`#form-user input[name="name"]`, "Wilma", chromedp.ByQuery),
 		chromedp.SendKeys(`#form-user input[name="email"]`, "wilma@example.com",
 			chromedp.ByQuery),
-		chromedp.SetValue(`#form-user select[name="role"]`, "user", chromedp.ByQuery),
+		p.chooseOption(`#form-user select[name="role"]`, "user"),
 		chromedp.SendKeys(`#form-user input[name="password"]`, "wilma-password-1",
 			chromedp.ByQuery),
 		p.click(`#form-user button[type="submit"]`))
