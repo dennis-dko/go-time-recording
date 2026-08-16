@@ -288,6 +288,34 @@ func (b *browser) evalJSON(expression string, into any) {
 // The interface answers requests to draw itself, so there is nothing to wait for
 // that is true of every case. Kept as one call so the waiting is named rather
 // than scattered as bare sleeps.
+//
+// Where there *is* something to wait for, waitFor is the one to use: a fixed
+// sleep is a guess about somebody else's machine, and this suite failed on a
+// loaded runner for exactly that reason - the sign-in had not finished inside the
+// guess, and the case reported it as a sign-in that does not work.
 func (b *browser) settle() {
 	time.Sleep(1200 * time.Millisecond)
+}
+
+// waitFor blocks until an expression in the page is true.
+//
+// Ten seconds, which is long for anything here and short next to a case that
+// hangs. The complaint is what the failure says, so it should name the thing that
+// never became true rather than the expression that asked.
+func (b *browser) waitFor(expression, complaint string) {
+	b.t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for {
+		if got, _ := b.eval(expression).(bool); got {
+			return
+		}
+
+		if time.Now().After(deadline) {
+			b.t.Fatalf("%s (waiting for %s)", complaint, expression)
+		}
+
+		time.Sleep(150 * time.Millisecond)
+	}
 }

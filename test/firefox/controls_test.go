@@ -215,11 +215,11 @@ func signIn(t *testing.T, b *browser) {
 		return 1;
 	})()`, harness.AdminEmail, harness.AdminPassword))
 
-	b.settle()
-
-	if got := b.evalString(`String(document.querySelector('#login-screen').hidden)`); got != "true" {
-		t.Fatalf("the sign-in screen is still up in Firefox after signing in (%s)", got)
-	}
+	// Waited for rather than slept through. A fixed wait is a guess about the
+	// machine running this, and on a loaded runner the guess was short - which
+	// this reported as a sign-in that does not work in Firefox.
+	b.waitFor(`document.querySelector('#login-screen').hidden === true`,
+		"the sign-in screen never went away in Firefox")
 
 	post(t, b, "/api/v1/settings/timezone", `{"timezone":"Europe/Berlin"}`, "PUT")
 	post(t, b, "/api/v1/setup/complete", "null")
