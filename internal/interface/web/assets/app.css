@@ -867,6 +867,19 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   padding: 20px;
   position: fixed;
   z-index: 30;
+
+  /* Reachable on a short window.
+   *
+   * A fixed overlay that centres its contents clips whatever does not fit, at
+   * both ends, and nothing scrolls it back into view - so on a laptop with a
+   * toolbar, or a phone held sideways, the submit button can simply not be
+   * there. Nothing looks wrong: the form is on the screen, one button short of
+   * the bottom of it.
+   *
+   * Found when the shipped mark started appearing above the card and pushed a
+   * sign-in past the bottom of a short window. Anything that grows this screen
+   * would have done it. */
+  overflow: auto;
 }
 
 /* Bounded to the card's width so a long notice does not stretch across a wide

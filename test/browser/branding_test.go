@@ -221,3 +221,62 @@ func TestYourOwnRowIsMarkedAsYours(t *testing.T) {
 			"would end the session it was pressed from")
 	}
 }
+
+// The sign-in screen can be used on a short window.
+//
+// It is a fixed overlay that centres what it holds, which clips anything too
+// tall at both ends - and nothing scrolls it back. The submit button is simply
+// not there, on a screen where nothing looks wrong: the form is visible, one
+// button short of the bottom.
+//
+// A laptop with a toolbar is enough to do it once the screen has a notice above
+// the card and a mark above that. Which is how this was found: the shipped mark
+// started standing in for an absent logo, and a sign-in on a short CI window
+// stopped working.
+//
+// No sign-in needed - open(t) lands here, which is the state this is about.
+func TestTheSignInScreenIsUsableOnAShortWindow(t *testing.T) {
+	p := open(t)
+
+	// Shorter than the screen's own contents, so this asks about the property
+	// rather than about one machine's idea of a window.
+	p.run("a short window", chromedp.EmulateViewport(1000, 320),
+		chromedp.Sleep(400*time.Millisecond))
+
+	var out struct {
+		Overflows    bool    `json:"overflows"`
+		Scrolled     float64 `json:"scrolled"`
+		ButtonBottom float64 `json:"buttonBottom"`
+		Viewport     float64 `json:"viewport"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const screen = document.querySelector('#login-screen');
+		const button = document.querySelector('#form-login button[type="submit"]');
+
+		// What a person does when a form runs off the edge, and what they cannot
+		// do if the overlay does not scroll.
+		screen.scrollTop = screen.scrollHeight;
+
+		return {
+			overflows: screen.scrollHeight > screen.clientHeight + 1,
+			scrolled: screen.scrollTop,
+			buttonBottom: button.getBoundingClientRect().bottom,
+			viewport: window.innerHeight,
+		};
+	})())`, &out)
+
+	if !out.Overflows {
+		t.Skip("the sign-in screen fits in 320px, so there is nothing to scroll here")
+	}
+
+	if out.Scrolled == 0 {
+		t.Fatal("the sign-in screen is taller than the window and will not scroll, " +
+			"so whatever is past the edge cannot be reached at all")
+	}
+
+	if out.ButtonBottom > out.Viewport {
+		t.Errorf("the submit button ends at %.0fpx in a %.0fpx window even after "+
+			"scrolling to the bottom", out.ButtonBottom, out.Viewport)
+	}
+}
