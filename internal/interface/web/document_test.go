@@ -1,8 +1,12 @@
 package web_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -204,4 +208,129 @@ func pngLogo() string {
 
 func otherLogo() string {
 	return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+}
+
+// A wordmark is converted into something a tab can use.
+//
+// This is what was missing all along: the logo was served exactly as stored, so
+// what reached the browser as a tab icon was a few thousand pixels of wordmark,
+// twice as wide as it is tall. Every decision was left to the browser - whether
+// to accept it at that size, how to fit two-to-one into a square, whether to
+// bother at all - and the answers differ by engine. One that decides not to shows
+// nothing and says nothing, which is a long way from any error message.
+func TestAWordmarkIsConvertedIntoASquareIcon(t *testing.T) {
+	logo := rasterLogo(t, 2776, 1299)
+
+	server := brandedServer(web.Branding{Title: "x", Logo: logo})
+
+	res := fetch(t, server, "/favicon")
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("the icon answered %d", res.Code)
+	}
+
+	if got := res.Header().Get("Content-Type"); got != "image/png" {
+		t.Errorf("the icon is served as %q; a converted one is always a PNG", got)
+	}
+
+	icon, format, err := image.Decode(bytes.NewReader(res.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("what was served is not an image: %v", err)
+	}
+
+	if format != "png" {
+		t.Errorf("the icon is a %s", format)
+	}
+
+	bounds := icon.Bounds()
+
+	// Square, and small. Those are the two properties that make an icon
+	// uninteresting to every engine that receives it.
+	if bounds.Dx() != bounds.Dy() {
+		t.Errorf("the icon is %dx%d, which is not square", bounds.Dx(), bounds.Dy())
+	}
+
+	if bounds.Dx() > 128 {
+		t.Errorf("the icon is %dpx across; a tab draws sixteen", bounds.Dx())
+	}
+
+	// Nothing is cut: a wordmark fitted into a square leaves transparent bands
+	// above and below, and the corners are where they are.
+	if _, _, _, alpha := icon.At(1, 1).RGBA(); alpha != 0 {
+		t.Error("the icon was cropped to the square rather than fitted into it; " +
+			"part of the logo has been cut off")
+	}
+
+	// And something was actually drawn, rather than a transparent square being
+	// served as a successful conversion.
+	if !hasVisiblePixels(icon) {
+		t.Error("the icon is empty")
+	}
+}
+
+// A logo that cannot be converted leaves the shipped mark in place.
+//
+// A tab with the wrong picture is a small wrong thing. A tab with no picture is
+// what this whole exercise was about, so it must not be the answer to anything.
+func TestALogoThatCannotBeConvertedFallsBackToTheShippedMark(t *testing.T) {
+	// The right declaration and rubbish behind it, which is what a truncated
+	// upload looks like from here.
+	broken := "data:image/png;base64," +
+		base64.StdEncoding.EncodeToString([]byte("not really a PNG"))
+
+	res := fetch(t, brandedServer(web.Branding{Logo: broken}), "/favicon")
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("a logo that cannot be read left the tab with no icon at all (%d)",
+			res.Code)
+	}
+
+	if !strings.Contains(res.Header().Get("Content-Type"), "svg") {
+		t.Errorf("the fallback is served as %q rather than the shipped mark",
+			res.Header().Get("Content-Type"))
+	}
+}
+
+// rasterLogo is a PNG of the given size, shaped like a wordmark: a mark on the
+// left, a band of text to the right of it, transparent everywhere else.
+func rasterLogo(t *testing.T, width, height int) string {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	for y := range height {
+		for x := range width {
+			dx, dy := x-width/5, y-height/2
+
+			switch {
+			case dx*dx+dy*dy < (height/3)*(height/3):
+				img.Set(x, y, color.RGBA{R: 205, G: 220, A: 255})
+			case x > width/2 && y > height/3 && y < 2*height/3:
+				img.Set(x, y, color.RGBA{A: 255})
+			}
+		}
+	}
+
+	var out bytes.Buffer
+
+	if err := png.Encode(&out, img); err != nil {
+		t.Fatal(err)
+	}
+
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(out.Bytes())
+}
+
+// hasVisiblePixels reports whether anything was drawn at all.
+func hasVisiblePixels(img image.Image) bool {
+	bounds := img.Bounds()
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if _, _, _, alpha := img.At(x, y).RGBA(); alpha > 0 {
+				return true
+			}
+		}
+	}
+
+	return false
 }

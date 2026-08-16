@@ -509,6 +509,22 @@ func (a *App) waitUntilReady() error {
 			_ = resp.Body.Close()
 
 			if resp.StatusCode == http.StatusOK {
+				// An answer is not proof it came from this instance.
+				//
+				// The port was free when it was asked for and is bound by a
+				// different process, so the address can belong to another test's
+				// instance that is still running - and that one answers 200 to
+				// anything. Accepting it means the test talks to somebody else's
+				// database, and the failure lands three steps later as an account
+				// that already exists.
+				//
+				// Our own process binds within moments of starting, so by the time
+				// anything answers, it has either bound or said it could not. This
+				// is the second look, after the answer rather than before it.
+				if failed := a.startupFailure(); failed != nil {
+					return failed
+				}
+
 				return nil
 			}
 		}
