@@ -54,3 +54,30 @@ func TestFreePortIsFree(t *testing.T) {
 
 	_ = listener.Close()
 }
+
+// An answer from the address is not proof it came from this instance.
+//
+// The port was free when it was asked for and is bound by a different process,
+// so the address can belong to another test's instance that is still running -
+// and that one answers 200 to anything. Accepting it means the test talks to
+// somebody else's database, and the failure lands three steps later: an account
+// it creates already exists, reported as a 409 nobody can explain.
+//
+// Our own process binds within moments of starting, so by the time anything
+// answers it has either bound or said it could not - which is what makes looking
+// again, after the answer, worth doing.
+func TestAnAnswerIsCheckedAgainstWhatThisProcessSaid(t *testing.T) {
+	lost := &App{logs: logBuffer(
+		`{"level":"ERROR","message":"listen tcp :45247: bind: address already in use"}`)}
+
+	if !errors.Is(lost.startupFailure(), errPortTaken) {
+		t.Error("an instance that lost its port would be accepted as ready")
+	}
+
+	fine := &App{logs: logBuffer(
+		`{"level":"WARN","message":"TLS_ENABLED is false"}`)}
+
+	if fine.startupFailure() != nil {
+		t.Errorf("an ordinary start is treated as a failure: %v", fine.startupFailure())
+	}
+}
