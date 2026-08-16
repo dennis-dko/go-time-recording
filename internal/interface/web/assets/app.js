@@ -1074,6 +1074,11 @@ function brandingIn(branding, field) {
   return written || branding[field] || '';
 }
 
+/** What a language is called, in its own words. */
+function languageName(language) {
+  return { en: 'English', de: 'Deutsch' }[language] ?? language;
+}
+
 /** The languages the appearance texts can be written in. */
 const BRANDING_LANGUAGES = ['en', 'de'];
 
@@ -1852,7 +1857,7 @@ const TRANSLATIONS = {
     'admin.bindDn': 'Bind DN (optional)',
     'admin.dbHost': 'Host',
     'admin.dbPort': 'Port',
-    'admin.logo': 'Logo (PNG/SVG, max. 256 KB)',
+    'admin.logo': 'Logo (PNG oder JPEG, max. 256 KB)',
     'admin.logoInHeader': 'In der Kopfzeile',
     'admin.logoAsFavicon': 'Im Browser-Tab',
     'admin.logoOnSignIn': 'Auf der Anmeldeseite',
@@ -2203,6 +2208,7 @@ const TRANSLATIONS = {
     'err.invalidCredentials': 'E-Mail-Adresse oder Kennwort ist falsch.',
     'err.invalidToken': 'Ungültiges Token.',
     'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
+    'err.logoNotRaster': 'Das Logo muss ein PNG oder ein JPEG sein. SVG wird von manchen Browsern nicht als Tab-Symbol übernommen.',
     'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
     'err.missingPermission': 'Dafür fehlt die Berechtigung „{0}“.',
     'err.onlyOwnWorkingTimes': 'Sie können nur Ihre eigenen Arbeitszeiten ändern.',
@@ -3961,6 +3967,19 @@ function wireAdmin() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // The accept list on the input is a filter in the file dialog and nothing
+    // more - a file can still be dragged in, or chosen after switching the
+    // dialog to "all files". So the type is checked here as well, before
+    // anything is read.
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      toast(t('err.logoNotRaster',
+        'The logo must be a PNG or a JPEG. Some browsers will not take an SVG as a tab icon.'),
+      'error');
+      e.target.value = '';
+
+      return;
+    }
+
     // 256 KB matches the server-side limit; checking here gives a better
     // message than a rejected request would.
     if (file.size > 256 * 1024) {
@@ -5359,17 +5378,49 @@ const SETUP_STEPS = {
     text: () => t('setup.branding.text',
       'The title appears in the browser tab and the header. Optional, but it is what tells '
       + 'a test instance apart from the real one at a glance.'),
-    fields: () => [
-      el('label', { text: t('admin.title', 'Title (browser tab and header)') },
-        el('input', { type: 'text', name: 'title', maxlength: '80' })),
-    ],
+    // One field per language, rather than one field.
+    //
+    // The title is the first thing an installation says about itself and the one
+    // thing this step exists for, so a company that works in two languages should
+    // not have to come back to the appearance screen afterwards to say it twice.
+    // Two boxes is small enough to put on the wizard; the four texts on the
+    // appearance screen are not, which is why that one has a switcher instead.
+    fields: () => BRANDING_LANGUAGES.map((language) => el('label', {
+      text: `${t('admin.title', 'Title (browser tab and header)')} — ${languageName(language)}`,
+    }, el('input', { type: 'text', name: `title.${language}`, maxlength: '80' }))),
     submit: async (values) => {
-      if (!values.title?.trim()) return;
+      const written = {};
+
+      for (const language of BRANDING_LANGUAGES) {
+        written[language] = (values[`title.${language}`] ?? '').trim();
+      }
+
+      // Nothing typed at all is a step somebody skipped, which it is allowed to
+      // be.
+      if (!Object.values(written).some(Boolean)) return;
 
       const branding = await api('/branding');
+
+      // The base is the first language that has something, so an installation
+      // that fills in one box is named in every language rather than in one.
+      const base = written[BRANDING_LANGUAGES[0]]
+        || Object.values(written).find(Boolean)
+        || '';
+
+      const translations = { ...branding.translations };
+
+      for (const language of BRANDING_LANGUAGES) {
+        translations[language] = {
+          ...(translations[language] ?? {}),
+          title: written[language],
+        };
+      }
+
       await api('/settings/branding', {
-        method: 'PUT', body: JSON.stringify({ ...branding, title: values.title.trim() }),
+        method: 'PUT',
+        body: JSON.stringify({ ...branding, title: base, translations }),
       });
+
       await loadBranding();
     },
   },

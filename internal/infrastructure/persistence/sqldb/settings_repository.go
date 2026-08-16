@@ -42,22 +42,30 @@ func (r *SettingsRepository) Get(ctx context.Context, key string) (string, error
 
 // Set writes the value, replacing any previous one.
 //
-// An UPDATE-then-INSERT is used rather than dialect-specific upsert syntax
-// (ON CONFLICT / ON DUPLICATE KEY), which differs across the engines.
+// A real upsert, in each engine's own words. It used to be an UPDATE and, if
+// that reported nothing changed, an INSERT - which reads correctly and is wrong
+// on MySQL, because MySQL counts *changed* rows rather than matched ones. Writing
+// a value that is already there therefore reported nothing changed, fell through
+// to the INSERT, and answered "Duplicate entry ... for key 'settings.PRIMARY'".
+//
+// Saving a form twice without editing it is not an unusual thing to do; it is
+// what somebody does when they are not sure the first press registered. On MySQL
+// that was a 500.
+//
+// The syntax differs by engine and there is no portable spelling, so this is the
+// one place in the repositories that branches on the dialect. SQLite and
+// PostgreSQL agree on the standard form.
 func (r *SettingsRepository) Set(ctx context.Context, key, value string) error {
-	affected, err := r.exec(ctx,
-		"UPDATE settings SET value = ?, updated_at = ? WHERE key_name = ?", value, time.Now(), key)
-	if err != nil {
-		return apperror.Internal(err)
+	query := `INSERT INTO settings (key_name, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT (key_name) DO UPDATE SET value = EXCLUDED.value,
+			updated_at = EXCLUDED.updated_at`
+
+	if r.dialect == "mysql" {
+		query = `INSERT INTO settings (key_name, value, updated_at) VALUES (?, ?, ?)
+			ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)`
 	}
 
-	if affected > 0 {
-		return nil
-	}
-
-	_, err = r.exec(ctx,
-		"INSERT INTO settings (key_name, value, updated_at) VALUES (?, ?, ?)", key, value, time.Now())
-	if err != nil {
+	if _, err := r.exec(ctx, query, key, value, time.Now()); err != nil {
 		return apperror.Internal(err)
 	}
 

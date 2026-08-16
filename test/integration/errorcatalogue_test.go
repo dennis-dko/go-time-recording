@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -507,5 +508,92 @@ func markAsDirectoryAccount(t *testing.T, a *app, id uint) {
 
 	if _, err := db.Exec(query, true, fmt.Sprintf("uid=%d", id), id); err != nil {
 		t.Fatalf("marking the account as the directory's: %v", err)
+	}
+}
+
+// A logo is a PNG or a JPEG, and nothing else.
+//
+// This used to take any image a browser would encode, SVG included, and SVG is
+// where it went wrong: the same file that renders perfectly in the header and on
+// the sign-in screen can be refused as a tab icon, silently, by an engine with
+// its own rules about what it will rasterise. Nothing in the response says so -
+// the icon is served, fetched, and then not used, which is a long way to go to
+// find out.
+func TestALogoMustBeARasterImage(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	refused := admin.api(http.MethodPut, "/settings/branding", map[string]any{
+		"title": "Zeiterfassung",
+		"logo": "data:image/svg+xml;base64," +
+			base64.StdEncoding.EncodeToString([]byte(
+				`<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>`)),
+	})
+
+	if refused.Status != http.StatusBadRequest {
+		t.Fatalf("an SVG logo answered %d, want %d\n%s",
+			refused.Status, http.StatusBadRequest, refused.Body)
+	}
+
+	if code := errorCode(t, refused); code != "logoNotRaster" {
+		t.Errorf("the refusal is named %q", code)
+	}
+
+	// And the two that work everywhere are taken.
+	for name, logo := range map[string]string{
+		"a PNG":  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+		"a JPEG": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+	} {
+		accepted := admin.api(http.MethodPut, "/settings/branding", map[string]any{
+			"title": "Zeiterfassung", "logo": logo,
+		})
+
+		if accepted.Status != http.StatusOK {
+			t.Errorf("%s was refused: %d\n%s", name, accepted.Status, accepted.Body)
+		}
+	}
+}
+
+// Saving the same settings twice is not an error.
+//
+// It is what somebody does when they are not sure the first press registered,
+// and on MySQL it used to answer 500: the write was an UPDATE and, if that
+// reported nothing changed, an INSERT - and MySQL counts *changed* rows rather
+// than matched ones, so writing a value that was already there fell through to
+// the INSERT and hit the primary key.
+//
+// The dialect that had the bug is the one this only fails on, so it is worth
+// saying plainly that this case means nothing unless the suite is run against
+// MySQL as well - which CI does.
+func TestSavingTheSameSettingsTwiceIsFine(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	body := map[string]any{
+		"title":       "Zeiterfassung",
+		"banner":      "",
+		"footerText":  "Gemacht in Osnabrück",
+		"legalNotice": "",
+	}
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		saved := admin.api(http.MethodPut, "/settings/branding", body)
+
+		if saved.Status != http.StatusOK {
+			t.Fatalf("saving the appearance the %d time answered %d\n%s",
+				attempt, saved.Status, saved.Body)
+		}
+	}
+
+	// And what it holds afterwards is what was sent, rather than a row that was
+	// written twice and read once.
+	var branding struct {
+		FooterText string `json:"footerText"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/branding", nil), http.StatusOK).Data(t, &branding)
+
+	if branding.FooterText != "Gemacht in Osnabrück" {
+		t.Errorf("the footer reads %q after being saved twice", branding.FooterText)
 	}
 }

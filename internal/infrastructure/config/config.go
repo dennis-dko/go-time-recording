@@ -71,8 +71,16 @@ type Config struct {
 	SessionLifetime time.Duration
 
 	// TLS serves HTTPS with automatically obtained Let's Encrypt certificates.
-	TLSEnabled  bool
-	TLSDomains  []string
+	TLSEnabled bool
+	TLSDomains []string
+
+	// TLSCertFile and TLSKeyFile point at a certificate this installation
+	// already has, in PEM. With both set nothing is requested from a certificate
+	// authority - which is the only way to serve HTTPS on a name Let's Encrypt
+	// cannot reach, and that is most installations of this: an office network, a
+	// hostname that resolves nowhere outside it, no public name at all.
+	TLSCertFile string
+	TLSKeyFile  string
 	TLSEmail    string
 	TLSCacheDir string
 	TLSPort     int
@@ -272,6 +280,8 @@ func Load(p Provider) Config {
 
 		TLSEnabled:  boolOr(p.GetOrDefault("TLS_ENABLED", "false"), false),
 		TLSDomains:  splitList(p.Get("TLS_DOMAINS")),
+		TLSCertFile: p.Get("TLS_CERT_FILE"),
+		TLSKeyFile:  p.Get("TLS_KEY_FILE"),
 		TLSEmail:    p.Get("TLS_EMAIL"),
 		TLSCacheDir: p.GetOrDefault("TLS_CACHE_DIR", defaultTLSCacheDir),
 		TLSPort:     intOr(p.GetOrDefault("TLS_PORT", ""), defaultTLSPort),

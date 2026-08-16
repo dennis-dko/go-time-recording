@@ -46,6 +46,23 @@ type Config struct {
 	// trusted by browsers but whose rate limits are far looser. Use it while
 	// setting a deployment up.
 	Staging bool
+
+	// CertFile and KeyFile are a certificate this installation already has, in
+	// PEM. Given both, nothing is requested from anybody: no domain, no
+	// challenge on port 80, no certificate authority.
+	//
+	// This is what makes HTTPS possible where Let's Encrypt cannot go, which is
+	// most installations of this application: an office network, a hostname that
+	// resolves nowhere outside it, an address with no public name at all. Those
+	// have a certificate from a company authority or one made for the purpose,
+	// and until now had no way to use it.
+	CertFile string
+	KeyFile  string
+}
+
+// usesOwnCertificate reports whether this installation brought its own.
+func (c Config) usesOwnCertificate() bool {
+	return strings.TrimSpace(c.CertFile) != "" && strings.TrimSpace(c.KeyFile) != ""
 }
 
 // Logger is the small part of GoFr's logger this package needs.
@@ -61,21 +78,44 @@ const stagingDirectory = "https://acme-staging-v02.api.letsencrypt.org/directory
 //
 // The returned function shuts both servers down.
 func Start(cfg Config, logger Logger) (stop func(context.Context) error, err error) {
-	if len(cfg.Domains) == 0 {
-		return nil, fmt.Errorf("at least one domain is required for a certificate")
+	own := cfg.usesOwnCertificate()
+
+	if !own && len(cfg.Domains) == 0 {
+		return nil, fmt.Errorf(
+			"TLS needs either TLS_DOMAINS, for a certificate from Let's Encrypt, or " +
+				"TLS_CERT_FILE and TLS_KEY_FILE, for one this installation already has")
 	}
 
-	manager := &autocert.Manager{
-		Prompt: autocert.AcceptTOS,
-		// HostPolicy is what stops the process from being used to request
-		// certificates for names it does not serve.
-		HostPolicy: autocert.HostWhitelist(cfg.Domains...),
-		Cache:      autocert.DirCache(cfg.CacheDir),
-		Email:      cfg.Email,
-	}
+	var (
+		manager     *autocert.Manager
+		certificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)
+	)
 
-	if cfg.Staging {
-		manager.Client = &acme.Client{DirectoryURL: stagingDirectory}
+	if own {
+		// Loaded once, here, so a file that is missing or does not parse stops
+		// the start rather than every request: a certificate read lazily is a
+		// certificate whose mistakes are found by the first visitor.
+		pair, loadErr := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		if loadErr != nil {
+			return nil, fmt.Errorf("cannot read the certificate and key: %w", loadErr)
+		}
+
+		certificate = func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &pair, nil }
+	} else {
+		manager = &autocert.Manager{
+			Prompt: autocert.AcceptTOS,
+			// HostPolicy is what stops the process from being used to request
+			// certificates for names it does not serve.
+			HostPolicy: autocert.HostWhitelist(cfg.Domains...),
+			Cache:      autocert.DirCache(cfg.CacheDir),
+			Email:      cfg.Email,
+		}
+
+		if cfg.Staging {
+			manager.Client = &acme.Client{DirectoryURL: stagingDirectory}
+		}
+
+		certificate = manager.GetCertificate
 	}
 
 	backend, err := url.Parse("http://" + cfg.Backend)
@@ -103,7 +143,7 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 		Addr:    fmt.Sprintf(":%d", cfg.HTTPSPort),
 		Handler: proxy,
 		TLSConfig: &tls.Config{
-			GetCertificate: manager.GetCertificate,
+			GetCertificate: certificate,
 			MinVersion:     tls.VersionTLS12,
 			NextProtos:     []string{"h2", "http/1.1", acme.ALPNProto},
 		},
@@ -111,11 +151,22 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 		IdleTimeout:       120 * time.Second,
 	}
 
-	// Port 80 must stay reachable: it answers the HTTP-01 challenge, and
-	// redirects everything else so no one is served over plain HTTP.
+	// The plain listener redirects, so nobody is served over HTTP.
+	//
+	// With Let's Encrypt it also answers the HTTP-01 challenge, which is why port
+	// 80 has to stay reachable from outside. With a certificate this installation
+	// already has there is no challenge, so this is only the redirect - and an
+	// installation that does not want a plain listener at all can point
+	// TLS_REDIRECT_PORT somewhere harmless.
+	redirect := http.Handler(redirectToHTTPS(cfg.HTTPSPort))
+
+	if manager != nil {
+		redirect = manager.HTTPHandler(redirect)
+	}
+
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
-		Handler:           manager.HTTPHandler(redirectToHTTPS(cfg.HTTPSPort)),
+		Handler:           redirect,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

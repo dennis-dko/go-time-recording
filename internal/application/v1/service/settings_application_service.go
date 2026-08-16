@@ -439,12 +439,48 @@ func validateLogo(dataURI string) error {
 			WithCode("logoNotInline")
 	}
 
+	// PNG or JPEG, and nothing else.
+	//
+	// This used to take any image the browser would encode, SVG included, and SVG
+	// is where it went wrong: the same file that renders perfectly in the header
+	// and on the sign-in screen can be refused as a tab icon, silently, by an
+	// engine that has its own rules about what it will rasterise. Nothing in the
+	// response says so - the icon is served, fetched, and then not used.
+	//
+	// A raster image has no such argument with anybody. It costs an installation
+	// one export from whatever drew the logo, and it costs this application the
+	// class of failure where a logo is configured, correct, and invisible in one
+	// browser.
+	if !isRasterImage(dataURI) {
+		return apperror.Invalidf("the logo must be a PNG or a JPEG").
+			WithCode("logoNotRaster")
+	}
+
 	if len(dataURI) > maxLogoBytes {
 		return apperror.Invalidf("the logo must be smaller than %d KB", maxLogoBytes/1024).
 			WithCode("logoTooLarge", maxLogoBytes/1024)
 	}
 
 	return nil
+}
+
+// isRasterImage reports whether the data URI holds one of the two formats every
+// browser will take as a tab icon.
+//
+// Read from the URI's own declaration rather than by sniffing the bytes: the
+// browser wrote it from the file it was given, and the same string is what the
+// icon endpoint later serves as a content type. Sniffing would let those two
+// disagree, which is the one thing that must not happen for an image served under
+// a type somebody else chose.
+func isRasterImage(dataURI string) bool {
+	head, _, found := strings.Cut(dataURI, ",")
+	if !found {
+		return false
+	}
+
+	kind := strings.TrimSuffix(strings.TrimPrefix(head, "data:"), ";base64")
+
+	return kind == "image/png" || kind == "image/jpeg"
 }
 
 func isHTTPURL(raw string) bool {
