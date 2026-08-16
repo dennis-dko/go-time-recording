@@ -4,6 +4,7 @@
 package web
 
 import (
+	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -11,6 +12,19 @@ import (
 	"net/http"
 	"strings"
 )
+
+// Branding is what an installation calls itself, as far as the served document
+// is concerned.
+type Branding struct {
+	// Title names the browser tab.
+	Title string
+
+	// Logo is the configured mark as a data URI, or empty for the shipped one.
+	Logo string
+}
+
+// BrandingFunc answers what this installation is called right now.
+type BrandingFunc func(context.Context) Branding
 
 // assets holds the UI. all: is not needed here because no file starts with
 // '_' or '.', but the pattern must keep matching every file added later.
@@ -43,7 +57,19 @@ var apiPrefixes = []string{
 // GoFr's AddStaticFiles only serves a directory from disk, which would defeat
 // the single-binary goal, so the assets are served here instead. The signature
 // matches gofr.dev/pkg/gofr/http.Middleware.
-func Handler() func(http.Handler) http.Handler {
+//
+// The branding function is what makes the served document say the instance's own
+// name and carry its own mark. Optional: nil serves the assets exactly as they
+// are embedded, which is what the tests that only care about caching want.
+//
+// It has to be the server that does this. The title and the logo are configured,
+// so they live in the database, so the page cannot know either until it has asked
+// - and asking finishes after the document has been parsed and shown. Patching
+// them afterwards from script is what this used to do, and it leaves a reload
+// showing "Time Recording" and the shipped mark for as long as the request takes.
+// There is no arrangement of client-side code that fixes that, because the
+// problem is the order of two things and one of them is a round trip.
+func Handler(branding BrandingFunc) func(http.Handler) http.Handler {
 	sub, err := fs.Sub(assets, "assets")
 	if err != nil {
 		// Only reachable if the embed directive and this path disagree,
@@ -53,11 +79,28 @@ func Handler() func(http.Handler) http.Handler {
 
 	fileServer := http.FileServer(http.FS(sub))
 	tags := buildETags(sub)
+	document := newDocument(sub)
+	shipped := shippedIcon(sub)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !servesUI(r) {
 				next.ServeHTTP(w, r)
+
+				return
+			}
+
+			// The instance's own mark, at a stable address. A data: URI in the
+			// markup would be the obvious alternative and is the version that did
+			// not work: engines disagree about honouring one, and about honouring
+			// an icon link that changed after the document was parsed. A URL is
+			// something every one of them fetches.
+			//
+			// Before the single-page fallback below, which rewrites anything that
+			// is not a file to "/" - and this is not a file. Left after it, every
+			// request for the tab icon was answered with the page.
+			if path(r) == iconPath {
+				serveIcon(w, r, branding, shipped)
 
 				return
 			}
@@ -74,6 +117,14 @@ func Handler() func(http.Handler) http.Handler {
 			if _, statErr := fs.Stat(sub, strings.TrimPrefix(path(r), "/")); statErr != nil {
 				r = r.Clone(r.Context())
 				r.URL.Path = "/"
+			}
+
+			// The document, with the title and the icon written into it before it
+			// is sent.
+			if branding != nil && isDocument(path(r)) {
+				document.serve(w, r, branding(r.Context()))
+
+				return
 			}
 
 			if servedFromCache(w, r, tags) {

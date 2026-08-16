@@ -55,7 +55,10 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	projectID, err := queryUint(c, "projectId")
+	// "none" rather than a number, matching what the evaluation already takes: a
+	// zero id means "any project", so the entries that belong to none cannot be
+	// asked for with a number at all.
+	projectID, withoutProject, err := projectFilter(c)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -71,10 +74,11 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 	}
 
 	result, err := h.timesheets.ListTimesheets(c, query.ListTimesheetsQuery{
-		UserID:    userID,
-		ProjectID: projectID,
-		StartDate: from,
-		EndDate:   to,
+		UserID:         userID,
+		ProjectID:      projectID,
+		WithoutProject: withoutProject,
+		StartDate:      from,
+		EndDate:        to,
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -481,4 +485,31 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 	})
 
 	return resp, nil
+}
+
+// projectFilter reads the projectId query parameter, which asks one of three
+// questions.
+//
+// Absent or empty is every project. The literal "none" is the entries that were
+// never given one - a question a number cannot express, because zero already
+// means "any". Anything else is that project.
+//
+// The same three the evaluation takes, so one screen does not learn a different
+// vocabulary from the other.
+func projectFilter(c *gofr.Context) (projectID uint, withoutProject bool, err error) {
+	raw := strings.TrimSpace(c.Param("projectId"))
+
+	switch raw {
+	case "":
+		return 0, false, nil
+	case "none":
+		return 0, true, nil
+	}
+
+	id, err := parseUint(raw, "projectId")
+	if err != nil {
+		return 0, false, err
+	}
+
+	return id, false, nil
 }

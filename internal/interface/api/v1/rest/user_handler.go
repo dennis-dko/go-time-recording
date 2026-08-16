@@ -8,6 +8,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // UserHandler serves the user endpoints.
@@ -133,13 +134,32 @@ func (h *UserHandler) Update(c *gofr.Context) (any, error) {
 
 // Delete handles DELETE /api/v1/users/{id}
 func (h *UserHandler) Delete(c *gofr.Context) (any, error) {
-	if _, err := h.authz.Require(c, model.PermUserDelete); err != nil {
+	principal, err := h.authz.Require(c, model.PermUserDelete)
+	if err != nil {
 		return nil, err
 	}
 
 	id, err := pathID(c)
 	if err != nil {
 		return nil, toHTTPError(err)
+	}
+
+	// Not the account doing the asking.
+	//
+	// Nothing about the permission stops it - somebody who may delete accounts may
+	// delete every account, and theirs is one of them - and the result is a
+	// request that succeeds and takes the session it arrived on with it. The
+	// screen goes back to the sign-in form, the account it wants is gone, and
+	// whatever else that person was in the middle of is gone with it.
+	//
+	// Refused rather than confirmed, because there is no version of this that is
+	// what somebody meant to do from an administration screen. Somebody genuinely
+	// leaving is deleted by a colleague, which is also the only way it gets
+	// noticed.
+	if principal.User != nil && principal.User.ID == id {
+		return nil, toHTTPError(apperror.Conflictf(
+			"you cannot delete the account you are signed in with").
+			WithCode("cannotDeleteSelf"))
 	}
 
 	// ?purge=true confirms that the account's recorded time goes with it. Without

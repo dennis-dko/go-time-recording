@@ -209,6 +209,43 @@ func (p *page) evalJSON(expression string, into any) {
 	}
 }
 
+// chooseOption picks a value from a select, once that value is there to pick.
+//
+// A select is in the markup from the start and its options arrive with a
+// loader, so there is a window in which the element exists and is empty.
+// chromedp's SetValue inside that window fails with "could not set value on
+// node", which reads as a broken control rather than a case that arrived early -
+// and it does so rarely enough to look like a different bug each time.
+func (p *page) chooseOption(selector, value string) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		deadline := time.Now().Add(15 * time.Second)
+
+		for {
+			var ready bool
+
+			if err := chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(
+				`Boolean(document.querySelector(%q)?.querySelector('option[value=%q]'))`,
+				selector, value), &ready)); err != nil {
+				return err
+			}
+
+			if ready {
+				return chromedp.Run(ctx, chromedp.SetValue(selector, value, chromedp.ByQuery))
+			}
+
+			if time.Now().After(deadline) {
+				return fmt.Errorf("%s never offered the option %q", selector, value)
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	})
+}
+
 // run executes actions and fails the test with the application's log attached,
 // which is usually where the reason is.
 func (p *page) run(what string, actions ...chromedp.Action) {

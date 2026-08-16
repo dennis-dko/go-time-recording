@@ -67,11 +67,13 @@
    * and shows the shipped mark, whatever this installation calls itself. On a
    * reload that is a visible flicker back to a name nobody chose.
    *
-   * The same trick as the theme above, for the same reason: what was true last
-   * time is remembered on the device and applied before the first paint, and the
-   * answer from the server corrects it a moment later if it has changed. The
-   * first visit on a new device still starts from the default, which is the one
-   * case where there is genuinely nothing to know yet.
+   * The tab icon is no longer here: the server writes that into the document, at
+   * an address carrying a fingerprint of what it answers with, so it is right on
+   * the first paint without anything on this side.
+   *
+   * The title is written by the server too. This stays as the answer for the one
+   * case the server cannot cover - a page restored from the browser's own cache,
+   * where no request was made and the document is whatever it was last time.
    */
   function applyStoredBranding() {
     var stored;
@@ -86,24 +88,6 @@
 
     if (typeof stored.title === 'string' && stored.title) {
       document.title = stored.title;
-    }
-
-    // Only a data: URI, exactly as the interface does later: a logo that is a
-    // link to somewhere else would make the tab icon a request to that
-    // somewhere.
-    if (typeof stored.logo !== 'string' || stored.logo.indexOf('data:image/') !== 0) {
-      return;
-    }
-
-    var icons = document.querySelectorAll('link[rel~="icon"]');
-    var link = document.createElement('link');
-
-    link.rel = 'icon';
-    link.href = stored.logo;
-    document.head.appendChild(link);
-
-    for (var i = 0; i < icons.length; i += 1) {
-      icons[i].parentNode.removeChild(icons[i]);
     }
   }
 

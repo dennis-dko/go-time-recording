@@ -174,24 +174,15 @@ Get-FileHash .\go-time-recording_v0.1.39_windows_amd64.exe -Algorithm SHA256
 **Properly, for everybody.** A code signing certificate, which costs money every
 year and is issued to a legal identity — a company, or a person with documents.
 There is no free path and a self-signed certificate does nothing here, because
-the point is the authority vouching for the identity, not the cryptography.
+the point is the authority vouching for the identity, not the cryptography. An
+OV certificate (~€200–400/year) names the publisher but may still warn until it
+has been seen enough times; an EV certificate (~€300–600/year) or Microsoft's own
+Azure Trusted Signing (~$10/month) removes the dialog from the first download.
 
-| | Cost | What it does |
-| --- | --- | --- |
-| **OV certificate** | ~€200–400/year | Names the publisher. SmartScreen may still warn until that certificate has been seen enough times — reputation attaches to the certificate, not to the file |
-| **EV certificate** | ~€300–600/year | Reputation from the first download, so the dialog does not appear at all |
-| **Azure Trusted Signing** | ~$10/month | Microsoft's own service. Cheapest by a distance; needs an organisation with three years of verifiable history |
-
-Since June 2023 the private key must live on hardware or in a cloud HSM for both
-kinds, so "a `.pfx` on the build machine" is no longer something a new
-certificate can be.
-
-The release workflow already has the step, skipped while no certificate is
-configured. Adding one is two repository secrets — `WINDOWS_SIGNING_PFX`
-(base64) and `WINDOWS_SIGNING_PASSWORD` — and the next release is signed and
-timestamped. It signs before the checksums are written, which matters: the
-signature changes the file, and the in-application update verifies exactly those
-checksums.
+This project does not sign its releases, so the dialog is what everybody sees.
+Signing would go into the release workflow immediately before the checksums are
+written — the signature changes the file, and the in-application update verifies
+exactly those checksums.
 
 ## What is included
 

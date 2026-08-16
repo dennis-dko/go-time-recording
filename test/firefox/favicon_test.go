@@ -4,6 +4,7 @@ package firefox
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -48,8 +49,11 @@ func TestTheConfiguredLogoIsTheOnlyIconDeclared(t *testing.T) {
 			len(icons), icons)
 	}
 
-	if !strings.HasPrefix(icons[0], "data:image/") {
-		t.Errorf("the declared icon is %.40q rather than the configured logo", icons[0])
+	// And what that one address answers with is the logo, which is the question
+	// the tab actually asks. A href that looks right while the shipped mark comes
+	// back is exactly the shape this bug had twice.
+	if width := iconWidth(t, b); width != 600 {
+		t.Errorf("the tab icon is served at %dpx wide; the configured logo is 600", width)
 	}
 
 	// And clearing it puts the shipped pair back rather than leaving the page
@@ -65,11 +69,40 @@ func TestTheConfiguredLogoIsTheOnlyIconDeclared(t *testing.T) {
 		t.Fatal("clearing the logo left the page with no icon declared at all")
 	}
 
-	for _, href := range restored {
-		if strings.HasPrefix(href, "data:image/") {
-			t.Errorf("the cleared logo is still declared as an icon: %.40q", href)
-		}
+	if width := iconWidth(t, b); width == 600 {
+		t.Error("after clearing the logo the tab is still served it")
 	}
+
+	if width := iconWidth(t, b); width == 0 {
+		t.Error("with no logo the tab has no icon at all")
+	}
+}
+
+// iconWidth fetches whatever the page points its icon at and measures it.
+//
+// The bytes rather than the address: what a browser draws in a tab is the
+// picture, and both earlier attempts at this bug were correct in the DOM.
+func iconWidth(t *testing.T, b *browser) int {
+	t.Helper()
+
+	raw := b.evalString(`(async () => {
+		const link = document.querySelector('link[rel~="icon"]');
+		if (!link) return '0';
+
+		return await new Promise((resolve) => {
+			const probe = new Image();
+			probe.onload = () => resolve(String(probe.naturalWidth));
+			probe.onerror = () => resolve('0');
+			probe.src = link.href;
+		});
+	})()`)
+
+	width, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0
+	}
+
+	return width
 }
 
 // declaredIcons is every icon link on the page, in document order.

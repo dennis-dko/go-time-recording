@@ -745,8 +745,8 @@
         <!-- What may be written in the three texts above. Here rather than in a
              manual: the person typing the footer is looking at this screen, and a
              placeholder nobody knows about is a placeholder nobody uses. -->
-        <details class="markup-legend">
-          <summary data-i18n="admin.markupLegend">What you can write in the banner, footer and legal notice</summary>
+        <div class="markup-legend">
+          <p class="markup-legend-title" data-i18n="admin.markupLegend">What you can write in the banner, footer and legal notice</p>
           <table class="markup-table">
             <tbody>
               <tr><td><code>{year}</code></td><td data-i18n="markup.year">The current year — a copyright line stays right without anybody editing it</td></tr>
@@ -758,7 +758,7 @@
             </tbody>
           </table>
           <p class="muted" data-i18n="markup.note">Everything else is shown exactly as typed. These texts are read on the sign-in screen by people who have not signed in, so they are not HTML.</p>
-        </details>
+        </div>
         <div class="row">
           <label data-i18n="admin.logo">Logo (PNG/SVG, max. 256 KB)<input type="file" id="logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
           </label>
@@ -778,6 +778,14 @@
           <figure class="logo-use">
             <img id="logo-preview-login" class="logo-preview logo-preview-login" alt="">
             <figcaption class="muted" data-i18n="admin.logoOnSignIn">On the sign-in screen</figcaption>
+          </figure>
+          <!-- The third use, and the one with the least room by a long way. A
+               wordmark that reads perfectly as a banner is a smear at sixteen
+               pixels, and that is worth seeing before saving rather than
+               discovering in the tab afterwards. -->
+          <figure class="logo-use">
+            <img id="logo-preview-icon" class="logo-preview logo-preview-icon" alt="">
+            <figcaption class="muted" data-i18n="admin.logoAsFavicon">In the browser tab</figcaption>
           </figure>
         </div>
         <!-- Away from the file picker above it: they sat on adjacent lines and
@@ -917,7 +925,7 @@
       <form id="form-ldap" class="card form">
         <h2 data-i18n="admin.ldap">LDAP connection</h2>
         <p class="muted" data-i18n="admin.ldapHint">When enabled, passwords are checked against the directory. Unknown users are created locally on their first successful sign-in.</p>
-        <div class="perm-grid">
+        <div class="perm-grid switch-row">
           <label class="switch"><input type="checkbox" name="enabled"><span class="switch-track"></span><span class="switch-label" data-i18n="admin.ldapEnabled">Enabled</span></label>
           <label class="switch"><input type="checkbox" name="startTls"><span class="switch-track"></span><span class="switch-label">StartTLS</span></label>
           <label class="switch"><input type="checkbox" name="useTls"><span class="switch-track"></span><span class="switch-label">LDAPS</span></label>

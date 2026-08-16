@@ -86,7 +86,9 @@ func (h *WorkbookHandler) timesheetFilter(
 		return empty, err
 	}
 
-	projectID, err := queryUint(c, "projectId")
+	// The same three the list takes, or an export would refuse the very filter the
+	// screen it was started from is showing.
+	projectID, withoutProject, err := projectFilter(c)
 	if err != nil {
 		return empty, toHTTPError(err)
 	}
@@ -102,10 +104,11 @@ func (h *WorkbookHandler) timesheetFilter(
 	}
 
 	return repository.TimesheetFilter{
-		UserID:    userID,
-		ProjectID: projectID,
-		StartDate: from,
-		EndDate:   to,
+		UserID:         userID,
+		ProjectID:      projectID,
+		WithoutProject: withoutProject,
+		StartDate:      from,
+		EndDate:        to,
 	}, nil
 }
 

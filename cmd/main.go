@@ -643,7 +643,10 @@ func main() {
 		// defeat the single-binary goal, so the embedded UI is installed as
 		// middleware instead. The assets stay public: the sign-in form has to
 		// be reachable before there is a session.
-		app.UseMiddleware(web.Handler())
+		// The served document carries this installation's own name and mark,
+		// rather than the shipped defaults with a script correcting them a round
+		// trip later.
+		app.UseMiddleware(web.Handler(brandingFor(settingsService)))
 	}
 
 	// Read per request rather than cached, so changing the instance zone takes
@@ -833,4 +836,32 @@ func startTLS(app *gofr.App, cfg appconfig.Config) func(context.Context) error {
 	}
 
 	return stop
+}
+
+// brandingFor answers what the instance is called, for the served document.
+//
+// Read per request, and deliberately not cached.
+//
+// It was cached for five seconds at first, on the reasoning that this is on the
+// path of every page load. What that bought was one small SELECT of a table with
+// a handful of rows; what it cost was that saving a logo and reloading to look at
+// it showed the old one, which is exactly what somebody does immediately after
+// saving. A correctness problem in the one workflow this feature has, traded for
+// a query nobody would have noticed.
+//
+// The icon itself is cached hard by the browser instead, at an address carrying a
+// fingerprint of its contents - so a repeated page load re-reads this row and
+// fetches no image at all.
+func brandingFor(settings *appservice.SettingsService) web.BrandingFunc {
+	return func(ctx context.Context) web.Branding {
+		branding, err := settings.Branding(ctx)
+		if err != nil {
+			// The database being unreachable is not a reason to serve no page. The
+			// shipped title and mark are wrong but present, and every other screen
+			// is about to report the real problem.
+			return web.Branding{}
+		}
+
+		return web.Branding{Title: branding.Title, Logo: branding.LogoDataURI}
+	}
 }

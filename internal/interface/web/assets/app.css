@@ -344,6 +344,13 @@ input[type="checkbox"], input[type="radio"] { width: auto; }
    must not be squeezed by the track beside it. */
 .switch-label { color: var(--text); }
 
+/* A line's worth of air under a row of switches.
+ *
+ * Switches and the fields below them are different kinds of thing - one says what
+ * this connection *is*, the others say where it points - and without a gap they
+ * read as one block of controls at the same level. */
+.switch-row { margin-bottom: 20px; }
+
 /* Somebody who has asked for less movement gets the colour change and not the
    slide. */
 @media (prefers-reduced-motion: reduce) {
@@ -525,13 +532,22 @@ td.pick input, th.pick input { cursor: pointer; margin: 0; }
  * Quiet on purpose: it is below the sentence somebody actually needs, and the
  * people who want it know they want it. A summary that shouted would put the one
  * untranslatable line on the screen back at the top of the reading order. */
-/* The list of what may be written in the configured texts. Folded away, because
-   it is read once when somebody first writes a footer and never again. */
-.markup-legend { margin-bottom: 14px; font-size: 13px; }
+/* The list of what may be written in the configured texts.
+ *
+ * On the screen rather than folded away. It was a disclosure at first, on the
+ * reasoning that it is read once and never again - which is true of somebody who
+ * already knows the placeholders exist, and those are the people who do not need
+ * it. Anybody else has to guess that the fold is worth opening. */
+.markup-legend {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+}
 
-.markup-legend > summary { color: var(--muted); cursor: pointer; }
-
-.markup-legend > summary:hover { color: var(--text); }
+.markup-legend-title { color: var(--muted); margin: 0 0 4px; }
 
 .markup-table { margin: 8px 0; width: auto; }
 
@@ -1057,7 +1073,10 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 /* --- branding: logo and footer --- */
 
-.brand-logo { height: 28px; max-width: 160px; object-fit: contain; }
+/* The instance's mark in the header. Bigger than the text beside it can carry on
+   its own: a wordmark at 28px is a smudge, and this is the one place the
+   installation says whose it is. */
+.brand-logo { height: 40px; max-width: 220px; object-fit: contain; }
 
 .logo-preview {
   background: var(--bg);
@@ -1088,6 +1107,20 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 /* The sign-in card's width and the height the banner is allowed there, so what
  * is on screen here is what will be on screen there. */
 .logo-preview-login { height: 96px; max-width: 328px; width: 328px; }
+
+/* Sixteen pixels square, which is what a browser tab gives it - and the point of
+   showing it at all. A wordmark that reads as a banner is a smear at this size,
+   and finding that out here costs nothing while finding it out in the tab means
+   preparing a second image. */
+.logo-preview-icon {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  height: 16px;
+  object-fit: contain;
+  padding: 1px;
+  width: 16px;
+}
 
 .site-footer {
   align-items: center;

@@ -146,7 +146,7 @@ Unblock-File .\go-time-recording_v1.2.3_windows_amd64.exe
 ```
 
 Rolling this out to more than a handful of machines is the point at which a
-certificate is worth its yearly cost — the README weighs the three kinds under
+certificate is worth its yearly cost — the README weighs the kinds under
 *Windows says "unknown publisher"*. A Windows service installed with `sc create`
 or NSSM does not show the dialog at all, because nobody double-clicks it.
 
