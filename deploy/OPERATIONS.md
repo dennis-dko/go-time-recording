@@ -340,6 +340,40 @@ For `postgres` and `mysql` you may leave `DB_PORT` out: the application fills in
 5432 or 3306 for the dialect and hands that to the database layer, so the port it
 proved is the port it uses.
 
+## Serving HTTPS everywhere
+
+Two routes, and which one applies is decided by whether the name this
+installation answers to is one a public authority can be asked about.
+
+**A public name.** `TLS_ENABLED=true` with `TLS_DOMAINS`, and Let's Encrypt
+issues and renews the certificate by itself. Port 80 has to stay reachable from
+outside, because that is where the challenge is answered.
+
+**Anything else** — an office network, a hostname that resolves nowhere outside
+it, an address with no public name at all. Let's Encrypt cannot go there, and
+that is most installations of this application. Point it at a certificate you
+already have:
+
+```bash
+TLS_ENABLED=true
+TLS_CERT_FILE=/etc/gtr/fullchain.pem
+TLS_KEY_FILE=/etc/gtr/privkey.pem
+```
+
+Nothing is requested from anybody: no domain, no challenge, no authority, so
+port 80 is only the redirect. The certificate can come from a company authority —
+which the machines already trust, so browsers say nothing — or be made for the
+purpose, which they will warn about once per machine until it is trusted:
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 825   -keyout privkey.pem -out fullchain.pem   -subj "/CN=zeiterfassung.intern"   -addext "subjectAltName=DNS:zeiterfassung.intern"
+```
+
+A certificate that cannot be read stops the start rather than being discovered by
+the first visitor, and `TLS_ENABLED` with neither route configured refuses to
+pretend: it says so and carries on over plain HTTP rather than claiming HTTPS it
+cannot serve.
+
 ## The database has to exist first
 
 For PostgreSQL and MySQL, **yes — create the database and the account before

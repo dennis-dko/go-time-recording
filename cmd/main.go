@@ -807,8 +807,15 @@ func startTLS(app *gofr.App, cfg appconfig.Config) func(context.Context) error {
 		return nil
 	}
 
-	if len(cfg.TLSDomains) == 0 {
-		app.Logger().Errorf("TLS_ENABLED is true but TLS_DOMAINS is empty; continuing without HTTPS")
+	// Either a name Let's Encrypt can be asked about, or a certificate this
+	// installation already has. Without one of the two there is nothing to serve
+	// HTTPS with, and starting anyway would serve plain HTTP under a setting that
+	// says otherwise.
+	hasOwn := strings.TrimSpace(cfg.TLSCertFile) != "" && strings.TrimSpace(cfg.TLSKeyFile) != ""
+
+	if len(cfg.TLSDomains) == 0 && !hasOwn {
+		app.Logger().Errorf("TLS_ENABLED is true but neither TLS_DOMAINS nor " +
+			"TLS_CERT_FILE and TLS_KEY_FILE are set; continuing without HTTPS")
 
 		return nil
 	}
@@ -823,6 +830,8 @@ func startTLS(app *gofr.App, cfg appconfig.Config) func(context.Context) error {
 		HTTPPort:  cfg.HTTPPort,
 		Backend:   "127.0.0.1:" + backendPort,
 		Staging:   cfg.TLSStaging,
+		CertFile:  cfg.TLSCertFile,
+		KeyFile:   cfg.TLSKeyFile,
 	}, app.Logger())
 	if err != nil {
 		app.Logger().Errorf("could not start HTTPS: %v; continuing without it", err)

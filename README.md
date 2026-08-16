@@ -793,7 +793,8 @@ nothing sets the variable.
 | `AUTH_ENABLED` | `true` | `false` gives **every** caller full admin rights |
 | `SESSION_LIFETIME` | `12h` | how long a sign-in stays valid. **Administered under Settings**; not in `configs/.env` |
 | `TLS_ENABLED` | `false` | HTTPS with Let's Encrypt |
-| `TLS_DOMAINS` | – | comma separated; required when TLS is on |
+| `TLS_DOMAINS` | – | comma separated; the names Let's Encrypt is asked about. One of this or the two below is required when TLS is on |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | – | a certificate this installation already has, in PEM. With both set nothing is requested from any authority — which is the only way to serve HTTPS on a name Let's Encrypt cannot reach |
 | `TLS_EMAIL` | – | receives expiry warnings |
 | `TLS_PORT` / `TLS_REDIRECT_PORT` | `443` / `80` | HTTPS, and the ACME/redirect listener |
 | `TLS_STAGING` | `false` | Let's Encrypt test authority |

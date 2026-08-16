@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // A configured text may carry a date that stays current and a link that works.
@@ -159,7 +161,7 @@ func TestTheShippedMarkStandsInUntilALogoIsConfigured(t *testing.T) {
 	}
 
 	// And a configured one replaces it rather than sitting beside it.
-	const logo = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzFmNGU3OSIvPjwvc3ZnPg=="
+	const logo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAAB4CAYAAAAuVYzDAAADi0lEQVR4nOzd7U3cQBSGUROlFDqg/xLogF6IIn4ENlrWxq/n655TAPIdCc2j69Xurw0AgCiBBQAQJrAAAMIEFgBAmMACAAgTWAAAYQILACBMYAEAhAksAIAwgQUAECawAADCBBYAQJjAAgAIE1gAAGECCwAgTGABAIQJLACAMIEFABAmsAAAwgQWAECYwAIACPvd+wE45/Vtez/7N16et6fM0wAAf7lYJ5MIqkcEFwCc4yKdQIuoukdsAcBxLs+B9QyrW0ILAPZzaQ5opLC6JbQA4DGX5UBGDqtbQgsA7vM1DYOYKa62CZ8XAFoSWAOYNVZmfW4AuJrXPB2tFCheGQLAPzZYnawUV9uC8wDAGQKrg1VjZNW5AOAogdXY6hGy+nwAsIfAaqhKfFSZEwDuEViNVIuOavMCwGcCq4GqsVF1bgAQWAAAYQLrYtW3ONXnB6AmgXUhcfHBOQBQjcC6iKj4ynkAUInAAgAI8/txF7Ctuc9vFhLg/wsYng0WAECYwAqzvfqe8wGgAoEFABAmsIJsZ/ZxTgCsTmABAIQJLACAMIEV4rXXMc4LgJUJLACAMIEFABAmsAAAwgRWgM8T/YxzA2BVAgsAIExgAQCECSwAgDCBBQAQJrAAAMIEFgBAmMACAAgTWAAAYQILACBMYAEAhAksAIAwgQUAECawAADCBBYAQJjAAgAIE1gAAGECK+DleXvq/Qwzcm4ArEpgAQCECSwAgDCBBQAQJrBCfJ7oGOcFwMoEFgBAmMACAAgTWEFee+3jnABYncACAAgTWGG2M99zPgBUILAAAMJsEy7y+ra9936G0dheAVCFDRYAQJjAuohtzVfOA4BKBNaFRMUH5wBANQLrYtXjovr8ANQksAAAwgRWA1W3OFXnBgCB1Ui12Kg2LwB8JrAaqhIdVeYEgHsEVmOrx8fq8wHAHgKrg1UjZNW5AOAogdXJajGy2jwAcIZLcQAz/26hsAKA/9lgDWDWSJn1uQHgagJrELPFymzPCwAtuSQHNPIrQ2EFAI+5LAc2UmgJKwDYz6U5gZ6hJawA4DiX52RaxJaoAoBzXKSTSwSXoAIAAACG5msaAADCBBYAQJjAAgAIE1gAAGECCwAgTGABAIQJLACAMIEFABAmsAAAwgQWAECYwAIACBNYAABhAgsAIExgAQCECSwAgDCBBQAQJrAAAMIEFgBAmMACAAj7EwAA//8NjIji7L4NLAAAAABJRU5ErkJggg=="
 
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-branding", chromedp.ByID))
@@ -369,4 +371,58 @@ func TestALanguageWithNoTextsFallsBackRatherThanEmptying(t *testing.T) {
 		t.Errorf("a German reader is shown %q where nothing German was written; "+
 			"the banner should still be the one that exists", got)
 	}
+}
+
+// The wizard asks for the instance's name in both languages.
+//
+// It is the first thing an administrator meets and the one step that exists to
+// name the installation - so a company working in two languages should not have
+// to come back to the appearance screen afterwards to say it a second time.
+//
+// Two boxes here rather than the switcher the appearance screen has: two is small
+// enough to put on a wizard step, and four texts in two languages is not.
+func TestTheWizardTakesTheTitleInBothLanguages(t *testing.T) {
+	p := open(t)
+
+	p.signIn(harness.AdminEmail, harness.AdminPassword)
+	p.waitGone("#login-screen")
+
+	p.run("wait for the wizard", chromedp.WaitVisible("#setup-wizard", chromedp.ByID))
+
+	// Straight to the naming step: the ones before it are the database and the
+	// password, which have their own cases.
+	p.run("skip to the naming step", chromedp.Evaluate(
+		`(() => {
+			const at = setup.state.steps.findIndex(s => s.id === 'branding');
+			if (at < 0) return 'no naming step';
+
+			setup.index = at;
+			renderSetup();
+
+			return 'ok';
+		})()`, nil))
+
+	p.run("wait for the fields",
+		chromedp.WaitVisible(`#setup-step-fields input[name="title.en"]`, chromedp.ByQuery))
+
+	if p.count(`#setup-step-fields input[name="title.de"]`) != 1 {
+		t.Fatal("the naming step asks for one language only")
+	}
+
+	p.run("name it twice",
+		chromedp.SetValue(`#setup-step-fields input[name="title.en"]`, "Time Recording GmbH",
+			chromedp.ByQuery),
+		chromedp.SetValue(`#setup-step-fields input[name="title.de"]`, "Zeiterfassung GmbH",
+			chromedp.ByQuery),
+		p.click("#setup-next"))
+
+	// Stored, and told apart by language: the reader is on English here.
+	p.waitForText("#app-title", "Time Recording GmbH")
+
+	p.run("switch to German",
+		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
+		chromedp.Evaluate(
+			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+
+	p.waitForText("#app-title", "Zeiterfassung GmbH")
 }
