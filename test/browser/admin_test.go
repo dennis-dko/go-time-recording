@@ -2230,7 +2230,27 @@ func TestTheEvaluationDrawsInWhicheverShapeIsChosen(t *testing.T) {
 }
 
 // chartShape names the element the evaluation's chart is currently drawn with.
+//
+// Waited for rather than asked once. The chart is drawn from a second request -
+// the evaluation's table arrives first and the figures behind the picture after
+// it - so a case that reads the shape the moment the result appears is reading an
+// empty box and reporting it as a chart that was never drawn.
 func (p *page) chartShape() string {
+	p.t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for {
+		shape := p.currentChartShape()
+		if shape != "nothing" || time.Now().After(deadline) {
+			return shape
+		}
+
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
+func (p *page) currentChartShape() string {
 	p.t.Helper()
 
 	var shape string
