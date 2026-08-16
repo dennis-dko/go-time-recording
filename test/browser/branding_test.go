@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -25,6 +26,10 @@ import (
 // screen, before anybody has authenticated - so whatever is written here is
 // rendered for every visitor, including the next administrator. Accepting markup
 // would mean accepting a script tag from anyone holding settings:manage.
+// wideLogo is the shape installations actually upload: a wordmark far wider than
+// it is tall, which is what makes the part shown in a square tab a question.
+const wideLogo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAAB4CAYAAAAuVYzDAAADi0lEQVR4nOzd7U3cQBSGUROlFDqg/xLogF6IIn4ENlrWxq/n655TAPIdCc2j69Xurw0AgCiBBQAQJrAAAMIEFgBAmMACAAgTWAAAYQILACBMYAEAhAksAIAwgQUAECawAADCBBYAQJjAAgAIE1gAAGECCwAgTGABAIQJLACAMIEFABAmsAAAwgQWAECYwAIACPvd+wE45/Vtez/7N16et6fM0wAAf7lYJ5MIqkcEFwCc4yKdQIuoukdsAcBxLs+B9QyrW0ILAPZzaQ5opLC6JbQA4DGX5UBGDqtbQgsA7vM1DYOYKa62CZ8XAFoSWAOYNVZmfW4AuJrXPB2tFCheGQLAPzZYnawUV9uC8wDAGQKrg1VjZNW5AOAogdXY6hGy+nwAsIfAaqhKfFSZEwDuEViNVIuOavMCwGcCq4GqsVF1bgAQWAAAYQLrYtW3ONXnB6AmgXUhcfHBOQBQjcC6iKj4ynkAUInAAgAI8/txF7Ctuc9vFhLg/wsYng0WAECYwAqzvfqe8wGgAoEFABAmsIJsZ/ZxTgCsTmABAIQJLACAMIEV4rXXMc4LgJUJLACAMIEFABAmsAAAwgRWgM8T/YxzA2BVAgsAIExgAQCECSwAgDCBBQAQJrAAAMIEFgBAmMACAAgTWAAAYQILACBMYAEAhAksAIAwgQUAECawAADCBBYAQJjAAgAIE1gAAGECK+DleXvq/Qwzcm4ArEpgAQCECSwAgDCBBQAQJrBCfJ7oGOcFwMoEFgBAmMACAAgTWEFee+3jnABYncACAAgTWGG2M99zPgBUILAAAMJsEy7y+ra9936G0dheAVCFDRYAQJjAuohtzVfOA4BKBNaFRMUH5wBANQLrYtXjovr8ANQksAAAwgRWA1W3OFXnBgCB1Ui12Kg2LwB8JrAaqhIdVeYEgHsEVmOrx8fq8wHAHgKrg1UjZNW5AOAogdXJajGy2jwAcIZLcQAz/26hsAKA/9lgDWDWSJn1uQHgagJrELPFymzPCwAtuSQHNPIrQ2EFAI+5LAc2UmgJKwDYz6U5gZ6hJawA4DiX52RaxJaoAoBzXKSTSwSXoAIAAACG5msaAADCBBYAQJjAAgAIE1gAAGECCwAgTGABAIQJLACAMIEFABAmsAAAwgQWAECYwAIACBNYAABhAgsAIExgAQCECSwAgDCBBQAQJrAAAMIEFgBAmMACAAj7EwAA//8NjIji7L4NLAAAAABJRU5ErkJggg=="
+
 func TestAConfiguredTextFillsInPlaceholdersAndMakesLinks(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
@@ -425,4 +430,157 @@ func TestTheWizardTakesTheTitleInBothLanguages(t *testing.T) {
 			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
 
 	p.waitForText("#app-title", "Zeiterfassung GmbH")
+}
+
+// Each place can be given a different part of the logo.
+//
+// A logo is uploaded once and drawn in three places that want three different
+// things. A wide header takes the whole wordmark; a browser tab cannot - sixteen
+// pixels of a two-to-one wordmark is a smear, and what is worth keeping there is
+// usually the mark at one end. Nobody can guess which end, so it is chosen.
+//
+// The selection keeps the shape of the place it is for, so what is on this screen
+// is what will be on the others: a free-form one would be a selection that cannot
+// be used as chosen.
+func TestAPartOfTheLogoCanBeChosenForEachPlace(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.storeBranding(t, wideLogo)
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	// The previews are controls, and each one opens the chooser for its own place.
+	if p.count(".logo-use-button") != 3 {
+		t.Fatalf("%d previews can be pressed, want one per place",
+			p.count(".logo-use-button"))
+	}
+
+	p.run("choose the part used in the tab",
+		p.click(`.logo-use-button[data-crop="icon"]`),
+		chromedp.WaitVisible("#crop-overlay", chromedp.ByID))
+
+	// Square, because a tab is. The box is the application's answer to "as much
+	// of this as a square can hold", before anything is dragged.
+	var box struct {
+		Width  float64 `json:"width"`
+		Height float64 `json:"height"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const r = document.querySelector('#crop-box').getBoundingClientRect();
+		return { width: r.width, height: r.height };
+	})())`, &box)
+
+	if box.Width < 8 || box.Height < 8 {
+		t.Fatalf("the selection opened at %.0fx%.0f, which cannot be aimed at",
+			box.Width, box.Height)
+	}
+
+	if ratio := box.Width / box.Height; ratio < 0.9 || ratio > 1.1 {
+		t.Errorf("the tab's selection is %.0fx%.0f, a ratio of %.2f - a tab is square",
+			box.Width, box.Height, ratio)
+	}
+
+	// Moved to the left end of the logo, which is where a wordmark keeps its
+	// mark, and stored.
+	p.run("take the left end", chromedp.Evaluate(
+		`(() => {
+			cropBox = { ...cropBox, x: 0, y: 0 };
+			drawCropBox();
+			document.querySelector('#crop-apply').click();
+
+			return 1;
+		})()`, nil))
+
+	// What the page believes it chose, before saving - so a failure says which of
+	// the two halves broke rather than only that the answer is empty.
+	var chosen string
+
+	p.run("read the chosen part", chromedp.Evaluate(
+		`JSON.stringify(logoCrops)`, &chosen))
+
+	if !strings.Contains(chosen, "icon") {
+		t.Fatalf("the chooser stored nothing for the tab: %s", chosen)
+	}
+
+	// What the request actually carried, recorded as it goes: the page is where
+	// this was failing, and the body it sends is the one thing neither side's log
+	// shows.
+	p.run("watch the save", chromedp.Evaluate(`
+		(() => {
+			window.__sent = null;
+			const real = window.fetch;
+
+			window.fetch = (url, options) => {
+				if (String(url).includes('/settings/branding')) window.__sent = options?.body ?? '';
+
+				return real(url, options);
+			};
+
+			return 1;
+		})()`, nil))
+
+	p.run("save", p.click(`#form-branding button[type="submit"]`))
+
+	// Waited for the notice the save raises rather than for a moment. The first
+	// version of this waited for "" in the notices, which matches the empty
+	// string - so it waited for nothing at all and read the answer back before the
+	// request had finished, then reported a feature that works as one that stores
+	// nothing.
+	p.waitForText("#toast", "saved")
+
+	var sent string
+
+	p.run("read what was sent", chromedp.Evaluate(
+		`String(window.__sent ?? 'nothing was sent')`, &sent))
+
+	if !strings.Contains(sent, "crops") {
+		t.Fatalf("the save carried no crops: %.300s", sent)
+	}
+
+	// What was chosen comes back, so the chooser reopens on it rather than
+	// starting again - and the server has it, which is what the three sizes are
+	// made from.
+	var stored struct {
+		Icon struct {
+			X float64 `json:"x"`
+			W float64 `json:"w"`
+		} `json:"icon"`
+	}
+
+	var raw string
+
+	p.run("read what was stored", chromedp.Evaluate(`
+		(async () => {
+			const r = await fetch('/api/v1/branding', { credentials: 'same-origin' });
+			const body = await r.json();
+
+			return JSON.stringify(body?.data?.crops ?? {});
+		})()`, &raw, awaitPromise))
+
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		t.Fatalf("reading what was stored: %v; %s", err, raw)
+	}
+
+	t.Logf("chosen: %s / stored: %s", chosen, raw)
+
+	if stored.Icon.W <= 0 {
+		t.Fatal("nothing was stored for the tab's part of the logo")
+	}
+
+	if stored.Icon.W >= 1 {
+		t.Errorf("the whole logo was stored (w=%.2f) rather than the part chosen",
+			stored.Icon.W)
+	}
+
+	if stored.Icon.X > 0.05 {
+		t.Errorf("the part stored starts at %.2f rather than at the left end",
+			stored.Icon.X)
+	}
 }

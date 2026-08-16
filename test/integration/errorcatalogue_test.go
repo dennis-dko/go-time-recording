@@ -597,3 +597,39 @@ func TestSavingTheSameSettingsTwiceIsFine(t *testing.T) {
 		t.Errorf("the footer reads %q after being saved twice", branding.FooterText)
 	}
 }
+
+// The part chosen for each place is stored and comes back.
+func TestTheChosenPartOfTheLogoIsStored(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	saved := admin.api(http.MethodPut, "/settings/branding", map[string]any{
+		"title": "Zeiterfassung",
+		"logo":  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+		"crops": map[string]any{
+			"icon": map[string]float64{"x": 0, "y": 0, "w": 0.2, "h": 1},
+		},
+	})
+
+	if saved.Status != http.StatusOK {
+		t.Fatalf("saving answered %d\n%s", saved.Status, saved.Body)
+	}
+
+	var branding struct {
+		Crops map[string]struct {
+			X float64 `json:"x"`
+			W float64 `json:"w"`
+		} `json:"crops"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/branding", nil), http.StatusOK).Data(t, &branding)
+
+	icon, ok := branding.Crops["icon"]
+	if !ok {
+		t.Fatalf("nothing came back for the tab's part: %+v", branding.Crops)
+	}
+
+	if icon.W != 0.2 {
+		t.Errorf("the tab uses %v of the width, want 0.2", icon.W)
+	}
+}

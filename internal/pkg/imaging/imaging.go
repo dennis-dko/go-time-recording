@@ -47,14 +47,76 @@ const (
 	IconSize = 64
 )
 
+// Crop is the part of a logo one place uses, as fractions of the whole.
+//
+// Fractions rather than pixels so it survives everything about the file it came
+// from: it is chosen against the image on screen, which is some size the browser
+// picked, and applied to the original, which is another. Pixels would have to be
+// converted at both ends and would be wrong the moment either changed.
+//
+// The zero value means the whole image, which is what every logo starts as and
+// what the great majority keep.
+type Crop struct {
+	X, Y, W, H float64
+}
+
+// Whole reports whether this crop selects everything, which is the default.
+func (c Crop) Whole() bool {
+	return c.W <= 0 || c.H <= 0 || (c.X <= 0 && c.Y <= 0 && c.W >= 1 && c.H >= 1)
+}
+
+// apply returns the part of the image this crop names.
+func (c Crop) apply(source image.Image) image.Image {
+	if c.Whole() {
+		return source
+	}
+
+	bounds := source.Bounds()
+
+	// Clamped rather than trusted: this arrives from a browser, and a rectangle
+	// reaching outside the image would be a panic in the scaler rather than a
+	// refusal anybody could act on.
+	left := bounds.Min.X + int(clamp(c.X)*float64(bounds.Dx()))
+	top := bounds.Min.Y + int(clamp(c.Y)*float64(bounds.Dy()))
+	width := int(clamp(c.W) * float64(bounds.Dx()))
+	height := int(clamp(c.H) * float64(bounds.Dy()))
+
+	wanted := image.Rect(left, top, left+width, top+height).Intersect(bounds)
+
+	// A selection that came out empty - a stray drag, a rounding error on a very
+	// small image - is the whole image rather than nothing.
+	if wanted.Dx() < 1 || wanted.Dy() < 1 {
+		return source
+	}
+
+	type subImager interface {
+		SubImage(image.Rectangle) image.Image
+	}
+
+	if sub, ok := source.(subImager); ok {
+		return sub.SubImage(wanted)
+	}
+
+	// A decoder that does not offer SubImage: copy the part out instead.
+	out := image.NewRGBA(image.Rect(0, 0, wanted.Dx(), wanted.Dy()))
+	draw.Draw(out, out.Bounds(), source, wanted.Min, draw.Src)
+
+	return out
+}
+
+func clamp(v float64) float64 {
+	return min(max(v, 0), 1)
+}
+
 // Fit scales an image to fit inside the given box, without cropping, and returns
 // it as a PNG data URI.
 //
 // Nothing is cut: a wordmark keeps its proportions and gains transparent bands
 // where the box is a different shape. The alternative is cropping to the box,
-// which for a logo means keeping whichever part happens to be in the middle.
-func Fit(dataURI string, width, height int) (string, error) {
-	return fitURI(dataURI, width, height, false)
+// which for a logo means keeping whichever part happens to be in the middle -
+// which is why the part is chosen rather than guessed, and passed in.
+func Fit(dataURI string, crop Crop, width, height int) (string, error) {
+	return fitURI(dataURI, crop, width, height, false)
 }
 
 // FitIcon is Fit for a browser tab: the same scaling, padded out to the square.
@@ -63,17 +125,17 @@ func Fit(dataURI string, width, height int) (string, error) {
 // detail of the scaling - it is what a tab requires and what the other two must
 // not have. Deriving the icon through Fit produced a 64 by 16 strip, which a tab
 // either stretches or refuses.
-func FitIcon(dataURI string) (string, error) {
-	return fitURI(dataURI, IconSize, IconSize, true)
+func FitIcon(dataURI string, crop Crop) (string, error) {
+	return fitURI(dataURI, crop, IconSize, IconSize, true)
 }
 
-func fitURI(dataURI string, width, height int, pad bool) (string, error) {
+func fitURI(dataURI string, crop Crop, width, height int, pad bool) (string, error) {
 	decoded, _, ok := decodeDataURI(dataURI)
 	if !ok {
 		return "", fmt.Errorf("the logo is not an inline image")
 	}
 
-	converted, err := fitInto(decoded, width, height, pad)
+	converted, err := fitInto(decoded, crop, width, height, pad)
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +177,7 @@ const iconSize = 64
 func ToIcon(body []byte) ([]byte, error) {
 	// Padded, because a tab icon has to be square: an image that is not gets one
 	// dimension stretched or the whole thing refused, depending on who is asked.
-	return fitInto(body, iconSize, iconSize, true)
+	return fitInto(body, Crop{}, iconSize, iconSize, true)
 }
 
 // fitInto scales an image to fit inside a box.
@@ -124,12 +186,13 @@ func ToIcon(body []byte) ([]byte, error) {
 // transparency - which is what a square icon needs. Without, the result is the
 // image at its scaled size and nothing more, because a header and a sign-in card
 // place it themselves and a transparent margin would only fight them for room.
-func fitInto(body []byte, boxWidth, boxHeight int, pad bool) ([]byte, error) {
-	source, _, err := image.Decode(bytes.NewReader(body))
+func fitInto(body []byte, crop Crop, boxWidth, boxHeight int, pad bool) ([]byte, error) {
+	decoded, _, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("the logo could not be read as an image: %w", err)
 	}
 
+	source := crop.apply(decoded)
 	bounds := source.Bounds()
 	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
 		return nil, fmt.Errorf("the logo has no size")

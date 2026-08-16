@@ -1079,6 +1079,250 @@ function languageName(language) {
   return { en: 'English', de: 'Deutsch' }[language] ?? language;
 }
 
+/**
+ * Choosing which part of the logo one place uses.
+ *
+ * A logo is uploaded once and drawn in three places that want three different
+ * things, and the part worth showing differs between them: a wide header can take
+ * the whole wordmark, a browser tab cannot - sixteen pixels of a two-to-one
+ * wordmark is a smear, and what is worth keeping there is usually the mark at one
+ * end. Nobody can guess which end, so it is chosen here, per place.
+ *
+ * The selection keeps the shape of the place it is for: a tab is square, so the
+ * box is square, and what is on the screen is what will be on the screen. A
+ * free-form selection would be one that cannot be used as chosen, which is a
+ * selection that lies.
+ */
+const CROP_SHAPES = {
+  header: { width: 440, height: 80, label: () => t('admin.logoInHeader', 'In the header') },
+  banner: { width: 656, height: 192, label: () => t('admin.logoOnSignIn', 'On the sign-in screen') },
+  icon: { width: 64, height: 64, label: () => t('admin.logoAsFavicon', 'In the browser tab') },
+};
+
+/** What has been chosen, per place, while the form is open. */
+let logoCrops = {};
+
+/** Which place the chooser is currently open for. */
+let croppingFor = '';
+
+/** The selection, in fractions of the image, while it is being dragged. */
+let cropBox = { x: 0, y: 0, w: 1, h: 1 };
+
+function openCropChooser(use) {
+  const overlay = $('#crop-overlay');
+  const image = $('#crop-image');
+  if (!overlay || !image || !pendingLogo) return;
+
+  croppingFor = use;
+  image.src = pendingLogo;
+
+  $('#crop-text').textContent = fillIn(
+    t('crop.text', 'Drag to choose the part of the logo used here: {0}.'),
+    [CROP_SHAPES[use]?.label() ?? use]);
+
+  // Shown first, and measured after.
+  //
+  // A hidden element has no size, so a selection drawn before this line came out
+  // as the two pixels of its own border - present, correct in every way a test
+  // could ask about, and impossible to aim at.
+  overlay.hidden = false;
+
+  // Whatever was chosen before, or the largest box of this shape that fits -
+  // which for a wide header is the whole logo and for a tab is a square of it.
+  const begin = () => {
+    cropBox = logoCrops[use] ?? largestBoxOfShape(use, image);
+    drawCropBox();
+  };
+
+  if (image.complete && image.naturalWidth) begin();
+  else image.onload = begin;
+
+  // Again on the next frame: the image may be decoded already while the overlay
+  // it was just put into has not been laid out yet, and the first measurement
+  // would then be of a box with no width.
+  requestAnimationFrame(() => {
+    if (croppingFor === use && image.naturalWidth) drawCropBox();
+  });
+}
+
+/**
+ * The largest box of the wanted shape that fits inside the image, centred.
+ *
+ * The starting point when nothing has been chosen, and what "the whole logo"
+ * means for a place whose shape the logo does not have: a square tab cannot show
+ * a two-to-one wordmark whole, so the honest answer is as much of it as a square
+ * can hold.
+ */
+function largestBoxOfShape(use, image) {
+  const shape = CROP_SHAPES[use];
+
+  if (!shape || !image.naturalWidth || !image.naturalHeight) {
+    return { x: 0, y: 0, w: 1, h: 1 };
+  }
+
+  const wanted = shape.width / shape.height;
+  const actual = image.naturalWidth / image.naturalHeight;
+
+  if (actual > wanted) {
+    const w = wanted / actual;
+
+    return { x: (1 - w) / 2, y: 0, w, h: 1 };
+  }
+
+  const h = actual / wanted;
+
+  return { x: 0, y: (1 - h) / 2, w: 1, h };
+}
+
+/** Puts the selection on screen, where the image actually is. */
+function drawCropBox() {
+  const image = $('#crop-image');
+  const box = $('#crop-box');
+  if (!image || !box) return;
+
+  // Measured against the drawn image rather than its element: object-fit leaves
+  // bands at the sides or the top, and a selection placed against the element
+  // would be off by exactly those bands.
+  const area = drawnImageArea(image);
+
+  box.style.left = `${area.left + cropBox.x * area.width}px`;
+  box.style.top = `${area.top + cropBox.y * area.height}px`;
+  box.style.width = `${cropBox.w * area.width}px`;
+  box.style.height = `${cropBox.h * area.height}px`;
+}
+
+/** Where inside its element the image is actually drawn. */
+function drawnImageArea(image) {
+  const width = image.clientWidth;
+  const height = image.clientHeight;
+
+  if (!image.naturalWidth || !image.naturalHeight) {
+    return { left: 0, top: 0, width, height };
+  }
+
+  const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
+  const drawnWidth = image.naturalWidth * scale;
+  const drawnHeight = image.naturalHeight * scale;
+
+  return {
+    left: image.offsetLeft + (width - drawnWidth) / 2,
+    top: image.offsetTop + (height - drawnHeight) / 2,
+    width: drawnWidth,
+    height: drawnHeight,
+  };
+}
+
+function wireCropChooser() {
+  const overlay = $('#crop-overlay');
+  const stage = $('#crop-stage');
+  const box = $('#crop-box');
+  const handle = $('#crop-handle');
+  if (!overlay || !stage || !box || !handle) return;
+
+  for (const button of $$('.logo-use-button')) {
+    button.addEventListener('click', () => openCropChooser(button.dataset.crop));
+  }
+
+  const close = () => {
+    overlay.hidden = true;
+    croppingFor = '';
+  };
+
+  $('#crop-cancel').addEventListener('click', close);
+
+  $('#crop-whole').addEventListener('click', () => {
+    // The whole logo for this place, which for a square tab means as much of it
+    // as a square can hold rather than a squashed wordmark.
+    delete logoCrops[croppingFor];
+    setLogoPreview(pendingLogo);
+    close();
+  });
+
+  $('#crop-apply').addEventListener('click', () => {
+    logoCrops[croppingFor] = { ...cropBox };
+    setLogoPreview(pendingLogo);
+    close();
+  });
+
+  // Dragging the box moves it; dragging the corner resizes it. Both keep the
+  // shape of the place the selection is for, and both stay inside the image.
+  let mode = '';
+  let from = { x: 0, y: 0 };
+  let start = cropBox;
+
+  const grab = (kind) => (e) => {
+    mode = kind;
+    from = { x: e.clientX, y: e.clientY };
+    start = { ...cropBox };
+
+    e.preventDefault();
+    e.stopPropagation();
+    stage.setPointerCapture(e.pointerId);
+  };
+
+  box.addEventListener('pointerdown', grab('move'));
+  handle.addEventListener('pointerdown', grab('resize'));
+
+  stage.addEventListener('pointermove', (e) => {
+    if (!mode) return;
+
+    const area = drawnImageArea($('#crop-image'));
+    if (!area.width || !area.height) return;
+
+    const dx = (e.clientX - from.x) / area.width;
+    const dy = (e.clientY - from.y) / area.height;
+
+    cropBox = mode === 'move' ? moveCropBox(start, dx, dy) : resizeCropBox(start, dx, dy);
+
+    drawCropBox();
+  });
+
+  for (const ending of ['pointerup', 'pointercancel']) {
+    stage.addEventListener(ending, () => { mode = ''; });
+  }
+
+  // The stage is a share of the window, so the selection has to be redrawn when
+  // that changes - otherwise it keeps the pixels it had and points at the wrong
+  // part of the logo.
+  window.addEventListener('resize', () => {
+    if (croppingFor) drawCropBox();
+  });
+}
+
+/** Moves the selection, keeping it inside the image. */
+function moveCropBox(start, dx, dy) {
+  return {
+    ...start,
+    x: Math.min(Math.max(start.x + dx, 0), 1 - start.w),
+    y: Math.min(Math.max(start.y + dy, 0), 1 - start.h),
+  };
+}
+
+/**
+ * Resizes the selection from its corner, keeping the shape of the place it is for
+ * and staying inside the image.
+ *
+ * Driven by whichever of the two movements is larger, so a diagonal drag does
+ * what it looks like it should rather than following one axis and ignoring the
+ * other.
+ */
+function resizeCropBox(start, dx, dy) {
+  const image = $('#crop-image');
+  const shape = CROP_SHAPES[croppingFor];
+  if (!shape || !image?.naturalWidth) return start;
+
+  // The selection's shape in fractions is the place's shape divided by the
+  // image's: a given fraction of a wide image is a different shape from the same
+  // fraction of a tall one.
+  const ratio = (shape.width / shape.height) / (image.naturalWidth / image.naturalHeight);
+  const wanted = Math.abs(dx) > Math.abs(dy) ? start.w + dx : (start.h + dy) * ratio;
+
+  // Never off the edge, and never so small it cannot be seen or grabbed again.
+  const w = Math.min(Math.max(wanted, 0.05), 1 - start.x, (1 - start.y) * ratio);
+
+  return { ...start, w, h: w / ratio };
+}
+
 /** The languages the appearance texts can be written in. */
 const BRANDING_LANGUAGES = ['en', 'de'];
 
@@ -1859,6 +2103,11 @@ const TRANSLATIONS = {
     'admin.dbPort': 'Port',
     'admin.logo': 'Logo (PNG oder JPEG, max. 256 KB)',
     'admin.logoInHeader': 'In der Kopfzeile',
+    'admin.logoCropHint': 'Jede Vorschau zeigt einen Ausschnitt des Logos. Zum Wählen darauf klicken.',
+    'crop.title': 'Welcher Teil des Logos?',
+    'crop.text': 'Ziehen, um den Teil des Logos zu wählen, der hier verwendet wird: {0}.',
+    'crop.whole': 'Ganzes Logo verwenden',
+    'crop.apply': 'Diesen Teil verwenden',
     'admin.logoAsFavicon': 'Im Browser-Tab',
     'admin.logoOnSignIn': 'Auf der Anmeldeseite',
     'field.name': 'Name',
@@ -3881,6 +4130,10 @@ async function loadAdmin() {
 
   showBrandingLanguage($('#branding-language')?.value || activeLanguage());
 
+  // What was chosen last time, so the previews show it and the chooser opens on
+  // it rather than starting again.
+  logoCrops = branding.crops ?? {};
+
   setLogoPreview(branding.logo ?? '');
 
   await loadOperational();
@@ -3965,13 +4218,61 @@ let pendingLogo = '';
 function setLogoPreview(dataURI) {
   pendingLogo = dataURI;
 
-  for (const id of ['#logo-preview', '#logo-preview-login', '#logo-preview-icon']) {
+  // Each preview shows the part chosen for that place, so what is on this screen
+  // is what will be on the others. Drawn here rather than by the server, because
+  // nothing has been saved yet - the logo may not even have left the machine.
+  for (const [id, use] of [
+    ['#logo-preview', 'header'],
+    ['#logo-preview-login', 'banner'],
+    ['#logo-preview-icon', 'icon'],
+  ]) {
     const preview = $(id);
-    if (preview) preview.src = dataURI || '';
+    if (!preview) continue;
+
+    preview.src = dataURI ? cropPreview(dataURI, logoCrops[use], preview) : '';
   }
 
   const uses = $('#logo-preview-uses');
   if (uses) uses.hidden = !dataURI;
+
+  const hint = $('#logo-crop-hint');
+  if (hint) hint.hidden = !dataURI;
+}
+
+/**
+ * The chosen part of a logo, for a preview.
+ *
+ * The whole image where nothing has been chosen, which is the usual case and
+ * costs nothing. Where something has, the part is cut out with a canvas - the one
+ * piece of image work that happens in the browser, because the alternative is a
+ * round trip per preview for a picture that has not been saved yet.
+ */
+function cropPreview(dataURI, crop, into) {
+  if (!crop || crop.w >= 1) return dataURI;
+
+  const source = new Image();
+
+  source.onload = () => {
+    const canvas = document.createElement('canvas');
+
+    canvas.width = Math.max(1, Math.round(source.naturalWidth * crop.w));
+    canvas.height = Math.max(1, Math.round(source.naturalHeight * crop.h));
+
+    canvas.getContext('2d').drawImage(
+      source,
+      source.naturalWidth * crop.x, source.naturalHeight * crop.y,
+      canvas.width, canvas.height,
+      0, 0, canvas.width, canvas.height,
+    );
+
+    into.src = canvas.toDataURL('image/png');
+  };
+
+  source.src = dataURI;
+
+  // Until it has loaded, the whole image: a preview that is briefly too generous
+  // is better than one that is briefly empty.
+  return dataURI;
 }
 
 function wireAdmin() {
@@ -4002,7 +4303,15 @@ function wireAdmin() {
     }
 
     const reader = new FileReader();
-    reader.onload = () => setLogoPreview(String(reader.result));
+
+    reader.onload = () => {
+      // A different logo means the parts chosen from the old one are about a
+      // picture that is gone. Keeping them would crop the new logo by
+      // coordinates somebody chose against another image.
+      logoCrops = {};
+      setLogoPreview(String(reader.result));
+    };
+
     reader.readAsDataURL(file);
   });
 
@@ -4026,6 +4335,7 @@ function wireAdmin() {
       ...base,
       logo: pendingLogo,
       translations: brandingDraft,
+      crops: logoCrops,
     };
     // Whether the tab's own identity is changing, decided before the save so the
     // comparison is against what is currently on screen.
@@ -8772,6 +9082,7 @@ async function init() {
     wireRestart();
     wireUpdate();
     wireReleaseBanner();
+    wireCropChooser();
 
     $('#branding-language')?.addEventListener('change', (e) => {
       showBrandingLanguage(e.target.value);

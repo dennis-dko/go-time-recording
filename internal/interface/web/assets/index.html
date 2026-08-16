@@ -87,6 +87,31 @@
        once is a list to skim, and the point is that nothing gets skimmed past.
        Shown only to the built-in administrator, and only while something is
        outstanding. -->
+  <!-- Choosing which part of the logo one place uses. An overlay rather than a
+       panel on the form: it needs the logo at a size somebody can aim at, and the
+       form has room for a preview rather than for a picture. -->
+  <div id="crop-overlay" class="overlay" hidden>
+    <div class="overlay-card crop-card" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+      <h2 id="crop-title" data-i18n="crop.title">Which part of the logo?</h2>
+      <p class="muted" id="crop-text"></p>
+
+      <div class="crop-stage" id="crop-stage">
+        <img id="crop-image" alt="">
+        <div id="crop-box" class="crop-box">
+          <span class="crop-handle" id="crop-handle"></span>
+        </div>
+      </div>
+
+      <div class="row row-apart">
+        <button type="button" class="secondary" id="crop-whole" data-i18n="crop.whole">Use the whole logo</button>
+        <span class="row">
+          <button type="button" class="secondary" id="crop-cancel" data-i18n="action.cancel">Cancel</button>
+          <button type="button" id="crop-apply" data-i18n="crop.apply">Use this part</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
   <div id="restart-overlay" class="overlay" hidden>
     <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="restart-waiting-title">
       <h2 id="restart-waiting-title" data-i18n="restart.waiting">Restarting</h2>
@@ -786,13 +811,18 @@
              shown here rather than discovered on the sign-in screen after saving,
              which is a screen an administrator does not see again for as long as
              they stay signed in. -->
+        <p class="muted" id="logo-crop-hint" data-i18n="admin.logoCropHint" hidden>Each of these shows a part of the logo. Press one to choose which part.</p>
         <div class="logo-uses" id="logo-preview-uses" hidden>
           <figure class="logo-use">
-            <img id="logo-preview" class="logo-preview" alt="">
+            <button type="button" class="logo-use-button" data-crop="header">
+              <img id="logo-preview" class="logo-preview" alt="">
+            </button>
             <figcaption class="muted" data-i18n="admin.logoInHeader">In the header</figcaption>
           </figure>
           <figure class="logo-use">
-            <img id="logo-preview-login" class="logo-preview logo-preview-login" alt="">
+            <button type="button" class="logo-use-button" data-crop="banner">
+              <img id="logo-preview-login" class="logo-preview logo-preview-login" alt="">
+            </button>
             <figcaption class="muted" data-i18n="admin.logoOnSignIn">On the sign-in screen</figcaption>
           </figure>
           <!-- The third use, and the one with the least room by a long way. A
@@ -800,7 +830,9 @@
                pixels, and that is worth seeing before saving rather than
                discovering in the tab afterwards. -->
           <figure class="logo-use">
-            <img id="logo-preview-icon" class="logo-preview logo-preview-icon" alt="">
+            <button type="button" class="logo-use-button" data-crop="icon">
+              <img id="logo-preview-icon" class="logo-preview logo-preview-icon" alt="">
+            </button>
             <figcaption class="muted" data-i18n="admin.logoAsFavicon">In the browser tab</figcaption>
           </figure>
         </div>

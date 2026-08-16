@@ -1,5 +1,11 @@
 package model
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 // Setting keys. They are constants because each one is read by a specific
 // piece of code; a key that exists only in the database would do nothing.
 const (
@@ -12,14 +18,24 @@ const (
 	// Kept beside the original rather than instead of it: the original is what a
 	// later version re-derives from when a size changes, and it is the only copy
 	// that has lost nothing. What is sent to a browser is these.
-	SettingLogoHeader   = "branding.logo.header"
-	SettingLogoBanner   = "branding.logo.banner"
-	SettingLogoIcon     = "branding.logo.icon"
-	SettingFooterText   = "branding.footer"
-	SettingCompanyName  = "branding.company"
-	SettingCompanyURL   = "branding.companyUrl"
-	SettingFooterLegal  = "branding.legal"
-	SettingLDAPSettings = "ldap.config"
+	SettingLogoHeader = "branding.logo.header"
+	SettingLogoBanner = "branding.logo.banner"
+	SettingLogoIcon   = "branding.logo.icon"
+
+	// Which part of the logo each place uses, as fractions of the whole.
+	//
+	// A wordmark that reads as a banner is a smear in a tab, and the part worth
+	// keeping there is usually the mark at one end rather than the middle. Nobody
+	// can guess which, so it is chosen - and remembered per place, because the
+	// answer differs between a wide header and a square tab.
+	SettingLogoHeaderCrop = "branding.logo.header.crop"
+	SettingLogoBannerCrop = "branding.logo.banner.crop"
+	SettingLogoIconCrop   = "branding.logo.icon.crop"
+	SettingFooterText     = "branding.footer"
+	SettingCompanyName    = "branding.company"
+	SettingCompanyURL     = "branding.companyUrl"
+	SettingFooterLegal    = "branding.legal"
+	SettingLDAPSettings   = "ldap.config"
 
 	// SettingTimezone is the instance-wide zone that decides which calendar day
 	// a booking belongs to, for everyone who has not set their own.
@@ -68,6 +84,12 @@ type Branding struct {
 	LogoHeader string
 	LogoBanner string
 	LogoIcon   string
+
+	// The part of the logo each of those is made from. The zero value is the
+	// whole image, which is what a logo starts as.
+	HeaderCrop LogoCrop
+	BannerCrop LogoCrop
+	IconCrop   LogoCrop
 
 	FooterText  string
 	CompanyName string
@@ -202,4 +224,54 @@ func DefaultLDAPConfig() LDAPConfig {
 		IDAttribute:    "entryUUID",
 		DefaultRole:    RoleUser,
 	}
+}
+
+// LogoCrop is the part of the logo one place uses, as fractions of the whole.
+//
+// Fractions rather than pixels, because it is chosen against the image as the
+// browser drew it and applied to the original: two different sizes, neither of
+// which the other should have to know.
+type LogoCrop struct {
+	X, Y, W, H float64
+}
+
+// Whole reports whether this selects the entire image, which is the default.
+func (c LogoCrop) Whole() bool {
+	return c.W <= 0 || c.H <= 0
+}
+
+// String is how a crop is stored: four numbers, or empty for the whole image.
+//
+// Its own small format rather than JSON in a settings value, because the settings
+// table holds strings people read when something has gone wrong, and
+// "0.00,0.10,0.35,0.80" is legible in a way an escaped object is not.
+func (c LogoCrop) String() string {
+	if c.Whole() {
+		return ""
+	}
+
+	return fmt.Sprintf("%.4f,%.4f,%.4f,%.4f", c.X, c.Y, c.W, c.H)
+}
+
+// ParseLogoCrop reads what String wrote. Anything unreadable is the whole image,
+// which is the safe answer: a logo shown complete is never wrong, only sometimes
+// small.
+func ParseLogoCrop(raw string) LogoCrop {
+	parts := strings.Split(strings.TrimSpace(raw), ",")
+	if len(parts) != 4 {
+		return LogoCrop{}
+	}
+
+	values := make([]float64, 4)
+
+	for i, part := range parts {
+		value, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+		if err != nil {
+			return LogoCrop{}
+		}
+
+		values[i] = value
+	}
+
+	return LogoCrop{X: values[0], Y: values[1], W: values[2], H: values[3]}
 }
