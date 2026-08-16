@@ -239,3 +239,23 @@ func (p *page) waitForText(selector, want string) {
 	p.t.Fatalf("%s never contained %q; it says:\n%s\n\napplication log:\n%s",
 		selector, want, p.text(selector), p.app.Log())
 }
+
+// waitForTextWithin is waitForText with its own patience, for the few things
+// whose speed is somebody else's business - a connection to a port nobody
+// answers on takes as long as the network stack takes.
+func (p *page) waitForTextWithin(selector, want string, within time.Duration) {
+	p.t.Helper()
+
+	deadline := time.Now().Add(within)
+
+	for time.Now().Before(deadline) {
+		if strings.Contains(p.text(selector), want) {
+			return
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	p.t.Fatalf("%s never contained %q; it says:\n%s\n\napplication log:\n%s",
+		selector, want, p.text(selector), p.app.Log())
+}

@@ -25,7 +25,7 @@ func TestALogoIsMadeInTheSizeEachPlaceDraws(t *testing.T) {
 		"the banner": {BannerWidth, BannerHeight},
 	} {
 		t.Run(name, func(t *testing.T) {
-			out, err := Fit(logo, size.width, size.height)
+			out, err := Fit(logo, Crop{}, size.width, size.height)
 			if err != nil {
 				t.Fatalf("converting: %v", err)
 			}
@@ -105,7 +105,7 @@ func TestOnlyTheTwoFormatsAreConverted(t *testing.T) {
 		"not encoded":      "data:image/png,plain",
 		"not a URI at all": "hello",
 	} {
-		if _, err := FitIcon(uri); err == nil {
+		if _, err := FitIcon(uri, Crop{}); err == nil {
 			t.Errorf("%s was converted", name)
 		}
 	}
@@ -114,7 +114,7 @@ func TestOnlyTheTwoFormatsAreConverted(t *testing.T) {
 func mustFitIcon(t *testing.T, logo string) string {
 	t.Helper()
 
-	out, err := FitIcon(logo)
+	out, err := FitIcon(logo, Crop{})
 	if err != nil {
 		t.Fatalf("converting: %v", err)
 	}
@@ -125,7 +125,7 @@ func mustFitIcon(t *testing.T, logo string) string {
 func mustFit(t *testing.T, logo string, width, height int) string {
 	t.Helper()
 
-	out, err := Fit(logo, width, height)
+	out, err := Fit(logo, Crop{}, width, height)
 	if err != nil {
 		t.Fatalf("converting: %v", err)
 	}
@@ -208,4 +208,110 @@ func drawnBounds(img image.Image) image.Rectangle {
 	}
 
 	return found
+}
+
+// A part of the logo can be chosen for each place it is shown.
+//
+// A wordmark that reads as a banner is a smear in a tab, and the part worth
+// keeping there is usually the mark at one end rather than whatever falls in the
+// middle. Nobody can guess which, so it is chosen - and per place, because the
+// answer differs between a wide header and a square tab.
+func TestOnlyTheChosenPartIsUsed(t *testing.T) {
+	// Left half green, right half black, so which half came through is a question
+	// about a colour rather than about a size.
+	logo := halves(t, 400, 200)
+
+	left, err := Fit(logo, Crop{X: 0, Y: 0, W: 0.5, H: 1}, 100, 100)
+	if err != nil {
+		t.Fatalf("cropping to the left: %v", err)
+	}
+
+	if got := middleColour(t, left); got != (colours{green: true}) {
+		t.Errorf("the left half came out as %+v", got)
+	}
+
+	right, err := Fit(logo, Crop{X: 0.5, Y: 0, W: 0.5, H: 1}, 100, 100)
+	if err != nil {
+		t.Fatalf("cropping to the right: %v", err)
+	}
+
+	if got := middleColour(t, right); got != (colours{black: true}) {
+		t.Errorf("the right half came out as %+v", got)
+	}
+}
+
+// A crop that makes no sense is the whole image rather than nothing.
+//
+// It arrives from a browser, so it can be anything: a stray drag, a rounding
+// error on a small image, a value somebody typed into the request by hand. A logo
+// shown complete is never wrong, only sometimes small - and nothing here should
+// be able to produce an empty tab, which is the failure this all started with.
+func TestAnImpossibleCropIsTheWholeImage(t *testing.T) {
+	logo := halves(t, 400, 200)
+
+	whole := decode(t, mustFit(t, logo, 100, 100))
+
+	for name, crop := range map[string]Crop{
+		"nothing at all":    {X: 0.5, Y: 0.5, W: 0, H: 0},
+		"outside the image": {X: 4, Y: 4, W: 1, H: 1},
+		"negative":          {X: -1, Y: -1, W: -1, H: -1},
+		"vanishingly small": {X: 0.5, Y: 0.5, W: 0.0000001, H: 0.0000001},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := Fit(logo, crop, 100, 100)
+			if err != nil {
+				t.Fatalf("converting: %v", err)
+			}
+
+			got := decode(t, out)
+
+			if got.Bounds() != whole.Bounds() {
+				t.Errorf("%s produced %v rather than the whole image %v",
+					name, got.Bounds(), whole.Bounds())
+			}
+		})
+	}
+}
+
+type colours struct{ green, black bool }
+
+// middleColour is what is in the middle of a converted image, which is what says
+// which part of the original it was made from.
+func middleColour(t *testing.T, dataURI string) colours {
+	t.Helper()
+
+	img := decode(t, dataURI)
+	bounds := img.Bounds()
+
+	r, g, b, _ := img.At(bounds.Min.X+bounds.Dx()/2, bounds.Min.Y+bounds.Dy()/2).RGBA()
+
+	return colours{
+		green: g > r && g > b,
+		black: r < 0x4000 && g < 0x4000 && b < 0x4000,
+	}
+}
+
+// halves is an image whose left half is green and right half is black.
+func halves(t *testing.T, width, height int) string {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+
+	for y := range height {
+		for x := range width {
+			if x < width/2 {
+				img.Set(x, y, color.RGBA{G: 220, A: 255})
+			} else {
+				img.Set(x, y, color.RGBA{A: 255})
+			}
+		}
+	}
+
+	var out bytes.Buffer
+
+	if err := png.Encode(&out, img); err != nil {
+		t.Fatal(err)
+	}
+
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(out.Bytes())
 }

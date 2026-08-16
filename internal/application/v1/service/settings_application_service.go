@@ -52,6 +52,9 @@ func (s *SettingsService) Branding(ctx context.Context) (model.Branding, error) 
 	branding.LogoHeader = all[model.SettingLogoHeader]
 	branding.LogoBanner = all[model.SettingLogoBanner]
 	branding.LogoIcon = all[model.SettingLogoIcon]
+	branding.HeaderCrop = model.ParseLogoCrop(all[model.SettingLogoHeaderCrop])
+	branding.BannerCrop = model.ParseLogoCrop(all[model.SettingLogoBannerCrop])
+	branding.IconCrop = model.ParseLogoCrop(all[model.SettingLogoIconCrop])
 	branding.FooterText = all[model.SettingFooterText]
 	branding.CompanyName = all[model.SettingCompanyName]
 	branding.CompanyURL = all[model.SettingCompanyURL]
@@ -111,7 +114,7 @@ func (s *SettingsService) SaveBranding(ctx context.Context, branding model.Brand
 	// A logo that cannot be converted is stored with no derivatives, and the
 	// readers fall back to the original - which is also the state of every
 	// installation whose logo predates this.
-	header, banner, icon := deriveLogoSizes(branding.LogoDataURI)
+	header, banner, icon := deriveLogoSizes(branding)
 
 	values := map[string]string{
 		model.SettingAppTitle:    strings.TrimSpace(branding.Title),
@@ -120,10 +123,14 @@ func (s *SettingsService) SaveBranding(ctx context.Context, branding model.Brand
 		model.SettingLogoHeader:  header,
 		model.SettingLogoBanner:  banner,
 		model.SettingLogoIcon:    icon,
-		model.SettingFooterText:  branding.FooterText,
-		model.SettingCompanyName: branding.CompanyName,
-		model.SettingCompanyURL:  branding.CompanyURL,
-		model.SettingFooterLegal: branding.LegalNotice,
+
+		model.SettingLogoHeaderCrop: branding.HeaderCrop.String(),
+		model.SettingLogoBannerCrop: branding.BannerCrop.String(),
+		model.SettingLogoIconCrop:   branding.IconCrop.String(),
+		model.SettingFooterText:     branding.FooterText,
+		model.SettingCompanyName:    branding.CompanyName,
+		model.SettingCompanyURL:     branding.CompanyURL,
+		model.SettingFooterLegal:    branding.LegalNotice,
 	}
 
 	// The per-language texts, for every language the interface ships. Written
@@ -511,13 +518,15 @@ func isHTTPURL(raw string) bool {
 // happens instead is that the derivatives are empty and every reader falls back
 // to the original, which is exactly what an installation whose logo predates this
 // already does.
-func deriveLogoSizes(logo string) (header, banner, icon string) {
+func deriveLogoSizes(branding model.Branding) (header, banner, icon string) {
+	logo := branding.LogoDataURI
+
 	if strings.TrimSpace(logo) == "" {
 		return "", "", ""
 	}
 
-	fit := func(width, height int) string {
-		out, err := imaging.Fit(logo, width, height)
+	fit := func(crop model.LogoCrop, width, height int) string {
+		out, err := imaging.Fit(logo, asCrop(crop), width, height)
 		if err != nil {
 			return ""
 		}
@@ -527,12 +536,21 @@ func deriveLogoSizes(logo string) (header, banner, icon string) {
 
 	// The tab's is padded out to the square, which the other two must not be -
 	// see FitIcon.
-	tab, err := imaging.FitIcon(logo)
+	tab, err := imaging.FitIcon(logo, asCrop(branding.IconCrop))
 	if err != nil {
 		tab = ""
 	}
 
-	return fit(imaging.HeaderWidth, imaging.HeaderHeight),
-		fit(imaging.BannerWidth, imaging.BannerHeight),
+	return fit(branding.HeaderCrop, imaging.HeaderWidth, imaging.HeaderHeight),
+		fit(branding.BannerCrop, imaging.BannerWidth, imaging.BannerHeight),
 		tab
+}
+
+// asCrop carries a crop across the layer boundary.
+//
+// Two identical little structs rather than one shared: the domain names what an
+// installation chose, and the imaging package names what a scaler is given. They
+// agree today and there is no reason for either to know the other's type.
+func asCrop(c model.LogoCrop) imaging.Crop {
+	return imaging.Crop{X: c.X, Y: c.Y, W: c.W, H: c.H}
 }

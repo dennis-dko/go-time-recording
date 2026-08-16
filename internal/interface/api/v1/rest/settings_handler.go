@@ -209,6 +209,19 @@ type BrandingResponse struct {
 	// wants is decided in the browser - the switcher first, the browser's own
 	// setting otherwise - and this endpoint answers before anyone has signed in.
 	Translations map[string]BrandingTextResponse `json:"translations,omitempty"`
+
+	// Crops carry which part of the logo each place uses, so the screen that
+	// chose them can show them again. Fractions of the whole image; a place that
+	// uses all of it is not listed, which is what most installations send.
+	Crops map[string]CropResponse `json:"crops,omitempty"`
+}
+
+// CropResponse is a part of the logo, as fractions of the whole.
+type CropResponse struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
 }
 
 // BrandingTextResponse is one language's version of the texts.
@@ -280,6 +293,9 @@ func (h *SettingsHandler) SaveBranding(c *gofr.Context) (any, error) {
 		CompanyName: req.CompanyName,
 		CompanyURL:  req.CompanyURL,
 		LegalNotice: req.LegalNotice,
+		HeaderCrop:  cropFrom(req.Crops["header"]),
+		BannerCrop:  cropFrom(req.Crops["banner"]),
+		IconCrop:    cropFrom(req.Crops["icon"]),
 		Translations: func() map[string]model.BrandingText {
 			if len(req.Translations) == 0 {
 				return nil
@@ -714,6 +730,7 @@ func newBrandingResponse(b model.Branding) BrandingResponse {
 		Logo:        b.LogoDataURI,
 		LogoHeader:  b.LogoHeader,
 		LogoBanner:  b.LogoBanner,
+		Crops:       cropsOf(b),
 		FooterText:  b.FooterText,
 		CompanyName: b.CompanyName,
 		CompanyURL:  b.CompanyURL,
@@ -962,4 +979,38 @@ func (h *SettingsHandler) active() ActiveTelemetry {
 	}
 
 	return out
+}
+
+// cropsOf is what the screen needs to show the parts that were chosen.
+//
+// Named rather than positional, and only the ones that are not the whole image:
+// a logo nobody has cropped answers with nothing at all, which is what the great
+// majority of installations will send and receive.
+func cropsOf(b model.Branding) map[string]CropResponse {
+	out := map[string]CropResponse{}
+
+	for name, crop := range map[string]model.LogoCrop{
+		"header": b.HeaderCrop,
+		"banner": b.BannerCrop,
+		"icon":   b.IconCrop,
+	} {
+		if crop.Whole() {
+			continue
+		}
+
+		out[name] = CropResponse{X: crop.X, Y: crop.Y, W: crop.W, H: crop.H}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
+}
+
+// cropFrom reads one back. An absent one is the whole image, which is both the
+// default and the answer for anything that makes no sense - the scaler clamps
+// what it is given rather than trusting it.
+func cropFrom(c CropResponse) model.LogoCrop {
+	return model.LogoCrop{X: c.X, Y: c.Y, W: c.W, H: c.H}
 }

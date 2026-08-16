@@ -173,6 +173,18 @@ other two are not, because a header places the mark itself.
 It also shrinks what every visitor downloads. The sign-in screen used to receive
 the whole original inside the branding response, before anybody had signed in.
 
+**Which part of the logo each place uses is yours to choose.** Press a preview on
+the appearance screen and drag: the selection keeps the shape of the place it is
+for, so what is on that screen is what will be on the others. A wide header can
+take the whole wordmark; a browser tab has sixteen pixels, and the part worth
+keeping there is usually the mark at one end rather than whatever falls in the
+middle. Nothing has to be chosen — a logo starts as all of itself in all three
+places, which is what most installations will leave it as.
+
+The choice is remembered per place and per logo. Uploading a different logo
+forgets it, because a selection made against one picture means nothing against
+another.
+
 Fitted, not cropped: nothing of the logo is cut. That does mean a wide wordmark
 becomes a thin strip at the sixteen pixels a tab draws, which is a fact about
 wordmarks rather than about this. The appearance screen shows the logo at exactly

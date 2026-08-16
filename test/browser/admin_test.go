@@ -2360,10 +2360,10 @@ func TestClearingTheLogoChangesTheTabWithoutAReload(t *testing.T) {
 	p.run("take the logo off", p.click("#logo-clear"),
 		p.click(`#form-branding button[type="submit"]`))
 
-	p.waitForText("#toast", "")
-
-	// Given a moment for the save and the branding reload behind it, and then
-	// asked. No reload anywhere in this case.
+	// Not waited for by its notice: saving a changed mark reloads the page, and
+	// the notice goes with it. What this case is about is the tab, so that is what
+	// is waited for - polled, because the save, the branding behind it and the
+	// reload all have to finish first.
 	deadline := time.Now().Add(10 * time.Second)
 
 	for p.iconIsTheLogo(t) {

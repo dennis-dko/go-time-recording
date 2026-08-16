@@ -1133,6 +1133,62 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   margin: 4px 0 8px;
 }
 .logo-use { display: grid; gap: 4px; justify-items: start; margin: 0; }
+
+/* A preview is a control now: pressing it chooses which part of the logo that
+   place uses. It carries the cue a button does, quietly - it sits in a row of
+   pictures, and three outlined boxes would read as a toolbar. */
+.logo-use-button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  line-height: 0;
+  padding: 2px;
+}
+
+.logo-use-button:hover,
+.logo-use-button:focus-visible { border-color: var(--accent); }
+
+/* Where the choosing happens. The image is shown as large as the card allows,
+   because the part being aimed at is often a mark a few percent of the whole. */
+.crop-card { max-width: 720px; width: 100%; }
+
+.crop-stage {
+  background: repeating-conic-gradient(var(--border) 0% 25%, var(--surface) 0% 50%)
+    50% / 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 12px 0;
+  overflow: hidden;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+}
+
+.crop-stage img { display: block; max-height: 46vh; width: 100%; object-fit: contain; }
+
+/* Everything outside the selection is dimmed rather than the selection being
+   outlined: what matters is what will be kept, and a box drawn on a busy logo is
+   easy to lose. */
+.crop-box {
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 45%);
+  cursor: move;
+  position: absolute;
+}
+
+.crop-handle {
+  background: var(--accent);
+  border-radius: 2px;
+  bottom: -7px;
+  cursor: nwse-resize;
+  height: 14px;
+  position: absolute;
+  right: -7px;
+  width: 14px;
+}
 .logo-use figcaption { font-size: 12px; }
 
 /* The sign-in card's width and the height the banner is allowed there, so what
