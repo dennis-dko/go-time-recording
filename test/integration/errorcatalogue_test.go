@@ -553,3 +553,47 @@ func TestALogoMustBeARasterImage(t *testing.T) {
 		}
 	}
 }
+
+// Saving the same settings twice is not an error.
+//
+// It is what somebody does when they are not sure the first press registered,
+// and on MySQL it used to answer 500: the write was an UPDATE and, if that
+// reported nothing changed, an INSERT - and MySQL counts *changed* rows rather
+// than matched ones, so writing a value that was already there fell through to
+// the INSERT and hit the primary key.
+//
+// The dialect that had the bug is the one this only fails on, so it is worth
+// saying plainly that this case means nothing unless the suite is run against
+// MySQL as well - which CI does.
+func TestSavingTheSameSettingsTwiceIsFine(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	body := map[string]any{
+		"title":       "Zeiterfassung",
+		"banner":      "",
+		"footerText":  "Gemacht in Osnabrück",
+		"legalNotice": "",
+	}
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		saved := admin.api(http.MethodPut, "/settings/branding", body)
+
+		if saved.Status != http.StatusOK {
+			t.Fatalf("saving the appearance the %d time answered %d\n%s",
+				attempt, saved.Status, saved.Body)
+		}
+	}
+
+	// And what it holds afterwards is what was sent, rather than a row that was
+	// written twice and read once.
+	var branding struct {
+		FooterText string `json:"footerText"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/branding", nil), http.StatusOK).Data(t, &branding)
+
+	if branding.FooterText != "Gemacht in Osnabrück" {
+		t.Errorf("the footer reads %q after being saved twice", branding.FooterText)
+	}
+}
