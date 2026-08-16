@@ -51,6 +51,11 @@ type browser struct {
 	// context is the browsing context - BiDi's name for the tab.
 	context string
 
+	// profile is where this Firefox keeps everything it decided, including which
+	// icon it adopted for a page. That is the only place the answer exists: what a
+	// tab draws is not in the document.
+	profile string
+
 	// next numbers the commands. Every reply carries the id it answers, so
 	// replies can be told apart from the events that arrive between them.
 	next int
@@ -94,6 +99,7 @@ func openBrowser(t *testing.T) *browser {
 		t.Skip("no Firefox on this machine; set FIREFOX_PATH to run this suite")
 	}
 
+	b := &browser{t: t}
 	port := freePort(t)
 
 	// Its own profile, thrown away with the test: a shared one carries cookies,
@@ -103,6 +109,8 @@ func openBrowser(t *testing.T) *browser {
 	if err := os.MkdirAll(profile, 0o750); err != nil {
 		t.Fatal(err)
 	}
+
+	b.profile = profile
 
 	cmd := exec.Command(exe, "--headless",
 		"--remote-debugging-port", fmt.Sprint(port),
@@ -122,8 +130,6 @@ func openBrowser(t *testing.T) *browser {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	})
-
-	b := &browser{t: t}
 
 	// Firefox opens the port a moment after the process exists.
 	deadline := time.Now().Add(45 * time.Second)
