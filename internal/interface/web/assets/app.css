@@ -1078,6 +1078,13 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    installation says whose it is. */
 .brand-logo { height: 40px; max-width: 220px; object-fit: contain; }
 
+/* The shipped mark is drawn square for a tab, so it is given a square's room.
+   Left at a banner's width it would sit in a box four times too wide, with the
+   header's words pushed away from a mark that is not there. */
+.shipped-mark { max-width: 40px; }
+
+.login-card .shipped-mark { height: 64px; max-width: 64px; width: 64px; }
+
 .logo-preview {
   background: var(--bg);
   border: 1px solid var(--border);

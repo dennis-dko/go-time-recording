@@ -340,6 +340,51 @@ For `postgres` and `mysql` you may leave `DB_PORT` out: the application fills in
 5432 or 3306 for the dialect and hands that to the database layer, so the port it
 proved is the port it uses.
 
+## The database has to exist first
+
+For PostgreSQL and MySQL, **yes — create the database and the account before
+pointing the application at them.** It creates its own *tables* on first start
+and every migration after that; it does not create the database itself, and it
+does not ask for credentials that could.
+
+That is deliberate rather than an omission. A connection allowed to create
+databases is a connection allowed to drop them, and this application would be
+holding it for the rest of its life to use it once.
+
+```sql
+-- PostgreSQL
+CREATE DATABASE "go-time-recording";
+CREATE USER gtr WITH PASSWORD 'choose-something';
+GRANT ALL PRIVILEGES ON DATABASE "go-time-recording" TO gtr;
+-- PostgreSQL 15 and later also need the schema itself:
+\connect "go-time-recording"
+GRANT ALL ON SCHEMA public TO gtr;
+```
+
+```sql
+-- MySQL / MariaDB
+CREATE DATABASE `go-time-recording` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'gtr'@'%' IDENTIFIED BY 'choose-something';
+GRANT ALL PRIVILEGES ON `go-time-recording`.* TO 'gtr'@'%';
+```
+
+`utf8mb4` matters on MySQL: names, project titles and the notice on the sign-in
+screen are whatever people type, and the older `utf8` is three bytes and cannot
+store all of it.
+
+The account needs `CREATE TABLE`, `ALTER`, `INDEX` and the ordinary read and
+write rights *inside* that database — the grants above give it those. It never
+needs to create a database.
+
+**SQLite creates its own file**, so there is nothing to prepare. That is what
+`task dev` and the single binary use unless told otherwise.
+
+The installer tests the connection before writing it down, so a database that
+does not exist yet is reported on that screen rather than discovered at the next
+start. The compose files here create the database themselves, through the
+official image's `POSTGRES_DB` and `MYSQL_DATABASE` — which is the same act,
+done by the container instead of by you.
+
 ## First start
 
 ```

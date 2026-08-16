@@ -116,3 +116,35 @@ func declaredIcons(t *testing.T, b *browser) []string {
 
 	return icons
 }
+
+// A wide, mostly-black wordmark reaches the tab in Firefox.
+//
+// Reported as "no favicon at all", with a logo of that shape - so this is the
+// shape the check uses rather than the tidy rectangle the case above has. What it
+// answers is a narrow question: does Firefox fetch and decode what this
+// application serves for that image. Whether sixteen pixels of black on a dark
+// tab bar can be *seen* is a different question, and not one any test can ask.
+func TestAWideDarkWordmarkStillReachesTheTab(t *testing.T) {
+	app := harness.Start(t)
+	b := openBrowser(t)
+
+	b.goTo(app.BaseURL())
+	signIn(t, b)
+
+	post(t, b, "/api/v1/settings/branding",
+		`{"title":"Zeiterfassung","logo":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAwIiBoZWlnaHQ9IjEyOTkiIHZpZXdCb3g9IjAgMCAyMDAwIDEyOTkiPjxjaXJjbGUgY3g9IjQ3MCIgY3k9IjY1MCIgcj0iMzMwIiBmaWxsPSIjMDAwIi8+PGNpcmNsZSBjeD0iNDcwIiBjeT0iNjUwIiByPSIyMzAiIGZpbGw9IiNjZGRjMDAiLz48Y2lyY2xlIGN4PSI0NzAiIGN5PSI2NTAiIHI9IjgwIiBmaWxsPSIjMDAwIi8+PHJlY3QgeD0iOTAwIiB5PSI0NTAiIHdpZHRoPSIxMDAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iIzAwMCIvPjwvc3ZnPg=="}`, "PUT")
+
+	b.goTo(app.BaseURL())
+	b.settle()
+
+	if icons := declaredIcons(t, b); len(icons) != 1 {
+		t.Fatalf("the page declares %d icons", len(icons))
+	}
+
+	// 2000 is the wordmark's own width: Firefox fetched it, decoded it, and knows
+	// how big it is. Anything else means it never became an image.
+	if width := iconWidth(t, b); width != 2000 {
+		t.Errorf("Firefox reads the tab icon as %dpx wide; the logo is 2000, so it "+
+			"was not fetched or not decoded", width)
+	}
+}

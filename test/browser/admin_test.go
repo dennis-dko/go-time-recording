@@ -2295,3 +2295,50 @@ func TestAReloadStaysOnTheScreenThatWasOpen(t *testing.T) {
 		t.Errorf("the navigation marks %q as the open screen after the reload", open)
 	}
 }
+
+// Clearing the logo puts the shipped mark back at once, not at the next reload.
+//
+// The reload case was already covered and passed, which is what let this
+// through: the document the server sends is correct the moment it is asked for,
+// so anything that reloads sees the right icon whatever the page did. What
+// somebody actually does is press Save and look at the tab.
+func TestClearingTheLogoChangesTheTabWithoutAReload(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	const logo = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzFmNGU3OSIvPjwvc3ZnPg=="
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.storeBranding(t, logo)
+	p.run("reload with the logo", chromedp.Reload(),
+		chromedp.WaitVisible("#who", chromedp.ByID))
+
+	if !p.iconIsTheLogo(t) {
+		t.Fatal("the logo never reached the tab, so this case cannot show it going")
+	}
+
+	// Saved through the form's own path rather than by reloading afterwards, which
+	// is the whole point: the page has to notice.
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.run("take the logo off", p.click("#logo-clear"),
+		p.click(`#form-branding button[type="submit"]`))
+
+	p.waitForText("#toast", "")
+
+	// Given a moment for the save and the branding reload behind it, and then
+	// asked. No reload anywhere in this case.
+	deadline := time.Now().Add(10 * time.Second)
+
+	for p.iconIsTheLogo(t) {
+		if time.Now().After(deadline) {
+			t.Fatal("the tab still shows the logo after it was removed and saved; " +
+				"it only changes on the next reload")
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+}

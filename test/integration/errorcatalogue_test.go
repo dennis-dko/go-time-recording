@@ -297,3 +297,77 @@ func TestTheShippedRolesCannotBeDeleted(t *testing.T) {
 			deleted.Status, deleted.Body)
 	}
 }
+
+// The shipped roles cannot be renamed or have their rights changed either.
+//
+// Undeletable came first, on the reasoning that what these grant is an
+// installation's own business. What that misses is that they are also the answer
+// to questions asked elsewhere: the role every new account is given, the one the
+// directory synchronisation assigns, and the pair the interface names in its own
+// words. A shipped role renamed or emptied breaks those quietly - the
+// installation is left with a role called something else, granting something
+// else, under a name the interface still translates.
+func TestTheShippedRolesCannotBeEdited(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	var roles struct {
+		Items []struct {
+			ID        uint     `json:"id"`
+			Name      string   `json:"name"`
+			IsDefault bool     `json:"isDefault"`
+			Rights    []string `json:"permissions"`
+		} `json:"items"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/roles", nil), http.StatusOK).Data(t, &roles)
+
+	checked := 0
+
+	for _, role := range roles.Items {
+		if !role.IsDefault {
+			continue
+		}
+
+		checked++
+
+		renamed := admin.api(http.MethodPut, fmt.Sprintf("/roles/%d", role.ID),
+			map[string]any{"name": role.Name + "-neu"})
+
+		if renamed.Status != http.StatusConflict {
+			t.Errorf("renaming the shipped role %q answered %d, want %d\n%s",
+				role.Name, renamed.Status, http.StatusConflict, renamed.Body)
+		}
+
+		stripped := admin.api(http.MethodPut, fmt.Sprintf("/roles/%d", role.ID),
+			map[string]any{"permissions": []string{"timesheets:read:own"}})
+
+		if stripped.Status != http.StatusConflict {
+			t.Errorf("changing the rights of the shipped role %q answered %d, want %d\n%s",
+				role.Name, stripped.Status, http.StatusConflict, stripped.Body)
+		}
+	}
+
+	if checked != 3 {
+		t.Errorf("%d shipped roles were checked, want 3", checked)
+	}
+
+	// A description is still editable, which is the one thing about these that
+	// belongs to the installation rather than to the application: it is what the
+	// role editor shows beside the name and says nothing about what is granted.
+	for _, role := range roles.Items {
+		if !role.IsDefault {
+			continue
+		}
+
+		described := admin.api(http.MethodPut, fmt.Sprintf("/roles/%d", role.ID),
+			map[string]any{"description": "Von uns beschrieben"})
+
+		if described.Status != http.StatusOK {
+			t.Errorf("describing the shipped role %q answered %d\n%s",
+				role.Name, described.Status, described.Body)
+		}
+
+		break
+	}
+}
