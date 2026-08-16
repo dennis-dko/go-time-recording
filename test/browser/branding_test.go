@@ -568,8 +568,6 @@ func TestAPartOfTheLogoCanBeChosenForEachPlace(t *testing.T) {
 		t.Fatalf("reading what was stored: %v; %s", err, raw)
 	}
 
-	t.Logf("chosen: %s / stored: %s", chosen, raw)
-
 	if stored.Icon.W <= 0 {
 		t.Fatal("nothing was stored for the tab's part of the logo")
 	}

@@ -5,6 +5,7 @@ package browser
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -56,10 +57,21 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 
 	p.run("test the connection", p.click("#datasource-test"))
 
+	// Two waits rather than one, so a failure says which half went wrong.
+	//
+	// The first is the line that stands there while the attempt runs, which only
+	// appears if the press landed at all. Waiting straight for the outcome
+	// reported an empty box, which is equally what a missed click and a slow
+	// connection look like - and on a loaded runner it was one of those.
+	p.waitForText("#datasource-test-result", "wird geprüft")
+
 	// The generic sentence, in German. Waited for on the outcome rather than on
-	// the word "Verbindung", which is also in "Verbindung wird geprüft …" - the
-	// line that stands there while the attempt is still running.
-	p.waitForText("#datasource-test-result", "konnte nicht")
+	// the word "Verbindung", which is also in "Verbindung wird geprüft …".
+	//
+	// Given longer than the usual wait: the attempt is a connection to a port
+	// nobody answers on, and how long that takes to fail is the network stack's
+	// business rather than this application's.
+	p.waitForTextWithin("#datasource-test-result", "konnte nicht", 40*time.Second)
 
 	// The sentence that leads, read on its own. The whole card's text includes
 	// the folded-away part - textContent does not care what is on screen - so
