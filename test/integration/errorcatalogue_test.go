@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // Every refusal this API can give names itself.
@@ -369,5 +371,141 @@ func TestTheShippedRolesCannotBeEdited(t *testing.T) {
 		}
 
 		break
+	}
+}
+
+// An account the directory owns is not edited or deleted here.
+//
+// Both used to be allowed and both are worse than being refused, because each
+// one looks like it worked:
+//
+// The name and the address are copied from the entry on every synchronisation,
+// so changing them here lasts until the next run and then silently reverts.
+//
+// Deleting removes a person and, with a purge, everything they recorded - and
+// then the next synchronisation creates the account again from the entry that is
+// still in the directory. The hours are gone, the account is back, and nothing
+// about the directory has changed.
+//
+// The role is the exception, because the directory has no opinion about it: it is
+// decided here, for somebody the directory only says exists.
+func TestAnAccountFromTheDirectoryIsEditedInTheDirectory(t *testing.T) {
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	created := admin.api(http.MethodPost, "/users", map[string]any{
+		"name": "Dirk", "email": "dirk@example.com",
+		"role": "user", "password": "dirk-password-1",
+	})
+
+	var made struct {
+		ID uint `json:"id"`
+	}
+
+	admin.must(created, http.StatusCreated).Data(t, &made)
+
+	// Made into a directory account the way the synchronisation makes one. Through
+	// the database because there is no endpoint that does this - the
+	// synchronisation is the only thing that creates them, and standing an LDAP
+	// server up for one flag would be testing the directory rather than this rule.
+	markAsDirectoryAccount(t, a, made.ID)
+
+	// The name is refused.
+	renamed := admin.api(http.MethodPut, fmt.Sprintf("/users/%d", made.ID),
+		map[string]any{"name": "Dirk Neu"})
+
+	if renamed.Status != http.StatusConflict {
+		t.Errorf("renaming a directory account answered %d, want %d\n%s",
+			renamed.Status, http.StatusConflict, renamed.Body)
+	}
+
+	if code := errorCode(t, renamed); code != "directoryAccountReadOnly" {
+		t.Errorf("the refusal is named %q", code)
+	}
+
+	// And so is the address, which is what the synchronisation matches on.
+	moved := admin.api(http.MethodPut, fmt.Sprintf("/users/%d", made.ID),
+		map[string]any{"email": "dirk.neu@example.com"})
+
+	if moved.Status != http.StatusConflict {
+		t.Errorf("changing a directory account's address answered %d, want %d",
+			moved.Status, http.StatusConflict)
+	}
+
+	// Deleting is refused whether or not the hours go with it.
+	for _, path := range []string{"", "?purge=true"} {
+		removed := admin.api(http.MethodDelete,
+			fmt.Sprintf("/users/%d%s", made.ID, path), nil)
+
+		if removed.Status != http.StatusConflict {
+			t.Errorf("deleting a directory account%s answered %d, want %d\n%s",
+				path, removed.Status, http.StatusConflict, removed.Body)
+		}
+
+		if code := errorCode(t, removed); code != "directoryAccountUndeletable" {
+			t.Errorf("the refusal is named %q", code)
+		}
+	}
+
+	// The role is still this installation's to decide.
+	role := admin.api(http.MethodPut, fmt.Sprintf("/users/%d/role", made.ID),
+		map[string]any{"role": "user-admin"})
+
+	if role.Status != http.StatusOK {
+		t.Errorf("changing a directory account's role answered %d\n%s",
+			role.Status, role.Body)
+	}
+
+	// And the account says where it comes from, so a screen can explain why two
+	// of its buttons are missing.
+	var listed struct {
+		Items []struct {
+			ID         uint `json:"id"`
+			IsExternal bool `json:"isExternal"`
+		} `json:"items"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK).Data(t, &listed)
+
+	found := false
+
+	for _, one := range listed.Items {
+		if one.ID == made.ID {
+			found = one.IsExternal
+		}
+	}
+
+	if !found {
+		t.Error("the account does not report that it comes from the directory")
+	}
+}
+
+// markAsDirectoryAccount makes an account look like one the synchronisation
+// created.
+//
+// Through the database because nothing else does it: the synchronisation is the
+// only thing that creates these, and standing an LDAP server up for one flag
+// would be testing the directory rather than the rule under test.
+//
+// The placeholders differ by dialect and the application's own queries are
+// written with ?, so this rewrites them the way the harness does.
+func markAsDirectoryAccount(t *testing.T, a *app, id uint) {
+	t.Helper()
+
+	db := a.DB(t)
+	if db == nil {
+		t.Fatal("this instance has no database")
+	}
+
+	query := "UPDATE users SET is_external = ?, external_id = ? WHERE id = ?"
+
+	// The placeholders differ by dialect and the application's own queries are
+	// written with ?, so PostgreSQL gets its own numbering.
+	if strings.Contains(os.Getenv(harness.DSNEnv), "postgres") {
+		query = "UPDATE users SET is_external = $1, external_id = $2 WHERE id = $3"
+	}
+
+	if _, err := db.Exec(query, true, fmt.Sprintf("uid=%d", id), id); err != nil {
+		t.Fatalf("marking the account as the directory's: %v", err)
 	}
 }

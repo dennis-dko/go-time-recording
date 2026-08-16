@@ -51,7 +51,51 @@ type Branding struct {
 	CompanyName string
 	CompanyURL  string
 	LegalNotice string
+
+	// Translations carries the same four texts in the languages this
+	// installation has written them in, keyed by language.
+	//
+	// The fields above stay the ones an installation is asked for first and the
+	// answer for any language nobody has written: a company that works in one
+	// language fills those in and never opens this, and a reader whose language
+	// has no translation sees them rather than nothing.
+	//
+	// Only the texts. The logo, the company's address and the URL are the same
+	// in every language - translating a link would be translating where it goes.
+	Translations map[string]BrandingText
 }
+
+// BrandingText is what an installation says about itself, in one language.
+type BrandingText struct {
+	Title       string
+	Banner      string
+	FooterText  string
+	LegalNotice string
+}
+
+// brandingTextKeys are the setting names one language's texts are stored under.
+//
+// Suffixed rather than prefixed, so everything about the appearance still sorts
+// together in a table somebody is reading by eye.
+func brandingTextKeys(language string) BrandingTextKeys {
+	return BrandingTextKeys{
+		Title:       SettingAppTitle + "." + language,
+		Banner:      SettingBannerText + "." + language,
+		FooterText:  SettingFooterText + "." + language,
+		LegalNotice: SettingFooterLegal + "." + language,
+	}
+}
+
+// BrandingTextKeys names where one language's texts live.
+type BrandingTextKeys struct {
+	Title       string
+	Banner      string
+	FooterText  string
+	LegalNotice string
+}
+
+// BrandingKeysFor is brandingTextKeys, exported for the settings service.
+func BrandingKeysFor(language string) BrandingTextKeys { return brandingTextKeys(language) }
 
 // FallbackAppTitle is the name an instance carries when nothing else has been
 // configured - neither a title under Settings nor APP_NAME in the environment.

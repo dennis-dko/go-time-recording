@@ -1058,6 +1058,78 @@ function trackTopbarHeight() {
   window.addEventListener('resize', apply);
 }
 
+/**
+ * One of the configured texts, in the language the reader is being served.
+ *
+ * The rule is the one that governs everything else about language here: what the
+ * switcher says, and the browser's own setting when nobody has switched. A
+ * language with nothing written for it falls back to the base text rather than to
+ * nothing - an installation that works in one language wrote that one, and a
+ * German reader is better served by a German company's German banner than by a
+ * blank strip.
+ */
+function brandingIn(branding, field) {
+  const written = branding.translations?.[activeLanguage()]?.[field];
+
+  return written || branding[field] || '';
+}
+
+/** The languages the appearance texts can be written in. */
+const BRANDING_LANGUAGES = ['en', 'de'];
+
+/** The four texts that translate, per language, while the form is open. */
+let brandingDraft = {};
+
+/**
+ * The texts as they were before any translation existed.
+ *
+ * They stay the base: what a reader gets when their language has nothing written
+ * for it, and what the server puts in the document before anybody has chosen a
+ * language. An installation working in one language fills these in and never
+ * opens the switcher.
+ */
+let brandingBase = {};
+
+/** The four fields the language switcher swaps. */
+const BRANDING_TEXT_FIELDS = ['title', 'banner', 'footerText', 'legalNotice'];
+
+/**
+ * Puts one language's texts into the form, keeping whatever was typed in the one
+ * being left.
+ */
+function showBrandingLanguage(language) {
+  const form = $('#form-branding');
+  const picker = $('#branding-language');
+  if (!form || !picker) return;
+
+  rememberBrandingDraft();
+
+  const chosen = BRANDING_LANGUAGES.includes(language) ? language : BRANDING_LANGUAGES[0];
+
+  picker.value = chosen;
+  brandingLanguage = chosen;
+
+  for (const field of BRANDING_TEXT_FIELDS) {
+    // The base where this language has nothing of its own, so somebody adding a
+    // translation starts from what is already on the screen rather than from an
+    // empty box.
+    form.elements[field].value = brandingDraft[chosen]?.[field] || brandingBase[field] || '';
+  }
+}
+
+/** Which language the form is currently showing. */
+let brandingLanguage = 'en';
+
+/** Takes what is in the form back into the draft for the language it belongs to. */
+function rememberBrandingDraft() {
+  const form = $('#form-branding');
+  if (!form || !brandingDraft[brandingLanguage]) return;
+
+  for (const field of BRANDING_TEXT_FIELDS) {
+    brandingDraft[brandingLanguage][field] = form.elements[field].value;
+  }
+}
+
 /** The mark an instance carries when nobody has configured one. */
 const SHIPPED_MARK = '/favicon.svg';
 
@@ -1957,7 +2029,6 @@ const TRANSLATIONS = {
     'row.noSuchProject': 'Es gibt kein Projekt mit dem Namen „{0}“.',
     'row.projectNotActive': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
 
-    'user.directoryAccount': 'aus dem Verzeichnis',
     'user.directoryHint': 'Wird im LDAP verwaltet. Das Passwort liegt dort, und das Entfernen des Eintrags dort entfernt auch dieses Konto.',
 
     'passkey.title': 'Passkeys',
@@ -2087,6 +2158,7 @@ const TRANSLATIONS = {
     'admin.testConnection': 'Verbindung testen',
     'admin.testing': 'Verbindung wird geprüft …',
     'admin.testOk': 'Die Verbindung funktioniert.',
+    'admin.textLanguage': 'Sprache dieser Texte',
     'admin.title': 'Titel (Browser-Tab und Kopfzeile)',
     'admin.userFilter': 'Benutzer-Filter (%s = Anmeldename)',
     'app.language': 'Sprache',
@@ -2491,6 +2563,11 @@ const TRANSLATIONS = {
     'user.initialPassword': 'leer = Initialpasswort',
     'user.deleteConfirm': 'Trotzdem löschen? Die erfassten Zeiten sind danach unwiederbringlich verloren.',
     'user.ownAccount': 'Inhaberkonto',
+    'field.source': 'Herkunft',
+    'user.local': 'Lokal',
+    'user.fromDirectory': 'Verzeichnis',
+    'err.directoryAccountReadOnly': '„{0}“ stammt aus dem Verzeichnis. Name und Adresse werden von dort übernommen; hier lässt sich nur die Rolle ändern.',
+    'err.directoryAccountUndeletable': '„{0}“ stammt aus dem Verzeichnis. Bitte den Eintrag dort entfernen — der nächste Abgleich entfernt dieses Konto.',
     'user.systemAccount': 'Systemkonto',
   },
 };
@@ -2865,7 +2942,10 @@ async function loadUsers() {
     // Not your own, which the server refuses too: deleting it would end the
     // session the request arrived on and leave whoever pressed it looking at a
     // sign-in screen for an account that no longer exists.
-    if (can('users:delete') && !u.isSystem && u.id !== me.user?.id) {
+    // Not a directory account either: removing it here removes a person, and the
+    // next synchronisation creates them again from the entry that is still
+    // there - so the hours are gone and nothing else has changed.
+    if (can('users:delete') && !u.isSystem && !u.isExternal && u.id !== me.user?.id) {
       actions.append(deleteButton({
         label: `${u.name} <${u.email}>`,
         path: `/users/${u.id}`,
@@ -2895,17 +2975,6 @@ async function loadUsers() {
       }));
     }
 
-    // A directory account shown as an ordinary one invites two useless
-    // actions: setting a password that is never checked, and a deletion the
-    // next synchronisation undoes.
-    if (u.isExternal) {
-      actions.append(el('span', {
-        class: 'muted',
-        text: t('user.directoryAccount', 'from the directory'),
-        title: t('user.directoryHint',
-          'Managed in LDAP. The password lives there, and removing the entry there removes this account.'),
-      }));
-    }
 
     const roleCell = el('td', {});
 
@@ -2933,13 +3002,26 @@ async function loadUsers() {
       el('td', { text: u.name }),
       el('td', { text: u.email }),
       roleCell,
+      // Where the account is kept. It decides what may be done to it here, and
+      // was only visible as a note beside the buttons - which is the wrong place
+      // for the thing that explains why two of them are missing.
+      el('td', {
+        text: u.isExternal
+          ? t('user.fromDirectory', 'Directory')
+          : t('user.local', 'Local'),
+        class: u.isExternal ? 'muted' : '',
+        title: u.isExternal
+          ? t('user.directoryHint',
+            'Managed in LDAP. The password lives there, and removing the entry there removes this account.')
+          : '',
+      }),
       el('td', { class: 'num', text: u.dailyTargetHours ? u.dailyTargetHours.toFixed(1) : t('field.default', 'default') }),
       el('td', { class: 'num', text: u.maxDailyHours ? u.maxDailyHours.toFixed(1) : t('field.default', 'default') }),
       actions,
     );
   });
 
-  fillTable($('#table-users tbody'), rows, 6, t('user.empty', 'No users yet.'));
+  fillTable($('#table-users tbody'), rows, 7, t('user.empty', 'No users yet.'));
 }
 
 async function loadRoles() {
@@ -3615,6 +3697,17 @@ async function loadBranding() {
 
   lastBranding = branding;
 
+  // Drawn through the redraw registry, so switching language picks the texts
+  // again. Everything on this screen that a language change reaches goes the same
+  // way; a title and a banner written in two languages would otherwise stay in
+  // whichever one the page happened to load in.
+  redrawable('branding', () => drawBranding(branding));
+
+  return branding;
+}
+
+function drawBranding(branding) {
+
   // Remembered on the device, so the next load has the instance's own name and
   // mark before it is painted rather than a second later. theme.js reads this;
   // see the note there for why a reload otherwise flickers back to a name nobody
@@ -3628,8 +3721,10 @@ async function loadBranding() {
     // Private browsing refuses storage outright, which costs only the flicker.
   }
 
-  document.title = branding.title || 'Time Recording';
-  $('#app-title').textContent = branding.title || 'Time Recording';
+  const title = brandingIn(branding, 'title') || 'Time Recording';
+
+  document.title = title;
+  $('#app-title').textContent = title;
 
   // The shipped mark where nothing has been configured, in both places.
   //
@@ -3655,9 +3750,9 @@ async function loadBranding() {
   // Through the renderer, so a {year} in a copyright line stays right and a link
   // in a footer is a link. Drawn rather than assigned, because none of this is
   // HTML - see renderConfiguredText for why it must not be.
-  renderConfiguredText($('#instance-banner'), branding.banner);
-  renderConfiguredText($('#footer-text'), branding.footerText);
-  renderConfiguredText($('#footer-legal'), branding.legalNotice);
+  renderConfiguredText($('#instance-banner'), brandingIn(branding, 'banner'));
+  renderConfiguredText($('#footer-text'), brandingIn(branding, 'footerText'));
+  renderConfiguredText($('#footer-legal'), brandingIn(branding, 'legalNotice'));
 
   const company = $('#footer-company');
   company.textContent = branding.companyName ?? '';
@@ -3689,7 +3784,6 @@ async function loadBranding() {
       : '';
   }
 
-  return branding;
 }
 
 /** Whether the chosen database is one that lives on a server rather than in a file. */
@@ -3736,9 +3830,38 @@ async function loadAdmin() {
 
   const branding = await api('/branding');
   const form = $('#form-branding');
-  for (const field of ['title', 'banner', 'companyName', 'companyUrl', 'footerText', 'legalNotice']) {
+
+  // The two that are the same in every language. A logo, an address and a link
+  // do not translate - translating a link would be translating where it goes.
+  for (const field of ['companyName', 'companyUrl']) {
     form.elements[field].value = branding[field] ?? '';
   }
+
+  // And the four that do, kept per language while this screen is open so
+  // switching between them does not lose what has been typed.
+  brandingDraft = {};
+
+  for (const language of BRANDING_LANGUAGES) {
+    const written = branding.translations?.[language] ?? {};
+
+    brandingDraft[language] = {
+      title: written.title ?? '',
+      banner: written.banner ?? '',
+      footerText: written.footerText ?? '',
+      legalNotice: written.legalNotice ?? '',
+    };
+  }
+
+  // What the installation answered before any of this existed stays the base,
+  // and is what the form shows for the language it was presumably written in.
+  brandingBase = {
+    title: branding.title ?? '',
+    banner: branding.banner ?? '',
+    footerText: branding.footerText ?? '',
+    legalNotice: branding.legalNotice ?? '',
+  };
+
+  showBrandingLanguage($('#branding-language')?.value || activeLanguage());
 
   setLogoPreview(branding.logo ?? '');
 
@@ -3859,7 +3982,20 @@ function wireAdmin() {
 
   $('#form-branding').addEventListener('submit', (e) => {
     e.preventDefault();
-    const body = { ...formData(e.target), logo: pendingLogo };
+    rememberBrandingDraft();
+
+    // The base stays what is in the form for the language it was written in, so
+    // an installation that never opens the switcher goes on working exactly as
+    // it did - and a reader whose language has nothing written still gets
+    // something rather than a blank header.
+    const base = brandingDraft[BRANDING_LANGUAGES[0]] ?? brandingDraft[brandingLanguage] ?? {};
+
+    const body = {
+      ...formData(e.target),
+      ...base,
+      logo: pendingLogo,
+      translations: brandingDraft,
+    };
     // Whether the tab's own identity is changing, decided before the save so the
     // comparison is against what is currently on screen.
     const markChanged = (lastBranding.logo ?? '') !== (pendingLogo ?? '');
@@ -8573,6 +8709,10 @@ async function init() {
     wireRestart();
     wireUpdate();
     wireReleaseBanner();
+
+    $('#branding-language')?.addEventListener('change', (e) => {
+      showBrandingLanguage(e.target.value);
+    });
     trackTopbarHeight();
     wireTimer();
     wireStatistics();

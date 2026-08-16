@@ -53,6 +53,31 @@ func (s *SettingsService) Branding(ctx context.Context) (model.Branding, error) 
 	branding.CompanyURL = all[model.SettingCompanyURL]
 	branding.LegalNotice = all[model.SettingFooterLegal]
 
+	// What has been written in each language, where anything has. A language with
+	// nothing written for it is left out rather than carried as four empty
+	// strings, so "not translated" and "translated to nothing" stay different
+	// answers.
+	for _, language := range model.SupportedLanguages() {
+		keys := model.BrandingKeysFor(language)
+
+		text := model.BrandingText{
+			Title:       all[keys.Title],
+			Banner:      all[keys.Banner],
+			FooterText:  all[keys.FooterText],
+			LegalNotice: all[keys.LegalNotice],
+		}
+
+		if text == (model.BrandingText{}) {
+			continue
+		}
+
+		if branding.Translations == nil {
+			branding.Translations = map[string]model.BrandingText{}
+		}
+
+		branding.Translations[language] = text
+	}
+
 	return branding, nil
 }
 
@@ -82,6 +107,19 @@ func (s *SettingsService) SaveBranding(ctx context.Context, branding model.Brand
 		model.SettingCompanyName: branding.CompanyName,
 		model.SettingCompanyURL:  branding.CompanyURL,
 		model.SettingFooterLegal: branding.LegalNotice,
+	}
+
+	// The per-language texts, for every language the interface ships. Written
+	// even when empty, because emptying one is how a translation is withdrawn -
+	// skipping the blanks would make that impossible.
+	for _, language := range model.SupportedLanguages() {
+		keys := model.BrandingKeysFor(language)
+		text := branding.Translations[language]
+
+		values[keys.Title] = strings.TrimSpace(text.Title)
+		values[keys.Banner] = text.Banner
+		values[keys.FooterText] = text.FooterText
+		values[keys.LegalNotice] = text.LegalNotice
 	}
 
 	for key, value := range values {
@@ -360,6 +398,27 @@ func overlongBranding(branding model.Branding) []string {
 
 	if model.TooLong(branding.LegalNotice, model.MaxLegalNoticeLength) {
 		invalid = append(invalid, "legalNotice")
+	}
+
+	// The same ceilings for a translation, since it lands in the same places. The
+	// field is named without the language: the form shows one language at a time,
+	// so "the banner is too long" is about the one on screen.
+	for _, text := range branding.Translations {
+		if model.TooLong(text.Title, model.MaxTitleLength) {
+			invalid = append(invalid, "title")
+		}
+
+		if model.TooLong(text.Banner, model.MaxBannerLength) {
+			invalid = append(invalid, "banner")
+		}
+
+		if model.TooLong(text.FooterText, model.MaxFooterTextLength) {
+			invalid = append(invalid, "footerText")
+		}
+
+		if model.TooLong(text.LegalNotice, model.MaxLegalNoticeLength) {
+			invalid = append(invalid, "legalNotice")
+		}
 	}
 
 	if model.TooLong(branding.CompanyName, model.MaxCompanyNameLength) {

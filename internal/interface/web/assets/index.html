@@ -462,6 +462,11 @@
                 <th data-i18n="field.name">Name</th>
                 <th data-i18n="field.email">Email</th>
                 <th data-i18n="field.role">Role</th>
+                <!-- Where the account is kept, which decides what may be done to
+                     it here: a directory account's name and address are copied
+                     from the entry on every synchronisation, and removing it here
+                     removes a person the next run puts back. -->
+                <th data-i18n="field.source">Source</th>
                 <th class="num" data-i18n="field.targetPerDay">Target h/day</th>
                 <th class="num" data-i18n="field.maxPerDay">Max h/day</th>
                 <th class="actions" data-i18n="field.action">Action</th>
@@ -728,6 +733,17 @@
         <h2 data-i18n="admin.branding">Appearance</h2>
         <p class="muted" data-i18n="admin.brandingHint">Title, banner, logo and footer of this installation.</p>
         <div class="grid">
+          <!-- Which language the four texts below are being written in.
+               One language at a time rather than eight fields at once: an
+               installation that works in one language fills these in once and
+               never opens this, and one that works in two writes each properly
+               instead of squinting at a grid. -->
+          <label class="wide" data-i18n="admin.textLanguage">Language of these texts
+            <select id="branding-language">
+              <option value="en">English</option>
+              <option value="de">Deutsch</option>
+            </select>
+          </label>
           <label data-i18n="admin.title">Title (browser tab and header)<input type="text" name="title" maxlength="80">
           </label>
           <label class="wide" data-i18n="admin.banner">Banner text (empty hides it)<input type="text" name="banner" maxlength="300">
