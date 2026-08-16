@@ -143,6 +143,56 @@ undone makes its step outstanding again, and dismissing the wizard settles the
 optional steps only: it comes back on its own while anything required is
 missing. That is why "Finish later" is safe to offer.
 
+## Windows says "unknown publisher"
+
+Running the released `.exe` for the first time shows a blue SmartScreen dialog:
+*Windows protected your PC — unknown publisher*, with **Run anyway** hidden
+behind *More info*.
+
+This is expected, it is not a warning about this application in particular, and
+nothing inside the build can remove it. Windows says it about every executable
+nobody has signed with a certificate from an authority it already trusts. It is
+not a flag, a manifest, a resource or a setting — the released binaries do carry
+version information, an icon and a checksum, and none of that counts. The only
+thing that removes it is a signature.
+
+**Right now, for one machine.** Either press *More info* → *Run anyway*, or take
+the mark off the file first — Windows attaches it to anything downloaded from the
+internet:
+
+```powershell
+Unblock-File .\go-time-recording_v0.1.39_windows_amd64.exe
+```
+
+Check the download against the release's `SHA256SUMS` before doing either. That
+is the part that actually tells you the file is the one that was published:
+
+```powershell
+Get-FileHash .\go-time-recording_v0.1.39_windows_amd64.exe -Algorithm SHA256
+```
+
+**Properly, for everybody.** A code signing certificate, which costs money every
+year and is issued to a legal identity — a company, or a person with documents.
+There is no free path and a self-signed certificate does nothing here, because
+the point is the authority vouching for the identity, not the cryptography.
+
+| | Cost | What it does |
+| --- | --- | --- |
+| **OV certificate** | ~€200–400/year | Names the publisher. SmartScreen may still warn until that certificate has been seen enough times — reputation attaches to the certificate, not to the file |
+| **EV certificate** | ~€300–600/year | Reputation from the first download, so the dialog does not appear at all |
+| **Azure Trusted Signing** | ~$10/month | Microsoft's own service. Cheapest by a distance; needs an organisation with three years of verifiable history |
+
+Since June 2023 the private key must live on hardware or in a cloud HSM for both
+kinds, so "a `.pfx` on the build machine" is no longer something a new
+certificate can be.
+
+The release workflow already has the step, skipped while no certificate is
+configured. Adding one is two repository secrets — `WINDOWS_SIGNING_PFX`
+(base64) and `WINDOWS_SIGNING_PASSWORD` — and the next release is signed and
+timestamped. It signs before the checksums are written, which matters: the
+signature changes the file, and the in-application update verifies exactly those
+checksums.
+
 ## What is included
 
 | Area | Implementation |
