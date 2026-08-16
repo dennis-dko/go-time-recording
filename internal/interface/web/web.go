@@ -20,7 +20,15 @@ type Branding struct {
 	Title string
 
 	// Logo is the configured mark as a data URI, or empty for the shipped one.
+	//
+	// The original, as uploaded - a wordmark made for a header. Used only where
+	// Icon is empty, which is an installation whose logo was saved before the
+	// sizes were derived on save.
 	Logo string
+
+	// Icon is that logo already at icon size, derived when it was saved: square,
+	// small, and the same bytes after a restart.
+	Icon string
 }
 
 // BrandingFunc answers what this installation is called right now.

@@ -186,9 +186,19 @@ func (h *SettingsHandler) SaveOperational(c *gofr.Context) (any, error) {
 
 // BrandingResponse is the instance labelling.
 type BrandingResponse struct {
-	Title       string `json:"title"`
-	Banner      string `json:"banner"`
-	Logo        string `json:"logo"`
+	Title  string `json:"title"`
+	Banner string `json:"banner"`
+	Logo   string `json:"logo"`
+
+	// LogoHeader and LogoBanner are the logo at the size those two places draw
+	// it, derived when it was saved.
+	//
+	// Sent instead of the original, which is a wordmark of a few hundred
+	// kilobytes and went to every visitor of the sign-in screen inside this
+	// answer. These are a few kilobytes each. Empty on an installation whose logo
+	// predates them, where the interface falls back to the original.
+	LogoHeader  string `json:"logoHeader,omitempty"`
+	LogoBanner  string `json:"logoBanner,omitempty"`
 	FooterText  string `json:"footerText"`
 	CompanyName string `json:"companyName"`
 	CompanyURL  string `json:"companyUrl"`
@@ -702,6 +712,8 @@ func newBrandingResponse(b model.Branding) BrandingResponse {
 		Title:       b.Title,
 		Banner:      b.Banner,
 		Logo:        b.LogoDataURI,
+		LogoHeader:  b.LogoHeader,
+		LogoBanner:  b.LogoBanner,
 		FooterText:  b.FooterText,
 		CompanyName: b.CompanyName,
 		CompanyURL:  b.CompanyURL,

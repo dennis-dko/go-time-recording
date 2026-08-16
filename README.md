@@ -150,13 +150,28 @@ renders perfectly in the header and on the sign-in screen can be refused as a ta
 icon, silently, by an engine with its own rules about what it will rasterise —
 nothing in the response says so, and the tab is simply empty.
 
-**It is converted before it is served as an icon.** What an installation uploads
-is a wordmark made for a header: a few thousand pixels across, often twice as
-wide as it is tall. Handed to a browser at that size, every decision is the
-browser's — whether to accept it at all, how to fit two-to-one into a square,
-whether to bother — and the answers differ by engine. So the application makes
-that decision once: the logo is fitted into a transparent 64×64 square and served
-as a PNG, which every engine treats identically.
+**It is converted when it is saved**, into the size each place draws it:
+
+| | Kept at | Drawn at |
+| --- | --- | --- |
+| Header | 440×80 | 220×40 |
+| Sign-in card | 656×192 | 328×96 |
+| Browser tab | 64×64, square | 16, 32 or more |
+
+Twice the drawn size, because a screen at twice the density draws twice as many
+pixels for the same box. Derived once and stored, so a page load reads them
+rather than making them, and a restart has nothing to redo.
+
+That matters most for the tab. What an installation uploads is a wordmark made
+for a header — a few thousand pixels across, often twice as wide as it is tall —
+and handed to a browser at that size, every decision is the browser's: whether to
+accept it at all, how to fit two-to-one into a square, whether to bother. The
+answers differ by engine, and one that decides against shows nothing and says
+nothing. The tab's version is padded out to a square for the same reason; the
+other two are not, because a header places the mark itself.
+
+It also shrinks what every visitor downloads. The sign-in screen used to receive
+the whole original inside the branding response, before anybody had signed in.
 
 Fitted, not cropped: nothing of the logo is cut. That does mean a wide wordmark
 becomes a thin strip at the sixteen pixels a tab draws, which is a fact about

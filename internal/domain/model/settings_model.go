@@ -3,9 +3,18 @@ package model
 // Setting keys. They are constants because each one is read by a specific
 // piece of code; a key that exists only in the database would do nothing.
 const (
-	SettingAppTitle     = "branding.title"
-	SettingBannerText   = "branding.banner"
-	SettingLogoDataURI  = "branding.logo"
+	SettingAppTitle    = "branding.title"
+	SettingBannerText  = "branding.banner"
+	SettingLogoDataURI = "branding.logo"
+
+	// The logo at the size each place shows it, derived when it is saved.
+	//
+	// Kept beside the original rather than instead of it: the original is what a
+	// later version re-derives from when a size changes, and it is the only copy
+	// that has lost nothing. What is sent to a browser is these.
+	SettingLogoHeader   = "branding.logo.header"
+	SettingLogoBanner   = "branding.logo.banner"
+	SettingLogoIcon     = "branding.logo.icon"
 	SettingFooterText   = "branding.footer"
 	SettingCompanyName  = "branding.company"
 	SettingCompanyURL   = "branding.companyUrl"
@@ -45,7 +54,20 @@ type Branding struct {
 
 	// LogoDataURI holds the logo inline, so it needs no upload directory and
 	// travels with the database rather than the filesystem.
+	//
+	// The original, exactly as uploaded. Nothing displays it: each place is shown
+	// one of the three below, derived from this when it was saved. It is kept so
+	// that changing a size later is a re-derivation rather than asking every
+	// installation to upload their logo again.
 	LogoDataURI string
+
+	// LogoHeader, LogoBanner and LogoIcon are the logo at the size the header,
+	// the sign-in card and a browser tab draw it. Empty on an installation whose
+	// logo was saved before these existed, which is why every reader falls back
+	// to LogoDataURI.
+	LogoHeader string
+	LogoBanner string
+	LogoIcon   string
 
 	FooterText  string
 	CompanyName string

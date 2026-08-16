@@ -3739,17 +3739,29 @@ function drawBranding(branding) {
   // an installation that has simply not got round to it, which is most of them on
   // the first day. The tab has had a default all along; these two now have the
   // same one.
+  // Each place gets the logo at the size it draws, made when the logo was saved.
+  // The header used to be handed the original - a wordmark of a few hundred
+  // kilobytes - and scaled it down with CSS, which is a large download to draw a
+  // 40px mark and one every visitor of the sign-in screen paid for.
+  //
+  // The original is the fallback for an installation whose logo predates the
+  // derived sizes; it looks the same, it is only bigger.
+  const sized = {
+    '#brand-logo': branding.logoHeader || branding.logo,
+    '#login-logo': branding.logoBanner || branding.logo,
+  };
+
   for (const holder of ['#brand-logo', '#login-logo']) {
     const img = $(holder);
     if (!img) continue;
 
-    img.src = branding.logo || SHIPPED_MARK;
+    img.src = sized[holder] || SHIPPED_MARK;
     img.hidden = false;
     img.alt = branding.title || '';
 
     // The shipped mark is a square drawn for a tab, so it is given the room a
     // square needs rather than the width a wordmark banner is allowed.
-    img.classList.toggle('shipped-mark', !branding.logo);
+    img.classList.toggle('shipped-mark', !sized[holder]);
   }
 
   // The announcement banner is separate from the "change your password" one.
