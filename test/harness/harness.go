@@ -13,6 +13,7 @@ package harness
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -214,7 +215,41 @@ func StartUnconfigured(t *testing.T, env ...string) *App {
 // - for SQLite - its database file live.
 func (a *App) Dir() string { return a.dir }
 
+// start launches an instance, trying again if it lost a race for its port.
+//
+// FreePort asks the operating system for a port, closes the listener and hands
+// the number over - so between that close and the application's bind there is a
+// window in which anything else on the machine can take it. With one instance per
+// test and a suite that starts dozens, that window is hit: the application logs
+// "address already in use", listens to nothing, and the test waits out its whole
+// start-up deadline before failing for what looks like a slow machine.
+//
+// Nothing can close that window from here; a port cannot be reserved and handed
+// to a child process. What can be done is to notice and try another one, which is
+// what a person would do.
 func start(t *testing.T, withDatabase bool, env ...string) *App {
+	t.Helper()
+
+	const attempts = 3
+
+	for attempt := 1; ; attempt++ {
+		app, err := startOnce(t, withDatabase, env...)
+		if err == nil {
+			return app
+		}
+
+		if !errors.Is(err, errPortTaken) || attempt == attempts {
+			t.Fatalf("cannot start the application: %v", err)
+		}
+
+		// Whatever took the port is welcome to it. This one is stopped now rather
+		// than at the end of the test, so a discarded attempt is not left running
+		// beside the one that works.
+		app.stop()
+	}
+}
+
+func startOnce(t *testing.T, withDatabase bool, env ...string) (*App, error) {
 	t.Helper()
 
 	path := binaryPath.Load()
@@ -290,9 +325,8 @@ func start(t *testing.T, withDatabase bool, env ...string) *App {
 	}
 
 	t.Cleanup(a.stop)
-	a.waitUntilReady()
 
-	return a
+	return a, a.waitUntilReady()
 }
 
 // serverEnv gives this test its own database on the configured server and returns
@@ -446,7 +480,13 @@ func copyConfigs(t *testing.T, from, to string) {
 
 // waitUntilReady polls until the instance answers, and reports its log if it
 // never does - a start-up failure is otherwise invisible behind a timeout.
-func (a *App) waitUntilReady() {
+// waitUntilReady blocks until the instance answers, and says what stopped it if
+// it never does.
+//
+// It reports rather than failing the test outright, because one of the answers is
+// worth acting on instead: a port that was free when this process asked for one
+// and taken by the time the application bound it. See start.
+func (a *App) waitUntilReady() error {
 	a.t.Helper()
 
 	deadline := time.Now().Add(StartupTimeout)
@@ -454,7 +494,14 @@ func (a *App) waitUntilReady() {
 
 	for time.Now().Before(deadline) {
 		if a.cmd.ProcessState != nil && a.cmd.ProcessState.Exited() {
-			a.t.Fatalf("the application exited during start-up:\n%s", a.logs.String())
+			return fmt.Errorf("the application exited during start-up:\n%s", a.logs.String())
+		}
+
+		// The application says this once and then carries on, listening to
+		// nothing, so waiting out the whole deadline is waiting for something that
+		// has already failed.
+		if err := a.startupFailure(); err != nil {
+			return err
 		}
 
 		resp, err := client.Get(a.baseURL + "/")
@@ -462,14 +509,36 @@ func (a *App) waitUntilReady() {
 			_ = resp.Body.Close()
 
 			if resp.StatusCode == http.StatusOK {
-				return
+				return nil
 			}
 		}
 
 		time.Sleep(150 * time.Millisecond)
 	}
 
-	a.t.Fatalf("the application did not become ready within %s:\n%s", StartupTimeout, a.logs.String())
+	return fmt.Errorf("the application did not become ready within %s:\n%s",
+		StartupTimeout, a.logs.String())
+}
+
+// errPortTaken is the one start-up failure worth simply trying again.
+var errPortTaken = errors.New("the port was taken between choosing it and binding it")
+
+// startupFailure is what the instance has already said went wrong, if anything.
+//
+// Its own function so the recognition can be tested without racing a port: what
+// is being recognised is a sentence the application writes, and the sentence is
+// the part that can change underneath this.
+func (a *App) startupFailure() error {
+	if strings.Contains(a.logs.String(), "address already in use") {
+		return errPortTaken
+	}
+
+	return nil
+}
+
+// logBuffer builds a buffer holding one line, for the tests of the above.
+func logBuffer(line string) *bytes.Buffer {
+	return bytes.NewBufferString(line)
 }
 
 func (a *App) stop() {
