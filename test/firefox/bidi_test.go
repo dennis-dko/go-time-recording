@@ -299,13 +299,18 @@ func (b *browser) settle() {
 
 // waitFor blocks until an expression in the page is true.
 //
-// Ten seconds, which is long for anything here and short next to a case that
-// hangs. The complaint is what the failure says, so it should name the thing that
-// never became true rather than the expression that asked.
+// Thirty seconds, which is long next to anything this waits for and short next to
+// a case that hangs. It was ten, and ten is a guess about the machine running it:
+// every case here starts its own instance, so a sign-in on a loaded runner
+// includes a first migration, and the case then reported a sign-in that never
+// finished as a sign-in that does not work.
+//
+// A deadline on a condition costs nothing when the condition is met, which is
+// the argument for making it generous rather than tight.
 func (b *browser) waitFor(expression, complaint string) {
 	b.t.Helper()
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 
 	for {
 		if got, _ := b.eval(expression).(bool); got {
