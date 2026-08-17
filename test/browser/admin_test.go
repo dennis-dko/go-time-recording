@@ -3035,3 +3035,156 @@ func TestTheRightsAreShownInWordsWithALegend(t *testing.T) {
 		t.Errorf("the legend explains %d of %d rights", legend.Entries, boxes.Count)
 	}
 }
+
+// The navigation has its own line, centred, and nothing lies on top of anything.
+//
+// Three things that only a browser can answer, and the first preview of this
+// layout got two of them wrong: the points overlapped the account beside them,
+// and a wrapped row read as centred when it was a block growing from the left.
+func TestTheNavigationSitsCentredOnItsOwnLine(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	type box struct {
+		Left   float64 `json:"left"`
+		Right  float64 `json:"right"`
+		Top    float64 `json:"top"`
+		Bottom float64 `json:"bottom"`
+		Width  float64 `json:"width"`
+	}
+
+	read := func() struct {
+		Bar  box     `json:"bar"`
+		Tabs box     `json:"tabs"`
+		Row  box     `json:"row"`
+		Gap  float64 `json:"gap"`
+		Rows int     `json:"rows"`
+	} {
+		var out struct {
+			Bar  box     `json:"bar"`
+			Tabs box     `json:"tabs"`
+			Row  box     `json:"row"`
+			Gap  float64 `json:"gap"`
+			Rows int     `json:"rows"`
+		}
+
+		p.evalJSON(`JSON.stringify((() => {
+			const rect = (selector) => {
+				const r = document.querySelector(selector).getBoundingClientRect();
+
+				return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width };
+			};
+
+			const bar = rect('.topbar');
+			const row = rect('.topbar-row');
+			const tabs = rect('#tabs');
+
+			// How many lines the points are spread over, from their own tops.
+			const tops = new Set([...document.querySelectorAll('#tabs .tab')]
+				.filter((tab) => !tab.hidden)
+				.map((tab) => Math.round(tab.getBoundingClientRect().top)));
+
+			return { bar, row, tabs, gap: tabs.top - row.bottom, rows: tops.size };
+		})())`, &out)
+
+		return out
+	}
+
+	// Wide enough for the whole row, which is where "centred" has to be exact.
+	p.run("a wide window", chromedp.EmulateViewport(1600, 900))
+
+	wide := read()
+
+	if wide.Rows != 1 {
+		t.Errorf("the points are spread over %d lines at 1600px", wide.Rows)
+	}
+
+	// Centred on the bar, not between neighbours: there are none on this line.
+	barMiddle := wide.Bar.Left + wide.Bar.Width/2
+	tabsMiddle := wide.Tabs.Left + wide.Tabs.Width/2
+
+	if math.Abs(barMiddle-tabsMiddle) > 2 {
+		t.Errorf("the points are centred at %.0f and the bar at %.0f", tabsMiddle, barMiddle)
+	}
+
+	// Its own line: below everything on the row above rather than beside it. This
+	// is what the overlap in the first preview looked like from here.
+	if wide.Tabs.Top < wide.Row.Bottom {
+		t.Errorf("the points start at %.0f, above where the row above ends (%.0f)",
+			wide.Tabs.Top, wide.Row.Bottom)
+	}
+
+	// The line of space that was asked for.
+	if wide.Gap < 28 || wide.Gap > 36 {
+		t.Errorf("the space between the two rows is %.0fpx, want about 32", wide.Gap)
+	}
+
+	// A long name on the right cannot pull the points off centre, which is the
+	// reason this layout was chosen over centring between the neighbours.
+	p.run("a very long name", chromedp.Evaluate(`
+		(() => {
+			document.querySelector('#who').textContent =
+				'Maximiliane Freifrau von und zu Beispielhausen · Benutzer & Administrator';
+
+			return 1;
+		})()`, nil))
+
+	stretched := read()
+	stretchedMiddle := stretched.Tabs.Left + stretched.Tabs.Width/2
+
+	if math.Abs(stretchedMiddle-(stretched.Bar.Left+stretched.Bar.Width/2)) > 2 {
+		t.Errorf("a long name moved the points to %.0f", stretchedMiddle)
+	}
+
+	// And narrow: one scrolling line rather than a block of nine.
+	p.run("a telephone", chromedp.EmulateViewport(390, 760))
+
+	narrow := read()
+
+	if narrow.Rows != 1 {
+		t.Errorf("on a 390px screen the points are in %d lines, which pushes the "+
+			"whole screen down", narrow.Rows)
+	}
+
+	var scrolls bool
+
+	p.evalJSON(`JSON.stringify((() => {
+		const tabs = document.querySelector('#tabs');
+
+		return tabs.scrollWidth > tabs.clientWidth + 1;
+	})())`, &scrolls)
+
+	if !scrolls {
+		t.Error("the points fit a 390px screen without scrolling, so this test is " +
+			"no longer measuring what it thinks")
+	}
+
+	// Nothing on the narrow screen lies on top of anything else.
+	var overlaps string
+
+	p.evalJSON(`JSON.stringify((() => {
+		const parts = [...document.querySelectorAll('.topbar-row > *')]
+			.filter((part) => !part.hidden)
+			.map((part) => ({ name: part.id || part.tagName, box: part.getBoundingClientRect() }));
+
+		const clashes = [];
+
+		for (let i = 0; i < parts.length; i++) {
+			for (let j = i + 1; j < parts.length; j++) {
+				const a = parts[i].box;
+				const b = parts[j].box;
+
+				const over = a.left < b.right - 1 && b.left < a.right - 1
+					&& a.top < b.bottom - 1 && b.top < a.bottom - 1;
+
+				if (over) clashes.push(parts[i].name + '/' + parts[j].name);
+			}
+		}
+
+		return clashes.join(', ');
+	})())`, &overlaps)
+
+	if overlaps != "" {
+		t.Errorf("these lie on top of each other in the header: %s", overlaps)
+	}
+}
