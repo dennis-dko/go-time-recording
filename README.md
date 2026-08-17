@@ -174,9 +174,11 @@ It also shrinks what every visitor downloads. The sign-in screen used to receive
 the whole original inside the branding response, before anybody had signed in.
 
 **Which part of the logo each place uses is yours to choose.** Press a preview on
-the appearance screen and drag: the selection keeps the shape of the place it is
-for, so what is on that screen is what will be on the others. A wide header can
-take the whole wordmark; a browser tab has sixteen pixels, and the part worth
+the appearance screen and drag: any part, in any shape, from any corner. The
+selection opens on the shape of the place it is for, because that is the one
+selection nothing has to be done to, but nothing holds it there — and a part that
+is not that shape is fitted into the place rather than stretched to fill it. A
+wide header can take the whole wordmark; a browser tab has sixteen pixels, and the part worth
 keeping there is usually the mark at one end rather than whatever falls in the
 middle. Nothing has to be chosen — a logo starts as all of itself in all three
 places, which is what most installations will leave it as.
@@ -190,6 +192,18 @@ becomes a thin strip at the sixteen pixels a tab draws, which is a fact about
 wordmarks rather than about this. The appearance screen shows the logo at exactly
 that size beside the header and sign-in previews, so it is seen before saving. A
 square mark is what reads best there — many companies keep one for exactly this.
+
+**The tab can be named separately from the header**, under *Browser tab* beside
+the title. The two are one name until the header's is too long to be a tab: a
+browser cuts a tab off after a couple of dozen characters, and somebody has six
+of them open — "Zeiterfassung der Beispiel GmbH & Co. KG" reads as
+"Zeiterfassung der B…" in every one. Left empty, the tab keeps the title, which
+is what every installation configured before this existed goes on doing. It
+translates like the other texts.
+
+Saving a mark reloads the page, because no engine takes a new tab icon from a
+link swapped in afterwards — and the reload comes back to where you were on the
+screen rather than to the top of it.
 
 ## Windows says "unknown publisher"
 
@@ -806,8 +820,8 @@ anybody opens that screen; the templates in `deploy/` name them commented out
 for exactly that case.
 
 `APP_NAME` stays, and it is worth knowing why, because it looks like the
-instance title and is not. The title under *Settings* renames the browser tab
-and the header; `APP_NAME` is the issuer an authenticator app shows beside an
+instance title and is not. The title under *Settings* renames the header, and the
+browser tab where nothing separate is written for it; `APP_NAME` is the issuer an authenticator app shows beside an
 enrolled two-factor account, which no screen administers - and it seeds the
 initial title, so naming the instance in the environment saves naming it twice.
 

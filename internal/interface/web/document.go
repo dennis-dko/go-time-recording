@@ -86,10 +86,10 @@ func (d document) serve(w http.ResponseWriter, r *http.Request, branding Brandin
 	}
 
 	// The icon's address carries a fingerprint of what it will answer with, so a
-	// changed logo is a changed URL. Without it a browser that cached the old one
+	// changed icon is a changed URL. Without it a browser that cached the old one
 	// keeps showing it for as long as it feels like, which is the whole difficulty
 	// with tab icons.
-	icon := `<link rel="icon" href="` + iconPath + `?v=` + fingerprint(branding.Logo) + `">`
+	icon := `<link rel="icon" href="` + iconPath + `?v=` + iconVersion(branding) + `">`
 
 	page := d.before + "<title>" + escape(title) + "</title>" + d.middle + icon + d.after
 
@@ -125,6 +125,23 @@ func escape(s string) string {
 		">", "&gt;",
 		`"`, "&quot;",
 	).Replace(s)
+}
+
+// iconVersion is the part of the icon's address that changes when the icon does.
+//
+// Taken from the icon rather than from the logo it was made out of. The two
+// stopped being the same thing when a part of the logo became choosable: picking
+// a different corner for the tab makes a different icon out of an unchanged
+// logo, and a fingerprint of the logo answered that with the same address as
+// before. That address is served with a year of immutable caching, so the browser
+// was right not to ask again - it had been told the picture there could never
+// change. What that looked like was a tab that kept the old icon through every
+// reload until somebody held down shift.
+//
+// Both, so an installation whose icon is derived at request time - one whose logo
+// predates the stored sizes - still gets a new address when its logo changes.
+func iconVersion(b Branding) string {
+	return fingerprint(b.Icon + "\x00" + b.Logo)
 }
 
 // fingerprint is a short stable digest, used for cache validators rather than

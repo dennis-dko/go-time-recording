@@ -48,8 +48,17 @@ const (
 // A test compares each of these against the maxlength in the markup, so the two
 // cannot drift apart again.
 const (
-	// MaxTitleLength bounds what the browser tab and the header say.
+	// MaxTitleLength bounds what the header says.
 	MaxTitleLength = 80
+
+	// MaxTabTitleLength bounds what the browser tab says on its own.
+	//
+	// Shorter than the header's, because the tab is where the room actually runs
+	// out: a browser gives a tab a couple of dozen characters before it cuts the
+	// name off with an ellipsis, and somebody with six of these open has less
+	// than that. A limit that let the full header name through would be a limit
+	// that never fired on the one field where length is the whole problem.
+	MaxTabTitleLength = 40
 
 	// MaxBannerLength bounds the announcement above the application.
 	MaxBannerLength = 300

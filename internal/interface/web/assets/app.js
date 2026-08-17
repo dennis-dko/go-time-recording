@@ -1359,7 +1359,7 @@ function resizeCropBox(start, dx, dy, corner) {
 /** The languages the appearance texts can be written in. */
 const BRANDING_LANGUAGES = ['en', 'de'];
 
-/** The four texts that translate, per language, while the form is open. */
+/** The texts that translate, per language, while the form is open. */
 let brandingDraft = {};
 
 /**
@@ -1372,8 +1372,8 @@ let brandingDraft = {};
  */
 let brandingBase = {};
 
-/** The four fields the language switcher swaps. */
-const BRANDING_TEXT_FIELDS = ['title', 'banner', 'footerText', 'legalNotice'];
+/** The fields the language switcher swaps. */
+const BRANDING_TEXT_FIELDS = ['title', 'tabTitle', 'banner', 'footerText', 'legalNotice'];
 
 /**
  * Puts one language's texts into the form, keeping whatever was typed in the one
@@ -2447,7 +2447,9 @@ const TRANSLATIONS = {
     'admin.testing': 'Verbindung wird geprüft …',
     'admin.testOk': 'Die Verbindung funktioniert.',
     'admin.textLanguage': 'Sprache dieser Texte',
-    'admin.title': 'Titel (Browser-Tab und Kopfzeile)',
+    'admin.title': 'Titel (Kopfzeile)',
+    'admin.tabTitle': 'Browser-Tab (leer = Titel)',
+    'setup.instanceName': 'Name dieser Installation',
     'admin.userFilter': 'Benutzer-Filter (%s = Anmeldename)',
     'app.language': 'Sprache',
     'banner.password': 'Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleibt die übrige Anwendung gesperrt.',
@@ -2618,6 +2620,7 @@ const TRANSLATIONS = {
     'field.startDate': 'Start',
     'field.syncSchedule': 'Zeitplan',
     'field.timezone': 'Zeitzone',
+    'field.tabTitle': 'Browser-Tab',
     'field.title': 'Titel',
     'field.traceExporter': 'Trace-Exporter',
     'field.tracerRatio': 'Trace-Anteil',
@@ -2644,6 +2647,7 @@ const TRANSLATIONS = {
     'field.to': 'Bis',
     'field.user': 'Benutzer',
     'filter.allProjects': 'Alle Projekte',
+    'footer.source': 'Quellcode auf GitHub',
     'footer.versionTitle': 'Laufende Version dieser Installation',
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
@@ -2903,6 +2907,17 @@ function applyLanguage(language) {
   for (const node of $$('[data-i18n-aria]')) {
     const translated = dict[node.dataset.i18nAria];
     if (translated) node.setAttribute('aria-label', translated);
+  }
+
+  // The tooltip, for an element whose meaning is a picture. A mark on its own
+  // says what it is to somebody who already knows it and nothing to anybody
+  // else, and pointing at it is how the second group finds out.
+  for (const node of $$('[data-i18n-title]')) {
+    if (node.dataset.i18nTitleSource === undefined) {
+      node.dataset.i18nTitleSource = node.title;
+    }
+
+    node.title = dict[node.dataset.i18nTitle] ?? node.dataset.i18nTitleSource;
   }
 
   redrawAll();
@@ -4001,18 +4016,29 @@ function drawBranding(branding) {
   // mark before it is painted rather than a second later. theme.js reads this;
   // see the note there for why a reload otherwise flickers back to a name nobody
   // chose.
+  const title = brandingIn(branding, 'title') || 'Time Recording';
+
+  // The tab may be named separately, because the room runs out there first: a
+  // name that reads across the top of the screen is cut off after a couple of
+  // dozen characters in a tab, and somebody has six of them open. Where nothing
+  // separate was written, the two are the same name.
+  const tabTitle = brandingIn(branding, 'tabTitle') || title;
+
+  // Remembered on the device, so the next load has the instance's own name and
+  // mark before it is painted rather than a second later. theme.js reads this;
+  // see the note there for why a reload otherwise flickers back to a name nobody
+  // chose. The tab's name resolved rather than both fields, since the tab is the
+  // only thing that reads it.
   try {
     localStorage.setItem('gtr.branding', JSON.stringify({
-      title: branding.title ?? '',
+      title: tabTitle,
       logo: branding.logo ?? '',
     }));
   } catch {
     // Private browsing refuses storage outright, which costs only the flicker.
   }
 
-  const title = brandingIn(branding, 'title') || 'Time Recording';
-
-  document.title = title;
+  document.title = tabTitle;
   $('#app-title').textContent = title;
 
   // The shipped mark where nothing has been configured, in both places.
@@ -4138,7 +4164,7 @@ async function loadAdmin() {
     form.elements[field].value = branding[field] ?? '';
   }
 
-  // And the four that do, kept per language while this screen is open so
+  // And the ones that do, kept per language while this screen is open so
   // switching between them does not lose what has been typed.
   brandingDraft = {};
 
@@ -4147,6 +4173,7 @@ async function loadAdmin() {
 
     brandingDraft[language] = {
       title: written.title ?? '',
+      tabTitle: written.tabTitle ?? '',
       banner: written.banner ?? '',
       footerText: written.footerText ?? '',
       legalNotice: written.legalNotice ?? '',
@@ -4157,6 +4184,7 @@ async function loadAdmin() {
   // and is what the form shows for the language it was presumably written in.
   brandingBase = {
     title: branding.title ?? '',
+    tabTitle: branding.tabTitle ?? '',
     banner: branding.banner ?? '',
     footerText: branding.footerText ?? '',
     legalNotice: branding.legalNotice ?? '',
@@ -4376,7 +4404,13 @@ function wireAdmin() {
     };
     // Whether the tab's own identity is changing, decided before the save so the
     // comparison is against what is currently on screen.
-    const markChanged = (lastBranding.logo ?? '') !== (pendingLogo ?? '');
+    //
+    // The chosen parts count as much as the logo does. A different corner of an
+    // unchanged logo is a different icon, and leaving the reload out for that
+    // case left the tab showing the old one - which is exactly the shape of the
+    // bug that made this reload necessary in the first place.
+    const markChanged = (lastBranding.logo ?? '') !== (pendingLogo ?? '')
+      || JSON.stringify(lastBranding.crops ?? {}) !== JSON.stringify(logoCrops ?? {});
 
     mutate(() => api('/settings/branding', { method: 'PUT', body: JSON.stringify(body) }),
       t('admin.saved', 'Settings saved'),
@@ -4394,7 +4428,10 @@ function wireAdmin() {
         // Only for the mark, and only when it actually changed - reloading after
         // every save on this screen would throw away whatever else was being
         // edited for no reason at all.
-        if (markChanged) window.location.reload();
+        if (markChanged) {
+          rememberPlace();
+          window.location.reload();
+        }
       });
   });
 
@@ -5745,7 +5782,7 @@ const SETUP_STEPS = {
     // Two boxes is small enough to put on the wizard; the four texts on the
     // appearance screen are not, which is why that one has a switcher instead.
     fields: () => BRANDING_LANGUAGES.map((language) => el('label', {
-      text: `${t('admin.title', 'Title (browser tab and header)')} — ${languageName(language)}`,
+      text: `${t('setup.instanceName', 'Name of this installation')} — ${languageName(language)}`,
     }, el('input', { type: 'text', name: `title.${language}`, maxlength: '80' }))),
     submit: async (values) => {
       const written = {};
@@ -8728,6 +8765,75 @@ function switchView(name) {
   }
 }
 
+/**
+ * Where somebody was on the page, kept across a reload this application caused.
+ *
+ * Saving a logo reloads: the tab's icon comes from the document, and no engine
+ * takes a new one from a link swapped in afterwards. What that cost was the
+ * place - the appearance settings are a long way down a long screen, and coming
+ * back to the top of it after every save means scrolling back down to see
+ * whether the thing that was just saved looks right.
+ *
+ * In the session rather than on the device, and cleared as soon as it is used:
+ * this is about one reload that is already in flight, not about where somebody
+ * was yesterday. That is what rememberedView is for.
+ */
+const PLACE_KEY = 'gtr.place';
+
+/** Records the place, immediately before reloading. */
+function rememberPlace() {
+  try {
+    sessionStorage.setItem(PLACE_KEY, JSON.stringify({
+      view: currentHashView(),
+      y: Math.round(window.scrollY),
+    }));
+  } catch {
+    // Private browsing refuses storage; the reload then starts at the top,
+    // which is where it always used to start.
+  }
+}
+
+/**
+ * Puts somebody back where they were, once there is enough page to do it.
+ *
+ * Not in one go: at the moment this runs the screen is a few hundred pixels of
+ * empty form, and scrolling to where the LDAP section will be scrolls to the
+ * bottom of nothing. The page grows as each panel answers, so this keeps asking
+ * until the scroll actually lands or the patience runs out - either of which
+ * leaves somebody looking at a page rather than at a spinner.
+ */
+function restorePlace() {
+  let place = null;
+
+  try {
+    place = JSON.parse(sessionStorage.getItem(PLACE_KEY) || 'null');
+    sessionStorage.removeItem(PLACE_KEY);
+  } catch {
+    return;
+  }
+
+  if (!place || typeof place.y !== 'number' || place.y <= 0) return;
+
+  // Only back to the screen it was taken on. A reload that ends up somewhere
+  // else - a session that expired, a link that named another view - has no
+  // business being scrolled to an offset measured on a different page.
+  if (place.view && place.view !== currentHashView()) return;
+
+  const deadline = Date.now() + 3000;
+
+  const settle = () => {
+    window.scrollTo(0, place.y);
+
+    // Arrived, near enough: the last panel to answer can be a pixel or two
+    // shorter than it was, and chasing that would never finish.
+    if (Math.abs(window.scrollY - place.y) <= 2) return;
+
+    if (Date.now() < deadline) requestAnimationFrame(settle);
+  };
+
+  requestAnimationFrame(settle);
+}
+
 /** The view named in the address bar, if it names one. */
 function currentHashView() {
   return decodeURIComponent(window.location.hash.replace(/^#/, ''));
@@ -9154,6 +9260,9 @@ async function init() {
     await refreshAll();
     hideLogin();
     switchView(startingView());
+
+    // Back to where a reload this application caused took somebody from.
+    restorePlace();
 
     // After the first view is up, so the tour highlights something that is
     // actually on screen.

@@ -4,6 +4,7 @@ package browser
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -65,6 +66,78 @@ func TestTheFooterShowsTheRunningVersion(t *testing.T) {
 	// replaced by the platform.
 	if strings.HasPrefix(version, "(") {
 		t.Errorf("the footer shows only the platform: %q", version)
+	}
+}
+
+// The other corner holds the mark of where this comes from, linked to it.
+//
+// Level with the version and the same distance in from its own edge, so the two
+// corners read as a pair rather than as one deliberate thing and one that landed
+// where it landed.
+func TestTheFooterLinksToTheSource(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	if !p.visible("#footer-source") {
+		t.Fatal("the footer has no link to the source")
+	}
+
+	if href := p.attr("#footer-source", "href"); !strings.Contains(href, "github.com/") {
+		t.Errorf("the source link points at %q", href)
+	}
+
+	// A link that is a picture and nothing else says nothing to a screen reader,
+	// and nothing to anybody pointing at it wondering what it is.
+	if label := p.attr("#footer-source", "aria-label"); strings.TrimSpace(label) == "" {
+		t.Error("the mark is unlabelled, so it is a link to nowhere named")
+	}
+
+	// Opened away from the application rather than in place of it. Somebody
+	// reading the source has not finished with the screen they were on.
+	if got := p.attr("#footer-source", "target"); got != "_blank" {
+		t.Errorf("the source link opens in %q, taking the application's place", got)
+	}
+
+	var corners struct {
+		SourceLeft   float64 `json:"sourceLeft"`
+		SourceMiddle float64 `json:"sourceMiddle"`
+		SourceHeight float64 `json:"sourceHeight"`
+		VersionRight float64 `json:"versionRight"`
+		VersionMid   float64 `json:"versionMiddle"`
+		FooterLeft   float64 `json:"footerLeft"`
+		FooterRight  float64 `json:"footerRight"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const source = document.querySelector('#footer-source').getBoundingClientRect();
+		const version = document.querySelector('#footer-version').getBoundingClientRect();
+		const footer = document.querySelector('#site-footer').getBoundingClientRect();
+
+		return {
+			sourceLeft: source.left - footer.left,
+			sourceMiddle: source.top + source.height / 2,
+			sourceHeight: source.height,
+			versionRight: footer.right - version.right,
+			versionMiddle: version.top + version.height / 2,
+			footerLeft: footer.left,
+			footerRight: footer.right,
+		};
+	})())`, &corners)
+
+	if math.Abs(corners.SourceMiddle-corners.VersionMid) > 2 {
+		t.Errorf("the mark sits %.0fpx down the footer and the version %.0fpx, so "+
+			"they are not on the same line", corners.SourceMiddle, corners.VersionMid)
+	}
+
+	if math.Abs(corners.SourceLeft-corners.VersionRight) > 2 {
+		t.Errorf("the mark is %.0fpx in from the left and the version %.0fpx in from "+
+			"the right", corners.SourceLeft, corners.VersionRight)
+	}
+
+	// Big enough to aim at and to recognise. The version's line is about this
+	// tall, which is what "the same height" means here.
+	if corners.SourceHeight < 14 || corners.SourceHeight > 24 {
+		t.Errorf("the mark is %.0fpx tall", corners.SourceHeight)
 	}
 }
 

@@ -872,7 +872,10 @@ func brandingFor(settings *appservice.SettingsService) web.BrandingFunc {
 		}
 
 		return web.Branding{
-			Title: branding.Title,
+			// What the tab is called, which is the only title this document has.
+			// The header's name is put there by the interface once it has loaded,
+			// and the two are only the same until somebody sets them apart.
+			Title: branding.TabName(),
 			Logo:  branding.LogoDataURI,
 			Icon:  branding.LogoIcon,
 		}
