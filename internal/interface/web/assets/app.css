@@ -188,13 +188,46 @@ body {
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
 
 .tab {
+  align-items: center;
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius);
   color: var(--muted);
   cursor: pointer;
+  display: inline-flex;
   font: inherit;
+  gap: 7px;
   padding: 6px 12px;
+}
+
+/* Where the navigation's marks are kept. Taken out of the flow and given no
+   size rather than hidden outright: a <symbol> is never drawn where it is
+   defined, and display:none on the container has a history of stopping <use>
+   from finding it in one engine or another. */
+.sprite {
+  height: 0;
+  overflow: hidden;
+  position: absolute;
+  width: 0;
+}
+
+/* The mark, drawn ahead of the label by the layout rather than by the markup.
+   In the markup it comes after: the language switch replaces the first text
+   node of a translated element, and an element sitting in that position gets
+   overwritten by the new words instead.
+
+   It takes the tab's own colour, so it dims with an inactive tab and turns
+   white in the current one without a rule of its own. */
+.tab-icon {
+  fill: none;
+  flex: none;
+  height: 16px;
+  order: -1;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 16px;
 }
 
 .tab:hover { color: var(--text); }

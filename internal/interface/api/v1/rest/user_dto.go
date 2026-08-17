@@ -53,6 +53,17 @@ type UserResponse struct {
 	// worked out. Every date the client computes - which day "today" is, where
 	// a calendar month starts - has to use this, not the browser's own zone.
 	EffectiveTimezone string `json:"effectiveTimezone"`
+
+	// InstanceTimezone is the zone this account would follow if it chose none.
+	//
+	// Not the same question as EffectiveTimezone, and the difference is the
+	// whole reason this exists: once somebody has picked a zone of their own,
+	// what applies to them is that zone, and the instance's is no longer
+	// derivable from anything the client holds. The picker names it in its
+	// "follow the instance setting" line - which was showing the effective one,
+	// so after choosing Africa/Abidjan the option to stop choosing read "follow
+	// the instance setting (Africa/Abidjan)". It offered to change nothing.
+	InstanceTimezone string `json:"instanceTimezone"`
 }
 
 // CreateUserRequest is the payload for creating a user.
@@ -128,6 +139,7 @@ func newUserResponse(r *common.UserResult, instanceTimezone string) UserResponse
 		Timezone:           r.Timezone,
 		TourSeen:           r.TourSeen,
 		EffectiveTimezone:  model.EffectiveTimezoneName(r.Timezone, instanceTimezone),
+		InstanceTimezone:   model.EffectiveTimezoneName("", instanceTimezone),
 		DailyTargetHours:   r.DailyTargetHours,
 		MaxDailyHours:      r.MaxDailyHours,
 	}
@@ -170,6 +182,7 @@ func newUserResponseFromModel(u *model.User, instanceTimezone string) UserRespon
 		Timezone:           u.Timezone,
 		TourSeen:           u.TourSeen,
 		EffectiveTimezone:  model.EffectiveTimezoneName(u.Timezone, instanceTimezone),
+		InstanceTimezone:   model.EffectiveTimezoneName("", instanceTimezone),
 	}
 }
 

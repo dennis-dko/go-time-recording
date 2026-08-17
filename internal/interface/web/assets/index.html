@@ -22,6 +22,57 @@
        move anything when it appears, or every request would nudge the page. -->
   <div id="progress" class="progress" hidden aria-hidden="true"><span></span></div>
 
+  <!-- The navigation's marks, drawn once and used by reference.
+
+       One family: the same 24-unit box, the same stroke weight, the same round
+       ends, so nine tabs read as one row rather than as nine borrowed pictures.
+       They carry the text colour, which is what makes them right in both
+       appearances and white in the tab that is current, without a second rule.
+
+       Marked hidden from assistive technology: the tab already says what it is,
+       and a tab that announces "image, calendar, Calendar" is worse than one
+       with no picture at all. -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="icon-timesheets" viewBox="0 0 24 24">
+        <path d="M3 6h10M3 12h6.5M3 18h4.5"/>
+        <circle cx="16.5" cy="15.5" r="5.2"/><path d="M16.5 12.6v2.9l2 1.3"/>
+      </symbol>
+      <symbol id="icon-calendar" viewBox="0 0 24 24">
+        <rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/>
+        <path d="M3.5 10h17M8 3v4M16 3v4"/>
+        <circle cx="12" cy="15.2" r="1.9" fill="currentColor" stroke="none"/>
+      </symbol>
+      <symbol id="icon-projects" viewBox="0 0 24 24">
+        <path d="M3.5 7.6a2 2 0 0 1 2-2h3.4l2.1 2.7h7.5a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>
+      </symbol>
+      <symbol id="icon-users" viewBox="0 0 24 24">
+        <rect x="2.5" y="5" width="19" height="14" rx="2.6"/>
+        <circle cx="8.2" cy="11" r="2.2"/>
+        <path d="M4.8 16.4a3.6 3.6 0 0 1 6.8 0"/>
+        <path d="M14.6 10h4.6M14.6 14h3.2"/>
+      </symbol>
+      <symbol id="icon-roles" viewBox="0 0 24 24">
+        <path d="M12 2.8 20 6v6.1c0 4.5-3.2 7.8-8 9.1-4.8-1.3-8-4.6-8-9.1V6z"/>
+        <path d="m8.8 11.9 2.3 2.4 4.3-4.7"/>
+      </symbol>
+      <symbol id="icon-report" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.6"/>
+        <path d="M12 3.4V12h8.6"/>
+      </symbol>
+      <symbol id="icon-account" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"/>
+        <circle cx="12" cy="9.8" r="3.2"/>
+        <path d="M5.9 19.1a7 7 0 0 1 12.2 0"/>
+      </symbol>
+      <symbol id="icon-admin" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 5.6V2.8M12 21.2v-2.8M18.4 12H21.2M2.8 12h2.8"/>
+        <path d="m16.5 7.5 2-2M5.5 18.5l2-2M16.5 16.5l2 2M5.5 5.5l2 2"/>
+      </symbol>
+    </defs>
+  </svg>
+
   <header class="topbar">
     <img id="brand-logo" class="brand-logo" alt="" hidden>
     <!-- The title is a button because it does something: it is the way back to
@@ -33,15 +84,15 @@
                 d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/><path d="M9.6 23.4h12.8L16 16Z"
                 fill="var(--accent-text)" opacity="0.55"/></svg><span id="app-title-text">Time Recording</span></button></h1>
     <nav id="tabs">
-      <button class="tab" data-view="timesheets" data-perm="timesheets:read:own" data-i18n="nav.timesheets">Time entries</button>
-      <button class="tab" data-view="calendar" data-perm="timesheets:read:own" data-i18n="nav.calendar">Calendar</button>
+      <button class="tab" data-view="timesheets" data-perm="timesheets:read:own" data-i18n="nav.timesheets">Time entries<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-timesheets"/></svg></button>
+      <button class="tab" data-view="calendar" data-perm="timesheets:read:own" data-i18n="nav.calendar">Calendar<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-calendar"/></svg></button>
       <button class="tab" data-view="overtime" data-perm="timesheets:read:own" data-i18n="nav.overtime">Overtime</button>
-      <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects</button>
-      <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Users</button>
-      <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Roles</button>
-      <button class="tab" data-view="report" data-perm="reports:read:own" data-i18n="nav.report">Reports</button>
-      <button class="tab" data-view="settings" data-i18n="nav.settings">My account</button>
-      <button class="tab" data-view="admin" id="tab-admin" hidden data-perm="settings:manage" data-i18n="nav.admin">Settings</button>
+      <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-projects"/></svg></button>
+      <button class="tab" data-view="users" data-perm="users:read" data-i18n="nav.users">Users<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-users"/></svg></button>
+      <button class="tab" data-view="roles" data-perm="roles:read" data-i18n="nav.roles">Roles<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-roles"/></svg></button>
+      <button class="tab" data-view="report" data-perm="reports:read:own" data-i18n="nav.report">Reports<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-report"/></svg></button>
+      <button class="tab" data-view="settings" data-i18n="nav.settings">My account<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-account"/></svg></button>
+      <button class="tab" data-view="admin" id="tab-admin" hidden data-perm="settings:manage" data-i18n="nav.admin">Settings<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-admin"/></svg></button>
     </nav>
     <div class="who" id="who"></div>
     <select id="theme-picker" class="lang" data-i18n-aria="app.theme" aria-label="Appearance">
