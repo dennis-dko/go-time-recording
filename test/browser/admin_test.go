@@ -2545,13 +2545,22 @@ func TestTheMarkedTabsKeepTheirMarksInEveryLanguage(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
-	marked := []string{"timesheets", "calendar", "projects", "users", "roles",
-		"report", "settings", "admin"}
+	// Asked of the navigation rather than of a list written here, so a tab added
+	// later without a mark fails this rather than quietly standing out.
+	unmarked := func() string {
+		var out string
 
-	for _, view := range marked {
-		if got := p.count(`.tab[data-view="` + view + `"] .tab-icon`); got != 1 {
-			t.Errorf("the %s tab has %d marks, want exactly one", view, got)
-		}
+		p.run("look for bare tabs", chromedp.Evaluate(`
+			[...document.querySelectorAll('#tabs .tab')]
+				.filter((tab) => tab.querySelectorAll('.tab-icon').length !== 1)
+				.map((tab) => tab.dataset.view)
+				.join(', ')`, &out))
+
+		return out
+	}
+
+	if bare := unmarked(); bare != "" {
+		t.Errorf("these tabs do not carry exactly one mark: %s", bare)
 	}
 
 	// Hidden from a screen reader, which reads the label instead.
@@ -2573,10 +2582,8 @@ func TestTheMarkedTabsKeepTheirMarksInEveryLanguage(t *testing.T) {
 	p.run("switch to German", p.chooseOption("#language-picker", "de"))
 	p.waitForText(`.tab[data-view="calendar"]`, "Kalender")
 
-	for _, view := range marked {
-		if got := p.count(`.tab[data-view="` + view + `"] .tab-icon`); got != 1 {
-			t.Errorf("after switching language the %s tab has %d marks", view, got)
-		}
+	if bare := unmarked(); bare != "" {
+		t.Errorf("after switching language these tabs lost their mark: %s", bare)
 	}
 
 	if after := strings.TrimSpace(p.text(`.tab[data-view="calendar"]`)); after == before {
