@@ -2,8 +2,12 @@ package harness
 
 import (
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // A port that is taken between choosing it and binding it is tried again.
@@ -79,5 +83,84 @@ func TestAnAnswerIsCheckedAgainstWhatThisProcessSaid(t *testing.T) {
 
 	if fine.startupFailure() != nil {
 		t.Errorf("an ordinary start is treated as a failure: %v", fine.startupFailure())
+	}
+}
+
+// A reply carrying somebody else's name is somebody else's instance.
+//
+// Reading the log is a race of its own: it only works if our process has already
+// written that it could not bind by the time the neighbour answers, and the
+// neighbour is already running, so it usually answers first. That is what one
+// failed run of the suite on main looked like - an account that already existed,
+// three steps after the harness had accepted a stranger's 200.
+//
+// So the answer is identified rather than counted. Every instance is started
+// under a name nothing else is using and says that name when asked.
+func TestAReplyFromAnotherInstanceIsRecognised(t *testing.T) {
+	answers := func(title string, status int) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_, _ = fmt.Fprintf(w, `{"data":{"title":%q}}`, title)
+			}))
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	ours := answers("harness-1-7", http.StatusOK)
+	defer ours.Close()
+
+	mine := &App{baseURL: ours.URL, marker: "harness-1-7"}
+	if mine.answeredBySomebodyElse(client) {
+		t.Error("an instance does not recognise its own answer")
+	}
+
+	theirs := answers("harness-1-8", http.StatusOK)
+	defer theirs.Close()
+
+	stranger := &App{baseURL: theirs.URL, marker: "harness-1-7"}
+	if !stranger.answeredBySomebodyElse(client) {
+		t.Error("a neighbour's answer is accepted as this instance's, which is how " +
+			"a test comes to talk to somebody else's database")
+	}
+
+	// An instance that cannot be asked is not one that failed the question. The
+	// installer runs before there is a database and does not register the route
+	// that would answer; reading that as "not ours" would leave it a port it
+	// could never bind.
+	silent := answers("", http.StatusNotFound)
+	defer silent.Close()
+
+	unasked := &App{baseURL: silent.URL, marker: "harness-1-7"}
+	if unasked.answeredBySomebodyElse(client) {
+		t.Error("an instance that cannot answer the question is treated as a stranger")
+	}
+
+	// And an instance the caller named itself carries no marker, so there is
+	// nothing to compare and the old check is what it falls back to.
+	named := &App{baseURL: theirs.URL}
+	if named.answeredBySomebodyElse(client) {
+		t.Error("an instance named by its test is judged against a name it never had")
+	}
+}
+
+// A port is never suggested twice in one run.
+//
+// The operating system hands the same number out again once the listener is
+// closed, and it does: a suite that starts dozens of instances asks dozens of
+// times. Two instances on one port is the failure all of this guards against, so
+// the cheapest half of the guard is not to suggest one twice.
+func TestAPortIsHandedOutOnce(t *testing.T) {
+	seen := map[int]bool{}
+
+	for range 40 {
+		port := FreePort(t)
+
+		if seen[port] {
+			t.Fatalf("port %d was handed out twice in one run", port)
+		}
+
+		seen[port] = true
 	}
 }
