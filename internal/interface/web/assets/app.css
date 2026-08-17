@@ -29,6 +29,18 @@
   --log-debug: #6a737d;
   --log-notice: #0b6bcb;
 
+
+  /* The chart palette, beside the rest of the theme rather than inside the chart
+     rules: a hue that reads on white is muddy on near-black, so each theme holds
+     its own set. The accent is the eighth and leads; see .chart-colour-0. */
+  --chart-1: #d9822b;
+  --chart-2: #12a19a;
+  --chart-3: #b8529b;
+  --chart-4: #4f9a3e;
+  --chart-5: #d1544f;
+  --chart-6: #7b6ae0;
+  --chart-7: #a3822c;
+
   /* Tells form controls and scrollbars which palette they are sitting on. */
   color-scheme: light;
 }
@@ -47,6 +59,15 @@
     --log-error: #f07a6a;
     --log-debug: #8b949e;
     --log-notice: #6cb6ff;
+    /* Lifted for a dark ground rather than reused: the same seven at their light
+       values go muddy on near-black, and two muddy colours look alike. */
+    --chart-1: #f0a44e;
+    --chart-2: #3fc9c0;
+    --chart-3: #e07ac4;
+    --chart-4: #7bcc63;
+    --chart-5: #f08579;
+    --chart-6: #a294ff;
+    --chart-7: #d6b45c;
     color-scheme: dark;
   }
 }
@@ -65,6 +86,15 @@
   --log-debug: #8b949e;
   --log-notice: #6cb6ff;
   color-scheme: dark;
+  /* Lifted for a dark ground rather than reused: the same seven at their light
+     values go muddy on near-black, and two muddy colours look alike. */
+  --chart-1: #f0a44e;
+  --chart-2: #3fc9c0;
+  --chart-3: #e07ac4;
+  --chart-4: #7bcc63;
+  --chart-5: #f08579;
+  --chart-6: #a294ff;
+  --chart-7: #d6b45c;
 }
 
 :root[data-theme="light"] {
@@ -115,11 +145,19 @@ html { scroll-padding-top: var(--topbar-height, 76px); }
  */
 [hidden] { display: none !important; }
 
+/* A column the height of the window, so the footer can be held at the bottom of
+   it rather than following whatever the screen happens to contain. Screens vary
+   enormously here - "My account" is a few short cards, the entry list is
+   hundreds of rows - and a footer that floats up to meet a short screen reads as
+   the page having ended early. */
 body {
-  margin: 0;
   background: var(--bg);
   color: var(--text);
+  display: flex;
+  flex-direction: column;
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  margin: 0;
+  min-height: 100vh;
 }
 
 .topbar {
@@ -216,9 +254,12 @@ nav { display: flex; gap: 4px; flex-wrap: wrap; }
    node of a translated element, and an element sitting in that position gets
    overwritten by the new words instead.
 
-   It takes the tab's own colour, so it dims with an inactive tab and turns
-   white in the current one without a rule of its own. */
+   It carries the accent, like the mark beside the title, so the row reads as
+   part of the application rather than as grey furniture. Not in the current
+   tab: that tab is filled with the accent, and an accent-coloured mark on it
+   would be a mark nobody can see. There it takes the colour the label has. */
 .tab-icon {
+  color: var(--accent);
   fill: none;
   flex: none;
   height: 16px;
@@ -230,6 +271,8 @@ nav { display: flex; gap: 4px; flex-wrap: wrap; }
   width: 16px;
 }
 
+.tab[aria-current="true"] .tab-icon { color: var(--accent-text); }
+
 .tab:hover { color: var(--text); }
 
 .tab[aria-current="true"] {
@@ -238,7 +281,9 @@ nav { display: flex; gap: 4px; flex-wrap: wrap; }
   color: var(--accent-text);
 }
 
-main { max-width: 1080px; margin: 0 auto; padding: 20px; }
+/* Takes the room left over, which is what pushes the footer down on a screen
+   with little on it and leaves it after the content on a long one. */
+main { flex: 1 0 auto; margin: 0 auto; max-width: 1080px; padding: 20px; width: 100%; }
 
 .card {
   background: var(--surface);
@@ -473,11 +518,37 @@ button.danger:not(.link) {
    bars share one baseline, which is what makes their heights comparable. */
 .chart-axis { stroke: var(--border); stroke-width: 1; }
 
-/* Six steps of the accent colour rather than six unrelated hues. A pie of one
-   period's projects is one quantity divided up, not six different things, and
-   a rainbow says the opposite. They stay distinguishable in both themes because
-   the lightness moves, not only the opacity - a light slice on a dark ground
-   and a dark slice on a light one would otherwise be the same value twice. */
+/* A colour per project, and the same one wherever that project is drawn - bars,
+   columns, pie, and again tomorrow. Which one it gets comes from the project
+   itself rather than from its place in the list, so adding a project does not
+   repaint the others; see chartColourFor.
+
+   Eight hues, spread far enough apart to be told apart at the width of a pie
+   key, and each given its own value in the dark theme rather than being reused:
+   a hue that reads on white is muddy on near-black, and this is a chart, where
+   two colours looking alike is the whole failure.
+
+   The accent leads, because a chart of one project should still look like part
+   of this application rather than like a sample of a palette. */
+.chart-colour-0 { fill: var(--accent); }
+.chart-colour-1 { fill: var(--chart-1); }
+.chart-colour-2 { fill: var(--chart-2); }
+.chart-colour-3 { fill: var(--chart-3); }
+.chart-colour-4 { fill: var(--chart-4); }
+.chart-colour-5 { fill: var(--chart-5); }
+.chart-colour-6 { fill: var(--chart-6); }
+.chart-colour-7 { fill: var(--chart-7); }
+
+/* The hours that belong to no project are not a project. Neutral, so they do
+   not read as one more of them. */
+.chart-colour-none { fill: var(--muted); }
+
+/* Six steps of the accent colour, for a pie of something that is not projects -
+   where there is no identity to keep a colour stable against. One quantity
+   divided up, not six different things, and a rainbow would say the opposite.
+   They stay distinguishable in both themes because the lightness moves, not
+   only the opacity - a light slice on a dark ground and a dark slice on a light
+   one would otherwise be the same value twice. */
 .chart-slice { stroke: var(--surface); stroke-width: 2; }
 .chart-slice-0 { fill: var(--accent); }
 .chart-slice-1 { fill: color-mix(in srgb, var(--accent) 78%, var(--muted)); }
@@ -1274,8 +1345,16 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
      as long as the version alone - and the left matches it rather than being
      measured to the mark it holds: equal reservations are what leave the
      branding text centred on the footer rather than on what is left of it. */
-  padding: 16px 168px;
+  padding: 0 168px;
   position: relative;
+
+  /* One height, whatever is in it. The three things it holds are of different
+     lengths on every installation - a copyright line, a version, a mark - and
+     letting the strip be as tall as the tallest of them made it a different
+     strip on every screen. Held rather than fixed: the narrow layout below
+     stacks these and needs the room. */
+  flex: none;
+  min-height: 56px;
 }
 
 .site-footer a { color: var(--accent); text-decoration: none; }
@@ -1319,7 +1398,8 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    corners back in the flow, the mark first and the version on its own last
    line. */
 @media (max-width: 560px) {
-  .site-footer { padding: 16px 20px; }
+  /* Stacked rather than in one line, so the one height above gives way. */
+  .site-footer { min-height: 0; padding: 16px 20px; }
 
   #footer-version {
     flex-basis: 100%;

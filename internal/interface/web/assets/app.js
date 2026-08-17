@@ -2718,7 +2718,8 @@ const TRANSLATIONS = {
     'maint.offSaved': 'Die Installation ist wieder in Betrieb.',
     'maint.onSaved': 'Die Installation ist jetzt außer Betrieb.',
     'maint.title': 'Wartungsmodus',
-    'maint.who': 'Solange er aktiv ist, kann nur dieser eingebaute Administrator arbeiten. Alle anderen, auch weitere Administratoren, werden abgewiesen — genau das ist der Zweck.',
+    'maint.who': 'Solange er aktiv ist, können nur diejenigen arbeiten, die diese Installation verwalten dürfen: dieses eingebaute Konto und alle mit der Administrator-Rolle. Alle anderen werden abgewiesen — genau das ist der Zweck.',
+    'maint.signInWho': 'Während der Wartung können sich nur Administratoren anmelden.',
     'msg.error': 'Fehler',
     'msg.initFailed': 'Initialisierung fehlgeschlagen',
     'msg.loadFailed': 'Konnte nicht alles laden',
@@ -6752,6 +6753,60 @@ function svg(tag, attributes = {}) {
 }
 
 /**
+ * How many colours the charts have for naming things apart.
+ *
+ * Matched by .chart-colour-0 .. -7 in the stylesheet, where the actual hues
+ * live so that each theme can hold its own.
+ */
+const CHART_COLOURS = 8;
+
+/**
+ * The colour a project keeps, wherever it is drawn.
+ *
+ * From the project's own identity rather than from its position in the list.
+ * Position would mean the colours shuffle whenever a project is added, finishes,
+ * or simply has no hours in the period being looked at - and a colour that means
+ * something different on every visit is decoration rather than information. This
+ * way a project is the same colour in the bars, in the columns, in the pie, and
+ * again tomorrow.
+ *
+ * Eight hues for any number of projects, so two of them can collide. That is
+ * worth it: the label is beside every bar and in the pie's key, so the colour
+ * groups the eye rather than carrying the meaning on its own.
+ */
+function chartColourFor(key) {
+  if (key === undefined || key === null || key === '') return '';
+
+  // The hours that belong to no project are not a project, and a colour of their
+  // own would put them among them. They keep the neutral one.
+  if (key === NO_PROJECT_KEY) return 'chart-colour-none';
+
+  let hash = 0;
+
+  for (const character of String(key)) {
+    hash = (hash * 31 + character.codePointAt(0)) % 100000007;
+  }
+
+  return `chart-colour-${hash % CHART_COLOURS}`;
+}
+
+/** What the bucket for unassigned hours is called, in every chart. */
+const NO_PROJECT_KEY = 'no-project';
+
+/** One bar per project, each carrying the identity its colour comes from. */
+function projectBars(projects) {
+  return projects.map((project) => ({
+    // A project with no name is one that has been deleted since; the hours it
+    // holds still count, so it is shown rather than dropped.
+    label: project.projectId
+      ? (project.name || t('stats.deletedProject', 'deleted project'))
+      : t('stats.noProject', 'no project'),
+    value: project.hours,
+    key: project.projectId || NO_PROJECT_KEY,
+  }));
+}
+
+/**
  * Renders bars into a container.
  *
  * bars is [{label, value, title}]. The scale runs from zero to the largest value,
@@ -6803,7 +6858,12 @@ function drawBarChart(container, bars, formatValue) {
       const barWidth = Math.max(2, (bar.value / largest) * trackWidth);
 
       const rect = svg('rect', {
-        x: labelWidth, y, width: barWidth, height: rowHeight, rx: 4, class: 'chart-bar',
+        x: labelWidth,
+        y,
+        width: barWidth,
+        height: rowHeight,
+        rx: 4,
+        class: `chart-bar ${chartColourFor(bar.key)}`.trim(),
       });
 
       // The exact figure on hover, since the bar is a comparison and not a
@@ -6878,7 +6938,7 @@ function drawColumnChart(container, bars, formatValue) {
         width: barWidth,
         height: barHeight,
         rx: 4,
-        class: 'chart-bar',
+        class: `chart-bar ${chartColourFor(bar.key)}`.trim(),
       });
 
       const title = svg('title');
@@ -6957,7 +7017,11 @@ function drawPieChart(container, slices, formatValue) {
         ].join(' '),
       });
 
-    shape.setAttribute('class', `chart-slice chart-slice-${index % 6}`);
+    // The same colour the bars gave it, so switching shape does not repaint
+    // every project. Falls back to a step of the accent for a pie of something
+    // that is not projects, where there is no identity to be stable about.
+    shape.setAttribute('class',
+      `chart-slice ${chartColourFor(slice.key) || `chart-slice-${index % 6}`}`);
 
     const title = svg('title');
     title.textContent = slice.title
@@ -6971,7 +7035,7 @@ function drawPieChart(container, slices, formatValue) {
 
     chart.append(svg('rect', {
       x: size + 24, y: y - 10, width: 12, height: 12, rx: 3,
-      class: `chart-slice chart-slice-${index % 6}`,
+      class: `chart-slice ${chartColourFor(slice.key) || `chart-slice-${index % 6}`}`,
     }));
 
     const label = svg('text', { x: size + 44, y, class: 'chart-label' });
@@ -6990,6 +7054,55 @@ function defaultStatisticsRange() {
   const firstOfMonth = `${today.slice(0, 7)}-01`;
 
   return { from: firstOfMonth, to: today };
+}
+
+/**
+ * Puts a period into a pair of empty date fields, on arrival.
+ *
+ * Every screen that evaluates a period has a From and a To, and leaving them
+ * empty meant something different on each: the statistics card filled them in
+ * when Evaluate was pressed - so the answer arrived for a period nobody had
+ * seen until the fields changed under it - while the report and the overtime
+ * balance sent nothing at all and quietly evaluated the whole history.
+ *
+ * Filled when the screen is opened instead, which is the only one of the three
+ * that can be checked before acting. Refusing to evaluate until somebody types
+ * a date would be the worst of them: there is an obvious right answer here, and
+ * demanding it be typed is make-work.
+ *
+ * Only when both are empty. A period somebody set is theirs, including one they
+ * cleared on purpose - and this runs on every visit to the screen.
+ */
+function fillDateRange(from, to) {
+  if (!from || !to || from.value || to.value) return;
+
+  const range = defaultStatisticsRange();
+
+  setDateField(from, range.from);
+  setDateField(to, range.to);
+}
+
+/**
+ * The date pairs on the screens that evaluate a period.
+ *
+ * Two of them share the Overtime screen: the balance is asked for over a period,
+ * and the hours card above it over another. They are separate questions with
+ * separate answers, so they get separate fields - and both start filled in.
+ */
+function fillRangesFor(view) {
+  const pairs = {
+    overtime: [
+      ['#statistics-from', '#statistics-to'],
+      ['#form-overtime input[name="from"]', '#form-overtime input[name="to"]'],
+    ],
+    report: [
+      ['#form-report input[name="from"]', '#form-report input[name="to"]'],
+    ],
+  }[view] ?? [];
+
+  for (const [from, to] of pairs) {
+    fillDateRange($(from), $(to));
+  }
 }
 
 async function loadStatistics() {
@@ -7024,16 +7137,7 @@ async function loadStatistics() {
     days.map((day) => ({ label: fmtDate(day.date), value: day.hours })),
     fmtHours);
 
-  drawBarChart($('#chart-projects'),
-    projects.map((project) => ({
-      // A project with no name is one that has been deleted since; the hours it
-      // holds still count, so it is shown rather than dropped.
-      label: project.projectId
-        ? (project.name || t('stats.deletedProject', 'deleted project'))
-        : t('stats.noProject', 'no project'),
-      value: project.hours,
-    })),
-    fmtHours);
+  drawBarChart($('#chart-projects'), projectBars(projects), fmtHours);
 
   $('#statistics-empty').hidden = (stats.totalHours ?? 0) > 0;
 }
@@ -7588,13 +7692,7 @@ function drawReportChart() {
   const byProject = reportChart.scope === 'projects';
 
   const bars = byProject
-    ? reportChart.projects.map((project) => ({
-      // A project with no name is one deleted since; its hours still count.
-      label: project.projectId
-        ? (project.name || t('stats.deletedProject', 'deleted project'))
-        : t('stats.noProject', 'no project'),
-      value: project.hours,
-    }))
+    ? projectBars(reportChart.projects)
     : reportChart.days.map((day) => ({ label: fmtDate(day.date), value: day.hours }));
 
   $('#report-chart-caption').textContent = byProject
@@ -8544,6 +8642,13 @@ async function loadMaintenance() {
     onLogin.hidden = !state.enabled;
   }
 
+  // And who may still come in. The notice above is whatever the administrator
+  // typed - "back at 14:00" - which tells somebody nothing about why their own
+  // password was refused, so they try it again. This line is the application's
+  // own and says the refusal is not about them.
+  const who = $('#login-maintenance-who');
+  if (who) who.hidden = !state.enabled;
+
   // The form, for the administrator who is looking at it.
   const form = $('#form-maintenance');
   if (form) {
@@ -8790,6 +8895,9 @@ function switchView(name) {
   }
 
   rememberView(name);
+
+  // The period this screen evaluates, visible before anything is evaluated.
+  fillRangesFor(name);
 
   // Filled on arrival rather than once, because what it says about today goes
   // stale. Not awaited: switching screens is not something to hold up for two
