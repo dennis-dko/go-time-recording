@@ -3188,3 +3188,84 @@ func TestTheNavigationSitsCentredOnItsOwnLine(t *testing.T) {
 		t.Errorf("these lie on top of each other in the header: %s", overlaps)
 	}
 }
+
+// Opening a role puts the rights on the screen, not the table above them.
+//
+// The form sits a long way down a screen that begins with the table of roles,
+// and the legend under the rights made it longer still - so pressing the button
+// used to leave somebody looking at the table they had just pressed in, with the
+// thing they asked for below the fold.
+func TestOpeningARoleShowsItsRights(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open the roles", p.click(`.tab[data-view="roles"]`),
+		chromedp.WaitVisible("#table-roles", chromedp.ByID))
+
+	p.run("back to the top", chromedp.Evaluate(`window.scrollTo(0, 0)`, nil))
+
+	p.run("open a role", p.click(`#table-roles tbody tr:nth-child(1) button.link`),
+		chromedp.WaitVisible("#form-role", chromedp.ByID))
+
+	// Given a moment: the scroll is smooth and starts on the next frame.
+	var onScreen bool
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		p.evalJSON(`JSON.stringify((() => {
+			const rights = document.querySelector('#form-role .perms').getBoundingClientRect();
+			const bar = document.querySelector('.topbar').getBoundingClientRect();
+
+			// On screen and clear of the bar that floats over the top of it.
+			return rights.top >= bar.bottom - 1 && rights.top < window.innerHeight;
+		})())`, &onScreen)
+
+		if onScreen {
+			break
+		}
+
+		time.Sleep(150 * time.Millisecond)
+	}
+
+	if !onScreen {
+		var where float64
+
+		p.evalJSON(`JSON.stringify(
+			document.querySelector('#form-role .perms').getBoundingClientRect().top)`, &where)
+
+		t.Errorf("the rights are at %.0f in a %d-tall window after opening the role",
+			where, 900)
+	}
+
+	// And the fields that cannot be typed into do not offer a typing cursor.
+	var cursors string
+
+	p.evalJSON(`JSON.stringify(
+		['name', 'description']
+			.map((field) => {
+				const input = document.querySelector('#form-role [name="' + field + '"]');
+
+				return field + ':' + (input.readOnly ? getComputedStyle(input).cursor : 'writable');
+			})
+			.join(' '))`, &cursors)
+
+	if strings.Contains(cursors, ":text") {
+		t.Errorf("a field that cannot be typed into offers a typing cursor: %s", cursors)
+	}
+
+	// A line of air over the buttons, so Save and New are not read as the last
+	// row of the legend above them.
+	var air float64
+
+	p.evalJSON(`JSON.stringify((() => {
+		const legend = document.querySelector('#permission-legend').getBoundingClientRect();
+		const buttons = document.querySelector('#form-role .row').getBoundingClientRect();
+
+		return buttons.top - legend.bottom;
+	})())`, &air)
+
+	if air < 16 {
+		t.Errorf("the buttons sit %.0fpx under the legend", air)
+	}
+}

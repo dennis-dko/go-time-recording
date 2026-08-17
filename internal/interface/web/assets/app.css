@@ -1941,3 +1941,14 @@ a.tab:hover {
 
   .who { margin-left: 0; text-align: left; }
 }
+
+/* A line of air over the buttons, so Save and New are not the next thing after
+   the last sentence of the legend. The legend is prose to read; these are two
+   controls to press, and they were reading as its final row. */
+#form-role .row { margin-top: 22px; }
+
+/* A field that cannot be typed into should not offer a typing cursor.
+   The rights of a shipped role are visibly fixed - the boxes are greyed and
+   cannot be ticked - while its name and description looked exactly like every
+   other field on the screen until somebody tried. */
+input[readonly] { cursor: default; }

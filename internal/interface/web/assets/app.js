@@ -3650,6 +3650,21 @@ function editRole(role) {
     : t('role.edit', 'Edit role').replace('{0}', roleTitle(role.name));
 
   switchView('roles');
+
+  // Straight to the rights, which is what somebody pressed the button for.
+  //
+  // The form is a long way down a screen that starts with the table of roles,
+  // and the legend under the rights made it longer still - so opening a role
+  // used to leave the reader at the top of the table they were already looking
+  // at, with the thing they asked for somewhere below the fold.
+  //
+  // On the next frame, because the view is only just unhidden and an element in
+  // a hidden one has nowhere to be scrolled to. The offset for the sticky bar is
+  // the page's own: html carries scroll-padding-top, which every scroll into
+  // view respects.
+  requestAnimationFrame(() => {
+    $('#form-role .perms')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
 }
 
 function resetRoleForm() {
