@@ -288,6 +288,20 @@ func TestTheSettingsScreenFillsTheTelemetryCardAndTheOnesAfterIt(t *testing.T) {
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-telemetry", chromedp.ByID))
 
+	// Waited for the card to be filled, not for the card to exist.
+	//
+	// Every one of these forms is in index.html, so the wait above returns the
+	// moment the screen is shown - before a single request has answered. Reading
+	// straight after it therefore asks "is the chain finished" of a chain that
+	// has not started, which is a question with a different answer on a busy
+	// machine than on a quiet one. It passed here and failed on CI, saying the
+	// screen was broken when it was merely still loading.
+	//
+	// The LDAP filter is the last of the three read below, so waiting for it
+	// waits for all of them - and a chain that really did break never fills it,
+	// which is what this case is about.
+	p.waitForValue(`#form-ldap input[name="userFilter"]`)
+
 	// This line is written by the same response that fills the fields, so an
 	// empty one means the card never loaded at all.
 	active := p.text("#telemetry-active")
@@ -2568,4 +2582,26 @@ func TestTheMarkedTabsKeepTheirMarksInEveryLanguage(t *testing.T) {
 	if after := strings.TrimSpace(p.text(`.tab[data-view="calendar"]`)); after == before {
 		t.Errorf("the calendar tab still says %q in German", after)
 	}
+}
+
+// waitForValue waits until a field has something in it.
+//
+// For the screens whose forms are in the markup and whose contents arrive by
+// request: the field is there from the first paint, and only what is in it says
+// whether the answer has come back.
+func (p *page) waitForValue(selector string) {
+	p.t.Helper()
+
+	deadline := time.Now().Add(30 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if p.value(selector) != "" {
+			return
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	p.t.Fatalf("%s was never filled in, so the screen stopped loading before it;"+
+		" the log says:\n%s", selector, p.app.Log())
 }
