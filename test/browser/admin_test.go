@@ -4,6 +4,7 @@ package browser
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -2446,5 +2447,125 @@ func TestClearingTheLogoChangesTheTabWithoutAReload(t *testing.T) {
 		}
 
 		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// The way back to the instance's zone says which zone that is.
+//
+// The option named whatever was in effect for the account, which is the same
+// thing only until somebody chooses a zone of their own. After choosing
+// Africa/Abidjan by hand, the line offering to stop choosing read "follow the
+// instance setting (Africa/Abidjan)" - an offer to change nothing, with no way
+// to find out what stopping would actually give you.
+func TestFollowingTheInstanceZoneNamesTheInstanceZone(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// A zone for the installation that nobody would pick by accident, and a
+	// different one for this account.
+	const (
+		instanceZone = "Pacific/Auckland"
+		ownZone      = "Africa/Abidjan"
+	)
+
+	var status string
+
+	p.run("set the instance zone", chromedp.Evaluate(fmt.Sprintf(`
+		(async () => {
+			const csrf = document.cookie.split(';').map(c => c.trim())
+				.find(c => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+
+			const r = await fetch('/api/v1/settings/timezone', {
+				method: 'PUT',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+				body: JSON.stringify({ timezone: %q }),
+			});
+
+			return String(r.status);
+		})()`, instanceZone), &status, awaitPromise))
+
+	if status != "200" {
+		t.Fatalf("setting the instance zone answered %s", status)
+	}
+
+	// Reloaded, because who is signed in is read once: without this the page
+	// still holds the zone the installation had when it was opened.
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+
+	p.run("open My account", p.click(`.tab[data-view="settings"]`),
+		chromedp.WaitVisible("#my-timezone", chromedp.ByID))
+
+	// Straight to a chosen zone rather than checking the untouched state first.
+	// There is no untouched state to check here: the first load stores whatever
+	// zone the browser reports, so this account already has one of its own
+	// before the screen is ever opened.
+	p.run("choose a zone of my own",
+		p.chooseOption("#my-timezone", ownZone),
+		p.click(`#form-my-timezone button[type="submit"]`))
+
+	p.waitForText("#toast", "saved")
+
+	// The point of the whole case: the way back still names the instance's zone.
+	got := p.text(`#my-timezone option[value=""]`)
+
+	if strings.Contains(got, ownZone) {
+		t.Errorf("after choosing %s, the way back reads %q - it offers to change "+
+			"nothing", ownZone, got)
+	}
+
+	if !strings.Contains(got, instanceZone) {
+		t.Errorf("the way back reads %q, without naming the instance's zone %s",
+			got, instanceZone)
+	}
+}
+
+// Every marked tab carries exactly one mark, and says nothing extra about it.
+//
+// Two things can go wrong here and neither shows up by looking. A mark placed
+// before the label is wiped by the language switch, which replaces the first
+// text node of a translated element - so the marks vanish the moment somebody
+// switches to German. And a mark that is not hidden from assistive technology
+// is announced beside the label, which turns "Calendar" into "image, Calendar".
+func TestTheMarkedTabsKeepTheirMarksInEveryLanguage(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	marked := []string{"timesheets", "calendar", "projects", "users", "roles",
+		"report", "settings", "admin"}
+
+	for _, view := range marked {
+		if got := p.count(`.tab[data-view="` + view + `"] .tab-icon`); got != 1 {
+			t.Errorf("the %s tab has %d marks, want exactly one", view, got)
+		}
+	}
+
+	// Hidden from a screen reader, which reads the label instead.
+	var announced int
+
+	p.evalJSON(`JSON.stringify(
+		[...document.querySelectorAll('#tabs .tab-icon')]
+			.filter((mark) => mark.getAttribute('aria-hidden') !== 'true').length)`,
+		&announced)
+
+	if announced != 0 {
+		t.Errorf("%d marks are announced beside the label they already have", announced)
+	}
+
+	// And the label is still the label. This is what breaks if a mark is put
+	// before the words rather than after them.
+	before := strings.TrimSpace(p.text(`.tab[data-view="calendar"]`))
+
+	p.run("switch to German", p.chooseOption("#language-picker", "de"))
+	p.waitForText(`.tab[data-view="calendar"]`, "Kalender")
+
+	for _, view := range marked {
+		if got := p.count(`.tab[data-view="` + view + `"] .tab-icon`); got != 1 {
+			t.Errorf("after switching language the %s tab has %d marks", view, got)
+		}
+	}
+
+	if after := strings.TrimSpace(p.text(`.tab[data-view="calendar"]`)); after == before {
+		t.Errorf("the calendar tab still says %q in German", after)
 	}
 }

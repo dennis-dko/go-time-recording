@@ -901,3 +901,118 @@ func (p *page) submitAndAwaitReload(t *testing.T, submit chromedp.Action) {
 
 	p.run("wait for the screen", chromedp.WaitVisible("#form-branding", chromedp.ByID))
 }
+
+// A language nobody has written anything for goes on following the base.
+//
+// The form fills every language with the base text, so somebody switching to
+// German sees what a German reader currently gets. Saving then stored that as
+// German's own answer - so merely looking at a language froze it, and renaming
+// the installation afterwards reached every language except the ones that had
+// been opened. Same rule as the logo: nothing written means the default applies,
+// and goes on applying.
+func TestALanguageWithNothingWrittenKeepsFollowingTheBase(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.saveBranding(t, "name the installation",
+		chromedp.SetValue(`#form-branding input[name="title"]`, "Alpha GmbH", chromedp.ByQuery),
+		chromedp.SetValue(`#form-branding input[name="tabTitle"]`, "Alpha", chromedp.ByQuery))
+
+	// Look at German - which fills the boxes with what a German reader gets
+	// today - and save without typing a word.
+	p.run("look at German", p.chooseOption("#branding-language", "de"))
+	p.saveBranding(t, "save what was only looked at")
+
+	written := p.storedTranslations(t)
+
+	if got := written["de"].Title; got != "" {
+		t.Errorf("looking at German stored %q as its own title, so the base no "+
+			"longer reaches it", got)
+	}
+
+	if got := written["de"].TabTitle; got != "" {
+		t.Errorf("looking at German stored %q as its own tab title", got)
+	}
+
+	// And the proof that it matters: rename the installation. German has nothing
+	// of its own, so it has to follow.
+	p.run("back to the base", p.chooseOption("#branding-language", "en"))
+	p.saveBranding(t, "rename",
+		chromedp.SetValue(`#form-branding input[name="title"]`, "Beta GmbH", chromedp.ByQuery))
+
+	written = p.storedTranslations(t)
+
+	if got := written["de"].Title; got != "" {
+		t.Errorf("after the rename German still says %q of its own, so a German "+
+			"reader is left on the old name", got)
+	}
+
+	if got := written["en"].Title; got != "Beta GmbH" {
+		t.Errorf("the base came back as %q after being renamed to Beta GmbH", got)
+	}
+
+	// The other half of the rule: a translation somebody actually writes is kept.
+	// This must not turn into "translations are never stored".
+	p.run("to German", p.chooseOption("#branding-language", "de"))
+	p.saveBranding(t, "write a German name",
+		chromedp.SetValue(`#form-branding input[name="title"]`, "Beta GmbH (DE)", chromedp.ByQuery))
+
+	if got := p.storedTranslations(t)["de"].Title; got != "Beta GmbH (DE)" {
+		t.Errorf("a written German name came back as %q", got)
+	}
+}
+
+// saveBranding presses Save on the appearance form and waits for that save.
+//
+// The notices stack, so a "Settings saved" from the previous one is still on
+// screen when the next is pressed - and waiting for the word then returns at
+// once, before the request has been anywhere near the server. Cleared first, so
+// the notice that arrives is the one being waited for.
+func (p *page) saveBranding(t *testing.T, what string, fill ...chromedp.Action) {
+	t.Helper()
+
+	if len(fill) > 0 {
+		p.run(what, fill...)
+	}
+
+	p.run("clear the notices", chromedp.Evaluate(
+		`(() => { document.querySelector('#toast').replaceChildren(); return 1; })()`, nil))
+
+	p.run("save", p.click(`#form-branding button[type="submit"]`))
+	p.waitForText("#toast", "saved")
+}
+
+func (p *page) storedTranslations(t *testing.T) map[string]struct {
+	Title    string `json:"title"`
+	TabTitle string `json:"tabTitle"`
+} {
+	t.Helper()
+
+	var raw string
+
+	// no-store, because this answer is cacheable and every visitor of the sign-in
+	// screen fetches it. Read without it, this returned the copy taken when the
+	// page loaded - which made a frozen translation look like an absent one and
+	// sent the whole investigation into the server.
+	p.run("read the translations", chromedp.Evaluate(`
+		(async () => {
+			const r = await fetch('/api/v1/branding', { credentials: 'same-origin', cache: 'no-store' });
+			const body = await r.json();
+
+			return JSON.stringify(body?.data?.translations ?? {});
+		})()`, &raw, awaitPromise))
+
+	written := map[string]struct {
+		Title    string `json:"title"`
+		TabTitle string `json:"tabTitle"`
+	}{}
+
+	if err := json.Unmarshal([]byte(raw), &written); err != nil {
+		t.Fatalf("reading the translations: %v; %s", err, raw)
+	}
+
+	return written
+}

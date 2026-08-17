@@ -210,6 +210,12 @@ of them open — "Zeiterfassung der Beispiel GmbH & Co. KG" reads as
 is what every installation configured before this existed goes on doing. It
 translates like the other texts.
 
+**A language you have written nothing for follows the base**, the same way an
+unconfigured logo falls back to the shipped mark. The form fills each language
+with the base text so you can see what a reader of it currently gets; leaving
+that untouched means exactly what it looks like — nothing written here. Rename
+the installation later and every untranslated language follows along.
+
 Saving a mark reloads the page, because no engine takes a new tab icon from a
 link swapped in afterwards — and the reload comes back to where you were on the
 screen rather than to the top of it.

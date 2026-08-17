@@ -1402,13 +1402,42 @@ function showBrandingLanguage(language) {
 /** Which language the form is currently showing. */
 let brandingLanguage = 'en';
 
+/**
+ * What a reader gets in a language nothing has been written for.
+ *
+ * The first language's box is the base itself, so it is read from there while
+ * the form is open and from what was loaded before anybody typed.
+ */
+function brandingFallback(field) {
+  return brandingDraft[BRANDING_LANGUAGES[0]]?.[field] || brandingBase[field] || '';
+}
+
 /** Takes what is in the form back into the draft for the language it belongs to. */
 function rememberBrandingDraft() {
   const form = $('#form-branding');
   if (!form || !brandingDraft[brandingLanguage]) return;
 
   for (const field of BRANDING_TEXT_FIELDS) {
-    brandingDraft[brandingLanguage][field] = form.elements[field].value;
+    const typed = form.elements[field].value;
+
+    // The first language is the base, so whatever is in the form is it.
+    if (brandingLanguage === BRANDING_LANGUAGES[0]) {
+      brandingDraft[brandingLanguage][field] = typed;
+
+      continue;
+    }
+
+    // Any other language holds a translation, and one that says exactly what
+    // the base says is not a translation - it is the base, copied.
+    //
+    // Storing it froze the language. The form fills each language with the base
+    // so that somebody switching to German sees what a German reader currently
+    // gets; saving then wrote that back as German's own answer, and renaming the
+    // installation afterwards reached every language except the ones that had
+    // been looked at. Leaving a field as it was found has to mean what it looks
+    // like it means: nothing written here, so the default applies - the same
+    // rule the logo follows.
+    brandingDraft[brandingLanguage][field] = typed === brandingFallback(field) ? '' : typed;
   }
 }
 
@@ -8649,18 +8678,32 @@ function showTimeIn(select, output, fallbackZone) {
 function fillMyTimezone() {
   const select = $('#my-timezone');
   const inherit = `${t('tz.inherit', 'Follow the instance setting')}`;
-  const effective = me.user?.effectiveTimezone ?? 'UTC';
 
-  fillTimezoneSelect(select, me.user?.timezone ?? '', `${inherit} (${effective})`);
-  showTimeIn(select, $('#my-timezone-now'), effective);
+  // The instance's zone, not the one in effect for this account.
+  //
+  // They are the same until somebody picks a zone of their own, and then they
+  // are not: what is in effect is the personal choice. Naming that in this
+  // option made it read "follow the instance setting (Africa/Abidjan)" right
+  // after Africa/Abidjan had been chosen by hand - an offer to change nothing,
+  // and no way to find out what stopping would actually give you.
+  const instance = me.user?.instanceTimezone ?? me.user?.effectiveTimezone ?? 'UTC';
+
+  fillTimezoneSelect(select, me.user?.timezone ?? '', `${inherit} (${instance})`);
+
+  // The clock beside the picker follows the picker: with nothing chosen it
+  // shows the instance's zone, which is what would apply.
+  showTimeIn(select, $('#my-timezone-now'), instance);
 }
 
 function wireTimezones() {
   const mine = $('#my-timezone');
   const myNow = $('#my-timezone-now');
 
+  // The instance's zone as the fallback, for the same reason as in
+  // fillMyTimezone: picking the "follow the instance setting" line has to show
+  // the time it would actually be, not the time in the zone being left.
   mine.addEventListener('change', () => showTimeIn(mine, myNow,
-    me.user?.effectiveTimezone ?? 'UTC'));
+    me.user?.instanceTimezone ?? me.user?.effectiveTimezone ?? 'UTC'));
 
   $('#form-my-timezone').addEventListener('submit', (e) => {
     e.preventDefault();
