@@ -96,6 +96,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260814010000: {UP: func(d migration.Datasource) error {
 			return clearTheAdministratorsWorkingDay(d, dialect)
 		}},
+		20260818010000: {UP: func(d migration.Datasource) error {
+			return moveTheAppearanceOntoTheAccount(d, dialect)
+		}},
 	}
 }
 
@@ -1453,4 +1456,18 @@ func createTimesheets(dialect string) string {
 		description TEXT,
 		status VARCHAR(32) NOT NULL
 	)`, primaryKey(dialect), foreignKeyID(dialect), foreignKeyID(dialect), timestamp(dialect), float(dialect))
+}
+
+// moveTheAppearanceOntoTheAccount gives each account its own light or dark.
+//
+// It was a device setting, kept in the browser, which is right for one person
+// with one laptop and wrong everywhere else: a shared machine handed the next
+// person the last one's dark mode, on a screen with nothing else of theirs on
+// it. Empty is what every existing account gets - follow the time of day, which
+// is what a browser that has never been told anything does.
+func moveTheAppearanceOntoTheAccount(d migration.Datasource, dialect string) error {
+	_ = dialect
+
+	return execAll(d,
+		"ALTER TABLE users ADD COLUMN theme VARCHAR(8) NOT NULL DEFAULT ''")
 }

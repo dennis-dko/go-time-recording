@@ -499,7 +499,20 @@ function stopPermissionPolling() {
  * Per device rather than per account: what somebody has already seen is a fact
  * about the screen in front of them.
  */
-const RELEASE_SEEN_KEY = 'gtr.releaseSeen';
+/**
+ * Where a dismissed release is remembered, per account.
+ *
+ * Per account rather than per device, which is what it was. Dismissing is one
+ * administrator saying "I have seen this version"; kept against the machine, it
+ * said it on behalf of everybody who signs in there - so the second
+ * administrator on a shared machine was never told about a release at all.
+ *
+ * Keyed this way it survives signing out, which is right: somebody who has seen
+ * v1.2.3 has still seen it tomorrow.
+ */
+function releaseSeenKey() {
+  return me.user ? `gtr.releaseSeen.${me.user.id}` : '';
+}
 
 /** How often an open tab asks again. A day left open should notice a release. */
 const RELEASE_POLL_MS = 60 * 60 * 1000;
@@ -563,8 +576,11 @@ async function checkForRelease() {
 
 /** What was last dismissed, if anything. */
 function dismissedRelease() {
+  const key = releaseSeenKey();
+  if (!key) return '';
+
   try {
-    return localStorage.getItem(RELEASE_SEEN_KEY) ?? '';
+    return localStorage.getItem(key) ?? '';
   } catch {
     return '';
   }
@@ -592,7 +608,7 @@ function wireReleaseBanner() {
     // Against the version, so this is "I know about that one" rather than "stop
     // telling me anything".
     try {
-      localStorage.setItem(RELEASE_SEEN_KEY, offeredRelease);
+      localStorage.setItem(releaseSeenKey(), offeredRelease);
     } catch {
       // Storage refused: the banner comes back on the next load, which is a
       // smaller failure than never showing it.
@@ -2749,6 +2765,7 @@ const TRANSLATIONS = {
     'field.sessionLifetimeHours': 'Sitzungsdauer (Stunden)',
     'field.startDate': 'Start',
     'field.syncSchedule': 'Zeitplan',
+    'field.theme': 'Erscheinungsbild',
     'field.timezone': 'Zeitzone',
     'field.tabTitle': 'Browser-Tab',
     'field.title': 'Titel',
@@ -3377,6 +3394,7 @@ async function loadMe() {
   $("#logout").hidden = !me.authEnabled;
 
   applyLanguage(activeLanguage());
+  applyAccountTheme();
   applyPermissionVisibility();
 
   renderTOTPState();
@@ -5218,12 +5236,9 @@ async function submitLogin(e) {
  * one's dark mode, on a screen that has nothing else of theirs on it. Back to
  * following the time of day, which is what a fresh browser does.
  *
- * The release notice goes the same way. Dismissing it is one administrator
- * saying "I have seen this version", and it was being kept for whoever sat down
- * next - who has not seen it.
- *
- * What is not cleared: the screen each account was last on, which is stored
- * against that account's own id and so is invisible to anybody else, and the
+ * What is not cleared, because none of it can reach anybody else: the screen
+ * each account was last on, whether it has been greeted, and which release it
+ * has dismissed - all three stored against that account's own id - and the
  * instance's own name and mark, which belong to the installation rather than to
  * a person.
  */
@@ -5236,11 +5251,14 @@ function forgetTheLastAppearance() {
   const picker = $('#theme-picker');
   if (picker) picker.value = 'auto';
 
-  try {
-    localStorage.removeItem(RELEASE_SEEN_KEY);
-  } catch {
-    // Private browsing refuses storage, in which case nothing was kept anyway.
-  }
+  // And the language switcher, which is a per-account setting and was left
+  // showing the account that has gone. It sits behind the sign-in screen, so
+  // nobody was looking at a control that disagreed with the page - but it is a
+  // control that disagreed with the page, and the next thing it does is be
+  // right for somebody else.
+  const language = $('#language-picker');
+  if (language) language.value = activeLanguage();
+
 }
 
 function forgetTheLastAccount() {
@@ -9131,7 +9149,15 @@ function wireTimezones() {
  */
 const THEME_RECHECK_MS = 60_000;
 
-/** Stores the choice and applies it, keeping theme.js as the single authority. */
+/**
+ * Applies an appearance and remembers it for the next first paint.
+ *
+ * The remembering is a cache, not the setting. The setting lives on the account
+ * - see setThemeForAccount - and the copy in this browser exists for one reason:
+ * theme.js runs before anything has been asked of the server, and without it the
+ * page paints in the wrong colours and corrects itself a moment later. It is
+ * cleared on the way out, so the next person starts from the clock.
+ */
 function setThemePreference(preference) {
   const theme = window.gtrTheme;
 
@@ -9146,13 +9172,51 @@ function setThemePreference(preference) {
   }
 }
 
+/**
+ * Chooses an appearance: on the account where there is one, on the page where
+ * there is not.
+ *
+ * Signed out, the sign-in screen still has to be readable by whoever is looking
+ * at it, so the choice holds for the page and is not written anywhere. Signed
+ * in, it goes to the account - which is the whole point of moving it off the
+ * device, where a shared machine handed the next person the last one's dark
+ * mode.
+ *
+ * "auto" is sent as an empty value, because on the account the absence of a
+ * choice is what following the clock means.
+ */
+function setThemeForAccount(preference) {
+  setThemePreference(preference);
+
+  if (!me.user) return;
+
+  // Quietly: this is a preference, and a notice saying it was saved is a notice
+  // about something the person can already see happened.
+  api('/me/theme', {
+    method: 'PUT',
+    body: JSON.stringify({ theme: preference === 'auto' ? '' : preference }),
+  }).then(() => {
+    me.user.theme = preference === 'auto' ? '' : preference;
+  }).catch(() => {
+    // It holds for this page either way, which is what somebody just asked for.
+  });
+}
+
+/** Puts the signed-in account's appearance on the screen. */
+function applyAccountTheme() {
+  setThemePreference(me.user?.theme || 'auto');
+
+  const picker = $('#theme-picker');
+  if (picker) picker.value = me.user?.theme || 'auto';
+}
+
 /** Wires the appearance picker and keeps "automatic" honest as the day passes. */
 function wireTheme() {
   const picker = $('#theme-picker');
   const theme = window.gtrTheme;
 
   picker.value = theme.stored();
-  picker.addEventListener('change', (e) => setThemePreference(e.target.value));
+  picker.addEventListener('change', (e) => setThemeForAccount(e.target.value));
 
   setInterval(() => {
     if (document.documentElement.dataset.themePreference !== 'auto') return;

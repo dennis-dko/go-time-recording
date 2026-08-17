@@ -205,6 +205,23 @@
         }
       }
     },
+    "/me/theme": {
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Set the appearance you read in, or clear it to follow the time of day",
+        "description": "\"light\", \"dark\", or an empty value. Empty is meaningful rather than an omission: it is how somebody goes back to the screen following the time of day. The appearance is stored on the account rather than in the browser, so a shared machine does not hand the next person the last one's.",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "400": {
+            "description": "Unknown appearance"
+          }
+        }
+      }
+    },
     "/me/timezone": {
       "put": {
         "tags": [

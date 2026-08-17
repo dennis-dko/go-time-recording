@@ -101,6 +101,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me", h.Me.Me)
 	app.PUT(base+"/me/password", h.Me.ChangePassword)
 	app.PUT(base+"/me/language", h.Auth.SetLanguage)
+	app.PUT(base+"/me/theme", h.Auth.SetTheme)
 	app.PUT(base+"/me/timezone", h.Auth.SetTimezone)
 	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
 	// The clock, always the caller's own: starting somebody else's would record

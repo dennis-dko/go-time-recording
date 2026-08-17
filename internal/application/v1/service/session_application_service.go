@@ -477,6 +477,19 @@ func (s *SessionService) SetLanguage(ctx context.Context, userID uint, language 
 	return s.users.SetPreference(ctx, userID, repository.PreferenceLanguage, language)
 }
 
+// SetTheme stores the appearance this person reads in, or clears it.
+//
+// An empty value is the normal case rather than an omission: it means "follow
+// the time of day", which is what somebody who has never chosen gets and what
+// they go back to by choosing automatic.
+func (s *SessionService) SetTheme(ctx context.Context, userID uint, theme string) error {
+	if !model.IsSupportedTheme(theme) {
+		return apperror.InvalidFields("theme")
+	}
+
+	return s.users.SetPreference(ctx, userID, repository.PreferenceTheme, theme)
+}
+
 // SetTourSeen records whether this person has been shown the guided tour.
 //
 // Settable both ways: someone who wants to see it again should be able to ask,

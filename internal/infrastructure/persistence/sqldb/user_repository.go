@@ -18,7 +18,8 @@ import (
 const userSelect = `SELECT u.id, u.name, u.email, u.role_id, COALESCE(r.name, ''),
 	u.password_hash, u.must_change_password, u.is_system,
 	u.daily_target_hours, u.max_daily_hours,
-	u.totp_secret, u.totp_enabled, u.language, u.is_external, u.external_id, u.timezone, u.tour_seen
+	u.totp_secret, u.totp_enabled, u.language, u.is_external, u.external_id, u.timezone,
+	u.tour_seen, u.theme
 	FROM users u LEFT JOIN roles r ON r.id = u.role_id`
 
 // UserRepository stores users in a SQL database.
@@ -38,12 +39,12 @@ func (r *UserRepository) Save(ctx context.Context, user *model.User) (*model.Use
 	id, err := r.insert(ctx,
 		"INSERT INTO users (name, email, role_id, password_hash, must_change_password, "+
 			"is_system, daily_target_hours, max_daily_hours, totp_secret, totp_enabled, "+
-			"language, is_external, external_id, timezone, tour_seen) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"language, is_external, external_id, timezone, tour_seen, theme) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		user.Name, user.Email, user.RoleID, user.PasswordHash, user.MustChangePassword,
 		user.IsSystem, user.DailyTargetHours, user.MaxDailyHours,
 		user.TOTPSecret, user.TOTPEnabled, user.Language, user.IsExternal, user.ExternalID,
-		user.Timezone, user.TourSeen)
+		user.Timezone, user.TourSeen, user.Theme)
 	if err != nil {
 		return nil, translateUserErr(err, user.Email)
 	}
@@ -176,7 +177,7 @@ func scanUser(s scanner) (*model.User, error) {
 		&user.PasswordHash, &user.MustChangePassword, &user.IsSystem,
 		&user.DailyTargetHours, &user.MaxDailyHours,
 		&user.TOTPSecret, &user.TOTPEnabled, &user.Language, &user.IsExternal, &user.ExternalID,
-		&user.Timezone, &user.TourSeen)
+		&user.Timezone, &user.TourSeen, &user.Theme)
 	if err != nil {
 		return nil, err
 	}
@@ -231,6 +232,8 @@ func (r *UserRepository) SetPreference(
 		query = "UPDATE users SET language = ? WHERE id = ?"
 	case repository.PreferenceTimezone:
 		query = "UPDATE users SET timezone = ? WHERE id = ?"
+	case repository.PreferenceTheme:
+		query = "UPDATE users SET theme = ? WHERE id = ?"
 	default:
 		return fmt.Errorf("unknown user preference %d", field)
 	}

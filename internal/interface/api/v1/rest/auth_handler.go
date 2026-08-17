@@ -213,6 +213,31 @@ func (h *AuthHandler) SetLanguage(c *gofr.Context) (any, error) {
 	return map[string]string{"status": "language saved"}, nil
 }
 
+// SetTheme handles PUT /api/v1/me/theme.
+//
+// An empty value is meaningful and not an omission: it clears the choice so the
+// screen follows the time of day again.
+func (h *AuthHandler) SetTheme(c *gofr.Context) (any, error) {
+	principal, err := h.authz.Principal(c)
+	if err != nil {
+		return nil, err
+	}
+
+	var req struct {
+		Theme string `json:"theme"`
+	}
+
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.sessions.SetTheme(c, principal.User.ID, req.Theme); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return map[string]string{"status": "appearance saved"}, nil
+}
+
 // SetTimezone handles PUT /api/v1/me/timezone.
 //
 // An empty value is meaningful and not an omission: it clears the personal

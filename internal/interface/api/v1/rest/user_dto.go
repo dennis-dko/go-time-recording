@@ -44,6 +44,11 @@ type UserResponse struct {
 	// chosen deliberately.
 	Timezone string `json:"timezone"`
 
+	// Theme is the appearance this account reads in - light, dark, or empty for
+	// following the time of day. On the account rather than on the device: a
+	// device is shared and an account is not.
+	Theme string `json:"theme"`
+
 	// TourSeen tells the interface whether to offer the guided tour. It is on
 	// the user rather than in the browser, so someone who has been introduced
 	// to the application is not introduced again on their next device.
@@ -137,6 +142,7 @@ func newUserResponse(r *common.UserResult, instanceTimezone string) UserResponse
 		Language:           r.Language,
 		EffectiveLanguage:  r.EffectiveLanguage,
 		Timezone:           r.Timezone,
+		Theme:              r.Theme,
 		TourSeen:           r.TourSeen,
 		EffectiveTimezone:  model.EffectiveTimezoneName(r.Timezone, instanceTimezone),
 		InstanceTimezone:   model.EffectiveTimezoneName("", instanceTimezone),
@@ -180,6 +186,7 @@ func newUserResponseFromModel(u *model.User, instanceTimezone string) UserRespon
 		EffectiveLanguage:  u.EffectiveLanguage(),
 		IsExternal:         u.IsExternal,
 		Timezone:           u.Timezone,
+		Theme:              u.Theme,
 		TourSeen:           u.TourSeen,
 		EffectiveTimezone:  model.EffectiveTimezoneName(u.Timezone, instanceTimezone),
 		InstanceTimezone:   model.EffectiveTimezoneName("", instanceTimezone),
