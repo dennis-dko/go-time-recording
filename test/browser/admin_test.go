@@ -2612,3 +2612,269 @@ func (p *page) waitForValue(selector string) {
 	p.t.Fatalf("%s was never filled in, so the screen stopped loading before it;"+
 		" the log says:\n%s", selector, p.app.Log())
 }
+
+// The footer sits at the bottom of the window, not at the end of the content.
+//
+// "My account" is a few short cards, and the footer followed them - which reads
+// as the page having stopped early, with a band of empty ground under it. And it
+// was as tall as whatever happened to be in it, so it was a different strip on
+// every screen.
+func TestTheFooterStaysAtTheBottomAtOneHeight(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	measure := func() struct {
+		Bottom float64 `json:"bottom"`
+		Height float64 `json:"height"`
+		Window float64 `json:"window"`
+	} {
+		var out struct {
+			Bottom float64 `json:"bottom"`
+			Height float64 `json:"height"`
+			Window float64 `json:"window"`
+		}
+
+		p.evalJSON(`JSON.stringify((() => {
+			const r = document.querySelector('#site-footer').getBoundingClientRect();
+
+			return { bottom: r.bottom, height: r.height, window: window.innerHeight };
+		})())`, &out)
+
+		return out
+	}
+
+	// A window taller than the screen's content, or the question cannot be asked:
+	// where the content already fills the window the footer is at the bottom of
+	// both, and every layout looks right.
+	p.run("a tall window", chromedp.EmulateViewport(1280, 1600))
+
+	p.run("open the shortest screen", p.click(`.tab[data-view="settings"]`),
+		chromedp.WaitVisible("#form-password", chromedp.ByID))
+
+	short := measure()
+
+	if short.Window < 1000 {
+		t.Fatalf("the window is only %.0fpx tall, so this proves nothing", short.Window)
+	}
+
+	if short.Bottom < short.Window-2 {
+		t.Errorf("on a short screen the footer ends %.0fpx down a %.0fpx window, "+
+			"leaving empty ground under it", short.Bottom, short.Window)
+	}
+
+	// And the same strip on a screen with plenty on it.
+	p.run("open a longer one", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	long := measure()
+
+	if math.Abs(long.Height-short.Height) > 2 {
+		t.Errorf("the footer is %.0fpx tall on one screen and %.0fpx on another",
+			short.Height, long.Height)
+	}
+
+	if short.Height < 40 || short.Height > 80 {
+		t.Errorf("the footer is %.0fpx tall", short.Height)
+	}
+}
+
+// Two projects are drawn in two colours, and each keeps its own.
+//
+// One accent for every bar meant a chart of five projects was five identical
+// bars of different lengths: the labels carried all of it, and the eye had
+// nothing to group by.
+func TestEachProjectKeepsItsOwnColourInTheCharts(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+	p.becomeWorker()
+
+	// An hour on each, so both are in the chart.
+	for _, project := range []string{"Dachsanierung", "Serverumzug"} {
+		p.bookAnHourOn(t, project)
+	}
+
+	p.run("open the hours card", p.click(`.tab[data-view="overtime"]`),
+		chromedp.WaitVisible("#statistics-card", chromedp.ByID))
+
+	p.run("evaluate", p.click("#statistics-load"))
+	p.waitForNode("#chart-projects .chart-bar")
+
+	var fills []string
+
+	p.evalJSON(`JSON.stringify(
+		[...document.querySelectorAll('#chart-projects .chart-bar')]
+			.map((bar) => getComputedStyle(bar).fill))`, &fills)
+
+	if len(fills) < 2 {
+		t.Fatalf("the chart drew %d bars, so there is nothing to tell apart", len(fills))
+	}
+
+	if fills[0] == fills[1] {
+		t.Errorf("both projects are drawn in %s", fills[0])
+	}
+}
+
+// Every screen that evaluates a period says which period, before it is asked to.
+//
+// They disagreed: the statistics card filled its fields in when Evaluate was
+// pressed - so the answer arrived for a period nobody had seen until the fields
+// changed under it - and the report and overtime forms sent nothing at all,
+// quietly evaluating the whole history.
+func TestTheEvaluationScreensArriveWithTheirPeriodFilledIn(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+	p.becomeWorker()
+
+	for _, screen := range []struct {
+		view, from, to string
+	}{
+		{"overtime", "#statistics-from", "#statistics-to"},
+		{"overtime", `#form-overtime input[name="from"]`, `#form-overtime input[name="to"]`},
+		{"report", `#form-report input[name="from"]`, `#form-report input[name="to"]`},
+	} {
+		t.Run(screen.view+" "+screen.from, func(t *testing.T) {
+			p.run("open "+screen.view, p.click(`.tab[data-view="`+screen.view+`"]`),
+				chromedp.WaitVisible(screen.from, chromedp.ByQuery))
+
+			from := p.value(screen.from)
+			to := p.value(screen.to)
+
+			if from == "" || to == "" {
+				t.Fatalf("the period reads %q to %q before anything was pressed",
+					from, to)
+			}
+
+			// The month it is, which is the period somebody almost always wants
+			// and the only one that can be checked at a glance.
+			if !strings.HasSuffix(from, "-01") {
+				t.Errorf("the period starts at %q rather than at the first of a month", from)
+			}
+
+			if from > to {
+				t.Errorf("the period runs from %q to %q, which is backwards", from, to)
+			}
+		})
+	}
+}
+
+// The sign-in screen says who may still come in.
+//
+// The notice above it is whatever the administrator typed - "back at 14:00" -
+// which says nothing about why this particular password was refused, so somebody
+// tries it again.
+func TestTheSignInScreenSaysWhoMaySignInDuringMaintenance(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-maintenance", chromedp.ByID))
+
+	p.run("go out of service",
+		p.click(`#form-maintenance input[name="enabled"]`),
+		p.click(`#form-maintenance button[type="submit"]`),
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery))
+
+	p.run("confirm", p.click(".confirm-overlay button:not(.secondary)"))
+	p.waitForText("#toast", "out of service")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	if !p.visible("#login-maintenance-who") {
+		t.Fatal("the sign-in screen does not say who may sign in while the " +
+			"installation is out of service")
+	}
+
+	said := strings.ToLower(p.text("#login-maintenance-who"))
+	if !strings.Contains(said, "admin") {
+		t.Errorf("the sign-in screen says %q, without naming who may still come in",
+			p.text("#login-maintenance-who"))
+	}
+}
+
+// The administration screen no longer claims the built-in account is alone.
+//
+// Everyone who may administer the installation can work during maintenance -
+// that is what the server does - and the sentence beside the switch said the
+// opposite, which is the kind of wrong that gets believed.
+func TestTheMaintenanceCardNamesEveryoneWhoMayWork(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-maintenance", chromedp.ByID))
+
+	said := p.text(`#form-maintenance [data-i18n="maint.who"]`)
+
+	if strings.Contains(said, "including other administrators") {
+		t.Errorf("the maintenance card still turns other administrators away: %q", said)
+	}
+
+	if !strings.Contains(strings.ToLower(said), "administrator role") {
+		t.Errorf("the maintenance card does not say the role may work: %q", said)
+	}
+}
+
+// bookAnHourOn creates a project and books an hour against it, through the API.
+//
+// Through the API rather than through the forms: what is being examined here is
+// the chart, and eight form steps per project would put the whole of project
+// creation and time entry between the test and the thing it is about.
+func (p *page) bookAnHourOn(t *testing.T, name string) {
+	t.Helper()
+
+	var status string
+
+	p.run("book an hour on "+name, chromedp.Evaluate(fmt.Sprintf(`
+		(async () => {
+			const csrf = document.cookie.split(';').map(c => c.trim())
+				.find(c => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+
+			const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf };
+
+			const made = await fetch('/api/v1/projects', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers,
+				body: JSON.stringify({ name: %q, startDate: new Date().toISOString().slice(0, 10) }),
+			});
+
+			if (!made.ok) return 'project ' + made.status;
+
+			const project = (await made.json())?.data;
+
+			const booked = await fetch('/api/v1/timesheets', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers,
+				body: JSON.stringify({
+					projectId: project.id,
+					date: new Date().toISOString().slice(0, 10),
+					durationHours: 1,
+				}),
+			});
+
+			return booked.ok ? 'ok' : 'entry ' + booked.status;
+		})()`, name), &status, awaitPromise))
+
+	if status != "ok" {
+		t.Fatalf("booking an hour on %s: %s", name, status)
+	}
+}
+
+// waitForNode waits until something matches.
+func (p *page) waitForNode(selector string) {
+	p.t.Helper()
+
+	deadline := time.Now().Add(20 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if p.count(selector) > 0 {
+			return
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	p.t.Fatalf("nothing ever matched %s", selector)
+}

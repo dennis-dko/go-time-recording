@@ -398,10 +398,23 @@ administration, so they keep their own hours and still nobody else's.
 A project's report totals **your own** hours on it. Everyone sees their own figures
 there and through **My statistics**, and nobody sees anybody else's.
 
+**Every screen that evaluates a period arrives with one filled in** — the month
+so far — rather than waiting to be told. The alternative was worse in both
+directions: the hours card used to fill its fields *when Evaluate was pressed*,
+so the answer arrived for a period nobody had seen until the fields changed under
+it, and the report and overtime forms sent nothing at all and quietly evaluated
+the whole history. Refusing to evaluate until a date is typed would be worse
+still — there is an obvious right answer here, and demanding it be typed is
+make-work. Clear a field and it stays clear; the period is yours once you have
+touched it.
+
 The picture beside the table is the same figures in whichever shape answers the
 question: **bars** for a long list of names, because a name fits beside a bar and
 not under a column; **columns** for comparing a few things; a **pie** for a share of
-a whole. It follows the filter the table follows, so scoping the evaluation to one
+a whole. **Each project keeps its own colour** across all three shapes and
+between visits, because the colour comes from the project rather than from its
+place in the list — a colour that means something different on every visit is
+decoration rather than information. It follows the filter the table follows, so scoping the evaluation to one
 project scopes both — a chart totalling everything next to a table totalling one
 project is two answers on one screen, and no way to tell which was asked for.
 
@@ -1626,6 +1639,6 @@ lands, and where the default TLS cache `configs/certs` goes — so start it from
 the same place every time. [`deploy/OPERATIONS.md`](deploy/OPERATIONS.md) has a
 systemd unit that gets that right.
 
-## Licence
+## License
 
 MIT.

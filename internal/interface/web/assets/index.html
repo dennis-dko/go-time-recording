@@ -235,6 +235,10 @@
          it covers it. Somebody arriving at a closed installation would otherwise
          type a password and be turned away with no explanation. -->
     <div id="login-maintenance" class="banner banner-warn" hidden></div>
+    <!-- Who may still sign in, beside the installation's own notice. Without it
+         somebody refused reads "back at 14:00" and tries their password again,
+         because nothing on the screen says the refusal is not about them. -->
+    <p id="login-maintenance-who" class="muted" hidden data-i18n="maint.signInWho">Only administrators can sign in while this lasts.</p>
 
     <!-- Shown only while the session is being checked, and replaced by whichever
          answer comes back. No text: it is on screen for a moment and a sentence
@@ -807,7 +811,7 @@
       <form id="form-maintenance" class="card form">
         <h2 data-i18n="maint.title">Maintenance mode</h2>
         <p class="muted" data-i18n="maint.hint">Turns everyone else away with a notice while the installation stays running. Use it before restoring or moving the database: time recorded during that window is lost when the snapshot goes back, and whoever recorded it has no way to know.</p>
-        <p class="muted minus" data-i18n="maint.who">While it is on, only this built-in administrator can work. Everyone else, including other administrators, is turned away — that is the point.</p>
+        <p class="muted minus" data-i18n="maint.who">While it is on, only people who may administer this installation can work: this built-in account and anyone holding the administrator role. Everyone else is turned away — that is the point.</p>
         <div class="grid">
           <label class="switch"><input type="checkbox" name="enabled"><span class="switch-track"></span><span class="switch-label" data-i18n="maint.enabled">Out of service</span></label>
           <label class="wide" data-i18n="maint.message">Notice shown to everyone else<input type="text" name="message" maxlength="300" data-i18n-placeholder="maint.messagePlaceholder" placeholder="Back at 14:00">
