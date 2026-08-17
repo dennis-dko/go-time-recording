@@ -1945,6 +1945,10 @@ a.tab:hover {
 /* A line of air over the buttons, so Save and New are not the next thing after
    the last sentence of the legend. The legend is prose to read; these are two
    controls to press, and they were reading as its final row. */
+/* A line of air over the buttons, so Save and New are not the next thing after
+   the switches. They sit above the legend rather than below it: pressing view
+   jumps to the rights, and the way out of a role that is only being shown has
+   to be where the eye lands rather than a screen further down. */
 #form-role .row { margin-top: 22px; }
 
 /* A field that cannot be typed into should not offer a typing cursor.
@@ -1952,3 +1956,17 @@ a.tab:hover {
    cannot be ticked - while its name and description looked exactly like every
    other field on the screen until somebody tried. */
 input[readonly] { cursor: default; }
+
+/* A right is a switch, like every other on-or-off control here. The identifier
+   sits at the end of the row rather than beside the words, so fifteen rows line
+   up on their switches and read down the column. */
+.perm-switch {
+  gap: 10px;
+  justify-content: flex-start;
+}
+
+.perm-switch .perm-name { flex: 1; }
+
+/* A switch that cannot be moved says so by being still: no pointer, no hover,
+   and the whole row dimmed. */
+.perm-switch.muted { cursor: default; }
