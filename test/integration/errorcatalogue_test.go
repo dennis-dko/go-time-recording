@@ -355,9 +355,12 @@ func TestTheShippedRolesCannotBeEdited(t *testing.T) {
 		t.Errorf("%d shipped roles were checked, want 3", checked)
 	}
 
-	// A description is still editable, which is the one thing about these that
-	// belongs to the installation rather than to the application: it is what the
-	// role editor shows beside the name and says nothing about what is granted.
+	// And the description, which was the one part still open. The reasoning was
+	// that a description belongs to the installation rather than to the
+	// application - but these three are the words the interface translates, keyed
+	// on the name, so an installation that edited one got a description in one
+	// language that the interface then overrode in another. That reads as the
+	// change not having been saved.
 	for _, role := range roles.Items {
 		if !role.IsDefault {
 			continue
@@ -366,9 +369,9 @@ func TestTheShippedRolesCannotBeEdited(t *testing.T) {
 		described := admin.api(http.MethodPut, fmt.Sprintf("/roles/%d", role.ID),
 			map[string]any{"description": "Von uns beschrieben"})
 
-		if described.Status != http.StatusOK {
-			t.Errorf("describing the shipped role %q answered %d\n%s",
-				role.Name, described.Status, described.Body)
+		if described.Status != http.StatusConflict {
+			t.Errorf("describing the shipped role %q answered %d, want %d\n%s",
+				role.Name, described.Status, http.StatusConflict, described.Body)
 		}
 
 		break

@@ -374,10 +374,20 @@ func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
 		"permissions": held,
 	}), http.StatusOK)
 
-	// And the description is still editable, because it explains rather than grants.
-	admin.must(admin.api(http.MethodPut, path("/roles/", adminRole), map[string]any{
+	// And the description is refused too, which it was not for a long time. It
+	// explains rather than grants, so it looked like the installation's business -
+	// but the three shipped roles are the ones the interface translates, keyed on
+	// the name, and a description edited here is overridden on screen by the
+	// translation. Nothing about these roles is editable now, which is also what
+	// their screen offers: they are shown rather than opened.
+	described := admin.api(http.MethodPut, path("/roles/", adminRole), map[string]any{
 		"description": "Runs this installation",
-	}), http.StatusOK)
+	})
+
+	if described.Status != http.StatusConflict {
+		t.Errorf("describing the administrator's role answered %d, want %d",
+			described.Status, http.StatusConflict)
+	}
 
 	// A fresh session, because the session carries the permissions - so this cannot
 	// pass by the old session simply not having noticed a grant.

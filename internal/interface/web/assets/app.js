@@ -1783,6 +1783,92 @@ function fillSelect(select, items, { placeholder, labelKey = 'name', valueKey = 
  * A role an installation named itself is not in here and falls back to the name it was
  * given, which is the only sensible answer for a word this application has never seen.
  */
+/**
+ * What each right is called, in words.
+ *
+ * The identifiers are what the API takes and what a role's rights are stored as -
+ * "timesheets:write:own" - and they were what the ticking boxes said. That asks
+ * somebody deciding what a colleague may do to read a namespace: the difference
+ * between "projects:write" and "projects:archive" is plain once you know the
+ * system and a guess before that.
+ *
+ * The identifier stays beside the words rather than being replaced by them. It is
+ * what an API caller and a directory configuration deal in, so the screen that
+ * hands rights out is the one place it has to stay readable.
+ *
+ * English here, translated through perm.<right>; the fallback is what an
+ * installation without a translation sees.
+ */
+const PERMISSION_TITLES = {
+  'users:read': 'See accounts',
+  'users:write': 'Create and change accounts',
+  'users:delete': 'Delete accounts',
+  'roles:read': 'See roles',
+  'roles:write': 'Create and change roles',
+  'settings:manage': 'Administer the installation',
+  'projects:read': 'See projects',
+  'projects:write': 'Create and change projects',
+  'projects:delete': 'Delete projects',
+  'projects:archive': 'Archive projects',
+  'timesheets:read:own': 'See own time',
+  'timesheets:write:own': 'Record own time',
+  'timesheets:transfer': 'Move time between projects',
+  'reports:read:own': 'Evaluate own hours',
+  'settings:write:own': 'Change own settings',
+};
+
+/**
+ * What each right actually allows, for the legend.
+ *
+ * One sentence, and specific: "See accounts" leaves open whether that includes
+ * their recorded time, which is exactly the question somebody handing out rights
+ * is trying to answer.
+ */
+const PERMISSION_DETAILS = {
+  'users:read': 'The list of accounts, their addresses and which role each holds. Not their recorded time - nobody sees anybody else\u2019s.',
+  'users:write': 'Add an account, change a name or an address, assign a role. Not the initial password of an account somebody else set up.',
+  'users:delete': 'Remove an account. Its recorded time goes with it.',
+  'roles:read': 'The roles on this screen and what each grants.',
+  'roles:write': 'Make a role, change what it grants, remove one nobody holds. The roles shipped with the application stay as they are.',
+  'settings:manage': 'The installation itself: the database connection, the directory, appearance, maintenance mode, telemetry, the log and the restart. This is the right that makes somebody an administrator.',
+  'projects:read': 'The list of projects and what each is called.',
+  'projects:write': 'Make a project and change one.',
+  'projects:delete': 'Remove a project. Time booked on it keeps its hours and loses the project.',
+  'projects:archive': 'Close a project to new bookings without deleting what is on it.',
+  'timesheets:read:own': 'One\u2019s own entries, calendar and balance. There is no right that opens somebody else\u2019s.',
+  'timesheets:write:own': 'Record, correct and delete one\u2019s own time, by hand or with the stopwatch.',
+  'timesheets:transfer': 'Move one\u2019s own entries from one project to another, in bulk.',
+  'reports:read:own': 'The report and the charts, over one\u2019s own hours.',
+  'settings:write:own': 'One\u2019s own account: password, language, appearance, timezone, working times, two-factor.',
+};
+
+/** The areas rights are grouped under, in the order they are shown. */
+const PERMISSION_GROUPS = {
+  users: 'Accounts',
+  roles: 'Roles',
+  settings: 'Settings',
+  projects: 'Projects',
+  timesheets: 'Time',
+  reports: 'Evaluations',
+};
+
+/** What a right is called, in the reader's language. */
+function permissionTitle(right) {
+  return t(`perm.${right}`, PERMISSION_TITLES[right] ?? right);
+}
+
+/** What a right allows, in the reader's language. */
+function permissionDetail(right) {
+  return t(`perm.desc.${right}`, PERMISSION_DETAILS[right] ?? '');
+}
+
+/** Which area a right belongs to, from the identifier's first part. */
+function permissionGroup(right) {
+  const area = String(right).split(':')[0];
+
+  return { key: area, label: t(`perm.group.${area}`, PERMISSION_GROUPS[area] ?? area) };
+}
+
 const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
@@ -2558,6 +2644,7 @@ const TRANSLATIONS = {
     'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
     'err.systemRoleUndeletable': 'Die Systemrolle „{0}“ kann nicht gelöscht werden.',
     'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
+    'err.systemRoleDescriptionFixed': 'Die Beschreibung der mitgelieferten Rolle „{0}“ lässt sich nicht ändern – sie wird von der Oberfläche übersetzt.',
     'err.systemRoleRightsFixed': 'Die Rechte der Systemrolle „{0}“ lassen sich nicht ändern – weder entziehen noch hinzufügen. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'err.roleGrantsNothing': 'Eine Rolle muss mindestens ein Recht gewähren.',
     'err.targetOverMaximum': 'Das Tagesziel ({0} Std.) darf das Tagesmaximum ({1} Std.) nicht überschreiten.',
@@ -2769,12 +2856,51 @@ const TRANSLATIONS = {
     'report.byDay': 'Stunden je Tag',
     'role.create': 'Rolle anlegen',
     'role.edit': 'Rolle „{0}“ bearbeiten',
-    'role.rightsFixed': 'Die Rechte einer Systemrolle lassen sich nicht ändern. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'role.empty': 'Keine Rollen vorhanden.',
     'role.permissions': 'Berechtigungen',
     'role.rights': 'Rechte',
     'role.shippedRole': 'Mitgelieferte Rolle',
     'role.systemRole': 'Systemrolle',
+    'action.view': 'anzeigen',
+    'perm.legend': 'Was die einzelnen Rechte erlauben',
+    'perm.group.users': 'Konten',
+    'perm.group.roles': 'Rollen',
+    'perm.group.settings': 'Einstellungen',
+    'perm.group.projects': 'Projekte',
+    'perm.group.timesheets': 'Zeiten',
+    'perm.group.reports': 'Auswertungen',
+    'perm.users:read': 'Konten sehen',
+    'perm.users:write': 'Konten anlegen und ändern',
+    'perm.users:delete': 'Konten löschen',
+    'perm.roles:read': 'Rollen sehen',
+    'perm.roles:write': 'Rollen anlegen und ändern',
+    'perm.settings:manage': 'Installation verwalten',
+    'perm.projects:read': 'Projekte sehen',
+    'perm.projects:write': 'Projekte anlegen und ändern',
+    'perm.projects:delete': 'Projekte löschen',
+    'perm.projects:archive': 'Projekte archivieren',
+    'perm.timesheets:read:own': 'Eigene Zeiten sehen',
+    'perm.timesheets:write:own': 'Eigene Zeiten erfassen',
+    'perm.timesheets:transfer': 'Zeiten auf andere Projekte umbuchen',
+    'perm.reports:read:own': 'Eigene Stunden auswerten',
+    'perm.settings:write:own': 'Eigene Einstellungen ändern',
+    'perm.desc.users:read': 'Die Liste der Konten, ihre Adressen und welche Rolle jedes hat. Nicht ihre erfassten Zeiten – die sieht niemand außer der Person selbst.',
+    'perm.desc.users:write': 'Ein Konto anlegen, Name oder Adresse ändern, eine Rolle zuweisen.',
+    'perm.desc.users:delete': 'Ein Konto entfernen. Die darauf erfassten Zeiten gehen mit.',
+    'perm.desc.roles:read': 'Die Rollen auf diesem Bildschirm und was jede gewährt.',
+    'perm.desc.roles:write': 'Eine Rolle anlegen, ändern oder eine entfernen, die niemand hat. Die mitgelieferten Rollen bleiben, wie sie sind.',
+    'perm.desc.settings:manage': 'Die Installation selbst: Datenbankverbindung, Verzeichnis, Erscheinungsbild, Wartungsmodus, Metriken, Protokoll und Neustart. Dieses Recht macht jemanden zum Administrator.',
+    'perm.desc.projects:read': 'Die Liste der Projekte und wie sie heißen.',
+    'perm.desc.projects:write': 'Ein Projekt anlegen und ändern.',
+    'perm.desc.projects:delete': 'Ein Projekt entfernen. Darauf gebuchte Zeiten behalten ihre Stunden und verlieren das Projekt.',
+    'perm.desc.projects:archive': 'Ein Projekt für neue Buchungen schließen, ohne zu löschen, was darauf liegt.',
+    'perm.desc.timesheets:read:own': 'Die eigenen Einträge, den eigenen Kalender und den eigenen Saldo. Es gibt kein Recht, das fremde öffnet.',
+    'perm.desc.timesheets:write:own': 'Eigene Zeiten erfassen, korrigieren und löschen – von Hand oder mit der Stoppuhr.',
+    'perm.desc.timesheets:transfer': 'Eigene Einträge gesammelt von einem Projekt auf ein anderes umbuchen.',
+    'perm.desc.reports:read:own': 'Bericht und Diagramme über die eigenen Stunden.',
+    'perm.desc.settings:write:own': 'Das eigene Konto: Kennwort, Sprache, Erscheinungsbild, Zeitzone, Arbeitszeiten, Zwei-Faktor.',
+    'role.view': 'Rolle „{0}“',
+    'role.shippedFixed': 'Diese Rolle wird mitgeliefert und wird angezeigt, nicht bearbeitet: weder Name noch Beschreibung noch Rechte. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'role.desc.admin': 'Verwaltet die Installation, ihre Konten und deren Rollen – und erfasst selbst keine Zeit.',
     'role.desc.user': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
     'role.desc.user-admin': 'Beides: arbeitet hier und verwaltet zusätzlich die Installation.',
@@ -3368,18 +3494,23 @@ async function loadRoles() {
   const rows = cache.roles.map((role) => {
     const actions = el('td', { class: 'actions' });
 
+    // A shipped role cannot be changed in any part - not its name, not its
+    // description, not its rights - so the way in says "view". "Edit" was an
+    // offer the server refuses, which is a button that teaches somebody the
+    // screen is broken.
+    const shipped = role.isSystem || role.isDefault;
+
     if (can('roles:write')) {
       actions.append(el('button', {
         class: 'link',
-        text: t('action.edit', 'edit'),
+        text: shipped ? t('action.view', 'view') : t('action.edit', 'edit'),
         onclick: () => editRole(role),
       }));
 
-      // Shipped roles are not offered a delete, because the server refuses one.
-      // The admin role is fixed outright; the other two can be edited and cannot
-      // be removed, since they are what every new account and every synchronised
-      // one is assigned.
-      if (!role.isSystem && !role.isDefault) {
+      // Shipped roles are not offered a delete either, because the server
+      // refuses one: they are what every new account and every synchronised one
+      // is assigned.
+      if (!shipped) {
         actions.append(deleteButton({
           label: `${t('field.role', 'Role')} "${roleTitle(role.name)}"`,
           path: `/roles/${role.id}`,
@@ -3431,7 +3562,19 @@ function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
   const list = $('#permission-list');
   list.replaceChildren();
 
+  // Grouped by area, in the order the rights arrive. Fifteen boxes in one run
+  // is a wall to read; six short groups is a list to scan, and the grouping is
+  // already in the identifiers rather than invented here.
+  let group = '';
+
   for (const permission of cache.permissions) {
+    const area = permissionGroup(permission);
+
+    if (area.key !== group) {
+      group = area.key;
+      list.append(el('h3', { class: 'perm-group', text: area.label }));
+    }
+
     list.append(el('label', { class: fixed ? 'muted' : '' },
       el('input', {
         type: 'checkbox',
@@ -3440,9 +3583,14 @@ function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
         checked: selected.includes(permission),
         disabled: fixed,
       }),
-      el('span', { text: permission }),
+      el('span', { class: 'perm-name', text: permissionTitle(permission) }),
+      // The identifier stays: it is what the API takes and what a directory
+      // configuration stores, so this screen is where it has to remain readable.
+      el('code', { class: 'perm-id', text: permission }),
     ));
   }
+
+  renderPermissionLegend();
 
   // Why they cannot be ticked, next to them rather than in a notice after the fact.
   const note = $('#role-fixed-note');
@@ -3450,20 +3598,57 @@ function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
   if (note) note.hidden = !fixed;
 }
 
+/** The legend: every right, and one sentence on what it actually allows. */
+function renderPermissionLegend() {
+  const list = $('#permission-legend-list');
+  if (!list) return;
+
+  list.replaceChildren();
+
+  for (const permission of cache.permissions) {
+    const detail = permissionDetail(permission);
+    if (!detail) continue;
+
+    list.append(el('dt', {},
+      el('span', { text: permissionTitle(permission) }),
+      el('code', { class: 'perm-id', text: permission })));
+    list.append(el('dd', { text: detail }));
+  }
+}
+
 function editRole(role) {
   const form = $('#form-role');
-  form.elements.id.value = String(role.id);
-  form.elements.name.value = role.name;
-  form.elements.description.value = role.description ?? '';
+
   // Every shipped role, not only the administrator's: the server refuses a
-  // rename or a changed right on all three, and a form that offers what the
-  // server refuses is worse than one that does not offer it.
+  // rename, a changed right and a changed description on all three, and a form
+  // that offers what the server refuses is worse than one that does not.
   const shipped = role.isSystem || role.isDefault;
 
+  form.elements.id.value = String(role.id);
+
+  // Shown in the reader's language, because this is a reading screen. The
+  // identifier and the English description in the database are what a role is
+  // stored as; what a person is looking at here is the role, and it has a name
+  // and a purpose in their own language everywhere else on this screen.
+  form.elements.name.value = shipped ? roleTitle(role.name) : role.name;
+  form.elements.description.value = shipped
+    ? roleDescription(role)
+    : (role.description ?? '');
+
   form.elements.name.readOnly = shipped;
+  form.elements.description.readOnly = shipped;
+
   renderPermissionCheckboxes(role.permissions, { fixed: shipped });
-  $('#role-form-title').textContent = t('role.edit', 'Edit role')
-    .replace('{0}', roleTitle(role.name));
+
+  // Nothing to save, so nothing offering to. The way out is "New", which is
+  // still there beside it.
+  const save = $('#form-role button[type="submit"]');
+  if (save) save.hidden = shipped;
+
+  $('#role-form-title').textContent = shipped
+    ? t('role.view', 'Role {0}').replace('{0}', roleTitle(role.name))
+    : t('role.edit', 'Edit role').replace('{0}', roleTitle(role.name));
+
   switchView('roles');
 }
 
@@ -3472,6 +3657,11 @@ function resetRoleForm() {
   form.reset();
   form.elements.id.value = '';
   form.elements.name.readOnly = false;
+  form.elements.description.readOnly = false;
+
+  const save = $('#form-role button[type="submit"]');
+  if (save) save.hidden = false;
+
   renderPermissionCheckboxes();
   $('#role-form-title').textContent = t('role.create', 'Create role');
 }

@@ -418,6 +418,18 @@ decoration rather than information. It follows the filter the table follows, so 
 project scopes both — a chart totalling everything next to a table totalling one
 project is two answers on one screen, and no way to tell which was asked for.
 
+**The three roles the application ships with are shown, not edited** — not their
+name, not their description, not their rights. They are the answer to questions
+asked elsewhere: the role every new account gets, the one the directory
+synchronisation assigns, and the pair the interface names in its own words. A
+role that should grant something different is a new role, which is a minute's
+work and says what it is.
+
+**The rights are listed in words**, grouped by area, with the identifier beside
+each — the identifier is what the API takes and what a directory configuration
+stores, so it stays readable — and a legend under them saying what each one
+actually allows.
+
 Whether somebody may see another person's recorded time is not a permission question,
 because no permission answers yes — not for a list of entries, not for the spreadsheet
 export, not for a project's total and not for an overtime balance. Whose entry it is

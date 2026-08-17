@@ -2878,3 +2878,160 @@ func (p *page) waitForNode(selector string) {
 
 	p.t.Fatalf("nothing ever matched %s", selector)
 }
+
+// A shipped role is shown, not opened for changes.
+//
+// The button said "edit" on all of them, and the server refuses a rename, a
+// changed right and now a changed description on the three the application ships
+// with. A button offering what the server refuses teaches somebody that the
+// screen is broken.
+func TestAShippedRoleIsShownRatherThanEdited(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open the roles", p.click(`.tab[data-view="roles"]`),
+		chromedp.WaitVisible("#table-roles", chromedp.ByID))
+
+	// The way in says so.
+	var offered string
+
+	p.evalJSON(`JSON.stringify(
+		[...document.querySelectorAll('#table-roles tbody tr')]
+			.filter((row) => row.textContent.includes('Administrator'))
+			.map((row) => row.querySelector('button.link')?.textContent ?? '')
+			.join('|'))`, &offered)
+
+	if offered == "" {
+		t.Fatal("no shipped role has a way in at all")
+	}
+
+	if strings.Contains(strings.ToLower(offered), "edit") {
+		t.Errorf("the shipped roles offer %q, which the server refuses", offered)
+	}
+
+	// And what it opens changes nothing.
+	p.run("open it", p.click(`#table-roles tbody tr:nth-child(1) button.link`),
+		chromedp.WaitVisible("#form-role", chromedp.ByID))
+
+	for _, field := range []string{"name", "description"} {
+		if !p.locked(`#form-role [name="` + field + `"]`) {
+			t.Errorf("the %s of a shipped role can be typed into", field)
+		}
+	}
+
+	var open struct {
+		Ticks    int  `json:"ticks"`
+		Fixed    int  `json:"fixed"`
+		Saveable bool `json:"saveable"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const boxes = [...document.querySelectorAll('#permission-list input[type="checkbox"]')];
+		const save = document.querySelector('#form-role button[type="submit"]');
+
+		return {
+			ticks: boxes.length,
+			fixed: boxes.filter((box) => box.disabled).length,
+			saveable: Boolean(save && !save.hidden),
+		};
+	})())`, &open)
+
+	if open.Ticks == 0 || open.Fixed != open.Ticks {
+		t.Errorf("%d of %d rights can still be ticked on a shipped role",
+			open.Ticks-open.Fixed, open.Ticks)
+	}
+
+	if open.Saveable {
+		t.Error("a shipped role is still offered a Save, which the server refuses")
+	}
+
+	// Read in the reader's language, since this is a reading screen: the
+	// identifier and the English description are what it is stored as.
+	if name := p.value(`#form-role [name="name"]`); name == "" {
+		t.Error("the role is shown without a name")
+	}
+
+	if said := p.value(`#form-role [name="description"]`); said == "" {
+		t.Error("the role is shown without a description")
+	}
+}
+
+// The rights are words, with the identifier beside them and a legend under them.
+//
+// The boxes said "timesheets:write:own", which asks somebody deciding what a
+// colleague may do to read a namespace.
+func TestTheRightsAreShownInWordsWithALegend(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open the roles", p.click(`.tab[data-view="roles"]`),
+		chromedp.WaitVisible("#permission-list", chromedp.ByID))
+
+	var boxes struct {
+		Count    int    `json:"count"`
+		Named    int    `json:"named"`
+		WithID   int    `json:"withId"`
+		Grouped  int    `json:"grouped"`
+		FirstOne string `json:"first"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const labels = [...document.querySelectorAll('#permission-list label')];
+
+		return {
+			count: labels.length,
+			named: labels.filter((label) => {
+				const name = label.querySelector('.perm-name')?.textContent ?? '';
+
+				return name !== '' && !name.includes(':');
+			}).length,
+			withId: labels.filter((label) => label.querySelector('.perm-id')).length,
+			grouped: document.querySelectorAll('#permission-list .perm-group').length,
+			first: labels[0]?.querySelector('.perm-name')?.textContent ?? '',
+		};
+	})())`, &boxes)
+
+	if boxes.Count == 0 {
+		t.Fatal("no rights are offered at all")
+	}
+
+	if boxes.Named != boxes.Count {
+		t.Errorf("%d of %d rights are still shown as their identifier, e.g. %q",
+			boxes.Count-boxes.Named, boxes.Count, boxes.FirstOne)
+	}
+
+	// The identifier stays: it is what the API takes and what a directory
+	// configuration stores.
+	if boxes.WithID != boxes.Count {
+		t.Errorf("%d of %d rights no longer show the identifier the API takes",
+			boxes.Count-boxes.WithID, boxes.Count)
+	}
+
+	if boxes.Grouped < 2 {
+		t.Errorf("the rights are in %d group(s), so they are one wall to read",
+			boxes.Grouped)
+	}
+
+	// The legend, open rather than folded away.
+	var legend struct {
+		Open    bool `json:"open"`
+		Entries int  `json:"entries"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const details = document.querySelector('#permission-legend');
+
+		return {
+			open: Boolean(details?.open),
+			entries: document.querySelectorAll('#permission-legend-list dd').length,
+		};
+	})())`, &legend)
+
+	if !legend.Open {
+		t.Error("the legend is folded away, so it is read by nobody ticking the boxes")
+	}
+
+	if legend.Entries != boxes.Count {
+		t.Errorf("the legend explains %d of %d rights", legend.Entries, boxes.Count)
+	}
+}

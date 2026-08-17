@@ -112,6 +112,20 @@ func (s *RoleApplicationService) UpdateRole(
 				"the permissions of the shipped role %q cannot be changed", role.Name).
 				WithCode("systemRoleRightsFixed", role.Name)
 		}
+
+		// And what it says about itself. This was the one part still open, on the
+		// reasoning that a description is only words - but these three are the
+		// words the interface translates, keyed on the name. An installation that
+		// edits one gets a description in one language that the interface then
+		// overrides in another, which reads as the change not having been saved.
+		//
+		// Nothing about a shipped role is editable now, which is also what its
+		// screen offers: it is shown rather than opened for changes.
+		if description != nil && strings.TrimSpace(*description) != role.Description {
+			return nil, apperror.Conflictf(
+				"the description of the shipped role %q cannot be changed", role.Name).
+				WithCode("systemRoleDescriptionFixed", role.Name)
+		}
 	}
 
 	if name != nil {
