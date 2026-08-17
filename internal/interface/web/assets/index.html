@@ -94,11 +94,15 @@
     <div class="overlay-card crop-card" role="dialog" aria-modal="true" aria-labelledby="crop-title">
       <h2 id="crop-title" data-i18n="crop.title">Which part of the logo?</h2>
       <p class="muted" id="crop-text"></p>
+      <p class="muted" id="crop-free" data-i18n="crop.free">Drag the corners to any shape you like. What you choose is fitted into the place it is for, never stretched.</p>
 
       <div class="crop-stage" id="crop-stage">
         <img id="crop-image" alt="">
         <div id="crop-box" class="crop-box">
-          <span class="crop-handle" id="crop-handle"></span>
+          <span class="crop-handle crop-handle-nw" id="crop-handle" data-corner="nw"></span>
+          <span class="crop-handle crop-handle-ne" data-corner="ne"></span>
+          <span class="crop-handle crop-handle-sw" data-corner="sw"></span>
+          <span class="crop-handle crop-handle-se" data-corner="se"></span>
         </div>
       </div>
 

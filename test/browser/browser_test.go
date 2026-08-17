@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/input"
 	cdplog "github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -396,6 +397,49 @@ func (p *page) click(selector string) chromedp.Action {
 			chromedp.Click(selector, chromedp.ByQuery),
 		)
 	})
+}
+
+// drag takes hold of the middle of an element, moves the pointer and lets go.
+//
+// Real input rather than a call to the page's own functions: what is being asked
+// about here is whether a corner of the selection can be grabbed and pulled, and
+// a test that sets the selection directly would pass with nothing wired to the
+// corner at all.
+//
+// Moved in steps, because one jump from press to release is not a drag: the
+// handler that follows the pointer only hears about positions it is told about.
+func (p *page) drag(selector string, dx, dy float64) {
+	p.t.Helper()
+
+	var at struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+	}
+
+	p.evalJSON(fmt.Sprintf(`JSON.stringify((() => {
+		const r = document.querySelector(%q).getBoundingClientRect();
+
+		return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+	})())`, selector), &at)
+
+	moves := []chromedp.Action{
+		chromedp.MouseEvent(input.MousePressed, at.X, at.Y,
+			chromedp.ButtonType(input.Left), chromedp.ClickCount(1)),
+	}
+
+	const steps = 6
+
+	for step := 1; step <= steps; step++ {
+		share := float64(step) / steps
+
+		moves = append(moves, chromedp.MouseEvent(input.MouseMoved,
+			at.X+dx*share, at.Y+dy*share, chromedp.ButtonType(input.Left)))
+	}
+
+	moves = append(moves, chromedp.MouseEvent(input.MouseReleased, at.X+dx, at.Y+dy,
+		chromedp.ButtonType(input.Left), chromedp.ClickCount(1)))
+
+	p.run("drag "+selector, moves...)
 }
 
 // readyAdmin signs in, replaces the initial password and settles the wizard,

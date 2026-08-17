@@ -1179,16 +1179,26 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   position: absolute;
 }
 
+/* One grip per corner, because the selection is free: each corner moves both of
+   the edges it touches while the opposite corner stays where it is, so a
+   selection can be narrowed from whichever side is in the way. */
 .crop-handle {
   background: var(--accent);
   border-radius: 2px;
-  bottom: -7px;
-  cursor: nwse-resize;
   height: 14px;
   position: absolute;
-  right: -7px;
   width: 14px;
 }
+
+/* Just inside the corner rather than straddling it. A selection is very often
+   pushed right up against an edge of the logo - the tab's square on a wordmark
+   starts against the top and the bottom - and a grip hanging over the edge is
+   half cut off by the stage, leaving a corner that cannot be taken hold of at
+   exactly the moment it is wanted. */
+.crop-handle-nw { cursor: nwse-resize; left: -1px; top: -1px; }
+.crop-handle-ne { cursor: nesw-resize; right: -1px; top: -1px; }
+.crop-handle-sw { bottom: -1px; cursor: nesw-resize; left: -1px; }
+.crop-handle-se { bottom: -1px; cursor: nwse-resize; right: -1px; }
 .logo-use figcaption { font-size: 12px; }
 
 /* The sign-in card's width and the height the banner is allowed there, so what
