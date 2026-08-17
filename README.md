@@ -418,12 +418,30 @@ decoration rather than information. It follows the filter the table follows, so 
 project scopes both — a chart totalling everything next to a table totalling one
 project is two answers on one screen, and no way to tell which was asked for.
 
+**Appearance belongs to the person, not to the machine.** Light or dark is
+chosen per device, which is right while somebody is using it and wrong the
+moment they leave — so signing out puts it back to following the time of day,
+and takes the dismissed release notice with it. What survives is what is
+invisible to anybody else: the screen each account was last on, stored against
+that account's own id.
+
 **The three roles the application ships with are shown, not edited** — not their
 name, not their description, not their rights. They are the answer to questions
 asked elsewhere: the role every new account gets, the one the directory
 synchronisation assigns, and the pair the interface names in its own words. A
 role that should grant something different is a new role, which is a minute's
 work and says what it is.
+
+**The release feed is asked at most four times a day**, however many
+administrators are looking at the screen. It used to be asked once a minute at
+most, which sounds careful and is not: GitHub allows an unauthenticated caller
+sixty requests an hour *per address*, every administrator's sign-in starts a
+check, and every open tab repeats it hourly — so an installation with a few
+administrators spent its allowance and got a 403 that reads as a permission
+problem with somebody else's service. A failed lookup no longer erases the last
+good answer either: the card shows the version it knows, with the trouble noted
+beside it. An installation that sets `UPDATE_TOKEN` gets five thousand an hour
+and never comes near either number.
 
 **The rights are listed in words**, grouped by area, with the identifier beside
 each — the identifier is what the API takes and what a directory configuration

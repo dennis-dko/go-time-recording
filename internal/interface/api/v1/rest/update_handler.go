@@ -54,6 +54,10 @@ type UpdateHandler struct {
 	cached   selfupdate.Release
 	cachedAt time.Time
 	cacheErr error
+
+	// failedAt is when the last attempt failed, so the next one waits rather
+	// than asking straight into a rate limit that has not cleared.
+	failedAt time.Time
 }
 
 // NewUpdateHandler creates the handler.
@@ -64,8 +68,28 @@ func NewUpdateHandler(authz *Authorizer, source *selfupdate.Source, hub *announc
 	}
 }
 
-// updateCacheFor is how long an answer from the release feed is reused.
-const updateCacheFor = time.Minute
+// How long an answer from the release feed is reused, and how long to wait
+// before asking again after a failure.
+//
+// A minute was far too short, and the cost of that was the failure it produced.
+// GitHub allows an unauthenticated caller sixty requests an hour *per address*.
+// Every administrator's sign-in starts a check, every open tab repeats it hourly,
+// and all of them leave from one address - so an installation with a handful of
+// administrators spends its allowance and gets a 403, which reads on screen as a
+// permission problem with somebody else's service.
+//
+// Six hours instead. Releases happen a few times a day at most, the screen polls
+// hourly anyway, and one instance now costs four requests a day however many
+// people are looking at it. An installation that sets a token gets five thousand
+// an hour and never comes near either number.
+//
+// The wait after a failure is shorter, because a failure is often a network that
+// was down for a minute - but long enough that a rate limit is not answered by
+// asking again immediately.
+const (
+	updateCacheFor   = 6 * time.Hour
+	updateRetryAfter = 15 * time.Minute
+)
 
 // UpdateResponse is what the screen needs to say something true on every
 // platform.
@@ -152,7 +176,12 @@ func (h *UpdateHandler) describe(c *gofr.Context) UpdateResponse {
 	release, err := h.latest(c)
 	if err != nil {
 		out.Problem = err.Error()
+	}
 
+	// A version that is known is reported whether or not the last lookup worked.
+	// The card says what it knows and, beside it, that the feed is not answering
+	// - which is two facts rather than one blank.
+	if release.Version == "" {
 		return out
 	}
 
@@ -170,19 +199,53 @@ func (h *UpdateHandler) describe(c *gofr.Context) UpdateResponse {
 	return out
 }
 
+// latest is the newest release, from the feed or from what it last said.
+//
+// Both are returned when both are known: an answer that is a few hours old is
+// worth far more than nothing, and the caller shows the version it knows with
+// the trouble noted beside it. Losing the version because the last lookup failed
+// meant a rate limit blanked a card that had been right all morning.
 func (h *UpdateHandler) latest(c *gofr.Context) (selfupdate.Release, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if time.Since(h.cachedAt) < updateCacheFor && (h.cached.Version != "" || h.cacheErr != nil) {
+	if h.hasFreshAnswer() {
+		return h.cached, nil
+	}
+
+	if h.waitingAfterFailure() {
 		return h.cached, h.cacheErr
 	}
 
 	release, err := h.source.Latest(c)
 
-	h.cached, h.cacheErr, h.cachedAt = release, err, time.Now()
+	if err != nil {
+		h.cacheErr, h.failedAt = err, time.Now()
 
-	return release, err
+		// The previous answer is kept rather than thrown away with the attempt.
+		return h.cached, err
+	}
+
+	h.cached, h.cachedAt, h.cacheErr = release, time.Now(), nil
+
+	return release, nil
+}
+
+// hasFreshAnswer reports whether the last answer is recent enough to reuse.
+//
+// Its own function so the rule can be tested without a clock to wind or a feed
+// to stand in for: what is being decided is how old is too old.
+func (h *UpdateHandler) hasFreshAnswer() bool {
+	return h.cached.Version != "" && time.Since(h.cachedAt) < updateCacheFor
+}
+
+// waitingAfterFailure reports whether the last attempt failed recently enough
+// that the next one should wait.
+//
+// Asking again straight away is what turns a rate limit into a rate limit that
+// never clears: the allowance is spent, and every retry spends the next one.
+func (h *UpdateHandler) waitingAfterFailure() bool {
+	return h.cacheErr != nil && time.Since(h.failedAt) < updateRetryAfter
 }
 
 // Apply handles POST /api/v1/settings/update.

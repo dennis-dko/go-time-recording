@@ -3202,6 +3202,21 @@ func TestOpeningARoleShowsItsRights(t *testing.T) {
 	p.run("open the roles", p.click(`.tab[data-view="roles"]`),
 		chromedp.WaitVisible("#table-roles", chromedp.ByID))
 
+	// Before anything is opened: the empty form is the one that makes a role, and
+	// its rights have to be settable. They were not - every one of them was
+	// rendered with disabled="false", which is an attribute whose presence is its
+	// whole meaning, so no role could be granted a right through the interface at
+	// all.
+	var open int
+
+	p.evalJSON(`JSON.stringify(
+		[...document.querySelectorAll('#permission-list input[type="checkbox"]')]
+			.filter((box) => !box.disabled).length)`, &open)
+
+	if open == 0 {
+		t.Fatal("no right can be set on a new role, so none can be created")
+	}
+
 	p.run("back to the top", chromedp.Evaluate(`window.scrollTo(0, 0)`, nil))
 
 	p.run("open a role", p.click(`#table-roles tbody tr:nth-child(1) button.link`),
@@ -3254,18 +3269,228 @@ func TestOpeningARoleShowsItsRights(t *testing.T) {
 		t.Errorf("a field that cannot be typed into offers a typing cursor: %s", cursors)
 	}
 
-	// A line of air over the buttons, so Save and New are not read as the last
-	// row of the legend above them.
-	var air float64
+	// The buttons come after the switches and before the legend, with a line of
+	// air over them.
+	//
+	// Under the legend they were a screen and a half below where this jump lands,
+	// which is what made the application look unable to create a role at all: the
+	// switches of a shipped role are fixed, and the button that unlocks them was
+	// nowhere to be seen.
+	var layout struct {
+		Air          float64 `json:"air"`
+		BeforeLegend bool    `json:"beforeLegend"`
+		OnScreen     bool    `json:"onScreen"`
+	}
 
 	p.evalJSON(`JSON.stringify((() => {
-		const legend = document.querySelector('#permission-legend').getBoundingClientRect();
-		const buttons = document.querySelector('#form-role .row').getBoundingClientRect();
+		const rights = document.querySelector('#form-role .perms').getBoundingClientRect();
+		const buttons = document.querySelector('#form-role .row');
+		const box = buttons.getBoundingClientRect();
+		const legend = document.querySelector('#permission-legend');
 
-		return buttons.top - legend.bottom;
-	})())`, &air)
+		return {
+			air: box.top - rights.bottom,
+			// Earlier in the document than the legend, which is what puts them
+			// where the eye lands after the jump.
+			beforeLegend: Boolean(
+				buttons.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING),
+			onScreen: box.top < window.innerHeight,
+		};
+	})())`, &layout)
 
-	if air < 16 {
-		t.Errorf("the buttons sit %.0fpx under the legend", air)
+	if !layout.BeforeLegend {
+		t.Error("the buttons are below the legend, which is a screen further down " +
+			"than the rights this jumped to")
+	}
+
+	if layout.Air < 16 {
+		t.Errorf("the buttons sit %.0fpx under the switches", layout.Air)
+	}
+
+	// The buttons at the end of the form are off the bottom of the window after
+	// this jump, because fifteen switches are taller than a window. So the way
+	// out is offered beside the reason instead - which is what somebody reads
+	// when they find they cannot set anything.
+	//
+	// This is the thing that broke: a shipped role opened with everything fixed,
+	// and the only control that unlocks it was nowhere on screen. It looked like
+	// an application that could no longer create a role.
+	var escape struct {
+		Shown    bool    `json:"shown"`
+		Top      float64 `json:"top"`
+		BarBelow float64 `json:"barBelow"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const way = document.querySelector('#role-start-new');
+		const box = way.getBoundingClientRect();
+		const bar = document.querySelector('.topbar').getBoundingClientRect();
+
+		return { shown: !way.hidden, top: box.top, barBelow: bar.bottom };
+	})())`, &escape)
+
+	if !escape.Shown {
+		t.Fatal("a shipped role is open with everything fixed and nothing on screen " +
+			"offers a way to make a role instead")
+	}
+
+	if escape.Top < escape.BarBelow-1 || escape.Top > 900 {
+		t.Errorf("the way to a new role is at %.0f, outside the window under the "+
+			"bar at %.0f", escape.Top, escape.BarBelow)
+	}
+
+	// And taking it leaves a form that can actually be filled in.
+	p.run("start a new role", p.click("#role-start-new"))
+
+	var settable int
+
+	p.evalJSON(`JSON.stringify(
+		[...document.querySelectorAll('#permission-list input[type="checkbox"]')]
+			.filter((box) => !box.disabled).length)`, &settable)
+
+	if settable == 0 {
+		t.Error("after asking for a new role the rights still cannot be set")
+	}
+
+	if p.locked(`#form-role [name="name"]`) {
+		t.Error("after asking for a new role the name still cannot be typed into")
+	}
+}
+
+// Signing out takes the appearance with it.
+//
+// Appearance is chosen per device, which is right while somebody is using it
+// and wrong the moment they leave: the next person at that machine arrived to
+// the last one's dark mode, on a screen with nothing else of theirs on it.
+func TestSigningOutForgetsTheAppearance(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("choose dark", p.chooseOption("#theme-picker", "dark"))
+
+	var chosen struct {
+		Preference string `json:"preference"`
+		Stored     string `json:"stored"`
+	}
+
+	p.evalJSON(`JSON.stringify({
+		preference: document.documentElement.dataset.themePreference,
+		stored: localStorage.getItem('gtr.theme') ?? '',
+	})`, &chosen)
+
+	if chosen.Preference != "dark" || chosen.Stored != "dark" {
+		t.Fatalf("choosing dark left the page at %+v, so this proves nothing", chosen)
+	}
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	var after struct {
+		Preference string `json:"preference"`
+		Stored     string `json:"stored"`
+		Picker     string `json:"picker"`
+	}
+
+	p.evalJSON(`JSON.stringify({
+		preference: document.documentElement.dataset.themePreference,
+		stored: localStorage.getItem('gtr.theme') ?? '',
+		picker: document.querySelector('#theme-picker').value,
+	})`, &after)
+
+	if after.Stored != "" {
+		t.Errorf("the appearance %q is still kept on this device after signing out",
+			after.Stored)
+	}
+
+	if after.Preference != "auto" {
+		t.Errorf("the page follows %q rather than the time of day after signing out",
+			after.Preference)
+	}
+
+	if after.Picker != "auto" {
+		t.Errorf("the picker still offers %q as the current choice", after.Picker)
+	}
+}
+
+// Hours that belong to no project are called the same thing everywhere.
+//
+// Three strings said it three ways - "ohne Projekt" in the tables and the
+// stopwatch, "Ohne Projekt" in the dropdowns, "kein Projekt" in the charts -
+// which reads as three different states rather than one.
+func TestHoursWithoutAProjectAreNamedTheSameEverywhere(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+	p.becomeWorker()
+
+	p.run("open the entries", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#timer-project", chromedp.ByID))
+
+	var said []string
+
+	p.evalJSON(`JSON.stringify([
+		document.querySelector('#timer-project option[value=""]')?.textContent ?? '',
+		document.querySelector('#form-timesheet select[name="projectId"] option[value=""]')?.textContent ?? '',
+	].filter(Boolean))`, &said)
+
+	if len(said) < 2 {
+		t.Fatalf("only %d of the two dropdowns offer the empty choice", len(said))
+	}
+
+	for _, wording := range said {
+		if wording != said[0] {
+			t.Errorf("the dropdowns say %q, so one screen names it differently", said)
+		}
+	}
+
+	// And the one the reader was shown, which is the wording that was asked for.
+	if !strings.Contains(said[0], "Kein Projekt") && !strings.Contains(said[0], "No project") {
+		t.Errorf("the stopwatch offers %q for hours without a project", said[0])
+	}
+}
+
+// A new project starts today, and ends when it ends.
+//
+// The date somebody would have to look up a calendar to type is filled in, the
+// same courtesy the evaluation screens do with their period. The end is left
+// empty on purpose: empty there means "no end planned", which is most projects,
+// and filling it would invent a deadline.
+func TestANewProjectStartsTodayAndHasNoEnd(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+	p.becomeWorker()
+
+	p.run("open the projects", p.click(`.tab[data-view="projects"]`),
+		chromedp.WaitVisible("#form-project", chromedp.ByID))
+
+	start := p.value(`#form-project input[name="startDate"]`)
+	end := p.value(`#form-project input[name="endDate"]`)
+
+	if start == "" {
+		t.Error("the start of a new project is empty, so it has to be typed in")
+	}
+
+	if end != "" {
+		t.Errorf("the end of a new project is filled in with %q, which invents a "+
+			"deadline nobody set", end)
+	}
+
+	// Today in the reader's own zone, which is the only day this can mean.
+	var today string
+
+	p.evalJSON(`JSON.stringify(todayISO())`, &today)
+
+	if start != today {
+		t.Errorf("a new project starts on %q and today is %q", start, today)
+	}
+
+	// And it survives making one: the second project asks no more than the first.
+	p.run("make one",
+		chromedp.SetValue(`#form-project input[name="name"]`, "Dachsanierung", chromedp.ByQuery),
+		p.click(`#form-project button[type="submit"]`))
+
+	p.waitForText("#toast", "reated")
+
+	if again := p.value(`#form-project input[name="startDate"]`); again != today {
+		t.Errorf("after making a project the start reads %q", again)
 	}
 }

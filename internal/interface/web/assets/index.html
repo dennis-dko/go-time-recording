@@ -515,8 +515,17 @@
         <p class="muted" data-i18n="project.hint">Your projects are yours: only you see them, and only you book on them. Two people working on the same thing keep a project each.</p>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
-          <label data-i18n="field.start">Start<input type="date" name="startDate" data-i18n-placeholder="field.optional" placeholder="optional"></label>
-          <label data-i18n="field.end">End<input type="date" name="endDate"></label>
+          <!-- The start is filled in on arrival, like every other date this
+               application asks for: a project is being made today, and a field
+               somebody has to fill with today's date is a field asking them to
+               look at a calendar for no reason.
+
+               The end is left empty, and that is not an oversight - empty means
+               "no end planned", which is what most projects are. It is the one
+               that carries "optional"; they were the wrong way round, with the
+               required date labelled optional and the optional one unlabelled. -->
+          <label data-i18n="field.start">Start<input type="date" name="startDate"></label>
+          <label data-i18n="field.end">End<input type="date" name="endDate" data-i18n-placeholder="field.optional" placeholder="optional"></label>
           <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
         <button type="submit" data-i18n="action.create">Create</button>
@@ -592,22 +601,37 @@
         </div>
         <fieldset class="perms">
           <legend data-i18n="role.permissions">Permissions</legend>
+          <!-- The way out, beside the reason. A shipped role is opened at its
+               rights, and the rights of fifteen switches are taller than a
+               window - so the buttons at the end of the form are off the bottom
+               of it, and the only thing on screen says what cannot be done.
+               This says what can. -->
+          <button type="button" class="link" id="role-start-new" hidden
+                  data-i18n="role.startNew">Create a new role instead</button>
           <p class="muted" id="role-fixed-note" data-i18n="role.shippedFixed" hidden>This role ships with the application and is shown rather than edited: not its name, not its description, and not its rights. Somebody who should work here and also administer is given the "User &amp; administrator" role.</p>
           <div id="permission-list" class="perm-grid"></div>
         </fieldset>
 
+        <!-- Above the legend, not below it.
+
+             The legend is long, and pressing view or edit now jumps to the
+             rights - so with the buttons underneath it, the way out of a role
+             that is only being shown was a screen and a half further down. What
+             that looked like was an application that could no longer create a
+             role: the switches are fixed while a shipped role is open, and the
+             button that unlocks them was nowhere on screen. -->
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="role-reset" data-i18n="action.new">New role</button>
+        </div>
+
         <!-- What each right actually allows. Open rather than folded away: it is
-             read while ticking the boxes above, and a legend somebody has to
-             open first is one they tick without. -->
+             read while the switches above are being set, and a legend somebody
+             has to open first is one they set them without. -->
         <details class="perm-legend" id="permission-legend" open>
           <summary data-i18n="perm.legend">What each right allows</summary>
           <dl id="permission-legend-list"></dl>
         </details>
-
-        <div class="row">
-          <button type="submit" data-i18n="action.save">Save</button>
-          <button type="button" class="secondary" id="role-reset" data-i18n="action.new">New</button>
-        </div>
       </form>
 
       <div class="card">

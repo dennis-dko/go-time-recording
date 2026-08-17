@@ -925,6 +925,20 @@ function configuredLink(label, url) {
 }
 
 /** Builds an element; text is assigned via textContent, never innerHTML. */
+/**
+ * The attributes whose presence is the whole of their meaning.
+ *
+ * setAttribute('disabled', false) disables the control: the value is never read,
+ * only whether the attribute is there at all. Every right on the roles screen was
+ * rendered with disabled="false" and could not be ticked - so no role could be
+ * given a permission through the interface, which is a feature that had simply
+ * stopped working.
+ */
+const BOOLEAN_ATTRIBUTES = new Set([
+  'disabled', 'readonly', 'required', 'hidden', 'multiple', 'selected',
+  'autofocus', 'open', 'novalidate',
+]);
+
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -932,6 +946,9 @@ function el(tag, props = {}, ...children) {
     else if (key === 'text') node.textContent = value;
     else if (key === 'checked') node.checked = value;
     else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+    // Present or absent, never "false". aria-* is deliberately not in that set:
+    // there the string is read, and aria-current="false" means something.
+    else if (BOOLEAN_ATTRIBUTES.has(key)) { if (value) node.setAttribute(key, ''); }
     else if (value !== null && value !== undefined) node.setAttribute(key, value);
   }
   for (const child of children) {
@@ -2510,7 +2527,7 @@ const TRANSLATIONS = {
     'stats.perDay': 'Stunden pro Tag',
     'stats.perProject': 'Stunden pro Projekt',
     'stats.total': 'Gesamt',
-    'stats.noProject': 'kein Projekt',
+    'stats.noProject': 'Kein Projekt',
     'stats.deletedProject': 'gelöschtes Projekt',
     'stats.empty': 'In diesem Zeitraum wurde nichts erfasst.',
     'timer.title': 'Stoppuhr',
@@ -2847,7 +2864,7 @@ const TRANSLATIONS = {
     'report.result': 'Ergebnis',
     'report.total': '{0} gesamt',
     'report.title': 'Auswertung',
-    'report.noProject': 'Ohne Projekt',
+    'report.noProject': 'Kein Projekt',
     'report.chartKind': 'Diagrammart',
     'report.bars': 'Balken',
     'report.columns': 'Säulen',
@@ -2900,6 +2917,7 @@ const TRANSLATIONS = {
     'perm.desc.reports:read:own': 'Bericht und Diagramme über die eigenen Stunden.',
     'perm.desc.settings:write:own': 'Das eigene Konto: Kennwort, Sprache, Erscheinungsbild, Zeitzone, Arbeitszeiten, Zwei-Faktor.',
     'role.view': 'Rolle „{0}“',
+    'role.startNew': 'Stattdessen eine neue Rolle anlegen',
     'role.shippedFixed': 'Diese Rolle wird mitgeliefert und wird angezeigt, nicht bearbeitet: weder Name noch Beschreibung noch Rechte. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'role.desc.admin': 'Verwaltet die Installation, ihre Konten und deren Rollen – und erfasst selbst keine Zeit.',
     'role.desc.user': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
@@ -2970,7 +2988,7 @@ const TRANSLATIONS = {
     'ts.empty': 'Keine Einträge für diesen Filter.',
     'ts.edit': 'Eintrag bearbeiten',
     'ts.entries': 'Einträge',
-    'ts.noProject': 'ohne Projekt',
+    'ts.noProject': 'Kein Projekt',
     'unit.hours': 'Std.',
 
     // Updating. The card says something true on every deployment, which is why
@@ -3575,7 +3593,10 @@ function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
       list.append(el('h3', { class: 'perm-group', text: area.label }));
     }
 
-    list.append(el('label', { class: fixed ? 'muted' : '' },
+    // A switch, like every other on-or-off control in this interface. A right is
+    // held or it is not, which is the question a switch asks - and fifteen of
+    // them read as settings rather than as a form to fill in.
+    list.append(el('label', { class: `switch perm-switch${fixed ? ' muted' : ''}` },
       el('input', {
         type: 'checkbox',
         name: 'permissions',
@@ -3583,6 +3604,7 @@ function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
         checked: selected.includes(permission),
         disabled: fixed,
       }),
+      el('span', { class: 'switch-track' }),
       el('span', { class: 'perm-name', text: permissionTitle(permission) }),
       // The identifier stays: it is what the API takes and what a directory
       // configuration stores, so this screen is where it has to remain readable.
@@ -3592,10 +3614,15 @@ function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
 
   renderPermissionLegend();
 
-  // Why they cannot be ticked, next to them rather than in a notice after the fact.
+  // Why they cannot be set, next to them rather than in a notice after the fact,
+  // and beside it the thing that can be done instead.
   const note = $('#role-fixed-note');
 
   if (note) note.hidden = !fixed;
+
+  const startNew = $('#role-start-new');
+
+  if (startNew) startNew.hidden = !fixed;
 }
 
 /** The legend: every right, and one sentence on what it actually allows. */
@@ -3687,11 +3714,14 @@ async function loadProjects() {
   cache.projects = (await api('/projects'))?.items ?? [];
 
   const bookable = cache.projects.filter((p) => p.status === 'active');
-  // A blank first option is what lets time be booked without a project.
+  // A blank first option is what lets time be booked without a project, and it
+  // is named the same in both places. The stopwatch called it "Project
+  // (optional)" while the form beside it called it "No project" - two names for
+  // the same choice, on one screen.
   fillSelect($('#timer-project'), bookable,
-    { placeholder: t('field.projectOptional', 'Project (optional)') });
+    { placeholder: t('ts.noProject', 'No project') });
   fillSelect($('#form-timesheet select[name=projectId]'), bookable,
-    { placeholder: t('ts.noProject', 'no project') });
+    { placeholder: t('ts.noProject', 'No project') });
   // An evaluation covers all projects, one of them, or the hours that belong to
   // none - so this select carries two options that are not projects. The picker
   // used to be required and offer only real ones, which made the two questions
@@ -3705,7 +3735,7 @@ async function loadProjects() {
   fillSelect(reportProject, cache.projects,
     { placeholder: t('filter.allProjects', 'All projects') });
   reportProject.append(el('option', {
-    value: 'none', text: t('report.noProject', 'No project assigned'),
+    value: 'none', text: t('report.noProject', 'No project'),
   }));
   reportProject.value = chosenScope;
   // The same three choices the evaluation offers, and for the same reason: the
@@ -3721,7 +3751,7 @@ async function loadProjects() {
     { placeholder: t('filter.allProjects', 'All projects') });
 
   timesheetProject.append(el('option', {
-    value: 'none', text: t('report.noProject', 'No project assigned'),
+    value: 'none', text: t('report.noProject', 'No project'),
   }));
 
   timesheetProject.value = chosenProject;
@@ -3906,7 +3936,7 @@ async function loadTimesheets() {
       el('td', { text: fmtDate(entry.date) }),
       el('td', {
         class: entry.projectId ? '' : 'empty',
-        text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project'),
+        text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project'),
       }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
       el('td', { text: entry.description ?? '–' }),
@@ -4064,7 +4094,7 @@ function renderCalendarGrid(first, last, byDay) {
       cell.append(el('span', { class: 'cal-hours', text: fmtHours(hours) }));
 
       const names = [...new Set(dayEntries.map(
-        (e) => (e.projectId ? projectName(e.projectId) : t('ts.noProject', 'no project'))))];
+        (e) => (e.projectId ? projectName(e.projectId) : t('ts.noProject', 'No project'))))];
       cell.append(el('span', { class: 'cal-projects', text: names.join(', ') }));
 
       const bar = el('div', { class: 'cal-bar' });
@@ -4089,7 +4119,7 @@ function showCalendarDay(iso, entries) {
 
   const rows = entries.map((entry) => {
     const row = el('tr', {},
-      el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'no project') }),
+      el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
       el('td', { text: entry.description ?? '–' }),
       timesheetActions(entry),
@@ -5180,6 +5210,39 @@ async function submitLogin(e) {
  * moment this stops being anybody's data, and leaving it to the next arrival
  * means it sits on the sign-in screen in the meantime.
  */
+/**
+ * Puts the screen back to how it looks for somebody who has never been here.
+ *
+ * Appearance is chosen per device, which is right while somebody is using it and
+ * wrong the moment they leave: the next person at that machine got the last
+ * one's dark mode, on a screen that has nothing else of theirs on it. Back to
+ * following the time of day, which is what a fresh browser does.
+ *
+ * The release notice goes the same way. Dismissing it is one administrator
+ * saying "I have seen this version", and it was being kept for whoever sat down
+ * next - who has not seen it.
+ *
+ * What is not cleared: the screen each account was last on, which is stored
+ * against that account's own id and so is invisible to anybody else, and the
+ * instance's own name and mark, which belong to the installation rather than to
+ * a person.
+ */
+function forgetTheLastAppearance() {
+  // Through the same function the picker uses, so there is one place that knows
+  // what choosing an appearance means: it clears the stored choice and applies
+  // the automatic one at once, rather than at the next load.
+  setThemePreference('auto');
+
+  const picker = $('#theme-picker');
+  if (picker) picker.value = 'auto';
+
+  try {
+    localStorage.removeItem(RELEASE_SEEN_KEY);
+  } catch {
+    // Private browsing refuses storage, in which case nothing was kept anyway.
+  }
+}
+
 function forgetTheLastAccount() {
   // replaceState rather than assigning: assigning pushes a history entry, and
   // Back would then return to a screen belonging to the session that ended.
@@ -5221,6 +5284,7 @@ async function doLogout() {
   me = { user: null, permissions: [], authEnabled: true };
 
   forgetTheLastAccount();
+  forgetTheLastAppearance();
 
   // The screen belongs to nobody now, so it stops speaking the language of
   // whoever just left. activeLanguage() falls back to the browser once me.user
@@ -7005,7 +7069,7 @@ function projectBars(projects) {
     // holds still count, so it is shown rather than dropped.
     label: project.projectId
       ? (project.name || t('stats.deletedProject', 'deleted project'))
-      : t('stats.noProject', 'no project'),
+      : t('stats.noProject', 'No project'),
     value: project.hours,
     key: project.projectId || NO_PROJECT_KEY,
   }));
@@ -7308,6 +7372,21 @@ function fillRangesFor(view) {
   for (const [from, to] of pairs) {
     fillDateRange($(from), $(to));
   }
+
+  // The single dates, which are the same idea with one field.
+  //
+  // A project is made today, so its start is today until somebody says
+  // otherwise - the same courtesy the evaluation screens do with their period.
+  // Its end is left alone: empty there means "no end planned", which is most
+  // projects, and filling it would invent a deadline.
+  if (view === 'projects') fillToday($('#form-project input[name="startDate"]'));
+}
+
+/** Puts today into a date field that is empty, on arrival. */
+function fillToday(field) {
+  if (!field || field.value) return;
+
+  setDateField(field, todayISO());
 }
 
 async function loadStatistics() {
@@ -7494,7 +7573,7 @@ function renderWorkbookPreview(result) {
     el('td', { class: 'num', text: String(row.row) }),
     el('td', { text: row.date ? fmtDate(row.date) : '–' }),
     el('td', { text: row.user || '–' }),
-    el('td', { text: row.project || t('ts.noProject', 'no project') }),
+    el('td', { text: row.project || t('ts.noProject', 'No project') }),
     el('td', { class: 'num', text: row.hours ? fmtNumber(row.hours) : '–' }),
     el('td', { text: row.description || '–' }),
     el('td', { class: row.problem ? 'minus' : 'muted', text: rowProblem(row) || '✓' }),
@@ -9359,12 +9438,28 @@ function wireForms() {
 
   $('#role-reset').addEventListener('click', resetRoleForm);
 
+  // The same thing, offered where a shipped role is being read rather than at
+  // the end of a form that is a screen further down.
+  $('#role-start-new')?.addEventListener('click', () => {
+    resetRoleForm();
+    $('#form-role .perms')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    $('#form-role').elements.name.focus();
+  });
+
   $('#form-project').addEventListener('submit', (e) => {
     e.preventDefault();
     const body = formData(e.target);
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.projectCreated', 'Project created'),
-      async () => { e.target.reset(); await refreshAll(); });
+      async () => {
+        e.target.reset();
+
+        // And today back into the start, because reset empties it: making a
+        // second project should ask no more than the first one did.
+        fillToday($('#form-project input[name="startDate"]'));
+
+        await refreshAll();
+      });
   });
 
   $('#form-timesheet').addEventListener('submit', (e) => {
