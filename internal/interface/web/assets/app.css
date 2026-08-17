@@ -146,21 +146,34 @@ body {
  * enough that it does not compete with the tabs beside it, and present enough
  * that it reads as a control while standing still. */
 .app-title {
+  align-items: center;
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: 4px 10px;
-  margin: -4px 0;
-  font: inherit;
   color: inherit;
   cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 8px;
+  margin: -4px 0;
+  padding: 4px 10px;
 }
 
-.app-title::before {
-  content: "⌂";
-  margin-right: 8px;
-  opacity: 0.55;
-  font-weight: 400;
+/* The application's own mark, and the way to the welcome screen.
+
+   Drawn rather than typed. This was the house character, which is a font glyph:
+   a different picture on every platform and a hollow box wherever the font has
+   no house in it - the same trap the tab icon was pulled out of. It also said
+   "home", which is not a word this application uses for that screen.
+
+   The tile takes the accent, so this is the mark that is in the browser tab
+   beside it rather than a second thing that happens to be nearby. */
+.app-mark {
+  color: var(--accent);
+  flex: none;
+  height: 22px;
+  opacity: 0.9;
+  width: 22px;
 }
 
 .app-title:hover,
@@ -169,8 +182,8 @@ body {
   border-color: var(--border);
 }
 
-.app-title:hover::before,
-.app-title:focus-visible::before { opacity: 1; }
+.app-title:hover .app-mark,
+.app-title:focus-visible .app-mark { opacity: 1; }
 
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
 
@@ -1101,13 +1114,6 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    its own: a wordmark at 28px is a smudge, and this is the one place the
    installation says whose it is. */
 .brand-logo { height: 40px; max-width: 220px; object-fit: contain; }
-
-/* The shipped mark is drawn square for a tab, so it is given a square's room.
-   Left at a banner's width it would sit in a box four times too wide, with the
-   header's words pushed away from a mark that is not there. */
-.shipped-mark { max-width: 40px; }
-
-.login-card .shipped-mark { height: 64px; max-width: 64px; width: 64px; }
 
 .logo-preview {
   background: var(--bg);

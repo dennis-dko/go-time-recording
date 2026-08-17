@@ -140,33 +140,53 @@ func (p *page) setBrandingText(t *testing.T, field, value string) {
 	}
 }
 
-// An instance that has configured nothing still has a mark.
+// The two places a company's own mark goes stay empty until it puts one there.
 //
-// The header and the sign-in screen used to be empty until somebody uploaded
-// something, which is a header of words alone and a sign-in card with a gap where
-// a mark goes - on every installation on its first day. The tab has had a default
-// all along; these two now have the same one.
-func TestTheShippedMarkStandsInUntilALogoIsConfigured(t *testing.T) {
+// They fell back to the shipped mark for a while, on the reasoning that a header
+// of words alone looks unfinished. It is the wrong place for it: filling the
+// slots meant for whoever runs the installation makes an unbranded one look
+// branded by somebody else. The application's own mark has its own places - the
+// browser tab, and the button beside the title - which say which program this is
+// without taking the space meant for the company.
+func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
 	// Nothing configured: this instance has never been given a logo.
 	//
-	// Asked of the source rather than of visibility, because the sign-in screen is
-	// hidden while somebody is signed in - its mark is filled in and waiting, which
-	// is exactly what has to be true for the next visitor to see it.
+	// Asked of the source rather than of visibility alone, because the sign-in
+	// screen is hidden while somebody is signed in - what matters is that there
+	// is nothing waiting in it for the next visitor.
 	for _, holder := range []string{"#brand-logo", "#login-logo"} {
-		if src := p.attr(holder, "src"); !strings.Contains(src, "favicon.svg") {
-			t.Errorf("%s shows %.40q rather than the shipped mark", holder, src)
+		if src := p.attr(holder, "src"); src != "" {
+			t.Errorf("%s shows %.40q on an installation with no logo", holder, src)
 		}
 	}
 
-	// And the header's is on the screen, which is the one of the two that is.
-	if !p.visible("#brand-logo") {
-		t.Error("the header has no mark at all on an instance with no logo")
+	if p.visible("#brand-logo") {
+		t.Error("the header shows a mark on an installation that has configured none")
 	}
 
-	// And a configured one replaces it rather than sitting beside it.
+	// The application's own mark is there, though, beside the title. It is what
+	// the browser tab shows too, so the two read as one program.
+	if !p.visible(".app-mark") {
+		t.Error("the welcome button has no mark, so nothing on the screen says " +
+			"which application this is")
+	}
+
+	// Drawn, not typed. The house character it replaced is a font glyph: a
+	// different picture on every platform and a hollow box where the font has no
+	// house in it.
+	var marks int
+
+	p.evalJSON(`JSON.stringify(document.querySelectorAll('.app-mark svg, svg.app-mark').length)`,
+		&marks)
+
+	if marks == 0 {
+		t.Error("the mark beside the title is not drawn")
+	}
+
+	// And a configured logo fills the header.
 	const logo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAAB4CAYAAAAuVYzDAAADi0lEQVR4nOzd7U3cQBSGUROlFDqg/xLogF6IIn4ENlrWxq/n655TAPIdCc2j69Xurw0AgCiBBQAQJrAAAMIEFgBAmMACAAgTWAAAYQILACBMYAEAhAksAIAwgQUAECawAADCBBYAQJjAAgAIE1gAAGECCwAgTGABAIQJLACAMIEFABAmsAAAwgQWAECYwAIACPvd+wE45/Vtez/7N16et6fM0wAAf7lYJ5MIqkcEFwCc4yKdQIuoukdsAcBxLs+B9QyrW0ILAPZzaQ5opLC6JbQA4DGX5UBGDqtbQgsA7vM1DYOYKa62CZ8XAFoSWAOYNVZmfW4AuJrXPB2tFCheGQLAPzZYnawUV9uC8wDAGQKrg1VjZNW5AOAogdXY6hGy+nwAsIfAaqhKfFSZEwDuEViNVIuOavMCwGcCq4GqsVF1bgAQWAAAYQLrYtW3ONXnB6AmgXUhcfHBOQBQjcC6iKj4ynkAUInAAgAI8/txF7Ctuc9vFhLg/wsYng0WAECYwAqzvfqe8wGgAoEFABAmsIJsZ/ZxTgCsTmABAIQJLACAMIEV4rXXMc4LgJUJLACAMIEFABAmsAAAwgRWgM8T/YxzA2BVAgsAIExgAQCECSwAgDCBBQAQJrAAAMIEFgBAmMACAAgTWAAAYQILACBMYAEAhAksAIAwgQUAECawAADCBBYAQJjAAgAIE1gAAGECK+DleXvq/Qwzcm4ArEpgAQCECSwAgDCBBQAQJrBCfJ7oGOcFwMoEFgBAmMACAAgTWEFee+3jnABYncACAAgTWGG2M99zPgBUILAAAMJsEy7y+ra9936G0dheAVCFDRYAQJjAuohtzVfOA4BKBNaFRMUH5wBANQLrYtXjovr8ANQksAAAwgRWA1W3OFXnBgCB1Ui12Kg2LwB8JrAaqhIdVeYEgHsEVmOrx8fq8wHAHgKrg1UjZNW5AOAogdXJajGy2jwAcIZLcQAz/26hsAKA/9lgDWDWSJn1uQHgagJrELPFymzPCwAtuSQHNPIrQ2EFAI+5LAc2UmgJKwDYz6U5gZ6hJawA4DiX52RaxJaoAoBzXKSTSwSXoAIAAACG5msaAADCBBYAQJjAAgAIE1gAAGECCwAgTGABAIQJLACAMIEFABAmsAAAwgQWAECYwAIACBNYAABhAgsAIExgAQCECSwAgDCBBQAQJrAAAMIEFgBAmMACAAj7EwAA//8NjIji7L4NLAAAAABJRU5ErkJggg=="
 
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
@@ -177,7 +197,11 @@ func TestTheShippedMarkStandsInUntilALogoIsConfigured(t *testing.T) {
 	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
 
 	if src := p.attr("#brand-logo", "src"); !strings.HasPrefix(src, "data:image/") {
-		t.Errorf("the header still shows %.40q after a logo was configured", src)
+		t.Errorf("the header shows %.40q after a logo was configured", src)
+	}
+
+	if !p.visible("#brand-logo") {
+		t.Error("the header's mark is hidden after a logo was configured")
 	}
 }
 

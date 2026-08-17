@@ -193,6 +193,15 @@ wordmarks rather than about this. The appearance screen shows the logo at exactl
 that size beside the header and sign-in previews, so it is seen before saving. A
 square mark is what reads best there — many companies keep one for exactly this.
 
+**Until a logo is configured, the header and the sign-in card carry nothing.**
+Those two slots belong to whoever runs the installation, and filling them with
+our mark makes an unbranded installation look branded by somebody else. The
+application's own mark — an hourglass — has its own places: the browser tab, the
+`.exe`, and the button beside the title that leads to the welcome screen. It is
+drawn (`internal/interface/web/assets/favicon.svg`) rather than a font character,
+and `go run ./build/icon > build/icon.ico` redraws the Windows copy from the same
+geometry whenever it changes.
+
 **The tab can be named separately from the header**, under *Browser tab* beside
 the title. The two are one name until the header's is too long to be a tab: a
 browser cuts a tab off after a couple of dozen characters, and somebody has six

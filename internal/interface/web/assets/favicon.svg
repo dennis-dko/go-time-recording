@@ -1,19 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Time Recording">
-  <!-- A stopwatch, drawn rather than typed. The tab icon used to be the ⏱
-       character in an inline data URI, which is a font glyph: it renders as a
-       different picture on every platform and as a hollow box where the font is
-       missing. Paths look the same everywhere and need no font at all. -->
+  <!-- An hourglass on its own tile, drawn rather than typed.
+       Drawn: the tab icon used to be the ⏱ character in an inline data URI,
+       which is a font glyph - it renders as a different picture on every
+       platform and as a hollow box where the font is missing. Paths look the
+       same everywhere and need no font at all.
+       Filled rather than stroked: this is seen at sixteen pixels far more often
+       than at any other size, and a two-unit line in a thirty-two-unit box is
+       thinner than one pixel there. The previous mark was a stopwatch of lines,
+       and at sixteen pixels its ring, hand and crown ran together into a grey
+       smudge. Areas survive what lines do not.
+       The tile is part of the mark rather than a background: it carries the
+       colour, so this reads the same on a white tab strip, a dark one, and
+       whatever colour somebody has made their taskbar. -->
   <title>Time Recording</title>
-  <g fill="none" stroke="#2f6fed" stroke-width="2.4" stroke-linecap="round">
-    <!-- The crown and the two lugs, which is what makes it a stopwatch rather
-         than a clock. -->
-    <path d="M13 3h6" />
-    <path d="M16 3v3" />
-    <path d="M25.5 8.5 27 7" />
-    <!-- The case. -->
-    <circle cx="16" cy="18" r="11" />
-    <!-- The hand, at ten past, so it reads as running rather than as noon. -->
-    <path d="M16 18V11.5" />
-    <path d="M16 18h4.5" stroke-width="2" />
-  </g>
+  <rect x="3" y="3" width="26" height="26" rx="7.6" fill="#2f6feb"/>
+  <!-- The two halves, meeting in the middle. The lower one is dimmer: it is the
+       sand that has already fallen, which is what makes this a measure of time
+       spent rather than a picture of an object. -->
+  <path d="M9.6 8.6h12.8L16 16Z" fill="#ffffff"/>
+  <path d="M9.6 23.4h12.8L16 16Z" fill="#ffffff" opacity="0.55"/>
 </svg>

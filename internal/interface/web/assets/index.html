@@ -28,7 +28,10 @@
          the greeting from wherever you are. A heading that navigates has to say
          so to a keyboard and a screen reader too, which a plain h1 cannot. -->
     <h1><button type="button" id="app-title" class="app-title" data-i18n-aria="welcome.goTo"
-                aria-label="Welcome page">Time Recording</button></h1>
+                aria-label="Welcome page"><svg class="app-mark" viewBox="0 0 32 32" aria-hidden="true"
+                focusable="false"><rect x="3" y="3" width="26" height="26" rx="7.6" fill="currentColor"/><path
+                d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/><path d="M9.6 23.4h12.8L16 16Z"
+                fill="var(--accent-text)" opacity="0.55"/></svg><span id="app-title-text">Time Recording</span></button></h1>
     <nav id="tabs">
       <button class="tab" data-view="timesheets" data-perm="timesheets:read:own" data-i18n="nav.timesheets">Time entries</button>
       <button class="tab" data-view="calendar" data-perm="timesheets:read:own" data-i18n="nav.calendar">Calendar</button>
