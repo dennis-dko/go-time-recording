@@ -65,4 +65,7 @@ const (
 	// PreferenceTimezone is the zone this person's days are counted in, empty
 	// meaning they follow the instance.
 	PreferenceTimezone
+
+	// PreferenceTheme is light or dark, empty meaning the time of day decides.
+	PreferenceTheme
 )

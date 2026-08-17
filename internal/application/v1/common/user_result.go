@@ -33,6 +33,9 @@ type UserResult struct {
 	EffectiveLanguage string
 
 	Timezone string
+
+	// Theme is the appearance this account reads in; empty follows the clock.
+	Theme    string
 	TourSeen bool
 
 	// Working times as this account has them, which is zero for one that has not
@@ -70,6 +73,7 @@ func NewUserResultFromModel(userModels ...*model.User) []*UserResult {
 			Language:           userModel.Language,
 			EffectiveLanguage:  userModel.EffectiveLanguage(),
 			Timezone:           userModel.Timezone,
+			Theme:              userModel.Theme,
 			TourSeen:           userModel.TourSeen,
 			DailyTargetHours:   userModel.DailyTargetHours,
 			MaxDailyHours:      userModel.MaxDailyHours,

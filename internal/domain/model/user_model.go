@@ -41,6 +41,15 @@ type User struct {
 	// Language is the interface language; empty means the default.
 	Language string
 
+	// Theme is light or dark, or empty for following the time of day.
+	//
+	// On the account rather than on the device, which is where it used to be.
+	// A device is shared and an account is not: the next person to sit down at a
+	// machine got the last one's dark mode, on a screen with nothing else of
+	// theirs on it. Empty is the honest default for somebody who has never
+	// chosen, and is what a signed-out screen always uses.
+	Theme string
+
 	// TourSeen records that this person has been shown the guided tour. Per
 	// user rather than per device: it answers "has this person been introduced
 	// to the application", which does not become false again on a new laptop.
@@ -75,6 +84,22 @@ const (
 	// translation layered over it, so a gap in one still reads.
 	DefaultLanguage = LanguageEnglish
 )
+
+// The appearances an account may choose. Empty is the third and is not listed:
+// it is the absence of a choice rather than one of them.
+const (
+	ThemeLight = "light"
+	ThemeDark  = "dark"
+)
+
+// IsSupportedTheme reports whether this is an appearance the interface can show.
+//
+// Empty passes, because clearing the choice is how somebody goes back to
+// following the time of day - the same shape as an empty timezone meaning
+// "follow the instance".
+func IsSupportedTheme(theme string) bool {
+	return theme == "" || theme == ThemeLight || theme == ThemeDark
+}
 
 // SupportedLanguages lists the languages the interface ships translations for,
 // the fallback first.

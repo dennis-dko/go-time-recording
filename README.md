@@ -419,11 +419,18 @@ project scopes both — a chart totalling everything next to a table totalling o
 project is two answers on one screen, and no way to tell which was asked for.
 
 **Appearance belongs to the person, not to the machine.** Light or dark is
-chosen per device, which is right while somebody is using it and wrong the
-moment they leave — so signing out puts it back to following the time of day,
-and takes the dismissed release notice with it. What survives is what is
-invisible to anybody else: the screen each account was last on, stored against
-that account's own id.
+stored on the account, like the language, and applied when that account signs
+in. Signed out — and on a fresh account that has never chosen — the screen
+follows the time of day. It used to live in the browser, which is right for one
+person with one laptop and wrong everywhere else: the next person at a shared
+machine arrived to the last one's dark mode.
+
+Everything else this interface keeps in a browser is keyed by account id and so
+cannot reach anybody else: the screen each account was last on, whether it has
+been greeted, whether the browser's zone and language have been offered, and
+which release it has dismissed. The two exceptions are impersonal — the
+instance's own name and mark, cached so the first paint is not generic, and a
+scroll position kept for the length of one reload.
 
 **The three roles the application ships with are shown, not edited** — not their
 name, not their description, not their rights. They are the answer to questions

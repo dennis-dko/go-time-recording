@@ -3494,3 +3494,141 @@ func TestANewProjectStartsTodayAndHasNoEnd(t *testing.T) {
 		t.Errorf("after making a project the start reads %q", again)
 	}
 }
+
+// What somebody changes about the screen is theirs, and stays theirs.
+//
+// Two settings, one rule, seen from four sides: kept on the account, applied
+// when that account signs in, gone from the screen when it signs out, and never
+// inherited by whoever signs in next.
+//
+// The appearance was the one that broke it. It lived in the browser, which is
+// right for one person with one laptop and wrong everywhere else - the next
+// person at a shared machine arrived to the last one's dark mode, on a screen
+// with nothing else of theirs on it.
+func TestTheScreenSomebodyChoseIsTheirs(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+	p.createOrdinaryAccount(t, workerEmail, workerPassword)
+
+	p.run("choose dark", p.chooseOption("#theme-picker", "dark"))
+	p.run("choose German", p.chooseOption("#language-picker", "de"))
+	p.waitForText(`.tab[data-view="settings"]`, "Mein Konto")
+
+	// On the account, which is what makes it follow the person rather than the
+	// machine. Read back from the server rather than from the page.
+	var stored struct {
+		Theme    string `json:"theme"`
+		Language string `json:"language"`
+	}
+
+	read := func() {
+		var raw string
+
+		p.run("read the account", chromedp.Evaluate(`
+			(async () => {
+				const r = await fetch('/api/v1/me', { credentials: 'same-origin', cache: 'no-store' });
+				const body = await r.json();
+
+				return JSON.stringify(body?.data?.user ?? {});
+			})()`, &raw, awaitPromise))
+
+		if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+			t.Fatalf("reading the account: %v; %s", err, raw)
+		}
+	}
+
+	read()
+
+	if stored.Theme != "dark" {
+		t.Errorf("the account reads in %q after dark was chosen", stored.Theme)
+	}
+
+	if stored.Language != "de" {
+		t.Errorf("the account speaks %q after German was chosen", stored.Language)
+	}
+
+	screen := func() struct {
+		Theme    string `json:"theme"`
+		Chosen   string `json:"chosen"`
+		Language string `json:"language"`
+		Themes   string `json:"themePicker"`
+		Speaks   string `json:"languagePicker"`
+	} {
+		var out struct {
+			Theme    string `json:"theme"`
+			Chosen   string `json:"chosen"`
+			Language string `json:"language"`
+			Themes   string `json:"themePicker"`
+			Speaks   string `json:"languagePicker"`
+		}
+
+		p.evalJSON(`JSON.stringify({
+			theme: document.documentElement.dataset.theme,
+			chosen: document.documentElement.dataset.themePreference,
+			language: document.documentElement.lang,
+			themePicker: document.querySelector('#theme-picker').value,
+			languagePicker: document.querySelector('#language-picker').value,
+		})`, &out)
+
+		return out
+	}
+
+	if now := screen(); now.Theme != "dark" || now.Language != "de" {
+		t.Fatalf("the screen is %+v after choosing dark and German", now)
+	}
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	out := screen()
+
+	if out.Chosen != "auto" {
+		t.Errorf("the sign-in screen follows %q rather than the time of day", out.Chosen)
+	}
+
+	if out.Language == "de" {
+		t.Error("the sign-in screen still speaks the language of the account that left")
+	}
+
+	// The controls say what the screen is doing, rather than still offering the
+	// choices of somebody who has gone.
+	if out.Themes != "auto" || out.Speaks != out.Language {
+		t.Errorf("the pickers offer %q and %q on a screen doing %q and %q",
+			out.Themes, out.Speaks, out.Chosen, out.Language)
+	}
+
+	// Somebody else, on the same machine, who has chosen nothing.
+	p.signIn(workerEmail, workerPassword)
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	next := screen()
+
+	if next.Chosen != "auto" {
+		t.Errorf("the next person inherited %q", next.Chosen)
+	}
+
+	if next.Language == "de" {
+		t.Error("the next person inherited the last one's language")
+	}
+
+	// And the first person's choice is still theirs when they come back, which is
+	// the difference between clearing it and keeping it per account.
+	p.run("sign out again", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn(harness.AdminEmail, adminPassword)
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	back := screen()
+
+	if back.Chosen != "dark" {
+		t.Errorf("coming back, the screen follows %q rather than the dark that was "+
+			"chosen", back.Chosen)
+	}
+
+	if back.Language != "de" {
+		t.Errorf("coming back, the screen speaks %q", back.Language)
+	}
+}
