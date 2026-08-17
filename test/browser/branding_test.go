@@ -5,6 +5,7 @@ package browser
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -581,4 +582,132 @@ func TestAPartOfTheLogoCanBeChosenForEachPlace(t *testing.T) {
 		t.Errorf("the part stored starts at %.2f rather than at the left end",
 			stored.Icon.X)
 	}
+}
+
+// The selection is free: a corner pulled in one direction moves in that
+// direction only, and whatever shape comes out of it is what gets stored.
+//
+// The opening selection has the shape of the place it is for, and that used to
+// be a rule rather than a starting point - a corner dragged upwards took the
+// width with it, so a tab could only ever be given a square of the logo. This is
+// the test that the rule is gone, dragged with real pointer input so that a
+// corner nothing is wired to fails here rather than passing.
+func TestTheChosenPartCanBeAnyShape(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.storeBranding(t, wideLogo)
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.run("choose the part used in the tab",
+		p.click(`.logo-use-button[data-crop="icon"]`),
+		chromedp.WaitVisible("#crop-overlay", chromedp.ByID))
+
+	before := p.selection(t)
+
+	// The logo is five times as wide as it is tall, so the square the tab opens
+	// on is the full height of it - which is what makes pulling the bottom edge
+	// up a fair question to ask.
+	if before.H < 0.9 {
+		t.Fatalf("the tab's selection opened %.2f of the way down the logo, "+
+			"so there is nothing to pull up", before.H)
+	}
+
+	p.drag(`.crop-handle-se`, 0, -60)
+
+	after := p.selection(t)
+
+	if after.H >= before.H-0.1 {
+		t.Fatalf("the bottom edge was pulled up and the selection is still "+
+			"%.2f tall, was %.2f", after.H, before.H)
+	}
+
+	// The point of the whole exercise. Under the old rule this width would have
+	// followed the height down to keep the square square.
+	if math.Abs(after.W-before.W) > 0.02 {
+		t.Errorf("pulling the bottom edge up changed the width from %.2f to %.2f; "+
+			"a corner should move the two edges it is dragged along and no others",
+			before.W, after.W)
+	}
+
+	// Still on the logo. A selection that has been dragged off it describes a
+	// part that does not exist, which the server would have to guess about.
+	if after.X < 0 || after.Y < 0 || after.X+after.W > 1.001 || after.Y+after.H > 1.001 {
+		t.Errorf("the selection left the logo: %+v", after)
+	}
+
+	p.run("use this part", p.click("#crop-apply"))
+	p.run("save", p.click(`#form-branding button[type="submit"]`))
+	p.waitForText("#toast", "saved")
+
+	// And it survives being stored: the shape that was chosen is the shape that
+	// comes back, rather than one the server rounded to something it preferred.
+	var stored struct {
+		Icon struct {
+			W float64 `json:"w"`
+			H float64 `json:"h"`
+		} `json:"icon"`
+	}
+
+	var raw string
+
+	p.run("read what was stored", chromedp.Evaluate(`
+		(async () => {
+			const r = await fetch('/api/v1/branding', { credentials: 'same-origin' });
+			const body = await r.json();
+
+			return JSON.stringify(body?.data?.crops ?? {});
+		})()`, &raw, awaitPromise))
+
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		t.Fatalf("reading what was stored: %v; %s", err, raw)
+	}
+
+	if math.Abs(stored.Icon.H-after.H) > 0.02 || math.Abs(stored.Icon.W-after.W) > 0.02 {
+		t.Errorf("chose %.2fx%.2f and %.2fx%.2f came back",
+			after.W, after.H, stored.Icon.W, stored.Icon.H)
+	}
+}
+
+// selection is the part of the logo the chooser currently has marked, in
+// fractions of the whole image.
+func (p *page) selection(t *testing.T) struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
+} {
+	t.Helper()
+
+	var box struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+		W float64 `json:"w"`
+		H float64 `json:"h"`
+	}
+
+	// Read off the screen rather than out of the page's own variable: what is
+	// drawn is what is being aimed at, and the two agreeing is part of what is
+	// under test.
+	p.evalJSON(`JSON.stringify((() => {
+		const image = document.querySelector('#crop-image');
+		const area = drawnImageArea(image);
+		const box = document.querySelector('#crop-box').getBoundingClientRect();
+		const stage = document.querySelector('#crop-stage').getBoundingClientRect();
+
+		return {
+			x: (box.left - stage.left - area.left) / area.width,
+			y: (box.top - stage.top - area.top) / area.height,
+			w: box.width / area.width,
+			h: box.height / area.height,
+		};
+	})())`, &box)
+
+	return box
 }

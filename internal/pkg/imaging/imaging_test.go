@@ -315,3 +315,73 @@ func halves(t *testing.T, width, height int) string {
 
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(out.Bytes())
 }
+
+// A part chosen in a shape the place does not have is fitted into it, not
+// stretched to fill it.
+//
+// The part is chosen freely - any corner, any shape - so a square can be picked
+// for the header and a strip for the tab, and neither has the proportions of the
+// box it is going into. Filling the box would mean distorting the logo, which is
+// the one thing an instance's mark must never come out as. So it is scaled until
+// it fits and left at its own proportions, and the sides that are left over are
+// simply not there for the header and padded for the tab.
+func TestAPartOfAnyShapeIsFittedRatherThanStretched(t *testing.T) {
+	logo := wordmark(t, 2000, 500)
+
+	// A square out of a four-to-one wordmark, headed for a five-and-a-half-to-one
+	// header box.
+	square := Crop{X: 0.4, Y: 0, W: 0.25, H: 1}
+
+	header := decode(t, mustFitCrop(t, logo, square, HeaderWidth, HeaderHeight))
+
+	if ratio := float64(header.Bounds().Dx()) / float64(header.Bounds().Dy()); ratio < 0.9 || ratio > 1.1 {
+		t.Errorf("a square part came out of the header's box at %dx%d, a ratio of %.2f",
+			header.Bounds().Dx(), header.Bounds().Dy(), ratio)
+	}
+
+	if header.Bounds().Dy() > HeaderHeight {
+		t.Errorf("the header's version is %dpx tall, taller than the %dpx it is given",
+			header.Bounds().Dy(), HeaderHeight)
+	}
+
+	// And the other way round: a wide strip headed for the square tab.
+	strip := Crop{X: 0, Y: 0.4, W: 1, H: 0.2}
+
+	icon := decode(t, mustFitIconCrop(t, logo, strip))
+
+	if icon.Bounds().Dx() != IconSize || icon.Bounds().Dy() != IconSize {
+		t.Fatalf("the tab's version is %dx%d rather than %dpx square",
+			icon.Bounds().Dx(), icon.Bounds().Dy(), IconSize)
+	}
+
+	// Padded into the square rather than squashed to it: what was drawn is still
+	// the twenty-to-one strip that was chosen.
+	drawn := drawnBounds(icon)
+
+	if ratio := float64(drawn.Dx()) / float64(drawn.Dy()); ratio < 5 {
+		t.Errorf("a twenty-to-one strip was drawn into the tab at %dx%d, a ratio of %.2f",
+			drawn.Dx(), drawn.Dy(), ratio)
+	}
+}
+
+func mustFitCrop(t *testing.T, logo string, crop Crop, width, height int) string {
+	t.Helper()
+
+	out, err := Fit(logo, crop, width, height)
+	if err != nil {
+		t.Fatalf("converting: %v", err)
+	}
+
+	return out
+}
+
+func mustFitIconCrop(t *testing.T, logo string, crop Crop) string {
+	t.Helper()
+
+	out, err := FitIcon(logo, crop)
+	if err != nil {
+		t.Fatalf("converting: %v", err)
+	}
+
+	return out
+}

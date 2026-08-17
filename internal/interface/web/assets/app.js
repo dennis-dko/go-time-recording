@@ -1088,10 +1088,15 @@ function languageName(language) {
  * wordmark is a smear, and what is worth keeping there is usually the mark at one
  * end. Nobody can guess which end, so it is chosen here, per place.
  *
- * The selection keeps the shape of the place it is for: a tab is square, so the
- * box is square, and what is on the screen is what will be on the screen. A
- * free-form selection would be one that cannot be used as chosen, which is a
- * selection that lies.
+ * The selection is free: any part, in any shape, from any corner. It opens on
+ * the shape of the place it is for, because that is the one selection nothing has
+ * to be done to, but nothing holds it there.
+ *
+ * A chosen part that is not the place's shape is fitted into that place rather
+ * than stretched to fill it - scaled until it fits and left at its own
+ * proportions, which is what the header and the sign-in banner do with it and
+ * what the tab's icon is padded out to. So the previews show it fitted too, and
+ * what is on this screen is what will be on the others.
  */
 const CROP_SHAPES = {
   header: { width: 440, height: 80, label: () => t('admin.logoInHeader', 'In the header') },
@@ -1107,6 +1112,15 @@ let croppingFor = '';
 
 /** The selection, in fractions of the image, while it is being dragged. */
 let cropBox = { x: 0, y: 0, w: 1, h: 1 };
+
+/**
+ * The smallest selection either side may be dragged to.
+ *
+ * Not a matter of taste: a selection dragged to nothing is one that cannot be
+ * seen, cannot be grabbed again, and would be scaled up into a place from almost
+ * no pixels at all.
+ */
+const MIN_CROP = 0.02;
 
 function openCropChooser(use) {
   const overlay = $('#crop-overlay');
@@ -1127,8 +1141,10 @@ function openCropChooser(use) {
   // could ask about, and impossible to aim at.
   overlay.hidden = false;
 
-  // Whatever was chosen before, or the largest box of this shape that fits -
-  // which for a wide header is the whole logo and for a tab is a square of it.
+  // Whatever was chosen before, or - with nothing chosen yet - the largest box
+  // of this place's shape that fits, which for a wide header is the whole logo
+  // and for a tab is a square of it. A starting point rather than a rule: it is
+  // the one selection that needs no fitting, and every corner drags away from it.
   const begin = () => {
     cropBox = logoCrops[use] ?? largestBoxOfShape(use, image);
     drawCropBox();
@@ -1216,8 +1232,8 @@ function wireCropChooser() {
   const overlay = $('#crop-overlay');
   const stage = $('#crop-stage');
   const box = $('#crop-box');
-  const handle = $('#crop-handle');
-  if (!overlay || !stage || !box || !handle) return;
+  const handles = $$('.crop-handle');
+  if (!overlay || !stage || !box || !handles.length) return;
 
   for (const button of $$('.logo-use-button')) {
     button.addEventListener('click', () => openCropChooser(button.dataset.crop));
@@ -1244,14 +1260,16 @@ function wireCropChooser() {
     close();
   });
 
-  // Dragging the box moves it; dragging the corner resizes it. Both keep the
-  // shape of the place the selection is for, and both stay inside the image.
+  // Dragging the box moves it; dragging a corner resizes it from that corner.
+  // Both stay inside the image, and neither constrains the shape.
   let mode = '';
+  let corner = '';
   let from = { x: 0, y: 0 };
   let start = cropBox;
 
   const grab = (kind) => (e) => {
     mode = kind;
+    corner = e.currentTarget.dataset.corner ?? '';
     from = { x: e.clientX, y: e.clientY };
     start = { ...cropBox };
 
@@ -1261,7 +1279,10 @@ function wireCropChooser() {
   };
 
   box.addEventListener('pointerdown', grab('move'));
-  handle.addEventListener('pointerdown', grab('resize'));
+
+  for (const grip of handles) {
+    grip.addEventListener('pointerdown', grab('resize'));
+  }
 
   stage.addEventListener('pointermove', (e) => {
     if (!mode) return;
@@ -1272,7 +1293,9 @@ function wireCropChooser() {
     const dx = (e.clientX - from.x) / area.width;
     const dy = (e.clientY - from.y) / area.height;
 
-    cropBox = mode === 'move' ? moveCropBox(start, dx, dy) : resizeCropBox(start, dx, dy);
+    cropBox = mode === 'move'
+      ? moveCropBox(start, dx, dy)
+      : resizeCropBox(start, dx, dy, corner);
 
     drawCropBox();
   });
@@ -1299,28 +1322,38 @@ function moveCropBox(start, dx, dy) {
 }
 
 /**
- * Resizes the selection from its corner, keeping the shape of the place it is for
- * and staying inside the image.
+ * Resizes the selection from one of its corners, freely.
  *
- * Driven by whichever of the two movements is larger, so a diagonal drag does
- * what it looks like it should rather than following one axis and ignoring the
- * other.
+ * The corner being dragged follows the pointer on both axes and the opposite one
+ * stays where it is, so any part of the logo can be enclosed in any shape. The
+ * two axes are worked out separately - a corner is two edges, and holding one of
+ * them back because the other ran into the image's edge would make the drag stick
+ * for reasons nothing on the screen explains.
  */
-function resizeCropBox(start, dx, dy) {
-  const image = $('#crop-image');
-  const shape = CROP_SHAPES[croppingFor];
-  if (!shape || !image?.naturalWidth) return start;
+function resizeCropBox(start, dx, dy, corner) {
+  const right = start.x + start.w;
+  const bottom = start.y + start.h;
 
-  // The selection's shape in fractions is the place's shape divided by the
-  // image's: a given fraction of a wide image is a different shape from the same
-  // fraction of a tall one.
-  const ratio = (shape.width / shape.height) / (image.naturalWidth / image.naturalHeight);
-  const wanted = Math.abs(dx) > Math.abs(dy) ? start.w + dx : (start.h + dy) * ratio;
+  // Held between the image's edge and the smallest selection worth having, which
+  // is what keeps a corner dragged past its opposite from turning the selection
+  // inside out.
+  const [x, w] = corner.includes('w')
+    ? (() => {
+      const moved = Math.min(Math.max(start.x + dx, 0), right - MIN_CROP);
 
-  // Never off the edge, and never so small it cannot be seen or grabbed again.
-  const w = Math.min(Math.max(wanted, 0.05), 1 - start.x, (1 - start.y) * ratio);
+      return [moved, right - moved];
+    })()
+    : [start.x, Math.min(Math.max(start.w + dx, MIN_CROP), 1 - start.x)];
 
-  return { ...start, w, h: w / ratio };
+  const [y, h] = corner.includes('n')
+    ? (() => {
+      const moved = Math.min(Math.max(start.y + dy, 0), bottom - MIN_CROP);
+
+      return [moved, bottom - moved];
+    })()
+    : [start.y, Math.min(Math.max(start.h + dy, MIN_CROP), 1 - start.y)];
+
+  return { x, y, w, h };
 }
 
 /** The languages the appearance texts can be written in. */
@@ -2106,6 +2139,7 @@ const TRANSLATIONS = {
     'admin.logoCropHint': 'Jede Vorschau zeigt einen Ausschnitt des Logos. Zum Wählen darauf klicken.',
     'crop.title': 'Welcher Teil des Logos?',
     'crop.text': 'Ziehen, um den Teil des Logos zu wählen, der hier verwendet wird: {0}.',
+    'crop.free': 'Ziehen Sie die Ecken in eine beliebige Form. Der gewählte Teil wird in die jeweilige Stelle eingepasst, niemals verzerrt.',
     'crop.whole': 'Ganzes Logo verwenden',
     'crop.apply': 'Diesen Teil verwenden',
     'admin.logoAsFavicon': 'Im Browser-Tab',
@@ -4248,7 +4282,10 @@ function setLogoPreview(dataURI) {
  * round trip per preview for a picture that has not been saved yet.
  */
 function cropPreview(dataURI, crop, into) {
-  if (!crop || crop.w >= 1) return dataURI;
+  // Both sides, not just the width: a selection may keep the full width of a
+  // logo and half its height, and asking only about the width would answer that
+  // with the whole image.
+  if (!crop || (crop.w >= 1 && crop.h >= 1)) return dataURI;
 
   const source = new Image();
 
