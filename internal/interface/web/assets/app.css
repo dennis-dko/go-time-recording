@@ -1229,29 +1229,56 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   gap: 12px;
   justify-content: center;
   margin-top: 20px;
-  /* Room on the right for the version, so long branding text cannot run
-     underneath it. Widened when the platform moved in beside it: "v1.10.3
-     (windows)" is half again as long as the version alone was, and the reserved
-     strip is what keeps the two from overlapping. */
-  padding: 16px 168px 16px 20px;
+  /* Room at both ends, so long branding text cannot run underneath the version
+     on the right or the source link on the left. The right needed widening when
+     the platform moved in beside the version - "v1.10.3 (windows)" is half again
+     as long as the version alone - and the left matches it rather than being
+     measured to the mark it holds: equal reservations are what leave the
+     branding text centred on the footer rather than on what is left of it. */
+  padding: 16px 168px;
   position: relative;
 }
 
 .site-footer a { color: var(--accent); text-decoration: none; }
 .site-footer a:hover { text-decoration: underline; }
 
-/* Taken out of the flow so the branding stays centred in the footer rather
-   than being shoved off-centre by whatever the version happens to be. */
-#footer-version {
-  font-variant-numeric: tabular-nums;
+/* The two corners. Taken out of the flow so the branding stays centred in the
+   footer rather than being shoved off-centre by whatever they happen to hold,
+   and both on the same line through the middle. */
+#footer-version,
+.footer-corner {
   position: absolute;
-  right: 20px;
   top: 50%;
   transform: translateY(-50%);
 }
 
-/* Narrow enough that a corner would overlap wrapped branding text: put the
-   version back in the flow as its own last line. */
+#footer-version {
+  font-variant-numeric: tabular-nums;
+  right: 20px;
+}
+
+.footer-corner {
+  align-items: center;
+  display: flex;
+  left: 20px;
+}
+
+/* The mark alone, at the height of the line the version sits on. It carries the
+   colour of the text around it rather than the accent every other link has:
+   in a corner, at this size, a coloured mark reads as a decoration somebody
+   forgot to finish. */
+.footer-corner svg {
+  fill: currentcolor;
+  height: 18px;
+  width: 18px;
+}
+
+.footer-corner:hover svg,
+.footer-corner:focus-visible svg { fill: var(--accent); }
+
+/* Narrow enough that a corner would overlap wrapped branding text: put both
+   corners back in the flow, the mark first and the version on its own last
+   line. */
 @media (max-width: 560px) {
   .site-footer { padding: 16px 20px; }
 
@@ -1259,6 +1286,12 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
     flex-basis: 100%;
     position: static;
     text-align: center;
+    transform: none;
+  }
+
+  .footer-corner {
+    order: -1;
+    position: static;
     transform: none;
   }
 }

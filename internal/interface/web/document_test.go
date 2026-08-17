@@ -110,6 +110,27 @@ func TestADifferentLogoIsADifferentAddress(t *testing.T) {
 	}
 }
 
+// And when only the icon does, which is what choosing a different part of the
+// logo for the tab produces.
+//
+// The address used to be a fingerprint of the logo, and the logo does not change
+// when a corner of it is picked out for the tab - so the new icon was served from
+// the old address, which carries a year of immutable caching. The browser never
+// asked for it again, and the tab kept the old icon through every reload until
+// somebody held down shift while pressing it.
+func TestADifferentPartOfTheLogoIsADifferentAddress(t *testing.T) {
+	logo := pngLogo()
+
+	first := fetch(t, brandedServer(web.Branding{Logo: logo, Icon: pngLogo()}), "/").Body.String()
+	second := fetch(t, brandedServer(web.Branding{Logo: logo, Icon: otherLogo()}), "/").Body.String()
+
+	if iconHref(first) == iconHref(second) {
+		t.Errorf("the same logo cropped two ways is served from one address (%s), "+
+			"so a browser that has the first one will never fetch the second",
+			iconHref(first))
+	}
+}
+
 // The icon endpoint answers with the logo itself.
 func TestTheIconEndpointServesTheConfiguredLogo(t *testing.T) {
 	server := brandedServer(web.Branding{Logo: pngLogo()})

@@ -186,7 +186,12 @@ func (h *SettingsHandler) SaveOperational(c *gofr.Context) (any, error) {
 
 // BrandingResponse is the instance labelling.
 type BrandingResponse struct {
-	Title  string `json:"title"`
+	Title string `json:"title"`
+
+	// TabTitle names the browser tab where an installation wants it to say
+	// something shorter than the header does. Empty means the title.
+	TabTitle string `json:"tabTitle"`
+
 	Banner string `json:"banner"`
 	Logo   string `json:"logo"`
 
@@ -227,6 +232,7 @@ type CropResponse struct {
 // BrandingTextResponse is one language's version of the texts.
 type BrandingTextResponse struct {
 	Title       string `json:"title"`
+	TabTitle    string `json:"tabTitle"`
 	Banner      string `json:"banner"`
 	FooterText  string `json:"footerText"`
 	LegalNotice string `json:"legalNotice"`
@@ -287,6 +293,7 @@ func (h *SettingsHandler) SaveBranding(c *gofr.Context) (any, error) {
 
 	err := h.settings.SaveBranding(c, model.Branding{
 		Title:       req.Title,
+		TabTitle:    req.TabTitle,
 		Banner:      req.Banner,
 		LogoDataURI: req.Logo,
 		FooterText:  req.FooterText,
@@ -313,6 +320,7 @@ func (h *SettingsHandler) SaveBranding(c *gofr.Context) (any, error) {
 
 				out[language] = model.BrandingText{
 					Title:       text.Title,
+					TabTitle:    text.TabTitle,
 					Banner:      text.Banner,
 					FooterText:  text.FooterText,
 					LegalNotice: text.LegalNotice,
@@ -726,6 +734,7 @@ func (h *SettingsHandler) requireAdminForSchedule(c *gofr.Context, wanted model.
 func newBrandingResponse(b model.Branding) BrandingResponse {
 	return BrandingResponse{
 		Title:       b.Title,
+		TabTitle:    b.TabTitle,
 		Banner:      b.Banner,
 		Logo:        b.LogoDataURI,
 		LogoHeader:  b.LogoHeader,
@@ -745,6 +754,7 @@ func newBrandingResponse(b model.Branding) BrandingResponse {
 			for language, text := range b.Translations {
 				out[language] = BrandingTextResponse{
 					Title:       text.Title,
+					TabTitle:    text.TabTitle,
 					Banner:      text.Banner,
 					FooterText:  text.FooterText,
 					LegalNotice: text.LegalNotice,

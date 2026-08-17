@@ -513,13 +513,17 @@ func TestAPartOfTheLogoCanBeChosenForEachPlace(t *testing.T) {
 	// What the request actually carried, recorded as it goes: the page is where
 	// this was failing, and the body it sends is the one thing neither side's log
 	// shows.
+	// Kept in the session rather than on the window: the save reloads the page,
+	// and everything this document was holding goes with it.
 	p.run("watch the save", chromedp.Evaluate(`
 		(() => {
-			window.__sent = null;
+			sessionStorage.removeItem('__sent');
 			const real = window.fetch;
 
 			window.fetch = (url, options) => {
-				if (String(url).includes('/settings/branding')) window.__sent = options?.body ?? '';
+				if (String(url).includes('/settings/branding')) {
+					sessionStorage.setItem('__sent', options?.body ?? '');
+				}
 
 				return real(url, options);
 			};
@@ -527,19 +531,12 @@ func TestAPartOfTheLogoCanBeChosenForEachPlace(t *testing.T) {
 			return 1;
 		})()`, nil))
 
-	p.run("save", p.click(`#form-branding button[type="submit"]`))
-
-	// Waited for the notice the save raises rather than for a moment. The first
-	// version of this waited for "" in the notices, which matches the empty
-	// string - so it waited for nothing at all and read the answer back before the
-	// request had finished, then reported a feature that works as one that stores
-	// nothing.
-	p.waitForText("#toast", "saved")
+	p.submitAndAwaitReload(t, p.click(`#form-branding button[type="submit"]`))
 
 	var sent string
 
 	p.run("read what was sent", chromedp.Evaluate(
-		`String(window.__sent ?? 'nothing was sent')`, &sent))
+		`String(sessionStorage.getItem('__sent') ?? 'nothing was sent')`, &sent))
 
 	if !strings.Contains(sent, "crops") {
 		t.Fatalf("the save carried no crops: %.300s", sent)
@@ -643,8 +640,7 @@ func TestTheChosenPartCanBeAnyShape(t *testing.T) {
 	}
 
 	p.run("use this part", p.click("#crop-apply"))
-	p.run("save", p.click(`#form-branding button[type="submit"]`))
-	p.waitForText("#toast", "saved")
+	p.submitAndAwaitReload(t, p.click(`#form-branding button[type="submit"]`))
 
 	// And it survives being stored: the shape that was chosen is the shape that
 	// comes back, rather than one the server rounded to something it preferred.
@@ -710,4 +706,174 @@ func (p *page) selection(t *testing.T) struct {
 	})())`, &box)
 
 	return box
+}
+
+// The tab can be named separately from the header.
+//
+// They were one field, which holds until the header's name is too long to be a
+// tab: a browser gives a tab a couple of dozen characters and somebody has six
+// of them open, so "Zeiterfassung der Beispiel GmbH & Co. KG" reads as
+// "Zeiterfassung der B…" in every one of them.
+func TestTheBrowserTabCanBeNamedSeparately(t *testing.T) {
+	const (
+		header = "Zeiterfassung der Beispiel GmbH"
+		tab    = "Zeiterfassung"
+	)
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.run("name both",
+		chromedp.SetValue(`#form-branding input[name="title"]`, header, chromedp.ByQuery),
+		chromedp.SetValue(`#form-branding input[name="tabTitle"]`, tab, chromedp.ByQuery),
+		p.click(`#form-branding button[type="submit"]`))
+
+	p.waitForText("#toast", "saved")
+
+	// The two names, in the two places. The header keeps the long one - that is
+	// the one place there is room for it.
+	var title string
+
+	p.run("read the tab", chromedp.Evaluate(`document.title`, &title))
+
+	if title != tab {
+		t.Errorf("the tab is called %q, want %q", title, tab)
+	}
+
+	if got := strings.TrimSpace(p.text("#app-title")); got != header {
+		t.Errorf("the header says %q, want %q", got, header)
+	}
+
+	// And in the document the server writes, which is what the tab reads before
+	// any of this application has run. Getting it from the interface alone would
+	// leave the tab showing the header's name for as long as the first request
+	// takes - which is the flicker this was all built to remove.
+	var served string
+
+	p.run("read the served document", chromedp.Evaluate(`
+		(async () => {
+			const r = await fetch('/', { credentials: 'same-origin', cache: 'no-store' });
+			const body = await r.text();
+			const at = body.indexOf('<title>');
+
+			return body.slice(at, body.indexOf('</title>', at) + 8);
+		})()`, &served, awaitPromise))
+
+	if !strings.Contains(served, tab) {
+		t.Errorf("the served document's title is %q, without the tab's own name", served)
+	}
+
+	if strings.Contains(served, header) {
+		t.Errorf("the served document's title is %q, which is the header's name", served)
+	}
+}
+
+// Saving keeps somebody where they were on the page.
+//
+// A changed mark reloads - no engine takes a new tab icon from a link swapped in
+// afterwards - and the reload used to land at the top. The appearance settings
+// are a long way down a long screen, so every save meant scrolling back down to
+// see whether what was just saved looks right.
+func TestSavingTheLogoKeepsThePlaceOnThePage(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.storeBranding(t, wideLogo)
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	// A different part of the logo for the tab, which is a changed mark and
+	// therefore a save that reloads.
+	p.run("choose a part", p.click(`.logo-use-button[data-crop="icon"]`),
+		chromedp.WaitVisible("#crop-overlay", chromedp.ByID))
+	p.drag(`.crop-handle-se`, 0, -40)
+	p.run("use it", p.click("#crop-apply"))
+
+	// Somewhere down the page, and submitted without pressing the button: a click
+	// scrolls its target into view, which would move the very thing being
+	// measured.
+	var from float64
+
+	p.evalJSON(`JSON.stringify((() => {
+		window.scrollTo(0, 700);
+
+		return window.scrollY;
+	})())`, &from)
+
+	if from < 100 {
+		t.Skipf("the settings screen is only %.0fpx of scroll here, so there is "+
+			"nowhere to be put back to", from)
+	}
+
+	p.submitAndAwaitReload(t, chromedp.Evaluate(
+		`document.querySelector('#form-branding').requestSubmit()`, nil))
+
+	// Given a moment to be put back: the page grows as each panel answers, and
+	// the scroll lands once there is enough page to land on.
+	var landed float64
+
+	settled := time.Now().Add(20 * time.Second)
+
+	for {
+		p.evalJSON(`JSON.stringify(window.scrollY)`, &landed)
+
+		if math.Abs(landed-from) <= 40 || time.Now().After(settled) {
+			break
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	if math.Abs(landed-from) > 40 {
+		t.Errorf("the save left the page at %.0f, having been at %.0f - somebody "+
+			"has to scroll back down to what they just changed", landed, from)
+	}
+}
+
+// submitAndAwaitReload sends the appearance form and waits for the page to come
+// back.
+//
+// A changed mark reloads: no engine takes a new tab icon from a link swapped in
+// afterwards, and a differently cropped logo is a different icon. The reload
+// takes the saved notice away with it, so waiting for that notice is waiting for
+// something that is being removed - which is a wait that sometimes sees it and
+// sometimes does not, depending on how quickly the request came back.
+//
+// The reload itself is what is waited for, by a mark left on the document that
+// is about to be replaced.
+func (p *page) submitAndAwaitReload(t *testing.T, submit chromedp.Action) {
+	t.Helper()
+
+	p.run("mark this document", chromedp.Evaluate(`window.__beforeReload = true`, nil))
+	p.run("save", submit)
+
+	deadline := time.Now().Add(30 * time.Second)
+
+	for {
+		var gone bool
+
+		p.run("wait for the reload", chromedp.Evaluate(
+			`window.__beforeReload === undefined`, &gone))
+
+		if gone {
+			break
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("the save never reloaded the page; the notice says %q",
+				p.text("#toast"))
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	p.run("wait for the screen", chromedp.WaitVisible("#form-branding", chromedp.ByID))
 }

@@ -1130,6 +1130,7 @@ func TestTheFormLimitsAreTheOnesTheServerEnforces(t *testing.T) {
 
 	for field, limit := range map[string]int{
 		"title":       model.MaxTitleLength,
+		"tabTitle":    model.MaxTabTitleLength,
 		"banner":      model.MaxBannerLength,
 		"footerText":  model.MaxFooterTextLength,
 		"legalNotice": model.MaxLegalNoticeLength,

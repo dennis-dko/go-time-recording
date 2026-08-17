@@ -10,6 +10,7 @@ import (
 // piece of code; a key that exists only in the database would do nothing.
 const (
 	SettingAppTitle    = "branding.title"
+	SettingTabTitle    = "branding.tabTitle"
 	SettingBannerText  = "branding.banner"
 	SettingLogoDataURI = "branding.logo"
 
@@ -62,8 +63,21 @@ const (
 
 // Branding is the instance's own labelling, editable by the administrator.
 type Branding struct {
-	// Title names the browser tab and the header.
+	// Title names the header, and the browser tab where TabTitle is empty.
 	Title string
+
+	// TabTitle names the browser tab on its own, where an installation wants it
+	// to say something different.
+	//
+	// The two were one field, which is the right answer until the header's name
+	// is too long to be a tab: a tab is a couple of dozen characters wide before
+	// the browser cuts it off, and several of an installation's tabs are usually
+	// open at once. "Zeiterfassung der Beispiel GmbH & Co. KG" belongs across the
+	// top of the screen; the tab wants "Zeiterfassung".
+	//
+	// Empty means the title, so an installation that has never thought about this
+	// keeps what it had.
+	TabTitle string
 
 	// Banner is an announcement shown above the application. Empty hides it.
 	Banner string
@@ -109,9 +123,24 @@ type Branding struct {
 	Translations map[string]BrandingText
 }
 
+// TabName is what the browser tab is called.
+//
+// The one place that asks this question rather than reading either field, so
+// nothing has to remember which of the two wins. The tab title where there is
+// one, and the ordinary title otherwise - which is every installation that has
+// never opened this setting.
+func (b Branding) TabName() string {
+	if tab := strings.TrimSpace(b.TabTitle); tab != "" {
+		return tab
+	}
+
+	return b.Title
+}
+
 // BrandingText is what an installation says about itself, in one language.
 type BrandingText struct {
 	Title       string
+	TabTitle    string
 	Banner      string
 	FooterText  string
 	LegalNotice string
@@ -124,6 +153,7 @@ type BrandingText struct {
 func brandingTextKeys(language string) BrandingTextKeys {
 	return BrandingTextKeys{
 		Title:       SettingAppTitle + "." + language,
+		TabTitle:    SettingTabTitle + "." + language,
 		Banner:      SettingBannerText + "." + language,
 		FooterText:  SettingFooterText + "." + language,
 		LegalNotice: SettingFooterLegal + "." + language,
@@ -133,6 +163,7 @@ func brandingTextKeys(language string) BrandingTextKeys {
 // BrandingTextKeys names where one language's texts live.
 type BrandingTextKeys struct {
 	Title       string
+	TabTitle    string
 	Banner      string
 	FooterText  string
 	LegalNotice string

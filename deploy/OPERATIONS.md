@@ -294,7 +294,9 @@ removed; what changed is that there is now one place per value instead of two,
 and the file's copy was always the losing one.
 
 **`APP_NAME` is not the instance title.** The title under *Settings → Appearance*
-renames the browser tab and the header. `APP_NAME` is the issuer an authenticator
+renames the header, and the browser tab where nothing separate is written for it
+(*Browser tab* beside it, for an installation whose name is too long to be a tab).
+`APP_NAME` is the issuer an authenticator
 app shows beside an enrolled two-factor account — read once at start, administered
 by no screen — and it also seeds the initial title, so naming the instance in the
 environment saves naming it again. Changing it invalidates no enrolled codes, but

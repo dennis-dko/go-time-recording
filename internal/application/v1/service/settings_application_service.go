@@ -47,6 +47,7 @@ func (s *SettingsService) Branding(ctx context.Context) (model.Branding, error) 
 		branding.Title = v
 	}
 
+	branding.TabTitle = all[model.SettingTabTitle]
 	branding.Banner = all[model.SettingBannerText]
 	branding.LogoDataURI = all[model.SettingLogoDataURI]
 	branding.LogoHeader = all[model.SettingLogoHeader]
@@ -69,6 +70,7 @@ func (s *SettingsService) Branding(ctx context.Context) (model.Branding, error) 
 
 		text := model.BrandingText{
 			Title:       all[keys.Title],
+			TabTitle:    all[keys.TabTitle],
 			Banner:      all[keys.Banner],
 			FooterText:  all[keys.FooterText],
 			LegalNotice: all[keys.LegalNotice],
@@ -118,6 +120,7 @@ func (s *SettingsService) SaveBranding(ctx context.Context, branding model.Brand
 
 	values := map[string]string{
 		model.SettingAppTitle:    strings.TrimSpace(branding.Title),
+		model.SettingTabTitle:    strings.TrimSpace(branding.TabTitle),
 		model.SettingBannerText:  branding.Banner,
 		model.SettingLogoDataURI: branding.LogoDataURI,
 		model.SettingLogoHeader:  header,
@@ -141,6 +144,7 @@ func (s *SettingsService) SaveBranding(ctx context.Context, branding model.Brand
 		text := branding.Translations[language]
 
 		values[keys.Title] = strings.TrimSpace(text.Title)
+		values[keys.TabTitle] = strings.TrimSpace(text.TabTitle)
 		values[keys.Banner] = text.Banner
 		values[keys.FooterText] = text.FooterText
 		values[keys.LegalNotice] = text.LegalNotice
@@ -412,6 +416,10 @@ func overlongBranding(branding model.Branding) []string {
 		invalid = append(invalid, "title")
 	}
 
+	if model.TooLong(branding.TabTitle, model.MaxTabTitleLength) {
+		invalid = append(invalid, "tabTitle")
+	}
+
 	if model.TooLong(branding.Banner, model.MaxBannerLength) {
 		invalid = append(invalid, "banner")
 	}
@@ -430,6 +438,10 @@ func overlongBranding(branding model.Branding) []string {
 	for _, text := range branding.Translations {
 		if model.TooLong(text.Title, model.MaxTitleLength) {
 			invalid = append(invalid, "title")
+		}
+
+		if model.TooLong(text.TabTitle, model.MaxTabTitleLength) {
+			invalid = append(invalid, "tabTitle")
 		}
 
 		if model.TooLong(text.Banner, model.MaxBannerLength) {
