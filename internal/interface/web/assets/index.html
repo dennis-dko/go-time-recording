@@ -78,15 +78,35 @@
   </svg>
 
   <header class="topbar">
-    <img id="brand-logo" class="brand-logo" alt="" hidden>
-    <!-- The title is a button because it does something: it is the way back to
-         the greeting from wherever you are. A heading that navigates has to say
-         so to a keyboard and a screen reader too, which a plain h1 cannot. -->
-    <h1><button type="button" id="app-title" class="app-title" data-i18n-aria="welcome.goTo"
-                aria-label="Welcome page"><svg class="app-mark" viewBox="0 0 32 32" aria-hidden="true"
-                focusable="false"><rect x="3" y="3" width="26" height="26" rx="7.6" fill="currentColor"/><path
-                d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/><path d="M9.6 23.4h12.8L16 16Z"
-                fill="var(--accent-text)" opacity="0.55"/></svg><span id="app-title-text">Time Recording</span></button></h1>
+    <!-- Two rows, and the navigation has the second one to itself.
+
+         With nine points it cannot share a line: the row of them alone is wider
+         than a laptop, so beside an identity on the left and four controls on
+         the right it wrapped - and a wrapped row is not centred, it is a block
+         growing from the left. Its own line costs about forty pixels of a bar
+         that stays at the top of every screen, and buys a navigation that is in
+         the same place whoever is signed in, however long their name is, and
+         whether or not a logo sits beside the title. -->
+    <div class="topbar-row">
+      <img id="brand-logo" class="brand-logo" alt="" hidden>
+      <!-- The title is a button because it does something: it is the way back to
+           the greeting from wherever you are. A heading that navigates has to say
+           so to a keyboard and a screen reader too, which a plain h1 cannot. -->
+      <h1><button type="button" id="app-title" class="app-title" data-i18n-aria="welcome.goTo"
+                  aria-label="Welcome page"><svg class="app-mark" viewBox="0 0 32 32" aria-hidden="true"
+                  focusable="false"><rect x="3" y="3" width="26" height="26" rx="7.6" fill="currentColor"/><path
+                  d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/><path d="M9.6 23.4h12.8L16 16Z"
+                  fill="var(--accent-text)" opacity="0.55"/></svg><span id="app-title-text">Time Recording</span></button></h1>
+      <div class="who" id="who"></div>
+      <select id="theme-picker" class="lang" data-i18n-aria="app.theme" aria-label="Appearance">
+        <option value="auto" data-i18n="theme.auto">Automatic (by time of day)</option>
+        <option value="light" data-i18n="theme.light">Light</option>
+        <option value="dark" data-i18n="theme.dark">Dark</option>
+      </select>
+      <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Language"></select>
+      <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
+    </div>
+
     <nav id="tabs">
       <button class="tab" data-view="timesheets" data-perm="timesheets:read:own" data-i18n="nav.timesheets">Time entries<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-timesheets"/></svg></button>
       <button class="tab" data-view="calendar" data-perm="timesheets:read:own" data-i18n="nav.calendar">Calendar<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-calendar"/></svg></button>
@@ -98,14 +118,6 @@
       <button class="tab" data-view="settings" data-i18n="nav.settings">My account<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-account"/></svg></button>
       <button class="tab" data-view="admin" id="tab-admin" hidden data-perm="settings:manage" data-i18n="nav.admin">Settings<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-admin"/></svg></button>
     </nav>
-    <div class="who" id="who"></div>
-    <select id="theme-picker" class="lang" data-i18n-aria="app.theme" aria-label="Appearance">
-      <option value="auto" data-i18n="theme.auto">Automatic (by time of day)</option>
-      <option value="light" data-i18n="theme.light">Light</option>
-      <option value="dark" data-i18n="theme.dark">Dark</option>
-    </select>
-    <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Language"></select>
-    <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
   </header>
 
   <!-- A stack rather than one slot: two failures in a row used to show only the

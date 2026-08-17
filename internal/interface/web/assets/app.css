@@ -160,17 +160,38 @@ body {
   min-height: 100vh;
 }
 
+/* Two rows: who and what on the first, where to go on the second.
+
+   The navigation used to share the line, which held while an administrator saw
+   four points and stopped holding at nine: the row of them alone is wider than a
+   laptop, so beside an identity and four controls it wrapped - and a wrapped row
+   is not centred, it is a block growing from the left.
+
+   Its own line costs about forty pixels of a bar that stays at the top of every
+   screen. What it buys is a navigation in the same place whoever is signed in,
+   however long their name is, and whether or not a logo sits beside the title. */
 .topbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: center;
-  padding: 14px 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+
+  /* A line of the body text, plus the space that was already there. Enough that
+     the navigation reads as its own thing rather than as something stuck to the
+     underside of the row above. */
+  gap: 32px;
+
+  padding: 14px 20px;
   position: sticky;
   top: 0;
   z-index: 5;
+}
+
+.topbar-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .topbar h1 { font-size: 18px; margin: 0; }
@@ -224,6 +245,11 @@ body {
 .app-title:focus-visible .app-mark { opacity: 1; }
 
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* Centred in the bar, which is the whole point of giving it a line. Centred on
+   the bar rather than between its neighbours: it has no neighbours here, so a
+   long name on the right cannot pull it off centre. */
+#tabs { justify-content: center; }
 
 .tab {
   align-items: center;
@@ -1893,4 +1919,25 @@ a.tab:hover {
   color: var(--muted);
   font-size: 13px;
   margin: 2px 0 0;
+}
+
+/* Narrow enough that the top row is already wrapping, so the navigation gets no
+   help from a second line either.
+
+   One scrolling line rather than three stacked ones: nine points as a block
+   would push the whole screen down by a third on a telephone, and a swipe is
+   what a telephone is good at. Left-aligned there, because a centred row that
+   scrolls starts somewhere nobody can predict. */
+@media (max-width: 900px) {
+  .topbar { gap: 16px; }
+
+  #tabs {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .who { margin-left: 0; text-align: left; }
 }
