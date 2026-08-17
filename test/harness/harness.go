@@ -13,6 +13,7 @@ package harness
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -21,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -67,6 +69,11 @@ type App struct {
 	// dbDriver and dbDSN reach the same database the instance is using. See DB.
 	dbDriver string
 	dbDSN    string
+
+	// marker is the name this instance answers with, so a reply can be told from
+	// a neighbour's. Empty when the caller named the instance itself. See
+	// waitUntilReady.
+	marker string
 }
 
 // DB opens a second connection to the database this instance is using.
@@ -266,6 +273,19 @@ func startOnce(t *testing.T, withDatabase bool, env ...string) (*App, error) {
 	port := FreePort(t)
 	metricsPort := FreePort(t)
 
+	// A name nothing else is answering with, so readiness can tell this
+	// instance's reply from the reply of one that already had the port.
+	//
+	// Not set when the caller named the instance: a test that passes APP_NAME is
+	// testing something about that name, and overwriting it would break the thing
+	// it came to look at. Those fall back to reading the log, as everything did
+	// before.
+	marker := ""
+
+	if !namesTheApp(env) {
+		marker = fmt.Sprintf("harness-%d-%d", os.Getpid(), instances.Add(1))
+	}
+
 	cmd := exec.Command(*path)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
@@ -274,6 +294,10 @@ func startOnce(t *testing.T, withDatabase bool, env ...string) (*App, error) {
 		fmt.Sprintf("METRICS_PORT=%d", metricsPort),
 		"LOG_LEVEL=WARN",
 	)
+
+	if marker != "" {
+		cmd.Env = append(cmd.Env, "APP_NAME="+marker)
+	}
 
 	driver, driverDSN := "", ""
 
@@ -322,6 +346,7 @@ func startOnce(t *testing.T, withDatabase bool, env ...string) (*App, error) {
 		logs:        logs,
 		dbDriver:    driver,
 		dbDSN:       driverDSN,
+		marker:      marker,
 	}
 
 	t.Cleanup(a.stop)
@@ -436,18 +461,45 @@ func createTestDatabase(t *testing.T, dialect, adminDSN string) string {
 	return name
 }
 
+// handedOut is every port this process has already given to an instance.
+//
+// The operating system will hand the same number out again once the listener
+// below is closed, and it does: a suite that starts dozens of instances asks
+// dozens of times, and the numbers repeat. Two instances on one port is the
+// whole failure this file guards against, so the cheapest half of the guard is
+// simply not to suggest a port twice.
+var handedOut sync.Map
+
 // FreePort asks the operating system for a port nothing is using.
+//
+// Nothing else in this process, at least. The listener has to be closed before
+// the number can be handed to a child, and in that window anything on the
+// machine may take it - which is what start's retry and waitUntilReady's
+// identity check are for.
 func FreePort(t *testing.T) int {
 	t.Helper()
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("cannot find a free port: %v", err)
+	const attempts = 20
+
+	for range attempts {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("cannot find a free port: %v", err)
+		}
+
+		port := listener.Addr().(*net.TCPAddr).Port
+
+		_ = listener.Close()
+
+		if _, seen := handedOut.LoadOrStore(port, struct{}{}); !seen {
+			return port
+		}
 	}
 
-	defer func() { _ = listener.Close() }()
+	t.Fatalf("could not find a port this run has not already used, after %d tries",
+		attempts)
 
-	return listener.Addr().(*net.TCPAddr).Port
+	return 0
 }
 
 func copyConfigs(t *testing.T, from, to string) {
@@ -518,9 +570,23 @@ func (a *App) waitUntilReady() error {
 				// database, and the failure lands three steps later as an account
 				// that already exists.
 				//
-				// Our own process binds within moments of starting, so by the time
-				// anything answers, it has either bound or said it could not. This
-				// is the second look, after the answer rather than before it.
+				// Reading the log was the first attempt at this and it is a race of
+				// its own: it only works if our process has already written that it
+				// could not bind by the time the neighbour answers. The neighbour is
+				// already running, so it usually answers first. What that cost was a
+				// suite where one test in twenty failed three steps later, saying an
+				// account already existed.
+				//
+				// So the answer is identified instead of merely counted. Every
+				// instance is started under a name nothing else is using, and it
+				// says that name when asked what it is called. A reply carrying
+				// somebody else's name is somebody else's instance.
+				if a.answeredBySomebodyElse(client) {
+					return errPortTaken
+				}
+
+				// Still worth the second look for the instances that carry no name
+				// of their own, and for anything the check above cannot see.
 				if failed := a.startupFailure(); failed != nil {
 					return failed
 				}
@@ -536,6 +602,67 @@ func (a *App) waitUntilReady() error {
 		StartupTimeout, a.logs.String())
 }
 
+// answeredBySomebodyElse reports whether what answered is a different instance
+// from the one this App started.
+//
+// By asking it what it is called. Every instance is started under a name nothing
+// else is using, and the branding endpoint says that name - which is public, so
+// this is one request at a moment where no session exists yet.
+//
+// Only a name that is present and different counts. An instance that cannot be
+// asked is not an instance that failed the question: the installer runs before
+// there is a database, and the endpoint that would answer is not among the
+// routes it registers. Reading it as "not ours" would have turned every
+// installer test into a port that could never be bound. Those fall back to
+// reading the log, which is what everything did before.
+func (a *App) answeredBySomebodyElse(client *http.Client) bool {
+	if a.marker == "" {
+		return false
+	}
+
+	resp, err := client.Get(a.baseURL + "/api/v1/branding")
+	if err != nil {
+		return false
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	var body struct {
+		Data struct {
+			Title string `json:"title"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return false
+	}
+
+	if body.Data.Title == "" {
+		return false
+	}
+
+	return body.Data.Title != a.marker
+}
+
+// instances counts the instances this process has started, so each can be given
+// a name of its own.
+var instances atomic.Uint64
+
+// namesTheApp reports whether the caller set APP_NAME itself.
+func namesTheApp(env []string) bool {
+	for _, variable := range env {
+		if strings.HasPrefix(variable, "APP_NAME=") {
+			return true
+		}
+	}
+
+	return false
+}
+
 // errPortTaken is the one start-up failure worth simply trying again.
 var errPortTaken = errors.New("the port was taken between choosing it and binding it")
 
@@ -545,8 +672,17 @@ var errPortTaken = errors.New("the port was taken between choosing it and bindin
 // is being recognised is a sentence the application writes, and the sentence is
 // the part that can change underneath this.
 func (a *App) startupFailure() error {
-	if strings.Contains(a.logs.String(), "address already in use") {
-		return errPortTaken
+	// Two wordings for one thing: the first is what a Unix returns and the second
+	// is Windows', which this suite also runs on. Recognising only the first made
+	// the guard silently do nothing on the platform where a developer is most
+	// likely to be running it by hand.
+	for _, said := range []string{
+		"address already in use",
+		"normally permitted",
+	} {
+		if strings.Contains(a.logs.String(), said) {
+			return errPortTaken
+		}
 	}
 
 	return nil
