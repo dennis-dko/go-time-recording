@@ -580,9 +580,18 @@
         </div>
         <fieldset class="perms">
           <legend data-i18n="role.permissions">Permissions</legend>
-          <p class="muted" id="role-fixed-note" data-i18n="role.rightsFixed" hidden>The rights of a system role cannot be changed. Somebody who should work here and also administer is given the "User &amp; administrator" role.</p>
+          <p class="muted" id="role-fixed-note" data-i18n="role.shippedFixed" hidden>This role ships with the application and is shown rather than edited: not its name, not its description, and not its rights. Somebody who should work here and also administer is given the "User &amp; administrator" role.</p>
           <div id="permission-list" class="perm-grid"></div>
         </fieldset>
+
+        <!-- What each right actually allows. Open rather than folded away: it is
+             read while ticking the boxes above, and a legend somebody has to
+             open first is one they tick without. -->
+        <details class="perm-legend" id="permission-legend" open>
+          <summary data-i18n="perm.legend">What each right allows</summary>
+          <dl id="permission-legend-list"></dl>
+        </details>
+
         <div class="row">
           <button type="submit" data-i18n="action.save">Save</button>
           <button type="button" class="secondary" id="role-reset" data-i18n="action.new">New</button>

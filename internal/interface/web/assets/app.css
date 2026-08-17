@@ -1839,3 +1839,58 @@ a.tab:hover {
   /* The timestamp is the first thing worth losing when there is no room. */
   .log-time { display: none; }
 }
+
+/* The rights, as words with the identifier beside them.
+
+   The boxes used to say "timesheets:write:own", which asks somebody deciding
+   what a colleague may do to read a namespace. The words carry it now and the
+   identifier stays in small type: it is what the API takes and what a directory
+   configuration stores, so this screen is where it has to remain readable. */
+.perm-group {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  grid-column: 1 / -1;
+  letter-spacing: 0.06em;
+  margin: 10px 0 0;
+  text-transform: uppercase;
+}
+
+.perm-group:first-child { margin-top: 0; }
+
+.perm-name { margin-right: 6px; }
+
+.perm-id {
+  background: var(--bg);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 1px 5px;
+}
+
+/* Open by default, and kept open: it is read while the boxes above are being
+   ticked, and a legend somebody has to open first is one they tick without. */
+.perm-legend { margin-top: 14px; }
+
+.perm-legend summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.perm-legend dl { margin: 10px 0 0; }
+
+.perm-legend dt {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  font-weight: 600;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.perm-legend dd {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 2px 0 0;
+}

@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
@@ -317,4 +318,85 @@ func TestBrandingNamesTheVersionAndThePlatform(t *testing.T) {
 	if instance.Version == "" {
 		t.Error("the instance reports no version at all")
 	}
+}
+
+// The description of a shipped role is refused like its name and its rights.
+//
+// It was the one part still open, on the reasoning that a description is only
+// words - but these three are the words the interface translates, keyed on the
+// name. An installation that edited one got a description in one language that
+// the interface then overrode in another, which reads as the change not having
+// been saved.
+func TestAShippedRolesDescriptionCannotBeChanged(t *testing.T) {
+	a := start(t)
+	c := a.signInAsAdmin("a-much-better-password")
+
+	var roles struct {
+		Items []struct {
+			ID          uint   `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"items"`
+	}
+
+	c.must(c.api(http.MethodGet, "/roles", nil), http.StatusOK).Data(t, &roles)
+
+	var shipped struct {
+		ID          uint
+		Name        string
+		Description string
+	}
+
+	for _, role := range roles.Items {
+		if role.Name == "user" {
+			shipped.ID, shipped.Name, shipped.Description = role.ID, role.Name, role.Description
+		}
+	}
+
+	if shipped.ID == 0 {
+		t.Fatal("the shipped user role is missing, so there is nothing to protect")
+	}
+
+	res := c.api(http.MethodPut, fmt.Sprintf("/roles/%d", shipped.ID), map[string]any{
+		"description": "Something an installation typed instead",
+	})
+
+	if res.Status != http.StatusConflict {
+		t.Fatalf("changing a shipped role's description answered %d, want %d",
+			res.Status, http.StatusConflict)
+	}
+
+	// And it really is unchanged, rather than refused after the fact.
+	var after struct {
+		Items []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"items"`
+	}
+
+	c.must(c.api(http.MethodGet, "/roles", nil), http.StatusOK).Data(t, &after)
+
+	for _, role := range after.Items {
+		if role.Name == shipped.Name && role.Description != shipped.Description {
+			t.Errorf("the description is now %q, was %q", role.Description, shipped.Description)
+		}
+	}
+
+	// The same request against a role of the installation's own is allowed: this
+	// is a rule about the three that ship, not about descriptions.
+	made := c.must(c.api(http.MethodPost, "/roles", map[string]any{
+		"name":        "reviewer",
+		"description": "Reads what others booked",
+		"permissions": []string{"timesheets:read:own"},
+	}), http.StatusCreated)
+
+	var own struct {
+		ID uint `json:"id"`
+	}
+
+	made.Data(t, &own)
+
+	c.must(c.api(http.MethodPut, fmt.Sprintf("/roles/%d", own.ID), map[string]any{
+		"description": "Reads what they booked themselves",
+	}), http.StatusOK)
 }

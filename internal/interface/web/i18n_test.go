@@ -291,6 +291,23 @@ func TestNoTranslationIsUnused(t *testing.T) {
 				}
 			}
 
+			// What a right is called and what it allows, looked up as
+			// t(`perm.${right}`) and t(`perm.desc.${right}`) from whatever the server
+			// listed, and the areas as t(`perm.group.${area}`) from the first part of
+			// each identifier. TestEveryPermissionIsNamedAndExplained checks all three
+			// against the model, in both directions.
+			if rest, isPerm := strings.CutPrefix(key, "perm."); isPerm {
+				right := strings.TrimPrefix(strings.TrimPrefix(rest, "desc."), "group.")
+
+				if _, known := permissionRights(t)[right]; known {
+					continue
+				}
+
+				if _, known := permissionAreas(t)[right]; known {
+					continue
+				}
+			}
+
 			// What a role is called and what it is for, looked up as
 			// t(`role.name.${name}`) and t(`role.desc.${name}`) from whatever the server
 			// sent. TestEverySeededRoleSaysWhatItIsFor checks both against the roles the
@@ -1296,4 +1313,114 @@ func TestTheInstallerTranslatesItsOwnRefusals(t *testing.T) {
 				field)
 		}
 	}
+}
+
+// Every right this application enforces is named in words and explained.
+//
+// The ticking boxes used to say "timesheets:write:own", which asks somebody
+// deciding what a colleague may do to read a namespace. Words instead - and a
+// right added later without them falls back to the identifier, which is the old
+// screen again for that one line.
+//
+// Both directions: a name for a right that no longer exists is a translation
+// nobody will ever see, and the way a dictionary rots.
+func TestEveryPermissionIsNamedAndExplained(t *testing.T) {
+	rights := permissionRights(t)
+	if len(rights) == 0 {
+		t.Fatal("no permissions found; this test is no longer reading the model")
+	}
+
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("app.js has no German dictionary")
+	}
+
+	var unnamed, unexplained []string
+
+	for right := range rights {
+		if _, found := dict["perm."+right]; !found {
+			unnamed = append(unnamed, right)
+		}
+
+		if _, found := dict["perm.desc."+right]; !found {
+			unexplained = append(unexplained, right)
+		}
+	}
+
+	sort.Strings(unnamed)
+	sort.Strings(unexplained)
+
+	if len(unnamed) > 0 {
+		t.Errorf("%d right(s) have no German name, so the box shows the identifier: %v",
+			len(unnamed), unnamed)
+	}
+
+	if len(unexplained) > 0 {
+		t.Errorf("%d right(s) are missing from the legend: %v",
+			len(unexplained), unexplained)
+	}
+
+	// And the areas they are grouped under.
+	for area := range permissionAreas(t) {
+		if _, found := dict["perm.group."+area]; !found {
+			t.Errorf("the %q group has no German heading", area)
+		}
+	}
+
+	// The other direction.
+	for key := range dict {
+		rest, isPerm := strings.CutPrefix(key, "perm.")
+		if !isPerm || rest == "legend" {
+			continue
+		}
+
+		if area, isGroup := strings.CutPrefix(rest, "group."); isGroup {
+			if _, known := permissionAreas(t)[area]; !known {
+				t.Errorf("%q names an area no right belongs to", key)
+			}
+
+			continue
+		}
+
+		right := strings.TrimPrefix(rest, "desc.")
+
+		if _, known := rights[right]; !known {
+			t.Errorf("%q describes a right this application does not enforce", key)
+		}
+	}
+}
+
+// permissionRights is every right the model declares.
+func permissionRights(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	source, err := os.ReadFile(filepath.Join("..", "..", "..",
+		"internal", "domain", "model", "permission_model.go"))
+	if err != nil {
+		t.Fatalf("reading the permission model: %v", err)
+	}
+
+	rights := map[string]struct{}{}
+	pattern := regexp.MustCompile(`Perm\w+\s*=\s*"([a-z:]+)"`)
+
+	for _, match := range pattern.FindAllSubmatch(source, -1) {
+		rights[string(match[1])] = struct{}{}
+	}
+
+	return rights
+}
+
+// permissionAreas is the first part of every right, which is what the boxes are
+// grouped under.
+func permissionAreas(t *testing.T) map[string]struct{} {
+	t.Helper()
+
+	areas := map[string]struct{}{}
+
+	for right := range permissionRights(t) {
+		area, _, _ := strings.Cut(right, ":")
+		areas[area] = struct{}{}
+	}
+
+	return areas
 }
