@@ -1412,9 +1412,6 @@ function rememberBrandingDraft() {
   }
 }
 
-/** The mark an instance carries when nobody has configured one. */
-const SHIPPED_MARK = '/favicon.svg';
-
 /** What the icon currently shown was made from. */
 let lastFaviconLogo = null;
 
@@ -4039,15 +4036,20 @@ function drawBranding(branding) {
   }
 
   document.title = tabTitle;
-  $('#app-title').textContent = title;
+  // Into the span rather than the button: the button also holds the mark, and
+  // writing text onto the button would take the mark out with it.
+  $('#app-title-text').textContent = title;
 
-  // The shipped mark where nothing has been configured, in both places.
+  // These two places show the installation's own logo and nothing else.
   //
-  // They used to be empty until somebody uploaded something, which left a header
-  // that was words alone and a sign-in screen with a gap where a mark goes - on
-  // an installation that has simply not got round to it, which is most of them on
-  // the first day. The tab has had a default all along; these two now have the
-  // same one.
+  // For a while they fell back to the shipped mark, on the reasoning that a
+  // header of words alone looks unfinished. It is the wrong place for it: these
+  // are the slots a company's own mark goes in, and filling them with ours makes
+  // an unbranded installation look like it is branded by somebody else. The
+  // application's own mark has its own place - the browser tab, and the button
+  // beside the title - which is where it says which program this is without
+  // claiming the space meant for whoever runs it.
+  //
   // Each place gets the logo at the size it draws, made when the logo was saved.
   // The header used to be handed the original - a wordmark of a few hundred
   // kilobytes - and scaled it down with CSS, which is a large download to draw a
@@ -4064,13 +4066,13 @@ function drawBranding(branding) {
     const img = $(holder);
     if (!img) continue;
 
-    img.src = sized[holder] || SHIPPED_MARK;
-    img.hidden = false;
-    img.alt = branding.title || '';
+    const mark = sized[holder];
 
-    // The shipped mark is a square drawn for a tab, so it is given the room a
-    // square needs rather than the width a wordmark banner is allowed.
-    img.classList.toggle('shipped-mark', !sized[holder]);
+    // Emptied as well as hidden: a hidden element holding a few hundred
+    // kilobytes of data URI is still holding them.
+    img.src = mark || '';
+    img.hidden = !mark;
+    img.alt = mark ? (branding.title || '') : '';
   }
 
   // The announcement banner is separate from the "change your password" one.
