@@ -609,16 +609,24 @@ than the production ones.
 
 Two things about this arrangement that are easier to know than to discover:
 
-- **The plain `HTTP_PORT` listener stays open, on every interface.** The TLS
-  server proxies to it and nothing closes it. Under `deploy/compose.tls.yaml`
-  that is hidden because the overlay publishes only 80 and 443; on a host, close
-  it yourself.
-- **A listener that cannot bind does not stop the process.** Both are started in
-  their own goroutines and only log, so start-up reports success either way — an
-  unprivileged process that may not bind 443 comes up and serves plain HTTP with
-  one error line in the log. After switching TLS on, look for
-  `serving HTTPS on :443` and connect to the name; "the service is running" is
-  not evidence.
+- **The plain `HTTP_PORT` listener stays bound, on every interface, but stops
+  answering the network.** GoFr binds every interface and offers no way to say
+  otherwise, so the socket is there; while HTTPS is being served from this
+  process, that port answers only the loopback address the TLS front end dials
+  from and sends everything else to the encrypted address with a 308. This used
+  to say "close it yourself", which was a real instruction and a fragile one: a
+  second step, on a different machine, after being told the installation is
+  finished. Firewalling it is still tidier — nothing about this asks you not to.
+- **A refused HTTPS bind stops HTTPS, and says so.** It used to be started in a
+  goroutine that only logged, so an unprivileged process that may not bind 443
+  came up serving plain HTTP with one error line nobody was reading. The bind now
+  happens before start-up returns, and a failure is reported as
+  `could not start HTTPS: cannot bind :443 …; continuing without HTTPS`.
+- **It still does not stop the process.** That is deliberate — an installation
+  that cannot get its certificate is more useful reachable than not — so the
+  plain port keeps serving the network in exactly the case where HTTPS is not
+  there to redirect to. After switching TLS on, look for `serving HTTPS on :443`
+  and connect to the name; "the service is running" is not evidence.
 
 GoFr owns its own listener and accepts only a static certificate pair, so TLS
 is terminated in front of it and proxied to localhost.

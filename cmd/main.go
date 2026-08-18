@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -615,6 +616,18 @@ func main() {
 		hub.Close()
 	}()
 
+	// Outermost, because everything after it is written for traffic that arrived
+	// through the front door. While HTTPS is served from this process, GoFr's
+	// plain port answers only the loopback address that front end dials from,
+	// and sends the network to the encrypted address instead.
+	//
+	// The flag is set below, once the HTTPS listener is bound rather than once it
+	// has been asked for: an installation whose port 443 was refused still serves
+	// on the plain one, and redirecting it to a port with nothing behind it would
+	// turn a warning in the log into an outage.
+	var httpsFrontEnd atomic.Bool
+
+	app.UseMiddleware(tlsserver.KeepThePlainPortLocal(httpsFrontEnd.Load, cfg.TLSPort))
 	app.UseMiddleware(rest.SecurityHeaders(cfg.HSTSMaxAge))
 	app.UseMiddleware(rest.NewRateLimiter(cfg.RateLimit, cfg.RateLimitWindow).
 		WithLimits(limits.RateLimit).Middleware())
@@ -749,6 +762,8 @@ func main() {
 	// submit it to.
 
 	if stop := startTLS(app, cfg); stop != nil {
+		httpsFrontEnd.Store(true)
+
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), tlsShutdownGrace)
 			defer cancel()

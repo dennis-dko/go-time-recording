@@ -170,19 +170,49 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// Bound here rather than inside the goroutine, and this is the difference
+	// between an installation that says it serves HTTPS and one that does.
+	//
+	// ListenAndServeTLS binds and serves in one call, so starting it in a
+	// goroutine meant a refused bind - port 443 without the privilege to take
+	// it, or something already holding it - became a line in the log that
+	// nothing was reading. Start returned a shutdown function either way, the
+	// caller took that as success, and the installation came up serving plain
+	// HTTP under a setting that says otherwise.
+	//
+	// It is also what makes the answer trustworthy for everything downstream:
+	// once Start returns without an error, the encrypted listener is bound, and
+	// the plain port can be closed to the network on the strength of it.
+	httpsListener, err := net.Listen("tcp", httpsServer.Addr)
+	if err != nil {
+		return nil, fmt.Errorf("cannot bind %s for HTTPS: %w", httpsServer.Addr, err)
+	}
+
+	// The redirect is not held to the same standard, deliberately. It is a
+	// courtesy to whoever typed http://, and with a certificate obtained over
+	// TLS-ALPN-01 nothing depends on it - so a port 80 that cannot be bound
+	// costs that courtesy rather than the encrypted listener that did bind.
+	httpListener, err := net.Listen("tcp", httpServer.Addr)
+	if err != nil {
+		logger.Errorf("cannot bind %s to redirect plain requests: %v; "+
+			"HTTPS is unaffected", httpServer.Addr, err)
+	}
+
 	go func() {
 		logger.Infof("serving HTTPS on :%d for %s", cfg.HTTPSPort, strings.Join(cfg.Domains, ", "))
 
-		if err := httpsServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		if err := httpsServer.ServeTLS(httpsListener, "", ""); err != nil && err != http.ErrServerClosed {
 			logger.Errorf("HTTPS server stopped: %v", err)
 		}
 	}()
 
-	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Errorf("HTTP redirect server stopped: %v", err)
-		}
-	}()
+	if httpListener != nil {
+		go func() {
+			if err := httpServer.Serve(httpListener); err != nil && err != http.ErrServerClosed {
+				logger.Errorf("HTTP redirect server stopped: %v", err)
+			}
+		}()
+	}
 
 	return func(ctx context.Context) error {
 		httpErr := httpServer.Shutdown(ctx)
@@ -213,4 +243,57 @@ func redirectToHTTPS(httpsPort int) http.Handler {
 		// turned into a GET.
 		http.Redirect(w, r, target, http.StatusPermanentRedirect)
 	})
+}
+
+// KeepThePlainPortLocal stops GoFr's plain listener from serving the network
+// while the HTTPS front end in this process is up.
+//
+// GoFr binds its port on every interface and offers no way to say otherwise, so
+// terminating TLS in front of it left the unencrypted port open beside the
+// encrypted one. Documented, in two places, as something for the operator to
+// firewall - which is a real answer and a fragile one: it is a second step,
+// taken on a different machine, by somebody who has just been told the
+// installation is finished.
+//
+// What that open port gave away was not only the traffic. Anything arriving on
+// it could also claim to be a proxy: the rate limiter keys on X-Forwarded-For,
+// so a caller inventing a fresh one per attempt had no limit on sign-in
+// guesses at all, and X-Forwarded-Proto decided whether cookies were marked
+// Secure.
+//
+// So while the front end is serving, this port answers the machine it runs on -
+// which is the front end, dialling loopback - and sends everybody else to the
+// encrypted address. The condition is the point: when the HTTPS listener did
+// not come up, this steps aside entirely rather than redirecting an
+// installation to a port with nothing behind it.
+func KeepThePlainPortLocal(frontEndIsServing func() bool, httpsPort int) func(http.Handler) http.Handler {
+	toHTTPS := redirectToHTTPS(httpsPort)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.TLS != nil || !frontEndIsServing() || fromThisMachine(r) {
+				next.ServeHTTP(w, r)
+
+				return
+			}
+
+			toHTTPS.ServeHTTP(w, r)
+		})
+	}
+}
+
+// fromThisMachine reports whether the connection was opened over the loopback
+// interface.
+//
+// The address the connection came from, not any header on it. Everything a
+// caller can write is exactly what this is deciding whether to believe.
+func fromThisMachine(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+
+	address := net.ParseIP(strings.Trim(host, "[]"))
+
+	return address != nil && address.IsLoopback()
 }

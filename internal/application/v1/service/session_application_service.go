@@ -224,17 +224,29 @@ func (s *SessionService) resolveUser(ctx context.Context, email, password string
 		}
 	}
 
-	if localErr != nil {
-		return nil, invalid
+	// What there is to check against, which is nothing at all in three of the
+	// four cases: no such address, an account the directory owns and this holds
+	// no usable password for, or an account with no password set.
+	//
+	// Nothing is still checked. VerifyPassword spends the same time on an empty
+	// hash as on a real one, and that time is the entire cost of a sign-in -
+	// bcrypt is tens of milliseconds and everything around it is one. Returning
+	// before it, as this did, refused an address nobody holds in a millisecond
+	// and a real one in sixty. Same status, same sentence, and a gap wide enough
+	// to read a staff list out of with one request per guess.
+	//
+	// A directory-backed account was the same tell in a quieter form: it says
+	// which of the addresses that do exist are managed elsewhere.
+	stored := ""
+	if localErr == nil && !local.IsExternal {
+		stored = local.PasswordHash
 	}
 
-	// An account backed by the directory has no usable local password, so it
-	// must not fall through to a local check.
-	if local.IsExternal {
-		return nil, invalid
-	}
+	matches := security.VerifyPassword(stored, password)
 
-	if local.PasswordHash == "" || !security.VerifyPassword(local.PasswordHash, password) {
+	// Judged after, in the order that keeps the dereference safe: IsExternal is
+	// only read when there is a local account to read it from.
+	if localErr != nil || local.IsExternal || !matches {
 		return nil, invalid
 	}
 
