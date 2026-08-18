@@ -4825,6 +4825,18 @@ async function runConnectionTest(result, attempt) {
   } catch (err) {
     showRefusal(result, err.refusal ?? { message: err.message });
     result.className = 'muted minus';
+
+    // Never nothing.
+    //
+    // A refusal with no words in it - a request that was aborted, a failure with
+    // an empty message - rendered as an empty box, which is the one outcome that
+    // says less than not having pressed the button. Whoever is looking at it is
+    // waiting for an answer, and "no answer" is not one of the answers.
+    if (result.textContent.trim() === '') {
+      result.textContent = t('err.internal',
+        'Something went wrong on this installation.');
+    }
+
     toast(err.message, 'error', refusalDetail(err.refusal));
   }
 }

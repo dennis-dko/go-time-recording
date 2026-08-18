@@ -3088,6 +3088,10 @@ func TestTheRightsAreShownInWordsWithALegend(t *testing.T) {
 	p.run("open the roles", p.click(`.tab[data-view="roles"]`),
 		chromedp.WaitVisible("#permission-list", chromedp.ByID))
 
+	// The list is a container in the markup and its rows arrive with the answer
+	// to /permissions, so waiting for the container is waiting for nothing.
+	p.waitForNode("#permission-list label")
+
 	var boxes struct {
 		Count    int    `json:"count"`
 		Named    int    `json:"named"`
