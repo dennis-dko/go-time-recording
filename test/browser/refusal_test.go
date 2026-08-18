@@ -78,6 +78,22 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 	// Given longer than the usual wait: the attempt is a connection to a port
 	// nobody answers on, and how long that takes to fail is the network stack's
 	// business rather than this application's.
+	// Watched from the page as well as waited on, because "the box is empty" has
+	// two very different causes and the wait cannot tell them apart: the attempt
+	// never started, or something rewrote the box after it did. This records
+	// every state the box passes through, so the next failure says which.
+	p.run("watch the box", chromedp.Evaluate(`
+		(() => {
+			window.__states = [];
+
+			const box = document.querySelector('#datasource-test-result');
+
+			new MutationObserver(() => window.__states.push(box.textContent.slice(0, 40)))
+				.observe(box, { childList: true, subtree: true, characterData: true });
+
+			return 1;
+		})()`, nil))
+
 	p.waitForTextWithin("#datasource-test-result", "konnte nicht", 40*time.Second)
 
 	// And whatever the outcome, the box says something. A refusal with no words

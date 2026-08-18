@@ -3282,28 +3282,10 @@ func TestTheNavigationSitsCentredOnItsOwnLine(t *testing.T) {
 		t.Errorf("a long name moved the points to %.0f", stretchedMiddle)
 	}
 
-	// And narrow: one scrolling line rather than a block of nine.
+	// And narrow, where the points are not on this line at all: they fold away
+	// behind one control, which TestTheNavigationFoldsAwayOnASmallScreen is about.
+	// What is left to check here is the row they used to share.
 	p.run("a telephone", chromedp.EmulateViewport(390, 760))
-
-	narrow := read()
-
-	if narrow.Rows != 1 {
-		t.Errorf("on a 390px screen the points are in %d lines, which pushes the "+
-			"whole screen down", narrow.Rows)
-	}
-
-	var scrolls bool
-
-	p.evalJSON(`JSON.stringify((() => {
-		const tabs = document.querySelector('#tabs');
-
-		return tabs.scrollWidth > tabs.clientWidth + 1;
-	})())`, &scrolls)
-
-	if !scrolls {
-		t.Error("the points fit a 390px screen without scrolling, so this test is " +
-			"no longer measuring what it thinks")
-	}
 
 	// Nothing on the narrow screen lies on top of anything else.
 	var overlaps string
@@ -3895,5 +3877,144 @@ func TestTheGreetingShowsTheLastEntries(t *testing.T) {
 
 	if !p.visible("#table-timesheets") {
 		t.Error("the way to all entries does not lead to them")
+	}
+}
+
+// Nothing on any screen is wider than the screen.
+//
+// A page that can be dragged sideways on a telephone is the plainest failure of
+// a responsive layout, and this one could be. The nine navigation points were a
+// row that did not wrap, scrolling inside itself - except the bar was as wide as
+// the row and the window scrolled in its place. Measured at 50px too wide on a
+// 390px screen and 80px on a 360px one, on every screen in the application.
+//
+// What fixed it is that the row is not there below the breakpoint any more; see
+// the case below.
+func TestNothingIsWiderThanTheScreen(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.becomeWorker()
+
+	for _, width := range []int64{1440, 1024, 820, 600, 480, 390, 360, 320} {
+		p.run("resize", chromedp.EmulateViewport(width, 900))
+
+		for _, view := range []string{"welcome", "timesheets", "calendar", "settings"} {
+			p.run("open "+view, chromedp.Evaluate(
+				fmt.Sprintf("switchView(%q)", view), nil))
+
+			var over float64
+
+			p.evalJSON(`JSON.stringify(
+				document.documentElement.scrollWidth - document.documentElement.clientWidth)`,
+				&over)
+
+			if over > 1 {
+				t.Errorf("at %dpx the %s screen is %.0fpx wider than the window",
+					width, view, over)
+			}
+		}
+	}
+}
+
+// The navigation folds into one control on a screen too narrow to hold it.
+//
+// Nine points do not fit beside anything on a telephone. As a row that scrolled
+// sideways they showed three and hid six, with nothing on screen to say the
+// others were there.
+func TestTheNavigationFoldsAwayOnASmallScreen(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// Wide: the points are on screen and there is nothing to open.
+	p.run("a wide window", chromedp.EmulateViewport(1440, 900))
+
+	if p.visible("#nav-toggle") {
+		t.Error("a wide screen offers a way to open a navigation that is already open")
+	}
+
+	if !p.visible(`.tab[data-view="settings"]`) {
+		t.Error("the points are not on screen at 1440px")
+	}
+
+	// Narrow: folded away, behind one control.
+	p.run("a telephone", chromedp.EmulateViewport(390, 760))
+
+	if !p.visible("#nav-toggle") {
+		t.Fatal("a telephone has no way to reach the navigation")
+	}
+
+	if p.visible(`.tab[data-view="settings"]`) {
+		t.Error("the points are still on screen on a telephone, where they do not fit")
+	}
+
+	// Opening shows all of them, as a list rather than a row that hides six.
+	p.run("open the menu", p.click("#nav-toggle"))
+
+	var shown struct {
+		Count   int    `json:"count"`
+		Rows    int    `json:"rows"`
+		Says    string `json:"says"`
+		Overrun bool   `json:"overrun"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const tabs = [...document.querySelectorAll('#tabs .tab')].filter((t) => !t.hidden);
+		const tops = new Set(tabs.map((t) => Math.round(t.getBoundingClientRect().top)));
+		const doc = document.documentElement;
+
+		return {
+			count: tabs.length,
+			rows: tops.size,
+			says: document.querySelector('#nav-toggle').getAttribute('aria-expanded'),
+			overrun: doc.scrollWidth > doc.clientWidth + 1,
+		};
+	})())`, &shown)
+
+	// However many this account may see - an administrator has four, somebody who
+	// books time has more. The claim is about how they are laid out, not how many
+	// there are.
+	if shown.Count < 3 {
+		t.Fatalf("the menu holds %d points", shown.Count)
+	}
+
+	// One per line: a row that scrolls is what this replaced.
+	if shown.Rows != shown.Count {
+		t.Errorf("%d points share %d lines, so some of them are side by side",
+			shown.Count, shown.Rows)
+	}
+
+	if shown.Says != "true" {
+		t.Errorf("the control says aria-expanded=%q while the menu is open", shown.Says)
+	}
+
+	if shown.Overrun {
+		t.Error("opening the menu made the page wider than the window")
+	}
+
+	// And it closes on the three things that mean "done": choosing a point,
+	// Escape, and a press elsewhere.
+	p.run("choose one", p.click(`.tab[data-view="settings"]`))
+
+	if p.attr("#nav-toggle", "aria-expanded") != "false" {
+		t.Error("choosing a point left the menu open over the screen it opened")
+	}
+
+	p.run("open again", p.click("#nav-toggle"))
+	p.run("press escape", chromedp.KeyEvent("\u001b"))
+
+	if p.attr("#nav-toggle", "aria-expanded") != "false" {
+		t.Error("Escape did not close the menu")
+	}
+
+	p.run("open once more", p.click("#nav-toggle"))
+	p.run("press elsewhere", chromedp.Evaluate(
+		`document.querySelector('main').click()`, nil))
+
+	if p.attr("#nav-toggle", "aria-expanded") != "false" {
+		t.Error("a press outside the menu did not close it")
 	}
 }

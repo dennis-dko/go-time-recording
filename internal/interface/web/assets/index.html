@@ -100,6 +100,14 @@
          and the name simply sits in the middle of the bar on its own. -->
     <div class="topbar-row">
       <span class="topbar-side">
+        <!-- The way to the navigation on a screen too narrow to hold it.
+             Hidden above the breakpoint, where the points are simply there. -->
+        <button type="button" id="nav-toggle" class="nav-toggle" aria-expanded="false"
+                aria-controls="tabs" data-i18n-aria="nav.menu" aria-label="Menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M4 7h16M4 12h16M4 17h16"/>
+          </svg>
+        </button>
         <img id="brand-logo" class="brand-logo" alt="" hidden>
       </span>
 

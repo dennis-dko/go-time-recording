@@ -2863,6 +2863,7 @@ const TRANSLATIONS = {
     'nav.admin': 'Einstellungen',
     'nav.calendar': 'Kalender',
     'nav.logout': 'Abmelden',
+    'nav.menu': 'Menü',
     'nav.overtime': 'Überstunden',
     'nav.projects': 'Projekte',
     'nav.report': 'Auswertung',
@@ -4822,23 +4823,33 @@ async function runConnectionTest(result, attempt) {
     }
 
     result.className = outcome.ok ? 'muted plus' : 'muted minus';
+    sayAtLeastSomething(result);
   } catch (err) {
     showRefusal(result, err.refusal ?? { message: err.message });
     result.className = 'muted minus';
-
-    // Never nothing.
-    //
-    // A refusal with no words in it - a request that was aborted, a failure with
-    // an empty message - rendered as an empty box, which is the one outcome that
-    // says less than not having pressed the button. Whoever is looking at it is
-    // waiting for an answer, and "no answer" is not one of the answers.
-    if (result.textContent.trim() === '') {
-      result.textContent = t('err.internal',
-        'Something went wrong on this installation.');
-    }
+    sayAtLeastSomething(result);
 
     toast(err.message, 'error', refusalDetail(err.refusal));
   }
+}
+
+/**
+ * Never nothing.
+ *
+ * A refusal with no words in it - a request that was aborted, an answer whose
+ * message is empty - renders as an empty box, which is the one outcome that says
+ * less than not having pressed the button at all. Whoever is looking at it is
+ * waiting for an answer, and "no answer" is not one of the answers.
+ *
+ * Called on both ways out rather than only on the throw. That was the first
+ * attempt at this and it covered half the paths: an answer that came back
+ * perfectly well and said the attempt had failed, without saying anything about
+ * why, went straight past it.
+ */
+function sayAtLeastSomething(result) {
+  if (result.textContent.trim() !== '') return;
+
+  result.textContent = t('err.internal', 'Something went wrong on this installation.');
 }
 
 /**
@@ -9327,6 +9338,61 @@ function wireTheme() {
   }, THEME_RECHECK_MS);
 }
 
+/**
+ * The navigation, folded away on a screen too narrow to hold it.
+ *
+ * Nine points do not fit beside anything on a telephone. They were a row that
+ * scrolled sideways, which shows three and hides six with nothing to say the
+ * others exist - so somebody looking for Roles had to discover it by dragging.
+ * Folded into a list behind one control, the count is visible the moment it
+ * opens.
+ *
+ * Closed by everything that means "I am done with this": choosing a point,
+ * pressing Escape, and a press anywhere else. A menu that only closes by its own
+ * button is a menu that ends up covering the screen somebody wanted to read.
+ */
+function wireNavigationMenu() {
+  const bar = $('.topbar');
+  const toggle = $('#nav-toggle');
+  const tabs = $('#tabs');
+  if (!bar || !toggle || !tabs) return;
+
+  const show = (open) => {
+    bar.classList.toggle('nav-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+  };
+
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    show(!bar.classList.contains('nav-open'));
+  });
+
+  // Choosing one is the point of opening it.
+  tabs.addEventListener('click', () => show(false));
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !bar.classList.contains('nav-open')) return;
+
+    show(false);
+
+    // Back to the control that opened it, so a keyboard is not left with the
+    // focus on something that is no longer there.
+    toggle.focus();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!bar.classList.contains('nav-open') || bar.contains(e.target)) return;
+
+    show(false);
+  });
+
+  // A window widened past the breakpoint has the points on screen again, and a
+  // menu left open would be a second copy of them.
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 900) show(false);
+  });
+}
+
 // --------------------------------------------------------------- bootstrap
 
 function switchView(name) {
@@ -9868,6 +9934,7 @@ async function init() {
     $('#branding-language')?.addEventListener('change', (e) => {
       showBrandingLanguage(e.target.value);
     });
+    wireNavigationMenu();
     trackTopbarHeight();
     wireTimer();
     wireStatistics();

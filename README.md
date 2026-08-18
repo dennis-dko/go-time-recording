@@ -418,6 +418,15 @@ decoration rather than information. It follows the filter the table follows, so 
 project scopes both — a chart totalling everything next to a table totalling one
 project is two answers on one screen, and no way to tell which was asked for.
 
+**The navigation folds into one control below 900px.** Nine points do not fit
+beside anything on a telephone: as a row that scrolled sideways they showed
+three and hid six, with nothing on screen to say the others were there — and
+because the bar was as wide as the row, the *window* scrolled in its place, so
+the page could be dragged sideways. Measured at 50px too wide on a 390px screen
+and 80px on a 360px one, on every screen in the application. Behind the burger
+they are a list, one per line, which says how many there are. It closes on
+choosing a point, on Escape, and on a press anywhere else.
+
 **The greeting shows the last few entries** to somebody who books time — a
 bounded ninety-day window rather than a whole history, because a greeting has no
 business downloading three years of a working life to show five lines of it. The
