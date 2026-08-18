@@ -33,6 +33,11 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
 
+	// Waited for the card to be filled before anything is typed into it: the form
+	// is in index.html, so it is on screen before a single request has answered,
+	// and the answer overwrites every field when it arrives.
+	p.waitForFilled("#datasource-active")
+
 	p.run("switch to German",
 		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
 		chromedp.Evaluate(
@@ -74,6 +79,14 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 	// nobody answers on, and how long that takes to fail is the network stack's
 	// business rather than this application's.
 	p.waitForTextWithin("#datasource-test-result", "konnte nicht", 40*time.Second)
+
+	// And whatever the outcome, the box says something. A refusal with no words
+	// in it used to render as an empty box - which is the one outcome that says
+	// less than not having pressed the button, and what a run of this on a loaded
+	// machine actually reported.
+	if said := strings.TrimSpace(p.text("#datasource-test-result")); said == "" {
+		t.Error("the connection test finished and said nothing at all")
+	}
 
 	// The sentence that leads, read on its own. The whole card's text includes
 	// the folded-away part - textContent does not care what is on screen - so

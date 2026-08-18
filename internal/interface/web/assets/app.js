@@ -4825,6 +4825,18 @@ async function runConnectionTest(result, attempt) {
   } catch (err) {
     showRefusal(result, err.refusal ?? { message: err.message });
     result.className = 'muted minus';
+
+    // Never nothing.
+    //
+    // A refusal with no words in it - a request that was aborted, a failure with
+    // an empty message - rendered as an empty box, which is the one outcome that
+    // says less than not having pressed the button. Whoever is looking at it is
+    // waiting for an answer, and "no answer" is not one of the answers.
+    if (result.textContent.trim() === '') {
+      result.textContent = t('err.internal',
+        'Something went wrong on this installation.');
+    }
+
     toast(err.message, 'error', refusalDetail(err.refusal));
   }
 }
@@ -9499,6 +9511,18 @@ function firstVisibleView() {
 }
 
 async function refreshAll() {
+  // Says whether every screen has been filled from the server yet.
+  //
+  // Written for anything watching from outside - a browser case, a person
+  // wondering why a card is blank - because there is no other way to tell a
+  // screen that is empty from one that has not been answered yet. Every form
+  // and every card in this application is in index.html, so all of them are on
+  // screen from the first paint and hold nothing until their request lands.
+  //
+  // Cleared here rather than only set at the end, so a second pass says
+  // "loading" again while it runs.
+  document.documentElement.dataset.loaded = 'no';
+
   await loadMe();
 
   // From here on, whether this account may still do what it could a moment ago
@@ -9537,6 +9561,12 @@ async function refreshAll() {
     fillSettingsForm();
     switchView('settings');
 
+    // Loaded, as far as this account is going to get: the server refuses the
+    // rest until the password is replaced, so there is nothing else coming.
+    // Saying "still loading" here would be waiting for requests that are never
+    // going to be made.
+    document.documentElement.dataset.loaded = 'yes';
+
     return;
   }
 
@@ -9552,6 +9582,8 @@ async function refreshAll() {
   await loadTokens();
   await loadPasskeys();
   fillSettingsForm();
+
+  document.documentElement.dataset.loaded = 'yes';
 }
 
 function wireForms() {
