@@ -210,8 +210,8 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 		t.Error("the header's mark is hidden after a logo was configured")
 	}
 
-	// The logo, and only the logo, in the middle of the bar. The title keeps the
-	// left end it has always had, and the account keeps the right.
+	// The logo at the left end and the name in the middle, which is the way round
+	// they were swapped to. The account keeps the right.
 	var placed struct {
 		TitleLeft float64 `json:"titleLeft"`
 		LogoLeft  float64 `json:"logoLeft"`
@@ -227,19 +227,19 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 		return {
 			titleLeft: title.left,
 			logoLeft: logo.left,
-			// The logo itself, not the column holding it.
-			centre: logo.left + logo.width / 2,
+			// The name itself, not the column holding it.
+			centre: title.left + title.width / 2,
 			barCentre: bar.left + bar.width / 2,
 		};
 	})())`, &placed)
 
-	if placed.LogoLeft < placed.TitleLeft {
-		t.Errorf("the logo is at %.0f and the title at %.0f, so the picture is left "+
-			"of the words", placed.LogoLeft, placed.TitleLeft)
+	if placed.TitleLeft < placed.LogoLeft {
+		t.Errorf("the title is at %.0f and the logo at %.0f, so the words come "+
+			"before the picture", placed.TitleLeft, placed.LogoLeft)
 	}
 
 	if math.Abs(placed.Centre-placed.BarCentre) > 2 {
-		t.Errorf("the logo sits at %.0f and the bar's middle is %.0f",
+		t.Errorf("the name sits at %.0f and the bar's middle is %.0f",
 			placed.Centre, placed.BarCentre)
 	}
 

@@ -87,19 +87,23 @@
          that stays at the top of every screen, and buys a navigation that is in
          the same place whoever is signed in, however long their name is, and
          whether or not a logo sits beside the title. -->
-    <!-- Three columns, and the middle one holds the installation's own logo.
+    <!-- Three columns: the installation's own logo at the left end, what this
+         application is called in the middle, and the account with its controls
+         at the right.
 
-         Only the logo. The title stays at the left end where it has always
-         been, and the account and the controls stay at the right end where
-         everybody looks for them - what moved is the picture, which is the one
-         thing on this bar that belongs to whoever runs the installation rather
-         than to the application.
+         The two were the other way round. This puts the picture where a reader's
+         eye starts and the name over the navigation below it, on one line down
+         the middle of the bar.
 
-         The middle column is empty on an installation that has uploaded no
-         logo, and an empty column of automatic width takes none - so the bar
-         then looks exactly as it did before there was a middle at all. -->
+         The left column is empty on an installation that has uploaded no logo,
+         which costs nothing: an empty column of automatic width takes no room,
+         and the name simply sits in the middle of the bar on its own. -->
     <div class="topbar-row">
       <span class="topbar-side">
+        <img id="brand-logo" class="brand-logo" alt="" hidden>
+      </span>
+
+      <span class="topbar-middle">
         <!-- The title is a button because it does something: it is the way back to
            the greeting from wherever you are. A heading that navigates has to say
            so to a keyboard and a screen reader too, which a plain h1 cannot. -->
@@ -108,10 +112,6 @@
                     focusable="false"><rect x="3" y="3" width="26" height="26" rx="7.6" fill="currentColor"/><path
                     d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/><path d="M9.6 23.4h12.8L16 16Z"
                     fill="var(--accent-text)" opacity="0.55"/></svg><span id="app-title-text">Time Recording</span></button></h1>
-      </span>
-
-      <span class="topbar-middle">
-        <img id="brand-logo" class="brand-logo" alt="" hidden>
       </span>
 
       <span class="topbar-side topbar-side-end">

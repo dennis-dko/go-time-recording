@@ -3234,28 +3234,23 @@ func TestTheNavigationSitsCentredOnItsOwnLine(t *testing.T) {
 		t.Errorf("the points are centred at %.0f and the bar at %.0f", tabsMiddle, barMiddle)
 	}
 
-	// The title keeps the left end, which is where it has always been: only the
-	// logo moved to the middle, and an installation with none has an empty middle
-	// column that takes no room at all.
+	// What this application is called sits in the middle, over the navigation: one
+	// vertical line down the bar rather than two things anchored to corners. The
+	// logo has the left end, and an installation with none leaves that column
+	// empty, which takes no room at all.
 	var title struct {
 		Centre float64 `json:"centre"`
-		Left   float64 `json:"left"`
 	}
 
 	p.evalJSON(`JSON.stringify((() => {
 		const box = document.querySelector('#app-title').getBoundingClientRect();
-		const bar = document.querySelector('.topbar').getBoundingClientRect();
 
-		return { centre: box.left + box.width / 2, left: box.left - bar.left };
+		return { centre: box.left + box.width / 2 };
 	})())`, &title)
 
-	if title.Centre > barMiddle-100 {
-		t.Errorf("the title is at %.0f, near the middle of a bar centred on %.0f - "+
-			"only the logo was meant to move", title.Centre, barMiddle)
-	}
-
-	if title.Left > 80 {
-		t.Errorf("the title starts %.0fpx in from the left edge", title.Left)
+	if math.Abs(title.Centre-barMiddle) > 2 {
+		t.Errorf("the name is centred at %.0f and the bar at %.0f",
+			title.Centre, barMiddle)
 	}
 
 	// Its own line: below everything on the row above rather than beside it. This
