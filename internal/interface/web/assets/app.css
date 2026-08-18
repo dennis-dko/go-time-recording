@@ -280,6 +280,16 @@ nav { display: flex; gap: 4px; flex-wrap: wrap; }
    long name on the right cannot pull it off centre. */
 #tabs { justify-content: center; }
 
+/* A grid child will not shrink below its own contents unless it is told it may.
+   Nothing here needs it today - the two things on this bar whose length is not
+   ours to control are an account's name and the appearance picker, and both wrap
+   before they push. It is here so that neither can start pushing the page
+   sideways the day somebody's name is longer than the last one's. */
+.topbar-row,
+.topbar-side,
+.topbar-middle,
+#tabs { min-width: 0; }
+
 .tab {
   align-items: center;
   background: none;
@@ -672,6 +682,7 @@ button.danger:not(.link) {
 .confirm-actions { justify-content: flex-end; }
 
 /* Wide tables scroll inside their own container so the page never does. */
+/* Scrolls inside itself rather than widening the page. */
 .table-wrap { overflow-x: auto; }
 
 table { border-collapse: collapse; width: 100%; }
@@ -1466,8 +1477,13 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 /* Narrow enough that a corner would overlap wrapped branding text: put both
    corners back in the flow, the mark first and the version on its own last
-   line. */
-@media (max-width: 560px) {
+   line.
+
+   At the same threshold as the navigation, so the layout has one idea of
+   "narrow" rather than two. It used to be 560, and between there and 900 the
+   footer went on reserving 168px at each end for its corners - 336 of a 620px
+   screen, leaving 284 for the line in the middle. */
+@media (max-width: 900px) {
   /* Stacked rather than in one line, so the one height above gives way. */
   .site-footer { min-height: 0; padding: 16px 20px; }
 
@@ -1972,8 +1988,72 @@ a.tab:hover {
    would push the whole screen down by a third on a telephone, and a swipe is
    what a telephone is good at. Left-aligned there, because a centred row that
    scrolls starts somewhere nobody can predict. */
+/* The way into the navigation when it does not fit.
+   Nothing above the breakpoint: the points are on screen there, and a control
+   that opens what is already open is a control that has to be explained. */
+.nav-toggle { display: none; }
+
 @media (max-width: 900px) {
   .topbar { gap: 16px; }
+
+  .nav-toggle {
+    align-items: center;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    cursor: pointer;
+    display: inline-flex;
+    flex: none;
+    justify-content: center;
+    padding: 7px;
+  }
+
+  .nav-toggle svg {
+    fill: none;
+    height: 20px;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 2;
+    width: 20px;
+  }
+
+  .nav-toggle[aria-expanded="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+
+  /* The points, folded away until asked for.
+
+     This is what made the application draggable sideways on a telephone. The
+     nine of them were a row that did not wrap, scrolling inside itself - except
+     the bar was as wide as the row and the window scrolled in its place: a 390px
+     screen measured 50px wider than itself and a 360px one 80px, on every screen
+     in the application.
+
+     A column behind one control rather than a scrolling row, because the row
+     also showed three of nine and hid the rest with nothing to say they were
+     there - somebody looking for Roles had to find it by dragging. A list says
+     how many there are. */
+  #tabs {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .topbar.nav-open #tabs { display: flex; }
+
+  .topbar.nav-open .tab {
+    justify-content: flex-start;
+    padding: 10px 12px;
+  }
+
+  /* The right-hand group wraps too. It holds an account, an appearance picker
+     whose longest option is "Automatic (by time of day)", a language and a way
+     out - which is wider than a telephone, and without this the sign-out button
+     hung over the edge of the screen. */
+  .topbar-side { flex-wrap: wrap; }
 
   /* Back to one wrapping row. Three columns on a telephone would be an empty
      third of the width, a squeezed name, and the controls in a column of their
@@ -1987,14 +2067,6 @@ a.tab:hover {
 
   .topbar-side:empty { display: none; }
   .topbar-side-end { justify-content: flex-start; }
-
-  #tabs {
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: thin;
-  }
 
   .who { margin-left: 0; text-align: left; }
 }

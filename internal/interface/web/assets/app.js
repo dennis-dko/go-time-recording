@@ -2863,6 +2863,7 @@ const TRANSLATIONS = {
     'nav.admin': 'Einstellungen',
     'nav.calendar': 'Kalender',
     'nav.logout': 'Abmelden',
+    'nav.menu': 'Menü',
     'nav.overtime': 'Überstunden',
     'nav.projects': 'Projekte',
     'nav.report': 'Auswertung',
@@ -9327,6 +9328,61 @@ function wireTheme() {
   }, THEME_RECHECK_MS);
 }
 
+/**
+ * The navigation, folded away on a screen too narrow to hold it.
+ *
+ * Nine points do not fit beside anything on a telephone. They were a row that
+ * scrolled sideways, which shows three and hides six with nothing to say the
+ * others exist - so somebody looking for Roles had to discover it by dragging.
+ * Folded into a list behind one control, the count is visible the moment it
+ * opens.
+ *
+ * Closed by everything that means "I am done with this": choosing a point,
+ * pressing Escape, and a press anywhere else. A menu that only closes by its own
+ * button is a menu that ends up covering the screen somebody wanted to read.
+ */
+function wireNavigationMenu() {
+  const bar = $('.topbar');
+  const toggle = $('#nav-toggle');
+  const tabs = $('#tabs');
+  if (!bar || !toggle || !tabs) return;
+
+  const show = (open) => {
+    bar.classList.toggle('nav-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+  };
+
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    show(!bar.classList.contains('nav-open'));
+  });
+
+  // Choosing one is the point of opening it.
+  tabs.addEventListener('click', () => show(false));
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !bar.classList.contains('nav-open')) return;
+
+    show(false);
+
+    // Back to the control that opened it, so a keyboard is not left with the
+    // focus on something that is no longer there.
+    toggle.focus();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!bar.classList.contains('nav-open') || bar.contains(e.target)) return;
+
+    show(false);
+  });
+
+  // A window widened past the breakpoint has the points on screen again, and a
+  // menu left open would be a second copy of them.
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 900) show(false);
+  });
+}
+
 // --------------------------------------------------------------- bootstrap
 
 function switchView(name) {
@@ -9868,6 +9924,7 @@ async function init() {
     $('#branding-language')?.addEventListener('change', (e) => {
       showBrandingLanguage(e.target.value);
     });
+    wireNavigationMenu();
     trackTopbarHeight();
     wireTimer();
     wireStatistics();
