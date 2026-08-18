@@ -8,17 +8,18 @@ import (
 
 // An id too large to hold is refused rather than wrapped.
 //
-// parseUint reads into 64 bits and returns a uint, which is 64 bits on
-// everything this ships for and 32 on something it does not. There the
-// conversion wraps silently: an id past four billion comes back as a different
-// id that looks perfectly valid, so the request is answered - about the wrong
-// row. A refusal is the only honest answer to a number this code cannot hold.
+// parseUint returns a uint, which is 64 bits on everything this ships for and
+// 32 on something it does not. Read at 64 and converted afterwards, a value past
+// four billion would arrive there as a different, valid-looking id and the
+// request would be answered - about the wrong row. It is read at the
+// destination's own width now, so the refusal happens in the reading.
 func TestAnIdTooLargeToHoldIsRefused(t *testing.T) {
-	// Only where it can be: on a 64-bit platform a uint holds everything
-	// ParseUint can produce, so there is no number to refuse and nothing to
-	// prove. The check exists for the platform where there is - and saying so
-	// here is better than an assertion that quietly cannot fail.
-	if math.MaxUint < math.MaxUint64 {
+	// Only where it can be: on a 64-bit platform a uint holds everything a
+	// 64-bit read can produce, so there is no number to refuse and nothing to
+	// prove. The guard exists for the platform where there is - and saying so
+	// here is better than an assertion that quietly cannot fail, which is
+	// precisely what the first version of the guard itself turned out to be.
+	if strconv.IntSize < 64 {
 		tooLarge := strconv.FormatUint(math.MaxUint64, 10)
 
 		if _, err := parseUint(tooLarge, "id"); err == nil {
