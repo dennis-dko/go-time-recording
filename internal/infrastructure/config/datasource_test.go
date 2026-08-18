@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -270,6 +271,45 @@ func TestTheMySQLProbeCarriesTheTLSModeGoFrWouldUse(t *testing.T) {
 
 		if !strings.Contains(dsn, tc.want) {
 			t.Errorf("SSL mode %q produced %q, want it to carry %q", tc.mode, dsn, tc.want)
+		}
+	}
+}
+
+// The file holds a database password, and so does the way to it.
+//
+// The file has been 0600 all along. The directory made for it was 0755, which
+// gives away the one thing the mode on the file was protecting: where the
+// password is kept, under what name, and that it is there at all. Nothing
+// legitimate reads it as another user - the application writes it and reads it
+// back at its next start.
+//
+// Unix only, because Windows does not carry these bits and Go does not invent
+// them. The installations this protects are the ones that have them.
+func TestTheDirectoryHoldingThePasswordIsNotOpenToOthers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not carried on this platform")
+	}
+
+	dir := filepath.Join(t.TempDir(), "made", "by", "save")
+	path := filepath.Join(dir, "datasource.json")
+
+	err := config.SaveDatasource(path, config.Datasource{
+		Dialect: "postgres", Name: "gtr",
+		Host: "db", Port: "5432", User: "gtr", Password: "secret", SSLMode: "require",
+	})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	for what, at := range map[string]string{"directory": dir, "file": path} {
+		info, err := os.Stat(at)
+		if err != nil {
+			t.Fatalf("stat the %s: %v", what, err)
+		}
+
+		if mode := info.Mode().Perm(); mode&0o077 != 0 {
+			t.Errorf("the %s holding the database password is %#o: anybody with an "+
+				"account on this machine can reach it", what, mode)
 		}
 	}
 }
