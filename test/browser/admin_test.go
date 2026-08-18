@@ -3107,6 +3107,39 @@ func TestTheNavigationSitsCentredOnItsOwnLine(t *testing.T) {
 		t.Errorf("the points are centred at %.0f and the bar at %.0f", tabsMiddle, barMiddle)
 	}
 
+	// And the name of the installation is on the same line, above them: one
+	// vertical line down the middle of the bar rather than two things anchored to
+	// opposite corners.
+	var middle struct {
+		Centre  float64 `json:"centre"`
+		Order   string  `json:"order"`
+		Overlap bool    `json:"overlap"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const block = document.querySelector('.topbar-middle').getBoundingClientRect();
+		const title = document.querySelector('#app-title').getBoundingClientRect();
+		const logo = document.querySelector('#brand-logo');
+		const right = document.querySelector('.topbar-side-end').getBoundingClientRect();
+
+		return {
+			centre: block.left + block.width / 2,
+			// Which comes first, for the case where a logo is configured.
+			order: logo.hidden ? 'title only' :
+				(title.left < logo.getBoundingClientRect().left ? 'title then logo' : 'logo then title'),
+			overlap: block.right > right.left + 1,
+		};
+	})())`, &middle)
+
+	if math.Abs(middle.Centre-barMiddle) > 2 {
+		t.Errorf("the name is centred at %.0f and the bar at %.0f",
+			middle.Centre, barMiddle)
+	}
+
+	if middle.Overlap {
+		t.Error("the name runs into the account beside it")
+	}
+
 	// Its own line: below everything on the row above rather than beside it. This
 	// is what the overlap in the first preview looked like from here.
 	if wide.Tabs.Top < wide.Row.Bottom {
@@ -3630,5 +3663,86 @@ func TestTheScreenSomebodyChoseIsTheirs(t *testing.T) {
 
 	if back.Language != "de" {
 		t.Errorf("coming back, the screen speaks %q", back.Language)
+	}
+}
+
+// The greeting shows the last few entries to somebody who books time.
+//
+// A greeting that says nothing about the work is one nobody reads twice. And it
+// is hidden outright for an account that records none: the built-in
+// administrator has no entries, and a panel explaining that is worse than no
+// panel.
+func TestTheGreetingShowsTheLastEntries(t *testing.T) {
+	p := open(t)
+	p.readyAdmin()
+
+	// The account that only administers sees no panel at all.
+	p.run("go to the greeting", p.click("#app-title"),
+		chromedp.WaitVisible("#welcome-title", chromedp.ByID))
+
+	if p.visible("#welcome-recent") {
+		t.Error("the account that records no time is shown a panel of its entries")
+	}
+
+	// Somebody who does book time, with something to show.
+	p.becomeWorker()
+	p.bookAnHourOn(t, "Dachsanierung")
+	p.bookAnHourOn(t, "Serverumzug")
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.run("go to the greeting", p.click("#app-title"),
+		chromedp.WaitVisible("#welcome-title", chromedp.ByID))
+
+	p.waitForNode("#welcome-recent-list li")
+
+	if !p.visible("#welcome-recent") {
+		t.Fatal("somebody who books time is shown no entries on the greeting")
+	}
+
+	var rows struct {
+		Count    int      `json:"count"`
+		Projects []string `json:"projects"`
+		Hours    []string `json:"hours"`
+		Empty    bool     `json:"empty"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const list = [...document.querySelectorAll('#welcome-recent-list li')];
+
+		return {
+			count: list.length,
+			projects: list.map((row) => row.querySelector('.welcome-recent-project')?.textContent ?? ''),
+			hours: list.map((row) => row.querySelector('.welcome-recent-hours')?.textContent ?? ''),
+			empty: !document.querySelector('#welcome-recent-empty').hidden,
+		};
+	})())`, &rows)
+
+	if rows.Count != 2 {
+		t.Errorf("the greeting lists %d entries, want the 2 that were booked", rows.Count)
+	}
+
+	if rows.Empty {
+		t.Error("the greeting says nothing was recorded while listing entries")
+	}
+
+	// Named, not numbered: a row saying "7" for a project helps nobody.
+	for _, project := range rows.Projects {
+		if project == "" || strings.TrimSpace(project) == "" {
+			t.Errorf("an entry is listed without a project: %v", rows.Projects)
+		}
+	}
+
+	for _, hours := range rows.Hours {
+		if !strings.Contains(hours, "1") {
+			t.Errorf("an hour was booked and the row reads %q", hours)
+		}
+	}
+
+	// And the way through to all of them.
+	p.run("all entries", p.click("#welcome-recent-all"),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID))
+
+	if !p.visible("#table-timesheets") {
+		t.Error("the way to all entries does not lead to them")
 	}
 }

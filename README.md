@@ -418,6 +418,11 @@ decoration rather than information. It follows the filter the table follows, so 
 project scopes both — a chart totalling everything next to a table totalling one
 project is two answers on one screen, and no way to tell which was asked for.
 
+**The greeting shows the last few entries** to somebody who books time — a
+bounded ninety-day window rather than a whole history, because a greeting has no
+business downloading three years of a working life to show five lines of it. The
+account that records no time is shown no panel at all rather than an empty one.
+
 **Appearance belongs to the person, not to the machine.** Light or dark is
 stored on the account, like the language, and applied when that account signs
 in. Signed out — and on a fresh account that has never chosen — the screen

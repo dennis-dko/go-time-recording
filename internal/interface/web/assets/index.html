@@ -87,24 +87,46 @@
          that stays at the top of every screen, and buys a navigation that is in
          the same place whoever is signed in, however long their name is, and
          whether or not a logo sits beside the title. -->
+    <!-- Three columns, and the middle one is what this installation is called.
+
+         The mark and the name used to sit at the left end, which is where a
+         browser puts them and where nobody looks twice. Centred, they sit over
+         the navigation on the line below - one vertical line down the middle of
+         the bar rather than two things anchored to opposite corners.
+
+         The title comes first and the uploaded logo after it: the words say what
+         the installation is called and the picture says whose it is, which is
+         the order somebody reads them in.
+
+         The left column is deliberately empty and deliberately as wide as the
+         right one. That is what "centred" costs: a middle that is actually in
+         the middle needs as much room on its left as the account and the
+         controls take on its right. -->
     <div class="topbar-row">
-      <img id="brand-logo" class="brand-logo" alt="" hidden>
-      <!-- The title is a button because it does something: it is the way back to
+      <span class="topbar-side"></span>
+
+      <span class="topbar-middle">
+        <!-- The title is a button because it does something: it is the way back to
            the greeting from wherever you are. A heading that navigates has to say
            so to a keyboard and a screen reader too, which a plain h1 cannot. -->
-      <h1><button type="button" id="app-title" class="app-title" data-i18n-aria="welcome.goTo"
-                  aria-label="Welcome page"><svg class="app-mark" viewBox="0 0 32 32" aria-hidden="true"
-                  focusable="false"><rect x="3" y="3" width="26" height="26" rx="7.6" fill="currentColor"/><path
-                  d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/><path d="M9.6 23.4h12.8L16 16Z"
-                  fill="var(--accent-text)" opacity="0.55"/></svg><span id="app-title-text">Time Recording</span></button></h1>
-      <div class="who" id="who"></div>
-      <select id="theme-picker" class="lang" data-i18n-aria="app.theme" aria-label="Appearance">
-        <option value="auto" data-i18n="theme.auto">Automatic (by time of day)</option>
-        <option value="light" data-i18n="theme.light">Light</option>
-        <option value="dark" data-i18n="theme.dark">Dark</option>
-      </select>
-      <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Language"></select>
-      <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
+        <h1><button type="button" id="app-title" class="app-title" data-i18n-aria="welcome.goTo"
+                    aria-label="Welcome page"><svg class="app-mark" viewBox="0 0 32 32" aria-hidden="true"
+                    focusable="false"><rect x="3" y="3" width="26" height="26" rx="7.6" fill="currentColor"/><path
+                    d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/><path d="M9.6 23.4h12.8L16 16Z"
+                    fill="var(--accent-text)" opacity="0.55"/></svg><span id="app-title-text">Time Recording</span></button></h1>
+        <img id="brand-logo" class="brand-logo" alt="" hidden>
+      </span>
+
+      <span class="topbar-side topbar-side-end">
+        <div class="who" id="who"></div>
+        <select id="theme-picker" class="lang" data-i18n-aria="app.theme" aria-label="Appearance">
+          <option value="auto" data-i18n="theme.auto">Automatic (by time of day)</option>
+          <option value="light" data-i18n="theme.light">Light</option>
+          <option value="dark" data-i18n="theme.dark">Dark</option>
+        </select>
+        <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Language"></select>
+        <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
+      </span>
     </div>
 
     <nav id="tabs">
@@ -293,6 +315,26 @@
         <h2 id="welcome-title"></h2>
         <p class="muted" id="welcome-text"></p>
         <p class="muted" id="welcome-today"></p>
+
+        <!-- The last few entries, for somebody who books time here. A greeting
+             that says nothing about the work is a greeting nobody reads twice;
+             this is the one thing the person in front of it already knows the
+             shape of, so it is the one thing worth showing back to them.
+
+             Hidden outright for an account that records no time - the built-in
+             administrator has no entries, and an empty panel explaining that is
+             worse than no panel. -->
+        <section class="welcome-recent" id="welcome-recent" hidden
+                 aria-labelledby="welcome-recent-title">
+          <div class="welcome-recent-head">
+            <h3 id="welcome-recent-title" data-i18n="welcome.recent">Your last entries</h3>
+            <button type="button" class="link" id="welcome-recent-all"
+                    data-i18n="welcome.recentAll">All time entries</button>
+          </div>
+          <ul class="welcome-recent-list" id="welcome-recent-list"></ul>
+          <p class="muted" id="welcome-recent-empty" hidden data-i18n="welcome.recentNone">Nothing recorded in the last 90 days.</p>
+        </section>
+
         <ul class="welcome-points" id="welcome-points"></ul>
         <div class="row welcome-actions">
           <button type="button" id="welcome-continue" data-i18n="welcome.continue">Get started</button>

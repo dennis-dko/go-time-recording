@@ -2739,6 +2739,9 @@ const TRANSLATIONS = {
     'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Unter „Zeiteinträge“ stoppen, um die Zeit zu buchen.',
     'welcome.todayHours': 'Heute bislang {0} gebucht.',
     'welcome.todayNothing': 'Heute noch nichts gebucht.',
+    'welcome.recent': 'Deine letzten Einträge',
+    'welcome.recentAll': 'Alle Zeiteinträge',
+    'welcome.recentNone': 'In den letzten 90 Tagen wurde nichts erfasst.',
     'welcome.tour': 'Rundgang starten',
     'field.banner': 'Banner-Text',
     'field.baseDn': 'Basis-DN',
@@ -5977,6 +5980,85 @@ async function renderWelcome() {
   // left to walk through. Offering it anyway would open an empty tour, which is a
   // worse first impression than not offering one.
   $('#welcome-tour').hidden = applicableTourSteps().length === 0;
+
+  // Not awaited with the rest: the greeting is readable without it, and holding
+  // the screen for a list of five lines would be holding it for a courtesy.
+  renderRecentEntries();
+}
+
+/** How many entries the greeting shows, and how far back it looks for them. */
+const WELCOME_RECENT_COUNT = 5;
+const WELCOME_RECENT_DAYS = 90;
+
+/**
+ * The last few entries, on the greeting.
+ *
+ * A bounded window rather than the whole history: this endpoint answers with
+ * everything when it is given no dates, and a greeting has no business
+ * downloading three years of somebody's working life to show five lines of it.
+ * Ninety days is long enough that somebody coming back from a month away still
+ * sees their own work, and the empty case says how far it looked rather than
+ * "nothing", which would be a different and wrong statement.
+ *
+ * Only for somebody who records time. The built-in administrator has no entries
+ * at all, and a panel explaining that is worse than no panel.
+ */
+async function renderRecentEntries() {
+  const panel = $('#welcome-recent');
+  if (!panel) return;
+
+  if (!can('timesheets:read:own')) {
+    panel.hidden = true;
+
+    return;
+  }
+
+  const to = todayISO();
+  const from = ISO_DAY(new Date(Date.parse(`${to}T00:00:00Z`) - WELCOME_RECENT_DAYS * 86400000));
+
+  let entries = [];
+
+  try {
+    const params = new URLSearchParams({ from, to });
+
+    entries = (await api(`/timesheets?${params}`))?.items ?? [];
+  } catch {
+    // A greeting is a courtesy. The entries screen reports anything that is
+    // actually wrong with reading them.
+    panel.hidden = true;
+
+    return;
+  }
+
+  panel.hidden = false;
+
+  // Newest first, and the newest of a day first within it: the answer is ordered
+  // for a table that reads forwards, and this reads backwards.
+  const newest = [...entries]
+    .sort((a, b) => (a.date === b.date ? b.id - a.id : b.date.localeCompare(a.date)))
+    .slice(0, WELCOME_RECENT_COUNT);
+
+  $('#welcome-recent-list').replaceChildren(...newest.map(recentEntryRow));
+  $('#welcome-recent-empty').hidden = newest.length > 0;
+}
+
+/** One entry, as a line of the greeting's list. */
+function recentEntryRow(entry) {
+  const project = entry.projectId
+    ? projectName(entry.projectId)
+    : t('ts.noProject', 'No project');
+
+  return el('li', { class: 'welcome-recent-row' },
+    el('span', { class: 'welcome-recent-when', text: fmtDate(entry.date) }),
+    el('span', { class: 'welcome-recent-what' },
+      el('span', { class: 'welcome-recent-project', text: project }),
+      // The note where there is one, which is what tells two entries on one
+      // project apart.
+      ...(entry.description
+        ? [el('span', { class: 'welcome-recent-note', text: entry.description })]
+        : [])),
+    el('span', { class: 'welcome-recent-hours', text: fmtHours(entry.durationHours) }),
+  );
 }
 
 /** What today looks like, in one sentence. */
@@ -9499,6 +9581,8 @@ function wireForms() {
     mutate(() => request, id ? t('msg.roleSaved', 'Role saved') : t('msg.roleCreated', 'Role created'),
       async () => { resetRoleForm(); await refreshAll(); });
   });
+
+  $('#welcome-recent-all')?.addEventListener('click', () => switchView('timesheets'));
 
   $('#role-reset').addEventListener('click', resetRoleForm);
 
