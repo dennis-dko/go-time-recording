@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -597,5 +598,103 @@ func TestATokenIsSentOnlyWhenThereIsOne(t *testing.T) {
 				t.Errorf("the feed was sent %q, want %q", seen, want)
 			}
 		})
+	}
+}
+
+// Two installs at once: one proceeds, the other is turned away.
+//
+// This downloads to a fixed path beside the binary and renames it over the
+// binary. Two of them at once write the same staged file and rename it twice,
+// and what that corrupts is the program itself - the worst thing here to get
+// wrong. Two administrators pressing the button within a moment of each other,
+// or one pressing it twice, is the ordinary way in.
+//
+// The race detector cannot find this on its own: it reports races that happen,
+// and no suite installs twice at the same moment unless one is written to.
+func TestOnlyOneInstallRunsAtATime(t *testing.T) {
+	// A release whose download blocks until this test lets it go, so the second
+	// attempt lands while the first is still inside.
+	holding := make(chan struct{})
+	served := make(chan struct{}, 2)
+
+	// A real program: the install runs what it downloaded before putting it in
+	// place, so a string of bytes would be testing the check's failure path and
+	// calling it success.
+	binary := workingProgram(t, "the new version")
+	sum := sha256.Sum256(binary)
+
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "SHA256SUMS"):
+			_, _ = fmt.Fprintf(w, "%x  %s\n", sum, assetName("v9.9.9"))
+
+		default:
+			served <- struct{}{}
+			<-holding
+			_, _ = w.Write(binary)
+		}
+	}))
+
+	defer feed.Close()
+
+	source := &Source{Client: feed.Client()}
+
+	release := Release{
+		Version: "v9.9.9",
+		asset:   feed.URL + "/" + assetName("v9.9.9"),
+		sums:    feed.URL + "/SHA256SUMS",
+	}
+
+	self := filepath.Join(t.TempDir(), "program")
+
+	if err := os.WriteFile(self, []byte("the version now running"), 0o755); err != nil {
+		t.Fatalf("cannot lay down a program to replace: %v", err)
+	}
+
+	first := make(chan error, 1)
+
+	go func() { first <- source.InstallOver(t.Context(), release, self) }()
+
+	// Wait until the first one is inside the download, so the second is genuinely
+	// concurrent rather than merely later.
+	select {
+	case <-served:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first install never reached the download")
+	}
+
+	// The second attempt, with a deadline on it.
+	//
+	// Turned away, it answers at once. Not turned away, it walks into the same
+	// download and blocks there on the same channel this test has not released
+	// yet - so without the guard this would hang rather than fail, and a case
+	// that hangs on a regression reports a timeout instead of the reason.
+	second := make(chan error, 1)
+
+	go func() { second <- source.InstallOver(t.Context(), release, self) }()
+
+	select {
+	case err := <-second:
+		if !errors.Is(err, ErrInstalling) {
+			t.Errorf("a second install answered %v, want %v - both were writing the "+
+				"same staged file over the same binary", err, ErrInstalling)
+		}
+
+	case <-time.After(5 * time.Second):
+		t.Error("a second install neither ran nor was turned away: it is inside the " +
+			"first one's download, writing the same staged file")
+	}
+
+	close(holding)
+
+	if err := <-first; err != nil {
+		t.Errorf("the first install failed: %v", err)
+	}
+
+	// And the one that ran did its work: the program on disk is the new one.
+	if got, err := os.ReadFile(self); err != nil {
+		t.Fatalf("reading the program back: %v", err)
+	} else if string(got) != string(binary) {
+		t.Error("the program on disk is not the one that was installed")
 	}
 }

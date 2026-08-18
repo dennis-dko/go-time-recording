@@ -19,7 +19,7 @@ import (
 // So the old one is moved aside first, exactly as Windows is forced to do, and
 // kept. That makes the two platforms behave the same way, gives Rollback
 // something to work with, and costs one file until the next update.
-func swap(self, staged string) error {
+func swap(self, staged, version string) error {
 	old := self + ".old"
 
 	// Whatever the previous update left. Removed rather than kept, because the
@@ -39,7 +39,7 @@ func swap(self, staged string) error {
 		return fmt.Errorf("cannot put the new binary in place: %w", err)
 	}
 
-	return markPending(self)
+	return markPending(self, version)
 }
 
 // removeLeftovers clears the note that an update is waiting, now that this

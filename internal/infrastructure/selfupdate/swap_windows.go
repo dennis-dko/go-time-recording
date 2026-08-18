@@ -14,7 +14,7 @@ import (
 //
 // The one left behind cannot be deleted yet, for the same reason: it is still
 // running. removeLeftovers clears it on the next start, when it is not.
-func swap(self, staged string) error {
+func swap(self, staged, version string) error {
 	old := self + ".old"
 
 	// From a previous update, and by now not running. If this fails the rename
@@ -33,7 +33,7 @@ func swap(self, staged string) error {
 		return fmt.Errorf("cannot put the new binary in place: %w", err)
 	}
 
-	return markPending(self)
+	return markPending(self, version)
 }
 
 // removeLeftovers clears the note that an update is waiting, now that this

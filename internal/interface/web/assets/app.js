@@ -2647,6 +2647,8 @@ const TRANSLATIONS = {
     'err.onlyOwnOvertime': 'Sie können nur Ihren eigenen Überstundenstand sehen.',
     'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
       + 'abgleichen.',
+    'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
+      + 'warten Sie, bis sie abgeschlossen ist.',
     'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
     'err.updateInContainer': 'Dies läuft in einem Container. Dort wäre ein ausgetauschtes '
       + 'Programm beim nächsten Neuaufbau wieder weg — bitte das Abbild aktualisieren.',
