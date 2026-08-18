@@ -253,7 +253,12 @@ func SaveDatasource(path string, ds Datasource) error {
 		ds.Host, ds.Port, ds.User, ds.Password, ds.SSLMode = "", "", "", "", ""
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// 0700, to match the file it is being made for. The file is 0600 because it
+	// holds a database password, and a directory anybody may list is a directory
+	// that says where the password is kept and under what name - which is most of
+	// what somebody looking for it needs. Nothing legitimate reads this as another
+	// user: the application writes it and the application reads it back at start.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 
