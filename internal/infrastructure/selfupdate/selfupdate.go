@@ -29,6 +29,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,6 +39,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -82,7 +84,18 @@ type Source struct {
 	// per installation, so a dozen instances behind one office connection share
 	// sixty between them; with a token the count is per token and far larger.
 	Token string
+
+	// installing is held for the whole of an install, and taken rather than
+	// waited on. See InstallOver.
+	installing sync.Mutex
 }
+
+// ErrInstalling says an install is already under way.
+//
+// Its own error so the handler can answer it as a conflict rather than as
+// something that went wrong - nothing went wrong, it is simply already
+// happening.
+var ErrInstalling = errors.New("an update is already being installed")
 
 // DefaultAPI is where the releases of this project live.
 const DefaultAPI = "https://api.github.com/repos/dennis-dko/go-time-recording/releases/latest"
@@ -300,6 +313,23 @@ func (s *Source) Install(ctx context.Context, release Release) error {
 // and a test that had to replace the test binary to check it would be worse than
 // no test. Install is then the one line that says which file that is.
 func (s *Source) InstallOver(ctx context.Context, release Release, self string) error {
+	// One at a time, and the second one is turned away rather than queued.
+	//
+	// This downloads to a fixed path beside the binary and then renames it over
+	// the binary. Two of them at once write the same staged file and rename it
+	// twice - which is the worst thing in this application to get wrong, because
+	// what it corrupts is the program itself.
+	//
+	// Turned away, because queueing would leave somebody's request holding for a
+	// whole download to be told that what they asked for had already been done by
+	// the other one. Two administrators pressing the button, or one pressing it
+	// twice, is the ordinary way in.
+	if !s.installing.TryLock() {
+		return ErrInstalling
+	}
+
+	defer s.installing.Unlock()
+
 	if !release.HasBinary() {
 		return fmt.Errorf("release %s published nothing for %s/%s",
 			release.Version, runtime.GOOS, runtime.GOARCH)
@@ -314,7 +344,6 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 	// has to be a rename, and a rename across filesystems is not one. /tmp on its
 	// own mount is the ordinary case, not the exception.
 	staged := self + ".new"
-	pendingVersion = release.Version
 
 	if err := s.download(ctx, release.asset, staged, want); err != nil {
 		_ = os.Remove(staged)
@@ -338,7 +367,7 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 		return err
 	}
 
-	if err := swap(self, staged); err != nil {
+	if err := swap(self, staged, release.Version); err != nil {
 		return err
 	}
 
@@ -525,18 +554,19 @@ func Installed() (string, bool) {
 // So the screen can say "downloaded, restart to use it" rather than offering the
 // same update again to somebody who has already taken it - which on Windows,
 // where the restart is somebody walking over to the machine, may be a while.
-func markPending(self string) error {
+//
+// The version is an argument. It was a package-level variable, set before the
+// swap so this half would not have to be told - which is one unguarded write
+// shared by every install this process ever performs, and two at once would have
+// written each other's version into the note.
+func markPending(self, version string) error {
 	// Best effort. The update itself has succeeded by this point, and failing it
 	// over a note would be undoing something that worked for the sake of the
 	// message about it.
-	_ = os.WriteFile(self+".pending", []byte(pendingVersion), 0o644)
+	_ = os.WriteFile(self+".pending", []byte(version), 0o644)
 
 	return nil
 }
-
-// pendingVersion is set by Install before the swap, so markPending has something
-// to write without threading it through the platform-specific half.
-var pendingVersion string
 
 // Cleanup removes what a previous update left behind, once this process is the
 // new version. Called at start-up.

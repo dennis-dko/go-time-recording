@@ -51,6 +51,10 @@ const (
 	// its own. On PostgreSQL the owner already can; on MySQL an ordinary user
 	// cannot, so use root there - it is a throwaway server either way.
 	DSNEnv = "GTR_TEST_DSN"
+
+	// RaceEnv asks for the application under test to be built with the race
+	// detector. See Build.
+	RaceEnv = "GTR_TEST_RACE"
 )
 
 // App is a running instance.
@@ -163,7 +167,25 @@ func Build() (cleanup func(), err error) {
 
 	path := filepath.Join(dir, "go-time-recording"+exeSuffix())
 
-	build := exec.Command("go", "build", "-o", path, "./cmd/main.go")
+	args := []string{"build", "-o", path}
+
+	// The race detector, when asked for.
+	//
+	// go test -race instruments the test binary, and the application under test
+	// is not in it - the harness starts it as its own process, so a race in a
+	// handler is invisible to a suite that runs with -race. Building the child
+	// with it is the only way the detector ever sees the code the suite is
+	// actually about.
+	//
+	// Off by default: an instrumented binary is several times slower to start
+	// and to answer, which every case in the suite would pay for.
+	if os.Getenv(RaceEnv) != "" {
+		args = append(args, "-race")
+	}
+
+	args = append(args, "./cmd/main.go")
+
+	build := exec.Command("go", args...)
 	build.Dir = RepoRoot()
 	build.Stderr = os.Stderr
 

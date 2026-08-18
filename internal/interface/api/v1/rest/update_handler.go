@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -248,6 +249,35 @@ func (h *UpdateHandler) waitingAfterFailure() bool {
 	return h.cacheErr != nil && time.Since(h.failedAt) < updateRetryAfter
 }
 
+// afterAFailedInstall decides what a refused install leaves standing, and says
+// what happened.
+//
+// Two answers, and the difference between them is the banner. Apply raises one
+// before the download starts, because the download is the notice period: it
+// warns everybody looking at a screen that the application is about to go away
+// under them.
+//
+// A genuine failure means no restart is coming, so that warning has to come down
+// - left up it is a permanent lie on everybody's screen.
+//
+// An install already under way means the opposite. The restart is still coming,
+// raised by the call that got there first, and the banner belongs to that call.
+// Two administrators pressing within a moment of each other, or one pressing
+// twice, is the ordinary way in - and taking the warning down because the second
+// press was turned away would leave everybody unwarned about an update that is
+// still running. So this is answered before the hub is touched at all.
+func (h *UpdateHandler) afterAFailedInstall(err error, version string) error {
+	if errors.Is(err, selfupdate.ErrInstalling) {
+		return toHTTPError(apperror.Conflictf(
+			"an update is already being installed").WithCode("updateInstalling"))
+	}
+
+	h.hub.Publish(announce.Cancelled, version)
+	h.hub.Forget()
+
+	return toHTTPError(apperror.Internal(err))
+}
+
 // Apply handles POST /api/v1/settings/update.
 func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 	if _, err := h.authz.RequireInstallationAdmin(c); err != nil {
@@ -287,12 +317,7 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 	h.hub.Publish(announce.Installing, release.Version)
 
 	if err := h.source.Install(c, release); err != nil {
-		// And taken back. The banner promises a restart, and no restart is coming:
-		// left standing it would be a permanent lie on everybody's screen.
-		h.hub.Publish(announce.Cancelled, release.Version)
-		h.hub.Forget()
-
-		return nil, toHTTPError(apperror.Internal(err))
+		return nil, h.afterAFailedInstall(err, release.Version)
 	}
 
 	// Downloaded and in place. Whether it takes effect now or when somebody walks
