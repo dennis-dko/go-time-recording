@@ -524,7 +524,18 @@ func (p *page) readyAdmin() {
 	// The session survives the change now: the server ends the other devices and
 	// keeps this one, because this is the device that just proved it knew the old
 	// password. Waiting for a sign-in screen here would wait for ever.
-	time.Sleep(600 * time.Millisecond)
+	//
+	// Waited on the effect rather than on six hundred milliseconds. The server
+	// refuses everything else until this lands, so acting too early is refused
+	// with "the initial password must be changed" - which arrives at whatever the
+	// caller was doing three steps later as a 409 nobody can place. That is what
+	// it did on a loaded runner: a case that creates an account got the refusal
+	// and reported it as an account that already existed.
+	//
+	// The banner is driven by the same fact the server is checking, so its going
+	// is the change having taken.
+	p.waitGone("#password-banner")
+	p.settled()
 
 	if p.visible("#login-screen") {
 		p.t.Fatalf("changing the password signed the administrator out; the session was meant to survive it")
@@ -1011,7 +1022,18 @@ func TestBookingTimeThroughTheInterface(t *testing.T) {
 	// The session survives the change now: the server ends the other devices and
 	// keeps this one, because this is the device that just proved it knew the old
 	// password. Waiting for a sign-in screen here would wait for ever.
-	time.Sleep(600 * time.Millisecond)
+	//
+	// Waited on the effect rather than on six hundred milliseconds. The server
+	// refuses everything else until this lands, so acting too early is refused
+	// with "the initial password must be changed" - which arrives at whatever the
+	// caller was doing three steps later as a 409 nobody can place. That is what
+	// it did on a loaded runner: a case that creates an account got the refusal
+	// and reported it as an account that already existed.
+	//
+	// The banner is driven by the same fact the server is checking, so its going
+	// is the change having taken.
+	p.waitGone("#password-banner")
+	p.settled()
 
 	if p.visible("#login-screen") {
 		p.t.Fatalf("changing the password signed the administrator out; the session was meant to survive it")
