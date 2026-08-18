@@ -34,6 +34,8 @@ func runningTimer(t *testing.T, c *client) TimerOnTheWire {
 
 // Nothing is running on a fresh account, and asking is not an error.
 func TestNoTimerIsRunningToBeginWith(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	if timer := runningTimer(t, worker); timer.Running {
@@ -44,6 +46,8 @@ func TestNoTimerIsRunningToBeginWith(t *testing.T) {
 // Starting records the clock and says when it started, so the interface can count
 // up on its own rather than asking every second to be told the same thing.
 func TestStartingAndReadingBackTheClock(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	// Private: the clock is the caller's own, and a private project is what the
@@ -87,6 +91,8 @@ func TestStartingAndReadingBackTheClock(t *testing.T) {
 // their mind about what they are doing, and refusing would leave them to stop a
 // clock that is measuring the wrong thing.
 func TestStartingAgainReplacesTheRunningClock(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	worker.must(worker.api(http.MethodPost, "/me/timer",
@@ -104,6 +110,8 @@ func TestStartingAgainReplacesTheRunningClock(t *testing.T) {
 // Discarding leaves no record at all, which is the way out of a clock nobody
 // meant to start.
 func TestDiscardingATimerRecordsNothing(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	before := timesheetCount(t, worker)
@@ -125,6 +133,8 @@ func TestDiscardingATimerRecordsNothing(t *testing.T) {
 // to the smallest bookable duration would record work nobody did. Refused, with
 // the way out in the message.
 func TestStoppingImmediatelyIsRefusedRatherThanRoundedUp(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	before := timesheetCount(t, worker)
@@ -153,6 +163,8 @@ func TestStoppingImmediatelyIsRefusedRatherThanRoundedUp(t *testing.T) {
 // The one that matters: a clock that has run long enough becomes an ordinary time
 // entry, with the measured duration and not a rounded one.
 func TestStoppingBooksTheMeasuredTime(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	worker.must(worker.api(http.MethodPost, "/me/timer",
@@ -198,6 +210,8 @@ func TestStoppingBooksTheMeasuredTime(t *testing.T) {
 // it. Reached here through a project that is completed while the clock runs, which
 // is a thing that really happens.
 func TestStoppingIsRefusedWhenTheEntryWouldBe(t *testing.T) {
+	t.Parallel()
+
 	a, admin, _ := startWithWorker(t)
 	other := a.signInAsUser(admin, "Nils", "nils@example.com")
 
@@ -238,6 +252,8 @@ func TestStoppingIsRefusedWhenTheEntryWouldBe(t *testing.T) {
 // the insert and answered 500 for what is a mistyped number. Now it is a 404 on
 // every engine, and nothing is stored.
 func TestStartingTheClockOnAProjectThatDoesNotExistIsRefused(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	refused := worker.api(http.MethodPost, "/me/timer", map[string]any{"projectId": 999999})
@@ -257,6 +273,8 @@ func TestStartingTheClockOnAProjectThatDoesNotExistIsRefused(t *testing.T) {
 // reported the same way it is everywhere else: not found, so its existence stays
 // private.
 func TestStartingTheClockOnSomebodyElsesPrivateProjectIsRefused(t *testing.T) {
+	t.Parallel()
+
 	a, admin, worker := startWithWorker(t)
 
 	// Creating the second account is the administrator's job; timing against a
@@ -300,6 +318,8 @@ func timesheetCount(t *testing.T, c *client) int {
 // as timing against a project that never existed, reached from the other end.
 
 func TestDeletingAnAccountWithAClockRunning(t *testing.T) {
+	t.Parallel()
+
 	a, admin, _ := startWithWorker(t)
 
 	var created struct {
@@ -336,6 +356,8 @@ func TestDeletingAnAccountWithAClockRunning(t *testing.T) {
 }
 
 func TestDeletingAProjectSomebodyIsTimingAgainst(t *testing.T) {
+	t.Parallel()
+
 	a, admin, _ := startWithWorker(t)
 	other := a.signInAsUser(admin, "Rolf", "rolf@example.com")
 

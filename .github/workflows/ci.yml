@@ -172,7 +172,14 @@ jobs:
           # Empty for the sqlite leg: the harness falls back to a file per test.
           # root on MySQL, because each test creates its own database.
           GTR_TEST_DSN: ${{ matrix.dialect == 'postgres' && 'postgres://gtr:gtr-test-password@localhost:5432/go-time-recording?sslmode=disable' || matrix.dialect == 'mysql' && 'mysql://root:gtr-test-root@localhost:3306/go-time-recording' || '' }}
-        run: go test -tags integration -count=1 -timeout 15m ./test/integration/
+        # -parallel for the same reason as the browser job: every case starts its
+        # own instance of the application against its own database, so there is
+        # nothing shared to fight over and almost all of the time is spent waiting
+        # for one to come up. Locally the suite is 200 seconds one at a time and
+        # 71 four at a time, and 91 against a real PostgreSQL - which is the leg
+        # that could have contended, and does not: each case creates a database of
+        # its own on the server.
+        run: go test -tags integration -count=1 -timeout 15m -parallel 4 ./test/integration/
 
   # The two suites that were never run here at all.
   #
@@ -255,24 +262,43 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # ubuntu-latest ships Chrome, but pinning the action means the tests do
-      # not start failing the day the runner image drops it.
+      # The Chrome the runner image already has, rather than one fetched here.
       #
-      # install-dependencies because of what changed in v2: "stable" now comes
-      # from Chrome for Testing rather than the official installer, and that is
-      # an unpacked archive with no package manager to pull in the shared
-      # libraries it links against. The runner happens to have most of them
-      # today; a missing one surfaces as the browser exiting instantly, which
-      # reads like a broken test rather than a missing .so.
-      - uses: browser-actions/setup-chrome@v2
+      # This used to install it with browser-actions/setup-chrome, and that step
+      # became the slowest and least reliable thing in the whole workflow. v2
+      # takes "stable" from Chrome for Testing - an unpacked archive with no
+      # package manager to pull in the shared libraries it links against - so it
+      # needed install-dependencies, which is an apt-get update against Ubuntu's
+      # mirrors. On a bad day those mirrors do not answer: the step sat for eight
+      # and a half minutes ignoring one repository after another and was
+      # cancelled, and the tests it was preparing for never ran at all.
+      #
+      # The image ships Google Chrome installed as a package, so its libraries
+      # are there by construction, and it is kept working by the people who
+      # maintain the image. Nothing is downloaded, so nothing can hang.
+      #
+      # Checked rather than assumed: the day the image drops it, this says so in
+      # one line instead of ninety-six cases timing out against a browser that
+      # was never there.
+      - name: Find the runner's Chrome
         id: chrome
-        with:
-          chrome-version: stable
-          install-dependencies: true
+        run: |
+          candidates="$CHROME_BIN /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium-browser"
+
+          for candidate in $candidates; do
+            if [ -x "$candidate" ]; then
+              echo "path=$candidate" >> "$GITHUB_OUTPUT"
+              "$candidate" --version
+              exit 0
+            fi
+          done
+
+          echo "::error::no Chrome on this runner image; the browser tests need one"
+          exit 1
 
       - name: Browser tests
         env:
-          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          CHROME_PATH: ${{ steps.chrome.outputs.path }}
         # -v so a failure names the case and the log shows which steps ran
         # before it. Without it a browser failure is a package name and a
         # timeout, with nothing to say which click never landed.

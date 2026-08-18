@@ -242,6 +242,38 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 		t.Errorf("the logo sits at %.0f and the bar's middle is %.0f",
 			placed.Centre, placed.BarCentre)
 	}
+
+	// The room the sign-in screen gives it, which is what it is given here now.
+	// It was 40px in the bar and 96 on the card - two sizes for one picture, and
+	// the header's was the one nobody could read.
+	var sizes struct {
+		Header float64 `json:"header"`
+		SignIn float64 `json:"signIn"`
+		Source string  `json:"source"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const header = document.querySelector('#brand-logo');
+		const login = document.querySelector('#login-logo');
+
+		return {
+			header: parseFloat(getComputedStyle(header).maxHeight),
+			signIn: parseFloat(getComputedStyle(login).maxHeight),
+			// Both are handed the same copy: the header's slot is no longer the
+			// small derived one, which would be enlarged and blurred.
+			source: header.src === login.src ? 'same' : 'different',
+		};
+	})())`, &sizes)
+
+	if sizes.Header != sizes.SignIn {
+		t.Errorf("the header allows the logo %.0fpx and the sign-in screen %.0fpx",
+			sizes.Header, sizes.SignIn)
+	}
+
+	if sizes.Source != "same" {
+		t.Error("the header is given a different copy of the logo from the sign-in " +
+			"screen, so one of the two is being enlarged")
+	}
 }
 
 // Your own row says so, and says it before it says anything else.

@@ -13,6 +13,8 @@ import (
 // cover the path everybody takes before anything else works.
 
 func TestFreshInstallServesTheInterfaceAndTheAPI(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 
 	page := a.newClient().do(http.MethodGet, "/", nil)
@@ -34,6 +36,8 @@ func TestFreshInstallServesTheInterfaceAndTheAPI(t *testing.T) {
 }
 
 func TestTheInitialPasswordMustBeChangedBeforeAnythingElse(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.newClient()
 
@@ -71,6 +75,8 @@ func TestTheInitialPasswordMustBeChangedBeforeAnythingElse(t *testing.T) {
 // something: a session opened with the old password somewhere else must stop
 // working the moment the password changes.
 func TestOtherSessionsDoNotSurviveAPasswordChange(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 
 	// Two sessions of the same account, both signed in with the initial password.
@@ -94,6 +100,8 @@ func TestOtherSessionsDoNotSurviveAPasswordChange(t *testing.T) {
 }
 
 func TestTheOldPasswordStopsWorking(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	a.signInAsAdmin("a-much-better-password")
 
@@ -108,6 +116,8 @@ func TestTheOldPasswordStopsWorking(t *testing.T) {
 // A wrong password and an unknown account must be indistinguishable, or the
 // response becomes a way to discover which addresses exist.
 func TestFailedSignInsAreIndistinguishable(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	a.signInAsAdmin("a-much-better-password")
 
@@ -137,6 +147,8 @@ func TestFailedSignInsAreIndistinguishable(t *testing.T) {
 // would come back up reachable with the initial password from the
 // documentation. It is settled by the installer, before the application starts.
 func TestTheWizardRequiresAPasswordAndAZoneAndNotADatabase(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.newClient()
 	c.signIn(adminEmail, adminPassword)
@@ -181,6 +193,8 @@ func TestTheWizardRequiresAPasswordAndAZoneAndNotADatabase(t *testing.T) {
 }
 
 func TestSetupWizardCompletesAndStaysAway(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -213,6 +227,8 @@ func TestSetupWizardCompletesAndStaysAway(t *testing.T) {
 // The wizard is a list of what is not configured yet, which is a useful thing
 // for an attacker to read.
 func TestSetupWizardIsAdministratorOnly(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -237,6 +253,8 @@ func TestSetupWizardIsAdministratorOnly(t *testing.T) {
 // review that no longer exists - and it never did either of those things, even then.
 // What it checks is that a booking is recorded, read back, corrected and removed.
 func TestBookingCorrectingAndRemovingAnEntry(t *testing.T) {
+	t.Parallel()
+
 	a, admin, _ := startWithWorker(t)
 	other := a.signInAsUser(admin, "Meike", "meike@example.com")
 
@@ -265,6 +283,8 @@ func TestBookingCorrectingAndRemovingAnEntry(t *testing.T) {
 // day it stops belongs to somebody who works here, and the administrator no longer
 // has one - so the bookings go through Wera.
 func TestBookingIsRefusedOverTheDailyCap(t *testing.T) {
+	t.Parallel()
+
 	_, admin, worker := startWithWorker(t)
 
 	// Administered from the Settings screen, and in force immediately.
@@ -300,6 +320,8 @@ func TestBookingIsRefusedOverTheDailyCap(t *testing.T) {
 // are all Wera's, and the administrator appears only to open the account. It has no
 // daily target of its own to compare against and no entries to total.
 func TestOvertimeCountsOnlyDaysWithBookings(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	me := worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK)
@@ -362,6 +384,8 @@ func TestOvertimeCountsOnlyDaysWithBookings(t *testing.T) {
 // so an installation cannot be used on the password from the documentation
 // even by someone who never opens the interface.
 func TestChangingTheAdministratorPasswordCannotBeSkipped(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.newClient()
 	c.signIn(adminEmail, adminPassword)
@@ -448,6 +472,8 @@ func TestChangingTheAdministratorPasswordCannotBeSkipped(t *testing.T) {
 // Written down because the README described it as ending *every* session, which
 // is the behaviour this replaced and not the one the code has.
 func TestChangingAPasswordEndsTheOtherSessionsAndKeepsThisOne(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 

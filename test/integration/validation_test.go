@@ -67,6 +67,8 @@ func checkRefusals(t *testing.T, c *client, cases []badRequest) {
 var tooLong = strings.Repeat("x", 5000)
 
 func TestCreatingAnAccountRefusesWhatCannotBeStored(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -111,6 +113,8 @@ func TestCreatingAnAccountRefusesWhatCannotBeStored(t *testing.T) {
 }
 
 func TestBookingTimeRefusesWhatCannotBeStored(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	checkRefusals(t, worker, []badRequest{
@@ -134,6 +138,8 @@ func TestBookingTimeRefusesWhatCannotBeStored(t *testing.T) {
 }
 
 func TestCreatingAProjectRefusesWhatCannotBeStored(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	checkRefusals(t, worker, []badRequest{
@@ -149,6 +155,8 @@ func TestCreatingAProjectRefusesWhatCannotBeStored(t *testing.T) {
 }
 
 func TestChangingOwnSettingsRefusesWhatCannotBeStored(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	checkRefusals(t, worker, []badRequest{
@@ -168,6 +176,8 @@ func TestChangingOwnSettingsRefusesWhatCannotBeStored(t *testing.T) {
 }
 
 func TestAdministeringRolesRefusesWhatCannotBeStored(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -185,6 +195,8 @@ func TestAdministeringRolesRefusesWhatCannotBeStored(t *testing.T) {
 // the ones where a value that is merely stored, rather than refused, is only
 // discovered at the next start - which is the worst moment to discover it.
 func TestAdministeringTheInstanceRefusesWhatCannotBeStored(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 

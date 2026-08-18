@@ -1274,7 +1274,20 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 /* The instance's mark in the header. Bigger than the text beside it can carry on
    its own: a wordmark at 28px is a smudge, and this is the one place the
    installation says whose it is. */
-.brand-logo { height: 40px; max-width: 220px; object-fit: contain; }
+/* The same room the sign-in screen gives it.
+
+   It was 40px tall in the bar and 96px on the sign-in card, which is two sizes
+   for one picture and made the header's copy the small one nobody could read.
+   Bounded rather than fixed: a wide wordmark hits the width first and comes out
+   shorter, a square mark hits the height. What it costs is bar height, and the
+   bar is sticky - so this is the one place where a large logo is paid for on
+   every screen. */
+.brand-logo {
+  height: auto;
+  max-height: 96px;
+  max-width: 328px;
+  object-fit: contain;
+}
 
 .logo-preview {
   background: var(--bg);
@@ -2015,18 +2028,12 @@ input[readonly] { cursor: default; }
    and the whole row dimmed. */
 .perm-switch.muted { cursor: default; }
 
-/* The last few entries, on the greeting.
+/* The last few entries, in a card of their own under the greeting.
 
-   Its own panel inside the card rather than a second card: it belongs to the
-   greeting - it is what the greeting is about, for somebody who books time -
-   and a card of its own would read as a separate screen that happens to be
-   underneath. */
-.welcome-recent {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin: 14px 0 4px;
-  padding: 12px 14px;
-}
+   It began as a panel inside the greeting card, which put the work somebody
+   came for inside a card explaining what the application is. Two cards: one
+   introduces, one reports, and the reporting one is the one that stays useful
+   after the first week. */
 
 .welcome-recent-head {
   align-items: baseline;

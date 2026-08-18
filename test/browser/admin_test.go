@@ -3825,6 +3825,32 @@ func TestTheGreetingShowsTheLastEntries(t *testing.T) {
 		t.Fatal("somebody who books time is shown no entries on the greeting")
 	}
 
+	// A card of its own, under the greeting rather than inside it: one card
+	// introduces the application and one reports the work, and the second is the
+	// one that stays useful after the first week.
+	var standing struct {
+		OwnCard bool    `json:"ownCard"`
+		Below   float64 `json:"below"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const panel = document.querySelector('#welcome-recent');
+		const greeting = document.querySelector('#view-welcome .card');
+
+		return {
+			ownCard: panel.classList.contains('card') && !greeting.contains(panel),
+			below: panel.getBoundingClientRect().top - greeting.getBoundingClientRect().bottom,
+		};
+	})())`, &standing)
+
+	if !standing.OwnCard {
+		t.Error("the entries sit inside the greeting card rather than in one of their own")
+	}
+
+	if standing.Below < 0 {
+		t.Errorf("the entries card overlaps the greeting by %.0fpx", -standing.Below)
+	}
+
 	var rows struct {
 		Count    int      `json:"count"`
 		Projects []string `json:"projects"`

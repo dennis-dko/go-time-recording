@@ -102,6 +102,8 @@ func sqliteDatasource() map[string]string {
 // than the application - and must not have picked a database for itself, which
 // is the failure this whole design exists to prevent.
 func TestABinaryWithNoDatabaseServesItsInstaller(t *testing.T) {
+	t.Parallel()
+
 	c := openInstaller(t)
 
 	body := get(t, c.app.BaseURL()+"/")
@@ -126,6 +128,8 @@ func TestABinaryWithNoDatabaseServesItsInstaller(t *testing.T) {
 // The token is the only thing standing between an exposed port and that
 // decision.
 func TestTheInstallerRefusesAWrongToken(t *testing.T) {
+	t.Parallel()
+
 	c := openInstaller(t)
 
 	for _, token := range []string{"", "wrong", strings.Repeat("a", 32)} {
@@ -143,6 +147,8 @@ func TestTheInstallerRefusesAWrongToken(t *testing.T) {
 // A saved connection that does not work would leave the process unable to start
 // and unable to serve the screen that could fix it. So it is proven first.
 func TestTheInstallerRefusesAConnectionThatDoesNotWork(t *testing.T) {
+	t.Parallel()
+
 	c := openInstaller(t)
 
 	unreachable := map[string]string{
@@ -168,6 +174,8 @@ func TestTheInstallerRefusesAConnectionThatDoesNotWork(t *testing.T) {
 // Nonsense is refused before it is probed, so a missing host is a sentence
 // rather than a driver error.
 func TestTheInstallerRefusesAnIncompleteConnection(t *testing.T) {
+	t.Parallel()
+
 	c := openInstaller(t)
 
 	for _, ds := range []map[string]string{
@@ -192,6 +200,8 @@ func TestTheInstallerRefusesAnIncompleteConnection(t *testing.T) {
 // application on the same port. No restart, because a container that exits to
 // finish installing itself looks like one that crashed.
 func TestChoosingADatabaseHandsOverToTheApplication(t *testing.T) {
+	t.Parallel()
+
 	c := openInstaller(t)
 
 	if status, body := c.post("/install/test", c.token, sqliteDatasource()); status != http.StatusOK {
@@ -237,6 +247,8 @@ func TestChoosingADatabaseHandsOverToTheApplication(t *testing.T) {
 // an installer - that would turn a working deployment into one that waits for
 // somebody to click something.
 func TestAConfiguredDatabaseSkipsTheInstallerEntirely(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 
 	if strings.Contains(a.Log(), "serving its installer") {

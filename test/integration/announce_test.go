@@ -93,6 +93,8 @@ func openStream(t *testing.T, c *client) (<-chan map[string]any, int, func()) {
 
 // Somebody signed in gets a stream, and what is published arrives on it.
 func TestAnAnnouncementReachesAnOpenStream(t *testing.T) {
+	t.Parallel()
+
 	app := start(t)
 	admin := app.signInAsAdmin("a-much-better-password")
 
@@ -133,6 +135,8 @@ func TestAnAnnouncementReachesAnOpenStream(t *testing.T) {
 // but it is still a connection this application holds open, and holding one for
 // every visitor is how a public endpoint becomes a way to exhaust a server.
 func TestTheStreamIsRefusedWithoutASession(t *testing.T) {
+	t.Parallel()
+
 	app := start(t)
 
 	// A client that has fetched the page - so it has the CSRF cookie a browser
@@ -154,6 +158,8 @@ func TestTheStreamIsRefusedWithoutASession(t *testing.T) {
 // delivered once and then never again, and a content type of anything else is a
 // browser that will not treat it as events at all.
 func TestTheStreamAnnouncesItselfAsOne(t *testing.T) {
+	t.Parallel()
+
 	app := start(t)
 	admin := app.signInAsAdmin("a-much-better-password")
 

@@ -21,6 +21,8 @@ import (
 // The footer asks which build is running, and the answer has to come from the
 // build rather than from a constant somebody forgets to change.
 func TestTheBrandingResponseCarriesTheVersion(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.newClient()
 
@@ -41,6 +43,8 @@ func TestTheBrandingResponseCarriesTheVersion(t *testing.T) {
 
 // Readable without a session, because the footer is on the sign-in screen too.
 func TestTheVersionIsReadableBeforeSigningIn(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 
 	body := get(t, a.BaseURL()+"/api/v1/branding")
@@ -79,6 +83,8 @@ func (c *client) logs(t *testing.T, query string) logPage {
 // decided to print. A user reading it would be reading the whole
 // installation's traffic.
 func TestTheLogIsOnlyReadableByTheBuiltInAdministrator(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -105,6 +111,8 @@ func TestTheLogIsOnlyReadableByTheBuiltInAdministrator(t *testing.T) {
 // explanation. And it has to have caught the framework's own output, which is
 // the whole reason it intercepts the process rather than wrapping a logger.
 func TestTheLogCapturesWhatTheFrameworkWrote(t *testing.T) {
+	t.Parallel()
+
 	// LOG_LEVEL=INFO because the request log is an INFO line, and the harness
 	// otherwise runs at WARN. Worth knowing beyond this test: the viewer can only
 	// ever show what LOG_LEVEL admits, so ticking DEBUG on an installation
@@ -156,6 +164,8 @@ func TestTheLogCapturesWhatTheFrameworkWrote(t *testing.T) {
 // The levels offered by the interface come from the server, so a filter cannot
 // name a level that never appears.
 func TestTheLogReportsTheLevelsItCanEmit(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -169,6 +179,8 @@ func TestTheLogReportsTheLevelsItCanEmit(t *testing.T) {
 }
 
 func TestFilteringTheLogByLevel(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -188,6 +200,8 @@ func TestFilteringTheLogByLevel(t *testing.T) {
 }
 
 func TestSearchingTheLog(t *testing.T) {
+	t.Parallel()
+
 	// LOG_LEVEL=INFO because the request log is an INFO line, and the harness
 	// otherwise runs at WARN. Worth knowing beyond this test: the viewer can only
 	// ever show what LOG_LEVEL admits, so ticking DEBUG on an installation
@@ -223,6 +237,8 @@ func TestSearchingTheLog(t *testing.T) {
 // A polling viewer asks for what is new. Handing it lines it already has would
 // make the view repeat itself on every refresh.
 func TestSinceReturnsOnlyNewLines(t *testing.T) {
+	t.Parallel()
+
 	// LOG_LEVEL=INFO because the request log is an INFO line, and the harness
 	// otherwise runs at WARN. Worth knowing beyond this test: the viewer can only
 	// ever show what LOG_LEVEL admits, so ticking DEBUG on an installation
@@ -255,6 +271,8 @@ func TestSinceReturnsOnlyNewLines(t *testing.T) {
 // endpoint reads a mutex-guarded buffer, and a request for a million lines
 // would hold it while serialising the lot.
 func TestTheLogPageSizeIsBounded(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -268,6 +286,8 @@ func TestTheLogPageSizeIsBounded(t *testing.T) {
 // Nonsense in the query string means "no filter" rather than an error the caller
 // cannot act on - the alternative is a viewer that breaks on a stale bookmark.
 func TestNonsenseLogParametersAreIgnored(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -300,6 +320,8 @@ func contains(values []string, want string) bool {
 // the version alone does not say what somebody is looking at. Public, like the
 // version it sits next to: it is in the footer of a page anyone can reach.
 func TestBrandingNamesTheVersionAndThePlatform(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.newClient()
 
@@ -328,6 +350,8 @@ func TestBrandingNamesTheVersionAndThePlatform(t *testing.T) {
 // the interface then overrode in another, which reads as the change not having
 // been saved.
 func TestAShippedRolesDescriptionCannotBeChanged(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 

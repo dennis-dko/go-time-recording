@@ -46,6 +46,8 @@ func refusalOf(t *testing.T, r response) refusal {
 
 // A conflict, which GoFr renders through a local error type.
 func TestAConflictCarriesItsReasonAndValues(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	// A project with an entry on it cannot be deleted, and the refusal says how
@@ -90,6 +92,8 @@ func TestAConflictCarriesItsReasonAndValues(t *testing.T) {
 // Invalid input, which is the other rendering path - and the one that used to
 // wrap the sentence in GoFr's "'1' invalid parameter(s):".
 func TestInvalidInputCarriesItsReasonAndValues(t *testing.T) {
+	t.Parallel()
+
 	// Somebody who works here, because the two figures are a time figure each and
 	// belong to the person they are about. The administrator is refused this route
 	// before the request is even read, so it could never reach the rule under test.
@@ -150,6 +154,8 @@ func TestInvalidInputCarriesItsReasonAndValues(t *testing.T) {
 // which field, and the names without the code give a list nobody can put a
 // sentence around.
 func TestAFieldRejectionIsNamedAndSaysWhichField(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	refused := worker.api(http.MethodPost, "/timesheets", map[string]any{

@@ -75,6 +75,8 @@ func accepted(status int) bool {
 // holds nothing about projects, and an ordinary account holds nothing about
 // accounts - so a single caller could only ever prove half of this.
 func TestTheExportRoutesAreNotReadAsIdentifiers(t *testing.T) {
+	t.Parallel()
+
 	_, admin, worker := startWithWorker(t)
 
 	for _, sheet := range []struct {
@@ -99,6 +101,8 @@ func TestTheExportRoutesAreNotReadAsIdentifiers(t *testing.T) {
 // A project sheet round-trips: exported, read back, imported again, and the second
 // import changes nothing rather than creating everything twice.
 func TestProjectsRoundTripThroughASpreadsheet(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	// The work is done by somebody who works here; the administrator only creates
@@ -164,6 +168,8 @@ func TestProjectsRoundTripThroughASpreadsheet(t *testing.T) {
 // already archived was refused, for a change nobody had asked for. The status is
 // only sent where it differs now, which is both correct and sidesteps the rule.
 func TestAnArchivedProjectCanBeImportedBack(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	var project projectResponse
@@ -212,6 +218,8 @@ func TestAnArchivedProjectCanBeImportedBack(t *testing.T) {
 // preview: nothing is written when any row is refused, so the whole file would fail
 // after being shown as fine.
 func TestArchivingAProjectThatIsNotCompletedIsRefusedInThePreview(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
@@ -244,6 +252,8 @@ func TestArchivingAProjectThatIsNotCompletedIsRefusedInThePreview(t *testing.T) 
 // The headings are translated and the values with them, and the preview says the
 // same words as the file.
 func TestTheProjectPreviewSpeaksTheLanguageAsked(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	book, err := spreadsheet.WriteProjects("de", []spreadsheet.ProjectRow{
@@ -284,6 +294,8 @@ func TestTheProjectPreviewSpeaksTheLanguageAsked(t *testing.T) {
 
 // A sheet of the wrong kind is refused rather than half understood.
 func TestASheetOfTheWrongKindIsRefusedByTheAPI(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -300,6 +312,8 @@ func TestASheetOfTheWrongKindIsRefusedByTheAPI(t *testing.T) {
 
 // An import of people changes accounts and does not invent them.
 func TestImportingPeopleChangesThemAndCreatesNothing(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	a.signInAsUser(admin, "Mika", "mika@example.com")
@@ -357,6 +371,8 @@ func TestImportingPeopleChangesThemAndCreatesNothing(t *testing.T) {
 // have been worse than leaving it: somebody edits forty targets, is told forty rows
 // were written, and nothing happened.
 func TestThePeopleSheetCarriesNoWorkingTimes(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	a.signInAsUser(admin, "Mika", "mika@example.com")
@@ -445,6 +461,8 @@ func permissionsOffered(t *testing.T, columns []string) []string {
 // A roles sheet round-trips: exported, imported again, and the second import
 // matches every role by name instead of creating a second set of them.
 func TestRolesRoundTripThroughASpreadsheet(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -475,6 +493,8 @@ func TestRolesRoundTripThroughASpreadsheet(t *testing.T) {
 // something the reader can look up and complain about; a misspelled word inside a
 // list of rights is a right nobody granted and nobody was told about.
 func TestARightThisApplicationDoesNotEnforceIsRefusedByName(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -509,6 +529,8 @@ func TestARightThisApplicationDoesNotEnforceIsRefusedByName(t *testing.T) {
 // A role that does not exist yet is created from a row, which is what makes this
 // sheet different from the accounts one: everything a role is fits in a row.
 func TestARoleCanBeCreatedFromASheet(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -570,6 +592,8 @@ func TestARoleCanBeCreatedFromASheet(t *testing.T) {
 // spreadsheet the widest way into the one thing that keeps an installation
 // administrable - on the route nobody reads row by row.
 func TestASystemRoleCannotBeStrippedByASheet(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -619,6 +643,8 @@ func TestASystemRoleCannotBeStrippedByASheet(t *testing.T) {
 // be written was English prose beside all of it. It travels as a code and the
 // values the sentence interpolated now, the same way a refused request does.
 func TestARefusedRowNamesItsReasonAndNotOnlyInEnglish(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	book, err := spreadsheet.WriteProjects("", []spreadsheet.ProjectRow{
@@ -659,6 +685,8 @@ func TestARefusedRowNamesItsReasonAndNotOnlyInEnglish(t *testing.T) {
 // The same for a row the reader itself could not understand, which is a different
 // path: those complaints are made before any of the application's rules are.
 func TestAnUnreadableRowNamesItsReason(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	book, err := spreadsheet.WriteProjects("", []spreadsheet.ProjectRow{
@@ -687,6 +715,8 @@ func TestAnUnreadableRowNamesItsReason(t *testing.T) {
 // put something where somebody else can see it, since it is the one route nobody reads
 // row by row.
 func TestAnImportedProjectBelongsToWhoeverImportedIt(t *testing.T) {
+	t.Parallel()
+
 	a, admin, _ := startWithWorker(t)
 	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
 	bert := a.signInAsUser(admin, "Bert", "bert@example.com")

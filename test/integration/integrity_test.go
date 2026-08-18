@@ -80,6 +80,8 @@ func createUserWithTime(t *testing.T, a *app, admin *client, email string) uint 
 // An account with recorded time is the normal case for a leaver, so this is the
 // path a real deletion actually takes.
 func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -128,6 +130,8 @@ func TestDeletingAnAccountThatHasRecordedTime(t *testing.T) {
 // The same for an account with nothing attached, which has to work on every
 // dialect - it is the only deletion with no ambiguity about it.
 func TestDeletingAnAccountWithNothingAttached(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -152,6 +156,8 @@ func TestDeletingAnAccountWithNothingAttached(t *testing.T) {
 // all and inserts the new set, so a failure part-way leaves a role that grants
 // less than it says - or nothing at all, taking every user on it with it.
 func TestChangingARolesPermissionsIsAllOrNothing(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -192,6 +198,8 @@ func TestChangingARolesPermissionsIsAllOrNothing(t *testing.T) {
 // one where a table missing from the cascade shows up - as a refusal on a
 // database that enforces its foreign keys, or as an orphan on one that does not.
 func TestConfirmingTheDeletionRemovesTheAccountAndItsTime(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -223,6 +231,8 @@ func TestConfirmingTheDeletionRemovesTheAccountAndItsTime(t *testing.T) {
 // An account with nothing recorded needs no confirmation. Asking about something
 // with no consequence trains people to click through the dialog that has one.
 func TestAnAccountWithNoRecordedTimeNeedsNoConfirmation(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 
@@ -242,6 +252,8 @@ func TestAnAccountWithNoRecordedTimeNeedsNoConfirmation(t *testing.T) {
 // The built-in administrator stays, confirmation or not: it is the way back into
 // an installation.
 func TestTheBuiltInAdministratorCannotBeDeletedEvenWithConfirmation(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	c := a.signInAsAdmin("a-much-better-password")
 

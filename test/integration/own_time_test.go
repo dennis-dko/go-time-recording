@@ -24,6 +24,8 @@ import (
 // like. What is checked now is both halves of that - each total holds its owner's hours
 // and the other project is not reachable at all.
 func TestAProjectTotalCoversOnlyYourOwnHours(t *testing.T) {
+	t.Parallel()
+
 	a, admin, _ := startWithWorker(t)
 	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
 	bert := a.signInAsUser(admin, "Bert", "bert@example.com")
@@ -93,6 +95,8 @@ func TestAProjectTotalCoversOnlyYourOwnHours(t *testing.T) {
 // It was gated on a right no seeded role held, so the screen was hidden and the
 // endpoint refused everybody - on every installation there is.
 func TestTheProjectReportIsReachableByAnOrdinaryAccount(t *testing.T) {
+	t.Parallel()
+
 	a, admin, worker := startWithWorker(t)
 	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
 
@@ -125,6 +129,8 @@ func TestTheProjectReportIsReachableByAnOrdinaryAccount(t *testing.T) {
 // that come closest: the one that administers the installation, and the one that
 // administers and works here as well.
 func TestSomebodyElsesOvertimeIsRefused(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	anna := a.signInAsUser(admin, "Anna", "anna@example.com")
@@ -180,6 +186,8 @@ func TestSomebodyElsesOvertimeIsRefused(t *testing.T) {
 // nobody does. A route left in place for a screen nobody may open is a route
 // somebody finds later.
 func TestThereIsNoTeamWideOvertimeEndpoint(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	if got := worker.api(http.MethodGet, "/overtime", nil).Status; got != http.StatusNotFound {

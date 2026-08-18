@@ -67,6 +67,8 @@ func readTelemetry(t *testing.T, c *client) TelemetryOnTheWire {
 // address are part of running the installation rather than anybody's working day,
 // and nobody else may see them - which the next test is about.
 func TestTelemetryReportsWhatTheProcessIsActuallyDoing(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -107,6 +109,8 @@ func TestTelemetryReportsWhatTheProcessIsActuallyDoing(t *testing.T) {
 // and by nobody else. See Authorizer.RequireInstallationAdmin, which records what
 // that costs.
 func TestTelemetryNeedsTheRightToManageSettings(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -152,6 +156,8 @@ func TestTelemetryNeedsTheRightToManageSettings(t *testing.T) {
 // the exporter, and a ratio it cannot parse samples nothing. Refusing them here is
 // the only point at which somebody is still looking.
 func TestTelemetryRefusesWhatWouldFailSilently(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -193,6 +199,8 @@ func TestTelemetryRefusesWhatWouldFailSilently(t *testing.T) {
 // was actually stored rather than echoing the request: the collector address is
 // trimmed on the way in, and switching tracing off clears it.
 func TestSavingTelemetrySaysItAppliesAtTheNextStart(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -250,6 +258,8 @@ func TestSavingTelemetrySaysItAppliesAtTheNextStart(t *testing.T) {
 // disabled, and the harness has given this instance a real METRICS_PORT in its
 // environment - so the stored setting also has to be seen beating that.
 func TestWhatWasStoredIsAppliedByTheNextStart(t *testing.T) {
+	t.Parallel()
+
 	if dsn := os.Getenv(harness.DSNEnv); dsn != "" {
 		// Both instances have to share one database, and on a server the harness
 		// gives each of them its own.
@@ -311,6 +321,8 @@ func TestWhatWasStoredIsAppliedByTheNextStart(t *testing.T) {
 // os.Setenv call - the symptom, if it ever stops holding, is tracing that cannot
 // be turned off, and nothing else here would notice.
 func TestAnAdministeredOffBeatsAnExporterInTheEnvironment(t *testing.T) {
+	t.Parallel()
+
 	if dsn := os.Getenv(harness.DSNEnv); dsn != "" {
 		t.Skip("this test shares a SQLite file between two instances")
 	}
@@ -356,6 +368,8 @@ func TestAnAdministeredOffBeatsAnExporterInTheEnvironment(t *testing.T) {
 // the whole seam: saved through the API, applied to the capture, visible in the
 // process output.
 func TestTheLogLevelAppliesWithoutARestart(t *testing.T) {
+	t.Parallel()
+
 	a := start(t, "LOG_LEVEL=WARN")
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -444,6 +458,8 @@ func TestTheLogLevelAppliesWithoutARestart(t *testing.T) {
 // settings:manage. Everything else there changes what the application does; this
 // changes what it *is* - the bytes that will be executed after the next start.
 func TestTheUpdateCheckAnswersAndIsGuarded(t *testing.T) {
+	t.Parallel()
+
 	// A feed of our own, because the point is the answer's shape and not whether
 	// GitHub is up - and a test that reaches the internet is a test that fails on
 	// a train.
@@ -531,6 +547,8 @@ func TestTheUpdateCheckAnswersAndIsGuarded(t *testing.T) {
 
 // Switched off means switched off: no lookup, and no install.
 func TestUpdatingCanBeSwitchedOff(t *testing.T) {
+	t.Parallel()
+
 	reached := false
 
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

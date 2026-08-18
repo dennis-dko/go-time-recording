@@ -27,6 +27,8 @@ import (
 // The default dialect is SQLite, so this runs against it unless GTR_TEST_DSN
 // points somewhere else - where it is still a fair test of concurrent writes.
 func TestConcurrentWritesAreServedRatherThanRefused(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -111,6 +113,8 @@ func TestConcurrentWritesAreServedRatherThanRefused(t *testing.T) {
 // records that the introduction has been seen, and the next thing the person does
 // is another write.
 func TestAWriteRightAfterSigningInIsServed(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -171,6 +175,8 @@ func TestAWriteRightAfterSigningInIsServed(t *testing.T) {
 // The enrolment then answered 409, because as far as the server was concerned no
 // enrolment had been started.
 func TestASettingWrittenInPassingDoesNotRevertAnother(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 

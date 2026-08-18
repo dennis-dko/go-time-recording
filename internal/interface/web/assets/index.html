@@ -313,31 +313,31 @@
         <p class="muted" id="welcome-text"></p>
         <p class="muted" id="welcome-today"></p>
 
-        <!-- The last few entries, for somebody who books time here. A greeting
-             that says nothing about the work is a greeting nobody reads twice;
-             this is the one thing the person in front of it already knows the
-             shape of, so it is the one thing worth showing back to them.
-
-             Hidden outright for an account that records no time - the built-in
-             administrator has no entries, and an empty panel explaining that is
-             worse than no panel. -->
-        <section class="welcome-recent" id="welcome-recent" hidden
-                 aria-labelledby="welcome-recent-title">
-          <div class="welcome-recent-head">
-            <h3 id="welcome-recent-title" data-i18n="welcome.recent">Your last entries</h3>
-            <button type="button" class="link" id="welcome-recent-all"
-                    data-i18n="welcome.recentAll">All time entries</button>
-          </div>
-          <ul class="welcome-recent-list" id="welcome-recent-list"></ul>
-          <p class="muted" id="welcome-recent-empty" hidden data-i18n="welcome.recentNone">Nothing recorded in the last 90 days.</p>
-        </section>
-
         <ul class="welcome-points" id="welcome-points"></ul>
         <div class="row welcome-actions">
           <button type="button" id="welcome-continue" data-i18n="welcome.continue">Get started</button>
           <button type="button" class="secondary" id="welcome-tour" data-i18n="welcome.tour">Show me around</button>
         </div>
       </div>
+
+      <!-- The last few entries, for somebody who books time here. A greeting
+           that says nothing about the work is a greeting nobody reads twice;
+           this is the one thing the person in front of it already knows the
+           shape of, so it is the one thing worth showing back to them.
+
+           Hidden outright for an account that records no time - the built-in
+           administrator has no entries, and an empty panel explaining that is
+           worse than no panel. -->
+      <section class="card welcome-recent" id="welcome-recent" hidden
+               aria-labelledby="welcome-recent-title">
+        <div class="welcome-recent-head">
+          <h3 id="welcome-recent-title" data-i18n="welcome.recent">Your last entries</h3>
+          <button type="button" class="link" id="welcome-recent-all"
+                  data-i18n="welcome.recentAll">All time entries</button>
+        </div>
+        <ul class="welcome-recent-list" id="welcome-recent-list"></ul>
+        <p class="muted" id="welcome-recent-empty" hidden data-i18n="welcome.recentNone">Nothing recorded in the last 90 days.</p>
+      </section>
     </section>
 
     <!-- Time entries -->

@@ -108,6 +108,8 @@ func configureLDAP(t *testing.T, admin *client, host string, port int, baseDN st
 // and searches, so a pass means the settings are usable rather than merely
 // well-formed.
 func TestTheDirectoryConnectionTestReachesARealServer(t *testing.T) {
+	t.Parallel()
+
 	host, port := requireLDAP(t)
 
 	a := start(t)
@@ -142,6 +144,8 @@ func TestTheDirectoryConnectionTestReachesARealServer(t *testing.T) {
 // the password is checked against the directory and the account appears locally
 // on first success, carrying the name and address the directory holds.
 func TestADirectoryAccountCanSignInAndIsCreatedLocally(t *testing.T) {
+	t.Parallel()
+
 	host, port := requireLDAP(t)
 
 	a := start(t)
@@ -186,6 +190,8 @@ func TestADirectoryAccountCanSignInAndIsCreatedLocally(t *testing.T) {
 // The filter substitutes the login name into every %s, so the same person can
 // sign in by uid or by mail address.
 func TestADirectoryAccountCanSignInByUidOrByMail(t *testing.T) {
+	t.Parallel()
+
 	host, port := requireLDAP(t)
 
 	a := start(t)
@@ -204,6 +210,8 @@ func TestADirectoryAccountCanSignInByUidOrByMail(t *testing.T) {
 // A wrong password has to be refused by the directory rather than quietly
 // falling back to a local check that would let a stale local password in.
 func TestAWrongDirectoryPasswordIsRefused(t *testing.T) {
+	t.Parallel()
+
 	host, port := requireLDAP(t)
 
 	a := start(t)
@@ -225,6 +233,8 @@ func TestAWrongDirectoryPasswordIsRefused(t *testing.T) {
 // invisible until somebody cannot sign in. Dave sits outside ou=people on
 // purpose, so narrowing the base DN has to make him disappear.
 func TestTheBaseDNDecidesWhoTheDirectoryContains(t *testing.T) {
+	t.Parallel()
+
 	host, port := requireLDAP(t)
 
 	a := start(t)
@@ -262,6 +272,8 @@ func TestTheBaseDNDecidesWhoTheDirectoryContains(t *testing.T) {
 // one prevents. The refusal says what is wrong, because whoever hits it has
 // already proved their password and can do nothing about it themselves.
 func TestAnEntryWithoutAMailAddressIsRefusedRatherThanGuessedAt(t *testing.T) {
+	t.Parallel()
+
 	host, port := requireLDAP(t)
 
 	a := start(t)
@@ -305,6 +317,8 @@ func TestAnEntryWithoutAMailAddressIsRefusedRatherThanGuessedAt(t *testing.T) {
 // that deletes people. It has to describe the real directory, and it must never
 // delete anything itself.
 func TestTheSynchronisationPreviewDescribesTheRealDirectory(t *testing.T) {
+	t.Parallel()
+
 	host, port := requireLDAP(t)
 
 	a := start(t)
@@ -376,6 +390,8 @@ func syncPreview(t *testing.T, admin *client) SyncPreview {
 // in that list is an account that is created and then deleted by the next run,
 // and whoever recorded time against it has no way to know.
 func TestAnAccountThatCanSignInIsNeverProposedForDeletion(t *testing.T) {
+	t.Parallel()
+
 	host, port := requireLDAP(t)
 
 	a := start(t)
@@ -418,6 +434,8 @@ func TestAnAccountThatCanSignInIsNeverProposedForDeletion(t *testing.T) {
 // It is checked without a directory, because none of this needs one: the schedule
 // decides whether a job is registered, not whether it can reach anything.
 func TestTheDirectoryScheduleIsAdministeredAndAppliedAtTheNextStart(t *testing.T) {
+	t.Parallel()
+
 	if dsn := os.Getenv(harness.DSNEnv); dsn != "" {
 		t.Skip("this test shares a SQLite file between two instances")
 	}
