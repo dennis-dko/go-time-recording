@@ -25,6 +25,8 @@ import (
 // folded away underneath for whoever is going to act on them - which on this
 // screen is often the same person, a moment later.
 func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 

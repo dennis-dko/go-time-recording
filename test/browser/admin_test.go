@@ -33,6 +33,8 @@ import (
 // The version belongs in the corner of every page, and the footer used to be
 // hidden whenever no branding was configured.
 func TestTheFooterShowsTheRunningVersion(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -76,6 +78,8 @@ func TestTheFooterShowsTheRunningVersion(t *testing.T) {
 // corners read as a pair rather than as one deliberate thing and one that landed
 // where it landed.
 func TestTheFooterLinksToTheSource(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -146,6 +150,8 @@ func TestTheFooterLinksToTheSource(t *testing.T) {
 // response parsed and the rendering worked. A card that stays empty looks
 // identical to one that is broken.
 func TestTheLogViewerFillsWithLines(t *testing.T) {
+	t.Parallel()
+
 	// INFO, or the only lines would be the start-up warnings and there would be
 	// nothing to prove polling works.
 	p := openWith(t, "LOG_LEVEL=INFO")
@@ -176,7 +182,7 @@ func TestTheLogViewerFillsWithLines(t *testing.T) {
 
 	// The search is debounced and then polled, so this waits rather than
 	// asserting at once.
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if strings.TrimSpace(p.text("#log-output")) == "" {
 			return
@@ -193,6 +199,8 @@ func TestTheLogViewerFillsWithLines(t *testing.T) {
 // status line, which is what tells the reader whether what they are looking at
 // is still moving.
 func TestPausingTheLogViewer(t *testing.T) {
+	t.Parallel()
+
 	p := openWith(t, "LOG_LEVEL=INFO")
 	p.readyAdmin()
 
@@ -206,7 +214,7 @@ func TestPausingTheLogViewer(t *testing.T) {
 	// The button offering to resume is the state, and it is the same assertion in
 	// either language the interface ships. Checking the status line's wording
 	// would be checking a translation.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		label := strings.ToLower(p.text("#log-pause"))
 		if strings.Contains(label, "resume") || strings.Contains(label, "fortsetzen") {
@@ -222,6 +230,8 @@ func TestPausingTheLogViewer(t *testing.T) {
 // A user must not be offered the log at all - not merely be refused when
 // they ask. The whole Settings screen is the built-in administrator's.
 func TestAUserIsNotOfferedTheLog(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.createOrdinaryAccount(t, "gerd@example.com", "gerd-password-1")
@@ -248,6 +258,8 @@ func TestAUserIsNotOfferedTheLog(t *testing.T) {
 // data-perm cannot express this: it names a permission, and this is about which
 // account it is, so only a browser can answer whether the card is there.
 func TestAGrantedAdministratorIsNotOfferedTheDirectoryRun(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.createAccount(t, "bothe@example.com", "both-jobs-password-1", "user-admin")
@@ -261,6 +273,17 @@ func TestAGrantedAdministratorIsNotOfferedTheDirectoryRun(t *testing.T) {
 
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-ldap", chromedp.ByID))
+
+	// Waited for the screen to be filled, not for it to exist. Every card here is
+	// in index.html, so the wait above returns before a single request has
+	// answered - and the card this case is about starts on screen and is taken
+	// away once the directory settings arrive. Reading before that finds it
+	// present and reports a right that was never granted.
+	//
+	// This line is the last thing the screen writes, and it is never empty: it
+	// says either when the synchronisation is scheduled or that it runs only when
+	// the button is pressed.
+	p.waitForFilled("#sync-schedule-active")
 
 	if p.visible("#sync-card") {
 		t.Error("an administrator who may not synchronise the directory is offered " +
@@ -282,6 +305,8 @@ func TestAGrantedAdministratorIsNotOfferedTheDirectoryRun(t *testing.T) {
 // card went into the middle of that chain, which makes the card after it as much
 // the point of this test as the new one is.
 func TestTheSettingsScreenFillsTheTelemetryCardAndTheOnesAfterIt(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -334,6 +359,8 @@ func TestTheSettingsScreenFillsTheTelemetryCardAndTheOnesAfterIt(t *testing.T) {
 // unhides it, so nothing short of running the page can tell "wired up" from
 // "wired up and working".
 func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -454,6 +481,8 @@ func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
 // cached it. The rule asked for was the logo "otherwise always the default as
 // before", which is a statement about both directions.
 func TestClearingTheLogoRestoresTheDefaultFavicon(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -598,6 +627,8 @@ func (p *page) storeBranding(t *testing.T, logo string) {
 // machine, and hard-coding a format would only assert what CI's Chrome happens
 // to be set to.
 func TestTheChosenLanguageWinsAndTheBrowserDecidesOtherwise(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -662,6 +693,8 @@ func TestTheChosenLanguageWinsAndTheBrowserDecidesOtherwise(t *testing.T) {
 // whether it exists at all is a question only a browser can answer - and what it
 // does is a change to an attribute that no API test can see.
 func TestAPasswordCanBeRevealedAndHiddenAgain(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -719,6 +752,8 @@ func TestAPasswordCanBeRevealedAndHiddenAgain(t *testing.T) {
 // setting. The test exists so that if the behaviour is ever changed, it is
 // changed on purpose.
 func TestAPasskeySignsInWithoutATwoFactorCodeEvenWhenTOTPIsOn(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.withAuthenticator(t)
 
@@ -864,7 +899,7 @@ func (p *page) enableTOTP(t *testing.T) string {
 func waitForLines(p *page, complaint string) {
 	p.t.Helper()
 
-	deadline := time.Now().Add(25 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if strings.TrimSpace(p.text("#log-output")) != "" {
 			return
@@ -891,6 +926,8 @@ func truncateText(s string, max int) string {
 // visible afterwards - including on the sign-in screen, which is the only place
 // somebody turned away can read anything at all.
 func TestTurningMaintenanceModeOnAndOffFromTheInterface(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -931,7 +968,7 @@ func TestTurningMaintenanceModeOnAndOffFromTheInterface(t *testing.T) {
 		p.click(`#form-maintenance button[type="submit"]`),
 	)
 
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if !p.visible("#maintenance-banner") {
 			return
@@ -955,6 +992,8 @@ func TestTurningMaintenanceModeOnAndOffFromTheInterface(t *testing.T) {
 // Only a browser can check this: it is the browser's own zone and language that
 // have to reach the database.
 func TestAFirstSignInAdoptsTheBrowsersZoneAndLanguage(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -1080,6 +1119,8 @@ func (p *page) browserTimezone() string {
 // A sign-in that is merely refused is not this case: that message goes into the
 // form, next to the field it is about, which is where it belongs.
 func TestANoticeIsVisibleOverTheSignInScreen(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	p.run("wait for the form", chromedp.WaitVisible("#form-login", chromedp.ByID))
@@ -1104,6 +1145,8 @@ func TestANoticeIsVisibleOverTheSignInScreen(t *testing.T) {
 // Two failures in a row used to show only the second, which is the case where
 // the first one mattered.
 func TestTwoNoticesAreBothShown(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -1141,6 +1184,8 @@ func TestTwoNoticesAreBothShown(t *testing.T) {
 // Only a browser can check either half: that the question appears, and that
 // answering "no" leaves the thing alone.
 func TestDeletingAsksFirstAndCancellingChangesNothing(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -1176,7 +1221,7 @@ func TestDeletingAsksFirstAndCancellingChangesNothing(t *testing.T) {
 	p.run("confirm", p.click(`.confirm-actions button.danger`))
 	p.waitGone(".confirm-overlay")
 
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if !strings.Contains(p.text("#table-timesheets tbody"), "1.37") {
 			return
@@ -1191,6 +1236,8 @@ func TestDeletingAsksFirstAndCancellingChangesNothing(t *testing.T) {
 // Escape is the ambiguous keypress, and a dialog with a destructive option has
 // to read it as "no".
 func TestEscapeCancelsTheConfirmation(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -1218,6 +1265,8 @@ func TestEscapeCancelsTheConfirmation(t *testing.T) {
 // stopping it books what was measured. Both halves are browser behaviour: the
 // ticking display, and the buttons swapping over when it starts.
 func TestTheStopwatchRunsAndBooksWhatItMeasured(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -1233,7 +1282,7 @@ func TestTheStopwatchRunsAndBooksWhatItMeasured(t *testing.T) {
 		p.click("#timer-start"))
 
 	// The buttons swap over, which is how somebody can tell it took.
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) && !p.visible("#timer-stop") {
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -1269,7 +1318,7 @@ func TestTheStopwatchRunsAndBooksWhatItMeasured(t *testing.T) {
 	p.waitForText("#table-timesheets tbody", "measured in a browser")
 
 	// And the clock is back to offering a start.
-	deadline = time.Now().Add(15 * time.Second)
+	deadline = time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) && !p.visible("#timer-start") {
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -1287,6 +1336,8 @@ func TestTheStopwatchRunsAndBooksWhatItMeasured(t *testing.T) {
 // exist, and whether they render - an <svg> built in the HTML namespace parses
 // without complaint and draws nothing at all.
 func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -1322,7 +1373,7 @@ func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
 
 	// A bar exists, and the SVG is in the right namespace - an HTML-namespace
 	// <svg> would be found by a selector and occupy no space.
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if p.visible("#chart-days svg .chart-bar") {
 			break
@@ -1382,6 +1433,8 @@ func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
 // wire the message is still English, deliberately, and the integration tests check
 // exactly that.
 func TestAServerRefusalIsShownInTheReadersLanguage(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -1425,7 +1478,7 @@ func TestAServerRefusalIsShownInTheReadersLanguage(t *testing.T) {
 
 	shown := ""
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if shown = p.text("#toast"); shown != "" {
 			break
@@ -1457,6 +1510,8 @@ func TestAServerRefusalIsShownInTheReadersLanguage(t *testing.T) {
 
 // A field the server rejects is named the way the form names it.
 func TestARejectedFieldIsNamedNotIdentified(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -1481,7 +1536,7 @@ func TestARejectedFieldIsNamedNotIdentified(t *testing.T) {
 
 	shown := ""
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if shown = p.text("#toast"); strings.Contains(shown, "Max/Tag") {
 			break
@@ -1511,6 +1566,8 @@ func TestARejectedFieldIsNamedNotIdentified(t *testing.T) {
 // proves nothing: this checks the browser decoded it, which for an SVG data URI
 // means the markup parsed.
 func TestTheTwoFactorQRCodeIsShown(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -1573,6 +1630,8 @@ func TestTheTwoFactorQRCodeIsShown(t *testing.T) {
 // button that looked like "later" meant "never", and the introduction this
 // application has was the introduction almost nobody got.
 func TestAFirstSignInIsWalkedThroughTheApplication(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -1660,6 +1719,8 @@ func TestAFirstSignInIsWalkedThroughTheApplication(t *testing.T) {
 // to read the greeting were to be new or to have just arrived - which is why it is
 // a screen now, and why the title in the header leads to it from anywhere.
 func TestTheGreetingIsAScreenReachableFromTheTitle(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -1728,6 +1789,8 @@ func TestTheGreetingIsAScreenReachableFromTheTitle(t *testing.T) {
 // screen somebody was working on was discarded and the only way back to it was to
 // reload the page afterwards.
 func TestSigningInAgainReturnsToTheScreenThatWasOpen(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -1740,7 +1803,7 @@ func TestSigningInAgainReturnsToTheScreenThatWasOpen(t *testing.T) {
 	p.signIn(workerEmail, workerPassword)
 	p.waitGone("#login-screen")
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if p.visible("#calendar-days") {
 			break
@@ -1770,6 +1833,8 @@ func TestSigningInAgainReturnsToTheScreenThatWasOpen(t *testing.T) {
 // loaded - so an ordinary account arriving after an administrator found the
 // account list still in the document, under a tab that is only hidden.
 func TestAnotherAccountDoesNotInheritTheLastOnesScreen(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -1835,6 +1900,8 @@ func tourTotal(p *page) int {
 // which rows are refused and why, on screen, with the import button withheld until
 // the file is clean.
 func TestTheImportShowsWhatAFileWouldDoBeforeDoingIt(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -1868,7 +1935,7 @@ func TestTheImportShowsWhatAFileWouldDoBeforeDoingIt(t *testing.T) {
 	p.run("check the file", p.click("#wb-preview"),
 		chromedp.WaitVisible("#wb-preview-wrap", chromedp.ByID))
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if strings.Contains(p.text("#table-workbook tbody"), "This one is fine") {
 			break
@@ -1932,7 +1999,7 @@ func TestTheImportShowsWhatAFileWouldDoBeforeDoingIt(t *testing.T) {
 
 	p.run("import it", p.click("#wb-import"))
 
-	deadline = time.Now().Add(15 * time.Second)
+	deadline = time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if strings.Contains(p.text("#table-timesheets tbody"), "Imported from a file") {
 			return
@@ -1952,6 +2019,8 @@ func TestTheImportShowsWhatAFileWouldDoBeforeDoingIt(t *testing.T) {
 // in-flight counter that decrements on success only would stick on the first
 // failed request and stay for as long as the page is open.
 func TestTheLoadingStripAppearsAndGoesAgain(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -2037,6 +2106,8 @@ func TestTheLoadingStripAppearsAndGoesAgain(t *testing.T) {
 // This also pins the half its sibling only reports on - that a request outliving the
 // delay is drawn at all.
 func TestTheStripGoesAwayWhenARequestLandsDuringItsFade(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	// The counter has to start at zero, or progressStart sees a request already in
@@ -2104,6 +2175,8 @@ func TestTheStripGoesAwayWhenARequestLandsDuringItsFade(t *testing.T) {
 // Only a browser can show this. It is not what the strings are, it is when they
 // were looked up.
 func TestSwitchingLanguageRedrawsWhatIsAlreadyOnScreen(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -2175,6 +2248,8 @@ func TestSwitchingLanguageRedrawsWhatIsAlreadyOnScreen(t *testing.T) {
 // the German one? That is the whole question, asked as a property rather than as a
 // list of words somebody remembered to look for.
 func TestNothingOnScreenKeepsItsEnglishWhenGermanIsChosen(t *testing.T) {
+	t.Parallel()
+
 	// Both kinds of account, because they see different halves of the application
 	// and neither half is the whole of it: the administrator has the settings and
 	// the spreadsheet cards, and somebody who works here has the time, the
@@ -2261,6 +2336,8 @@ func checkGermanEverywhere(t *testing.T, signIn func(*page)) {
 // stops changing the picture. Only a browser notices, because the failure is that
 // the same SVG comes back.
 func TestTheEvaluationDrawsInWhicheverShapeIsChosen(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -2339,7 +2416,7 @@ func TestTheEvaluationDrawsInWhicheverShapeIsChosen(t *testing.T) {
 func (p *page) chartShape() string {
 	p.t.Helper()
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for {
 		shape := p.currentChartShape()
@@ -2381,6 +2458,8 @@ func (p *page) currentChartShape() string {
 // Reachable only through a browser: the state lives in the address bar and is
 // applied while the page boots.
 func TestAReloadStaysOnTheScreenThatWasOpen(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -2424,6 +2503,8 @@ func TestAReloadStaysOnTheScreenThatWasOpen(t *testing.T) {
 // so anything that reloads sees the right icon whatever the page did. What
 // somebody actually does is press Save and look at the tab.
 func TestClearingTheLogoChangesTheTabWithoutAReload(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -2452,7 +2533,7 @@ func TestClearingTheLogoChangesTheTabWithoutAReload(t *testing.T) {
 	// the notice goes with it. What this case is about is the tab, so that is what
 	// is waited for - polled, because the save, the branding behind it and the
 	// reload all have to finish first.
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for p.iconIsTheLogo(t) {
 		if time.Now().After(deadline) {
@@ -2472,6 +2553,8 @@ func TestClearingTheLogoChangesTheTabWithoutAReload(t *testing.T) {
 // instance setting (Africa/Abidjan)" - an offer to change nothing, with no way
 // to find out what stopping would actually give you.
 func TestFollowingTheInstanceZoneNamesTheInstanceZone(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -2542,6 +2625,8 @@ func TestFollowingTheInstanceZoneNamesTheInstanceZone(t *testing.T) {
 // switches to German. And a mark that is not hidden from assistive technology
 // is announced beside the label, which turns "Calendar" into "image, Calendar".
 func TestTheMarkedTabsKeepTheirMarksInEveryLanguage(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -2591,6 +2676,28 @@ func TestTheMarkedTabsKeepTheirMarksInEveryLanguage(t *testing.T) {
 	}
 }
 
+// waitForFilled waits until an element has something written in it.
+//
+// For the screens whose cards are in the markup and whose contents arrive by
+// request: the card is there from the first paint, and only what is in it says
+// whether the answer has come back.
+func (p *page) waitForFilled(selector string) {
+	p.t.Helper()
+
+	deadline := time.Now().Add(waitPatience)
+
+	for time.Now().Before(deadline) {
+		if strings.TrimSpace(p.text(selector)) != "" {
+			return
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	p.t.Fatalf("%s was never written to, so the screen stopped loading before it;"+
+		" the log says:\n%s", selector, p.app.Log())
+}
+
 // waitForValue waits until a field has something in it.
 //
 // For the screens whose forms are in the markup and whose contents arrive by
@@ -2599,7 +2706,7 @@ func TestTheMarkedTabsKeepTheirMarksInEveryLanguage(t *testing.T) {
 func (p *page) waitForValue(selector string) {
 	p.t.Helper()
 
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for time.Now().Before(deadline) {
 		if p.value(selector) != "" {
@@ -2620,6 +2727,8 @@ func (p *page) waitForValue(selector string) {
 // was as tall as whatever happened to be in it, so it was a different strip on
 // every screen.
 func TestTheFooterStaysAtTheBottomAtOneHeight(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -2684,6 +2793,8 @@ func TestTheFooterStaysAtTheBottomAtOneHeight(t *testing.T) {
 // bars of different lengths: the labels carried all of it, and the eye had
 // nothing to group by.
 func TestEachProjectKeepsItsOwnColourInTheCharts(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.becomeWorker()
@@ -2721,6 +2832,8 @@ func TestEachProjectKeepsItsOwnColourInTheCharts(t *testing.T) {
 // changed under it - and the report and overtime forms sent nothing at all,
 // quietly evaluating the whole history.
 func TestTheEvaluationScreensArriveWithTheirPeriodFilledIn(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.becomeWorker()
@@ -2763,6 +2876,8 @@ func TestTheEvaluationScreensArriveWithTheirPeriodFilledIn(t *testing.T) {
 // which says nothing about why this particular password was refused, so somebody
 // tries it again.
 func TestTheSignInScreenSaysWhoMaySignInDuringMaintenance(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -2798,6 +2913,8 @@ func TestTheSignInScreenSaysWhoMaySignInDuringMaintenance(t *testing.T) {
 // that is what the server does - and the sentence beside the switch said the
 // opposite, which is the kind of wrong that gets believed.
 func TestTheMaintenanceCardNamesEveryoneWhoMayWork(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -2866,7 +2983,7 @@ func (p *page) bookAnHourOn(t *testing.T, name string) {
 func (p *page) waitForNode(selector string) {
 	p.t.Helper()
 
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for time.Now().Before(deadline) {
 		if p.count(selector) > 0 {
@@ -2886,6 +3003,8 @@ func (p *page) waitForNode(selector string) {
 // with. A button offering what the server refuses teaches somebody that the
 // screen is broken.
 func TestAShippedRoleIsShownRatherThanEdited(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -2961,6 +3080,8 @@ func TestAShippedRoleIsShownRatherThanEdited(t *testing.T) {
 // The boxes said "timesheets:write:own", which asks somebody deciding what a
 // colleague may do to read a namespace.
 func TestTheRightsAreShownInWordsWithALegend(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -3042,6 +3163,8 @@ func TestTheRightsAreShownInWordsWithALegend(t *testing.T) {
 // layout got two of them wrong: the points overlapped the account beside them,
 // and a wrapped row read as centred when it was a block growing from the left.
 func TestTheNavigationSitsCentredOnItsOwnLine(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -3220,6 +3343,8 @@ func TestTheNavigationSitsCentredOnItsOwnLine(t *testing.T) {
 // used to leave somebody looking at the table they had just pressed in, with the
 // thing they asked for below the fold.
 func TestOpeningARoleShowsItsRights(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -3387,6 +3512,8 @@ func TestOpeningARoleShowsItsRights(t *testing.T) {
 // and wrong the moment they leave: the next person at that machine arrived to
 // the last one's dark mode, on a screen with nothing else of theirs on it.
 func TestSigningOutForgetsTheAppearance(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -3442,6 +3569,8 @@ func TestSigningOutForgetsTheAppearance(t *testing.T) {
 // stopwatch, "Ohne Projekt" in the dropdowns, "kein Projekt" in the charts -
 // which reads as three different states rather than one.
 func TestHoursWithoutAProjectAreNamedTheSameEverywhere(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.becomeWorker()
@@ -3479,6 +3608,8 @@ func TestHoursWithoutAProjectAreNamedTheSameEverywhere(t *testing.T) {
 // empty on purpose: empty there means "no end planned", which is most projects,
 // and filling it would invent a deadline.
 func TestANewProjectStartsTodayAndHasNoEnd(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.becomeWorker()
@@ -3530,6 +3661,8 @@ func TestANewProjectStartsTodayAndHasNoEnd(t *testing.T) {
 // person at a shared machine arrived to the last one's dark mode, on a screen
 // with nothing else of theirs on it.
 func TestTheScreenSomebodyChoseIsTheirs(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.createOrdinaryAccount(t, workerEmail, workerPassword)
@@ -3664,6 +3797,8 @@ func TestTheScreenSomebodyChoseIsTheirs(t *testing.T) {
 // administrator has no entries, and a panel explaining that is worse than no
 // panel.
 func TestTheGreetingShowsTheLastEntries(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 

@@ -28,6 +28,8 @@ import (
 // Driven in a German browser, because that is the only thing this page has to go
 // on - no session, no stored choice, no server to ask.
 func TestTheInstallerRefusesInTheReadersLanguage(t *testing.T) {
+	t.Parallel()
+
 	app := harness.StartUnconfigured(t)
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],

@@ -21,6 +21,8 @@ import (
 // that is decided before a single millisecond passes. The paths are made up, so
 // nothing is created or deleted by asking.
 func TestOnlyReadsCarryATimeoutSignal(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	var wiring struct {

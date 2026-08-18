@@ -23,6 +23,8 @@ import (
 // control nobody has decided about, which is exactly when the decision should be
 // made rather than a year later.
 func TestEveryOnOffControlIsASwitch(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -69,6 +71,8 @@ func TestEveryOnOffControlIsASwitch(t *testing.T) {
 // broken by a wrapper - and the failure is a control that looks perfect and does
 // nothing.
 func TestPressingASwitchChangesTheStateUnderneath(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -124,6 +128,8 @@ func (p *page) switchIsOn(selector string) bool {
 // Checked at a width where the bar wraps, since that is the case a fixed number
 // gets wrong.
 func TestTheStickyBarReservesItsOwnHeight(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 

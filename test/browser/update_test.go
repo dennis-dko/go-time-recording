@@ -18,6 +18,8 @@ import (
 // offers a button or says what to run instead - and getting that wrong means
 // offering an update that silently reverts.
 func TestTheUpdateCardOffersWhatThisDeploymentCanDo(t *testing.T) {
+	t.Parallel()
+
 	// Our own feed: the point is what the card does with an answer, not whether
 	// GitHub is up.
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -74,6 +76,8 @@ func TestTheUpdateCardOffersWhatThisDeploymentCanDo(t *testing.T) {
 // others is a rule nobody can hold in their head. Whoever could reach this could
 // already tick the narrower right onto a role for themselves in any case.
 func TestTheUpdateCardIsOfferedToEverybodyWhoAdministers(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.createAccount(t, "bothe@example.com", "both-jobs-password-1", "user-admin")
@@ -102,6 +106,8 @@ func TestTheUpdateCardIsOfferedToEverybodyWhoAdministers(t *testing.T) {
 
 // Switched off, the card says so rather than saying nothing.
 func TestTheUpdateCardSaysWhenCheckingIsOff(t *testing.T) {
+	t.Parallel()
+
 	p := openWith(t, "UPDATE_CHECK=false")
 	p.readyAdmin()
 

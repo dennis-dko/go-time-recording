@@ -41,8 +41,28 @@ import (
 )
 
 // interactionTimeout bounds one test. Generous, because a cold browser start
-// and the application's first migration both land inside it.
-const interactionTimeout = 90 * time.Second
+// and the application's first migration both land inside it - and because the
+// suite now runs several cases at once, where all of that happens on a machine
+// doing several times the work.
+//
+// The case that measures a stopwatch spends forty of these seconds deliberately
+// asleep, waiting out the smallest bookable duration; on a busy two-core runner
+// the rest of its work has to fit in what is left.
+const interactionTimeout = 150 * time.Second
+
+// waitPatience is how long the helpers below wait for something that is on its
+// way.
+//
+// Generous on purpose. These were written against a quiet machine running one
+// case at a time; the suite now runs several at once, where the same work takes
+// several times as long in wall-clock terms without anything being wrong. A wait
+// that expires under that load reports a timeout, which reads like a broken
+// feature rather than a busy machine.
+//
+// It costs nothing when the thing arrives - every one of these returns the
+// moment its condition holds - and only lengthens how long a genuine failure
+// takes to announce itself. The per-case ceiling above is what bounds that.
+const waitPatience = 45 * time.Second
 
 func TestMain(m *testing.M) {
 	cleanup, err := harness.Build()
@@ -229,7 +249,7 @@ func (p *page) evalJSON(expression string, into any) {
 // and it does so rarely enough to look like a different bug each time.
 func (p *page) chooseOption(selector, value string) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
-		deadline := time.Now().Add(15 * time.Second)
+		deadline := time.Now().Add(waitPatience)
 
 		for {
 			var ready bool
@@ -552,7 +572,7 @@ func (p *page) visible(selector string) bool {
 func (p *page) waitGone(selector string) {
 	p.t.Helper()
 
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for time.Now().Before(deadline) {
 		if !p.visible(selector) {
@@ -603,7 +623,7 @@ func (p *page) atRest() {
 			"this helper cannot tell a loading page from a stuck one", kind)
 	}
 
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for time.Now().Before(deadline) {
 		var idle bool
@@ -728,6 +748,8 @@ func (p *page) jsBroken() bool {
 // The regression this package exists for: signing in has to remove the
 // overlay. It authenticated correctly and stayed on screen once.
 func TestSigningInDismissesTheLoginScreen(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	if !p.visible("#login-screen") {
@@ -748,6 +770,8 @@ func TestSigningInDismissesTheLoginScreen(t *testing.T) {
 // A wrong password must say so and leave the form usable, rather than clearing
 // the screen or hanging.
 func TestAFailedSignInKeepsTheFormUsable(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	p.signIn(harness.AdminEmail, "not-the-password")
@@ -768,6 +792,8 @@ func TestAFailedSignInKeepsTheFormUsable(t *testing.T) {
 // Losing it makes hidden elements render, which is how the sign-in overlay got
 // stuck.
 func TestTheHiddenAttributeIsHonoured(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	var rendered bool
@@ -791,6 +817,8 @@ func TestTheHiddenAttributeIsHonoured(t *testing.T) {
 // The whole interface is one script; if it throws on load, the page still
 // renders and nothing works.
 func TestTheScriptInitialisesWithoutThrowing(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	if p.jsBroken() {
@@ -801,6 +829,8 @@ func TestTheScriptInitialisesWithoutThrowing(t *testing.T) {
 // The setup wizard is shown on a first sign-in and has to be operable: it is
 // the first thing an administrator meets.
 func TestTheSetupWizardAppearsAndAdvances(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	p.signIn(harness.AdminEmail, harness.AdminPassword)
@@ -832,6 +862,8 @@ func TestTheSetupWizardAppearsAndAdvances(t *testing.T) {
 // that clicking a tab shows its panel, and it should stay the cheapest case in the
 // suite rather than growing a password change and a second account.
 func TestTabsSwitchTheVisiblePanel(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	p.signIn(harness.AdminEmail, harness.AdminPassword)
@@ -859,6 +891,8 @@ func TestTabsSwitchTheVisiblePanel(t *testing.T) {
 // The picker writes to localStorage and stamps the document; both have to
 // happen or the choice is lost on the next page load.
 func TestTheAppearancePickerChangesTheTheme(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	for _, want := range []string{"dark", "light"} {
@@ -883,6 +917,8 @@ func TestTheAppearancePickerChangesTheTheme(t *testing.T) {
 // dictionary is not applied, the page stays English - which looks fine and is
 // wrong.
 func TestSwitchingLanguageTranslatesThePage(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	// The starting language is whatever the browser asks for - that is the
@@ -917,6 +953,8 @@ func TestSwitchingLanguageTranslatesThePage(t *testing.T) {
 // The end-to-end path a person actually walks: sign in, change the password,
 // book time, see it in the table.
 func TestBookingTimeThroughTheInterface(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	p.signIn(harness.AdminEmail, harness.AdminPassword)
@@ -964,7 +1002,7 @@ func TestBookingTimeThroughTheInterface(t *testing.T) {
 
 	// The table has to show it. A booking the server accepted and the table
 	// never renders is indistinguishable, to the person, from one that failed.
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if strings.Contains(p.text("#table-timesheets tbody"), "Booked in a browser") {
 			return
@@ -986,6 +1024,8 @@ func TestBookingTimeThroughTheInterface(t *testing.T) {
 // covers both halves: the row opens the entry, and saving it corrects that entry
 // instead of booking a second one.
 func TestACalendarEntryOpensForEditing(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -1036,7 +1076,7 @@ func TestACalendarEntryOpensForEditing(t *testing.T) {
 		p.click(`#form-timesheet button[type="submit"]`),
 	)
 
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if strings.Contains(p.text("#table-timesheets tbody"), "4.25") {
 			break
@@ -1078,7 +1118,7 @@ func TestACalendarEntryOpensForEditing(t *testing.T) {
 func (p *page) waitSignedIn(t *testing.T) {
 	t.Helper()
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for {
 		var status int
