@@ -85,6 +85,39 @@ jobs:
             exit 1
           fi
 
+  vulnerabilities:
+    name: Vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # What the toolchain and the dependencies are known to be wrong about.
+      #
+      # This was added after a scan found seven advisories against the pinned
+      # Go release that this code reaches - XML and ASN.1 decoders without a
+      # recursion limit, among them, both fed from files a user uploads. All
+      # seven were fixed in the next patch release, and nothing here would have
+      # said so: go.mod pins a patch version deliberately, so the fix arrives
+      # when somebody bumps it, and nobody bumps what nothing is asking about.
+      #
+      # govulncheck reports at symbol level. The nine advisories against modules
+      # this build merely requires and never calls stay quiet, which is the only
+      # reason a check like this can be allowed to fail the build: when it goes
+      # red, a path from this code to the vulnerable function exists.
+      #
+      # Unpinned, unlike the linter, and for a reason that does not apply there:
+      # the advisory database is queried live, so pinning the binary would buy no
+      # reproducibility - it would only mean asking an old client about a new
+      # database. A finding that appears without a code change is the point here
+      # rather than the hazard.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
   test:
     name: Test
     runs-on: ubuntu-latest
