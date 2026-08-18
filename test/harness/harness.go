@@ -544,6 +544,10 @@ func (a *App) waitUntilReady() error {
 	deadline := time.Now().Add(StartupTimeout)
 	client := &http.Client{Timeout: 2 * time.Second}
 
+	// When the identity question first started getting nowhere. See the unclear
+	// case below.
+	var unclearSince time.Time
+
 	for time.Now().Before(deadline) {
 		if a.cmd.ProcessState != nil && a.cmd.ProcessState.Exited() {
 			return fmt.Errorf("the application exited during start-up:\n%s", a.logs.String())
@@ -581,8 +585,33 @@ func (a *App) waitUntilReady() error {
 				// instance is started under a name nothing else is using, and it
 				// says that name when asked what it is called. A reply carrying
 				// somebody else's name is somebody else's instance.
-				if a.answeredBySomebodyElse(client) {
+				switch a.whoAnswered(client) {
+				case answerIsAStranger:
 					return errPortTaken
+
+				case answerIsUnclear:
+					// Not an answer, so not a reason to accept the address: under
+					// load the identity request is the first thing to time out, and
+					// reading that as "ours" accepts whatever is on the port, which
+					// is the mix-up this check exists to stop.
+					//
+					// Bounded, though. An instance in installer mode answers "/"
+					// perfectly well and cannot answer this at all - there is no
+					// database behind it - so insisting for ever would leave it a
+					// port it could never be ready on. After a few seconds of
+					// getting nowhere this stops insisting and falls back to the
+					// log, which is what everything did before.
+					if unclearSince.IsZero() {
+						unclearSince = time.Now()
+					}
+
+					if time.Since(unclearSince) < identityGrace {
+						time.Sleep(150 * time.Millisecond)
+
+						continue
+					}
+
+				case answerIsOurs:
 				}
 
 				// Still worth the second look for the instances that carry no name
@@ -602,33 +631,53 @@ func (a *App) waitUntilReady() error {
 		StartupTimeout, a.logs.String())
 }
 
-// answeredBySomebodyElse reports whether what answered is a different instance
-// from the one this App started.
+// Who answered on this instance's address.
+type answeredBy int
+
+const (
+	// answerIsOurs means the reply carried this instance's own name, or there is
+	// no name to check against.
+	answerIsOurs answeredBy = iota
+
+	// answerIsAStranger means the reply carried somebody else's name.
+	answerIsAStranger
+
+	// answerIsUnclear means the question could not be put or could not be
+	// answered - which is not the same as an answer, and must not be read as one.
+	answerIsUnclear
+)
+
+// whoAnswered asks what is listening on this instance's address what it is
+// called.
 //
-// By asking it what it is called. Every instance is started under a name nothing
-// else is using, and the branding endpoint says that name - which is public, so
-// this is one request at a moment where no session exists yet.
+// Every instance is started under a name nothing else is using and says that
+// name through the branding endpoint, which is public - so this is one request
+// at a moment where no session exists yet.
 //
-// Only a name that is present and different counts. An instance that cannot be
-// asked is not an instance that failed the question: the installer runs before
-// there is a database, and the endpoint that would answer is not among the
-// routes it registers. Reading it as "not ours" would have turned every
-// installer test into a port that could never be bound. Those fall back to
-// reading the log, which is what everything did before.
-func (a *App) answeredBySomebodyElse(client *http.Client) bool {
+// Three answers rather than two, and the third is the one that matters. The
+// request has a short deadline and this suite now runs several cases at once, so
+// under load the identity request is the first thing to time out. Reading a
+// timeout as "ours" accepts whatever is on the port, which is exactly the
+// mix-up this check exists to prevent - and it surfaces three steps later as an
+// account that already exists.
+//
+// A reply that is not 200 is different again: the installer runs before there is
+// a database and never registers the route that would answer, so there the
+// question cannot be put at all and the log is what is left to go on.
+func (a *App) whoAnswered(client *http.Client) answeredBy {
 	if a.marker == "" {
-		return false
+		return answerIsOurs
 	}
 
 	resp, err := client.Get(a.baseURL + "/api/v1/branding")
 	if err != nil {
-		return false
+		return answerIsUnclear
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return false
+		return answerIsOurs
 	}
 
 	var body struct {
@@ -638,14 +687,17 @@ func (a *App) answeredBySomebodyElse(client *http.Client) bool {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return false
+		return answerIsUnclear
 	}
 
-	if body.Data.Title == "" {
-		return false
+	switch body.Data.Title {
+	case "":
+		return answerIsOurs
+	case a.marker:
+		return answerIsOurs
+	default:
+		return answerIsAStranger
 	}
-
-	return body.Data.Title != a.marker
 }
 
 // instances counts the instances this process has started, so each can be given
@@ -662,6 +714,15 @@ func namesTheApp(env []string) bool {
 
 	return false
 }
+
+// identityGrace is how long to keep asking an address what it is called before
+// giving up on the question.
+//
+// Long enough that a busy machine gets its answer, short enough that an instance
+// which cannot answer at all - the installer, which runs before there is a
+// database - is not left waiting out its whole start-up deadline for a question
+// nothing was ever going to reply to.
+const identityGrace = 8 * time.Second
 
 // errPortTaken is the one start-up failure worth simply trying again.
 var errPortTaken = errors.New("the port was taken between choosing it and binding it")

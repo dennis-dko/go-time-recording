@@ -308,11 +308,17 @@ jobs:
         # two of its three and a half seconds on those two things alone. Ninety-six
         # cases one after another is six minutes of mostly idle runner.
         #
-        # Four rather than more. Six is faster still on a machine with cores to
-        # spare, and this runner has two - past that the cases are not waiting on
-        # the application any more, they are waiting on each other, and a suite
-        # that is fast and occasionally red is worse than one that is slow.
-        run: go test -tags browser -count=1 -timeout 20m -v -parallel 4 ./test/browser/
+        # Two, not four. Four is right on a machine with cores to spare - the
+        # suite is 473 seconds one at a time and 121 four at a time here - and
+        # wrong on this runner, which has two: at four a single case took 154
+        # seconds of its 150-second ceiling and a dozen fell over each other.
+        # Each case carries a whole browser, which is not something two cores can
+        # run four of.
+        #
+        # The integration job below does take four, and the difference is what
+        # each case costs: an instance and a database connection, not an instance
+        # and a browser.
+        run: go test -tags browser -count=1 -timeout 20m -v -parallel 2 ./test/browser/
 
   firefox:
     name: Firefox

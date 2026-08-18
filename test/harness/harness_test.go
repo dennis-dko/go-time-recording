@@ -86,16 +86,20 @@ func TestAnAnswerIsCheckedAgainstWhatThisProcessSaid(t *testing.T) {
 	}
 }
 
-// A reply carrying somebody else's name is somebody else's instance.
+// A reply carrying somebody else's name is somebody else's instance - and a
+// reply that never came is not a reply at all.
 //
-// Reading the log is a race of its own: it only works if our process has already
-// written that it could not bind by the time the neighbour answers, and the
-// neighbour is already running, so it usually answers first. That is what one
-// failed run of the suite on main looked like - an account that already existed,
-// three steps after the harness had accepted a stranger's 200.
+// Reading the log was the first attempt at this and it is a race of its own: it
+// only works if our process has already written that it could not bind by the
+// time the neighbour answers, and the neighbour is already running, so it
+// usually answers first. That is what one failed run of the suite on main looked
+// like - an account that already existed, three steps after the harness had
+// accepted a stranger's 200.
 //
-// So the answer is identified rather than counted. Every instance is started
-// under a name nothing else is using and says that name when asked.
+// The third answer is the one that cost a second run. The identity request has a
+// short deadline and the suite runs several cases at once, so under load it is
+// the first thing to time out; treating that as "ours" accepts whatever is on
+// the port, which is the mix-up this exists to prevent.
 func TestAReplyFromAnotherInstanceIsRecognised(t *testing.T) {
 	answers := func(title string, status int) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(
@@ -112,36 +116,46 @@ func TestAReplyFromAnotherInstanceIsRecognised(t *testing.T) {
 	defer ours.Close()
 
 	mine := &App{baseURL: ours.URL, marker: "harness-1-7"}
-	if mine.answeredBySomebodyElse(client) {
-		t.Error("an instance does not recognise its own answer")
+	if got := mine.whoAnswered(client); got != answerIsOurs {
+		t.Errorf("an instance does not recognise its own answer: %v", got)
 	}
 
 	theirs := answers("harness-1-8", http.StatusOK)
 	defer theirs.Close()
 
 	stranger := &App{baseURL: theirs.URL, marker: "harness-1-7"}
-	if !stranger.answeredBySomebodyElse(client) {
-		t.Error("a neighbour's answer is accepted as this instance's, which is how " +
-			"a test comes to talk to somebody else's database")
+	if got := stranger.whoAnswered(client); got != answerIsAStranger {
+		t.Errorf("a neighbour's answer is taken for this instance's (%v), which is "+
+			"how a case comes to talk to somebody else's database", got)
+	}
+
+	// Nothing listening at all: not an answer, and not a reason to accept the
+	// address either. This is what a loaded machine produces.
+	silent := answers("harness-1-9", http.StatusOK)
+	silent.Close()
+
+	unanswered := &App{baseURL: silent.URL, marker: "harness-1-7"}
+	if got := unanswered.whoAnswered(client); got != answerIsUnclear {
+		t.Errorf("a request that never got an answer reads as %v", got)
 	}
 
 	// An instance that cannot be asked is not one that failed the question. The
 	// installer runs before there is a database and does not register the route
-	// that would answer; reading that as "not ours" would leave it a port it
+	// that would answer; reading that as a stranger would leave it a port it
 	// could never bind.
-	silent := answers("", http.StatusNotFound)
-	defer silent.Close()
+	unasked := answers("", http.StatusNotFound)
+	defer unasked.Close()
 
-	unasked := &App{baseURL: silent.URL, marker: "harness-1-7"}
-	if unasked.answeredBySomebodyElse(client) {
-		t.Error("an instance that cannot answer the question is treated as a stranger")
+	installer := &App{baseURL: unasked.URL, marker: "harness-1-7"}
+	if got := installer.whoAnswered(client); got != answerIsOurs {
+		t.Errorf("an instance that cannot answer the question reads as %v", got)
 	}
 
 	// And an instance the caller named itself carries no marker, so there is
 	// nothing to compare and the old check is what it falls back to.
 	named := &App{baseURL: theirs.URL}
-	if named.answeredBySomebodyElse(client) {
-		t.Error("an instance named by its test is judged against a name it never had")
+	if got := named.whoAnswered(client); got != answerIsOurs {
+		t.Errorf("an instance named by its test is judged against a name it never had")
 	}
 }
 
