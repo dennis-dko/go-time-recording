@@ -3,7 +3,6 @@ package rest
 import (
 	"bytes"
 	"encoding/json"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -105,15 +104,22 @@ func queryDate(c *gofr.Context, name string) (*time.Time, error) {
 }
 
 func parseUint(raw, field string) (uint, error) {
-	v, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
-
-	// The ceiling is checked rather than assumed. This parses into 64 bits and
-	// returns a uint, which is 64 bits on everything this ships for and 32 on
-	// something it does not - and there the conversion would wrap silently, so an
-	// id past four billion would come back as a different, valid-looking id.
-	// Nobody has that many rows; the point is that the failure would be a wrong
-	// answer rather than a refusal.
-	if err != nil || v == 0 || v > uint64(math.MaxUint) {
+	// Read at the size it is being put into, rather than at sixty-four and
+	// checked afterwards.
+	//
+	// This returns a uint, which is sixty-four bits on everything this ships for
+	// and thirty-two on something it does not - and there a value read at
+	// sixty-four wraps on the way in, so an id past four billion arrives as a
+	// different, valid-looking id and the request is answered about the wrong
+	// row. strconv.IntSize is exactly the destination's width, so the refusal
+	// happens in the reading and there is nothing left to check.
+	//
+	// The first attempt at this compared against math.MaxUint afterwards, which
+	// is the same value as MaxUint64 on a sixty-four bit build: a comparison that
+	// cannot be true, and so no bound at all. It read like a guard and was not
+	// one.
+	v, err := strconv.ParseUint(strings.TrimSpace(raw), 10, strconv.IntSize)
+	if err != nil || v == 0 {
 		return 0, apperror.InvalidFields(field)
 	}
 
