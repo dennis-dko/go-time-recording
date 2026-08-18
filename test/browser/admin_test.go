@@ -3107,37 +3107,28 @@ func TestTheNavigationSitsCentredOnItsOwnLine(t *testing.T) {
 		t.Errorf("the points are centred at %.0f and the bar at %.0f", tabsMiddle, barMiddle)
 	}
 
-	// And the name of the installation is on the same line, above them: one
-	// vertical line down the middle of the bar rather than two things anchored to
-	// opposite corners.
-	var middle struct {
-		Centre  float64 `json:"centre"`
-		Order   string  `json:"order"`
-		Overlap bool    `json:"overlap"`
+	// The title keeps the left end, which is where it has always been: only the
+	// logo moved to the middle, and an installation with none has an empty middle
+	// column that takes no room at all.
+	var title struct {
+		Centre float64 `json:"centre"`
+		Left   float64 `json:"left"`
 	}
 
 	p.evalJSON(`JSON.stringify((() => {
-		const block = document.querySelector('.topbar-middle').getBoundingClientRect();
-		const title = document.querySelector('#app-title').getBoundingClientRect();
-		const logo = document.querySelector('#brand-logo');
-		const right = document.querySelector('.topbar-side-end').getBoundingClientRect();
+		const box = document.querySelector('#app-title').getBoundingClientRect();
+		const bar = document.querySelector('.topbar').getBoundingClientRect();
 
-		return {
-			centre: block.left + block.width / 2,
-			// Which comes first, for the case where a logo is configured.
-			order: logo.hidden ? 'title only' :
-				(title.left < logo.getBoundingClientRect().left ? 'title then logo' : 'logo then title'),
-			overlap: block.right > right.left + 1,
-		};
-	})())`, &middle)
+		return { centre: box.left + box.width / 2, left: box.left - bar.left };
+	})())`, &title)
 
-	if math.Abs(middle.Centre-barMiddle) > 2 {
-		t.Errorf("the name is centred at %.0f and the bar at %.0f",
-			middle.Centre, barMiddle)
+	if title.Centre > barMiddle-100 {
+		t.Errorf("the title is at %.0f, near the middle of a bar centred on %.0f - "+
+			"only the logo was meant to move", title.Centre, barMiddle)
 	}
 
-	if middle.Overlap {
-		t.Error("the name runs into the account beside it")
+	if title.Left > 80 {
+		t.Errorf("the title starts %.0fpx in from the left edge", title.Left)
 	}
 
 	// Its own line: below everything on the row above rather than beside it. This

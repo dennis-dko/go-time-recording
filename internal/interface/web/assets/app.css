@@ -187,14 +187,18 @@ body {
   z-index: 5;
 }
 
-/* Three columns, so what this installation is called sits in the middle of the
-   bar - on the same vertical line as the navigation below it.
+/* Three columns, so the installation's own logo sits in the middle of the bar -
+   on the same vertical line as the navigation below it.
 
-   The outer two are equal shares, and the left one is empty. That is not waste,
-   it is the price: a middle that is actually in the middle needs as much room on
-   its left as the account and the controls take on its right. Where the right
-   outgrows its share the middle drifts, which is the honest limit of centring
-   something between two things of unequal weight. */
+   Only the logo. The title keeps the left end and the account keeps the right,
+   which is where both have always been; what moved is the one thing on this bar
+   that belongs to whoever runs the installation.
+
+   The outer two are equal shares, which is what puts the middle in the middle
+   rather than between two things of unequal weight. Where the right outgrows its
+   share the logo drifts left, which is the honest limit of it - and an
+   installation with no logo has an empty middle column of automatic width, which
+   takes no room at all, so the bar looks exactly as it did before. */
 .topbar-row {
   align-items: center;
   display: grid;
