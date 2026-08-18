@@ -3,6 +3,7 @@ package rest
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -105,7 +106,14 @@ func queryDate(c *gofr.Context, name string) (*time.Time, error) {
 
 func parseUint(raw, field string) (uint, error) {
 	v, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
-	if err != nil || v == 0 {
+
+	// The ceiling is checked rather than assumed. This parses into 64 bits and
+	// returns a uint, which is 64 bits on everything this ships for and 32 on
+	// something it does not - and there the conversion would wrap silently, so an
+	// id past four billion would come back as a different, valid-looking id.
+	// Nobody has that many rows; the point is that the failure would be a wrong
+	// answer rather than a refusal.
+	if err != nil || v == 0 || v > uint64(math.MaxUint) {
 		return 0, apperror.InvalidFields(field)
 	}
 
