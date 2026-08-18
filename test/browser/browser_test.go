@@ -462,6 +462,38 @@ func (p *page) drag(selector string, dx, dy float64) {
 	p.run("drag "+selector, moves...)
 }
 
+// settled waits until every screen has been filled from the server.
+//
+// Almost every case in this suite reads a screen, and every form and card in
+// this application is in index.html - so all of them are on screen from the
+// first paint and hold nothing until their request lands. A case that reads in
+// between finds an empty table, a card that has not yet been taken away, or a
+// field about to be overwritten, and reports it as a broken feature.
+//
+// That was survivable while the cases ran one at a time on a quiet machine. Run
+// beside each other on a busy runner and the window is wide enough to fall into
+// regularly, in a different case each time.
+func (p *page) settled() {
+	p.t.Helper()
+
+	deadline := time.Now().Add(waitPatience)
+
+	for time.Now().Before(deadline) {
+		var state string
+
+		p.run("is it loaded", chromedp.Evaluate(
+			`String(document.documentElement.dataset.loaded ?? '')`, &state))
+
+		if state == "yes" {
+			return
+		}
+
+		time.Sleep(150 * time.Millisecond)
+	}
+
+	p.t.Fatalf("the interface never finished loading; the log says:\n%s", p.app.Log())
+}
+
 // readyAdmin signs in, replaces the initial password and settles the wizard,
 // leaving an administrator who can actually do things.
 //
@@ -476,6 +508,7 @@ func (p *page) readyAdmin() {
 
 	p.signIn(harness.AdminEmail, harness.AdminPassword)
 	p.waitGone("#login-screen")
+	p.settled()
 	p.settleWizard()
 
 	p.run("replace the initial password",
@@ -538,6 +571,7 @@ func (p *page) becomeWorker() {
 
 	p.signIn(workerEmail, workerPassword)
 	p.waitGone("#login-screen")
+	p.settled()
 	p.settleWelcome()
 }
 
