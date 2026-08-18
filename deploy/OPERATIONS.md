@@ -199,17 +199,27 @@ Two things to know before you switch `TLS_ENABLED=true` on a host.
 host does not. As written, the unit runs as `gtr` with `NoNewPrivileges=true`, so
 binding 443 and 80 fails with "permission denied".
 
-**And that failure does not stop the process.** Both listeners are started in
-their own goroutines and only log; startup reports success either way. So the
-service comes up, `systemctl status` says `active (running)`, and the
-installation serves **unencrypted** HTTP on `HTTP_PORT` with one error line in
-the log. After enabling TLS, check the log for `serving HTTPS on :443` and
-actually connect to the name over HTTPS. Do not take "the unit started" as
-evidence.
+**And that failure does not stop the process.** The service comes up,
+`systemctl status` says `active (running)`, and the installation serves
+**unencrypted** HTTP on `HTTP_PORT`. It is now loud about it — the bind happens
+before startup returns, so the log carries
+`could not start HTTPS: cannot bind :443 …; continuing without HTTPS` rather
+than a line from inside a goroutine — but the unit still starts. After enabling
+TLS, check the log for `serving HTTPS on :443` and actually connect to the name
+over HTTPS. Do not take "the unit started" as evidence.
 
-**The plain listener stays open on all interfaces regardless.** The TLS server
-proxies to it and nothing closes it. Firewall `HTTP_PORT`, or expose only 80 and
-443 on the public interface.
+**The plain listener stays bound on all interfaces, and answers only this
+machine.** GoFr binds every interface and offers no way to say otherwise, so the
+socket is there either way. While HTTPS is being served from this process, that
+port serves the loopback address the TLS front end dials from and answers
+everything else with a 308 to the encrypted address — so the headers that come
+with an open port, `X-Forwarded-For` and `X-Forwarded-Proto`, can no longer be
+written by whoever found it. When HTTPS did **not** come up, it serves the
+network as before: redirecting to a port with nothing behind it would turn a bad
+configuration into an outage.
+
+Firewalling `HTTP_PORT`, or exposing only 80 and 443 on the public interface, is
+still the tidier arrangement and nothing here argues against it.
 
 ## D · Bare container
 

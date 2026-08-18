@@ -4,6 +4,7 @@ package integration
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,61 @@ func TestFailedSignInsAreIndistinguishable(t *testing.T) {
 
 	if wrongPassword.Message() != unknownAccount.Message() {
 		t.Errorf("messages differ: %q vs %q", wrongPassword.Message(), unknownAccount.Message())
+	}
+}
+
+// And they must take the same time, which is the half the words do not cover.
+//
+// The message and the status were identical long before this test existed. The
+// duration was not: an address nobody holds was refused as soon as the lookup
+// missed, while a real address ran bcrypt first. That is one millisecond against
+// sixty, from the same endpoint, with the same sentence on screen - so anybody
+// with a list of names and a stopwatch could read back which of them work here,
+// one request each, learning nothing about passwords and everything about
+// people.
+//
+// Medians of interleaved samples, so a slow moment on the machine running this
+// lands on both sides rather than on one. The margin is wide because the
+// difference it guards against is not: the ratio was near zero before and near
+// one after, and half is nowhere near either edge.
+func TestFailedSignInsTakeTheSameTime(t *testing.T) {
+	t.Parallel()
+
+	a := start(t)
+	a.signInAsAdmin("a-much-better-password")
+
+	const samples = 5
+
+	var real, absent []time.Duration
+
+	timed := func(email string) time.Duration {
+		started := time.Now()
+
+		a.newClient().api(http.MethodPost, "/auth/login", map[string]string{
+			"email": email, "password": "not-the-password",
+		})
+
+		return time.Since(started)
+	}
+
+	for range samples {
+		real = append(real, timed(adminEmail))
+		absent = append(absent, timed("nobody@example.com"))
+	}
+
+	median := func(taken []time.Duration) time.Duration {
+		slices.Sort(taken)
+
+		return taken[len(taken)/2]
+	}
+
+	withAccount, without := median(real), median(absent)
+
+	if without*2 < withAccount {
+		t.Errorf("an unknown address is refused in %v and a known one in %v: the "+
+			"gap is the answer to \"does this person work here\", given to anybody "+
+			"who asks in the only way that cannot be seen on screen",
+			without, withAccount)
 	}
 }
 
