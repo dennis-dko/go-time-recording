@@ -2184,3 +2184,51 @@ input[readonly] { cursor: default; }
 }
 
 .welcome-recent-hours { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Big enough to hit with a thumb.
+
+   Below this width the layout is already the small one, and a small screen is
+   overwhelmingly a touch screen - where the thing being aimed with is about a
+   centimetre across rather than a pixel. Measured on a 390px screen before this
+   block: the burger 36px tall, the appearance picker 37, a tab in the open menu
+   37, the fields 38, the button that reveals a password 26, and the one that
+   dismisses a notice 18. All of them things somebody presses, none of them a
+   size anybody can press reliably.
+
+   Forty-four, which is the size a finger actually needs and the number both
+   platform guidelines settled on. Height rather than font size: nothing gets
+   bigger to read, there is simply more of it to hit. */
+@media (max-width: 900px) {
+  button,
+  select,
+  .tab,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+    min-height: 44px;
+  }
+
+  /* A file field is drawn by the browser and barely restylable; what can be
+     given room is the label around it, which is what a thumb aims at. */
+  .file-pick {
+    align-items: center;
+    display: flex;
+    min-height: 44px;
+  }
+
+  /* A switch is pressed by its label, not by the checkbox inside it - which is
+     invisible and 22px. Fifteen rights in a column, each a row to hit. */
+  .switch { min-height: 44px; }
+
+  /* The small round ones, which need width as much as height: an 18px cross in
+     the corner of a notice is the hardest thing on the screen to press. */
+  .toast-close,
+  .pw-toggle,
+  .nav-toggle {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* And room between them, so aiming at one does not risk the next. The rows in
+     a table are the tightest place: two link buttons side by side in an action
+     cell, four pixels apart. */
+  .actions { gap: 8px; }
+}
