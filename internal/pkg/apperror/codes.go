@@ -75,6 +75,11 @@ const (
 	// leaving somebody to guess.
 	CodeCSRFRejected = "csrfRejected"
 
+	// CodeBodyTooLarge: the request carried more than the endpoint accepts. A
+	// spreadsheet import is allowed far more than anything else, so this arriving
+	// anywhere else is a caller sending something it has no reason to.
+	CodeBodyTooLarge = "bodyTooLarge"
+
 	// CodeMaintenance: the installation is deliberately out of service. Sent only
 	// where the notice is this application's own words; an administrator who wrote
 	// their own wrote it for the people who will read it, and replacing it with a
@@ -94,5 +99,6 @@ var GenericCodes = []string{
 	CodeInvalidFields,
 	CodeRateLimited,
 	CodeCSRFRejected,
+	CodeBodyTooLarge,
 	CodeMaintenance,
 }

@@ -265,3 +265,73 @@ func clientKey(r *http.Request) string {
 
 	return host
 }
+
+// What a request may carry.
+//
+// Nothing bounded this. GoFr decodes the body into a struct with no cap, and
+// http.Server bounds only the headers, so a single POST could name a body of any
+// size and be given the memory to hold it - on /auth/login, which needs no
+// session, no permission and no account that exists.
+//
+// The two numbers are chosen from what the application actually sends. A saved
+// appearance is the largest ordinary body there is: a logo and a tab icon, each
+// capped at 256 KB as a data URI, plus a title per language. That is well under
+// a megabyte, and two leaves room for the next field without leaving room for an
+// attack. A spreadsheet is the one thing legitimately larger, and thirty-two
+// megabytes is more rows than this application will ever be handed at once.
+const (
+	maxRequestBody = 2 << 20
+	maxImportBody  = 32 << 20
+)
+
+// LimitRequestBody refuses a body larger than the endpoint has any use for.
+//
+// Two checks, because they catch different callers. Content-Length is what an
+// honest client declares, and answering it refuses the request before a byte of
+// the body is read - which is the whole point, and gives a named refusal the
+// interface can put into a sentence. MaxBytesReader is for the client that
+// declares nothing, or lies: a chunked body has no length to check, so the cap
+// has to sit on the reading as well, where it stops the read rather than the
+// request.
+func LimitRequestBody() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			allowed := int64(maxRequestBody)
+			if strings.HasSuffix(r.URL.Path, "/import") {
+				allowed = maxImportBody
+			}
+
+			if r.ContentLength > allowed {
+				rejectTooLarge(w, allowed)
+
+				return
+			}
+
+			r.Body = http.MaxBytesReader(w, r.Body, allowed)
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// rejectTooLarge answers in the shape every other refusal in this API uses, and
+// carries the limit so the sentence can name it.
+func rejectTooLarge(w http.ResponseWriter, allowed int64) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusRequestEntityTooLarge)
+
+	body, err := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"message": "the request body is too large",
+			"code":    apperror.CodeBodyTooLarge,
+			"values":  []any{allowed / (1 << 20)},
+		},
+	})
+	if err != nil {
+		// The map above cannot fail to encode, and a refusal with no body is
+		// still a refusal.
+		return
+	}
+
+	_, _ = w.Write(append(body, '\n'))
+}
