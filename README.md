@@ -418,6 +418,12 @@ decoration rather than information. It follows the filter the table follows, so 
 project scopes both — a chart totalling everything next to a table totalling one
 project is two answers on one screen, and no way to tell which was asked for.
 
+**Everything you press on a small screen is at least 44px tall** — the size a
+finger needs, and the number both platform guidelines settled on. Measured on a
+390px screen before this was set: the button that dismisses a notice was 18px,
+a permission switch 22, the one that reveals a password 26, the fields 38.
+Height only; nothing is enlarged to read, there is simply more of it to hit.
+
 **The navigation folds into one control below 900px.** Nine points do not fit
 beside anything on a telephone: as a row that scrolled sideways they showed
 three and hid six, with nothing on screen to say the others were there — and

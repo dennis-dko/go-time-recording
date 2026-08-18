@@ -4018,3 +4018,59 @@ func TestTheNavigationFoldsAwayOnASmallScreen(t *testing.T) {
 		t.Error("a press outside the menu did not close it")
 	}
 }
+
+// Everything you press on a telephone is big enough to press.
+//
+// A small screen is overwhelmingly a touch screen, where the thing being aimed
+// with is about a centimetre across rather than a pixel. Measured on a 390px
+// screen before this was fixed: the burger 36px tall, the appearance picker 37,
+// a tab in the open menu 37, the fields 38, the button that reveals a password
+// 26, and the one that dismisses a notice 18.
+//
+// Forty-four is the size a finger needs, and the number both platform
+// guidelines settled on.
+func TestEveryControlIsBigEnoughToPressOnAPhone(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("a telephone", chromedp.EmulateViewport(390, 760))
+
+	// With the navigation open, so its points are measured too.
+	p.run("open the menu", p.click("#nav-toggle"))
+
+	for _, view := range []string{"welcome", "users", "roles", "settings"} {
+		p.run("open "+view, chromedp.Evaluate(
+			fmt.Sprintf("switchView(%q)", view), nil))
+
+		var small []string
+
+		// What a thumb actually lands on, which is not always the element itself.
+		// A switch's checkbox is invisible and 22px; the thing being pressed is
+		// the label drawn around it. A checkbox in a table is small on purpose;
+		// what is pressed is the cell holding it, header cells included - the one
+		// that selects every row lives in a th. A file field is drawn by the
+		// browser and hardly restylable; its label is what can be given room.
+		p.evalJSON(`JSON.stringify(
+			[...document.querySelectorAll('button, select, .tab, input:not([type=hidden])')]
+				.filter((el) => !el.hidden && el.offsetParent !== null)
+				.map((el) => (['checkbox', 'radio', 'file'].includes(el.type)
+					? (el.closest('label, td, th') ?? el)
+					: el))
+				.filter((el) => {
+					const box = el.getBoundingClientRect();
+
+					return box.height > 0 && box.height < 44;
+				})
+				.map((el) => (el.id || el.className || el.tagName) + ':' +
+					Math.round(el.getBoundingClientRect().height))
+				.filter((v, i, a) => a.indexOf(v) === i)
+				.slice(0, 8))`, &small)
+
+		if len(small) > 0 {
+			t.Errorf("on the %s screen these are too small to press with a thumb: %v",
+				view, small)
+		}
+	}
+}
