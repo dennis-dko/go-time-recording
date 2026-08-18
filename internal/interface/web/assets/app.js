@@ -4343,8 +4343,13 @@ function drawBranding(branding) {
   //
   // The original is the fallback for an installation whose logo predates the
   // derived sizes; it looks the same, it is only bigger.
+  // Both places are given the banner-sized copy now that both draw it at the
+  // same size. The header used to take the 440x80 one, which is the right file
+  // for a 40px-tall slot and a blurred one for a 96px slot - the pixels are not
+  // there to enlarge. Nothing extra is fetched: this answer already carried both
+  // copies, because the sign-in screen behind the session needs one of them.
   const sized = {
-    '#brand-logo': branding.logoHeader || branding.logo,
+    '#brand-logo': branding.logoBanner || branding.logo,
     '#login-logo': branding.logoBanner || branding.logo,
   };
 

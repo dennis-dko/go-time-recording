@@ -28,6 +28,8 @@ func setMaintenance(t *testing.T, c *client, enabled bool, message string) {
 // The point of the feature: ordinary work is refused, and refused in a way a
 // monitor and a person both read correctly.
 func TestMaintenanceModeTurnsOrdinaryWorkAway(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -74,6 +76,8 @@ func TestMaintenanceModeTurnsOrdinaryWorkAway(t *testing.T) {
 // The trap this feature invites: turning it on and finding that the switch is
 // behind it.
 func TestTheAdministratorCanStillEndMaintenanceMode(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -119,6 +123,8 @@ type MaintenanceOnTheWire struct {
 // cookie expired mid-window would otherwise be locked out of their own
 // installation.
 func TestSigningInStillWorksDuringMaintenance(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -133,6 +139,8 @@ func TestSigningInStillWorksDuringMaintenance(t *testing.T) {
 // Whoever opens the page has to be told why, which means the notice is readable
 // before there is a session.
 func TestTheNoticeIsReadableWithoutSigningIn(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -163,6 +171,8 @@ func TestTheNoticeIsReadableWithoutSigningIn(t *testing.T) {
 // worth anything is the contrast: the same installation, the same window, and one
 // of them turned away.
 func TestWhoeverMayAdministerGetsPastMaintenanceMode(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -200,6 +210,8 @@ func TestWhoeverMayAdministerGetsPastMaintenanceMode(t *testing.T) {
 // Nobody, which is not the same as everybody: the exemption is about the account
 // behind the request, so a request that carries no account at all is refused.
 func TestMaintenanceModeStillRefusesARequestWithoutASession(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -215,6 +227,8 @@ func TestMaintenanceModeStillRefusesARequestWithoutASession(t *testing.T) {
 // An empty message still says something. "Temporarily unavailable" beats a bare
 // status code.
 func TestAnEmptyMessageFallsBackToSomethingReadable(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -242,6 +256,8 @@ func TestAnEmptyMessageFallsBackToSomethingReadable(t *testing.T) {
 // maintenance mode off while somebody edits their sentence, which is the opposite
 // of what they were trying to do.
 func TestAnOverLongMessageIsCutRatherThanRefused(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 

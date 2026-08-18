@@ -46,6 +46,8 @@ func accountsOf(t *testing.T, admin *client) []struct {
 }
 
 func TestNobodySetsSomebodyElsesWorkingTimes(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	mika := a.signInAsUser(admin, "Mika", "mika@example.com")
@@ -108,6 +110,8 @@ func TestNobodySetsSomebodyElsesWorkingTimes(t *testing.T) {
 // else to decide them. It no longer does, and the fields are gone from the screen -
 // so a body that still sends them changes nothing.
 func TestANewAccountStartsOnTheInstanceDefault(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -156,6 +160,8 @@ func TestANewAccountStartsOnTheInstanceDefault(t *testing.T) {
 // raise it past what the installation allows, because that ceiling is configuration and
 // configuration is not theirs.
 func TestAPersonalDailyCeilingHoldsAndCannotLoosenTheInstanceOne(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	mika := a.signInAsUser(admin, "Mika", "mika@example.com")

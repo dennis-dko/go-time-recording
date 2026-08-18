@@ -40,6 +40,8 @@ func userWithTime(t *testing.T, a *app, admin *client) (*client, timesheetRespon
 }
 
 func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -97,6 +99,8 @@ func TestTheAdministratorCannotReachSomebodyElsesTime(t *testing.T) {
 
 // The projects everybody books against belong to whoever runs the work.
 func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	other := a.signInAsUser(admin, "Momo", "momo@example.com")
@@ -162,6 +166,8 @@ func TestTheAdministratorDoesNotKeepTheSharedProjects(t *testing.T) {
 // how you get in rather than somebody's working day. Whoever does work here has an
 // account of their own, and the role below is for the person who does both.
 func TestTheAdministratorStillAdministersAndNothingElse(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -288,6 +294,8 @@ func TestTheAdministratorStillAdministersAndNothingElse(t *testing.T) {
 // jobs is given the combined role. That is a decision about a person, which is the
 // point.
 func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -427,6 +435,8 @@ func TestTheAdministratorsRightsCannotBeChangedAtAll(t *testing.T) {
 // broken installation rather than as a decision. Taking somebody's access away is what
 // removing the account is for.
 func TestARoleMustGrantAtLeastOnePermission(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -473,6 +483,8 @@ func TestARoleMustGrantAtLeastOnePermission(t *testing.T) {
 // write - so the safety the buttons were given could be walked around by typing
 // five numbers into the field between them.
 func TestOnlyTheBuiltInAdministratorSchedulesTheDirectoryRun(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	both := a.signInAsWorkingAdmin(admin, "Bothe", "bothe@example.com")
@@ -529,6 +541,8 @@ func TestOnlyTheBuiltInAdministratorSchedulesTheDirectoryRun(t *testing.T) {
 // combined role deliberately does not: somebody who also books time keeps their
 // own screens and was never meant to inherit a purge that deletes accounts.
 func TestTheAdminRoleIsTreatedAsTheBuiltInAdministrator(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 

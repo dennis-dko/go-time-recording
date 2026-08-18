@@ -48,6 +48,8 @@ func declares(scraped, metric string) bool {
 // This test exists because the opposite was assumed while writing them, and the
 // endpoint said otherwise.
 func TestAMetricIsPublishedOnlyOnceItHasAValue(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 
 	if scraped := scrape(t, a); declares(scraped, "gtr_signin_failures_total") {
@@ -69,6 +71,8 @@ func TestAMetricIsPublishedOnlyOnceItHasAValue(t *testing.T) {
 
 // The one the installation exists to record.
 func TestBookingTimeIsCounted(t *testing.T) {
+	t.Parallel()
+
 	a, _, worker := startWithWorker(t)
 
 	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
@@ -94,6 +98,8 @@ func TestBookingTimeIsCounted(t *testing.T) {
 // stopped answering and is turning away people whose passwords are fine. The
 // label is what tells those apart.
 func TestARefusedSignInIsCountedWithItsReason(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 
 	// No session needed, and deliberately so: this is the endpoint anybody can

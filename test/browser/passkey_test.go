@@ -63,6 +63,8 @@ func (p *page) withAuthenticator(t *testing.T) webauthn.AuthenticatorID {
 
 // A registered passkey signs in without a password being typed at all.
 func TestRegisteringAPasskeyAndSigningInWithIt(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.withAuthenticator(t)
 
@@ -115,6 +117,8 @@ func TestRegisteringAPasskeyAndSigningInWithIt(t *testing.T) {
 // Removing a passkey has to take effect, or revoking a lost device would be
 // theatre.
 func TestRemovingAPasskey(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.withAuthenticator(t)
 
@@ -143,7 +147,7 @@ func TestRemovingAPasskey(t *testing.T) {
 
 	p.run("confirm", p.click(`.confirm-actions button.danger`))
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 	for time.Now().Before(deadline) {
 		if !strings.Contains(p.text("#table-passkeys tbody"), "Doomed device") {
 			return
@@ -159,6 +163,8 @@ func TestRemovingAPasskey(t *testing.T) {
 // in that depends on a particular device still existing is not one, so it is
 // never offered the choice.
 func TestTheBuiltInAdministratorIsNotOfferedPasskeys(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.withAuthenticator(t)
 
@@ -226,7 +232,7 @@ func (p *page) createAccount(t *testing.T, email, password, role string) {
 func (p *page) waitForText(selector, want string) {
 	p.t.Helper()
 
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for time.Now().Before(deadline) {
 		if strings.Contains(p.text(selector), want) {

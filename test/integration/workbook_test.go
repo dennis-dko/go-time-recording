@@ -80,6 +80,8 @@ func importFile(t *testing.T, c *client, book []byte, dryRun string) (importResu
 }
 
 func TestExportingAndImportingRoundTrips(t *testing.T) {
+	t.Parallel()
+
 	a, admin, _ := startWithWorker(t)
 	other := a.signInAsUser(admin, "Mika", "mika@example.com")
 
@@ -162,6 +164,8 @@ func TestExportingAndImportingRoundTrips(t *testing.T) {
 // headed Date, User, Project, Hours. Nothing failed - the importer accepts either
 // language - which is exactly why nobody noticed.
 func TestTheGermanTimeExportIsGermanAndStillImports(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
@@ -236,6 +240,8 @@ func assertGermanHeadings(t *testing.T, workbook []byte) {
 // The preview writes nothing. That is the whole point of it: somebody with a file
 // of eighty rows should see what it would do before it does it.
 func TestThePreviewWritesNothing(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	book := workbookOf(t, spreadsheet.Row{
@@ -285,6 +291,8 @@ func TestThePreviewWritesNothing(t *testing.T) {
 // One bad row and nothing is written. A file half-imported leaves nobody able to
 // say which half, or which entries came from it.
 func TestAFileWithABadRowImportsNothing(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	book := workbookOf(t,
@@ -356,6 +364,8 @@ func TestAFileWithABadRowImportsNothing(t *testing.T) {
 // exported from a colleague's screen and edited is a realistic thing to be handed:
 // the rows that are yours import, and the ones that are not come back named.
 func TestImportingSomebodyElsesRowIsRefused(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -426,6 +436,8 @@ func TestImportingSomebodyElsesRowIsRefused(t *testing.T) {
 // Something that is not a workbook is refused as a whole, with a reason - as
 // opposed to a workbook with bad rows, which is refused row by row.
 func TestSomethingThatIsNotAWorkbookIsRefusedOutright(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	r := worker.upload("/timesheets/import", "file", "entries.xlsx",
@@ -449,6 +461,8 @@ func TestSomethingThatIsNotAWorkbookIsRefusedOutright(t *testing.T) {
 // two accounts exports exactly its own row, which distinguishes a scope from an empty
 // answer just as well and does not need a right that no longer exists.
 func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 	other := a.signInAsUser(admin, "Malin", "malin@example.com")

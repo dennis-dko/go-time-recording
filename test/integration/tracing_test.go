@@ -99,6 +99,8 @@ func tracedServices(t *testing.T) []string {
 // what an administrator saves is what the next start exports with, and the spans
 // arrive.
 func TestTracingConfiguredFromTheScreenActuallyExportsSpans(t *testing.T) {
+	t.Parallel()
+
 	collector := requireJaeger(t)
 
 	if dsn := os.Getenv(harness.DSNEnv); dsn != "" {
@@ -151,6 +153,8 @@ func TestTracingConfiguredFromTheScreenActuallyExportsSpans(t *testing.T) {
 // need: tracing configured in the environment, switched off from the screen, and
 // then nothing more arrives.
 func TestSwitchingTracingOffStopsSpansReachingTheCollector(t *testing.T) {
+	t.Parallel()
+
 	collector := requireJaeger(t)
 
 	if dsn := os.Getenv(harness.DSNEnv); dsn != "" {

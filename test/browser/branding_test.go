@@ -32,6 +32,8 @@ import (
 const wideLogo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAAB4CAYAAAAuVYzDAAADi0lEQVR4nOzd7U3cQBSGUROlFDqg/xLogF6IIn4ENlrWxq/n655TAPIdCc2j69Xurw0AgCiBBQAQJrAAAMIEFgBAmMACAAgTWAAAYQILACBMYAEAhAksAIAwgQUAECawAADCBBYAQJjAAgAIE1gAAGECCwAgTGABAIQJLACAMIEFABAmsAAAwgQWAECYwAIACPvd+wE45/Vtez/7N16et6fM0wAAf7lYJ5MIqkcEFwCc4yKdQIuoukdsAcBxLs+B9QyrW0ILAPZzaQ5opLC6JbQA4DGX5UBGDqtbQgsA7vM1DYOYKa62CZ8XAFoSWAOYNVZmfW4AuJrXPB2tFCheGQLAPzZYnawUV9uC8wDAGQKrg1VjZNW5AOAogdXY6hGy+nwAsIfAaqhKfFSZEwDuEViNVIuOavMCwGcCq4GqsVF1bgAQWAAAYQLrYtW3ONXnB6AmgXUhcfHBOQBQjcC6iKj4ynkAUInAAgAI8/txF7Ctuc9vFhLg/wsYng0WAECYwAqzvfqe8wGgAoEFABAmsIJsZ/ZxTgCsTmABAIQJLACAMIEV4rXXMc4LgJUJLACAMIEFABAmsAAAwgRWgM8T/YxzA2BVAgsAIExgAQCECSwAgDCBBQAQJrAAAMIEFgBAmMACAAgTWAAAYQILACBMYAEAhAksAIAwgQUAECawAADCBBYAQJjAAgAIE1gAAGECK+DleXvq/Qwzcm4ArEpgAQCECSwAgDCBBQAQJrBCfJ7oGOcFwMoEFgBAmMACAAgTWEFee+3jnABYncACAAgTWGG2M99zPgBUILAAAMJsEy7y+ra9936G0dheAVCFDRYAQJjAuohtzVfOA4BKBNaFRMUH5wBANQLrYtXjovr8ANQksAAAwgRWA1W3OFXnBgCB1Ui12Kg2LwB8JrAaqhIdVeYEgHsEVmOrx8fq8wHAHgKrg1UjZNW5AOAogdXJajGy2jwAcIZLcQAz/26hsAKA/9lgDWDWSJn1uQHgagJrELPFymzPCwAtuSQHNPIrQ2EFAI+5LAc2UmgJKwDYz6U5gZ6hJawA4DiX52RaxJaoAoBzXKSTSwSXoAIAAACG5msaAADCBBYAQJjAAgAIE1gAAGECCwAgTGABAIQJLACAMIEFABAmsAAAwgQWAECYwAIACBNYAABhAgsAIExgAQCECSwAgDCBBQAQJrAAAMIEFgBAmMACAAj7EwAA//8NjIji7L4NLAAAAABJRU5ErkJggg=="
 
 func TestAConfiguredTextFillsInPlaceholdersAndMakesLinks(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -78,6 +80,8 @@ func TestAConfiguredTextFillsInPlaceholdersAndMakesLinks(t *testing.T) {
 // DOM nodes and never assigned as innerHTML, so a tag is a tag-shaped string; and
 // the only schemes made into links are the three that go somewhere.
 func TestAConfiguredTextCannotSmuggleSomethingIn(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -149,6 +153,8 @@ func (p *page) setBrandingText(t *testing.T, field, value string) {
 // browser tab, and the button beside the title - which say which program this is
 // without taking the space meant for the company.
 func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -236,6 +242,38 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 		t.Errorf("the logo sits at %.0f and the bar's middle is %.0f",
 			placed.Centre, placed.BarCentre)
 	}
+
+	// The room the sign-in screen gives it, which is what it is given here now.
+	// It was 40px in the bar and 96 on the card - two sizes for one picture, and
+	// the header's was the one nobody could read.
+	var sizes struct {
+		Header float64 `json:"header"`
+		SignIn float64 `json:"signIn"`
+		Source string  `json:"source"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const header = document.querySelector('#brand-logo');
+		const login = document.querySelector('#login-logo');
+
+		return {
+			header: parseFloat(getComputedStyle(header).maxHeight),
+			signIn: parseFloat(getComputedStyle(login).maxHeight),
+			// Both are handed the same copy: the header's slot is no longer the
+			// small derived one, which would be enlarged and blurred.
+			source: header.src === login.src ? 'same' : 'different',
+		};
+	})())`, &sizes)
+
+	if sizes.Header != sizes.SignIn {
+		t.Errorf("the header allows the logo %.0fpx and the sign-in screen %.0fpx",
+			sizes.Header, sizes.SignIn)
+	}
+
+	if sizes.Source != "same" {
+		t.Error("the header is given a different copy of the logo from the sign-in " +
+			"screen, so one of the two is being enlarged")
+	}
 }
 
 // Your own row says so, and says it before it says anything else.
@@ -245,6 +283,8 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 // that matters to the person looking at the table, because it is the row whose
 // delete button is not there.
 func TestYourOwnRowIsMarkedAsYours(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 	p.createOrdinaryAccount(t, "sven@example.com", "sven-password-1")
@@ -301,6 +341,8 @@ func TestYourOwnRowIsMarkedAsYours(t *testing.T) {
 //
 // No sign-in needed - open(t) lands here, which is the state this is about.
 func TestTheSignInScreenIsUsableOnAShortWindow(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	// Shorter than the screen's own contents, so this asks about the property
@@ -357,6 +399,8 @@ func TestTheSignInScreenIsUsableOnAShortWindow(t *testing.T) {
 // squint at - and an installation working in one language never opens the
 // switcher at all.
 func TestTheConfiguredTextsFollowTheReadersLanguage(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -409,6 +453,8 @@ func TestTheConfiguredTextsFollowTheReadersLanguage(t *testing.T) {
 // installation that fills in one language and never opens the switcher must go on
 // working exactly as it did, for every reader.
 func TestALanguageWithNoTextsFallsBackRatherThanEmptying(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -445,6 +491,8 @@ func TestALanguageWithNoTextsFallsBackRatherThanEmptying(t *testing.T) {
 // Two boxes here rather than the switcher the appearance screen has: two is small
 // enough to put on a wizard step, and four texts in two languages is not.
 func TestTheWizardTakesTheTitleInBothLanguages(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 
 	p.signIn(harness.AdminEmail, harness.AdminPassword)
@@ -501,6 +549,8 @@ func TestTheWizardTakesTheTitleInBothLanguages(t *testing.T) {
 // is what will be on the others: a free-form one would be a selection that cannot
 // be used as chosen.
 func TestAPartOfTheLogoCanBeChosenForEachPlace(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -647,6 +697,8 @@ func TestAPartOfTheLogoCanBeChosenForEachPlace(t *testing.T) {
 // the test that the rule is gone, dragged with real pointer input so that a
 // corner nothing is wired to fails here rather than passing.
 func TestTheChosenPartCanBeAnyShape(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -772,6 +824,8 @@ func (p *page) selection(t *testing.T) struct {
 // of them open, so "Zeiterfassung der Beispiel GmbH & Co. KG" reads as
 // "Zeiterfassung der B…" in every one of them.
 func TestTheBrowserTabCanBeNamedSeparately(t *testing.T) {
+	t.Parallel()
+
 	const (
 		header = "Zeiterfassung der Beispiel GmbH"
 		tab    = "Zeiterfassung"
@@ -835,6 +889,8 @@ func TestTheBrowserTabCanBeNamedSeparately(t *testing.T) {
 // are a long way down a long screen, so every save meant scrolling back down to
 // see whether what was just saved looks right.
 func TestSavingTheLogoKeepsThePlaceOnThePage(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -877,7 +933,7 @@ func TestSavingTheLogoKeepsThePlaceOnThePage(t *testing.T) {
 	// the scroll lands once there is enough page to land on.
 	var landed float64
 
-	settled := time.Now().Add(20 * time.Second)
+	settled := time.Now().Add(waitPatience)
 
 	for {
 		p.evalJSON(`JSON.stringify(window.scrollY)`, &landed)
@@ -912,7 +968,7 @@ func (p *page) submitAndAwaitReload(t *testing.T, submit chromedp.Action) {
 	p.run("mark this document", chromedp.Evaluate(`window.__beforeReload = true`, nil))
 	p.run("save", submit)
 
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for {
 		var gone bool
@@ -944,6 +1000,8 @@ func (p *page) submitAndAwaitReload(t *testing.T, submit chromedp.Action) {
 // been opened. Same rule as the logo: nothing written means the default applies,
 // and goes on applying.
 func TestALanguageWithNothingWrittenKeepsFollowingTheBase(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 

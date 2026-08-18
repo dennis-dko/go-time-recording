@@ -92,6 +92,8 @@ func (c *client) tryRestartState() (RestartState, bool) {
 // A freshly started instance is running exactly what is stored, so there is
 // nothing to report and the card stays out of the way.
 func TestNothingIsPendingOnAnInstanceThatWasJustStarted(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -109,6 +111,8 @@ func TestNothingIsPendingOnAnInstanceThatWasJustStarted(t *testing.T) {
 // has nothing to wait for. See TestTheLogLevelAppliesWithoutARestart, and
 // TestTheLogLevelIsNotWaitingForAnything below for the other half of that.
 func TestSavingAStartUpSettingIsReportedAsPending(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -146,6 +150,8 @@ func TestSavingAStartUpSettingIsReportedAsPending(t *testing.T) {
 // it, it is already in force - and a card listing a change that has already
 // happened is worse than one that says nothing.
 func TestTheLogLevelIsNotWaitingForAnything(t *testing.T) {
+	t.Parallel()
+
 	a := start(t, "LOG_LEVEL=INFO")
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -163,6 +169,8 @@ func TestTheLogLevelIsNotWaitingForAnything(t *testing.T) {
 // Several at once, because that is the normal case: somebody opens the screen
 // and sets what they came to set.
 func TestEveryWaitingSettingIsListed(t *testing.T) {
+	t.Parallel()
+
 	a := start(t, "LOG_LEVEL=WARN")
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -192,6 +200,8 @@ func TestEveryWaitingSettingIsListed(t *testing.T) {
 // The switch that only goes one way: metrics can be turned off from here, so
 // only "on now, off after the restart" can ever be pending.
 func TestSwitchingMetricsOffIsPendingButLeavingThemOnIsNot(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -215,6 +225,8 @@ func TestSwitchingMetricsOffIsPendingButLeavingThemOnIsNot(t *testing.T) {
 // Whether the button is offered has to match what the platform can actually do,
 // or it is a button that fails on click.
 func TestTheRestartButtonIsOfferedOnlyWhereItWouldWork(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -242,6 +254,8 @@ func TestTheRestartButtonIsOfferedOnlyWhereItWouldWork(t *testing.T) {
 // The one that proves the feature rather than the plumbing: the process really
 // is replaced, it comes back, and it comes back running what was stored.
 func TestRestartingAppliesWhatWasWaiting(t *testing.T) {
+	t.Parallel()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("a process cannot replace its own image on Windows")
 	}

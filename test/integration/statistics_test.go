@@ -46,6 +46,8 @@ func ownStatistics(t *testing.T, c *client, query string) StatisticsOnTheWire {
 // A user reads their own time and nobody else's, which is exactly the account
 // that could not have had a chart of its own week before.
 func TestAUserCanReadTheirOwnStatistics(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -141,6 +143,8 @@ func TestAUserCanReadTheirOwnStatistics(t *testing.T) {
 
 // Somebody else's hours are never in your own figures, whatever role you have.
 func TestOwnStatisticsAreOnlyYourOwn(t *testing.T) {
+	t.Parallel()
+
 	a, admin, wera := startWithWorker(t)
 
 	wera.must(wera.api(http.MethodPost, "/timesheets", map[string]any{
@@ -170,6 +174,8 @@ func TestOwnStatisticsAreOnlyYourOwn(t *testing.T) {
 // A range the wrong way round is a mistake worth reporting rather than an empty
 // chart to puzzle over.
 func TestAnInvertedRangeIsRefused(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	if got := worker.api(http.MethodGet,

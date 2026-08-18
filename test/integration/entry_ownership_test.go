@@ -53,6 +53,8 @@ func entryOf(t *testing.T, c *client, body map[string]any) timesheetResponse {
 // description out of the response. Entry ids are small and sequential, so walking
 // somebody else's week cost nothing.
 func TestTransferringSomebodyElsesEntryIsRefused(t *testing.T) {
+	t.Parallel()
+
 	_, anna, bert := twoColleagues(t)
 
 	var shared projectResponse
@@ -90,6 +92,8 @@ func TestTransferringSomebodyElsesEntryIsRefused(t *testing.T) {
 
 // Transferring one's own entry still works, which is what the permission is for.
 func TestTransferringYourOwnEntryStillWorks(t *testing.T) {
+	t.Parallel()
+
 	_, anna, _ := twoColleagues(t)
 
 	var shared projectResponse
@@ -115,6 +119,8 @@ func TestTransferringYourOwnEntryStillWorks(t *testing.T) {
 // become - so somebody who may only write their own could push hours onto an
 // account that is not theirs to book for.
 func TestAnEntryCannotBeHandedToAColleague(t *testing.T) {
+	t.Parallel()
+
 	admin, anna, bert := twoColleagues(t)
 
 	var bertAccount []struct {
@@ -185,6 +191,8 @@ func TestAnEntryCannotBeHandedToAColleague(t *testing.T) {
 // colleague's private category, which the API refuses even to admit exists, or onto
 // a project that had been completed.
 func TestEditingCannotMoveAnEntryWhereBookingCouldNot(t *testing.T) {
+	t.Parallel()
+
 	_, anna, bert := twoColleagues(t)
 
 	// Bert's own category, which Anna may not even know about.
@@ -233,6 +241,8 @@ func TestEditingCannotMoveAnEntryWhereBookingCouldNot(t *testing.T) {
 // already there: a typo in its description has to stay fixable, or the check has
 // replaced one annoyance with another.
 func TestAnEntryOnAFinishedProjectStaysEditable(t *testing.T) {
+	t.Parallel()
+
 	_, anna, _ := twoColleagues(t)
 
 	var project projectResponse

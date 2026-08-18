@@ -33,6 +33,8 @@ import (
 // back. Written as a table rather than as a claim, because "all of them" is only
 // worth saying if something checks it.
 func TestEveryErrorTheAPICanGiveIsNamed(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -128,6 +130,8 @@ func TestEveryErrorTheAPICanGiveIsNamed(t *testing.T) {
 // writes its own code, which then has no sentence anywhere and shows English to
 // everybody while looking perfectly annotated in the source.
 func TestTheGenericCodesAreTheOnesDeclared(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	stranger := a.newClient()
 
@@ -145,6 +149,8 @@ func TestTheGenericCodesAreTheOnesDeclared(t *testing.T) {
 // on demand, and it is also the screen where this mattered most: the values being
 // complained about are in the fields directly above it.
 func TestAFailureFromUnderneathIsGenericAndKeepsItsDetail(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -230,6 +236,8 @@ func errorCode(t *testing.T, res response) string {
 // default. Deleting one leaves those without an answer, and putting it back means
 // reproducing a list of permissions exactly from memory.
 func TestTheShippedRolesCannotBeDeleted(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -311,6 +319,8 @@ func TestTheShippedRolesCannotBeDeleted(t *testing.T) {
 // installation is left with a role called something else, granting something
 // else, under a name the interface still translates.
 func TestTheShippedRolesCannotBeEdited(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -394,6 +404,8 @@ func TestTheShippedRolesCannotBeEdited(t *testing.T) {
 // The role is the exception, because the directory has no opinion about it: it is
 // decided here, for somebody the directory only says exists.
 func TestAnAccountFromTheDirectoryIsEditedInTheDirectory(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -523,6 +535,8 @@ func markAsDirectoryAccount(t *testing.T, a *app, id uint) {
 // the icon is served, fetched, and then not used, which is a long way to go to
 // find out.
 func TestALogoMustBeARasterImage(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -569,6 +583,8 @@ func TestALogoMustBeARasterImage(t *testing.T) {
 // saying plainly that this case means nothing unless the suite is run against
 // MySQL as well - which CI does.
 func TestSavingTheSameSettingsTwiceIsFine(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -603,6 +619,8 @@ func TestSavingTheSameSettingsTwiceIsFine(t *testing.T) {
 
 // The part chosen for each place is stored and comes back.
 func TestTheChosenPartOfTheLogoIsStored(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 

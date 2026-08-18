@@ -17,6 +17,8 @@ import (
 // ------------------------------------------------------------------- CSRF
 
 func TestCSRFRejectsARequestFromAnotherSite(t *testing.T) {
+	t.Parallel()
+
 	a, _, worker := startWithWorker(t)
 
 	// A real session and a real token - the only thing wrong is where the
@@ -33,6 +35,8 @@ func TestCSRFRejectsARequestFromAnotherSite(t *testing.T) {
 }
 
 func TestCSRFRejectsAMissingToken(t *testing.T) {
+	t.Parallel()
+
 	a, _, worker := startWithWorker(t)
 
 	req := rawRequest(t, http.MethodPost, a.BaseURL()+"/api/v1/projects",
@@ -45,6 +49,8 @@ func TestCSRFRejectsAMissingToken(t *testing.T) {
 }
 
 func TestCSRFTokenIsRotatedOnSignIn(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	a.signInAsAdmin("a-much-better-password")
 
@@ -65,6 +71,8 @@ func TestCSRFTokenIsRotatedOnSignIn(t *testing.T) {
 }
 
 func TestReadsNeedNoToken(t *testing.T) {
+	t.Parallel()
+
 	a, _, worker := startWithWorker(t)
 
 	req := rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/timesheets", "")
@@ -75,6 +83,8 @@ func TestReadsNeedNoToken(t *testing.T) {
 }
 
 func TestSecurityHeadersAreSet(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 
 	resp, err := http.Get(a.BaseURL() + "/")
@@ -117,6 +127,8 @@ func TestSecurityHeadersAreSet(t *testing.T) {
 }
 
 func TestAPIResponsesAreNotCached(t *testing.T) {
+	t.Parallel()
+
 	a, _, worker := startWithWorker(t)
 
 	req := rawRequest(t, http.MethodGet, a.BaseURL()+"/api/v1/me", "")
@@ -138,6 +150,8 @@ func TestAPIResponsesAreNotCached(t *testing.T) {
 // -------------------------------------------------------------------- RBAC
 
 func TestAUserSeesOnlyTheirOwnEntries(t *testing.T) {
+	t.Parallel()
+
 	a, admin, colleague := startWithWorker(t)
 
 	// Somebody else's hours have to be recorded for "only their own" to mean
@@ -188,6 +202,8 @@ func TestAUserSeesOnlyTheirOwnEntries(t *testing.T) {
 }
 
 func TestAUserCannotAdministerUsersOrRoles(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -226,6 +242,8 @@ func TestAUserCannotAdministerUsersOrRoles(t *testing.T) {
 }
 
 func TestTheBuiltInAdministratorCannotBeDeleted(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -256,6 +274,8 @@ func TestTheBuiltInAdministratorCannotBeDeleted(t *testing.T) {
 // ------------------------------------------------------------- API tokens
 
 func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -312,6 +332,8 @@ func TestAPITokenWorksAndCarriesTheOwnersRole(t *testing.T) {
 }
 
 func TestTokenValueIsNeverReturnedAgain(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	var created struct {

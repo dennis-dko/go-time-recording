@@ -38,6 +38,8 @@ func beginEnrolment(t *testing.T, c *client) enrolment {
 }
 
 func TestEnrolmentOffersAQRCodeAndTheKey(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -86,6 +88,8 @@ func TestEnrolmentOffersAQRCodeAndTheKey(t *testing.T) {
 // The secret is the whole of the second factor, so a fresh enrolment must not
 // hand out the same one twice.
 func TestEachEnrolmentGetsItsOwnSecret(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -104,6 +108,8 @@ func TestEachEnrolmentGetsItsOwnSecret(t *testing.T) {
 // Enrolment is the caller's own business: the code encodes a secret that signs
 // somebody in, so it must not be obtainable for anybody else, by anybody.
 func TestEnrolmentIsOnlyEverForTheCaller(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 

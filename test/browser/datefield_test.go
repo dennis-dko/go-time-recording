@@ -23,6 +23,8 @@ import (
 // the typing is a real keyboard, and whether the two halves agree is a fact
 // about a running page.
 func TestADateFieldIsWrittenTheReadersWay(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -124,6 +126,8 @@ func TestADateFieldIsWrittenTheReadersWay(t *testing.T) {
 // a mouse; the rule is on the pointer rather than on the width, because a small
 // window on a desktop is still a mouse.
 func TestADateFieldIsUsableOnAPhone(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 

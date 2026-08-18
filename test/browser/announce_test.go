@@ -21,6 +21,8 @@ import (
 // nothing fails - every screen works, and one day an update takes the application
 // away from somebody mid-sentence with no warning at all.
 func TestThePageListensForWhatTheServerAnnounces(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -59,6 +61,8 @@ func TestThePageListensForWhatTheServerAnnounces(t *testing.T) {
 // is being checked is that an announcement becomes something a person sees, and
 // that is decided here rather than in transit.
 func TestAnAnnouncementBecomesABannerNobodyCanMiss(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 

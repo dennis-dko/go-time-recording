@@ -27,6 +27,8 @@ import (
 // own delete buttons, and a report or an import preview gets nothing, because there
 // is nothing in it to delete.
 func TestSeveralRowsAreDeletedAtOnce(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -77,7 +79,7 @@ func TestSeveralRowsAreDeletedAtOnce(t *testing.T) {
 	p.waitGone(".confirm-overlay")
 
 	// All three gone, and the column with them: there is nothing left to delete.
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for time.Now().Before(deadline) {
 		body := p.text("#table-timesheets tbody")
@@ -117,6 +119,8 @@ func TestSeveralRowsAreDeletedAtOnce(t *testing.T) {
 // Deleting all of them hid it by luck: with no rows left there is nothing to delete,
 // so the whole column goes and the bar with it.
 func TestTheBarStandsDownWhenOnlySomeRowsWereDeleted(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyWorker()
 
@@ -152,7 +156,7 @@ func TestTheBarStandsDownWhenOnlySomeRowsWereDeleted(t *testing.T) {
 
 	// One row is left, so the column stays - and the bar must have stood down,
 	// because nothing in the new table is ticked.
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(waitPatience)
 
 	for time.Now().Before(deadline) {
 		if p.count("#table-timesheets tbody input.row-pick") == 1 {
@@ -183,6 +187,8 @@ func TestTheBarStandsDownWhenOnlySomeRowsWereDeleted(t *testing.T) {
 // because a missing cell would shift every column of that row one to the left. That
 // is the kind of fault that looks like bad data rather than bad markup.
 func TestARowThatCannotBeDeletedHasNoCheckboxButKeepsItsPlace(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -232,6 +238,8 @@ func TestARowThatCannotBeDeletedHasNoCheckboxButKeepsItsPlace(t *testing.T) {
 // it: the labels are built at render time from what the server sent, so reading app.js
 // proves nothing about what is on screen.
 func TestTheRoleDropdownExplainsEachRole(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -306,6 +314,8 @@ func TestTheRoleDropdownExplainsEachRole(t *testing.T) {
 // Only a browser can check it: the checkboxes are built at render time from what the
 // server sent, and whether they are disabled is not a fact about the source.
 func TestASystemRolesRightsCannotBeTicked(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 
@@ -358,6 +368,8 @@ func TestASystemRolesRightsCannotBeTicked(t *testing.T) {
 // the middle of it, and a select-all that ticked the built-in administrator
 // would offer a deletion the server refuses.
 func TestTheAccountTableOffersTheSameSelection(t *testing.T) {
+	t.Parallel()
+
 	p := open(t)
 	p.readyAdmin()
 

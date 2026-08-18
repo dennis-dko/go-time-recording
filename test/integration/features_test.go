@@ -11,6 +11,8 @@ import (
 // ---------------------------------------------------------------- projects
 
 func TestAProjectIsInvisibleToEverybodyButItsOwner(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -77,6 +79,8 @@ func TestAProjectIsInvisibleToEverybodyButItsOwner(t *testing.T) {
 // anyone holding the ordinary reporting, transfer or archiving permission - and
 // each request also confirmed that the id existed.
 func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T) {
+	t.Parallel()
+
 	a, admin, _ := startWithWorker(t)
 
 	// Two ordinary accounts. Archiving somebody's project needs rights over the work,
@@ -152,6 +156,8 @@ func TestSomebodyElsesPrivateProjectIsHiddenFromReportsAndTransfers(t *testing.T
 // carry step="0.25", which did not round anything - it made the browser refuse
 // the submit - while the API accepted any duration from a token client.
 func TestAnyDurationCanBeBookedNotOnlyQuarterHours(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	for _, hours := range []float64{1.37, 0.1167, 7.99, 0.01} {
@@ -178,6 +184,8 @@ func TestAnyDurationCanBeBookedNotOnlyQuarterHours(t *testing.T) {
 }
 
 func TestTimeCanBeBookedWithoutAProjectAndCategorisedLater(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	var entry timesheetResponse
@@ -209,6 +217,8 @@ func TestTimeCanBeBookedWithoutAProjectAndCategorisedLater(t *testing.T) {
 // --------------------------------------------------------------- timezones
 
 func TestTimezoneIsInstanceWideWithAPersonalOverride(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -254,6 +264,8 @@ func TestTimezoneIsInstanceWideWithAPersonalOverride(t *testing.T) {
 // back to UTC at every use, moving bookings between days with nothing on
 // screen to show it.
 func TestAnUnknownTimezoneIsRefused(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -273,6 +285,8 @@ func TestAnUnknownTimezoneIsRefused(t *testing.T) {
 // ------------------------------------------------------- operational limits
 
 func TestOperationalLimitsApplyWithoutARestart(t *testing.T) {
+	t.Parallel()
+
 	// The two halves of this belong to two different jobs, so it takes two accounts.
 	// The installation's ceiling is a setting, which the administrator owns; the
 	// booking that proves the new ceiling is already in force is a working day, which
@@ -323,6 +337,8 @@ func TestOperationalLimitsApplyWithoutARestart(t *testing.T) {
 // This is the one screen that can lock out its own administrator, so the
 // bounds are what make it safe to offer at all.
 func TestOperationalLimitsRejectValuesThatWouldLockTheInstance(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 	admin := a.signInAsAdmin("a-much-better-password")
 
@@ -343,6 +359,8 @@ func TestOperationalLimitsRejectValuesThatWouldLockTheInstance(t *testing.T) {
 // ------------------------------------------------------------- guided tour
 
 func TestTourIsOfferedOnceAndCanBeRestarted(t *testing.T) {
+	t.Parallel()
+
 	_, _, worker := startWithWorker(t)
 
 	var me struct {
@@ -375,6 +393,8 @@ func TestTourIsOfferedOnceAndCanBeRestarted(t *testing.T) {
 // ------------------------------------------------------------------ health
 
 func TestOperationalEndpointsAreServed(t *testing.T) {
+	t.Parallel()
+
 	a := start(t)
 
 	for _, path := range []string{"/.well-known/alive", "/.well-known/health"} {
@@ -414,6 +434,8 @@ func lower(s string) string {
 // on MySQL, and only when nothing changed, which is why it went unnoticed until
 // the suite was pointed at MySQL.
 func TestSavingWithoutChangingAnythingIsNotAnError(t *testing.T) {
+	t.Parallel()
+
 	// Every record saved here belongs to whoever it is about - their working times,
 	// their project, their time entry - so the account doing the saving is somebody who
 	// works here. The administrator holds no rights over any of the three, and a 403
