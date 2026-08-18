@@ -203,6 +203,40 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 	if !p.visible("#brand-logo") {
 		t.Error("the header's mark is hidden after a logo was configured")
 	}
+
+	// The words first and the picture after them: the name says what the
+	// installation is called and the logo says whose it is, which is the order
+	// somebody reads them in. Both in the middle of the bar.
+	var placed struct {
+		TitleLeft float64 `json:"titleLeft"`
+		LogoLeft  float64 `json:"logoLeft"`
+		Centre    float64 `json:"centre"`
+		BarCentre float64 `json:"barCentre"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const title = document.querySelector('#app-title').getBoundingClientRect();
+		const logo = document.querySelector('#brand-logo').getBoundingClientRect();
+		const block = document.querySelector('.topbar-middle').getBoundingClientRect();
+		const bar = document.querySelector('.topbar').getBoundingClientRect();
+
+		return {
+			titleLeft: title.left,
+			logoLeft: logo.left,
+			centre: block.left + block.width / 2,
+			barCentre: bar.left + bar.width / 2,
+		};
+	})())`, &placed)
+
+	if placed.LogoLeft < placed.TitleLeft {
+		t.Errorf("the logo is at %.0f and the name at %.0f, so the picture comes "+
+			"before the words", placed.LogoLeft, placed.TitleLeft)
+	}
+
+	if math.Abs(placed.Centre-placed.BarCentre) > 2 {
+		t.Errorf("with a logo the name sits at %.0f and the bar's middle is %.0f",
+			placed.Centre, placed.BarCentre)
+	}
 }
 
 // Your own row says so, and says it before it says anything else.
