@@ -4823,23 +4823,33 @@ async function runConnectionTest(result, attempt) {
     }
 
     result.className = outcome.ok ? 'muted plus' : 'muted minus';
+    sayAtLeastSomething(result);
   } catch (err) {
     showRefusal(result, err.refusal ?? { message: err.message });
     result.className = 'muted minus';
-
-    // Never nothing.
-    //
-    // A refusal with no words in it - a request that was aborted, a failure with
-    // an empty message - rendered as an empty box, which is the one outcome that
-    // says less than not having pressed the button. Whoever is looking at it is
-    // waiting for an answer, and "no answer" is not one of the answers.
-    if (result.textContent.trim() === '') {
-      result.textContent = t('err.internal',
-        'Something went wrong on this installation.');
-    }
+    sayAtLeastSomething(result);
 
     toast(err.message, 'error', refusalDetail(err.refusal));
   }
+}
+
+/**
+ * Never nothing.
+ *
+ * A refusal with no words in it - a request that was aborted, an answer whose
+ * message is empty - renders as an empty box, which is the one outcome that says
+ * less than not having pressed the button at all. Whoever is looking at it is
+ * waiting for an answer, and "no answer" is not one of the answers.
+ *
+ * Called on both ways out rather than only on the throw. That was the first
+ * attempt at this and it covered half the paths: an answer that came back
+ * perfectly well and said the attempt had failed, without saying anything about
+ * why, went straight past it.
+ */
+function sayAtLeastSomething(result) {
+  if (result.textContent.trim() !== '') return;
+
+  result.textContent = t('err.internal', 'Something went wrong on this installation.');
 }
 
 /**

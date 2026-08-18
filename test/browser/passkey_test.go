@@ -243,7 +243,22 @@ func (p *page) waitForText(selector, want string) {
 	}
 
 	p.t.Fatalf("%s never contained %q; it says:\n%s\n\napplication log:\n%s",
-		selector, want, p.text(selector), p.app.Log())
+		selector, want, p.text(selector)+p.recorded(), p.app.Log())
+}
+
+// recorded is whatever a case asked the page to write down, for the failure
+// message. Empty when nothing did.
+func (p *page) recorded() string {
+	var states string
+
+	p.run("read what the page recorded", chromedp.Evaluate(
+		`JSON.stringify(window.__states ?? [])`, &states))
+
+	if states == "[]" || states == "" {
+		return ""
+	}
+
+	return " ; it passed through " + states
 }
 
 // waitForTextWithin is waitForText with its own patience, for the few things

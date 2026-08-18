@@ -1229,10 +1229,17 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 /* --- calendar --- */
 
+/* Seven columns that may be narrower than what is in them.
+
+   1fr is minmax(auto, 1fr), and the auto is a floor: a column will not go below
+   its own contents, so on a 320px screen the seven of them together came to
+   twenty pixels more than the screen and the page could be dragged sideways.
+   minmax(0, 1fr) takes the floor away, and the figures inside are what give
+   way. */
 .cal-grid {
   display: grid;
   gap: 4px;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 #calendar-weekdays {
@@ -1258,6 +1265,20 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   text-align: left;
   color: var(--text);
   font: inherit;
+}
+
+/* On a telephone the day is what matters and the padding is what has to give:
+   seven columns of a 320px screen are 36px each before anything is drawn in
+   them. */
+@media (max-width: 480px) {
+  .cal-day {
+    min-height: 52px;
+    padding: 4px;
+  }
+
+  .cal-day .cal-hours { font-size: 11px; }
+
+  #calendar-weekdays span { padding: 4px 2px; }
 }
 
 /* Days outside the shown month keep the grid aligned but stay quiet. */
