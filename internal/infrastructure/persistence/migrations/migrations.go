@@ -99,6 +99,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260818010000: {UP: func(d migration.Datasource) error {
 			return moveTheAppearanceOntoTheAccount(d, dialect)
 		}},
+		20260819010000: {UP: func(d migration.Datasource) error {
+			return widenTOTPSecret(d, dialect)
+		}},
 	}
 }
 
@@ -1113,6 +1116,36 @@ func grantToAllRoles(d migration.Datasource, dialect, permission string) error {
 	}
 
 	return nil
+}
+
+// widenTOTPSecret makes room for an encrypted second factor.
+//
+// The column was VARCHAR(64), which fits the 32 characters a secret actually is
+// with room to spare. Encrypted it is 87: a nonce, the ciphertext, an
+// authentication tag, base64, and a marker saying which it is.
+//
+// SQLite does not enforce a column width and the servers do, so this was a change
+// that worked everywhere it was tried and failed only where it mattered -
+// "pq: value too long for type character varying(64)" on the first enrolment
+// after turning encryption on. It is the exact shape field_limits.go warns about,
+// and it was caught by the integration suite's PostgreSQL and MySQL legs.
+//
+// 255 rather than 87: it matches the other bounded columns here, and a limit
+// chosen to fit today's ciphertext exactly is a limit that breaks on the next
+// change to any part of it.
+func widenTOTPSecret(d migration.Datasource, dialect string) error {
+	switch dialect {
+	case sqldb.DialectPostgres:
+		return execAll(d, "ALTER TABLE users ALTER COLUMN totp_secret TYPE VARCHAR(255)")
+	case sqldb.DialectMySQL:
+		return execAll(d,
+			"ALTER TABLE users MODIFY totp_secret VARCHAR(255) NOT NULL DEFAULT ''")
+	default:
+		// SQLite stores what it is given whatever the declared type says, so the
+		// column already holds this. Nothing to do, and rebuilding the users table
+		// to change a width it never enforced would be all risk and no change.
+		return nil
+	}
 }
 
 // makeProjectOptional lets a time entry be booked without a project, so hours
