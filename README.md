@@ -1594,9 +1594,15 @@ listens on `127.0.0.1:8000`, for a reverse proxy in front of it. PostgreSQL
 publishes **no port at all**: it is reachable from the application container by
 name, and from nowhere else.
 
-Pin `GTR_VERSION` to a release rather than leaving it on `latest`. A container
-restarted at 3am otherwise comes back as a different version than the one that
-went down.
+Pin `GTR_VERSION` to a release in your own `.env`. A container restarted at 3am
+otherwise comes back as a different version than the one that went down.
+
+`deploy/.env.example` deliberately leaves it on `latest`, which is the opposite
+advice for the opposite situation: a version written into an example ages with
+every release and nothing moves it. That one sat at `v0.1.19` while the newest
+release was `v0.1.72`, so following the documented setup installed a version from
+fifty-three releases earlier. A test holds the example at `latest`; pinning is
+for the file you write.
 
 The compose file sets `DB_DIALECT`, so a server deployment never meets the
 installer — it is configured before it starts, which is what an unattended
