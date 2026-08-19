@@ -50,39 +50,6 @@ func NewAuthService(users repository.UserRepository, roles repository.RoleReposi
 	return &AuthService{users: users, roles: roles}
 }
 
-// Authenticate verifies a login and returns the resulting principal.
-//
-// Every failure returns the same error regardless of cause, so the response
-// cannot be used to discover which email addresses exist.
-func (s *AuthService) Authenticate(ctx context.Context, email, password string) (*Principal, error) {
-	user, err := s.users.GetByEmail(ctx, normalizeEmail(email))
-
-	// Looked up, then verified, then judged - in that order, and not returning
-	// in between.
-	//
-	// The same message for every failure hides which addresses exist only if the
-	// failures take the same time to arrive, and they did not. An address nobody
-	// holds was refused before bcrypt ran, which is a millisecond; a real address
-	// with a wrong password was refused after it, which is sixty. Anybody could
-	// read the staff list off that with a stopwatch and a list of guesses, one
-	// request per name, without ever seeing a different word on screen.
-	//
-	// So the hash that does not exist is verified as well. VerifyPassword spends
-	// the same time on an empty one, and there is no password it accepts.
-	stored := ""
-	if err == nil {
-		stored = user.PasswordHash
-	}
-
-	matches := security.VerifyPassword(stored, password)
-
-	if err != nil || !matches {
-		return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
-	}
-
-	return s.principalFor(ctx, user)
-}
-
 func (s *AuthService) principalFor(ctx context.Context, user *model.User) (*Principal, error) {
 	role, err := s.roles.GetByID(ctx, user.RoleID)
 	if err != nil {

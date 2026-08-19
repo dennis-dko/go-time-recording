@@ -7,9 +7,14 @@ run:
   # linter: their build tags exclude them, so roughly fifteen hundred lines that
   # decide whether a release is trustworthy were the only code here nothing
   # checked.
+  # firefox is here for the same reason as the other two, and was missed when
+  # they were added: test/firefox is another few hundred lines that decide
+  # whether a release is trustworthy, and the linter could not see them.
   build-tags:
     - integration
     - browser
+    - firefox
+    - firefox
 
 linters:
   default: standard

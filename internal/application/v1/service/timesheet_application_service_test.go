@@ -27,6 +27,11 @@ type fixture struct {
 	roles *service.RoleApplicationService
 	auth  *service.AuthService
 
+	// sessions is the real sign-in path: an address and a password in, a
+	// principal out. Tests ask it about authentication rather than asking
+	// AuthService, which the application never calls for that.
+	sessions *service.SessionService
+
 	// domain services, exercised where a rule lives in the domain layer
 	tsDomain      *domainservice.TimesheetDomainService
 	projectDomain *domainservice.ProjectDomainService
@@ -76,11 +81,15 @@ func newFixture(t *testing.T) *fixture {
 	roleRepo := memory.NewRoleRepository(userRepo)
 	projectRepo := memory.NewProjectRepository()
 	timesheetRepo := memory.NewTimesheetRepository()
+	sessionRepo := memory.NewSessionRepository()
+
+	auth := service.NewAuthService(userRepo, roleRepo)
 
 	f := &fixture{
 		users:         service.NewUserApplicationService(userRepo, roleRepo, timesheetRepo, &memoryPurger{users: userRepo, timesheets: timesheetRepo}),
 		roles:         service.NewRoleApplicationService(roleRepo),
-		auth:          service.NewAuthService(userRepo, roleRepo),
+		auth:          auth,
+		sessions:      service.NewSessionService(userRepo, roleRepo, sessionRepo, auth, time.Hour),
 		projects:      service.NewProjectApplicationService(projectRepo, timesheetRepo, memory.NewTimerRepository()),
 		timesheets:    service.NewTimesheetApplicationService(timesheetRepo, userRepo, projectRepo, maxDailyHours),
 		tsDomain:      domainservice.NewTimesheetDomainService(timesheetRepo, projectRepo, userRepo),

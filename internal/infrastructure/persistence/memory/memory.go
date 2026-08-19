@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
@@ -513,4 +514,111 @@ func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timeshe
 
 func (r *TimesheetRepository) Delete(_ context.Context, id uint) error {
 	return r.store.delete(id)
+}
+
+// SessionRepository keeps signed-in sessions in memory.
+//
+// Written so the unit tests can reach the real sign-in path. Without it,
+// AuthService.Authenticate was the only way for a test to turn an address and a
+// password into a principal - a second implementation of the password check that
+// the application itself never called, so the tests were proving something about
+// code nobody ran. Whether a wrong password is refused is a question about
+// SessionService, and now they can ask it there.
+//
+// Keyed by the stored hash rather than by an id, because that is the only way a
+// session is ever looked up: the browser presents a token and the hash of it is
+// the whole of what identifies the row.
+type SessionRepository struct {
+	mu       sync.RWMutex
+	sessions map[string]*model.Session
+}
+
+// NewSessionRepository creates an empty session store.
+func NewSessionRepository() *SessionRepository {
+	return &SessionRepository{sessions: make(map[string]*model.Session)}
+}
+
+var _ repository.SessionRepository = (*SessionRepository)(nil)
+
+func (r *SessionRepository) Save(_ context.Context, session *model.Session) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Copied in, so a caller that reuses its struct cannot rewrite what is stored.
+	stored := *session
+	r.sessions[session.TokenHash] = &stored
+
+	return nil
+}
+
+func (r *SessionRepository) Get(_ context.Context, tokenHash string) (*model.Session, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	session, ok := r.sessions[tokenHash]
+	if !ok {
+		return nil, apperror.NotFound("session", tokenHash)
+	}
+
+	out := *session
+
+	return &out, nil
+}
+
+func (r *SessionRepository) Delete(_ context.Context, tokenHash string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.sessions, tokenHash)
+
+	return nil
+}
+
+func (r *SessionRepository) DeleteForUser(_ context.Context, userID uint) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for hash, session := range r.sessions {
+		if session.UserID == userID {
+			delete(r.sessions, hash)
+		}
+	}
+
+	return nil
+}
+
+func (r *SessionRepository) DeleteForUserExcept(
+	_ context.Context,
+	userID uint,
+	keepTokenHash string,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for hash, session := range r.sessions {
+		if session.UserID == userID && hash != keepTokenHash {
+			delete(r.sessions, hash)
+		}
+	}
+
+	return nil
+}
+
+func (r *SessionRepository) DeleteExpired(_ context.Context) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var removed int64
+
+	now := time.Now()
+
+	for hash, session := range r.sessions {
+		if session.Expired(now) {
+			delete(r.sessions, hash)
+
+			removed++
+		}
+	}
+
+	return removed, nil
 }
