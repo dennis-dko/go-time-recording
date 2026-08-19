@@ -378,12 +378,6 @@ func (s *SessionService) Logout(ctx context.Context, token string) error {
 	return s.sessions.Delete(ctx, security.HashToken(token))
 }
 
-// LogoutAll ends every session of a user, used when their rights are altered or
-// their account is taken over by somebody else.
-func (s *SessionService) LogoutAll(ctx context.Context, userID uint) error {
-	return s.sessions.DeleteForUser(ctx, userID)
-}
-
 // LogoutOthers ends every session of a user but the one the token belongs to.
 //
 // For somebody changing their own password: the other devices lose access, which
@@ -392,7 +386,7 @@ func (s *SessionService) LogoutAll(ctx context.Context, userID uint) error {
 // sign-in.
 func (s *SessionService) LogoutOthers(ctx context.Context, userID uint, token string) error {
 	if token == "" {
-		// No session to keep - a token client, say. Then this is LogoutAll.
+		// No session to keep - a token client, say - so every one of them goes.
 		return s.sessions.DeleteForUser(ctx, userID)
 	}
 

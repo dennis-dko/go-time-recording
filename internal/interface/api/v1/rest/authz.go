@@ -191,27 +191,6 @@ func (a *Authorizer) Require(c *gofr.Context, permission string) (*service.Princ
 	return nil, missingPermission(permission)
 }
 
-// RequireAny returns the caller if they hold at least one of the permissions.
-// Used where a broad right implies a narrower one.
-func (a *Authorizer) RequireAny(c *gofr.Context, permissions ...string) (*service.Principal, error) {
-	principal, err := a.permittedPrincipal(c)
-	if err != nil {
-		return nil, err
-	}
-
-	if a.open {
-		return principal, nil
-	}
-
-	for _, permission := range permissions {
-		if principal.Can(permission) {
-			return principal, nil
-		}
-	}
-
-	return nil, missingPermission(permissions[0])
-}
-
 // permittedPrincipal resolves the caller and refuses anyone still on their
 // initial password.
 //

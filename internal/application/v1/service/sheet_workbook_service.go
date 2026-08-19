@@ -69,9 +69,6 @@ type SheetPlan struct {
 	Rejected int
 }
 
-// Ready reports whether the whole file can be written.
-func (p *SheetPlan) Ready() bool { return p.Rejected == 0 && p.Writable > 0 }
-
 func (p *SheetPlan) add(row SheetRow) {
 	if row.Problem == "" {
 		p.Writable++
