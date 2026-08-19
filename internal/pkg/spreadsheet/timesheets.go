@@ -170,7 +170,7 @@ func parseDate(raw string) (time.Time, error) {
 func parseOptionalDate(raw string) (time.Time, bool) {
 	for _, layout := range []string{dateFormat, "02.01.2006", "01/02/2006", time.RFC3339} {
 		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed, true
+			return theDayItFallsOn(parsed), true
 		}
 	}
 
@@ -178,11 +178,26 @@ func parseOptionalDate(raw string) (time.Time, bool) {
 	// so the epoch setting is honoured rather than assumed.
 	if serial, err := strconv.ParseFloat(raw, 64); err == nil {
 		if converted, convErr := excelize.ExcelDateToTime(serial, false); convErr == nil {
-			return converted, true
+			return theDayItFallsOn(converted), true
 		}
 	}
 
 	return time.Time{}, false
+}
+
+// theDayItFallsOn reduces what a cell yielded to the day it names.
+//
+// Two of the forms above carry more than a day. RFC 3339 brings whatever offset
+// was written into the cell, and a serial number with a fractional part brings a
+// time of day - a cell formatted as "date" in a workbook that was really holding
+// a timestamp. Neither is wrong in the file; both are wrong in a column that
+// answers which day somebody worked, where every other date is midnight UTC.
+//
+// The same rule as model.CalendarDay, written out rather than imported: this
+// package reads and writes files and knows nothing about the domain, which is
+// what lets it be tested against a workbook alone.
+func theDayItFallsOn(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // parseHours reads an hours column, in either decimal convention.
