@@ -123,3 +123,34 @@ func TestATimerTooShortOrTooLongToBook(t *testing.T) {
 		t.Error("a working day is reported as too long")
 	}
 }
+
+// The day the clock booked has to be the same shape as the day a form posts.
+//
+// The test above asks which day and gets the right answer either way, which is
+// how this survived: the day was right and the value was not. BookingDay kept
+// the user's zone, so the stopwatch wrote 15 July as midnight in Berlin while
+// the same day typed into the form is midnight UTC - one column, two shapes,
+// and anything that groups by the value sees two days.
+func TestTheBookingDayIsWrittenLikeEveryOtherDate(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatalf("cannot load the zone: %v", err)
+	}
+
+	timer := model.RunningTimer{
+		StartedAt: time.Date(2026, 8, 5, 22, 30, 0, 0, time.UTC),
+	}
+
+	day := timer.BookingDay(berlin)
+
+	// The 6th in Berlin, and that is not in question here.
+	if got := day.Format("2006-01-02"); got != "2026-08-06" {
+		t.Fatalf("the entry lands on %s, want 2026-08-06", got)
+	}
+
+	if !day.Equal(model.CalendarDay(day)) {
+		t.Errorf("the booked day is %s, and a date posted for the same day is %s - "+
+			"the same day in two shapes, in one column",
+			day.Format(time.RFC3339), model.CalendarDay(day).Format(time.RFC3339))
+	}
+}
