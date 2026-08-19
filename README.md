@@ -1607,8 +1607,15 @@ and read out of `docker logs`.
 
 ### HTTPS
 
-With a reverse proxy already terminating TLS, there is nothing more to do. To
-terminate it in the application instead, add the overlay:
+With a reverse proxy already terminating TLS, it has to pass
+`X-Forwarded-Proto: https` — nothing else tells this process the browser is on
+HTTPS, and without it the session cookie is written without `Secure` and no HSTS
+is sent. The plain port also has to be closed to everything but the proxy: the
+guard that refuses network traffic there only runs while *this* process is
+serving HTTPS, which behind a proxy it is not. `deploy/OPERATIONS.md` has the
+Apache configuration and what each line of it is for.
+
+To terminate TLS in the application instead, add the overlay:
 
 ```bash
 docker compose -f compose.yaml -f compose.tls.yaml up -d

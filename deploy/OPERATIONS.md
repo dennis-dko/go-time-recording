@@ -386,6 +386,84 @@ the first visitor, and `TLS_ENABLED` with neither route configured refuses to
 pretend: it says so and carries on over plain HTTP rather than claiming HTTPS it
 cannot serve.
 
+## Behind a reverse proxy that is already there
+
+Apache, nginx, or whatever already answers for the name. Then this process does
+not serve HTTPS at all - `TLS_ENABLED=false`, which is the default - and the
+proxy passes to its plain port.
+
+Three things are not optional, and none of them fails in a way that says what is
+wrong.
+
+**`X-Forwarded-Proto`.** Nothing else tells this process that the browser is on
+HTTPS. Without it the session cookie is written without `Secure` and no HSTS
+header is sent: the application works, and two of the things protecting it do
+not. Apache does not set this header on its own - the ones it does set are
+`X-Forwarded-For` and `X-Forwarded-Host`.
+
+**The client's address has to survive the hop.** The sign-in rate limit counts
+per caller, and it reads the last entry of `X-Forwarded-For`, which is the
+address the nearest proxy saw. With that header gone, every visitor shares one
+bucket and thirty sign-ins between all of them is the whole allowance. Apache
+adds it by default; `ProxyAddHeaders Off` is what removes it.
+
+**`HTTP_PORT` has to be closed to everything but the proxy.** This process
+refuses network traffic on its plain port only while it is serving HTTPS itself,
+which is exactly what it is not doing here - so that guard is off and the port
+answers whoever reaches it. Anything that reaches it can also claim to be a
+proxy, which is to say: set its own `X-Forwarded-For`, and have no rate limit on
+guessing a password.
+
+```apache
+<VirtualHost *:443>
+    ServerName zeiterfassung.example.com
+
+    SSLEngine on
+    SSLCertificateFile    /etc/letsencrypt/live/zeiterfassung.example.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/zeiterfassung.example.com/privkey.pem
+
+    # The one Apache does not add by itself, and the reason cookies are marked
+    # Secure and HSTS is sent at all.
+    RequestHeader set X-Forwarded-Proto "https"
+
+    # So the address bar's name is the one this process sees, rather than
+    # 127.0.0.1:8000.
+    ProxyPreserveHost On
+
+    ProxyPass        / http://127.0.0.1:8000/
+    ProxyPassReverse / http://127.0.0.1:8000/
+
+    # The interface holds one long-lived connection open for announcements -
+    # a restart coming, an update installed. Compressing a stream that is
+    # deliberately never finished buffers it instead of delivering it.
+    SetEnvIfNoCase Request_URI "^/api/v1/events" no-gzip dont-vary
+</VirtualHost>
+```
+
+Needs `proxy`, `proxy_http`, `headers` and `ssl`:
+
+```bash
+sudo a2enmod proxy proxy_http headers ssl
+sudo systemctl reload apache2
+```
+
+And close the plain port. On a host with ufw, where 8000 was never meant to be
+reachable from anywhere but this machine:
+
+```bash
+sudo ufw deny 8000/tcp
+```
+
+### What this arrangement does not need
+
+`ProxyTimeout` does not have to be raised for the announcement stream. It writes
+a comment down an idle connection every twenty seconds, which is under every
+proxy default worth naming - the browser reconnects if one is closed anyway, so
+the cost of getting this wrong is reconnections rather than a broken screen.
+
+Nothing has to be configured for WebSockets: there are none. The stream is
+server-sent events over an ordinary HTTP response.
+
 ## The database has to exist first
 
 For PostgreSQL and MySQL, **yes — create the database and the account before
