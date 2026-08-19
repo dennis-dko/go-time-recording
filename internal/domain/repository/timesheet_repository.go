@@ -19,6 +19,44 @@ type TimesheetFilter struct {
 	WithoutProject bool
 }
 
+// OverWholeDays widens the range to the calendar days its ends fall on, and is
+// what every repository must apply before comparing it to a stored date.
+//
+// An entry's date is a calendar day. It is written as midnight UTC and read back
+// the same way, because "which day did you work" has no time of day in it and no
+// zone either - the answer is 3 July whether it is read in Berlin or in Los
+// Angeles.
+//
+// The ends of a range do not arrive that way. They are built from the reader's
+// own clock, correctly: "this month" has to mean the month it is where the
+// person is, and "the last thirty days" has to end on their today rather than
+// the server's. So the range arrives as two instants carrying a zone, and it was
+// compared straight against dates that carry none.
+//
+// East of UTC that happened to work. West of it, it silently dropped a day at
+// each end: the first of the month in Los Angeles is 07:00 UTC, every entry
+// stored for that day is midnight UTC, and midnight is before seven - so the
+// first day of every month was missing from that person's balance, and the day
+// after their today was in it. Nothing on screen looked wrong. The month simply
+// started on the second.
+//
+// The calendar fields are read in the range's own location, which is the whole
+// point: 1 July in Los Angeles is 1 July, and it is then expressed the way a
+// stored date is.
+func (f TimesheetFilter) OverWholeDays() TimesheetFilter {
+	if f.StartDate != nil {
+		start := model.CalendarDay(*f.StartDate)
+		f.StartDate = &start
+	}
+
+	if f.EndDate != nil {
+		end := model.CalendarDay(*f.EndDate).AddDate(0, 0, 1).Add(-time.Nanosecond)
+		f.EndDate = &end
+	}
+
+	return f
+}
+
 // TimesheetRepository repository functions for timesheet
 type TimesheetRepository interface {
 	Save(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error)
