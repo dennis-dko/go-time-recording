@@ -607,6 +607,34 @@ everything else to HTTPS. Use `TLS_STAGING=true` while setting things up — its
 certificates are not trusted by browsers, but its rate limits are far looser
 than the production ones.
 
+### What a copy of the database gives away
+
+Passwords are bcrypt hashes, so a stolen dump yields none of them. Two other
+values cannot be hashed, because the application has to read them back rather
+than compare against them: the TOTP seed, which is fed to the code generator on
+every sign-in, and the directory's bind password, which is sent to the directory.
+
+`SECRET_KEY` encrypts those two, with the key outside the database:
+
+```bash
+openssl rand -base64 32
+```
+
+Three things follow from that, and all three are easier to know than to discover.
+
+- **It is opt-in, and silence is not safety.** An installation without the key
+  works exactly as before and stores both values in the clear; it says so once at
+  every start. Setting the key for the first time encrypts what is already
+  stored, and logs how many values it moved.
+- **Losing the key costs every enrolled second factor.** The application refuses
+  to start rather than reading rubbish, and the way back is to clear
+  `users.totp_secret` and the directory password and have them entered again.
+  Back the key up wherever the database password is backed up — and not in the
+  same place as the database.
+- **It is protection against a copy, not against the machine.** A backup on a
+  laptop, a snapshot with weaker access, a managed database somebody can read.
+  Whoever has the machine has the key too, and nothing here changes that.
+
 Two things about this arrangement that are easier to know than to discover:
 
 - **The plain `HTTP_PORT` listener stays bound, on every interface, but stops
@@ -946,6 +974,7 @@ nothing sets the variable.
 | `SETUP_TOKEN` | generated | what the installer asks for; logged when generated |
 | `UI_ENABLED` | `true` | `false` runs the binary as a headless API |
 | `AUTH_ENABLED` | `true` | `false` gives **every** caller full admin rights |
+| `SECRET_KEY` | empty | base64 of 32 bytes. Encrypts the second factors and the directory password in the database. Empty stores them in the clear, as before, and logs a line saying so. **Losing it costs every enrolled second factor** |
 | `SESSION_LIFETIME` | `12h` | how long a sign-in stays valid. **Administered under Settings**; not in `configs/.env` |
 | `TLS_ENABLED` | `false` | HTTPS with Let's Encrypt |
 | `TLS_DOMAINS` | – | comma separated; the names Let's Encrypt is asked about. One of this or the two below is required when TLS is on |

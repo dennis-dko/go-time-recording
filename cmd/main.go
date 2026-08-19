@@ -40,6 +40,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
 )
 
 // version is stamped at build time via -ldflags "-X main.version=...".
@@ -434,7 +435,29 @@ func main() {
 			cfg.Dialect, appconfig.DatasourceFile)
 	}
 
-	userRepo := sqldb.NewUserRepository(db, cfg.Dialect)
+	// The key that encrypts what a database dump must not give away. Built before
+	// the repositories, because two of them are handed it - and refused here
+	// rather than at the first sign-in with a second factor, which is where a key
+	// that cannot work would otherwise be discovered.
+	secrets, secretsErr := security.NewSealer(cfg.SecretKey)
+	if secretsErr != nil {
+		die(restoreOutput,
+			"SECRET_KEY cannot be used: %v\n"+
+				"  It encrypts the second factors and the directory password in the\n"+
+				"  database, so starting without it would read every one of them as\n"+
+				"  rubbish.\n"+
+				"  Generate one with `openssl rand -base64 32`, or unset SECRET_KEY\n"+
+				"  to store those values in the clear as before.",
+			secretsErr)
+	}
+
+	if !secrets.Enabled() {
+		app.Logger().Warn("SECRET_KEY is not set: second factors and the directory " +
+			"password are stored in the clear, so a copy of the database gives both away. " +
+			"Generate one with `openssl rand -base64 32`")
+	}
+
+	userRepo := sqldb.NewUserRepository(db, cfg.Dialect).WithSecrets(secrets)
 	roleRepo := sqldb.NewRoleRepository(db, cfg.Dialect)
 	sessionRepo := sqldb.NewSessionRepository(db, cfg.Dialect)
 	projectRepo := sqldb.NewProjectRepository(db, cfg.Dialect)
@@ -448,7 +471,8 @@ func main() {
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
 	passkeys := appservice.NewPasskeyService(passkeyRepo, userRepo, auth)
-	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName)
+	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName).
+		WithSecrets(secrets)
 
 	// The administered directory schedule wins over the configuration file, the
 	// same way the administered database connection and log level do.
@@ -525,6 +549,26 @@ func main() {
 	// The built-in administrator is created after the migrations have run, so
 	// there is always a way in even on a brand new database.
 	app.OnStart(func(ctx *gofr.Context) error {
+		// Before anything reads a secret, and before the built-in administrator
+		// exists: a key that is not this installation's key has to stop the start
+		// rather than surface later as second factors that stopped working.
+		if err := appservice.NewSecretsService(settingsRepo, secrets).Verify(ctx); err != nil {
+			return err
+		}
+
+		// And what was written before a key was configured comes under it. Zero on
+		// every start after the first; reported when it is not, because "encryption
+		// is on" and "the rows from before are still in the clear" are different
+		// states and whoever just turned this on is owed the difference.
+		moved, err := sqldb.SealStoredSecrets(ctx, db, cfg.Dialect, secrets)
+		if err != nil {
+			return err
+		}
+
+		if moved > 0 {
+			ctx.Logger.Warnf("encrypted %d stored secret(s) that predate SECRET_KEY", moved)
+		}
+
 		created, err := auth.EnsureSystemUser(ctx)
 		if err != nil {
 			return err

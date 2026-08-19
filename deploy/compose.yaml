@@ -42,6 +42,12 @@ services:
 
       APP_NAME: ${APP_NAME:-Time Recording}
 
+      # Encrypts the second factors and the directory password in the database.
+      # Empty stores them in the clear, as every installation did before this
+      # existed; see .env.example for how to generate one and why it has to be
+      # backed up somewhere other than beside the database.
+      SECRET_KEY: ${SECRET_KEY:-}
+
     ports:
       # Bound to the loopback interface, not 0.0.0.0: without TLS in front,
       # publishing this to the network would serve session cookies in the
