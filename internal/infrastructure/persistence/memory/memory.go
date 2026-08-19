@@ -472,6 +472,11 @@ func (r *TimesheetRepository) GetByFilter(
 	_ context.Context,
 	filter repository.TimesheetFilter,
 ) ([]*model.Timesheet, error) {
+	// The same narrowing the SQL repository applies, for the same reason: a range
+	// is a range of days. Two repositories that disagree about which entries a
+	// month contains would be worse than either answer alone.
+	filter = filter.OverWholeDays()
+
 	out := make([]*model.Timesheet, 0)
 
 	for _, ts := range r.store.all() {

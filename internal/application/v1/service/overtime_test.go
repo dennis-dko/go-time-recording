@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
@@ -125,3 +126,36 @@ func TestWorkingTimesValidation(t *testing.T) {
 
 // Guards that the in-memory repositories are exposed for the overtime service.
 var _ = memory.NewUserRepository
+
+// The same thing where it is felt: a balance for somebody west of UTC.
+//
+// The rule lives on the filter and is tested there. This is the sentence it
+// stands for - eight hours short and one day missing, on the screen somebody
+// checks their own overtime on, with nothing to see wrong.
+func TestOvertimeCountsTheFirstDayForSomebodyWestOfUTC(t *testing.T) {
+	west, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Skip("this machine has no zone database")
+	}
+
+	f := newFixture(t)
+
+	f.book(t, day(1), 8)
+	f.book(t, day(15), 8)
+
+	// What the handler builds when nobody passed a range: the first of the
+	// month, and now, both in the reader's own zone.
+	from := time.Date(2026, 7, 1, 0, 0, 0, 0, west)
+	to := time.Date(2026, 7, 20, 11, 0, 0, 0, west)
+
+	balance, err := overtimeFor(f).Balance(context.Background(), f.userID, from, to)
+	if err != nil {
+		t.Fatalf("balance: %v", err)
+	}
+
+	if balance.TotalBooked != 16 {
+		t.Errorf("counted %.1f hours over %d days, want 16 over 2 - the first of "+
+			"the month is 07:00 UTC there, and the entry for it is midnight",
+			balance.TotalBooked, len(balance.Days))
+	}
+}

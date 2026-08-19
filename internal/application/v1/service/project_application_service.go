@@ -63,8 +63,12 @@ func (s *ProjectApplicationService) CreateProject(
 	// somebody signed off, so it does not need a start date: defaulting it keeps the
 	// form down to just a name. This used to apply only to a private category, which
 	// is what every project is now.
+	// The same shape a posted one arrives in. A date sent as "2026-07-03" parses
+	// to midnight UTC and is stored that way; this used to default to midnight in
+	// whatever zone the server runs in, which is the same field holding two
+	// different things - and one of them a day early once a driver normalises it.
 	if startDate.IsZero() {
-		startDate = startOfDay(time.Now())
+		startDate = model.CalendarDay(time.Now())
 	}
 
 	if err := validateProject(cmd.Name, status, cmd.Description, startDate, cmd.EndDate); err != nil {

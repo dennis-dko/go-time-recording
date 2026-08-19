@@ -90,6 +90,10 @@ func (r *TimesheetRepository) GetByFilter(
 	ctx context.Context,
 	filter repository.TimesheetFilter,
 ) ([]*model.Timesheet, error) {
+	// A range of days, before it is compared to anything. See OverWholeDays: the
+	// ends arrive carrying the reader's zone and the stored dates carry none.
+	filter = filter.OverWholeDays()
+
 	var (
 		conditions []string
 		args       []any

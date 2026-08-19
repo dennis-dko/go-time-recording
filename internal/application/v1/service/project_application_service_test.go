@@ -174,3 +174,39 @@ func TestDayHelperIsUTCMidnight(t *testing.T) {
 		t.Fatalf("day() must return UTC midnight, got %s", d)
 	}
 }
+
+// A project that was given no start date starts today, in the shape every other
+// date is stored in.
+//
+// It used to default to midnight in whatever zone the server runs in, while a
+// posted "2026-07-03" parses to midnight UTC. The same field then held two
+// different things, and on a server an hour or two ahead of UTC the defaulted
+// one is the previous day the moment a driver normalises it away.
+func TestADefaultedStartDateIsTheSameShapeAsAPostedOne(t *testing.T) {
+	f := newFixture(t)
+	owner := f.userID
+
+	res, err := f.projects.CreateProject(context.Background(), command.CreateProjectCommand{
+		Name: "No date given", OwnerID: &owner,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	start := res.Result.StartDate
+
+	if start.Location() != time.UTC {
+		t.Errorf("the defaulted start date is in %s, not UTC - a posted one is "+
+			"parsed as UTC, and the two have to be the same thing",
+			start.Location())
+	}
+
+	if h, m, s := start.Clock(); h != 0 || m != 0 || s != 0 {
+		t.Errorf("the defaulted start date carries a time of day (%02d:%02d:%02d); "+
+			"a date answers which day and nothing else", h, m, s)
+	}
+
+	if got, want := start.Format(time.DateOnly), model.CalendarDay(time.Now()).Format(time.DateOnly); got != want {
+		t.Errorf("a project created today starts on %s, want %s", got, want)
+	}
+}
