@@ -1607,13 +1607,21 @@ and read out of `docker logs`.
 
 ### HTTPS
 
-With a reverse proxy already terminating TLS, it has to pass
-`X-Forwarded-Proto: https` — nothing else tells this process the browser is on
+With a reverse proxy already terminating TLS, three things are on you, and none
+of them fails in a way that says what is wrong: it has to pass
+`X-Forwarded-Proto: https` (nothing else tells this process the browser is on
 HTTPS, and without it the session cookie is written without `Secure` and no HSTS
-is sent. The plain port also has to be closed to everything but the proxy: the
-guard that refuses network traffic there only runs while *this* process is
-serving HTTPS, which behind a proxy it is not. `deploy/OPERATIONS.md` has the
-Apache configuration and what each line of it is for.
+is sent), the client's address has to survive the hop or the sign-in rate limit
+counts every visitor as one caller, and the plain port has to be closed to
+everything but the proxy — the guard that refuses network traffic there only runs
+while *this* process is serving HTTPS, which behind a proxy it is not.
+`compose.yaml` already publishes to the loopback interface, so the last of those
+is done for you; the single binary is not.
+
+It also needs a hostname of its own rather than a path under one: the interface
+asks for `/app.js` and `/api/v1` absolutely, and nothing moves them.
+`deploy/OPERATIONS.md` has the whole Apache configuration and what each line is
+for.
 
 To terminate TLS in the application instead, add the overlay:
 
