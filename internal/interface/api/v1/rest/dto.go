@@ -20,6 +20,10 @@ type Date struct {
 	time.Time
 }
 
+// UnmarshalJSON reads the three forms a date arrives in.
+//
+// A pointer receiver because it writes to the value, and this is the half of the
+// pair that has to be one. See MarshalJSON for why the other half is not.
 func (d *Date) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(data, []byte("null")) {
 		return nil
@@ -47,6 +51,20 @@ func (d *Date) UnmarshalJSON(data []byte) error {
 	return apperror.Invalidf("date %q must be YYYY-MM-DD or RFC 3339", raw).WithCode("dateFormat", raw)
 }
 
+// MarshalJSON writes the day and nothing else.
+//
+// A value receiver, deliberately, and the only place in this package where one
+// type carries both kinds.
+//
+// json.Marshal looks for the method on what it was handed. Every response holds
+// a Date by value, so a pointer receiver here would not be found on them - and
+// what happens then is quieter than an error: Date embeds time.Time, whose own
+// MarshalJSON is promoted and answers instead. The field goes out as
+// "2026-08-19T00:00:00Z" rather than "2026-08-19", on every date in the API, with
+// nothing failing anywhere.
+//
+// So the rule about one receiver per type gives way to the rule encoding/json
+// actually enforces.
 func (d Date) MarshalJSON() ([]byte, error) {
 	if d.IsZero() {
 		return []byte("null"), nil

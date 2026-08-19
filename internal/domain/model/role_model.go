@@ -37,7 +37,7 @@ func (r *Role) Has(permission string) bool {
 // one by hand means getting a list of permissions exactly right from memory.
 //
 // So: the defaults cannot be deleted, and only the admin role is otherwise fixed.
-func (r Role) IsDefault() bool {
+func (r *Role) IsDefault() bool {
 	for _, shipped := range DefaultRoles() {
 		if shipped.Name == r.Name {
 			return true
