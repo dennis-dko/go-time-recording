@@ -159,3 +159,48 @@ func TestOvertimeCountsTheFirstDayForSomebodyWestOfUTC(t *testing.T) {
 			balance.TotalBooked, len(balance.Days))
 	}
 }
+
+// One day booked twice is one day, however each half got there.
+//
+// The stopwatch used to store the day it was started as midnight in the user's
+// own zone, while the same day typed into the form is midnight UTC. Overtime
+// groups by that value, so the same Wednesday arrived as two days - each
+// measured against a full target. Eight hours of work came back as sixteen hours
+// of target and a balance eight hours short, on the screen somebody checks their
+// own overtime on.
+//
+// The zone-carrying value is used deliberately here: that is what is in every
+// database that has been in use, and grouping has to put it with the rest of its
+// day rather than beside it.
+func TestOneDayBookedTwoWaysIsStillOneDay(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("this machine has no zone database")
+	}
+
+	f := newFixture(t)
+
+	// Half by the clock, in the shape the stopwatch wrote before it was fixed.
+	f.book(t, time.Date(2026, 7, 15, 0, 0, 0, 0, berlin), 4)
+	// Half typed in, in the shape a posted date parses to.
+	f.book(t, day(15), 4)
+
+	balance, err := overtimeFor(f).Balance(context.Background(), f.userID, day(1), day(28))
+	if err != nil {
+		t.Fatalf("balance: %v", err)
+	}
+
+	if len(balance.Days) != 1 {
+		t.Errorf("one day came back as %d, so its target is charged %d times",
+			len(balance.Days), len(balance.Days))
+	}
+
+	if balance.TotalTarget != 8 {
+		t.Errorf("a day's target totalled %.1f hours, want 8", balance.TotalTarget)
+	}
+
+	if balance.TotalBalance != 0 {
+		t.Errorf("eight hours against an eight hour target came out as %.1f",
+			balance.TotalBalance)
+	}
+}

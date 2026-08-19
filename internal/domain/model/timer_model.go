@@ -44,14 +44,22 @@ func (r RunningTimer) HoursElapsed(now time.Time) float64 {
 // stopped. Somebody who starts at half past eleven at night and stops after
 // midnight worked that evening, and an entry that lands on the following day would
 // disagree with both their memory and their timesheet for the week.
+//
+// Which day is read in their zone; the answer is then written the way every
+// stored date is. It used to keep the zone, so the stopwatch stored 15 July as
+// midnight in Berlin while the same day typed into the form was midnight UTC -
+// the same day in two shapes, in one column.
+//
+// Overtime groups by that value, and two shapes are two days. One day booked
+// half by the clock and half by hand came out as two, each measured against a
+// full day's target: sixteen hours of target for one day of work, and a balance
+// eight hours short of the truth on the screen somebody checks it on.
 func (r RunningTimer) BookingDay(zone *time.Location) time.Time {
 	if zone == nil {
 		zone = time.UTC
 	}
 
-	local := r.StartedAt.In(zone)
-
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, zone)
+	return CalendarDay(r.StartedAt.In(zone))
 }
 
 // TimerTooShort and TimerTooLong describe a clock that cannot become an entry.

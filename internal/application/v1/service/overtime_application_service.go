@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
@@ -89,8 +90,13 @@ func (s *OvertimeService) Balance(
 
 	bookedPerDay := make(map[time.Time]float64)
 
+	// Keyed by the calendar day rather than by the value in the column, because a
+	// database that has been in use has both shapes in it: every stopwatch entry
+	// written before BookingDay was corrected carries the zone it was recorded in.
+	// Grouping by the raw value puts those in a day of their own, beside the same
+	// day typed by hand, and charges a full target to each.
 	for _, entry := range entries {
-		bookedPerDay[startOfDay(entry.Date)] += entry.DurationHours
+		bookedPerDay[model.CalendarDay(entry.Date)] += entry.DurationHours
 	}
 
 	balance := &OvertimeBalance{
