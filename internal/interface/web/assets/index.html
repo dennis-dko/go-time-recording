@@ -284,7 +284,7 @@
          nobody finishes reading is noise. -->
     <div class="session-check"><div class="spinner" aria-hidden="true"></div></div>
 
-    <form id="form-login" class="login-card">
+    <form method="post" id="form-login" class="login-card">
       <img id="login-logo" class="brand-logo" alt="" hidden>
       <h2 data-i18n="login.title">Sign in</h2>
       <p class="muted" id="login-hint" data-i18n="login.hint">Please sign in with your email address and password.</p>
@@ -374,7 +374,7 @@
         </div>
       </div>
 
-      <form id="form-timesheet" class="card form" data-perm="timesheets:write:own">
+      <form method="post" id="form-timesheet" class="card form" data-perm="timesheets:write:own">
         <h2 id="timesheet-form-title" data-i18n="ts.book">Book time</h2>
         <input type="hidden" name="id">
         <div class="grid">
@@ -524,7 +524,7 @@
         <p class="muted" id="statistics-empty" hidden data-i18n="stats.empty">Nothing was recorded in this period.</p>
       </div>
 
-      <form id="form-overtime" class="card form">
+      <form method="post" id="form-overtime" class="card form">
         <h2 data-i18n="nav.overtime">Overtime</h2>
         <div class="grid">
           <label data-i18n="field.from">From<input type="date" name="from"></label>
@@ -557,7 +557,7 @@
 
     <!-- Projects -->
     <section id="view-projects" class="view" hidden>
-      <form id="form-project" class="card form" data-perm="projects:write">
+      <form method="post" id="form-project" class="card form" data-perm="projects:write">
         <h2 data-i18n="project.create">Create project</h2>
         <p class="muted" data-i18n="project.hint">Your projects are yours: only you see them, and only you book on them. Two people working on the same thing keep a project each.</p>
         <div class="grid">
@@ -599,7 +599,7 @@
 
     <!-- Users -->
     <section id="view-users" class="view" hidden>
-      <form id="form-user" class="card form" data-perm="users:write">
+      <form method="post" id="form-user" class="card form" data-perm="users:write">
         <h2 data-i18n="user.create">Add user</h2>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
@@ -639,7 +639,7 @@
 
     <!-- Roles -->
     <section id="view-roles" class="view" hidden>
-      <form id="form-role" class="card form" data-perm="roles:write">
+      <form method="post" id="form-role" class="card form" data-perm="roles:write">
         <h2 id="role-form-title" data-i18n="role.create">Create role</h2>
         <input type="hidden" name="id">
         <div class="grid">
@@ -701,7 +701,7 @@
 
     <!-- Reports -->
     <section id="view-report" class="view" hidden>
-      <form id="form-report" class="card form">
+      <form method="post" id="form-report" class="card form">
         <h2 data-i18n="report.title">Report</h2>
         <div class="grid">
           <!-- Not required, and the first two options are not projects: an
@@ -751,7 +751,7 @@
            has no working day, so a daily target and a daily ceiling are two
            figures nothing would ever measure against - and settings:write:own
            is exactly the right this screen writes. -->
-      <form id="form-working-times" class="card form" data-perm="settings:write:own">
+      <form method="post" id="form-working-times" class="card form" data-perm="settings:write:own">
         <h2 data-i18n="settings.workingTimes">My working hours</h2>
         <p class="muted" data-i18n="settings.workingTimesHint">The daily target is the basis for overtime. The daily maximum limits how much may be booked on a single day.</p>
         <div class="grid">
@@ -766,7 +766,7 @@
       <div class="card" id="passkey-card" hidden>
         <h2 data-i18n="passkey.title">Passkeys</h2>
         <p class="muted" data-i18n="passkey.hint">Sign in with a fingerprint, a face or a device PIN instead of typing a password. The key never leaves your device, so it cannot be phished or read from a breach. Your password keeps working alongside it.</p>
-        <form id="form-passkey" class="form">
+        <form method="post" id="form-passkey" class="form">
           <div class="grid">
             <label class="wide" data-i18n="passkey.name">Name for this device
               <input type="text" name="name" maxlength="120" data-i18n-placeholder="passkey.namePlaceholder" placeholder="Work laptop">
@@ -795,7 +795,7 @@
         <button type="button" class="secondary" id="tour-restart" data-i18n="tour.card.start">Show the tour</button>
       </div>
 
-      <form id="form-my-timezone" class="card form">
+      <form method="post" id="form-my-timezone" class="card form">
         <h2 data-i18n="tz.myTitle">My timezone</h2>
         <p class="muted" data-i18n="tz.myHint">Decides which calendar day your bookings fall on. Leave it on "follow the instance" unless you work from another country.</p>
         <div class="grid">
@@ -836,7 +836,7 @@
           <a class="tab" href="/api-docs" target="_blank" rel="noopener" data-i18n="token.docs">API documentation ↗</a>
         </div>
         <p class="muted" data-i18n="token.hint">A token replaces your password for API calls and always carries exactly the permissions of your current role. The value is shown only once.</p>
-        <form id="form-token" class="form">
+        <form method="post" id="form-token" class="form">
           <div class="grid">
             <label data-i18n="token.name">Label<input type="text" name="name" required maxlength="120"></label>
             <label data-i18n="token.expires">Valid for (days, 0 = unlimited)<input type="number" name="expiresInDays" min="0" max="3650" value="0">
@@ -865,7 +865,7 @@
         </div>
       </div>
 
-      <form id="form-password" class="card form">
+      <form method="post" id="form-password" class="card form">
         <h2 data-i18n="settings.changePassword">Change password</h2>
         <div class="grid">
           <label data-i18n="settings.currentPassword">Current password<input type="password" name="currentPassword" required></label>
@@ -900,7 +900,7 @@
         <p class="muted minus" id="restart-unsupported" hidden></p>
       </div>
 
-      <form id="form-maintenance" class="card form">
+      <form method="post" id="form-maintenance" class="card form">
         <h2 data-i18n="maint.title">Maintenance mode</h2>
         <p class="muted" data-i18n="maint.hint">Turns everyone else away with a notice while the installation stays running. Use it before restoring or moving the database: time recorded during that window is lost when the snapshot goes back, and whoever recorded it has no way to know.</p>
         <p class="muted minus" data-i18n="maint.who">While it is on, only people who may administer this installation can work: this built-in account and anyone holding the administrator role. Everyone else is turned away — that is the point.</p>
@@ -912,7 +912,7 @@
         <button type="submit" data-i18n="action.save">Save</button>
       </form>
 
-      <form id="form-branding" class="card form">
+      <form method="post" id="form-branding" class="card form">
         <h2 data-i18n="admin.branding">Appearance</h2>
         <p class="muted" data-i18n="admin.brandingHint">Title, banner, logo and footer of this installation.</p>
         <div class="grid">
@@ -1004,7 +1004,7 @@
         <button type="submit" class="row-apart" data-i18n="action.save">Save</button>
       </form>
 
-      <form id="form-operational" class="card form">
+      <form method="post" id="form-operational" class="card form">
         <h2 data-i18n="ops.title">Operation and limits</h2>
         <p class="muted" data-i18n="ops.hint">Leave a field empty to keep the value from the configuration file. Changes take effect within a few seconds, without a restart.</p>
         <div class="grid">
@@ -1031,7 +1031,7 @@
         </div>
       </form>
 
-      <form id="form-timezone" class="card form">
+      <form method="post" id="form-timezone" class="card form">
         <h2 data-i18n="tz.title">Timezone</h2>
         <p class="muted" data-i18n="tz.hint">Decides which calendar day a booking falls on, for everyone who has not set their own under "My account".</p>
         <div class="grid">
@@ -1043,7 +1043,7 @@
         <button type="submit" data-i18n="action.save">Save</button>
       </form>
 
-      <form id="form-datasource" class="card form">
+      <form method="post" id="form-datasource" class="card form">
         <h2 data-i18n="admin.database">Database connection</h2>
         <p class="muted" id="datasource-active"></p>
         <p class="muted" data-i18n="admin.databaseHint">The connection is saved and used the next time the application starts. Switching it while running would not be safe.</p>
@@ -1083,7 +1083,7 @@
         <p class="muted" id="datasource-test-result"></p>
       </form>
 
-      <form id="form-telemetry" class="card form">
+      <form method="post" id="form-telemetry" class="card form">
         <h2 data-i18n="tel.title">Logging, metrics and tracing</h2>
         <p class="muted" id="telemetry-active"></p>
         <p class="muted" data-i18n="tel.hint">Saved here and applied the next time the application starts. None of it can be switched over while the application runs: the log level is read, the metrics port is bound and the trace exporter is built while it starts. A field left following the configuration file keeps its value from there.</p>
@@ -1132,7 +1132,7 @@
         </div>
       </form>
 
-      <form id="form-ldap" class="card form">
+      <form method="post" id="form-ldap" class="card form">
         <h2 data-i18n="admin.ldap">LDAP connection</h2>
         <p class="muted" data-i18n="admin.ldapHint">When enabled, passwords are checked against the directory. Unknown users are created locally on their first successful sign-in.</p>
         <div class="perm-grid switch-row">
@@ -1169,7 +1169,7 @@
         <p class="muted" data-i18n="sync.hint">Reconciles the users with the directory. LDAP is only ever read, never changed.</p>
         <p class="muted minus" data-i18n="sync.warning">Careful: accounts missing from the directory are deleted here, together with their recorded time, own projects and tokens. This cannot be undone. Always run the preview first.</p>
 
-        <form id="form-sync-schedule" class="form">
+        <form method="post" id="form-sync-schedule" class="form">
           <div class="grid">
             <label class="wide" data-i18n="sync.schedule">Run automatically (cron, five fields — empty means only by hand)
               <input type="text" name="syncSchedule" maxlength="120" placeholder="0 4 * * *" spellcheck="false">
