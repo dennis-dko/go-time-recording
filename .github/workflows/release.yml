@@ -11,11 +11,19 @@ name: Release
 # version, and the next merge counts on from it - which is how a minor or major
 # bump is made.
 #
-# The merge path waits for CI rather than verifying again. CI already runs the
+# Both paths wait for CI, and neither verifies for itself. CI already runs the
 # integration suite against SQLite, PostgreSQL and MySQL on every push to main,
-# and repeating a subset of that would add twenty minutes to every merge to
-# discover nothing. It also means only a green commit is ever published. The tag
-# path verifies for itself, because CI does not run on tags.
+# and repeating a subset of that would add twenty minutes to discover nothing.
+#
+# The tag path used to be the exception: it ran its own Verify - unit,
+# integration and browser - on the grounds that CI does not run on tags. True,
+# and not the same thing. Verify never ran the Firefox suite, the linter, the
+# vulnerability scan or the image build, so a tag could be released from a commit
+# whose pipeline was red in one of them. v0.2.0 was, in the Firefox job.
+#
+# So a tag now asks whether CI passed for the commit it points at, and refuses
+# if it has not. Which means the rule is the same on both paths and stated in one
+# place: a release comes from a commit the pipeline has passed on main.
 on:
   push:
     tags:
@@ -27,6 +35,9 @@ on:
 
 permissions:
   contents: write
+  # To ask whether CI passed for the commit a tag points at. Reading, not writing:
+  # this decides whether to publish, it does not start anything.
+  actions: read
 
 # One release at a time. Two merges landing together would otherwise both read
 # the same newest tag and both try to create the same next one.
@@ -35,15 +46,18 @@ concurrency:
   cancel-in-progress: false
 
 # The same time budgets as ci.yml, and for the same reason: the six hours a job
-# inherits otherwise. verify runs the unit, integration and browser suites one
-# after another, so it gets the room for all three.
+# inherits otherwise.
 jobs:
   version:
     name: Decide the version
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # A failed CI run must not publish anything. On the tag path there is no CI
-    # run to look at, so the condition only applies to the other one.
+    # A failed CI run must not publish anything.
+    #
+    # This condition covers the merge path only, because it is the one the event
+    # carries an answer for. The tag path is checked in a step below, against the
+    # same rule: CI has to have run on the commit being released, on main, and
+    # passed.
     if: >-
       github.event_name == 'push' ||
       github.event.workflow_run.conclusion == 'success'
@@ -60,6 +74,42 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           # Every tag, because the next version is computed from them.
           fetch-depth: 0
+
+      # The rule, for the path that had no way to obey it: a release comes from a
+      # commit CI has passed on main, and from nothing else.
+      #
+      # The merge path gets that from the event it was started by. A tag push
+      # carries no such answer, and this workflow used to substitute its own
+      # Verify job for it - unit, integration and browser, run again on the tag.
+      # That is not the same thing and the difference is not academic: Verify
+      # never ran the Firefox suite, so v0.2.0 was published from a commit whose
+      # CI on main had failed, in the one job Verify does not have.
+      #
+      # Asked of the API rather than assumed, because the answer is about a
+      # different workflow's run and nothing in this one can see it otherwise.
+      - name: CI has to have passed for this commit
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          sha="$(git rev-parse HEAD)"
+
+          runs="$(gh api             "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=$sha&branch=main&status=success"             --jq '.total_count')"
+
+          if [ "$runs" -eq 0 ]; then
+            echo "::error::No successful CI run for $sha on main." >&2
+            echo "" >&2
+            echo "A release is cut from a commit the pipeline has passed on main." >&2
+            echo "Either CI has not finished for this commit yet - wait for it - or" >&2
+            echo "it failed, in which case the tag is on the wrong commit." >&2
+            echo "" >&2
+            echo "  https://github.com/${{ github.repository }}/commit/$sha/checks" >&2
+            exit 1
+          fi
+
+          echo "CI passed for $sha on main; releasing."
 
       - name: Decide
         id: decide
@@ -105,87 +155,16 @@ jobs:
           echo "release=true" >> "$GITHUB_OUTPUT"
 
   # Only on the tag path: CI has not run for a tag, so this is the verification.
-  # On the merge path CI has already done all of it and more.
-  verify:
-    name: Verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    if: github.event_name == 'push'
-    needs: version
-    permissions:
-      contents: read
-
-    # The same database a release is expected to run on. Publishing an image
-    # that only ever met SQLite would leave the dialect differences - the
-    # placeholder syntax, the returning clause - untested at exactly the point
-    # they become someone else's problem.
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: go-time-recording
-          POSTGRES_USER: gtr
-          POSTGRES_PASSWORD: gtr-test-password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U gtr -d go-time-recording"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      # The pinned version, so cutting a tag cannot fail on a linter release
-      # that landed between the last green push and the tag. See ci.yml.
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          version-file: .golangci-lint-version
-
-      - name: go vet
-        run: go vet ./...
-
-      - name: go test
-        run: go test -race ./...
-
-      # Against PostgreSQL, because that is what a release is deployed on.
-      - name: Integration tests
-        env:
-          GTR_TEST_DSN: postgres://gtr:gtr-test-password@localhost:5432/go-time-recording?sslmode=disable
-        run: go test -tags integration -count=1 -timeout 15m ./test/integration/
-
-      # install-dependencies: see the note in ci.yml.
-      - uses: browser-actions/setup-chrome@v2
-        id: chrome
-        with:
-          chrome-version: stable
-          install-dependencies: true
-
-      # A release that nobody can sign in to is worse than no release.
-      - name: Browser tests
-        env:
-          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-        run: go test -tags browser -count=1 -timeout 20m -v ./test/browser/
-
   publish:
     name: Publish image & GitHub release
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    needs: [version, verify]
-    # always(), because verify is skipped on the merge path and a skipped
-    # dependency would otherwise skip this too. The conditions spell out what
-    # has to hold: something to release, and verification that either passed or
-    # was not needed because CI had already done it.
-    if: >-
-      always() &&
-      needs.version.outputs.release == 'true' &&
-      (needs.verify.result == 'success' || needs.verify.result == 'skipped')
+    needs: version
+    # One condition now, because there is one thing left to be true: the version
+    # job found something to release. Whether the pipeline passed is decided
+    # before this, in that job, and on both paths - it does not get here
+    # otherwise.
+    if: needs.version.outputs.release == 'true'
     permissions:
       contents: write
       packages: write
