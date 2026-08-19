@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/go-time-recording ./cmd/main.go
 
-FROM alpine:3.22
+FROM alpine:3.24
 
 # The version again: ARG does not cross a FROM, and the labels below want it.
 ARG VERSION=dev
