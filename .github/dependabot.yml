@@ -1,0 +1,72 @@
+# Dependabot opens the pull request that a warning does not.
+#
+# The alerts were already on, and an alert is a message: it says a dependency has
+# a known problem and leaves somebody to go and fix it. The security pass found
+# what that costs. Seven advisories against the pinned Go release had call paths
+# from this code - an XML decoder with no recursion limit, fed by every
+# spreadsheet import, among them - and all seven had been fixed in the next patch
+# release. go.mod pins a patch version on purpose, so nothing arrives by drift,
+# which is right and is also why they sat there: the fix was published and
+# nothing here was asking.
+#
+# The Vulnerabilities job asks now. This offers the fix.
+version: 2
+
+updates:
+  # The application's own dependencies.
+  #
+  # Grouped, and weekly rather than daily: a repository this size does not need
+  # eleven pull requests on a Tuesday, and every one of them costs a full CI run
+  # across three databases and two browsers.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+
+  # The image this ships as, and the probe the integration suite builds.
+  #
+  # Two entries because Dependabot reads one directory each, and the two
+  # Dockerfiles do not live together. They pin the same Go release as go.mod and
+  # are meant to stay that way, so a bump to one that leaves the other behind is
+  # something to look at rather than to merge.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+
+  - package-ecosystem: docker
+    directory: /test
+    schedule:
+      interval: weekly
+      day: monday
+
+  # The images the deployment runs beside the application: the database, and the
+  # trace collector.
+  #
+  # compose.yaml is read; the overlays beside it are not, because Dependabot
+  # matches the standard compose filenames and compose.tracing.yaml is not one of
+  # them. So the Jaeger pin in that overlay stays a manual job - said here rather
+  # than left to be discovered by somebody wondering why it never moves.
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+
+  # The actions every workflow is built from. These are the ones nobody thinks
+  # about until one is deprecated and a release cannot be cut.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns:
+          - "*"
