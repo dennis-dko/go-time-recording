@@ -131,30 +131,6 @@ func (s *OvertimeService) Balance(
 	return balance, nil
 }
 
-// BalanceForAll computes the balance of every user, for a team overview.
-func (s *OvertimeService) BalanceForAll(
-	ctx context.Context,
-	from, to time.Time,
-) ([]*OvertimeBalance, error) {
-	users, err := s.users.GetAll(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	balances := make([]*OvertimeBalance, 0, len(users))
-
-	for _, user := range users {
-		balance, balErr := s.Balance(ctx, user.ID, from, to)
-		if balErr != nil {
-			return nil, balErr
-		}
-
-		balances = append(balances, balance)
-	}
-
-	return balances, nil
-}
-
 func endOfDay(t time.Time) time.Time {
 	return startOfDay(t).AddDate(0, 0, 1).Add(-time.Nanosecond)
 }

@@ -38,6 +38,31 @@ jobs:
         with:
           version-file: .golangci-lint-version
 
+      # Code nothing reaches.
+      #
+      # Added after a pass found six of them, and one was worth more than the
+      # tidiness: OvertimeService.BalanceForAll computed every user's balance
+      # "for a team overview", which is a screen this application deliberately
+      # does not have - nobody here sees anybody else's hours. Wired to nothing
+      # and waiting for somebody who needed a team overview to find it.
+      #
+      # Every build tag, because the browser and integration suites are the only
+      # callers of some of it and a check that cannot see them would report the
+      # test harness as dead. With them the answer is nothing at all, which is
+      # what makes this worth failing a build on: there is no baseline to keep.
+      #
+      # Pinned, unlike govulncheck: what this reports depends on the analysis
+      # rather than on anything published, so a new release finding something new
+      # should arrive when somebody bumps it and not in the middle of a release.
+      - name: Unreachable code
+        run: |
+          go run golang.org/x/tools/cmd/deadcode@v0.49.0             -test -tags "integration,browser,firefox" ./... > deadcode.txt
+          if [ -s deadcode.txt ]; then
+            echo "these are reachable from nothing:" >&2
+            cat deadcode.txt >&2
+            exit 1
+          fi
+
       # The deployment files are copied to a server and run there, and nothing
       # in this repository had ever parsed them: a typo in an overlay would be
       # found by whoever was deploying, at the moment they were deploying.

@@ -83,18 +83,6 @@ func (s *AuthService) Authenticate(ctx context.Context, email, password string) 
 	return s.principalFor(ctx, user)
 }
 
-// PrincipalByEmail resolves the caller behind an already-authenticated
-// request. Authentication has happened by this point, so a missing user is a
-// real inconsistency rather than a failed login.
-func (s *AuthService) PrincipalByEmail(ctx context.Context, email string) (*Principal, error) {
-	user, err := s.users.GetByEmail(ctx, normalizeEmail(email))
-	if err != nil {
-		return nil, err
-	}
-
-	return s.principalFor(ctx, user)
-}
-
 func (s *AuthService) principalFor(ctx context.Context, user *model.User) (*Principal, error) {
 	role, err := s.roles.GetByID(ctx, user.RoleID)
 	if err != nil {

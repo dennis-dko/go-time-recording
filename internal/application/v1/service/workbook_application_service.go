@@ -159,9 +159,6 @@ type ImportPlan struct {
 	Rejected int
 }
 
-// Ready reports whether the whole file can be written.
-func (p *ImportPlan) Ready() bool { return p.Rejected == 0 && p.Writable > 0 }
-
 // Plan works out what a file would do, without writing anything.
 //
 // actor is who is importing. mayWriteAll says whether they may book for other
