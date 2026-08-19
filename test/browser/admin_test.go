@@ -1302,9 +1302,7 @@ func TestTheStopwatchRunsAndBooksWhatItMeasured(t *testing.T) {
 		t.Fatal("the elapsed display is empty while the clock runs")
 	}
 
-	time.Sleep(3 * time.Second)
-
-	if second := p.text("#timer-elapsed"); second == first {
+	if second := p.waitChanged("#timer-elapsed", first); second == first {
 		t.Errorf("the display is stuck at %q, so it is not counting", first)
 	}
 
@@ -1648,6 +1646,10 @@ func TestAFirstSignInIsWalkedThroughTheApplication(t *testing.T) {
 		p.click(`#form-user button[type="submit"]`),
 	)
 
+	// Slept through rather than waited for, and this is the one shape where that
+	// is right: what follows asserts that something did *not* appear. There is no
+	// condition to wait for - the answer is only trustworthy after giving it a
+	// chance to be wrong.
 	time.Sleep(500 * time.Millisecond)
 
 	// The administrator was not, which is half the requirement.
@@ -1686,13 +1688,12 @@ func TestAFirstSignInIsWalkedThroughTheApplication(t *testing.T) {
 	}
 
 	p.run("next step", p.click("#tour-next"))
-	time.Sleep(400 * time.Millisecond)
-
-	if second := p.text("#tour-title"); second == first {
+	if second := p.waitChanged("#tour-title", first); second == first {
 		t.Errorf("Next did not move on; still on %q", first)
 	}
 
 	p.run("leave the tour", p.click("#tour-end"))
+	// An absence again: see above.
 	time.Sleep(400 * time.Millisecond)
 
 	if p.visible("#tour-bubble") {
@@ -1704,6 +1705,7 @@ func TestAFirstSignInIsWalkedThroughTheApplication(t *testing.T) {
 	p.run("reload", chromedp.Reload())
 	p.waitGone("#login-screen")
 
+	// And once more: nothing to wait for, only time to give it.
 	time.Sleep(800 * time.Millisecond)
 
 	if p.visible("#tour-bubble") {
@@ -1926,7 +1928,7 @@ func TestTheImportShowsWhatAFileWouldDoBeforeDoingIt(t *testing.T) {
 		chromedp.SetUploadFiles("#wb-file", []string{path}, chromedp.ByQuery),
 	)
 
-	time.Sleep(300 * time.Millisecond)
+	p.waitShown("#wb-preview")
 
 	if !p.visible("#wb-preview") {
 		t.Fatal("choosing a file did not offer to check it")

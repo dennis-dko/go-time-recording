@@ -76,13 +76,26 @@ func TestFirefoxAdoptsTheLogoAsTheTabIcon(t *testing.T) {
 
 // waitForAdoptedIcon polls Firefox's own store until it has recorded an icon for
 // this page, and returns what it recorded.
+// adoptionPatience is how long Firefox is given to fetch an icon and write it to
+// its store.
+//
+// Twenty seconds, until a run took 37 and failed - "Firefox recorded no icon for
+// this page" - on a machine that was busy with another suite at the time. Nothing
+// was wrong with the application; the number was the outlier. Everything else
+// here waits 45 or 60 seconds, and the browser suite next door says why: these
+// were written against a quiet machine running one case at a time.
+//
+// It costs nothing when the icon arrives, which is the ordinary case at well
+// under a second.
+const adoptionPatience = 45 * time.Second
+
 func waitForAdoptedIcon(t *testing.T, b *browser, href string) string {
 	t.Helper()
 
 	// The address without its origin, which is what the store's rows end with.
 	wanted := strings.TrimPrefix(href, "/")
 
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(adoptionPatience)
 
 	for {
 		for _, row := range recordedIcons(t, b.profile) {
