@@ -11,6 +11,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
 )
 
 // Users are always read with their role name joined in, so callers can display
@@ -25,17 +26,42 @@ const userSelect = `SELECT u.id, u.name, u.email, u.role_id, COALESCE(r.name, ''
 // UserRepository stores users in a SQL database.
 type UserRepository struct {
 	base
+
+	// secrets encrypts the one column here that is a secret the application has
+	// to read back rather than only compare against: the TOTP seed. A password
+	// is bcrypt and needs nothing from this.
+	//
+	// Never nil - a repository built without one gets a sealer that stores what
+	// it is given, which is what an installation with no key configured wants.
+	secrets *security.Sealer
 }
 
 // NewUserRepository creates a user repository for the given dialect.
 func NewUserRepository(db DB, dialect string) *UserRepository {
-	return &UserRepository{base{db: db, dialect: dialect}}
+	empty, _ := security.NewSealer("")
+
+	return &UserRepository{base: base{db: db, dialect: dialect}, secrets: empty}
+}
+
+// WithSecrets attaches the key that encrypts what a database dump must not give
+// away. Without it the repository stores those values as it always did.
+func (r *UserRepository) WithSecrets(secrets *security.Sealer) *UserRepository {
+	if secrets != nil {
+		r.secrets = secrets
+	}
+
+	return r
 }
 
 // compile-time check that the domain contract stays satisfied.
 var _ repository.UserRepository = (*UserRepository)(nil)
 
 func (r *UserRepository) Save(ctx context.Context, user *model.User) (*model.User, error) {
+	secret, err := r.secrets.Seal(user.TOTPSecret)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
 	id, err := r.insert(ctx,
 		"INSERT INTO users (name, email, role_id, password_hash, must_change_password, "+
 			"is_system, daily_target_hours, max_daily_hours, totp_secret, totp_enabled, "+
@@ -43,7 +69,7 @@ func (r *UserRepository) Save(ctx context.Context, user *model.User) (*model.Use
 			"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		user.Name, user.Email, user.RoleID, user.PasswordHash, user.MustChangePassword,
 		user.IsSystem, user.DailyTargetHours, user.MaxDailyHours,
-		user.TOTPSecret, user.TOTPEnabled, user.Language, user.IsExternal, user.ExternalID,
+		secret, user.TOTPEnabled, user.Language, user.IsExternal, user.ExternalID,
 		user.Timezone, user.TourSeen, user.Theme)
 	if err != nil {
 		return nil, translateUserErr(err, user.Email)
@@ -56,7 +82,7 @@ func (r *UserRepository) Save(ctx context.Context, user *model.User) (*model.Use
 func (r *UserRepository) GetByID(ctx context.Context, id uint) (*model.User, error) {
 	row := r.db.QueryRowContext(ctx, r.rebind(userSelect+" WHERE u.id = ?"), id)
 
-	user, err := scanUser(row)
+	user, err := r.scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, apperror.NotFound("user", strconv.FormatUint(uint64(id), 10))
 	}
@@ -77,7 +103,7 @@ func (r *UserRepository) GetByExternalID(ctx context.Context, externalID string)
 
 	row := r.db.QueryRowContext(ctx, r.rebind(userSelect+" WHERE u.external_id = ?"), externalID)
 
-	user, err := scanUser(row)
+	user, err := r.scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, apperror.NotFound("user", externalID)
 	}
@@ -93,7 +119,7 @@ func (r *UserRepository) GetByExternalID(ctx context.Context, externalID string)
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	row := r.db.QueryRowContext(ctx, r.rebind(userSelect+" WHERE u.email = ?"), strings.ToLower(email))
 
-	user, err := scanUser(row)
+	user, err := r.scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, apperror.NotFound("user", email)
 	}
@@ -115,7 +141,7 @@ func (r *UserRepository) GetAll(ctx context.Context) ([]*model.User, error) {
 	users := make([]*model.User, 0)
 
 	for rows.Next() {
-		user, scanErr := scanUser(rows)
+		user, scanErr := r.scanUser(rows)
 		if scanErr != nil {
 			return nil, apperror.Internal(scanErr)
 		}
@@ -131,6 +157,11 @@ func (r *UserRepository) GetAll(ctx context.Context) ([]*model.User, error) {
 }
 
 func (r *UserRepository) Update(ctx context.Context, user *model.User) (*model.User, error) {
+	secret, err := r.secrets.Seal(user.TOTPSecret)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
 	found, err := r.update(ctx, "users",
 		"UPDATE users SET name = ?, email = ?, role_id = ?, password_hash = ?, "+
 			"must_change_password = ?, daily_target_hours = ?, max_daily_hours = ?, "+
@@ -139,7 +170,7 @@ func (r *UserRepository) Update(ctx context.Context, user *model.User) (*model.U
 		user.ID,
 		user.Name, user.Email, user.RoleID, user.PasswordHash, user.MustChangePassword,
 		user.DailyTargetHours, user.MaxDailyHours,
-		user.TOTPSecret, user.TOTPEnabled, user.Language, user.IsExternal,
+		secret, user.TOTPEnabled, user.Language, user.IsExternal,
 		user.ExternalID, user.Timezone, user.TourSeen, user.ID)
 	if err != nil {
 		return nil, translateUserErr(err, user.Email)
@@ -170,7 +201,13 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-func scanUser(s scanner) (*model.User, error) {
+// scanUser reads one row, and decrypts the column that is stored encrypted.
+//
+// A method rather than a function, which is the whole reason it changed: it has
+// to reach the key. Every read of a user goes through here, so there is one place
+// where a TOTP seed turns back into itself and no way to add a fifth read that
+// forgets to.
+func (r *UserRepository) scanUser(s scanner) (*model.User, error) {
 	var user model.User
 
 	err := s.Scan(&user.ID, &user.Name, &user.Email, &user.RoleID, &user.RoleName,
@@ -181,6 +218,14 @@ func scanUser(s scanner) (*model.User, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	secret, err := r.secrets.Open(user.TOTPSecret)
+	if err != nil {
+		return nil, apperror.Internal(fmt.Errorf("the second factor of %s cannot be read: %w",
+			user.Email, err))
+	}
+
+	user.TOTPSecret = secret
 
 	return &user, nil
 }
@@ -248,9 +293,14 @@ func (r *UserRepository) SetPreference(
 // See repository.UserRepository.SetTOTP for why they go together, and
 // SetPreference for why neither goes through Update.
 func (r *UserRepository) SetTOTP(ctx context.Context, id uint, secret string, enabled bool) error {
-	_, err := r.db.ExecContext(ctx,
+	sealed, err := r.secrets.Seal(secret)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	_, err = r.db.ExecContext(ctx,
 		r.rebind("UPDATE users SET totp_secret = ?, totp_enabled = ? WHERE id = ?"),
-		secret, enabled, id)
+		sealed, enabled, id)
 
 	return err
 }

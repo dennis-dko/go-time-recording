@@ -9,6 +9,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/imaging"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
 )
 
 // maxLogoBytes caps the inline logo. It is stored as a data URI in the
@@ -23,6 +24,24 @@ type SettingsService struct {
 	// appName is APP_NAME from the environment, used as the instance title
 	// until an administrator sets one under Settings.
 	appName string
+
+	// secrets encrypts the one field in this table that is a credential rather
+	// than a setting: the directory's bind password. The rest of the LDAP
+	// configuration stays readable in the column, which is what makes a stored
+	// setting worth reading when something is wrong with it.
+	//
+	// Never nil; a service built without one gets a sealer that stores what it is
+	// given.
+	secrets *security.Sealer
+}
+
+// WithSecrets attaches the key that encrypts the directory's bind password.
+func (s *SettingsService) WithSecrets(secrets *security.Sealer) *SettingsService {
+	if secrets != nil {
+		s.secrets = secrets
+	}
+
+	return s
 }
 
 // NewSettingsService creates new instance.
@@ -31,7 +50,9 @@ func NewSettingsService(
 	roles repository.RoleRepository,
 	appName string,
 ) *SettingsService {
-	return &SettingsService{settings: settings, roles: roles, appName: appName}
+	empty, _ := security.NewSealer("")
+
+	return &SettingsService{settings: settings, roles: roles, appName: appName, secrets: empty}
 }
 
 // Branding returns the instance labelling, with defaults filled in.
@@ -349,6 +370,17 @@ func (s *SettingsService) LDAP(ctx context.Context) (model.LDAPConfig, error) {
 		return model.DefaultLDAPConfig(), nil
 	}
 
+	password, err := s.secrets.Open(config.BindPassword)
+	if err != nil {
+		// Same reasoning as the corrupt entry above, and a different consequence:
+		// the screen opens, the password field shows as unset, and signing in
+		// through the directory fails until somebody types it again. Refusing to
+		// answer at all would hide the one setting that explains why.
+		return config, nil
+	}
+
+	config.BindPassword = password
+
 	return config, nil
 }
 
@@ -392,6 +424,16 @@ func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig)
 			return apperror.InvalidFields("defaultRole")
 		}
 	}
+
+	// Sealed after everything above has been checked, and only this field: the
+	// rest of the configuration is a setting rather than a credential, and a
+	// stored setting is worth being able to read when something is wrong with it.
+	sealed, err := s.secrets.Seal(config.BindPassword)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	config.BindPassword = sealed
 
 	raw, err := json.Marshal(config)
 	if err != nil {

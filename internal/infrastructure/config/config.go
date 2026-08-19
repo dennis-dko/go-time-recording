@@ -54,6 +54,20 @@ type Config struct {
 	// problem nobody can fix by changing a permission.
 	UpdateToken string
 
+	// SecretKey encrypts the values the database holds that the application has
+	// to read back: a TOTP secret, and the directory's bind password.
+	//
+	// Base64, thirty-two bytes. Empty on an installation that has not set one,
+	// which keeps working and stores those two in the clear - so this is opt-in,
+	// and the cost of opting in is that losing the key costs every enrolled second
+	// factor.
+	//
+	// It is protection against a dump: a backup on a laptop, a snapshot copied
+	// somewhere with weaker access, a managed database read by somebody who should
+	// only have reached the application. It is not protection against somebody who
+	// has the machine, because they have this too.
+	SecretKey string
+
 	// UIEnabled serves the embedded web interface. Turn it off to run the
 	// binary as a headless API.
 	UIEnabled bool
@@ -273,6 +287,7 @@ func Load(p Provider) Config {
 		UpdateCheck: boolOr(p.GetOrDefault("UPDATE_CHECK", "true"), true),
 		UpdateFeed:  p.Get("UPDATE_FEED"),
 		UpdateToken: p.Get("UPDATE_TOKEN"),
+		SecretKey:   p.Get("SECRET_KEY"),
 		// Defaults to on: an instance that quietly serves everyone full
 		// administrative rights should be a deliberate choice, not an oversight.
 		AuthRequired:    boolOr(p.GetOrDefault("AUTH_ENABLED", "true"), true),

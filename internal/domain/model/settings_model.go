@@ -38,6 +38,15 @@ const (
 	SettingFooterLegal    = "branding.legal"
 	SettingLDAPSettings   = "ldap.config"
 
+	// SettingSecretKeyCheck is a value sealed with the configured key, kept so
+	// the application can tell at start-up whether the key it has is the key its
+	// data was written with.
+	//
+	// Without it, the wrong key is discovered by whoever tries to sign in with a
+	// second factor, days later, as "your code is wrong". With it, the process
+	// refuses to start and says which of the two is out of step.
+	SettingSecretKeyCheck = "instance.secretKeyCheck"
+
 	// SettingTimezone is the instance-wide zone that decides which calendar day
 	// a booking belongs to, for everyone who has not set their own.
 	SettingTimezone = "instance.timezone"
