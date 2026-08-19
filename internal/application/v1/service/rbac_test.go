@@ -142,6 +142,33 @@ func TestRoleInUseCannotBeDeleted(t *testing.T) {
 	requireKind(t, f.roles.DeleteRole(context.Background(), role.ID), apperror.KindConflict)
 }
 
+// signIn is the sign-in the application actually performs.
+//
+// The tests here used to call AuthService.Authenticate, which the application
+// never calls: a second implementation of the password check, differing from the
+// real one in that it did not refuse a directory-backed account. Testing it
+// proved something about code nobody ran, and left the path that does run
+// covered only by the integration suite.
+func signIn(t *testing.T, f *fixture, email, password string) *service.Principal {
+	t.Helper()
+
+	result, err := f.sessions.Login(context.Background(), email, password, "")
+	if err != nil {
+		t.Fatalf("signing in as %s: %v", email, err)
+	}
+
+	return result.Principal
+}
+
+// signInIsRefused is signIn for the cases that are meant to be turned away.
+func signInIsRefused(t *testing.T, f *fixture, email, password string) {
+	t.Helper()
+
+	if _, err := f.sessions.Login(context.Background(), email, password, ""); err == nil {
+		t.Fatalf("signing in as %s with %q was accepted", email, password)
+	}
+}
+
 func TestSystemUserIsProtected(t *testing.T) {
 	f := newFixture(t)
 
@@ -164,11 +191,7 @@ func TestSystemUserIsProtected(t *testing.T) {
 		t.Error("the system user must only be created once")
 	}
 
-	principal, err := f.auth.Authenticate(context.Background(),
-		service.SystemUserEmail, service.SystemUserPassword)
-	if err != nil {
-		t.Fatalf("authenticate system user: %v", err)
-	}
+	principal := signIn(t, f, service.SystemUserEmail, service.SystemUserPassword)
 
 	if !principal.User.IsSystem {
 		t.Error("the built-in administrator must be flagged as a system user")
@@ -196,15 +219,14 @@ func TestAuthenticationRejectsWrongPassword(t *testing.T) {
 		t.Fatalf("ensure system user: %v", err)
 	}
 
-	if _, err := f.auth.Authenticate(context.Background(),
-		service.SystemUserEmail, "not-the-password"); err == nil {
-		t.Fatal("expected authentication to fail")
-	}
+	signInIsRefused(t, f, service.SystemUserEmail, "not-the-password")
 
 	// An unknown account must fail the same way as a wrong password, so the
-	// response cannot be used to discover which addresses exist.
-	_, unknownErr := f.auth.Authenticate(context.Background(), "nobody@example.com", "whatever")
-	_, wrongErr := f.auth.Authenticate(context.Background(), service.SystemUserEmail, "wrong")
+	// response cannot be used to discover which addresses exist. Both refusals
+	// are wanted here rather than only the fact of them, so this asks for them
+	// directly instead of going through the helper.
+	_, unknownErr := f.sessions.Login(context.Background(), "nobody@example.com", "whatever", "")
+	_, wrongErr := f.sessions.Login(context.Background(), service.SystemUserEmail, "wrong", "")
 
 	if unknownErr == nil || wrongErr == nil {
 		t.Fatal("both cases must fail")
@@ -222,14 +244,10 @@ func TestChangePassword(t *testing.T) {
 		t.Fatalf("ensure system user: %v", err)
 	}
 
-	principal, err := f.auth.Authenticate(context.Background(),
-		service.SystemUserEmail, service.SystemUserPassword)
-	if err != nil {
-		t.Fatalf("authenticate: %v", err)
-	}
+	principal := signIn(t, f, service.SystemUserEmail, service.SystemUserPassword)
 
 	// Too short.
-	err = f.auth.ChangePassword(context.Background(), principal.User.ID,
+	err := f.auth.ChangePassword(context.Background(), principal.User.ID,
 		service.SystemUserPassword, "short")
 	requireKind(t, err, apperror.KindInvalid)
 
@@ -243,16 +261,9 @@ func TestChangePassword(t *testing.T) {
 		t.Fatalf("change password: %v", err)
 	}
 
-	if _, err := f.auth.Authenticate(context.Background(),
-		service.SystemUserEmail, service.SystemUserPassword); err == nil {
-		t.Error("the old password must stop working")
-	}
+	signInIsRefused(t, f, service.SystemUserEmail, service.SystemUserPassword)
 
-	updated, err := f.auth.Authenticate(context.Background(),
-		service.SystemUserEmail, "a-much-better-password")
-	if err != nil {
-		t.Fatalf("authenticate with new password: %v", err)
-	}
+	updated := signIn(t, f, service.SystemUserEmail, "a-much-better-password")
 
 	if updated.User.MustChangePassword {
 		t.Error("changing the password must clear the must-change flag")
@@ -269,11 +280,7 @@ func TestPrincipalPermissionsComeFromRole(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 
-	principal, err := f.auth.Authenticate(context.Background(),
-		"worker@example.com", "worker-password")
-	if err != nil {
-		t.Fatalf("authenticate: %v", err)
-	}
+	principal := signIn(t, f, "worker@example.com", "worker-password")
 
 	if !principal.Can(model.PermTimesheetWriteOwn) {
 		t.Error("a user must be able to book their own time")
