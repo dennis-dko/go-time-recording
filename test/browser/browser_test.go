@@ -630,6 +630,33 @@ func (p *page) waitGone(selector string) {
 	p.t.Fatalf("%s is still visible after 20s\n\napplication log:\n%s", selector, p.app.Log())
 }
 
+// waitShown is waitGone's other half: it waits for something to appear.
+//
+// Written because its absence was being covered by a fixed sleep, and a fixed
+// sleep is a guess about how busy the machine is. TestTabsSwitchTheVisiblePanel
+// slept 150ms after clicking a tab and then asked whether the panel was up; on a
+// loaded runner three of its four tabs were not, and the suite reported a broken
+// application over a slow afternoon.
+//
+// The patience is the same as everywhere else here: long enough that only a real
+// failure reaches it, and it costs nothing when the answer arrives at once.
+func (p *page) waitShown(selector string) {
+	p.t.Helper()
+
+	deadline := time.Now().Add(waitPatience)
+
+	for time.Now().Before(deadline) {
+		if p.visible(selector) {
+			return
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	p.t.Fatalf("%s never became visible within %s\n\napplication log:\n%s",
+		selector, waitPatience, p.app.Log())
+}
+
 func (p *page) text(selector string) string {
 	p.t.Helper()
 
@@ -925,11 +952,10 @@ func TestTabsSwitchTheVisiblePanel(t *testing.T) {
 	} {
 		p.run("switch to "+view.panel, chromedp.Click(view.tab, chromedp.ByQuery))
 
-		time.Sleep(150 * time.Millisecond)
-
-		if !p.visible(view.panel) {
-			t.Errorf("%s should be visible after clicking its tab", view.panel)
-		}
+		// Waited for rather than slept through. This is a click and a class
+		// change, so it is usually up within a frame - but "usually" is what a
+		// fixed 150ms was betting on, and on a loaded runner it lost.
+		p.waitShown(view.panel)
 	}
 }
 
