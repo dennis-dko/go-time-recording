@@ -657,6 +657,61 @@ func (p *page) waitShown(selector string) {
 		selector, waitPatience, p.app.Log())
 }
 
+// waitChanged waits until the text at a selector is something other than what it
+// was, and answers with the new value.
+//
+// The shape it replaces is: do something, sleep, read, and complain if the
+// reading has not changed. That asserts a duration rather than a change - the
+// reading is only stale if the machine was slower than the guess, and on a loaded
+// runner the guess is the thing that fails.
+//
+// Waiting for the change says what the test means, and a change that never comes
+// is reported as itself rather than as an unexpected equality.
+func (p *page) waitChanged(selector, was string) string {
+	p.t.Helper()
+
+	deadline := time.Now().Add(waitPatience)
+
+	for time.Now().Before(deadline) {
+		if now := p.text(selector); now != was {
+			return now
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	p.t.Fatalf("%s still reads %q after %s\n\napplication log:\n%s",
+		selector, was, waitPatience, p.app.Log())
+
+	return ""
+}
+
+// waitEvaluates waits until a snippet of script answers what is wanted.
+//
+// The third of these, and the last shape the suite had been sleeping through:
+// something that is read out of the document rather than out of an element's
+// text. Same reasoning as the other two - the reading is only wrong if the
+// machine was slower than the guess.
+func (p *page) waitEvaluates(what, js, want string) {
+	p.t.Helper()
+
+	deadline := time.Now().Add(waitPatience)
+
+	var got string
+
+	for time.Now().Before(deadline) {
+		p.run("read "+what, chromedp.Evaluate(js, &got))
+
+		if got == want {
+			return
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	p.t.Fatalf("%s is %q after %s, want %q", what, got, waitPatience, want)
+}
+
 func (p *page) text(selector string) string {
 	p.t.Helper()
 
@@ -971,16 +1026,7 @@ func TestTheAppearancePickerChangesTheTheme(t *testing.T) {
 			chromedp.Evaluate(
 				`document.querySelector('#theme-picker').dispatchEvent(new Event('change'))`, nil))
 
-		time.Sleep(150 * time.Millisecond)
-
-		var theme string
-
-		p.run("read the theme",
-			chromedp.Evaluate(`document.documentElement.dataset.theme`, &theme))
-
-		if theme != want {
-			t.Errorf("expected the %s theme, got %q", want, theme)
-		}
+		p.waitEvaluates("the theme", `document.documentElement.dataset.theme`, want)
 	}
 }
 
@@ -996,17 +1042,13 @@ func TestSwitchingLanguageTranslatesThePage(t *testing.T) {
 	// point of the auto-detection - so it is set explicitly rather than
 	// assumed. A German Windows made this test fail by being right.
 	p.run("start from English", chromedp.Evaluate(`applyLanguage('en')`, nil))
-	time.Sleep(150 * time.Millisecond)
-
 	english := p.text(`label[data-i18n="login.email"]`)
 	if english == "" {
 		t.Fatal("the sign-in form should have a labelled email field")
 	}
 
 	p.run("switch to German", chromedp.Evaluate(`applyLanguage('de')`, nil))
-	time.Sleep(150 * time.Millisecond)
-
-	german := p.text(`label[data-i18n="login.email"]`)
+	german := p.waitChanged(`label[data-i18n="login.email"]`, english)
 	if german == english {
 		t.Errorf("the label did not change when switching language (still %q)", english)
 	}
@@ -1014,9 +1056,7 @@ func TestSwitchingLanguageTranslatesThePage(t *testing.T) {
 	// Back to English restores the markup's own text, which is what an
 	// untranslated key falls back to.
 	p.run("switch back to English", chromedp.Evaluate(`applyLanguage('en')`, nil))
-	time.Sleep(150 * time.Millisecond)
-
-	if back := p.text(`label[data-i18n="login.email"]`); back != english {
+	if back := p.waitChanged(`label[data-i18n="login.email"]`, german); back != english {
 		t.Errorf("expected %q back, got %q", english, back)
 	}
 }
@@ -1133,7 +1173,7 @@ func TestACalendarEntryOpensForEditing(t *testing.T) {
 	// buttons the row also carries.
 	p.run("click the entry", p.click("#table-calendar-day tbody tr.clickable td"))
 
-	time.Sleep(300 * time.Millisecond)
+	p.waitShown("#view-timesheets")
 
 	if !p.visible("#view-timesheets") {
 		t.Fatalf("clicking an entry should bring up the form that edits it\n\napplication log:\n%s",
