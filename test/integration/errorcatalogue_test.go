@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -88,6 +89,21 @@ func TestEveryErrorTheAPICanGiveIsNamed(t *testing.T) {
 			do: func() response {
 				return admin.api(http.MethodPost, "/users",
 					map[string]any{"name": "", "email": "", "role": "user"})
+			},
+		},
+		{
+			what:   "a body far larger than anything legitimate",
+			want:   apperror.CodeBodyTooLarge,
+			status: http.StatusRequestEntityTooLarge,
+			do: func() response {
+				// Three megabytes of nothing, to an endpoint that expects a name and
+				// an address. Nothing bounded this: the body was decoded into a
+				// struct with no cap, and http.Server bounds only the headers - so
+				// the number here was whatever the caller felt like naming, on
+				// /auth/login as readily as anywhere else.
+				return admin.raw(http.MethodPost, "/api/v1/users",
+					append([]byte(`{"name":"`), append(
+						bytes.Repeat([]byte("a"), 3<<20), []byte(`"}`)...)...))
 			},
 		},
 		{

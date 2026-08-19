@@ -2604,6 +2604,7 @@ const TRANSLATIONS = {
     'err.notFound': '{0} mit der Kennung {1} wurde nicht gefunden.',
     'err.invalidFields': 'Ungültige Felder',
     'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
+    'err.bodyTooLarge': 'Die gesendeten Daten sind zu groß (Grenze: {0} MB).',
     'err.csrfRejected': 'Diese Seite ist zu lange geöffnet gewesen. Bitte neu laden und noch einmal versuchen.',
     'err.maintenance': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
     'err.cannotDeleteSelf': 'Das Konto, mit dem du angemeldet bist, kann nicht gelöscht werden.',

@@ -628,6 +628,10 @@ func main() {
 	var httpsFrontEnd atomic.Bool
 
 	app.UseMiddleware(tlsserver.KeepThePlainPortLocal(httpsFrontEnd.Load, cfg.TLSPort))
+	// Then the size of it, before anything below reads a body - which all of them
+	// do. A request being sent to the encrypted address instead is not worth
+	// measuring first.
+	app.UseMiddleware(rest.LimitRequestBody())
 	app.UseMiddleware(rest.SecurityHeaders(cfg.HSTSMaxAge))
 	app.UseMiddleware(rest.NewRateLimiter(cfg.RateLimit, cfg.RateLimitWindow).
 		WithLimits(limits.RateLimit).Middleware())
