@@ -2408,6 +2408,7 @@ const TRANSLATIONS = {
     'tel.follow': 'Der Konfigurationsdatei folgen',
     'tel.url': 'Collector als host:port, ohne http://',
     'tel.ratio': 'Anteil aufgezeichneter Traces (0–1)',
+    'tel.ratioShort': 'Anteil aufgezeichneter Traces',
     'tel.tracingHint': 'Läuft deploy/compose.tracing.yaml neben der Anwendung? Dann ist es Exporter OTLP und Collector jaeger:4317, und die Traces liest man unter http://127.0.0.1:16686.',
     'tel.reset': 'Alles auf die Konfigurationsdatei zurücksetzen',
     'tel.resetDone': 'Metriken und Traces folgen wieder der Konfigurationsdatei',
@@ -6824,6 +6825,7 @@ function pendingLabel(setting) {
     case 'metrics': return t('tel.metrics', 'Metrics endpoint');
     case 'traceExporter': return t('tel.exporter', 'Trace exporter');
     case 'tracerUrl': return t('tel.url', 'Collector');
+    case 'tracerRatio': return t('tel.ratioShort', 'Share of traces recorded');
     case 'database': return t('admin.database', 'Database connection');
     case 'databasePassword': return t('restart.dbPassword', 'Database password');
     case 'directorySchedule': return t('sync.scheduleShort', 'Directory schedule');

@@ -2,6 +2,7 @@ package rest
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -177,6 +178,27 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 		})
 	}
 
+	// The recorded share, which was missing here and needs a restart exactly as
+	// much as the two above it: all three go into the exporter, and the exporter
+	// is built inside gofr.New().
+	//
+	// Its absence was not a decision. The log level a few lines up is absent
+	// deliberately and says so at length; this one simply was not added, and the
+	// gap was written into the manual as though it were settled - "change that on
+	// its own and nothing on screen will mention the restart it still needs".
+	//
+	// The save's own answer already knew. TelemetryResponse.RestartRequired
+	// compares the share and comes back true; nothing in the interface reads that
+	// field, and what the screen shows is this list. So the application was right
+	// twice and told nobody.
+	if telemetry.TracerRatio != nil && *telemetry.TracerRatio != running.TracerRatio {
+		pending = append(pending, PendingChange{
+			Setting: "tracerRatio",
+			Running: formatRatio(running.TracerRatio),
+			Stored:  formatRatio(*telemetry.TracerRatio),
+		})
+	}
+
 	// The directory schedule, which is stored with the rest of the LDAP settings
 	// but is the one of them that cannot be applied at once: a cron job is
 	// registered while the application starts.
@@ -222,6 +244,12 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 	}
 
 	return pending, nil
+}
+
+// formatRatio writes a sampling share the way the form takes it: a plain
+// number, with no trailing zeroes to make 1 look like something it is not.
+func formatRatio(ratio float64) string {
+	return strconv.FormatFloat(ratio, 'g', -1, 64)
 }
 
 // connectionSummary describes a connection in one line, without its password.
