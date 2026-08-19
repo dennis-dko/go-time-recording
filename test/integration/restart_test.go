@@ -179,13 +179,19 @@ func TestEveryWaitingSettingIsListed(t *testing.T) {
 		"metricsOff":    true,
 		"traceExporter": "otlp",
 		"tracerUrl":     "collector:4317",
+		"tracerRatio":   0.25,
 	}), http.StatusOK)
 
 	state := restartState(t, admin)
 
-	// The log level is saved in the same request and is deliberately not here:
-	// it is the one of the four that is already in force.
-	for _, setting := range []string{"metrics", "traceExporter", "tracerUrl"} {
+	// The share was missing from both the save and the list it is checked
+	// against, which is how it stayed missing: this case is called "every waiting
+	// setting" and was asking about three of the four. It goes into the exporter
+	// with the two above it, and the exporter is built while the process starts.
+	//
+	// The log level is saved in the same request and is deliberately not here: it
+	// is the one of these that is already in force.
+	for _, setting := range []string{"metrics", "traceExporter", "tracerUrl", "tracerRatio"} {
 		if _, _, found := state.pendingFor(setting); !found {
 			t.Errorf("%q was saved but is not reported as waiting: %+v", setting, state.Pending)
 		}

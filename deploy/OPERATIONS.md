@@ -606,8 +606,7 @@ list of pending changes with the running value beside the stored one:
 | the database password | same | yes, as the name of the setting alone |
 | log level | the logger's level is read at start | yes |
 | metrics off | the port is bound at start | yes |
-| trace exporter, collector URL | the exporter is built at start | yes |
-| trace sample ratio | same exporter | **no** |
+| trace exporter, collector URL, sample ratio | the exporter is built at start | yes |
 | the directory sync schedule | a cron job is registered at start | yes |
 
 Applying immediately: the operational limits, the whole directory connection, the
@@ -626,11 +625,6 @@ A changed password appears as *Database password* with nothing beside it. The
 old one is not printed next to the new one on an administration screen, and the
 card renders an entry with no before and after as the name of the setting alone
 rather than as "none → none".
-
-**One change still needs a restart and appears nowhere in the list**: the trace
-sample ratio. It is exported to the tracer at start like the rest of the
-exporter settings, but it is not among the values compared. If you changed it
-and the list is empty, the change is still waiting.
 
 Saving the database form says which of the two it was. It reports *Settings
 saved* when the comparison finds nothing and *Applied on the next start* when it
@@ -726,10 +720,12 @@ The scheme matters: that string goes to a gRPC dialer, which reads `http://` as
 part of the host name and then resolves nothing.
 
 **Then restart the application.** The exporter is built while it starts, so a
-saved setting does nothing until it does. The exporter and the collector address
-are both in the pending list, so the Settings screen says so and offers the
-button. The recorded share is not — change that on its own and nothing on screen
-will mention the restart it still needs.
+saved setting does nothing until it does. All three go into it, so all three
+appear in the pending list and the Settings screen offers the button.
+
+The share used to be missing from that list — it needed the restart and nothing
+said so — and this manual described the gap as though it were the design. It is
+compared now.
 
 **Reading the traces.** The browser is on `127.0.0.1:16686` and asks nobody to
 sign in, so it is not published to the network — traces carry request paths and
@@ -1105,7 +1101,7 @@ mistakes it for a configured installation.
 | `cannot reach the configured database` and the process exits | the connection was proven and refused | the message names the dialect, the name and the host. Remove `DB_DIALECT` and `configs/datasource.json` to choose interactively instead |
 | The installer appears on an installation that was working | nothing is configured any more — a lost volume, or a working directory that changed | check where `configs/datasource.json` is expected to be, and do not answer the installer until you know |
 | The container is healthy but nobody can sign in | the healthcheck is satisfied by the installer | ask `/api/v1/branding` for a `version` field |
-| A setting was changed and nothing happened | it needs a restart | *Settings* lists what is pending — but not a same-dialect database change or the trace sample ratio. Restart anyway if you changed either |
+| A setting was changed and nothing happened | it needs a restart | *Settings* lists what is pending. Two things used to be missing from that list — a same-dialect database change and the trace sample ratio — and both are compared now |
 | TLS was enabled and the site is still plain HTTP | the listener could not bind, and that does not stop the process | check the log for `serving HTTPS on :443`; on a host, grant `CAP_NET_BIND_SERVICE` |
 | `docker compose … -f compose.tls.yaml` refuses to start | `TLS_DOMAINS` or `TLS_EMAIL` is unset | both use the error form and are required |
 | A setting was cleared back to "follow the configuration file" and still applies | the in-application restart inherited the exported variable | stop and start the process properly |
