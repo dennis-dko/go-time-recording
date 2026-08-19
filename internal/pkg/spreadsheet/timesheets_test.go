@@ -335,3 +335,74 @@ func TestAnEmptyExportIsStillAWorkbook(t *testing.T) {
 			len(rows), len(problems))
 	}
 }
+
+// A cell holds a day, whatever else it was carrying.
+//
+// Two of the forms this reads bring more than a day with them. A timestamp in a
+// cell brings whatever offset was typed into it, and a serial number with a
+// fractional part brings a time of day - a column formatted as "date" in a
+// workbook that was really holding a moment. Neither is wrong in the file.
+//
+// Both are wrong in a column that answers which day somebody worked, where every
+// other date is midnight UTC. A date in a second shape is a day that groups
+// apart from itself: the same Tuesday counted twice, each half measured against
+// a full day's target.
+func TestACellYieldsADayAndNothingElse(t *testing.T) {
+	book := excelize.NewFile()
+	defer func() { _ = book.Close() }()
+
+	sheet := book.GetSheetList()[0]
+
+	for i, heading := range spreadsheet.Columns() {
+		name, _ := excelize.CoordinatesToCellName(i+1, 1)
+		if err := book.SetCellStr(sheet, name, heading); err != nil {
+			t.Fatalf("writing a heading: %v", err)
+		}
+	}
+
+	// A timestamp with an offset, and a serial number carrying a time of day.
+	// 46238.5 is 4 August 2026 at midday on the 1900 epoch.
+	for column, value := range map[string]string{
+		"A2": "2026-08-04T09:30:00+02:00", "B2": "Ilka Ruf", "D2": "3.75",
+		"A3": "46238.5", "B3": "Ilka Ruf", "D3": "2.25",
+	} {
+		if err := book.SetCellStr(sheet, column, value); err != nil {
+			t.Fatalf("writing %s: %v", column, err)
+		}
+	}
+
+	buffer, err := book.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+
+	rows, problems, err := spreadsheet.Read(bytes.NewReader(buffer.Bytes()))
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+
+	if len(problems) > 0 {
+		t.Fatalf("a readable file was rejected: %v", problems)
+	}
+
+	if len(rows) != 2 {
+		t.Fatalf("read %d row(s), want 2", len(rows))
+	}
+
+	for _, row := range rows {
+		if got := row.Date.Format("2006-01-02"); got != "2026-08-04" {
+			t.Errorf("a cell for 4 August read as %s", got)
+		}
+
+		if row.Date.Location() != time.UTC {
+			t.Errorf("the date came through in %s; every stored date is UTC, and a "+
+				"second shape is a day that groups apart from itself",
+				row.Date.Location())
+		}
+
+		if h, m, s := row.Date.Clock(); h != 0 || m != 0 || s != 0 {
+			t.Errorf("the date carries %02d:%02d:%02d; a date answers which day and "+
+				"nothing else", h, m, s)
+		}
+	}
+}
