@@ -323,3 +323,46 @@ func TestFilterFindsEntriesWithoutProject(t *testing.T) {
 		t.Error("the returned entry must have no project")
 	}
 }
+
+// An eight hour day booked in three parts is an eight hour day.
+//
+// Hours are a double, and a sum of them is not the decimal figure somebody
+// typed. Booking 0.56, then 0.46, then 6.98 is exactly eight hours on paper; the
+// check adds the new booking first and the stored ones after it, so what is
+// actually computed is 6.98 + 0.56 + 0.46 = 8.00000000000000177636. A strict
+// comparison against an eight hour ceiling refused the last one and said so in a
+// sentence that reads "booking 6.98h would total 8.00h, over the 8.00h daily
+// limit". Wrong on its face, and impossible to act on: there is nothing to
+// remove and nothing to correct.
+//
+// Not a rare shape either. Every three-part split of a working day where the
+// parts land badly does it, and somebody booking their day in pieces as they go
+// is the ordinary use of this.
+func TestADayBookedInPartsIsNotOverItsOwnLimit(t *testing.T) {
+	f := newFixture(t)
+
+	target := 8.0
+	ceiling := 8.0
+
+	if _, err := f.users.UpdateWorkingTimes(context.Background(),
+		command.UpdateWorkingTimesCommand{
+			ID: f.userID, DailyTargetHours: &target, MaxDailyHours: &ceiling,
+		}); err != nil {
+		t.Fatalf("set the ceiling: %v", err)
+	}
+
+	// Three parts of exactly eight hours, in the order that makes the sum
+	// overshoot. checkDailyLimit adds the booking being made first and the stored
+	// ones after it, so 6.98 + 0.56 + 0.46 is what is actually computed - and that
+	// is 8.00000000000000177636.
+	for _, hours := range []float64{0.56, 0.46, 6.98} {
+		_, err := f.timesheets.CreateTimesheet(context.Background(),
+			command.CreateTimesheetCommand{
+				UserID: f.userID, ProjectID: f.projectID,
+				Date: day(9), DurationHours: hours,
+			})
+		if err != nil {
+			t.Fatalf("booking %.2fh of an eight hour day was refused: %v", hours, err)
+		}
+	}
+}

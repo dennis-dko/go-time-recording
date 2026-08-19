@@ -331,7 +331,18 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 		total += entry.DurationHours
 	}
 
-	if total > limit {
+	// Compared with room for what the addition itself introduces.
+	//
+	// Hours are a double, and a sum of them is not the decimal figure a person
+	// typed. 0.56 + 6.98 + 0.46 is exactly eight hours on paper and
+	// 8.00000000000000177636 here, so a strict comparison refused the third
+	// booking of an eight hour day and explained that 8.00h is over the 8.00h
+	// limit - a sentence that is wrong on its face and impossible to act on.
+	//
+	// The slack is a millionth of a second of work. Nothing anybody records is
+	// that small, and nothing float64 gets wrong by is that large, so this can
+	// only ever forgive the arithmetic.
+	if total > limit+roundingSlack {
 		return apperror.Conflictf("booking %.2fh would total %.2fh on %s, over the %.2fh daily limit",
 			hours, total, from.Format(time.DateOnly), limit).
 			WithCode("overDailyLimit", hours, total, from.Format(time.DateOnly), limit)
@@ -339,6 +350,13 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 
 	return nil
 }
+
+// roundingSlack is what a sum of hours may exceed a limit by before it counts as
+// exceeding it: a millionth of a second, expressed in hours.
+//
+// Far above what adding doubles gets wrong, which is around 1e-15, and far below
+// anything a person books. See checkDailyLimit for the day this cost somebody.
+const roundingSlack = 1e-9
 
 func validateTimesheet(date time.Time, hours float64, description *string) error {
 	var invalid []string
