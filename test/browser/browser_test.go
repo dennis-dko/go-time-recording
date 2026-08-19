@@ -999,6 +999,19 @@ func TestTabsSwitchTheVisiblePanel(t *testing.T) {
 	// Out of the way: it is an overlay, so nothing behind it can be clicked.
 	p.settleWizard()
 
+	// And so is the walk through, which was the actual fault here.
+	//
+	// It opens by itself on a first sign-in - startTour runs whenever the account
+	// has not seen it, and a fresh installation's built-in administrator has not.
+	// Its bubble is a modal, so the tab clicks below landed on it instead, and no
+	// amount of waiting afterwards helps: the click never reached the tab.
+	//
+	// Intermittent because it is a race rather than a rule. The tour opens after
+	// the /me it waits on, so whether it is up when the first tab is clicked
+	// depends on which arrives first - which is why this failed on two unrelated
+	// pull requests and passed on the two beside them.
+	p.settleWelcome()
+
 	for _, view := range []struct{ tab, panel string }{
 		{`.tab[data-view="roles"]`, "#view-roles"},
 		{`.tab[data-view="admin"]`, "#view-admin"},
