@@ -542,6 +542,63 @@ func (p *page) readyAdmin() {
 	}
 
 	p.settleWizard()
+
+	// And the walk through, which opens by itself for an account that has never
+	// seen it - which a fresh installation's built-in administrator has not.
+	//
+	// This is what "ready" has to mean. The bubble is a modal, so a case handed a
+	// screen with it still up gets its next click swallowed and then waits for an
+	// effect that was never going to happen. That is what took the v0.2.0 release
+	// out: a connection test whose button was never pressed, reported as a box
+	// that said nothing - and the case had already guessed as much in a comment
+	// about a missed click.
+	//
+	// Recorded through the API rather than waited for and clicked away, for the
+	// same reason settleWizard completes the setup that way: waiting for a modal
+	// that has not opened yet costs its whole patience every time it does not
+	// come, and doing that in something sixty-nine cases call doubled the suite -
+	// from three and a half minutes to seven and a half. Saying "seen" is
+	// instant, and it stops the bubble opening at all rather than racing it.
+	p.markTourSeen()
+}
+
+// markTourSeen records the walk through as seen, so it never opens.
+//
+// The same endpoint the "skip" button uses, which is what makes this safe: it is
+// what the application itself does, not a state only the tests can reach.
+func (p *page) markTourSeen() {
+	p.t.Helper()
+
+	var status string
+
+	p.run("record the walk through as seen", chromedp.Evaluate(`
+		(async () => {
+			const csrf = document.cookie.split(';')
+				.map(c => c.trim())
+				.find(c => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+
+			const res = await fetch('/api/v1/me/tour', {
+				method: 'PUT',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+				body: JSON.stringify({ seen: true }),
+			});
+
+			return String(res.status);
+		})()`, &status, awaitPromise))
+
+	code, err := strconv.Atoi(status)
+	if err != nil || code < 200 || code > 299 {
+		p.t.Fatalf("could not record the walk through as seen: %s\n\napplication log:\n%s",
+			status, p.app.Log())
+	}
+
+	// Already open, if it got there first. Nothing to wait for when it did not:
+	// the record above is what stops it opening later.
+	if p.visible("#tour-bubble") {
+		p.run("skip the walk through", p.click("#tour-end"))
+		p.waitGone("#tour-bubble")
+	}
 }
 
 // workerEmail and workerPassword are the account readyWorker signs in as.
