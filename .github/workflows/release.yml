@@ -34,10 +34,14 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# The same time budgets as ci.yml, and for the same reason: the six hours a job
+# inherits otherwise. verify runs the unit, integration and browser suites one
+# after another, so it gets the room for all three.
 jobs:
   version:
     name: Decide the version
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # A failed CI run must not publish anything. On the tag path there is no CI
     # run to look at, so the condition only applies to the other one.
     if: >-
@@ -105,6 +109,7 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     if: github.event_name == 'push'
     needs: version
     permissions:
@@ -171,6 +176,7 @@ jobs:
   publish:
     name: Publish image & GitHub release
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [version, verify]
     # always(), because verify is skipped on the merge path and a skipped
     # dependency would otherwise skip this too. The conditions spell out what
