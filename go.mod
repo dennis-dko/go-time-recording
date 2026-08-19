@@ -13,7 +13,7 @@ require (
 	github.com/xuri/excelize/v2 v2.11.0
 	gofr.dev v1.58.0
 	golang.org/x/crypto v0.54.0
-	golang.org/x/image v0.38.0
+	golang.org/x/image v0.41.0
 	modernc.org/sqlite v1.55.0
 	rsc.io/qr v0.2.0
 )
