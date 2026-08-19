@@ -386,6 +386,124 @@ the first visitor, and `TLS_ENABLED` with neither route configured refuses to
 pretend: it says so and carries on over plain HTTP rather than claiming HTTPS it
 cannot serve.
 
+## Behind a reverse proxy that is already there
+
+Apache, nginx, or whatever already answers for the name. Then this process does
+not serve HTTPS at all - `TLS_ENABLED=false`, which is the default - and the
+proxy passes to its plain port.
+
+### It needs a name of its own, not a path
+
+`https://firma.example.com/zeiterfassung/` does not work, and cannot be made to
+work from the proxy side. The interface asks for `/app.js`, `/app.css`,
+`/theme.js` and `/favicon.ico`, and the script's API base is `/api/v1` - all
+absolute, and there is no setting that moves them. Under a sub-path the browser
+would look for those at the root of the site and find whatever else is there.
+
+So: its own hostname, or its own virtual host. Everything below assumes that.
+
+### Which deployment
+
+**Compose is the one built for this.** `deploy/compose.yaml` publishes the
+application to the loopback interface and nowhere else:
+
+```yaml
+ports:
+  - "127.0.0.1:8000:8000"
+```
+
+A proxy on the same host reaches it; the network does not. Nothing further to
+close. Do *not* add `compose.tls.yaml` - that overlay is for letting this
+process terminate TLS itself, which is the other arrangement.
+
+**The single binary works too, and leaves the port open.** GoFr binds every
+interface and offers no way to say otherwise, and the guard that refuses network
+traffic on the plain port only runs while this process is serving HTTPS itself -
+which behind a proxy it is not. So that has to be closed by hand:
+
+```bash
+sudo ufw deny 8000/tcp
+```
+
+Anything that reaches the port can also claim to be a proxy: set its own
+`X-Forwarded-For`, and have no rate limit on guessing a password.
+
+### The whole configuration
+
+`/etc/apache2/sites-available/zeiterfassung.conf`:
+
+```apache
+# Port 80 exists for the redirect and for certbot's challenge.
+<VirtualHost *:80>
+    ServerName zeiterfassung.firma.example.com
+
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} !^/\.well-known/acme-challenge/
+    RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [R=308,L]
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName zeiterfassung.firma.example.com
+
+    SSLEngine on
+    SSLCertificateFile    /etc/letsencrypt/live/zeiterfassung.firma.example.com/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/zeiterfassung.firma.example.com/privkey.pem
+
+    # Whatever a caller sent for itself goes, before Apache sets its own. The
+    # sign-in rate limit counts per address and reads these; left alone, the
+    # caller chooses which address it is counted as.
+    RequestHeader unset X-Forwarded-For   early
+    RequestHeader unset X-Forwarded-Host  early
+    RequestHeader unset X-Forwarded-Proto early
+
+    # The one Apache does not add by itself. Without it this process cannot tell
+    # the browser is on HTTPS: the session cookie is written without Secure and
+    # no HSTS is sent.
+    RequestHeader set X-Forwarded-Proto "https"
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+
+    ProxyPass        / http://127.0.0.1:8000/
+    ProxyPassReverse / http://127.0.0.1:8000/
+
+    # The announcement stream - a restart coming, an update installed - is a
+    # response that deliberately never ends. Compressed, it is buffered rather
+    # than delivered.
+    SetEnvIfNoCase Request_URI "^/api/v1/events" no-gzip dont-vary
+
+    ErrorLog  ${APACHE_LOG_DIR}/zeiterfassung-error.log
+    CustomLog ${APACHE_LOG_DIR}/zeiterfassung-access.log combined
+</VirtualHost>
+```
+
+```bash
+sudo a2enmod proxy proxy_http headers ssl rewrite
+sudo a2ensite zeiterfassung
+sudo apache2ctl configtest
+sudo systemctl reload apache2
+```
+
+### Do not add security headers here
+
+This process sends its own: a Content-Security-Policy, HSTS, `X-Frame-Options`,
+`Referrer-Policy` and `Permissions-Policy`. A second CSP from the proxy does not
+replace the first - a browser enforces every policy it is given, so the effect is
+the strictest of both, and the interface stops working for reasons that appear in
+the browser's console and nowhere else.
+
+HSTS arrives on its own once `X-Forwarded-Proto: https` does.
+
+### What this arrangement does not need
+
+`ProxyTimeout` does not have to be raised for the announcement stream. It writes
+a comment down an idle connection every twenty seconds, which is under every
+proxy default worth naming - the browser reconnects if one is closed anyway, so
+the cost of getting this wrong is reconnections rather than a broken screen.
+
+Nothing has to be configured for WebSockets: there are none. The stream is
+server-sent events over an ordinary HTTP response.
+
 ## The database has to exist first
 
 For PostgreSQL and MySQL, **yes — create the database and the account before
