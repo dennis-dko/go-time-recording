@@ -13,10 +13,27 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Every job carries a time budget, because the one it inherits otherwise is six
+# hours.
+#
+# A job that hangs is not rare here. setup-chrome spent eight minutes inside
+# apt before it was taken out; a browser run has come back with "websocket url
+# timeout reached" because Chrome never started; a test that waits on something
+# that will not arrive waits until something stops it. Six hours of that is a
+# branch nobody can merge for an afternoon and a bill for runner time nobody
+# asked for.
+#
+# The numbers are roughly four times what each job actually takes on this
+# repository, so a slow morning on GitHub's runners does not trip them. Where a
+# suite sets its own `go test -timeout`, the job's budget sits above it on
+# purpose: Go's timeout prints every goroutine's stack, and a job cancelled
+# underneath it prints nothing at all. The Go timeout should always be what
+# fires first.
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -113,6 +130,7 @@ jobs:
   vulnerabilities:
     name: Vulnerabilities
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -146,6 +164,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -182,6 +201,7 @@ jobs:
   integration:
     name: Integration (${{ matrix.dialect }})
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -257,6 +277,7 @@ jobs:
   directory-and-tracing:
     name: Directory and tracing
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
@@ -312,6 +333,7 @@ jobs:
   browser:
     name: Browser
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -381,6 +403,7 @@ jobs:
   firefox:
     name: Firefox
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -409,6 +432,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -452,6 +476,7 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: [lint, test, integration, directory-and-tracing, browser, build]
     permissions:
       contents: read
