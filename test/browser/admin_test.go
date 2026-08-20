@@ -4076,3 +4076,100 @@ func TestEveryControlIsBigEnoughToPressOnAPhone(t *testing.T) {
 		}
 	}
 }
+
+// Nothing an administrator was shown stays on the screen for whoever signs in
+// next.
+//
+// The release notice is drawn for whoever may act on it, which is a permission
+// an ordinary account has not got - and checkForRelease used to return without
+// taking it down when the server refused. Sign out of an administrator and in as
+// somebody who only works here, in the same page, and the previous account's
+// news was still there: the version this installation runs, and a button into
+// the screen that administers it.
+//
+// Reported by somebody who signed in as a synchronised directory user and found
+// both.
+func TestTheReleaseNoticeDoesNotOutlastTheAccountItWasFor(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// Drawn by hand rather than waited for. Whether a newer release exists
+	// depends on somebody else's feed, and what this is about is what happens to
+	// the banner afterwards - not how it got there.
+	p.run("put the notice up", chromedp.Evaluate(`
+		(() => {
+			const banner = document.querySelector('#release-banner');
+			document.querySelector('#release-text').textContent =
+				'Version v9.9.9 is available.';
+			banner.hidden = false;
+			return 1;
+		})()`, nil))
+
+	if !p.visible("#release-banner") {
+		t.Fatal("the fixture did not put the notice up, so this proves nothing")
+	}
+
+	p.becomeWorker()
+
+	if p.visible("#release-banner") {
+		t.Errorf("the release notice survived the sign-out; it says %q",
+			p.text("#release-text"))
+	}
+
+	// And again, without a sign-out in between - which is what actually proves
+	// the other half. The first version of this case only exercised the logout
+	// path and passed with the refusal path still broken.
+	//
+	// The notice is put back up and the check is asked to run: this account is
+	// answered 403, and the answer has to take it down rather than leave it.
+	p.run("put it back up", chromedp.Evaluate(`
+		(() => {
+			document.querySelector('#release-text').textContent = 'Version v9.9.9 is available.';
+			document.querySelector('#release-banner').hidden = false;
+			return 1;
+		})()`, nil))
+
+	p.run("ask again as this account",
+		chromedp.Evaluate(`checkForRelease()`, nil, awaitPromise))
+
+	if p.visible("#release-banner") {
+		t.Errorf("the check was refused for this account and left the notice "+
+			"standing; it says %q", p.text("#release-text"))
+	}
+}
+
+// And the screen behind that button does not open for somebody who may not have
+// it.
+//
+// The tabs are hidden by data-perm, and most ways to a screen were already
+// covered by that: the address bar and the remembered screen go through
+// startingView, which only accepts a view whose tab is visible, and the tour
+// drops steps whose permission the reader lacks. Checked, rather than assumed -
+// the first version of this case asserted the address bar was a way in, and it
+// was not.
+//
+// The banner's button was the one that was not covered. It calls switchView
+// directly, so hiding the tab did nothing about it.
+//
+// The data was never at risk: every request behind that screen is refused by the
+// server on its own. What was at risk is the sentence this is meant to be
+// describable in - somebody who may not administer this installation should not
+// be looking at the screen that administers it.
+func TestAnOrdinaryAccountCannotOpenTheAdministrationScreen(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.becomeWorker()
+
+	// The call the banner's button makes, which is the way in that was open.
+	p.run("ask for it the way the banner does", chromedp.Evaluate(
+		`(() => { switchView('admin'); return 1; })()`, nil))
+
+	if p.visible("#view-admin") {
+		t.Error("the administration screen opened for an account without " +
+			"settings:manage, through switchView")
+	}
+}

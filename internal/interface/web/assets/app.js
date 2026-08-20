@@ -552,17 +552,24 @@ async function checkForRelease() {
   try {
     state = await api('/settings/update');
   } catch {
-    // A feed that cannot be reached is not this installation being broken, and
-    // the version card says so where somebody has gone looking. A banner about
-    // it would be a banner about somebody else's service.
+    // Taken down, not left standing. A feed that cannot be reached is not this
+    // installation being broken, and the version card says so where somebody has
+    // gone looking - but the refusal that matters here is the other one: this
+    // endpoint needs settings:manage, so an ordinary account is answered 403.
+    //
+    // Returning without hiding left whatever was on screen. Sign out of an
+    // administrator and in as somebody who only works here, in the same page,
+    // and the banner stayed - the previous account's news, with a working link
+    // to a screen the new one may not have.
+    hideReleaseBanner();
+
     return;
   }
 
   // Newer rather than installable: a container cannot install it from here, and
   // the person reading this is still the one who should know.
   if (!state?.newer || !state.latest || dismissedRelease() === state.latest) {
-    $('#release-banner').hidden = true;
-    stopRedrawing('release');
+    hideReleaseBanner();
 
     return;
   }
@@ -584,6 +591,18 @@ function dismissedRelease() {
   } catch {
     return '';
   }
+}
+
+// hideReleaseBanner takes the notice down and stops it being redrawn.
+//
+// One function because there are three reasons to do it - refused, nothing
+// newer, nobody signed in - and a banner that is only hidden on two of them is
+// a banner that survives the third.
+function hideReleaseBanner() {
+  const banner = $('#release-banner');
+  if (banner) banner.hidden = true;
+
+  stopRedrawing('release');
 }
 
 function drawReleaseBanner(state) {
@@ -5339,6 +5358,12 @@ async function doLogout() {
   forgetTheLastAccount();
   forgetTheLastAppearance();
 
+  // And the news that belonged to whoever just left. checkForRelease takes it
+  // down on its next answer, but the next answer is a request away and the
+  // screen is here now - so somebody signing in behind an administrator would
+  // see it for as long as that takes.
+  hideReleaseBanner();
+
   // The screen belongs to nobody now, so it stops speaking the language of
   // whoever just left. activeLanguage() falls back to the browser once me.user
   // is gone, but nothing was re-rendering with it - so signing out of a German
@@ -9400,7 +9425,40 @@ function wireNavigationMenu() {
 
 // --------------------------------------------------------------- bootstrap
 
+// viewTheReaderMayHave answers with the screen asked for, or the welcome screen
+// when that one takes a permission the reader has not got.
+//
+// Most ways in were already covered, and it is worth saying which rather than
+// implying they were not. The address bar and the remembered screen both go
+// through startingView, which only accepts a view whose tab is visible; the tour
+// drops steps whose permission the reader lacks; the rest are reached from
+// inside a screen somebody already has.
+//
+// The release banner's button was the one that was not. It calls switchView
+// directly, and it was still on screen for an account that had just signed in
+// behind an administrator - so an ordinary user clicked it and got the
+// administration screen. Both halves are fixed; this is the half that stops the
+// next direct caller needing to remember.
+//
+// The data was never at risk: every request behind that screen is refused by the
+// server on its own. What was at risk is the sentence this application is meant
+// to be describable in - somebody who may not administer this installation
+// should not be looking at the screen that administers it.
+//
+// The permission comes off the tab, so there is one declaration of who may have
+// a screen rather than two that can disagree.
+function viewTheReaderMayHave(name) {
+  const tab = $(`.tab[data-view="${name}"]`);
+  const needs = tab?.dataset.perm;
+
+  if (!needs || can(...needs.split(','))) return name;
+
+  return 'welcome';
+}
+
 function switchView(name) {
+  name = viewTheReaderMayHave(name);
+
   $$('.tab').forEach((tab) => tab.setAttribute('aria-current', String(tab.dataset.view === name)));
   $$('.view').forEach((view) => { view.hidden = view.id !== `view-${name}`; });
 
