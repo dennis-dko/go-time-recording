@@ -498,10 +498,43 @@ var handedOut sync.Map
 // the number can be handed to a child, and in that window anything on the
 // machine may take it - which is what start's retry and waitUntilReady's
 // identity check are for.
+//
+// Two details of how ports are handed out decide the shape of this, and both
+// were measured on the machine this failed on rather than assumed.
+//
+// Windows walks its dynamic range in order - ask twenty times and you are given
+// twenty consecutive numbers - and wraps at the end. Every outbound socket on
+// the machine moves the same cursor, and a browser run makes thousands of them,
+// so the cursor laps the range several times while the suite is running. The
+// numbers this function has already given out are therefore not scattered: they
+// sit in long consecutive blocks, and a lap that re-enters one is offered the
+// whole block, one number at a time. Twenty attempts inside a block a hundred
+// long is a run that gives up with sixteen thousand ports free - in whichever
+// test happened to ask at that moment, which is why this read as flakiness.
+//
+// So the walk has to be able to leave a block: enough attempts to cross one,
+// and a rejected suggestion held open rather than closed, which is what
+// guarantees the next attempt is a different number on any system rather than
+// only on one that counts upwards.
 func FreePort(t *testing.T) int {
 	t.Helper()
 
-	const attempts = 20
+	// Longer than any block this can walk into. A run hands out a few hundred
+	// ports; a block is at most as long as the run, and in practice far shorter,
+	// because everything else on the machine is moving the same cursor between
+	// one instance starting and the next.
+	const attempts = 250
+
+	// Closed on the way out, not before. While they are open the operating
+	// system will not offer them again, so each attempt looks at a port the
+	// earlier attempts in this call did not.
+	var rejected []net.Listener
+
+	defer func() {
+		for _, listener := range rejected {
+			_ = listener.Close()
+		}
+	}()
 
 	for range attempts {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -511,11 +544,13 @@ func FreePort(t *testing.T) int {
 
 		port := listener.Addr().(*net.TCPAddr).Port
 
-		_ = listener.Close()
-
 		if _, seen := handedOut.LoadOrStore(port, struct{}{}); !seen {
+			_ = listener.Close()
+
 			return port
 		}
+
+		rejected = append(rejected, listener)
 	}
 
 	t.Fatalf("could not find a port this run has not already used, after %d tries",
