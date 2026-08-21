@@ -5563,20 +5563,32 @@ async function deleteUser(user) {
 // ------------------------------------------------------------------ sign-in
 
 /** Shows the sign-in overlay and hides the application behind it. */
+/**
+ * Whether the sign-in screen has been given up for a session.
+ *
+ * Set the moment a password is accepted and cleared only by signing out, which
+ * makes it true across the gap that whether an account is loaded yet cannot
+ * cover. showLogin is the only reader; the two writers are below and in
+ * doLogout.
+ */
+let handedToASession = false;
+
 function showLogin(message) {
-  // Never over a session.
+  // Never over a session this page has already been given to.
   //
   // The first load starts before there is one and fails because there is none.
   // The sign-in form is wired and usable from the first paint, though, so
-  // anybody quick - or any machine slow enough for the two to overlap - signs
-  // in underneath it, and that failure then arrives after theirs succeeded. The
-  // result was a page that was signed in, fully loaded and on a screen, with a
-  // sign-in form laid across all of it. Firefox in CI reported it three times.
+  // anybody quick - or any machine slow enough for the two to overlap - signs in
+  // underneath it, and that failure then arrives after theirs succeeded. The
+  // result is a page that is signed in, fully loaded and on a screen, with a
+  // sign-in form laid across all of it. Firefox in CI reported it four times.
   //
-  // Decided from whether there is a session rather than from what any one
-  // caller was doing, because the session is what this screen is about. Signing
-  // out clears it before asking for this, so that way in is unaffected.
-  if (me.user) return;
+  // Asked of handedToASession rather than of me.user, which is what this asked
+  // first and was not enough. A sign-in takes this screen down the moment the
+  // password is accepted and only fills in the account afterwards, so between
+  // those two there is a page that has been signed into and cannot prove it -
+  // and that is exactly the window the stale failure lands in.
+  if (handedToASession) return;
 
   const screen = $('#login-screen');
   screen.hidden = false;
@@ -5590,6 +5602,10 @@ function showLogin(message) {
 }
 
 function hideLogin() {
+  // From here this page belongs to a session, whether or not the account has
+  // arrived yet. See showLogin, which is the only reader.
+  handedToASession = true;
+
   $('#login-screen').classList.remove('checking');
   $('#login-screen').hidden = true;
   $('#login-error').hidden = true;
@@ -5753,6 +5769,10 @@ async function doLogout() {
   stopPermissionPolling();
   stopAnnouncements();
   stopReleaseWatch();
+
+  // The screen goes back to being nobody's, which is what lets showLogin put it
+  // up again at the end of this.
+  handedToASession = false;
 
   // And the unfinished forms, which belong to whoever typed them.
   forgetEveryDraft();
