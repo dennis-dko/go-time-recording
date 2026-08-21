@@ -1518,6 +1518,14 @@ func TestARejectedFieldIsNamedNotIdentified(t *testing.T) {
 			const field = document.querySelector('#form-operational input[name="maxDailyHours"]');
 			field.value = '-3';
 			field.removeAttribute('min');
+
+			// Announced the way typing announces itself, which is what tells the
+			// page somebody is part way through this form. Without it a loader
+			// answering between here and the press below puts the stored ceiling
+			// back, the save is a valid one, and the case waits for a refusal
+			// that was never going to come - which is what it reported, as a
+			// refusal that named no field.
+			field.dispatchEvent(new Event('input', { bubbles: true }));
 		})()`, nil),
 		p.click(`#form-operational button[type="submit"]`),
 	)
