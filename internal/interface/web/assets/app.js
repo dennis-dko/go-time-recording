@@ -3396,47 +3396,78 @@ function t(key, fallback) {
 }
 
 /**
- * Remembers, per account and per browser, that the defaults have been offered.
+ * Remembers, per account and per browser, that the zone has been offered.
  *
  * An empty stored zone means "follow the instance", which is a real choice - so
  * adopting the browser's zone every time the page loaded would make that choice
  * impossible to keep. The marker is what makes it a one-time suggestion rather
  * than a standing override.
+ *
+ * The zone only. A language has no "follow the browser" to protect, so it is not
+ * kept behind this - see adoptBrowserDefaults.
  */
 function adoptionMarker(userID) {
   return `gtr.adopted.${userID}`;
 }
 
 /**
- * Writes the browser's zone and language into the account, once.
+ * Writes the browser's zone and language into the account.
  *
  * The browser knows two things the server cannot: which zone the person is
- * actually in, and which language they read. Until now the language was detected
- * for the current page and thrown away on every load, and the zone was not
- * detected at all - so somebody in Vancouver saw their evening bookings land on
- * the instance's tomorrow until they found the setting.
+ * actually in, and which language they read. Until this, the language was
+ * detected for the current page and thrown away on every load, and the zone was
+ * not detected at all - so somebody in Vancouver saw their evening bookings land
+ * on the instance's tomorrow until they found the setting.
  *
- * Two deliberate limits. It happens once per account per browser, so "follow the
- * instance setting" stays choosable. And the zone is only written when it differs
- * from the instance's, because writing the same value would take that choice away
+ * The two are not decided the same way, and the difference is the point.
+ *
+ * A zone is a one-time suggestion. An empty stored zone means "follow the
+ * instance", which is a real choice somebody can make and see offered - so
+ * adopting the browser's on every load would make it impossible to keep. It is
+ * offered once per account per browser and never again, and only when it differs
+ * from the instance's, because writing the same value would take the choice away
  * to no effect at all.
+ *
+ * A language is not. The picker offers no "follow the browser" line, so an
+ * account with none stored is not an account that chose anything - it is one
+ * nobody has decided for yet, and nothing on screen could put it back. So it is
+ * decided on sight, every time it is found undecided: the browser's language
+ * where this interface speaks it, English where it does not.
  *
  * Returns whether anything was written, so the caller can read the account back.
  */
 async function adoptBrowserDefaults() {
   if (!me.user) return false;
 
+  let adopted = false;
+
+  // The language first, and outside the marker below on purpose. Under it, an
+  // adoption that was missed once - storage switched off, or a first sign-in on
+  // a browser that had already recorded one for this account - left the account
+  // with no language for ever, and its picker blank.
+  if (!me.user.language) {
+    try {
+      await api('/me/language', {
+        method: 'PUT',
+        body: JSON.stringify({ language: detectBrowserLanguage() }),
+      });
+
+      adopted = true;
+    } catch {
+      // It still reads in the detected language for this page; it is simply not
+      // remembered, and the next sign-in asks again.
+    }
+  }
+
   const marker = adoptionMarker(me.user.id);
 
   try {
-    if (window.localStorage.getItem(marker)) return false;
+    if (window.localStorage.getItem(marker)) return adopted;
   } catch {
-    // Private browsing, or storage switched off. Suggesting once per load is
-    // worse than never suggesting, so this stops here.
-    return false;
+    // Private browsing, or storage switched off. Suggesting the zone once per
+    // load is worse than never suggesting it, so that half stops here.
+    return adopted;
   }
-
-  let adopted = false;
 
   // The zone, when the browser's differs from what this account currently
   // resolves to. effectiveTimezone is the instance's while nothing is stored.
@@ -3451,23 +3482,11 @@ async function adoptBrowserDefaults() {
     }
   }
 
-  // The language, when the browser asks for one this interface actually speaks.
-  const language = detectBrowserLanguage();
-  if (!me.user.language && language) {
-    try {
-      await api('/me/language', { method: 'PUT', body: JSON.stringify({ language }) });
-      adopted = true;
-    } catch {
-      // Same reasoning: it keeps rendering in the detected language for this
-      // session, it is simply not remembered.
-    }
-  }
-
   try {
     window.localStorage.setItem(marker, '1');
   } catch {
-    // Nothing to do. Worst case it is suggested again on the next load, and the
-    // conditions above make that a no-op.
+    // Nothing to do. Worst case the zone is suggested again on the next load,
+    // and the conditions above make that a no-op.
   }
 
   return adopted;
@@ -5559,6 +5578,13 @@ async function doLogout() {
   stopAnnouncements();
   stopReleaseWatch();
 
+  // And what this installation is waiting to restart into, which is the
+  // administration of the installation and none of the next person's business.
+  // It is a banner now rather than a card behind a permission-checked tab, so
+  // nothing else would take it off the screen.
+  const restart = $('#restart-banner');
+  if (restart) restart.hidden = true;
+
   me = { user: null, permissions: [], authEnabled: true };
 
   forgetTheLastAccount();
@@ -5656,9 +5682,16 @@ async function loadLanguages() {
     picker.append(el('option', { value: language, text: language.toUpperCase() }));
   }
 
-  // Nobody signed in yet means the picker should show what is actually on
-  // screen, which is whatever the browser preference resolved to.
-  picker.value = me.user?.language ?? activeLanguage();
+  // What is actually on screen, whether that came from the account or from the
+  // browser.
+  //
+  // ?? was the wrong test: it steps aside for null and undefined and not for the
+  // empty string, and an account that has stored no language has exactly the
+  // empty string. So the picker was set to a value no option carries, and a
+  // select given one of those shows nothing - a blank control on the topbar of
+  // every account that had never chosen, which reads as a language that could
+  // not be worked out rather than one that simply was not stored.
+  picker.value = me.user?.language || activeLanguage();
 }
 
 // ------------------------------------------------------------- guided tour
@@ -7085,8 +7118,17 @@ function pendingValue(value) {
  * answer to be wrong in.
  */
 async function loadRestart() {
-  const card = $('#restart-card');
-  if (!card) return;
+  const banner = $('#restart-banner');
+  if (!banner) return;
+
+  // The same permission the screen that causes this needs. The banner is on
+  // every screen now rather than on one card, so who may see it is decided here
+  // rather than inherited from where it sat.
+  if (!can('settings:manage')) {
+    banner.hidden = true;
+
+    return;
+  }
 
   const state = await api('/settings/restart');
   restartStartedAt = state.startedAt ?? '';
@@ -7104,10 +7146,10 @@ async function loadRestart() {
   // it is read once, and after that it is the thing you look past to reach the
   // card below it, including on the day it finally has something to say.
   //
-  // Nothing is lost by waiting. The card explains the refusal in place of the
+  // Nothing is lost by waiting. The banner explains the refusal in place of the
   // button whenever it does appear, so the first save that needs a restart is
   // still where somebody finds out they will have to do it by hand.
-  card.hidden = pending.length === 0;
+  banner.hidden = pending.length === 0;
 
   const list = $('#restart-pending');
   list.replaceChildren(...pending.map((change) => {
@@ -7126,10 +7168,9 @@ async function loadRestart() {
 
   // Offered only where pressing it would actually work. Where it would not, the
   // reason is shown instead of a button that fails on click.
+  //
   // The hint promises a list of saved changes and the list follows it, so both go
-  // when there are none. Where restarting is impossible the card is on screen
-  // permanently, and a standing "these are saved and waiting:" above nothing reads
-  // as a rendering fault rather than as the explanation it sits above.
+  // when there are none.
   const waiting = pending.length > 0;
   $('#restart-hint').hidden = !waiting;
   $('#restart-pending').hidden = !waiting;

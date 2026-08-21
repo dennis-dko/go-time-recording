@@ -4329,3 +4329,216 @@ func TestTheNameJustSavedIsWhatTheLanguageChooserOffers(t *testing.T) {
 	p.waitEvaluates("what German was offered",
 		`String(window.__offered ?? "")`, "Beta GmbH")
 }
+
+// An account that has never chosen a language is given one, and shows it.
+//
+// The picker offers the languages this interface speaks and nothing else, so an
+// account with none stored is not one that chose to follow the browser - it is
+// one nobody has decided for yet, and there is no way back to that state from
+// the screen. It used to stay that way whenever the one-time adoption had been
+// missed, and the topbar then carried a select set to a value no option holds,
+// which a browser draws as an empty box: a language that looks like it could
+// not be worked out rather than one that simply was not stored.
+//
+// The account is created and signed into here rather than using the built-in
+// administrator, because the administrator's first sign-in is spent on the
+// wizard and the password, and this is about the ordinary way in.
+func TestAnAccountWithNoLanguageIsGivenOneAndTheTopbarSaysWhich(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	const (
+		email    = "sprachlos@example.com"
+		password = "sprachlos-password-1"
+	)
+
+	p.createOrdinaryAccount(t, email, password)
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn(email, password)
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+	p.settled()
+
+	// Read from the server, because the point is that it was written down.
+	if stored := p.storedAccount(t).Language; stored == "" {
+		t.Error("the account still has no language after signing in; there is no " +
+			"way to choose that state and no way out of it")
+	}
+
+	// And the control says which. Not which language - that is the machine
+	// running this - but that it names one at all.
+	if shown := p.value("#language-picker"); shown == "" {
+		t.Error("the language picker shows nothing; a select holding a value no " +
+			"option carries is drawn as an empty box")
+	}
+
+	// The two agree, which is the whole of what this control is for.
+	if shown, stored := p.value("#language-picker"), p.storedAccount(t).Language; shown != stored {
+		t.Errorf("the picker shows %q and the account holds %q", shown, stored)
+	}
+
+	// And the same control asked about an account with nothing stored, which is
+	// what every account is until the line above has run.
+	//
+	// Asked of the function rather than of a sign-in, because the state cannot be
+	// reached any other way: the server refuses to store an empty language, so
+	// there is no request that produces one. What there is, is a moment - between
+	// signing in and the adoption landing, or after an adoption that failed - and
+	// in that moment this control was blank.
+	var shown string
+
+	p.run("fill the picker for an account with nothing stored", chromedp.Evaluate(`
+		(async () => {
+			me.user.language = '';
+			await loadLanguages();
+
+			return document.querySelector('#language-picker').value;
+		})()`, &shown, awaitPromise))
+
+	if shown == "" {
+		t.Error("the picker is blank for an account with no language stored; it " +
+			"should name the one the page is actually reading in")
+	}
+}
+
+// A language adoption that was missed once is tried again.
+//
+// Both the zone and the language used to be written behind one marker in this
+// browser's storage, recorded per account and never cleared. That is right for
+// the zone: an empty stored zone means "follow the instance", a choice somebody
+// can make and see offered, so adopting the browser's on every load would make
+// it impossible to keep.
+//
+// It is wrong for the language, which has no such choice to protect. Under the
+// marker, an adoption that did not happen the first time - storage refused, the
+// request failed, or the marker was already there from a session before the
+// account had one - left the account with no language for ever, and its picker
+// blank, with nothing on screen able to put it right.
+//
+// Asked by watching for the request rather than by reading the account back:
+// the server refuses to store an empty language, so the account cannot be put
+// into that state to be rescued from it. What can be checked is that finding it
+// undecided is enough to decide it.
+func TestALanguageAdoptionThatWasMissedIsTriedAgain(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	var asked string
+
+	p.run("adopt with the marker already recorded", chromedp.Evaluate(`
+		(async () => {
+			const real = window.fetch;
+			let seen = false;
+
+			window.fetch = (...args) => {
+				const url = typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '';
+				if (String(url).includes('/me/language')) seen = true;
+
+				return real(...args);
+			};
+
+			try {
+				// Both of the conditions the old arrangement gave up on.
+				localStorage.setItem('gtr.adopted.' + me.user.id, '1');
+				me.user.language = '';
+
+				await adoptBrowserDefaults();
+			} finally {
+				window.fetch = real;
+			}
+
+			return String(seen);
+		})()`, &asked, awaitPromise))
+
+	if asked != "true" {
+		t.Error("an account with no language was left without one because this " +
+			"browser had already recorded the zone for it; there is no way back " +
+			"to that state from the screen and no way out of it")
+	}
+}
+
+// A restart that is waiting is said on every screen, to the people who can act
+// on it, and stops being said when it stops being true.
+//
+// It was a card under Settings. A card is read by somebody who has already gone
+// looking, and the thing it reports is not about that screen - it is about the
+// installation: saved values that the running process has not got. An
+// administrator who saved something, went off to do anything else and came back
+// the next day had nothing anywhere telling them so.
+//
+// Three things, because each of them is a way the old card was wrong or a way a
+// banner could be: it has to appear away from the screen that caused it, it has
+// to go when the settings go back, and it must not be shown to somebody who
+// could do nothing about it.
+func TestARestartThatIsWaitingIsSaidOnEveryScreenAndOnlyToAdministrators(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	if p.visible("#restart-banner") {
+		t.Fatal("a freshly started instance says a restart is waiting")
+	}
+
+	// Saved the way the screen saves it, so this is the same path an
+	// administrator takes rather than a request shaped to suit the case.
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-telemetry", chromedp.ByID))
+	p.settled()
+
+	p.run("point tracing somewhere",
+		chromedp.SetValue(`#form-telemetry [name="traceExporter"]`, "otlp", chromedp.ByQuery),
+		chromedp.SetValue(`#form-telemetry [name="tracerUrl"]`, "jaeger:4317", chromedp.ByQuery),
+		p.click(`#form-telemetry button[type="submit"]`))
+
+	p.waitShown("#restart-banner")
+
+	// Away from the screen that caused it, which is the whole reason it is a
+	// banner: the tab below is somewhere else entirely.
+	//
+	// Accounts rather than time entries. This is the built-in administrator,
+	// which administers and records nothing, so there is no timesheet tab for it
+	// to be sent to.
+	p.run("go somewhere else", p.click(`.tab[data-view="users"]`))
+	p.waitShown("#view-users")
+
+	if !p.visible("#restart-banner") {
+		t.Error("the restart notice is only on the screen that caused it, which is " +
+			"the screen somebody has already left by the time it matters")
+	}
+
+	// And it names what is waiting rather than only that something is.
+	if said := p.text("#restart-pending"); !strings.Contains(said, "jaeger:4317") {
+		t.Errorf("the notice does not say what is waiting: %q", said)
+	}
+
+	// Put back, and it goes with them. Reset rather than clearing the fields one
+	// at a time: it is the control that means "as it was", and the notice has to
+	// follow it or the installation is left claiming a restart it does not need.
+	p.run("back to Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-telemetry", chromedp.ByID))
+	p.run("reset", p.click("#telemetry-reset"))
+
+	p.waitGone("#restart-banner")
+
+	// And somebody who cannot administer this installation is not told about it.
+	p.run("save it again",
+		chromedp.SetValue(`#form-telemetry [name="traceExporter"]`, "otlp", chromedp.ByQuery),
+		chromedp.SetValue(`#form-telemetry [name="tracerUrl"]`, "jaeger:4317", chromedp.ByQuery),
+		p.click(`#form-telemetry button[type="submit"]`))
+
+	p.waitShown("#restart-banner")
+	p.becomeWorker()
+
+	if p.visible("#restart-banner") {
+		t.Error("somebody who may not administer this installation is told it is " +
+			"waiting for a restart they cannot perform")
+	}
+}

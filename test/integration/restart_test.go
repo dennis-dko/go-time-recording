@@ -307,3 +307,47 @@ func TestRestartingAppliesWhatWasWaiting(t *testing.T) {
 	// restart would be a poor reward for pressing the button.
 	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK)
 }
+
+// Putting the settings back the way they were takes the notice away with them.
+//
+// The screen that reports this is the same screen that caused it, and somebody
+// who has just been told a restart is waiting has an obvious second thought:
+// undo it. Reset is how - it drops every stored value so all of them follow the
+// configuration file again - and the notice has to go with them, or the
+// installation is left permanently claiming a restart it does not need.
+//
+// The collector and the sampling share together, because that is the pair a
+// tracing setup is changed in and the pair a screenshot of this arrived showing.
+func TestResettingTheSettingsTakesThePendingNoticeWithThem(t *testing.T) {
+	t.Parallel()
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	if pending := restartState(t, admin).Pending; len(pending) != 0 {
+		t.Fatalf("this instance is waiting for a restart before anything was saved: %+v",
+			pending)
+	}
+
+	admin.must(admin.api(http.MethodPut, "/settings/telemetry", map[string]any{
+		"traceExporter": "otlp",
+		"tracerUrl":     "jaeger:4317",
+		"tracerRatio":   0.1,
+	}), http.StatusOK)
+
+	for _, setting := range []string{"traceExporter", "tracerUrl", "tracerRatio"} {
+		if _, _, found := restartState(t, admin).pendingFor(setting); !found {
+			t.Errorf("%s was saved and is not reported as waiting", setting)
+		}
+	}
+
+	// Reset: everything follows the configuration file again, which is what the
+	// process is already running on.
+	admin.must(admin.api(http.MethodPut, "/settings/telemetry",
+		map[string]any{}), http.StatusOK)
+
+	if pending := restartState(t, admin).Pending; len(pending) != 0 {
+		t.Errorf("after putting every value back, the screen still says a restart "+
+			"is waiting for: %+v", pending)
+	}
+}

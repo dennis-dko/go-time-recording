@@ -149,7 +149,7 @@ func TestTheGreetingYieldsToTheWizardAndSkipsTheAdministrator(t *testing.T) {
 	}
 }
 
-// The restart card appears when something is waiting for a restart, and not
+// The restart notice appears when something is waiting for a restart, and not
 // otherwise.
 //
 // It used to stay on screen wherever restarting is impossible - on Windows,
@@ -160,18 +160,18 @@ func TestTheGreetingYieldsToTheWizardAndSkipsTheAdministrator(t *testing.T) {
 // including on the day it finally has something to say.
 //
 // The limitation is still explained, at the moment it costs something. The first
-// save that needs a restart brings the card up, and the card puts the reason
-// where the button would have been. Nothing is hidden; it is said when it
-// matters instead of always.
+// save that needs a restart brings the notice up, and it puts the reason where
+// the button would have been. Nothing is hidden; it is said when it matters
+// instead of always.
 //
 // Checked in the asset rather than in a browser because the browser suite runs on
 // Linux, where restarting is supported and this branch is never taken.
-func TestTheRestartCardAppearsOnlyWhenSomethingIsWaiting(t *testing.T) {
+func TestTheRestartNoticeAppearsOnlyWhenSomethingIsWaiting(t *testing.T) {
 	js := asset(t, "/app.js")
 
-	if !strings.Contains(js, "card.hidden = pending.length === 0;") {
-		t.Error("the restart card is shown on an empty pending list, which makes a " +
-			"standing warning out of a screen that should speak up when it has something")
+	if !strings.Contains(js, "banner.hidden = pending.length === 0;") {
+		t.Error("the restart notice is shown on an empty pending list, which makes a " +
+			"standing warning out of something that should speak up when it has something")
 	}
 
 	// And the explanation is translated rather than shown as the server wrote it,
@@ -182,10 +182,58 @@ func TestTheRestartCardAppearsOnlyWhenSomethingIsWaiting(t *testing.T) {
 	}
 
 	// The hint above the list promises saved changes, so it goes when there are
-	// none: on Windows the card is permanent, and a standing promise above an
-	// empty list reads as a rendering fault.
+	// none: where restarting is impossible the notice is permanent, and a standing
+	// promise above an empty list reads as a rendering fault.
 	if !strings.Contains(js, "$('#restart-hint').hidden = !waiting") {
-		t.Error("the card promises a list of pending changes even when there are none")
+		t.Error("the notice promises a list of pending changes even when there are none")
+	}
+}
+
+// The restart notice is a banner, and only for the people who administer.
+//
+// It was a card under Settings, which is only read by somebody who has already
+// gone looking - so an administrator who saved something, went off to do
+// anything else and came back the next day had nothing anywhere telling them the
+// installation was still running on the old values. A banner is on every screen,
+// which is where a fact about the whole installation belongs.
+//
+// That is also what makes the permission its own decision. On a card behind a
+// tab that needs settings:manage, who could see it was decided by the tab; a
+// banner has no tab to inherit from, and nobody who cannot act on this should be
+// told an installation they use is waiting for something.
+func TestTheRestartNoticeIsABannerOnlyAdministratorsSee(t *testing.T) {
+	js := asset(t, "/app.js")
+	html := asset(t, "/")
+
+	if !strings.Contains(html, `id="restart-banner"`) {
+		t.Error("there is no restart banner in the markup")
+	}
+
+	if strings.Contains(html, `id="restart-card"`) {
+		t.Error("the restart card is still under Settings beside the banner, so the " +
+			"same thing is said in two places and one of them can go stale")
+	}
+
+	// Not dismissable, and nothing to dismiss it with. It is a state rather than
+	// news: it goes when the settings are put back or the application restarts.
+	if strings.Contains(html, "restart-dismiss") {
+		t.Error("the restart banner can be dismissed; it reports a state, and a " +
+			"state that has been clicked away is still the state")
+	}
+
+	if !strings.Contains(js, "loadRestart") || !strings.Contains(js,
+		`const banner = $('#restart-banner');`) {
+		t.Error("the loader does not drive the banner")
+	}
+
+	// The permission, decided where the banner is filled rather than inherited
+	// from a screen it no longer lives on.
+	loader := js[strings.Index(js, "async function loadRestart()"):]
+	loader = loader[:strings.Index(loader, "\n}\n")]
+
+	if !strings.Contains(loader, "can('settings:manage')") {
+		t.Error("the restart banner is filled without asking whether the reader may " +
+			"administer this installation")
 	}
 }
 
