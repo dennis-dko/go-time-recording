@@ -5369,6 +5369,20 @@ async function deleteUser(user) {
 
 /** Shows the sign-in overlay and hides the application behind it. */
 function showLogin(message) {
+  // Never over a session.
+  //
+  // The first load starts before there is one and fails because there is none.
+  // The sign-in form is wired and usable from the first paint, though, so
+  // anybody quick - or any machine slow enough for the two to overlap - signs
+  // in underneath it, and that failure then arrives after theirs succeeded. The
+  // result was a page that was signed in, fully loaded and on a screen, with a
+  // sign-in form laid across all of it. Firefox in CI reported it three times.
+  //
+  // Decided from whether there is a session rather than from what any one
+  // caller was doing, because the session is what this screen is about. Signing
+  // out clears it before asking for this, so that way in is unaffected.
+  if (me.user) return;
+
   const screen = $('#login-screen');
   screen.hidden = false;
   // The check is over, whatever it concluded: show the form rather than the
@@ -10284,7 +10298,8 @@ async function init() {
     await greetAfterSignIn();
   } catch {
     // No usable session: the sign-in screen is the whole interface until
-    // there is one.
+    // there is one. Unless somebody signed in while this was running, which
+    // showLogin decides - it is the same question wherever it is asked from.
     showLogin();
   }
 }

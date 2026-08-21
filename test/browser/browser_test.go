@@ -1429,3 +1429,44 @@ func (p *page) waitSignedIn(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// The sign-in screen is never laid over a session that is working.
+//
+// The first load starts before there is a session and fails because there is
+// none, and its failure puts the sign-in screen up - which is right, until it
+// is not. The form is wired and usable from the first paint, so anybody quick,
+// or any machine slow enough for the two to overlap, signs in underneath that
+// load. Its failure then arrives after theirs succeeded.
+//
+// What that left was a page signed in, every screen loaded, sitting on a view -
+// with a sign-in form across all of it. Firefox in CI reported it three times
+// as "the sign-in screen never went away", which is what it looks like from
+// outside and says nothing about a race between two loads.
+//
+// Asked of the rule rather than of the race. Reproducing the timing means
+// holding one response back while another lands, and what is worth holding is
+// not that ordering but what it violated: this screen is about whether there is
+// a session, so it has no business appearing while there is one.
+func TestTheSignInScreenIsNeverPutOverASession(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// The same call the failing load makes.
+	p.run("let the first load fail late", chromedp.Evaluate(`showLogin()`, nil))
+
+	if p.visible("#login-screen") {
+		t.Fatal("the sign-in screen went up over a session that was signed in; " +
+			"a load that failed before anybody signed in can still be answering")
+	}
+
+	// And the application underneath is untouched: this is about not covering it,
+	// not about hiding something and leaving the page half dismantled.
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`))
+	p.waitShown("#view-admin")
+
+	// And signing out still gets there, because that clears the session first.
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID))
+	p.waitShown("#login-screen")
+}
