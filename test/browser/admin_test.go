@@ -4542,3 +4542,151 @@ func TestARestartThatIsWaitingIsSaidOnEveryScreenAndOnlyToAdministrators(t *test
 			"waiting for a restart they cannot perform")
 	}
 }
+
+// What was typed and not saved is still there after the page is loaded again.
+//
+// Reloading is not always a decision. It is a stray F5, a browser deciding the
+// tab has been idle long enough, a certificate prompt, a laptop coming back from
+// sleep - and whatever the reason, everything in a half-filled form was gone,
+// with the form coming back from the server looking like one nobody had touched.
+// There was not even anything on screen afterwards to say it had happened.
+//
+// The password is the exception and is checked here rather than left implied: a
+// draft is written to storage, and nothing is worth putting a password there
+// for.
+func TestWhatWasTypedIsStillThereAfterAReload(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+	p.waitForFilled("#datasource-active")
+
+	// A server dialect, or the fields typed into below are not on screen at all.
+	p.run("choose postgres",
+		chromedp.SetValue(`#form-datasource select[name="dialect"]`, "postgres",
+			chromedp.ByQuery))
+
+	typed := map[string]string{
+		"host": "db.example.invalid", "name": "gtr_live", "user": "gtr_admin",
+	}
+
+	for field, value := range typed {
+		p.run("type the "+field, chromedp.SendKeys(
+			`#form-datasource [name="`+field+`"]`, value, chromedp.ByQuery))
+	}
+
+	const secret = "a-password-that-must-not-be-written-down"
+
+	p.run("type the password", chromedp.SendKeys(
+		`#form-datasource [name="password"]`, secret, chromedp.ByQuery))
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.waitGone("#login-screen")
+	p.settleWizard()
+	p.settled()
+
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+
+	if got := p.value(`#form-datasource select[name="dialect"]`); got != "postgres" {
+		t.Errorf("the type reads %q after a reload; postgres was chosen", got)
+	}
+
+	for field, value := range typed {
+		if got := p.value(`#form-datasource [name="` + field + `"]`); got != value {
+			t.Errorf("the %s field reads %q after a reload; %q was typed into it",
+				field, got, value)
+		}
+	}
+
+	if got := p.value(`#form-datasource [name="password"]`); got != "" {
+		t.Errorf("the password came back after a reload as %q", got)
+	}
+
+	// And it is not sitting in storage waiting to.
+	var kept string
+
+	p.run("read what was written down", chromedp.Evaluate(`
+		JSON.stringify(Object.keys(sessionStorage)
+			.filter((key) => key.startsWith('gtr.draft.'))
+			.map((key) => sessionStorage.getItem(key)))`, &kept))
+
+	if strings.Contains(kept, secret) {
+		t.Error("the password was written into storage along with the rest of the form")
+	}
+
+	// And signing out takes the lot: a draft belongs to whoever typed it, and
+	// this application does not leave one person's half-written work for the next.
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	var after string
+
+	p.run("read them again", chromedp.Evaluate(`
+		JSON.stringify(Object.keys(sessionStorage).filter((key) => key.startsWith('gtr.draft.')))`,
+		&after))
+
+	if after != "[]" {
+		t.Errorf("drafts survived signing out: %s", after)
+	}
+}
+
+// The appearance card comes back with each language's words under that language.
+//
+// It keeps more than its boxes. The texts exist once per language and only the
+// chosen language's are on screen; the rest are held in memory while the card is
+// open. A draft made of the boxes alone would come back as the right words filed
+// under the wrong language, which is worse than losing them - it is a wrong
+// translation that nobody typed, waiting to be saved by somebody who thinks they
+// are looking at what they wrote.
+func TestTheAppearanceCardKeepsEachLanguagesWordsAcrossAReload(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+	p.settled()
+
+	const (
+		base   = "Alpha GmbH"
+		german = "Alpha GmbH (auf Deutsch)"
+	)
+
+	p.run("name the installation", chromedp.SetValue(
+		`#form-branding input[name="title"]`, base, chromedp.ByQuery))
+
+	p.run("look at German", p.chooseOption("#branding-language", "de"))
+
+	p.run("write a German name", chromedp.SetValue(
+		`#form-branding input[name="title"]`, german, chromedp.ByQuery))
+
+	// Nothing was saved. Everything above is unfinished work.
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.waitGone("#login-screen")
+	p.settleWizard()
+	p.settled()
+
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	if shown := p.value("#branding-language"); shown != "de" {
+		t.Errorf("the card came back showing %q; German was what was open", shown)
+	}
+
+	if got := p.value(`#form-branding input[name="title"]`); got != german {
+		t.Errorf("the German name reads %q after a reload; %q was written", got, german)
+	}
+
+	// And the base is still the base, which is the half that would be silently
+	// wrong if the boxes were all that had been kept.
+	p.run("back to the base", p.chooseOption("#branding-language", "en"))
+
+	if got := p.value(`#form-branding input[name="title"]`); got != base {
+		t.Errorf("the base name reads %q after a reload; %q was written", got, base)
+	}
+}

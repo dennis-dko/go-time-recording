@@ -1432,11 +1432,26 @@ const BRANDING_TEXT_FIELDS = ['title', 'tabTitle', 'banner', 'footerText', 'lega
  * being left.
  */
 function showBrandingLanguage(language) {
+  // What is in the boxes belongs to the language it was typed in, and has to be
+  // taken back into the draft before another language's words replace it.
+  rememberBrandingDraft();
+  fillBrandingBoxes(language);
+}
+
+/**
+ * Puts one language's words into the boxes, without taking anything back first.
+ *
+ * Split out of showBrandingLanguage for the one caller that must not take
+ * anything back: restoring a draft after a reload has just put the whole set of
+ * languages into place, and the boxes at that moment hold the server's copy.
+ * Capturing them would file the server's words under whichever language was
+ * about to be shown and lose what had actually been written - which is what it
+ * did, silently, in the half of this that was not being looked at.
+ */
+function fillBrandingBoxes(language) {
   const form = $('#form-branding');
   const picker = $('#branding-language');
   if (!form || !picker) return;
-
-  rememberBrandingDraft();
 
   const chosen = BRANDING_LANGUAGES.includes(language) ? language : BRANDING_LANGUAGES[0];
 
@@ -1979,6 +1994,155 @@ function roleChoices() {
 
 /** Reads a form into a plain object, dropping empty optional fields. */
 /**
+ * Where a form's unfinished contents wait out a page load.
+ *
+ * Reloading is not always a decision. It is a stray F5, a browser deciding the
+ * tab has been idle long enough, a certificate prompt, a laptop coming back from
+ * sleep - and whatever the reason, everything typed into a form and not yet
+ * saved was simply gone, with the form coming back filled from the server as
+ * though nobody had touched it. Losing twenty minutes of a legal notice that way
+ * is not a small thing, and there is nothing on screen afterwards to say it
+ * happened.
+ *
+ * sessionStorage rather than localStorage, and that is the whole of the rule
+ * about how long this lasts: it survives a reload of this tab and dies with the
+ * tab. Closing the page is the one way of saying "I am finished with this" that
+ * cannot be done by accident, so it is the one that throws the draft away.
+ *
+ * Cleared on the way out as well, because a draft is the property of whoever
+ * typed it and this application does not leave one person's half-written work on
+ * screen for the next.
+ */
+const DRAFT_PREFIX = 'gtr.draft.';
+
+/**
+ * The controls a draft is made of.
+ *
+ * Named ones only: an unnamed control decides what the form shows rather than
+ * what it would save, and there is nothing about it worth carrying across a
+ * load. Passwords never - a draft is written to storage, and nothing is worth
+ * putting a password there for. Files cannot be restored at all: a file input's
+ * value is not something a page is allowed to set, for good reasons.
+ */
+function draftableFields(form) {
+  return [...form.elements].filter((field) => field.name
+    && !['password', 'file', 'submit', 'button', 'reset'].includes(field.type));
+}
+
+/** Reads a form into something that can be written down and put back. */
+function draftOf(form) {
+  const values = {};
+
+  for (const field of draftableFields(form)) {
+    if (field.type === 'checkbox') values[field.name] = field.checked;
+    else if (field.type === 'radio') { if (field.checked) values[field.name] = field.value; }
+    else values[field.name] = field.value;
+  }
+
+  // The appearance card keeps more than its boxes.
+  //
+  // Its texts exist once per language, and only the chosen language's are on
+  // screen; the rest are held in memory, so a draft made of the boxes alone
+  // would come back as the right words filed under the wrong language. What is
+  // carried is therefore the whole set and which one is being looked at, and
+  // restoring puts the chooser back before the boxes.
+  if (form.id === 'form-branding') {
+    return { values, brandingDraft, brandingLanguage };
+  }
+
+  return { values };
+}
+
+/** Writes down what is in a form, for the next load of this tab. */
+function rememberDraft(form) {
+  if (!form.id || form.dataset.noDraft !== undefined) return;
+
+  try {
+    window.sessionStorage.setItem(DRAFT_PREFIX + form.id, JSON.stringify(draftOf(form)));
+  } catch {
+    // Storage refused, or full. Nothing to do and nothing to say: the form on
+    // screen is unaffected, and this was only ever insurance against a reload.
+  }
+}
+
+/** Throws away a form's draft, once it is no longer unfinished. */
+function forgetDraft(form) {
+  if (!form?.id) return;
+
+  try {
+    window.sessionStorage.removeItem(DRAFT_PREFIX + form.id);
+  } catch {
+    // Same reasoning as above.
+  }
+}
+
+/** Throws away every draft in this tab. */
+function forgetEveryDraft() {
+  try {
+    for (const key of Object.keys(window.sessionStorage)) {
+      if (key.startsWith(DRAFT_PREFIX)) window.sessionStorage.removeItem(key);
+    }
+  } catch {
+    // Same reasoning as above.
+  }
+}
+
+/**
+ * Puts back what was in the forms when this tab was last loaded.
+ *
+ * After the loaders and not before: they fill every form from the server, so a
+ * draft restored first would be overwritten by the very thing it exists to
+ * survive. Marking the form as being edited is what keeps the loaders off it
+ * from here on - see beingEdited.
+ *
+ * The values are announced the way typing announces them, so everything a form
+ * derives from a field follows: which database fields are on screen, which
+ * collector box the exporter allows, whether an SSL mode applies at all.
+ */
+function restoreDrafts() {
+  for (const form of $$('form')) {
+    if (!form.id || form.dataset.noDraft !== undefined) continue;
+
+    let draft = null;
+
+    try {
+      draft = JSON.parse(window.sessionStorage.getItem(DRAFT_PREFIX + form.id) ?? 'null');
+    } catch {
+      // Unreadable or not there. Either way there is nothing to put back.
+    }
+
+    if (!draft?.values) continue;
+
+    // The appearance card's language first, so the boxes below land in the
+    // language they were typed in rather than over the one the loader chose.
+    if (form.id === 'form-branding' && draft.brandingDraft) {
+      brandingDraft = draft.brandingDraft;
+
+      // Filled rather than shown: showBrandingLanguage takes the boxes back into
+      // the draft on its way past, and the boxes here hold what the loader just
+      // put in them - so it would file the server's words under the language
+      // being restored and throw away the ones that were written.
+      fillBrandingBoxes(draft.brandingLanguage ?? brandingLanguage);
+    }
+
+    for (const field of draftableFields(form)) {
+      if (!(field.name in draft.values)) continue;
+
+      const was = draft.values[field.name];
+
+      if (field.type === 'checkbox') field.checked = Boolean(was);
+      else if (field.type === 'radio') field.checked = field.value === was;
+      else field.value = was;
+
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    form.dataset.editing = 'yes';
+  }
+}
+
+/**
  * Whether somebody is part way through filling this form in.
  *
  * Every screen in this application is refilled from the server by loaders that
@@ -2021,12 +2185,20 @@ function watchForEditing(form) {
       if (e.target?.dataset?.notAnEdit !== undefined) return;
 
       form.dataset.editing = 'yes';
+
+      // And written down, so a reload does not take it. Here rather than on the
+      // way out of the page: a tab that is closed by the browser, by a crash or
+      // by a machine going to sleep never runs anything on the way out.
+      rememberDraft(form);
     });
   }
 
   // Discarding is finishing too: a form put back to what it was holds nothing
-  // worth protecting.
-  form.addEventListener('reset', () => { delete form.dataset.editing; });
+  // worth protecting, and nothing worth carrying across a load.
+  form.addEventListener('reset', () => {
+    delete form.dataset.editing;
+    forgetDraft(form);
+  });
 }
 
 /**
@@ -2043,6 +2215,10 @@ function watchForEditing(form) {
 function saveForm(form, fn, successMessage, after) {
   return mutate(fn, successMessage, async (result) => {
     if (form) delete form.dataset.editing;
+
+    // The draft with it: what it held is on the server now, so keeping it would
+    // only mean putting yesterday's copy back over today's on the next load.
+    forgetDraft(form);
 
     if (after) await after(result);
   });
@@ -5577,6 +5753,9 @@ async function doLogout() {
   stopPermissionPolling();
   stopAnnouncements();
   stopReleaseWatch();
+
+  // And the unfinished forms, which belong to whoever typed them.
+  forgetEveryDraft();
 
   // And what this installation is waiting to restart into, which is the
   // administration of the installation and none of the next person's business.
@@ -10331,6 +10510,13 @@ async function init() {
 
   try {
     await refreshAll();
+
+    // After the loaders and before anything can look: everything from here to
+    // the end of openTheStartingView happens without awaiting, so nothing
+    // observes a page calling itself loaded while what somebody typed into it is
+    // still missing.
+    restoreDrafts();
+
     hideLogin();
     openTheStartingView({ restoring: true });
 
