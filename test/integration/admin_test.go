@@ -457,3 +457,65 @@ func TestAShippedRolesDescriptionCannotBeChanged(t *testing.T) {
 		"description": "Reads what they booked themselves",
 	}), http.StatusOK)
 }
+
+// An installation configured through the environment can see what it is
+// connected to.
+//
+// The screen is filled from the file the installer or the screen itself writes,
+// and a deployment that sets DB_* has no such file - so every field was blank,
+// under a first line saying "currently connected via postgres". It read as "not
+// configured" on an installation that plainly was.
+//
+// Worse than looking wrong: the file wins over the environment. Filling in that
+// form would override the deployment's own settings at the next start, and
+// nothing said so.
+//
+// The harness starts its instances exactly that way, which is why this can be
+// asked here at all.
+func TestTheConnectionScreenSaysWhatIsRunningWhenNothingIsStored(t *testing.T) {
+	t.Parallel()
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	var ds struct {
+		Active  string `json:"active"`
+		Stored  bool   `json:"stored"`
+		Dialect string `json:"dialect"`
+		Running struct {
+			Dialect string `json:"dialect"`
+			Name    string `json:"name"`
+		} `json:"running"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/settings/datasource", nil),
+		http.StatusOK).Data(t, &ds)
+
+	if ds.Stored {
+		t.Fatal("this instance is configured through the environment, so nothing " +
+			"should be stored - the case is asking about the wrong state")
+	}
+
+	if ds.Running.Dialect == "" {
+		t.Error("the screen is told nothing about the connection this process " +
+			"opened, so it has an empty form to show and no way to say why")
+	}
+
+	if ds.Running.Dialect != ds.Active {
+		t.Errorf("the running connection says %q and the active dialect says %q; "+
+			"they describe the same connection", ds.Running.Dialect, ds.Active)
+	}
+
+	if ds.Running.Name == "" {
+		t.Error("the running connection carries no database name, so the screen " +
+			"cannot show which database it is connected to")
+	}
+
+	// And the stored fields stay empty, because nothing is stored: what is shown
+	// is a placeholder, not something this form would save.
+	if ds.Dialect != "" {
+		t.Errorf("the stored dialect is %q on an installation that has stored "+
+			"nothing; the running connection must not be presented as saved",
+			ds.Dialect)
+	}
+}

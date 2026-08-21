@@ -771,7 +771,8 @@ func main() {
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
 				return ldapClient.TestConnection(ctx, config)
 			}).WithMaintenance(maintenanceState).
-			WithLiveLogLevel(applyLogLevel, logs.Level),
+			WithLiveLogLevel(applyLogLevel, logs.Level).
+			WithRunningConnection(ds),
 	})
 
 	// Expired sessions would otherwise accumulate forever.
