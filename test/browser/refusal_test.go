@@ -38,10 +38,7 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 	// and the answer overwrites every field when it arrives.
 	p.waitForFilled("#datasource-active")
 
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
 

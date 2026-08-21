@@ -5,6 +5,7 @@ package browser
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -28,10 +29,26 @@ func TestThePageListensForWhatTheServerAnnounces(t *testing.T) {
 
 	var state int
 
-	// 1 is OPEN. 0 is still connecting, which on a local instance means something
-	// is wrong rather than something is slow, and 2 is closed.
-	p.run("read the stream's state", chromedp.Evaluate(
-		`announcements ? announcements.readyState : -1`, &state))
+	// 1 is OPEN. 0 is still connecting and 2 is closed.
+	//
+	// Waited for rather than read once. Connecting is a state a stream passes
+	// through, and this used to be read the instant the page was ready: on a run
+	// with twenty instances on the machine the handshake had not finished, and a
+	// stream that was open a moment later was reported as one that never opened.
+	// What is worth asserting is that it gets there, and that it does not sit in
+	// connecting for ever - which is what running out of time here still says.
+	deadline := time.Now().Add(20 * time.Second)
+
+	for time.Now().Before(deadline) {
+		p.run("read the stream's state", chromedp.Evaluate(
+			`announcements ? announcements.readyState : -1`, &state))
+
+		if state == 1 {
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	if state != 1 {
 		t.Fatalf("the announcement stream is in state %d rather than open; "+
@@ -91,10 +108,7 @@ func TestAnAnnouncementBecomesABannerNobodyCanMiss(t *testing.T) {
 
 	// German, because the person who most needs to understand this is the one
 	// least likely to be reading the application's source language.
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	// Waited for rather than assumed: the switch stores the choice, reloads the
 	// account and only then redraws, and a case that announces before that

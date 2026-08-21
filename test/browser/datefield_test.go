@@ -71,10 +71,7 @@ func TestADateFieldIsWrittenTheReadersWay(t *testing.T) {
 
 	// Now German. The same day, written the other way - and the value underneath
 	// is untouched, because the value was never the thing that differed.
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	p.waitForText("#tabs", "Zeiteinträge")
 

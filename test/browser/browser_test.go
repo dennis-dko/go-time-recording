@@ -684,7 +684,39 @@ func (p *page) waitGone(selector string) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	p.t.Fatalf("%s is still visible after 20s\n\napplication log:\n%s", selector, p.app.Log())
+	p.t.Fatalf("%s is still visible after 20s\n\npage: %s\n\napplication log:\n%s",
+		selector, p.state(), p.app.Log())
+}
+
+// state describes what the page looked like, for a wait that ran out of time.
+//
+// "It never appeared" and "it appeared and something took it away again" fail
+// the same way and are fixed in completely different places, and the log alone
+// separates them only when the server was involved. This says which screen is
+// up, what the tabs offer, whether the load finished and what is still in
+// flight - enough to tell a click that never landed from one that was undone.
+func (p *page) state() string {
+	p.t.Helper()
+
+	var out string
+
+	p.run("describe the page", chromedp.Evaluate(`JSON.stringify({
+		loaded: document.documentElement.dataset.loaded ?? null,
+		shown: [...document.querySelectorAll('.view')].filter(v => !v.hidden).map(v => v.id),
+		activeTab: document.querySelector('.tab.active')?.dataset.view ?? null,
+		tabs: [...document.querySelectorAll('.tab')].filter(v => !v.hidden).map(v => v.dataset.view),
+		dialogs: [...document.querySelectorAll('dialog[open]')].map(v => v.id || v.className),
+		hash: location.hash,
+		inFlight: typeof progress === 'object' ? progress.inFlight : null,
+		notice: document.querySelector('#toast')?.textContent?.trim()?.slice(0, 160) ?? '',
+		overTabs: [...document.querySelectorAll('.tab')].filter(t => !t.hidden).map(t => {
+			const box = t.getBoundingClientRect();
+			const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+			return t.dataset.view + ':' + (top === t || t.contains(top) ? 'ok' : (top?.id || top?.className || 'nothing'));
+		}),
+	})`, &out))
+
+	return out
 }
 
 // waitShown is waitGone's other half: it waits for something to appear.
@@ -710,8 +742,8 @@ func (p *page) waitShown(selector string) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	p.t.Fatalf("%s never became visible within %s\n\napplication log:\n%s",
-		selector, waitPatience, p.app.Log())
+	p.t.Fatalf("%s never became visible within %s\n\npage: %s\n\napplication log:\n%s",
+		selector, waitPatience, p.state(), p.app.Log())
 }
 
 // waitChanged waits until the text at a selector is something other than what it
@@ -778,6 +810,25 @@ func (p *page) text(selector string) string {
 		`document.querySelector(%q)?.textContent ?? ""`, selector), &out))
 
 	return strings.TrimSpace(out)
+}
+
+// chooseLanguage switches the interface language and waits for what that starts.
+//
+// Choosing a language saves it to the account, and the save is followed by a
+// reload of every screen - which refills every form on its way past. A case that
+// switches language and types straight afterwards is racing that reload: on a
+// slow run the answer lands after the typing and puts the fields back the way
+// the server has them, and the case then fails complaining about a value it set
+// itself. That is what "„“ ist keine Datenbank" was, in a case that had
+// just chosen postgres.
+//
+// So the switch is not finished when the labels change; it is finished when
+// nothing is in flight any more.
+func (p *page) chooseLanguage(code string) {
+	p.t.Helper()
+
+	p.run("switch the language to "+code, p.chooseOption("#language-picker", code))
+	p.atRest()
 }
 
 // atRest waits until nothing is in flight and the loading strip has been put away.
@@ -1069,6 +1120,14 @@ func TestTabsSwitchTheVisiblePanel(t *testing.T) {
 	// pull requests and passed on the two beside them.
 	p.settleWelcome()
 
+	// And the load has to be finished, not merely far enough along to have drawn
+	// the tabs. Signing in ends by choosing which screen to open on and putting
+	// the reader back where a reload took them from - both of which switch the
+	// view. A tab clicked before that lands, and is then switched away from, and
+	// the wait below spends forty-five seconds on a panel that was up for a
+	// moment. It reported the click as never having worked.
+	p.settled()
+
 	for _, view := range []struct{ tab, panel string }{
 		{`.tab[data-view="roles"]`, "#view-roles"},
 		{`.tab[data-view="admin"]`, "#view-admin"},
@@ -1147,7 +1206,17 @@ func TestBookingTimeThroughTheInterface(t *testing.T) {
 
 	p.run("open My account",
 		chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
-		chromedp.WaitVisible("#form-password", chromedp.ByID),
+		chromedp.WaitVisible("#form-password", chromedp.ByID))
+
+	// Before a key is typed, not after. The form is in the markup, so it is on
+	// screen at once, and the load that follows signing in ends by filling the
+	// forms on this screen - a fill that lands between the typing and the press
+	// puts the boxes back the way it found them and submits nothing. The server
+	// refuses that, the banner stays, and the case waits twenty seconds for it to
+	// go and reports the banner rather than the empty save that kept it there.
+	p.settled()
+
+	p.run("change the password",
 		chromedp.SendKeys(`#form-password input[name="currentPassword"]`,
 			harness.AdminPassword, chromedp.ByQuery),
 		chromedp.SendKeys(`#form-password input[name="newPassword"]`,
