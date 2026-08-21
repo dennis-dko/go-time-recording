@@ -550,6 +550,23 @@ tasks:
       - cmd: '{{if eq OS "windows"}}taskkill /F /IM app.exe{{else}}true{{end}}'
         ignore_error: true
 
+      # And the browsers the suites drive, which outlive an interrupted run the
+      # same way and are not cheap to leave lying about: three days after a
+      # cancelled run, this machine still had two headless Chromes and a
+      # twenty-six process Firefox holding memory and handles, and a browser
+      # suite that failed in bursts because of it.
+      #
+      # Matched on all three of the browser's name, --headless and a remote
+      # debugging port, and every one of those is load bearing. A browser
+      # somebody is reading in is not headless; VS Code passes --headless to
+      # helpers of its own and would have been killed by the obvious rule; and
+      # the debugging port is what makes it a browser something was driving.
+      #
+      # Children are left to go with their parent. Killing the root is what
+      # chromedp and the Firefox harness do themselves on a clean exit.
+      - cmd: "{{if eq OS \"windows\"}}powershell -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq \"chrome.exe\" -or $_.Name -eq \"firefox.exe\") -and $_.CommandLine -like \"*--headless*\" -and $_.CommandLine -like \"*--remote-debugging-port*\" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }'{{else}}pkill -f -- '(firefox|chrome|chromium).*--headless' || true{{end}}"
+        ignore_error: true
+
   clean:images:
     desc: 'Upkeep: remove the container images built locally by task image and task stage.'
     summary: |

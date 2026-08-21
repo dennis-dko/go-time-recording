@@ -1039,6 +1039,16 @@ button probes them before you commit. A connection saved there is written to
 `configs/datasource.json` and applied on the next restart; switching a live
 database under running requests is not safe, so it is deliberately not done.
 
+On an installation configured through the environment — a compose deployment, or
+a container run with `DB_*` set — there is no such file, so the card has nothing
+of its own to fill the boxes with. It shows the running connection as
+**placeholders** instead, and says above them where it came from. That matters
+more than looking tidy: saving this form writes the file, and the file is layer 4
+above the environment, so filling in the boxes to make the screen look right
+would quietly take the deployment's own settings out of use at the next start.
+Typing over a placeholder is how the connection is changed; leaving a field alone
+leaves the connection alone.
+
 *Settings → Logging, metrics and tracing* works the same way, and for the same
 kind of reason: GoFr reads the log level, binds the metrics port and builds the
 trace exporter inside `gofr.New()`, so nothing administered afterwards could

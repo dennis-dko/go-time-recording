@@ -303,6 +303,7 @@ jobs:
       - name: Smoke-test the image before publishing it
         env:
           IMAGE: ${{ steps.image.outputs.name }}:${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -317,16 +318,30 @@ jobs:
           docker run -d --name smoke -p 9090:8000 -e DB_DIALECT=sqlite "$IMAGE"
 
           ok=0
+          body=""
 
           for _ in $(seq 1 20); do
             # The body, not the status. The installer answers every path with its
             # own page and a 200 - including this one - so a successful request
             # proves only that something is listening. A version in the answer is
             # the application.
-            if curl -fsS http://localhost:9090/api/v1/branding 2>/dev/null | grep -q '"version"'; then
-              ok=1
-              break
-            fi
+            body="$(curl -fsS http://localhost:9090/api/v1/branding 2>/dev/null || true)"
+
+            # And the version it names, not merely that it names one.
+            #
+            # The Dockerfile declares ARG VERSION=dev, which is right for anybody
+            # building the image by hand and wrong for everything published from
+            # here - it reaches the binary only because the build step above
+            # passes it. Drop that one line, or misspell it, and the image builds,
+            # answers, passes this check and is published under a version number
+            # while calling itself "dev" in its own footer. Twice on the way here
+            # a comment says that must not happen; this is what stops it.
+            case "$body" in
+              *"\"version\":\"${VERSION}\""*)
+                ok=1
+                break
+                ;;
+            esac
 
             sleep 2
           done
@@ -335,7 +350,8 @@ jobs:
           docker rm -f smoke || true
 
           if [ "$ok" -ne 1 ]; then
-            echo "::error::the image did not answer on /api/v1/branding within 40s; nothing was published"
+            echo "::error::the image never answered on /api/v1/branding as ${VERSION} within 40s; nothing was published"
+            echo "last answer: ${body:-<nothing>}" >&2
             exit 1
           fi
 
