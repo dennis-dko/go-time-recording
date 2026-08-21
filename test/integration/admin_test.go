@@ -79,6 +79,37 @@ func (c *client) logs(t *testing.T, query string) logPage {
 	return page
 }
 
+// logsContaining waits for a search to find something, and answers with what it
+// found.
+//
+// The request that produced a line has returned by the time a case looks for it,
+// which is not the same as the line having been written: it travels from the
+// framework through a pipe into the sink that keeps it, and none of that is on
+// the request's own path. Asking once and failing is asking whether the machine
+// was quick.
+//
+// It cost a red pipeline on an unrelated change: "searching for a path that was
+// definitely requested found nothing", 0.56 seconds into a case whose request had
+// certainly been served.
+func (c *client) logsContaining(t *testing.T, query string) logPage {
+	t.Helper()
+
+	deadline := time.Now().Add(20 * time.Second)
+
+	for {
+		page := c.logs(t, query)
+		if len(page.Records) > 0 {
+			return page
+		}
+
+		if time.Now().After(deadline) {
+			return page
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // The log carries email addresses, request paths and whatever a failing driver
 // decided to print. A user reading it would be reading the whole
 // installation's traffic.
@@ -221,7 +252,7 @@ func TestSearchingTheLog(t *testing.T) {
 
 	// The log stays the administrator's to read, so the search is made from the other
 	// session.
-	page := admin.logs(t, "?search=/api/v1/projects&limit=500")
+	page := admin.logsContaining(t, "?search=/api/v1/projects&limit=500")
 
 	if len(page.Records) == 0 {
 		t.Fatal("searching for a path that was definitely requested found nothing")
@@ -246,7 +277,9 @@ func TestSinceReturnsOnlyNewLines(t *testing.T) {
 	a := start(t, "LOG_LEVEL=INFO")
 	c := a.signInAsAdmin("a-much-better-password")
 
-	first := c.logs(t, "?limit=500")
+	// Waited for, for the reason logsContaining exists: signing in produced the
+	// lines this reads, and a line written is not a line arrived.
+	first := c.logsContaining(t, "?limit=500")
 	if first.LastSeq == 0 {
 		t.Fatal("nothing captured yet")
 	}
