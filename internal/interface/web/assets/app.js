@@ -2579,6 +2579,10 @@ const TRANSLATIONS = {
     'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
     'sync.confirmTitle': 'Abgleich ausführen?',
     'admin.activeConnection': 'Aktuell verbunden über',
+    'admin.connectionFromEnvironment': 'Diese Verbindung kommt aus der Umgebung, '
+      + 'nicht aus einer gespeicherten Einstellung; die Felder unten zeigen sie '
+      + 'als Platzhalter. Wird dieses Formular gespeichert, gilt die gespeicherte '
+      + 'Verbindung beim nächsten Start vor der Umgebung.',
     'admin.banner': 'Banner-Text (leer = ausgeblendet)',
     'admin.bindPassword': 'Bind-Passwort',
     'admin.branding': 'Erscheinungsbild',
@@ -4430,6 +4434,53 @@ function drawBranding(branding) {
 
 }
 
+/**
+ * Shows what this process is connected to, for a screen that has nothing stored.
+ *
+ * The connection can come from three places, and the screen only ever knew one
+ * of them: the file the installer or this form writes. An installation
+ * configured through the environment therefore saw an empty form under a line
+ * saying "connected via postgres" - which reads as "not configured" and is not.
+ *
+ * The reason that matters beyond looking wrong: the file wins over the
+ * environment. Filling in this form on such an installation overrides the
+ * deployment's own settings at the next start, and nothing said so.
+ */
+function showRunningConnection(form, ds) {
+  const note = $('#datasource-source');
+  const running = ds.running ?? {};
+
+  if (ds.stored) {
+    if (note) note.hidden = true;
+
+    for (const field of ['name', 'host', 'port', 'user']) {
+      form.elements[field].placeholder = '';
+    }
+
+    return;
+  }
+
+  for (const field of ['name', 'host', 'port', 'user']) {
+    form.elements[field].placeholder = running[field] ?? '';
+  }
+
+  // The type is deliberately left alone. A select cannot hold a placeholder, so
+  // filling it would present a value this form has not stored as though it had -
+  // and it would do more than look wrong: choosing SQLite hides the server fields
+  // this note exists to explain, password included.
+  //
+  // Nothing is lost by leaving it. The line above already says which database
+  // this process is connected to.
+
+  if (note) {
+    note.textContent = t('admin.connectionFromEnvironment',
+      'This connection comes from the environment, not from a saved setting. '
+      + 'The fields below show it as placeholders. Saving this form stores a '
+      + 'connection that takes precedence over the environment at the next start.');
+    note.hidden = false;
+  }
+}
+
 /** Whether the chosen database is one that lives on a server rather than in a file. */
 function datasourceIsServer() {
   return $('#form-datasource').elements.dialect.value !== 'sqlite';
@@ -4529,6 +4580,17 @@ async function loadAdmin() {
   for (const field of ['dialect', 'name', 'host', 'port', 'user', 'sslMode']) {
     dsForm.elements[field].value = ds[field] ?? '';
   }
+
+  // Nothing stored, which is every installation configured through the
+  // environment - a compose deployment, or a container run with DB_* set. The
+  // form is filled from the file the installer or this screen writes, and there
+  // is none, so every field was blank on a screen whose first line said it was
+  // connected.
+  //
+  // Shown as placeholders rather than values, because they are not this form's
+  // to save: typing over a placeholder is how somebody changes the connection,
+  // and leaving it alone has to keep meaning "leave it alone".
+  showRunningConnection(dsForm, ds);
 
   // After the values are in, or the port would be prefilled over a stored one.
   syncDatasourceFields();

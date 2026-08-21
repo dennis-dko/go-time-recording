@@ -26,6 +26,12 @@ type SettingsHandler struct {
 	// from the stored settings until the next restart.
 	activeDialect string
 
+	// running is the whole connection this process opened, not just its dialect.
+	// It is what the datasource screen shows when nothing has been stored, so an
+	// installation configured through the environment can see what it is
+	// connected to rather than an empty form.
+	running appconfig.Datasource
+
 	// activeTelemetry is the metrics and tracing configuration this process
 	// started with, for the same reason: what is stored takes effect at the next
 	// start, and only this says what is happening now.
@@ -103,6 +109,23 @@ func NewSettingsHandler(
 		version:         version,
 		ldap:            &ldapAdmin{configure: configure, test: test},
 	}
+}
+
+// WithRunningConnection attaches the connection this process actually opened.
+//
+// The screen showed an empty form on any installation configured through the
+// environment, because it is filled from the file the installer or the screen
+// itself writes and a compose deployment has no such file. Above that empty form
+// sat "connected via postgres", which is the running dialect - so the screen said
+// it was connected and showed nothing it was connected to.
+//
+// Worse than looking unconfigured: the file wins over the environment, so
+// somebody filling in that form would override the deployment's own settings at
+// the next start, with nothing on screen saying so.
+func (h *SettingsHandler) WithRunningConnection(running appconfig.Datasource) *SettingsHandler {
+	h.running = running
+
+	return h
 }
 
 // OperationalResponse carries the administered limits together with what the
@@ -556,6 +579,16 @@ type DatasourceResponse struct {
 	// differs from the stored settings until the next restart.
 	Active string `json:"active"`
 
+	// Stored says whether the fields above came from anywhere. False on an
+	// installation configured through the environment, where the screen has
+	// nothing of its own to show and used to show nothing at all.
+	Stored bool `json:"stored"`
+
+	// Running is the connection this process opened, so a screen with nothing
+	// stored can show what is in force instead of an empty form. No password:
+	// the screen never receives one, and this is not the place to start.
+	Running DatasourceRequest `json:"running"`
+
 	// RestartRequired is always true after a change: GoFr opens the database
 	// at start-up, and swapping it under running requests is not safe.
 	RestartRequired bool `json:"restartRequired"`
@@ -569,7 +602,19 @@ func (h *SettingsHandler) Datasource(c *gofr.Context) (any, error) {
 
 	stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile)
 
-	resp := DatasourceResponse{Active: h.activeDialect}
+	resp := DatasourceResponse{
+		Active: h.activeDialect,
+		Stored: ok,
+		Running: DatasourceRequest{
+			Dialect: h.running.Dialect,
+			Name:    h.running.Name,
+			Host:    h.running.Host,
+			Port:    h.running.Port,
+			User:    h.running.User,
+			SSLMode: h.running.SSLMode,
+		},
+	}
+
 	if ok {
 		resp.DatasourceRequest = DatasourceRequest{
 			Dialect: stored.Dialect,

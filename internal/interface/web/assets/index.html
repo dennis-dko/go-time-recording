@@ -1047,6 +1047,10 @@
         <h2 data-i18n="admin.database">Database connection</h2>
         <p class="muted" id="datasource-active"></p>
         <p class="muted" data-i18n="admin.databaseHint">The connection is saved and used the next time the application starts. Switching it while running would not be safe.</p>
+        <!-- Only on an installation whose connection comes from the environment,
+             where this form has nothing of its own to show and saving it would
+             override the deployment. Filled by showRunningConnection. -->
+        <p class="muted minus" id="datasource-source" hidden></p>
         <div class="grid">
           <label data-i18n="admin.dialect">Type<select name="dialect">
               <option value="sqlite">SQLite</option>

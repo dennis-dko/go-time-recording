@@ -4173,3 +4173,51 @@ func TestAnOrdinaryAccountCannotOpenTheAdministrationScreen(t *testing.T) {
 			"settings:manage, through switchView")
 	}
 }
+
+// An installation configured through the environment sees what it is connected
+// to, and is told that saving the form would take over from that.
+//
+// The card is filled from the file the installer or the card itself writes. A
+// deployment that sets DB_* has no such file, so every field was blank - under a
+// first line reading "currently connected via sqlite". It looked unconfigured on
+// an installation that plainly was not.
+//
+// The reason it matters past appearances: that file wins over the environment.
+// Somebody filling in the blank form would silently override the deployment at
+// the next start.
+//
+// The harness starts its instances from the environment, so this is that case.
+func TestTheDatabaseCardSaysWhereAConnectionWithoutASavedSettingComesFrom(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+
+	// The form is in index.html and therefore on screen before any answer has
+	// arrived; the answer is what fills it.
+	p.waitForFilled("#datasource-active")
+	p.waitShown("#datasource-source")
+
+	// The database name, because this instance runs on SQLite: the server fields
+	// are put away for a file, and the file's name is the whole connection.
+	if got := p.attr(`#form-datasource [name="name"]`, "placeholder"); got == "" {
+		t.Error("the database field offers no placeholder, so the card still shows " +
+			"nothing of the connection its first line says is in force")
+	}
+
+	// And it is a placeholder, not a value: leaving the field alone has to keep
+	// meaning "leave the connection alone", or the next save writes a file that
+	// overrides the environment.
+	var value string
+
+	p.run("read the stored value", chromedp.Evaluate(
+		`document.querySelector('#form-datasource [name="name"]').value`, &value))
+
+	if value != "" {
+		t.Errorf("the database field holds %q on an installation that has stored "+
+			"nothing; the running connection is being presented as saved", value)
+	}
+}
