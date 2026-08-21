@@ -348,6 +348,26 @@ func (p *page) settleWizard() {
 			p.t.Fatalf("could not settle the wizard: %s\n\napplication log:\n%s", out, p.app.Log())
 		}
 	}
+
+	// And then put away again, once nothing else is in flight.
+	//
+	// The wizard is not only hidden by the line above, it is decided by a
+	// loader: signing in asks the server what is still outstanding and shows the
+	// wizard if anything is. That question can already be on its way when the
+	// two calls above answer it, and its answer - taken before they landed -
+	// puts the wizard straight back up.
+	//
+	// Which is what it did, over the whole page. Every tab click went to the
+	// wizard's card instead of the tab, and the case reported whatever was
+	// underneath: a tab that does not switch, or a password that would not save.
+	// It took a report of what lay over each tab to see it, after two wrong
+	// explanations.
+	p.atRest()
+
+	p.run("put the wizard away", chromedp.Evaluate(
+		`(() => { document.querySelector('#setup-wizard').hidden = true; return 1; })()`, nil))
+
+	p.waitGone("#setup-wizard")
 }
 
 // settleWelcome dismisses the first-sign-in greeting if it is up.
@@ -712,7 +732,14 @@ func (p *page) state() string {
 		overTabs: [...document.querySelectorAll('.tab')].filter(t => !t.hidden).map(t => {
 			const box = t.getBoundingClientRect();
 			const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-			return t.dataset.view + ':' + (top === t || t.contains(top) ? 'ok' : (top?.id || top?.className || 'nothing'));
+			if (top === t || t.contains(top)) return t.dataset.view + ':ok';
+
+			// The owning element's id, not only the class of whatever pixel was
+			// hit: "overlay-card" names a shape, and what matters is which
+			// overlay it belongs to.
+			const owner = top?.closest?.('[id]');
+
+			return t.dataset.view + ':' + (owner?.id || top?.className || 'nothing');
 		}),
 	})`, &out))
 
