@@ -178,3 +178,54 @@ func TestAPortIsHandedOutOnce(t *testing.T) {
 		seen[port] = true
 	}
 }
+
+// A walk into a block of this run's own numbers still finds a port.
+//
+// This is the failure the length of the search exists for, and it is worth
+// saying exactly what produced it, because it looked like flakiness for a while.
+//
+// Windows walks its dynamic port range in order and wraps at the end, and every
+// outbound socket on the machine moves the same cursor - a browser run makes
+// thousands of them, so the cursor laps the range several times while the suite
+// is running. The ports already handed out are therefore not scattered; they sit
+// in long consecutive blocks. A lap that re-enters one is offered the whole
+// block, one number at a time, and twenty attempts inside a hundred-long block
+// gave up with sixteen thousand ports free. It failed in a different test each
+// run, whichever asked at that moment.
+//
+// So: find where the next numbers are coming from, mark a block of them as
+// already used, and ask. Walking out of it is the whole requirement.
+//
+// On a system that hands out ports some other way the block below is never
+// walked into and this passes without having proved anything. That is the
+// honest cost of a case that reproduces one allocator's behaviour; it is still
+// worth having, because that allocator is the one this suite is developed on.
+func TestAWalkIntoAlreadyUsedPortsStillFindsOne(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("cannot find a free port: %v", err)
+	}
+
+	// Where the next numbers will come from, on a system that counts upwards.
+	cursor := listener.Addr().(*net.TCPAddr).Port
+
+	if err := listener.Close(); err != nil {
+		t.Fatalf("cannot release the port: %v", err)
+	}
+
+	// Longer than the search used to be, so crossing it is the thing being
+	// asked for rather than something twenty attempts would manage anyway.
+	const block = 60
+
+	for port := cursor; port < cursor+block; port++ {
+		handedOut.Store(port, struct{}{})
+	}
+
+	// Fails the case by itself if the search gives up: FreePort reports that
+	// with t.Fatalf, which is exactly what the suite used to see.
+	port := FreePort(t)
+
+	if port >= cursor && port < cursor+block {
+		t.Fatalf("port %d was handed out from the block marked as already used", port)
+	}
+}

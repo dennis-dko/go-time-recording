@@ -1455,12 +1455,7 @@ func TestAServerRefusalIsShownInTheReadersLanguage(t *testing.T) {
 	// German after the change of account, not before: the language is a preference of
 	// whoever is signed in, so choosing it as the administrator would have set it for
 	// the wrong person and left this reader in English.
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
-
-	time.Sleep(300 * time.Millisecond)
+	p.chooseLanguage("de")
 
 	p.run("clear the notices", chromedp.Evaluate(
 		`document.querySelector('#toast').replaceChildren()`, nil))
@@ -1513,12 +1508,7 @@ func TestARejectedFieldIsNamedNotIdentified(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
-
-	time.Sleep(300 * time.Millisecond)
+	p.chooseLanguage("de")
 
 	// A negative ceiling, which is refused by field rather than by sentence.
 	p.run("save an impossible ceiling",
@@ -2203,10 +2193,7 @@ func TestSwitchingLanguageRedrawsWhatIsAlreadyOnScreen(t *testing.T) {
 			"case cannot tell a redraw from the starting state", total)
 	}
 
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	// The heading is markup and was always translated; the total is the script's
 	// and was not. Both are checked, so a redraw that somehow lost the markup
@@ -2272,10 +2259,7 @@ func checkGermanEverywhere(t *testing.T, signIn func(*page)) {
 	p := open(t)
 	signIn(p)
 
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	p.waitForText("#tabs", "Einstellungen")
 
@@ -2390,10 +2374,7 @@ func TestTheEvaluationDrawsInWhicheverShapeIsChosen(t *testing.T) {
 	}
 
 	// The German word is "Kreis" and not "Kuchen", which is what it used to say.
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	p.waitForText("#report-chart-switch", "Kreis")
 
@@ -2666,7 +2647,7 @@ func TestTheMarkedTabsKeepTheirMarksInEveryLanguage(t *testing.T) {
 	// before the words rather than after them.
 	before := strings.TrimSpace(p.text(`.tab[data-view="calendar"]`))
 
-	p.run("switch to German", p.chooseOption("#language-picker", "de"))
+	p.chooseLanguage("de")
 	p.waitForText(`.tab[data-view="calendar"]`, "Kalender")
 
 	if bare := unmarked(); bare != "" {
@@ -3651,7 +3632,7 @@ func TestTheScreenSomebodyChoseIsTheirs(t *testing.T) {
 	p.createOrdinaryAccount(t, workerEmail, workerPassword)
 
 	p.run("choose dark", p.chooseOption("#theme-picker", "dark"))
-	p.run("choose German", p.chooseOption("#language-picker", "de"))
+	p.chooseLanguage("de")
 	p.waitForText(`.tab[data-view="settings"]`, "Mein Konto")
 
 	// On the account, which is what makes it follow the person rather than the

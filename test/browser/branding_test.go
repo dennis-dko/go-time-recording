@@ -431,10 +431,7 @@ func TestTheConfiguredTextsFollowTheReadersLanguage(t *testing.T) {
 		t.Errorf("an English reader is shown %q", got)
 	}
 
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
 
@@ -469,10 +466,7 @@ func TestALanguageWithNoTextsFallsBackRatherThanEmptying(t *testing.T) {
 
 	p.waitForText("#instance-banner", "One banner")
 
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
 
@@ -530,10 +524,7 @@ func TestTheWizardTakesTheTitleInBothLanguages(t *testing.T) {
 	// Stored, and told apart by language: the reader is on English here.
 	p.waitForText("#app-title", "Time Recording GmbH")
 
-	p.run("switch to German",
-		chromedp.SetValue("#language-picker", "de", chromedp.ByID),
-		chromedp.Evaluate(
-			`document.querySelector('#language-picker').dispatchEvent(new Event('change'))`, nil))
+	p.chooseLanguage("de")
 
 	p.waitForText("#app-title", "Zeiterfassung GmbH")
 }
@@ -1062,6 +1053,15 @@ func TestALanguageWithNothingWrittenKeepsFollowingTheBase(t *testing.T) {
 // screen when the next is pressed - and waiting for the word then returns at
 // once, before the request has been anywhere near the server. Cleared first, so
 // the notice that arrives is the one being waited for.
+//
+// And waited past the notice, which is where this used to stop. The notice is
+// the answer arriving; the screen is reloaded afterwards, and the copy of the
+// appearance the language chooser fills the boxes from is part of what that
+// reload replaces. Carrying straight on to another language read the copy taken
+// before the save - so looking at German filled the boxes with the name from
+// before the rename, and saving that stored it as a German translation. The
+// case reported it as a translation appearing out of nowhere, which is exactly
+// what it looked like.
 func (p *page) saveBranding(t *testing.T, what string, fill ...chromedp.Action) {
 	t.Helper()
 
@@ -1074,6 +1074,7 @@ func (p *page) saveBranding(t *testing.T, what string, fill ...chromedp.Action) 
 
 	p.run("save", p.click(`#form-branding button[type="submit"]`))
 	p.waitForText("#toast", "saved")
+	p.atRest()
 }
 
 func (p *page) storedTranslations(t *testing.T) map[string]struct {
