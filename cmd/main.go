@@ -331,6 +331,17 @@ func main() {
 	// The error is carried rather than reported: there is nowhere to report it yet,
 	// because the logger belongs to the application that does not exist until the
 	// next line.
+	// What the configuration file says, taken before the stored settings are
+	// applied over it. After that there is no reading it back: ApplyTelemetry
+	// works by setting environment variables, and a real environment variable
+	// beats the file it came from.
+	//
+	// It is what "follow the configuration file" means, and therefore what the
+	// restart card needs in order to answer honestly about a setting somebody has
+	// cleared: the comparison is between what the next start would use and what
+	// this one is using, and for a cleared setting the first of those is here.
+	fileTelemetry := appconfig.TelemetryFromConfig()
+
 	telemetry, telemetryErr := appconfig.StoredTelemetry(context.Background(), ds)
 	if telemetryErr == nil {
 		if err := appconfig.ApplyTelemetry(telemetry); err != nil {
@@ -360,11 +371,14 @@ func main() {
 	var applyLogLevel func(string)
 
 	if restoreOutput != nil {
-		fileLogLevel := appconfig.EffectiveLogLevel(model.Telemetry{})
-
 		applyLogLevel = func(level string) {
 			if strings.TrimSpace(level) == "" {
-				level = fileLogLevel
+				// The file's own, captured above. It used to be read here with
+				// EffectiveLogLevel(model.Telemetry{}), which reads the environment -
+				// and by this point ApplyTelemetry has already written the stored
+				// level into it. So clearing the field to "follow the configuration
+				// file" handed back the level that had just been cleared.
+				level = fileTelemetry.LogLevel
 			}
 
 			logs.SetLevel(level)
@@ -732,7 +746,7 @@ func main() {
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      rest.NewSetupHandler(setup, authorizer),
 		Logs:       rest.NewLogHandler(logs, authorizer),
-		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil),
+		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil, fileTelemetry),
 		Update: rest.NewUpdateHandler(authorizer,
 			selfupdate.New(cfg.UpdateFeed, cfg.UpdateToken), hub, version, cfg.UpdateCheck),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),

@@ -9,6 +9,7 @@ import (
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/restart"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
@@ -47,6 +48,12 @@ type RestartHandler struct {
 	// is only to report what somebody still has to do.
 	liveLogLevel bool
 
+	// fromFile is what the configuration file says, read before anything stored
+	// was applied over it. It is what "follow the configuration file" resolves
+	// to, and therefore what the next start would use for a setting nobody has
+	// stored - the half of the comparison that used to be missing.
+	fromFile appconfig.Telemetry
+
 	// startedAt identifies this process to the screen that asked it to restart.
 	//
 	// Waiting for the application to stop answering and then answer again does
@@ -63,6 +70,7 @@ func NewRestartHandler(
 	active appconfig.Config,
 	running appconfig.Datasource,
 	liveLogLevel bool,
+	fromFile appconfig.Telemetry,
 ) *RestartHandler {
 	return &RestartHandler{
 		settings:     settings,
@@ -70,6 +78,7 @@ func NewRestartHandler(
 		active:       active,
 		running:      running,
 		liveLogLevel: liveLogLevel,
+		fromFile:     fromFile,
 		startedAt:    time.Now(),
 	}
 }
@@ -150,54 +159,7 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 	// viewer either, and its operator is reading the console, where the framework
 	// is emitting everything.
 
-	if telemetry.LogLevel != nil && *telemetry.LogLevel != "" && !h.liveLogLevel &&
-		*telemetry.LogLevel != running.LogLevel {
-		pending = append(pending, PendingChange{
-			Setting: "logLevel", Running: running.LogLevel, Stored: *telemetry.LogLevel,
-		})
-	}
-
-	// Only one direction is administrable, so only one direction can be pending:
-	// the endpoint being switched off while this process still serves it.
-	if telemetry.MetricsOff && running.MetricsServed() {
-		pending = append(pending, PendingChange{
-			Setting: "metrics", Running: "on", Stored: "off",
-		})
-	}
-
-	if telemetry.TraceExporter != nil && *telemetry.TraceExporter != running.TraceExporter {
-		pending = append(pending, PendingChange{
-			Setting: "traceExporter",
-			Running: running.TraceExporter, Stored: *telemetry.TraceExporter,
-		})
-	}
-
-	if telemetry.TracerURL != nil && *telemetry.TracerURL != running.TracerURL {
-		pending = append(pending, PendingChange{
-			Setting: "tracerUrl", Running: running.TracerURL, Stored: *telemetry.TracerURL,
-		})
-	}
-
-	// The recorded share, which was missing here and needs a restart exactly as
-	// much as the two above it: all three go into the exporter, and the exporter
-	// is built inside gofr.New().
-	//
-	// Its absence was not a decision. The log level a few lines up is absent
-	// deliberately and says so at length; this one simply was not added, and the
-	// gap was written into the manual as though it were settled - "change that on
-	// its own and nothing on screen will mention the restart it still needs".
-	//
-	// The save's own answer already knew. TelemetryResponse.RestartRequired
-	// compares the share and comes back true; nothing in the interface reads that
-	// field, and what the screen shows is this list. So the application was right
-	// twice and told nobody.
-	if telemetry.TracerRatio != nil && *telemetry.TracerRatio != running.TracerRatio {
-		pending = append(pending, PendingChange{
-			Setting: "tracerRatio",
-			Running: formatRatio(running.TracerRatio),
-			Stored:  formatRatio(*telemetry.TracerRatio),
-		})
-	}
+	pending = append(pending, telemetryPending(telemetry, h.fromFile, running, h.liveLogLevel)...)
 
 	// The directory schedule, which is stored with the rest of the LDAP settings
 	// but is the one of them that cannot be applied at once: a cron job is
@@ -244,6 +206,126 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 	}
 
 	return pending, nil
+}
+
+// telemetryPending is which telemetry settings a restart would change.
+//
+// A function of its three inputs rather than a method, so the rule can be asked
+// directly. What it decides is not obvious enough to be left only reachable
+// through a running instance: the interesting cases are about a setting nobody
+// has stored, and arranging those end-to-end means starting a process, storing a
+// value, restarting into it and clearing it again.
+//
+// The rule is one sentence. A restart changes a setting when what the next start
+// would use differs from what this process is using - and what the next start
+// would use is the stored value where there is one, and the configuration file's
+// where there is not.
+func telemetryPending(
+	stored model.Telemetry,
+	fromFile, running appconfig.Telemetry,
+	liveLogLevel bool,
+) []PendingChange {
+	pending := make([]PendingChange, 0)
+
+	if !liveLogLevel {
+		if next := stringOr(stored.LogLevel, fromFile.LogLevel); next != running.LogLevel {
+			pending = append(pending, PendingChange{
+				Setting: "logLevel", Running: running.LogLevel, Stored: next,
+			})
+		}
+	}
+
+	// Both directions, because both are administrable: the form sends metricsOff
+	// when the box is ticked and leaves it out when it is not, so clearing it is
+	// how the endpoint is switched back on. Only the off direction was compared,
+	// so switching them on again said nothing and the port stayed unbound.
+	//
+	// The file has the last word when nothing is stored, and that is not
+	// decoration. MetricsOff is a bool, so "nobody stored anything" and "stored
+	// as on" are the same value - and reading it as "on" would tell an
+	// installation whose configuration file switches metrics off that a restart
+	// is about to switch them on.
+	if wanted := !stored.MetricsOff && fromFile.MetricsServed(); wanted != running.MetricsServed() {
+		pending = append(pending, PendingChange{
+			Setting: "metrics",
+			Running: onOrOff(running.MetricsServed()), Stored: onOrOff(wanted),
+		})
+	}
+
+	if next := stringOr(stored.TraceExporter, fromFile.TraceExporter); next != running.TraceExporter {
+		pending = append(pending, PendingChange{
+			Setting: "traceExporter",
+			Running: running.TraceExporter, Stored: next,
+		})
+	}
+
+	if next := stringOr(stored.TracerURL, fromFile.TracerURL); next != running.TracerURL {
+		pending = append(pending, PendingChange{
+			Setting: "tracerUrl", Running: running.TracerURL, Stored: next,
+		})
+	}
+
+	// The recorded share, which was missing here and needs a restart exactly as
+	// much as the two above it: all three go into the exporter, and the exporter
+	// is built inside gofr.New().
+	//
+	// Its absence was not a decision. The log level a few lines up is absent
+	// deliberately and says so at length; this one simply was not added, and the
+	// gap was written into the manual as though it were settled - "change that on
+	// its own and nothing on screen will mention the restart it still needs".
+	//
+	// The save's own answer already knew. TelemetryResponse.RestartRequired
+	// compares the share and comes back true; nothing in the interface reads that
+	// field, and what the screen shows is this list. So the application was right
+	// twice and told nobody.
+	if next := floatOr(stored.TracerRatio, fromFile.TracerRatio); next != running.TracerRatio {
+		pending = append(pending, PendingChange{
+			Setting: "tracerRatio",
+			Running: formatRatio(running.TracerRatio),
+			Stored:  formatRatio(next),
+		})
+	}
+
+	return pending
+}
+
+// stringOr and floatOr answer what the next start would use for one setting:
+// the stored value where there is one, and the configuration file's where there
+// is not.
+//
+// This is the whole of the fix. The comparison used to read "a stored value that
+// differs from the running one", which is silent about the change that matters
+// most to somebody looking at this card: clearing a field back to "follow the
+// configuration file". That is a change - the next start uses the file's value
+// instead of the one in force - and an absent stored value was being read as
+// nothing to say.
+//
+// Found by somebody switching the trace exporter to OTLP, being told to restart,
+// switching it back, and being told nothing.
+func stringOr(stored *string, fromFile string) string {
+	if stored == nil {
+		return fromFile
+	}
+
+	return *stored
+}
+
+func floatOr(stored *float64, fromFile float64) float64 {
+	if stored == nil {
+		return fromFile
+	}
+
+	return *stored
+}
+
+// onOrOff names a state the card can show, for a setting that is a switch
+// rather than a value.
+func onOrOff(on bool) string {
+	if on {
+		return "on"
+	}
+
+	return "off"
 }
 
 // formatRatio writes a sampling share the way the form takes it: a plain

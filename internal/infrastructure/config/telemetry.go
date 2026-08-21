@@ -150,6 +150,30 @@ func ApplyTelemetry(telemetry model.Telemetry) error {
 	return nil
 }
 
+// TelemetryFromConfig is what the configuration file and the environment say,
+// before anything stored in the database is applied over them.
+//
+// It has to be read before ApplyTelemetry, and that is the whole reason it
+// exists. ApplyTelemetry works by setting environment variables, and a real
+// environment variable beats the file it came from - so once it has run there is
+// no reading the file's own answer back.
+//
+// What needs that answer is the question "would a restart change anything". A
+// setting cleared back to "follow the configuration file" is a change, and
+// comparing an absent stored value against the running process says nothing
+// about it: the file's value is what the next start would use.
+func TelemetryFromConfig() Telemetry {
+	p := gofrConfig()
+
+	return Telemetry{
+		LogLevel:      logLevel(p.Get("LOG_LEVEL")),
+		MetricsPort:   metricsPort(p.Get("METRICS_PORT")),
+		TraceExporter: strings.ToLower(strings.TrimSpace(p.Get("TRACE_EXPORTER"))),
+		TracerURL:     strings.TrimSpace(p.Get("TRACER_URL")),
+		TracerRatio:   traceRatio(p.GetOrDefault("TRACER_RATIO", "1")),
+	}
+}
+
 // EffectiveLogLevel is the level this process should actually emit at.
 //
 // The administered value where there is one, and whatever the configuration
