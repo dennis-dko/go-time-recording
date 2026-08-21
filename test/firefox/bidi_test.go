@@ -324,9 +324,39 @@ func (b *browser) waitFor(expression, complaint string) {
 		}
 
 		if time.Now().After(deadline) {
-			b.t.Fatalf("%s (waiting for %s)", complaint, expression)
+			b.t.Fatalf("%s (waiting for %s)\n\npage: %s",
+				complaint, expression, b.state())
 		}
 
 		time.Sleep(150 * time.Millisecond)
 	}
+}
+
+// state describes what the page looked like, for a wait that ran out of time.
+//
+// Sixty seconds is not a slow machine, it is something that did not happen, and
+// the two ways it does not happen are fixed in different places: the press never
+// reached the application, or it did and the answer was a refusal nobody read.
+// A sign-in that sat on the screen for a full minute was reported here as a
+// sign-in that does not work in Firefox, twice, with nothing to say which.
+//
+// So the complaint carries what the screen had to say for itself. Read defensively
+// - this runs after something has already gone wrong, and a missing element must
+// not turn the report into a second failure.
+func (b *browser) state() string {
+	b.t.Helper()
+
+	out, _ := b.eval(`JSON.stringify({
+		readyState: document.readyState,
+		loaded: document.documentElement.dataset.loaded ?? null,
+		signInUp: document.querySelector('#login-screen') !== null
+			&& !document.querySelector('#login-screen').hidden,
+		checking: document.querySelector('#login-screen')?.classList?.contains('checking') ?? null,
+		signInSays: document.querySelector('#login-error')?.textContent?.trim()?.slice(0, 200) ?? '',
+		notice: document.querySelector('#toast')?.textContent?.trim()?.slice(0, 200) ?? '',
+		signedIn: typeof me === 'object' ? Boolean(me?.user) : null,
+		url: location.href,
+	})`).(string)
+
+	return out
 }
