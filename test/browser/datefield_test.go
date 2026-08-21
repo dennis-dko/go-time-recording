@@ -190,3 +190,60 @@ func TestADateFieldIsUsableOnAPhone(t *testing.T) {
 		})
 	}
 }
+
+// A date typed and not saved comes back readable, not only correct.
+//
+// A date field is two controls: the one that carries the value and the one
+// somebody reads. Restoring a draft puts the value back into the first, and the
+// second is drawn from it by a handler - so a restore that set values quietly
+// would come back with the right date in the form and an empty box on screen,
+// which is the one failure worse than losing it: it looks like nothing was kept
+// and would be typed over.
+func TestARestoredDateIsReadableAndNotOnlyCorrect(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// Somebody who records time: the built-in administrator has no time screen.
+	p.becomeWorker()
+
+	p.run("open the time view", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID))
+	p.settled()
+
+	// Typed into the box a person types into, which is what fills the other one.
+	p.run("type a date",
+		chromedp.Evaluate(`document.querySelector('#form-timesheet .date-shown').value = ''`, nil),
+		chromedp.SendKeys(`#form-timesheet .date-shown`, "03/14/2026", chromedp.ByQuery),
+		chromedp.Sleep(250*time.Millisecond))
+
+	before := p.value(`#form-timesheet .date-native`)
+	shownBefore := p.value(`#form-timesheet .date-shown`)
+
+	if before == "" || shownBefore == "" {
+		t.Fatalf("typing a date left something empty - carried %q, shown %q - so "+
+			"this case is about to prove nothing", before, shownBefore)
+	}
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.waitGone("#login-screen")
+	p.settled()
+
+	p.run("open the time view again", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID))
+
+	if after := p.value(`#form-timesheet .date-native`); after != before {
+		t.Errorf("the date carries %q after a reload; %q was typed", after, before)
+	}
+
+	// The same date, not merely some date. The form fills this box with today on
+	// the way in, so "not empty" would pass on a restore that put the value back
+	// silently and left the screen reading today - which looks exactly like a
+	// draft that was not kept, and would be typed over.
+	if shown := p.value(`#form-timesheet .date-shown`); shown != shownBefore {
+		t.Errorf("the date reads %q on screen after a reload and %q was typed; the "+
+			"box a person reads was not told the value behind it had changed",
+			shown, shownBefore)
+	}
+}

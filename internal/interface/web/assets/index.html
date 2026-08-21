@@ -308,7 +308,10 @@
          nobody finishes reading is noise. -->
     <div class="session-check"><div class="spinner" aria-hidden="true"></div></div>
 
-    <form method="post" id="form-login" class="login-card">
+    <!-- No draft of this one. It holds somebody's address, drafts are written to
+         storage, and a shared machine would hand the next person the last one's
+         name - which is the same reason signing out resets it. -->
+    <form method="post" id="form-login" data-no-draft class="login-card">
       <img id="login-logo" class="brand-logo" alt="" hidden>
       <h2 data-i18n="login.title">Sign in</h2>
       <p class="muted" id="login-hint" data-i18n="login.hint">Please sign in with your email address and password.</p>
