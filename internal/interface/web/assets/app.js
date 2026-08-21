@@ -5308,7 +5308,7 @@ async function submitLogin(e) {
     // The same choice a page load makes, rather than always the first tab: signing
     // out and back in used to discard the screen somebody was working on, so the
     // only way back to it was to reload the page afterwards.
-    switchView(startingView());
+    openTheStartingView();
 
     // Here as well as on a page load, or the greeting would only ever appear to
     // somebody who reloaded after signing in - which is nobody's first sign-in.
@@ -9682,6 +9682,35 @@ function rememberView(name) {
  * somebody who was working somewhere goes back to it instead, which is the point
  * of remembering.
  */
+/**
+ * Opens the screen this session starts on, and only then calls the page loaded.
+ *
+ * refreshAll marks the page loaded once every screen has been filled from the
+ * server, and for a refresh that is the truth. On the way in it is one step
+ * early: the first view has still to be chosen, and on a page load the reader
+ * has still to be put back where they were. Both of those switch the view.
+ *
+ * That mark is what anything outside this page has to go on - a browser case, or
+ * a person wondering whether a blank card is empty or unanswered - and it was
+ * saying "ready" while the interface was still about to change screens. A tab
+ * opened in that window was switched away from a moment later, with nothing to
+ * show that anything had happened.
+ *
+ * So the mark is taken back and given again around the choice. Nothing is
+ * awaited in between, so it is never observably given too early.
+ */
+function openTheStartingView({ restoring = false } = {}) {
+  document.documentElement.dataset.loaded = 'no';
+
+  switchView(startingView());
+
+  // Back to where a reload this application caused took somebody from. Only on a
+  // page load: signing in is not coming back from anywhere.
+  if (restoring) restorePlace();
+
+  document.documentElement.dataset.loaded = 'yes';
+}
+
 function startingView() {
   const permitted = (name) => name === 'welcome'
     || $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === name);
@@ -10089,10 +10118,7 @@ async function init() {
   try {
     await refreshAll();
     hideLogin();
-    switchView(startingView());
-
-    // Back to where a reload this application caused took somebody from.
-    restorePlace();
+    openTheStartingView({ restoring: true });
 
     // After the first view is up, so the tour highlights something that is
     // actually on screen.
