@@ -1466,7 +1466,34 @@ func TestTheSignInScreenIsNeverPutOverASession(t *testing.T) {
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`))
 	p.waitShown("#view-admin")
 
-	// And signing out still gets there, because that clears the session first.
+	// And in the gap the first attempt at this missed: a sign-in takes the screen
+	// down the moment the password is accepted and fills in the account only
+	// afterwards, so between the two there is a page that has been signed into
+	// and cannot prove it. Asking "is there an account yet" answered no, and the
+	// screen went back up over a sign-in that had already worked.
+	var hidden bool
+
+	p.run("a load that fails in the gap", chromedp.Evaluate(`
+		(() => {
+			const account = me.user;
+			me.user = null;
+
+			try {
+				showLogin();
+			} finally {
+				me.user = account;
+			}
+
+			return document.querySelector('#login-screen').hidden;
+		})()`, &hidden))
+
+	if !hidden {
+		t.Error("the sign-in screen went up between the password being accepted " +
+			"and the account arriving, which is a page that is signed in and " +
+			"cannot say so yet")
+	}
+
+	// And signing out still gets there, because that gives the screen back.
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID))
 	p.waitShown("#login-screen")
 }
