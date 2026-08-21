@@ -922,7 +922,9 @@
                never opens this, and one that works in two writes each properly
                instead of squinting at a grid. -->
           <label class="wide" data-i18n="admin.textLanguage">Language of these texts
-            <select id="branding-language">
+            <!-- Not an edit: this chooser decides which language's words the boxes
+                 show, not what a save would store. See watchForEditing. -->
+            <select id="branding-language" data-not-an-edit>
               <option value="en">English</option>
               <option value="de">Deutsch</option>
             </select>

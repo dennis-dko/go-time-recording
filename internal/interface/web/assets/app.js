@@ -1978,6 +1978,76 @@ function roleChoices() {
 }
 
 /** Reads a form into a plain object, dropping empty optional fields. */
+/**
+ * Whether somebody is part way through filling this form in.
+ *
+ * Every screen in this application is refilled from the server by loaders that
+ * run for reasons having nothing to do with the person in front of them: a
+ * language chosen, a neighbouring card saved, a directory synchronised. Each of
+ * those refills every form on the way past, and anything typed and not yet saved
+ * was replaced by the server's copy without a word.
+ *
+ * It is not a rare window either. Choosing a language reloads every screen, so
+ * an administrator half way through a database connection who switched to German
+ * to read a label lost the lot - and the form that came back looked like one
+ * nobody had touched, so there was nothing to notice.
+ *
+ * Somebody who has started typing is answering a question, and the server's copy
+ * is what they are answering it against. Replacing their answer with it
+ * mid-sentence is the one thing a background refresh must not do. So a form that
+ * has been changed and not saved is left alone until it is.
+ */
+function beingEdited(form) {
+  return form?.dataset.editing === 'yes';
+}
+
+/**
+ * Notices that somebody has started filling a form in.
+ *
+ * Both events, because they cover different fields: input is typing, and change
+ * is what a picker, a checkbox and a file field report. Only what a person did -
+ * setting a value from script fires neither, which is exactly the distinction
+ * this rests on, and is why the loaders can go on filling forms nobody has
+ * touched.
+ */
+function watchForEditing(form) {
+  for (const event of ['input', 'change']) {
+    form.addEventListener(event, (e) => {
+      // Unless the control only decides what the form shows. The appearance
+      // card's language chooser is one: it swaps which language's words are in
+      // the boxes, and looking at a translation is not writing one - a card
+      // somebody glanced at would otherwise stop following the server for as
+      // long as they left the screen open.
+      if (e.target?.dataset?.notAnEdit !== undefined) return;
+
+      form.dataset.editing = 'yes';
+    });
+  }
+
+  // Discarding is finishing too: a form put back to what it was holds nothing
+  // worth protecting.
+  form.addEventListener('reset', () => { delete form.dataset.editing; });
+}
+
+/**
+ * Saves a form, and stops protecting what is in it once the save has landed.
+ *
+ * The same as mutate, with the one thing every form that is refilled from the
+ * server has to do afterwards. Cleared here rather than when the form is
+ * submitted, because a refused save is not finished: the values stay on screen
+ * beside the complaint about them, and they are still the reader's to correct.
+ *
+ * Before `after` rather than after it, because `after` is where the reload is -
+ * and the whole point of clearing is that this reload may fill the form again.
+ */
+function saveForm(form, fn, successMessage, after) {
+  return mutate(fn, successMessage, async (result) => {
+    if (form) delete form.dataset.editing;
+
+    if (after) await after(result);
+  });
+}
+
 function formData(form) {
   const out = {};
   for (const [key, raw] of new FormData(form).entries()) {
@@ -4225,7 +4295,14 @@ function wireCalendar() {
 
 function fillSettingsForm() {
   if (!me.user) return;
+
   const form = $('#form-working-times');
+
+  // Not over somebody who is part way through filling it in. This runs after
+  // every save on the screen and after a language is chosen, and it used to
+  // replace whatever had been typed with the server's copy.
+  if (beingEdited(form)) return;
+
   form.elements.dailyTargetHours.value = me.user.dailyTargetHours || '';
   form.elements.maxDailyHours.value = me.user.maxDailyHours || '';
   fillMyTimezone();
@@ -4526,45 +4603,54 @@ async function loadAdmin() {
   const branding = await api('/branding');
   const form = $('#form-branding');
 
-  // The two that are the same in every language. A logo, an address and a link
-  // do not translate - translating a link would be translating where it goes.
-  for (const field of ['companyName', 'companyUrl']) {
-    form.elements[field].value = branding[field] ?? '';
-  }
+  // Not over an appearance somebody is part way through writing. This runs after
+  // every save on this screen and after a language is chosen, and the draft
+  // below is rebuilt from the server - so a reload used to take back not only
+  // the boxes on screen but the translations typed into the other languages.
+  //
+  // Skipped as one block. Filling half of it would leave the boxes showing one
+  // thing and the draft holding another, which is worse than either.
+  if (!beingEdited(form)) {
+    // The two that are the same in every language. A logo, an address and a link
+    // do not translate - translating a link would be translating where it goes.
+    for (const field of ['companyName', 'companyUrl']) {
+      form.elements[field].value = branding[field] ?? '';
+    }
 
   // And the ones that do, kept per language while this screen is open so
   // switching between them does not lose what has been typed.
-  brandingDraft = {};
+    brandingDraft = {};
 
-  for (const language of BRANDING_LANGUAGES) {
-    const written = branding.translations?.[language] ?? {};
+    for (const language of BRANDING_LANGUAGES) {
+      const written = branding.translations?.[language] ?? {};
 
-    brandingDraft[language] = {
-      title: written.title ?? '',
-      tabTitle: written.tabTitle ?? '',
-      banner: written.banner ?? '',
-      footerText: written.footerText ?? '',
-      legalNotice: written.legalNotice ?? '',
-    };
-  }
+      brandingDraft[language] = {
+        title: written.title ?? '',
+        tabTitle: written.tabTitle ?? '',
+        banner: written.banner ?? '',
+        footerText: written.footerText ?? '',
+        legalNotice: written.legalNotice ?? '',
+      };
+    }
 
   // What the installation answered before any of this existed stays the base,
   // and is what the form shows for the language it was presumably written in.
-  brandingBase = {
-    title: branding.title ?? '',
-    tabTitle: branding.tabTitle ?? '',
-    banner: branding.banner ?? '',
-    footerText: branding.footerText ?? '',
-    legalNotice: branding.legalNotice ?? '',
-  };
+    brandingBase = {
+      title: branding.title ?? '',
+      tabTitle: branding.tabTitle ?? '',
+      banner: branding.banner ?? '',
+      footerText: branding.footerText ?? '',
+      legalNotice: branding.legalNotice ?? '',
+    };
 
-  showBrandingLanguage($('#branding-language')?.value || activeLanguage());
+    showBrandingLanguage($('#branding-language')?.value || activeLanguage());
 
-  // What was chosen last time, so the previews show it and the chooser opens on
-  // it rather than starting again.
-  logoCrops = branding.crops ?? {};
+    // What was chosen last time, so the previews show it and the chooser opens
+    // on it rather than starting again.
+    logoCrops = branding.crops ?? {};
 
-  setLogoPreview(branding.logo ?? '');
+    setLogoPreview(branding.logo ?? '');
+  }
 
   await loadOperational();
   await loadUpdate();
@@ -4572,14 +4658,27 @@ async function loadAdmin() {
   const timezone = await api('/settings/timezone');
   const instanceSelect = $('#instance-timezone');
 
-  fillTimezoneSelect(instanceSelect, timezone.timezone ?? 'UTC');
+  // Not over a zone somebody has picked and not yet saved.
+  if (!beingEdited($('#form-timezone'))) {
+    fillTimezoneSelect(instanceSelect, timezone.timezone ?? 'UTC');
+  }
+
+  // The clock beside it either way: it follows whatever the picker shows, and
+  // what time it is somewhere does not depend on anybody having saved.
   showTimeIn(instanceSelect, $('#instance-timezone-now'), 'UTC');
 
   const ds = await api('/settings/datasource');
   const dsForm = $('#form-datasource');
-  for (const field of ['dialect', 'name', 'host', 'port', 'user', 'sslMode']) {
-    dsForm.elements[field].value = ds[field] ?? '';
-  }
+
+  // Not over a connection somebody is part way through entering. This is the
+  // card the loss was reported from: choosing a language reloads every screen,
+  // so switching to German to read a label put the stored connection back over
+  // the one being typed - and an empty stored connection put back nothing at
+  // all, which looked like a form that had never been filled in.
+  if (!beingEdited(dsForm)) {
+    for (const field of ['dialect', 'name', 'host', 'port', 'user', 'sslMode']) {
+      dsForm.elements[field].value = ds[field] ?? '';
+    }
 
   // Nothing stored, which is every installation configured through the
   // environment - a compose deployment, or a container run with DB_* set. The
@@ -4590,11 +4689,14 @@ async function loadAdmin() {
   // Shown as placeholders rather than values, because they are not this form's
   // to save: typing over a placeholder is how somebody changes the connection,
   // and leaving it alone has to keep meaning "leave it alone".
-  showRunningConnection(dsForm, ds);
+    showRunningConnection(dsForm, ds);
 
-  // After the values are in, or the port would be prefilled over a stored one.
-  syncDatasourceFields();
+    // After the values are in, or the port would be prefilled over a stored one.
+    syncDatasourceFields();
+  }
 
+  // What this process is connected to, whoever is typing what: it describes the
+  // running application rather than the form.
   $('#datasource-active').textContent =
     `${t('admin.activeConnection', 'Currently connected via')}: ${ds.active}`;
 
@@ -4607,17 +4709,24 @@ async function loadAdmin() {
     'host', 'baseDn', 'bindDn', 'userFilter',
     'nameAttribute', 'emailAttribute', 'idAttribute',
   ];
-  for (const field of ldapFields) {
-    ldapForm.elements[field].value = ldap[field] ?? '';
-  }
-  ldapForm.elements.port.value = ldap.port || 389;
-  for (const flag of ['enabled', 'startTls', 'useTls', 'skipVerify']) {
-    ldapForm.elements[flag].checked = Boolean(ldap[flag]);
-  }
+  // Not over a directory somebody is part way through configuring. A bind DN
+  // and a filter are long enough to be worth not losing to a reload nobody
+  // asked for.
+  if (!beingEdited(ldapForm)) {
+    for (const field of ldapFields) {
+      ldapForm.elements[field].value = ldap[field] ?? '';
+    }
 
-  fillSelect(ldapForm.elements.defaultRole, roleChoices(),
-    { labelKey: 'label', valueKey: 'name' });
-  ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'user';
+    ldapForm.elements.port.value = ldap.port || 389;
+
+    for (const flag of ['enabled', 'startTls', 'useTls', 'skipVerify']) {
+      ldapForm.elements[flag].checked = Boolean(ldap[flag]);
+    }
+
+    fillSelect(ldapForm.elements.defaultRole, roleChoices(),
+      { labelKey: 'label', valueKey: 'name' });
+    ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'user';
+  }
 
   // The directory run belongs to the built-in administrator, because it deletes
   // the accounts the directory no longer holds along with everything they
@@ -4634,7 +4743,11 @@ async function loadAdmin() {
     // Filled whether the card is on screen or not: the schedule travels with the
     // rest of the directory settings, so an empty field here would clear it the
     // next time somebody saved the connection.
-    schedule.elements.syncSchedule.value = ldap.syncSchedule ?? '';
+    //
+    // Not over one being typed, for the same reason as every other card here.
+    if (!beingEdited(schedule)) {
+      schedule.elements.syncSchedule.value = ldap.syncSchedule ?? '';
+    }
 
     // What this process is actually scheduled to do, which is not the stored
     // value until the next start - and the restart card is what says so.
@@ -4791,7 +4904,23 @@ function wireAdmin() {
     const markChanged = (lastBranding.logo ?? '') !== (pendingLogo ?? '')
       || JSON.stringify(lastBranding.crops ?? {}) !== JSON.stringify(logoCrops ?? {});
 
-    mutate(() => api('/settings/branding', { method: 'PUT', body: JSON.stringify(body) }),
+    saveForm(e.target, async () => {
+      const saved = await api('/settings/branding',
+        { method: 'PUT', body: JSON.stringify(body) });
+
+      // The copy the language chooser fills its boxes from, brought up to date
+      // from what was just sent - not from the reload below.
+      //
+      // The reload is behind the notice, and between the two there is a window
+      // somebody can click in. Clicking in it filled the boxes with the name
+      // from before the save, and saving that stored the old name as a
+      // translation of the new one - a wrong value written by a screen that
+      // looked like it was showing the right one. What was sent is what the
+      // server now holds, so there is nothing to wait for.
+      brandingBase = { ...brandingBase, ...base };
+
+      return saved;
+    },
       t('admin.saved', 'Settings saved'),
       async () => {
         await loadBranding();
@@ -4829,7 +4958,7 @@ function wireAdmin() {
 
     if (body.dialect !== 'postgres') body.sslMode = '';
 
-    mutate(
+    saveForm(e.target,
       () => api('/settings/datasource', { method: 'PUT', body: JSON.stringify(body) }),
       null,
       // loadAdmin ends with loadRestart, so the card follows - and announceSave
@@ -4840,14 +4969,15 @@ function wireAdmin() {
 
   $('#form-ldap').addEventListener('submit', (e) => {
     e.preventDefault();
-    mutate(() => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
+    saveForm(e.target,
+      () => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
       t('admin.saved', 'Settings saved'),
       loadAdmin);
   });
 
   $('#form-sync-schedule').addEventListener('submit', (e) => {
     e.preventDefault();
-    mutate(
+    saveForm(e.target,
       () => api('/settings/ldap', { method: 'PUT', body: JSON.stringify(ldapPayload()) }),
       null,
       // The restart card too: the schedule is the one directory setting that
@@ -6600,6 +6730,11 @@ const OPERATIONAL_FIELDS = [
 function fillOperationalForm(data) {
   const form = $('#form-operational');
 
+  // Not over somebody who is part way through filling it in. This runs after
+  // every save on the screen and after a language is chosen, and it used to
+  // replace whatever had been typed with the server's copy.
+  if (beingEdited(form)) return;
+
   for (const field of OPERATIONAL_FIELDS) {
     const input = form.elements[field];
 
@@ -6646,7 +6781,7 @@ function operationalPayload() {
 function wireOperational() {
   $('#form-operational').addEventListener('submit', (e) => {
     e.preventDefault();
-    mutate(
+    saveForm(e.target,
       () => api('/settings/operational', {
         method: 'PUT', body: JSON.stringify(operationalPayload()),
       }),
@@ -6655,7 +6790,10 @@ function wireOperational() {
   });
 
   $('#operational-reset').addEventListener('click', () => {
-    mutate(
+    // Through saveForm like a save, because it is one: putting every value back
+    // to the file is a decision, and what was typed before it is discarded on
+    // purpose rather than kept from the reload.
+    saveForm($('#form-operational'),
       () => api('/settings/operational', { method: 'PUT', body: JSON.stringify({}) }),
       t('ops.reset.done', 'All values follow the configuration file again'),
       loadOperational);
@@ -8367,6 +8505,11 @@ function fillTelemetryForm(data) {
   const form = $('#form-telemetry');
   const configured = data.configured ?? {};
 
+  // Not over somebody who is part way through filling it in. This runs after
+  // every save on the screen and after a language is chosen, and it used to
+  // replace whatever had been typed with the server's copy.
+  if (beingEdited(form)) return;
+
   form.elements.logLevel.value = configured.logLevel ?? '';
   form.elements.metricsOff.value = configured.metricsOff ? TELEMETRY_OFF : '';
 
@@ -8456,7 +8599,7 @@ function telemetryPayload() {
 function wireTelemetry() {
   $('#form-telemetry').addEventListener('submit', (e) => {
     e.preventDefault();
-    mutate(
+    saveForm(e.target,
       () => api('/settings/telemetry', {
         method: 'PUT', body: JSON.stringify(telemetryPayload()),
       }),
@@ -8469,7 +8612,8 @@ function wireTelemetry() {
   });
 
   $('#telemetry-reset').addEventListener('click', () => {
-    mutate(
+    // Through saveForm for the same reason as the limits above.
+    saveForm($('#form-telemetry'),
       () => api('/settings/telemetry', { method: 'PUT', body: JSON.stringify({}) }),
       t('tel.resetDone', 'Metrics and tracing follow the configuration file again'),
       afterTelemetrySaved);
@@ -9153,9 +9297,14 @@ async function loadMaintenance() {
   const who = $('#login-maintenance-who');
   if (who) who.hidden = !state.enabled;
 
-  // The form, for the administrator who is looking at it.
+  // The form, for the administrator who is looking at it - unless they are part
+  // way through typing the notice, which this runs often enough to interrupt:
+  // every load of the administration screen passes through here.
+  //
+  // The banners above are filled either way. They say what the installation is
+  // doing, which is true whatever anybody is typing.
   const form = $('#form-maintenance');
-  if (form) {
+  if (form && !beingEdited(form)) {
     form.elements.enabled.checked = Boolean(state.enabled);
     form.elements.message.value = state.message ?? '';
   }
@@ -9194,7 +9343,7 @@ function wireMaintenance() {
       }
     }
 
-    mutate(
+    saveForm(form,
       () => api('/settings/maintenance', {
         method: 'PUT',
         body: JSON.stringify({ enabled, message: form.elements.message.value }),
@@ -9285,6 +9434,11 @@ function showTimeIn(select, output, fallbackZone) {
 
 /** Loads the personal zone into "My account". */
 function fillMyTimezone() {
+  // Not over somebody who is part way through filling it in. This runs after
+  // every save on the screen and after a language is chosen, and it used to
+  // replace whatever had been typed with the server's copy.
+  if (beingEdited($('#form-my-timezone'))) return;
+
   const select = $('#my-timezone');
   const inherit = `${t('tz.inherit', 'Follow the instance setting')}`;
 
@@ -9316,7 +9470,7 @@ function wireTimezones() {
 
   $('#form-my-timezone').addEventListener('submit', (e) => {
     e.preventDefault();
-    mutate(
+    saveForm(e.target,
       () => api('/me/timezone', {
         method: 'PUT', body: JSON.stringify({ timezone: mine.value }),
       }),
@@ -9331,7 +9485,7 @@ function wireTimezones() {
 
   $('#form-timezone').addEventListener('submit', (e) => {
     e.preventDefault();
-    mutate(
+    saveForm(e.target,
       () => api('/settings/timezone', {
         method: 'PUT', body: JSON.stringify({ timezone: instance.value }),
       }),
@@ -9981,7 +10135,7 @@ function wireForms() {
       dailyTargetHours: Number(form.elements.dailyTargetHours.value || 0),
       maxDailyHours: Number(form.elements.maxDailyHours.value || 0),
     };
-    mutate(() => api(`/users/${me.user.id}/working-times`,
+    saveForm(form, () => api(`/users/${me.user.id}/working-times`,
       { method: 'PUT', body: JSON.stringify(body) }),
       t('msg.workingTimesSaved', 'Working hours saved'),
       refreshAll);
@@ -10039,6 +10193,11 @@ async function init() {
   // Beside the password fields, and for the same reason: a field added later is
   // covered without anybody remembering to come back here.
   enhanceDateFields();
+
+  // Every form, and before anything is loaded, so a reader who starts typing
+  // into a card the moment it appears is already protected from the loaders
+  // filling the cards after it. Forms nothing refills are unaffected by it.
+  $$('form').forEach(watchForEditing);
 
   // Appearance is a device setting and needs no session, so the picker works on
   // the sign-in screen too.
