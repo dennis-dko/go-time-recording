@@ -4202,3 +4202,122 @@ func TestTheDatabaseCardSaysWhereAConnectionWithoutASavedSettingComesFrom(t *tes
 			"nothing; the running connection is being presented as saved", value)
 	}
 }
+
+// What somebody has typed is still there after they choose a language.
+//
+// Choosing a language saves it to the account and reloads every screen, and
+// every reload refilled every form from the server on the way past. An
+// administrator half way through a database connection who switched to German
+// to read a label got the stored connection back over the one they were
+// entering - and on an installation with nothing stored, got nothing back at
+// all, which looks like a form that was never filled in rather than one that
+// was emptied.
+//
+// The connection card because that is where it was reported, but the rule is
+// the same on every card the administration screen refills.
+func TestWhatSomebodyTypedSurvivesChoosingALanguage(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+
+	// The card has to have been filled before anything is typed into it, or the
+	// answer arrives afterwards and this proves nothing about reloads.
+	p.waitForFilled("#datasource-active")
+
+	// A server dialect, so the fields below the type are on screen at all.
+	p.run("choose postgres",
+		chromedp.SetValue(`#form-datasource select[name="dialect"]`, "postgres",
+			chromedp.ByQuery),
+		chromedp.Evaluate(
+			`document.querySelector('#form-datasource select[name="dialect"]')
+				.dispatchEvent(new Event('change'))`, nil))
+
+	// Typed rather than assigned. Assigning a value fires no events, and events
+	// are how the page knows somebody is part way through - which is the whole
+	// distinction being tested.
+	typed := map[string]string{
+		"host": "db.example.invalid", "name": "gtr_live", "user": "gtr_admin",
+	}
+
+	for field, value := range typed {
+		p.run("type the "+field, chromedp.SendKeys(
+			`#form-datasource [name="`+field+`"]`, value, chromedp.ByQuery))
+	}
+
+	// The switch, and the reload it starts, in full.
+	p.chooseLanguage("de")
+
+	for field, value := range typed {
+		got := p.value(`#form-datasource [name="` + field + `"]`)
+
+		if got != value {
+			t.Errorf("the %s field reads %q after a language was chosen; %q was typed "+
+				"into it and never saved", field, got, value)
+		}
+	}
+
+	// And the type as well, which is a picker rather than a box.
+	if got := p.value(`#form-datasource select[name="dialect"]`); got != "postgres" {
+		t.Errorf("the type reads %q after a language was chosen; postgres was chosen", got)
+	}
+}
+
+// A name saved is the name the language chooser offers a moment later.
+//
+// Saving the appearance answers, and the reload that brings the screen up to
+// date runs behind the notice saying it worked. The copy the language chooser
+// fills its boxes from was part of that reload - so between the notice and the
+// reload, choosing a language filled the boxes with the name from before the
+// save. Saving that stored the old name as a translation of the new one: a
+// wrong value, written by a screen that looked like it was showing the right
+// one.
+//
+// Timed off the notice itself rather than raced against it. The switch happens
+// inside the observer that sees the notice appear, which is the same task the
+// notice is added in - so nothing the reload answers can have landed yet, and
+// this either passes because the copy was already right or fails every time.
+func TestTheNameJustSavedIsWhatTheLanguageChooserOffers(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	p.saveBranding(t, "name the installation",
+		chromedp.SetValue(`#form-branding input[name="title"]`, "Alpha GmbH", chromedp.ByQuery))
+
+	p.run("watch for the notice", chromedp.Evaluate(`
+		(() => {
+			window.__offered = null;
+
+			const notice = document.querySelector('#toast');
+
+			const watching = new MutationObserver(() => {
+				if (!/saved|gespeichert/i.test(notice.textContent)) return;
+
+				watching.disconnect();
+
+				const picker = document.querySelector('#branding-language');
+				picker.value = 'de';
+				picker.dispatchEvent(new Event('change'));
+
+				window.__offered = document.querySelector('#form-branding').elements.title.value;
+			});
+
+			watching.observe(notice, { childList: true, subtree: true, characterData: true });
+
+			return 1;
+		})()`, nil))
+
+	p.saveBranding(t, "rename it",
+		chromedp.SetValue(`#form-branding input[name="title"]`, "Beta GmbH", chromedp.ByQuery))
+
+	p.waitEvaluates("what German was offered",
+		`String(window.__offered ?? "")`, "Beta GmbH")
+}

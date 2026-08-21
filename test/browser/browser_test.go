@@ -348,6 +348,26 @@ func (p *page) settleWizard() {
 			p.t.Fatalf("could not settle the wizard: %s\n\napplication log:\n%s", out, p.app.Log())
 		}
 	}
+
+	// And then put away again, once nothing else is in flight.
+	//
+	// The wizard is not only hidden by the line above, it is decided by a
+	// loader: signing in asks the server what is still outstanding and shows the
+	// wizard if anything is. That question can already be on its way when the
+	// two calls above answer it, and its answer - taken before they landed -
+	// puts the wizard straight back up.
+	//
+	// Which is what it did, over the whole page. Every tab click went to the
+	// wizard's card instead of the tab, and the case reported whatever was
+	// underneath: a tab that does not switch, or a password that would not save.
+	// It took a report of what lay over each tab to see it, after two wrong
+	// explanations.
+	p.atRest()
+
+	p.run("put the wizard away", chromedp.Evaluate(
+		`(() => { document.querySelector('#setup-wizard').hidden = true; return 1; })()`, nil))
+
+	p.waitGone("#setup-wizard")
 }
 
 // settleWelcome dismisses the first-sign-in greeting if it is up.
@@ -712,7 +732,14 @@ func (p *page) state() string {
 		overTabs: [...document.querySelectorAll('.tab')].filter(t => !t.hidden).map(t => {
 			const box = t.getBoundingClientRect();
 			const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-			return t.dataset.view + ':' + (top === t || t.contains(top) ? 'ok' : (top?.id || top?.className || 'nothing'));
+			if (top === t || t.contains(top)) return t.dataset.view + ':ok';
+
+			// The owning element's id, not only the class of whatever pixel was
+			// hit: "overlay-card" names a shape, and what matters is which
+			// overlay it belongs to.
+			const owner = top?.closest?.('[id]');
+
+			return t.dataset.view + ':' + (owner?.id || top?.className || 'nothing');
 		}),
 	})`, &out))
 
@@ -1401,4 +1428,45 @@ func (p *page) waitSignedIn(t *testing.T) {
 
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// The sign-in screen is never laid over a session that is working.
+//
+// The first load starts before there is a session and fails because there is
+// none, and its failure puts the sign-in screen up - which is right, until it
+// is not. The form is wired and usable from the first paint, so anybody quick,
+// or any machine slow enough for the two to overlap, signs in underneath that
+// load. Its failure then arrives after theirs succeeded.
+//
+// What that left was a page signed in, every screen loaded, sitting on a view -
+// with a sign-in form across all of it. Firefox in CI reported it three times
+// as "the sign-in screen never went away", which is what it looks like from
+// outside and says nothing about a race between two loads.
+//
+// Asked of the rule rather than of the race. Reproducing the timing means
+// holding one response back while another lands, and what is worth holding is
+// not that ordering but what it violated: this screen is about whether there is
+// a session, so it has no business appearing while there is one.
+func TestTheSignInScreenIsNeverPutOverASession(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// The same call the failing load makes.
+	p.run("let the first load fail late", chromedp.Evaluate(`showLogin()`, nil))
+
+	if p.visible("#login-screen") {
+		t.Fatal("the sign-in screen went up over a session that was signed in; " +
+			"a load that failed before anybody signed in can still be answering")
+	}
+
+	// And the application underneath is untouched: this is about not covering it,
+	// not about hiding something and leaving the page half dismantled.
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`))
+	p.waitShown("#view-admin")
+
+	// And signing out still gets there, because that clears the session first.
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID))
+	p.waitShown("#login-screen")
 }
