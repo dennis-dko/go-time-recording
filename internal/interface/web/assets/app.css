@@ -993,6 +993,25 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .banner-dismiss:hover { opacity: 1; }
 
+/* The restart notice stays under the top bar rather than scrolling away with
+   the page.
+
+   It is the one banner here that is about the installation rather than about
+   the screen it was caused on, and the administrator who most needs to keep
+   seeing it is exactly the one who has scrolled down to carry on working. Under
+   the bar and not over it: --topbar-height is kept current by trackTopbarHeight,
+   and the z-index is below the bar's so the bar wins where they meet. */
+#restart-banner {
+  position: sticky;
+  top: var(--topbar-height, 0);
+  z-index: 4;
+}
+
+#restart-banner[hidden] { display: none; }
+
+#restart-banner p { margin: 6px 0; }
+#restart-banner .pending-list { margin: 6px 0; }
+
 /* Maintenance is not the same kind of news as an announcement, so it does not
    look the same. Stronger, and it sits above the announcement banner. */
 .banner-warn {
