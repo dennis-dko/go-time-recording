@@ -148,3 +148,87 @@ func TestMetricsAreWaitingInBothDirections(t *testing.T) {
 		}
 	})
 }
+
+// Nothing is waiting for a restart that a restart would not change.
+//
+// An installation with tracing switched off stood permanently at "recorded
+// share of traces: 0 -> 1", on a banner that cannot be dismissed, and no
+// sequence of saves on the screen could take it away - because putting the
+// settings back is what produced it.
+//
+// Both numbers were true. The process had been started with a stored share of
+// zero, and one is what the configuration file would give the next start. They
+// describe the sampler of an exporter that does not exist: with nothing
+// exporting at either end there are no spans to sample, so the difference
+// between them is a difference in nothing.
+//
+// The share and the collector are the only two settings here that can be inert.
+// Every other one - the level, the metrics endpoint, the exporter itself, the
+// directory schedule, the connection - changes what the application does
+// whenever it changes at all.
+func TestASettingThatChangesNothingIsNotWaitingForARestart(t *testing.T) {
+	// The state the report came from: no exporter running, none in the file, and
+	// a share that differs between the two because the process was started from a
+	// stored value that has since been cleared.
+	running := appconfig.Telemetry{LogLevel: "INFO", TracerRatio: 0, MetricsPort: 2121}
+	fromFile := appconfig.Telemetry{LogLevel: "INFO", TracerRatio: 1, MetricsPort: 2121}
+
+	changes := telemetryPending(model.Telemetry{}, fromFile, running, true)
+
+	if len(changes) != 0 {
+		t.Errorf("a restart is reported as waiting on an installation that exports "+
+			"no spans, for settings that only describe how spans are exported: %+v",
+			changes)
+	}
+
+	// The same about the collector, which is inert for the same reason.
+	quiet := appconfig.Telemetry{LogLevel: "INFO", TracerRatio: 1, MetricsPort: 2121}
+	withURL := appconfig.Telemetry{
+		LogLevel: "INFO", TracerURL: "collector:4317", TracerRatio: 1, MetricsPort: 2121,
+	}
+
+	if changes := telemetryPending(model.Telemetry{}, withURL, quiet, true); len(changes) != 0 {
+		t.Errorf("a collector address is reported as waiting where nothing exports "+
+			"to it: %+v", changes)
+	}
+}
+
+// And they are reported the moment anything does export.
+//
+// The other half of the case above, and the half that keeps it honest: the
+// share and the collector are left out only because there is no exporter, so an
+// exporter at either end has to bring them back. Switching tracing on is
+// exactly when the two of them decide what the next start will do.
+func TestTheShareAndCollectorAreWaitingAgainAsSoonAsAnythingExports(t *testing.T) {
+	quiet := appconfig.Telemetry{LogLevel: "INFO", TracerRatio: 0, MetricsPort: 2121}
+
+	// Switched on, with a collector and a share to go with it.
+	stored := model.Telemetry{
+		TraceExporter: ptr("otlp"),
+		TracerURL:     ptr("collector:4317"),
+		TracerRatio:   ptr(0.5),
+	}
+
+	changes := telemetryPending(stored, quiet, quiet, true)
+
+	for _, setting := range []string{"traceExporter", "tracerUrl", "tracerRatio"} {
+		if _, found := waitingFor(changes, setting); !found {
+			t.Errorf("%q is not reported as waiting while tracing is being switched "+
+				"on: %+v", setting, changes)
+		}
+	}
+
+	// And where the exporter is the one already running, the two still stand on
+	// their own: a collector moved to another host is a restart.
+	exporting := appconfig.Telemetry{
+		LogLevel: "INFO", TraceExporter: "otlp",
+		TracerURL: "collector:4317", TracerRatio: 1, MetricsPort: 2121,
+	}
+
+	moved := telemetryPending(model.Telemetry{TracerURL: ptr("elsewhere:4317")},
+		exporting, exporting, true)
+
+	if _, found := waitingFor(moved, "tracerUrl"); !found {
+		t.Errorf("a collector moved to another host is not reported as waiting: %+v", moved)
+	}
+}

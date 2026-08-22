@@ -252,11 +252,33 @@ func telemetryPending(
 		})
 	}
 
-	if next := stringOr(stored.TraceExporter, fromFile.TraceExporter); next != running.TraceExporter {
+	exporter := stringOr(stored.TraceExporter, fromFile.TraceExporter)
+
+	if exporter != running.TraceExporter {
 		pending = append(pending, PendingChange{
 			Setting: "traceExporter",
-			Running: running.TraceExporter, Stored: next,
+			Running: running.TraceExporter, Stored: exporter,
 		})
+	}
+
+	// The collector and the share describe where spans go and how many of them.
+	// With no exporter at either end there are no spans, so neither describes
+	// anything and a restart would change nothing anybody could observe.
+	//
+	// Left out of the comparison rather than compared and ignored, because what
+	// this list is for is deciding whether to restart an installation. An entry
+	// that cannot change the behaviour of the application is an entry that asks
+	// for a restart in exchange for nothing.
+	//
+	// Reported from an installation with tracing switched off, standing
+	// permanently at "recorded share of traces: 0 -> 1". The 0 was real - the
+	// process had been started with a stored share of zero - and the 1 was real
+	// as well, being what the configuration file would give the next start. Both
+	// numbers describe a sampler for an exporter that does not exist, and the
+	// banner could not be cleared by any means the screen offers: putting the
+	// settings back is what produced it.
+	if exporter == model.TracingOff && running.TraceExporter == model.TracingOff {
+		return pending
 	}
 
 	if next := stringOr(stored.TracerURL, fromFile.TracerURL); next != running.TracerURL {

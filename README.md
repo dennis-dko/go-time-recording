@@ -949,9 +949,8 @@ initial title, so naming the instance in the environment saves naming it twice.
 **At the next start** are administered too, but stored rather than applied,
 because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
 `LDAP_SYNC_SCHEDULE`, and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What
-is stored wins from the next start onwards, and *Settings → Restart* lists what is
-still waiting - though not completely: a database change that keeps the dialect,
-and the trace sample ratio, are never compared and so never reported.
+is stored wins from the next start onwards, and a banner across the top of every
+screen lists what is still waiting, for whoever may do something about it.
 
 `LOG_LEVEL` is administered too and is likewise out of `configs/.env` now. The
 one file that still names it is `configs/.dev.env`, which is what "follow the
@@ -1062,10 +1061,28 @@ configuration file keeps coming from there.
 
 The screen shows what the running process is actually doing beside what is
 stored, because until the next restart those disagree, and it names the metrics
-endpoint in full so it can be copied. A *Restart* card lists what is waiting —
-each setting with the value in force and the one that will replace it — and
-offers to restart there and then, with the interface waiting for the application
-to come back rather than leaving anyone to guess.
+endpoint in full so it can be copied. A banner across the top of every screen
+lists what is waiting — each setting with the value in force and the one that
+will replace it — and offers to restart there and then, with the interface
+waiting for the application to come back rather than leaving anyone to guess.
+
+It is a banner rather than a card on that screen because what it reports is a
+fact about the installation rather than about the screen it was saved on: an
+administrator who saves something and goes back to work would otherwise have
+nothing anywhere telling them the application is still running on the old
+values. It cannot be dismissed for the same reason, and it is shown only to
+accounts that may administer this installation.
+
+What the banner reports is the difference between what this process is using and
+what the next start would use — which is the stored value where there is one and
+the configuration file's where there is not. Clearing a field is therefore a
+change like any other, and appears as one.
+
+The exception is a setting that would change nothing. The collector address and
+the recorded share describe where spans go and how many of them, so with no
+exporter at either end they describe nothing, and a restart in exchange for a
+difference in nothing is worth nobody's outage. They are left out until
+something exports.
 
 The database is compared whole: the dialect, the host, the port, the name, the
 user and the SSL mode, read as one line rather than as six. A changed password
@@ -1080,9 +1097,11 @@ starts it again. Exiting works under Docker with a restart policy and under
 systemd with `Restart=`, and turns the button into an off switch everywhere else,
 including a binary started by hand. `execve` needs nothing outside the process,
 so there is no arrangement in which pressing it leaves the installation down.
-Windows has no `execve`, so the button is not offered there and the card stays on
-screen to say why — with nothing pending it used to disappear, which left the one
-screen that explains the limitation unreachable on the one platform that has it.
+Windows has no `execve`, so the button is not offered there and the banner puts
+the reason where the button would have been. It appears when something is
+actually waiting, which is the moment the limitation costs anything: a warning
+that is on screen every time you look is furniture, read once and looked past
+thereafter, including on the day it finally has something to say.
 
 `execve` passes the current environment on, and that has one consequence worth
 knowing before it surprises somebody: a setting cleared back to *follow the
@@ -1092,10 +1111,10 @@ same goes for deleting `configs/datasource.json` — the inherited `DB_DIALECT`
 keeps the old connection rather than bringing the installer back. Both need a
 genuine stop and start.
 
-Two other things the card cannot tell you, because they are never compared: a
-database change that keeps the dialect — another host, port, user or password —
-and the trace sample ratio. Both need a restart and neither appears as pending.
-So an empty card is not a promise that nothing is waiting.
+Both of those were once things this banner could not tell you, and both are
+compared now: a database change that keeps the dialect — another host, port, user
+or password — and the recorded share of traces. An empty banner means nothing is
+waiting, with the one deliberate exception named above.
 
 On Windows, then, a saved setting takes effect when the application is next
 started the way it was started. Two exporters are offered, `otlp` and `jaeger`.
@@ -1673,7 +1692,7 @@ under *Settings → Logging, metrics and tracing*: exporter `OTLP`, collector
 string to a gRPC dialer, which reads a scheme as part of the host name), the
 recorded share at `1` while investigating something. **Then restart**: the
 exporter is built while the application starts, so a saved setting does nothing
-until it does. The *Restart* card on the same screen says so and offers the
+until it does. The banner across the top of the screen says so and offers the
 button.
 
 The trace browser is on `127.0.0.1:16686`, published to the loopback interface
