@@ -4690,3 +4690,102 @@ func TestTheAppearanceCardKeepsEachLanguagesWordsAcrossAReload(t *testing.T) {
 		t.Errorf("the base name reads %q after a reload; %q was written", got, base)
 	}
 }
+
+// The rights ticked for a role that has not been saved are still ticked.
+//
+// A set of switches is not a switch. The rights on a role are fifteen boxes all
+// carrying the name "permissions" and told apart by their value, and a draft
+// that wrote one true or false under that name kept whichever box happened to be
+// last - then put every box in the set back agreeing with it. Ticking the rights
+// for a new role and reloading came back with none of them.
+//
+// Two ways of losing them, because they are different faults with the same
+// appearance: the reload, and the reload of the screens that happens without one
+// - which rebuilds these switches from nothing on every language chosen and
+// every neighbouring card saved.
+func TestTheRightsTickedForAnUnsavedRoleSurvive(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Roles", p.click(`.tab[data-view="roles"]`),
+		chromedp.WaitVisible("#form-role", chromedp.ByID))
+	p.settled()
+
+	const name = "Schichtleitung"
+
+	p.run("name the role", chromedp.SendKeys(
+		`#form-role input[name="name"]`, name, chromedp.ByQuery))
+
+	// Whichever the first two are: naming specific rights here would be a case
+	// about the catalogue rather than about the switches.
+	var ticked string
+
+	p.run("tick two rights", chromedp.Evaluate(`
+		(() => {
+			const boxes = [...document.querySelectorAll('#permission-list input[name=permissions]')];
+			const chosen = boxes.slice(0, 2);
+
+			for (const box of chosen) {
+				box.checked = true;
+				box.dispatchEvent(new Event('input', { bubbles: true }));
+				box.dispatchEvent(new Event('change', { bubbles: true }));
+			}
+
+			return JSON.stringify(chosen.map((box) => box.value));
+		})()`, &ticked))
+
+	if ticked == "[]" {
+		t.Fatal("there are no rights to tick, so this case is about to prove nothing")
+	}
+
+	// Under this form's own name, which is not what form.id answers with when a
+	// form holds a control called "id" - as this one and the time entry both do.
+	// Both wrote to "gtr.draft.[object HTMLInputElement]", one key for two forms,
+	// and they overwrote each other on the way out and restored each other's
+	// emptiness on the way back in.
+	var keys string
+
+	p.run("read the draft keys", chromedp.Evaluate(`
+		JSON.stringify(Object.keys(sessionStorage).filter((key) => key.startsWith('gtr.draft.')))`,
+		&keys))
+
+	if !strings.Contains(keys, "gtr.draft.form-role") {
+		t.Errorf("the role form's draft is not under its own name: %s", keys)
+	}
+
+	stillTicked := func(what string) string {
+		var got string
+
+		p.run("read the switches "+what, chromedp.Evaluate(`
+			JSON.stringify([...document.querySelectorAll('#permission-list input[name=permissions]')]
+				.filter((box) => box.checked).map((box) => box.value))`, &got))
+
+		return got
+	}
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.waitGone("#login-screen")
+	p.settleWizard()
+	p.settled()
+
+	p.run("open Roles again", p.click(`.tab[data-view="roles"]`),
+		chromedp.WaitVisible("#form-role", chromedp.ByID))
+
+	if got := p.value(`#form-role input[name="name"]`); got != name {
+		t.Errorf("the role is called %q after a reload; %q was typed", got, name)
+	}
+
+	if got := stillTicked("after the reload"); got != ticked {
+		t.Errorf("the rights read %s after a reload; %s were ticked", got, ticked)
+	}
+
+	// And the other way of losing them, which needs no reload at all.
+	p.chooseLanguage("de")
+
+	if got := stillTicked("after choosing a language"); got != ticked {
+		t.Errorf("the rights read %s after a language was chosen; %s were ticked",
+			got, ticked)
+	}
+}
