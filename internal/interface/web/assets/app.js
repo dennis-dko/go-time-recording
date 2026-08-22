@@ -2029,14 +2029,70 @@ function draftableFields(form) {
     && !['password', 'file', 'submit', 'button', 'reset'].includes(field.type));
 }
 
+/**
+ * A form's own identifier, which is not always what form.id answers with.
+ *
+ * A form exposes its controls as named properties of itself, and those come
+ * first: a form holding <input name="id"> answers form.id with that input. Two
+ * forms here do - the time entry and the role - so both wrote their draft under
+ * the key "gtr.draft.[object HTMLInputElement]", which is one key for two forms.
+ * They overwrote each other, and on the way back in the first of them restored
+ * whatever the other had left, then wrote its own emptiness over the top.
+ *
+ * The attribute is not shadowed by anything.
+ */
+function formKey(form) {
+  return form?.getAttribute('id') ?? '';
+}
+
+/**
+ * Whether a name belongs to several controls rather than to one.
+ *
+ * A form's elements answer to a name with the control itself where there is one
+ * and with a list where there are several - which is how a set of switches is
+ * told from a single switch, without either of them having to declare it.
+ */
+function sharedName(form, name) {
+  const found = form.elements[name];
+
+  return Boolean(found) && !('tagName' in found);
+}
+
 /** Reads a form into something that can be written down and put back. */
 function draftOf(form) {
   const values = {};
 
   for (const field of draftableFields(form)) {
-    if (field.type === 'checkbox') values[field.name] = field.checked;
-    else if (field.type === 'radio') { if (field.checked) values[field.name] = field.value; }
-    else values[field.name] = field.value;
+    if (field.type === 'radio') {
+      if (field.checked) values[field.name] = field.value;
+
+      continue;
+    }
+
+    // Several boxes under one name are a set, and what is worth keeping is which
+    // of them are ticked. A role's rights are fifteen boxes all called
+    // "permissions", told apart by what they carry, so writing down one true or
+    // false under that name kept whichever box happened to be last - and put
+    // every box in the set back agreeing with it. Ticking the rights for a new
+    // role and reloading came back with none of them, which is what this was
+    // reported as.
+    if (field.type === 'checkbox') {
+      if (sharedName(form, field.name)) {
+        const ticked = values[field.name] ?? [];
+
+        if (field.checked) ticked.push(field.value);
+
+        // Assigned even when nothing is ticked, so an empty set is written down
+        // as one rather than as an absence that restores nothing.
+        values[field.name] = ticked;
+      } else {
+        values[field.name] = field.checked;
+      }
+
+      continue;
+    }
+
+    values[field.name] = field.value;
   }
 
   // The appearance card keeps more than its boxes.
@@ -2046,7 +2102,7 @@ function draftOf(form) {
   // would come back as the right words filed under the wrong language. What is
   // carried is therefore the whole set and which one is being looked at, and
   // restoring puts the chooser back before the boxes.
-  if (form.id === 'form-branding') {
+  if (formKey(form) === 'form-branding') {
     return { values, brandingDraft, brandingLanguage };
   }
 
@@ -2055,10 +2111,12 @@ function draftOf(form) {
 
 /** Writes down what is in a form, for the next load of this tab. */
 function rememberDraft(form) {
-  if (!form.id || form.dataset.noDraft !== undefined) return;
+  const key = formKey(form);
+
+  if (!key || form.dataset.noDraft !== undefined) return;
 
   try {
-    window.sessionStorage.setItem(DRAFT_PREFIX + form.id, JSON.stringify(draftOf(form)));
+    window.sessionStorage.setItem(DRAFT_PREFIX + key, JSON.stringify(draftOf(form)));
   } catch {
     // Storage refused, or full. Nothing to do and nothing to say: the form on
     // screen is unaffected, and this was only ever insurance against a reload.
@@ -2067,10 +2125,12 @@ function rememberDraft(form) {
 
 /** Throws away a form's draft, once it is no longer unfinished. */
 function forgetDraft(form) {
-  if (!form?.id) return;
+  const key = formKey(form);
+
+  if (!key) return;
 
   try {
-    window.sessionStorage.removeItem(DRAFT_PREFIX + form.id);
+    window.sessionStorage.removeItem(DRAFT_PREFIX + key);
   } catch {
     // Same reasoning as above.
   }
@@ -2101,12 +2161,14 @@ function forgetEveryDraft() {
  */
 function restoreDrafts() {
   for (const form of $$('form')) {
-    if (!form.id || form.dataset.noDraft !== undefined) continue;
+    const key = formKey(form);
+
+    if (!key || form.dataset.noDraft !== undefined) continue;
 
     let draft = null;
 
     try {
-      draft = JSON.parse(window.sessionStorage.getItem(DRAFT_PREFIX + form.id) ?? 'null');
+      draft = JSON.parse(window.sessionStorage.getItem(DRAFT_PREFIX + key) ?? 'null');
     } catch {
       // Unreadable or not there. Either way there is nothing to put back.
     }
@@ -2115,7 +2177,7 @@ function restoreDrafts() {
 
     // The appearance card's language first, so the boxes below land in the
     // language they were typed in rather than over the one the loader chose.
-    if (form.id === 'form-branding' && draft.brandingDraft) {
+    if (key === 'form-branding' && draft.brandingDraft) {
       brandingDraft = draft.brandingDraft;
 
       // Filled rather than shown: showBrandingLanguage takes the boxes back into
@@ -2130,9 +2192,13 @@ function restoreDrafts() {
 
       const was = draft.values[field.name];
 
-      if (field.type === 'checkbox') field.checked = Boolean(was);
-      else if (field.type === 'radio') field.checked = field.value === was;
-      else field.value = was;
+      if (field.type === 'checkbox') {
+        field.checked = Array.isArray(was) ? was.includes(field.value) : Boolean(was);
+      } else if (field.type === 'radio') {
+        field.checked = field.value === was;
+      } else {
+        field.value = was;
+      }
 
       field.dispatchEvent(new Event('input', { bubbles: true }));
       field.dispatchEvent(new Event('change', { bubbles: true }));
@@ -3821,7 +3887,15 @@ async function loadRoles() {
 
   fillSelect($('#form-user select[name=role]'), roleChoices(),
     { labelKey: 'label', valueKey: 'name' });
-  renderPermissionCheckboxes();
+
+  // Not over a role somebody is part way through. This runs on every reload of
+  // the screens - a language chosen, a neighbouring card saved - and it rebuilds
+  // the switches from nothing, so the rights ticked for a role that has not been
+  // saved were swept away without a reload being involved at all.
+  //
+  // Only this call. Opening a role and starting a new one both redraw these on
+  // purpose, and are somebody asking for it.
+  if (!beingEdited($('#form-role'))) renderPermissionCheckboxes();
 
   const rows = cache.roles.map((role) => {
     const actions = el('td', { class: 'actions' });
