@@ -11,7 +11,13 @@ import (
 // emailPattern is deliberately permissive. Fully validating an address by
 // regex is not possible; this only rejects input that is obviously not an
 // address, and delivery would be the real test.
-var emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s.]+\.[^@\s]+$`)
+//
+// The domain may be one label. It had to have a dot in it, which reads as the
+// obvious rule and is wrong on exactly the networks this application is most
+// often installed on: "@local", "@intranet" and a bare host name are ordinary
+// there, and the account this installation creates for itself is admin@local -
+// so the screen refused to create the kind of address it had already made.
+var emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s.]+(\.[^@\s]+)?$`)
 
 func validEmail(email string) bool {
 	return emailPattern.MatchString(strings.TrimSpace(email))

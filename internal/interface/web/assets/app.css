@@ -1157,40 +1157,6 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   white-space: pre-wrap;
 }
 
-/* --- password reveal --- */
-
-/* The wrapper is injected by the script, so every password field gets the
-   toggle without the markup having to opt in. */
-.pw-wrap { position: relative; display: block; }
-
-.pw-wrap input { padding-right: 40px; }
-
-.pw-toggle {
-  align-items: center;
-  background: none;
-  border: none;
-  border-radius: 6px;
-  color: var(--muted);
-  cursor: pointer;
-  display: flex;
-  justify-content: center;
-  padding: 0;
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 30px;
-  width: 32px;
-}
-
-.pw-toggle:hover { color: var(--text); background: none; filter: none; }
-
-.pw-toggle:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-.pw-toggle svg { height: 18px; width: 18px; }
-
 /* --- date fields ---
  *
  * The native input is still there and still holds the value; it is the picker,
@@ -2240,7 +2206,7 @@ input[readonly] { cursor: default; }
   /* The small round ones, which need width as much as height: an 18px cross in
      the corner of a notice is the hardest thing on the screen to press. */
   .toast-close,
-  .pw-toggle,
+  .password-toggle,
   .nav-toggle {
     min-height: 44px;
     min-width: 44px;
