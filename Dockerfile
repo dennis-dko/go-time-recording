@@ -1,9 +1,21 @@
 # Build a single self-contained binary: the web UI is embedded via go:embed
 # and the SQLite driver is pure Go, so CGO is not needed and the result runs
 # on a scratch-like base.
-FROM golang:1.26.6 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.6 AS build
 
 ARG VERSION=dev
+
+# Which machine the image is being built for, which is not the one building it
+# when more than one platform is asked for. BuildKit sets both for every target.
+#
+# --platform=$BUILDPLATFORM above pins this stage to the builder's own
+# architecture, so the compiler runs natively and cross-compiles. Without it,
+# BuildKit runs the whole stage under emulation for every foreign target, which
+# turns a Go build into a quarter of an hour. There is no cgo anywhere in this
+# tree, so GOOS and GOARCH are all it takes - the same reason the release builds
+# its binaries for four platforms from one runner.
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /src
 
@@ -16,7 +28,7 @@ COPY . .
 
 # CGO_ENABLED=0 makes the binary static; the previous "-linkmode external
 # -extldflags -static" needed a C toolchain and is unnecessary without cgo.
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
     -trimpath \
     -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/go-time-recording ./cmd/main.go

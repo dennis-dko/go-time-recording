@@ -1557,7 +1557,9 @@ For a minor or major bump, tag it by hand: `task release VERSION=v1.2.0` pushes
 the tag and that exact version is released — the next merge then counts on from
 there.
 
-**What a release carries.** The image on GHCR, and a binary for each of
+**What a release carries.** The image on GHCR — for `linux/amd64` and
+`linux/arm64`, so the same `docker compose up` works on a server and on a
+Raspberry Pi — and a binary for each of
 
 | | |
 | --- | --- |
