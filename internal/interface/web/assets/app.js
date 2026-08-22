@@ -2148,6 +2148,62 @@ function forgetEveryDraft() {
 }
 
 /**
+ * Where controls that hold typed work but belong to no form are kept.
+ *
+ * Almost everything somebody fills in here is in a form, and a form is what a
+ * draft is filed under. The timer is not: its project and its description sit
+ * beside the clock rather than in a form, because starting a timer is a button
+ * rather than a submission - and until the timer is started they are the only
+ * copy of what somebody has typed. Once it is running the server holds both and
+ * gives them back on its own.
+ *
+ * Declared in the markup with data-keep rather than swept up by selector, so
+ * what is carried across a load is a decision somebody made about that control
+ * and not a consequence of where it happens to sit. A search box or a filter is
+ * a question being asked, not work: they are left out.
+ */
+const LOOSE_DRAFT_KEY = `${DRAFT_PREFIX}(loose)`;
+
+/** Writes down the controls marked to be kept. */
+function rememberLooseDraft() {
+  const values = {};
+
+  for (const field of $$('[data-keep]')) {
+    if (field.id && !field.disabled) values[field.id] = field.value;
+  }
+
+  try {
+    window.sessionStorage.setItem(LOOSE_DRAFT_KEY, JSON.stringify(values));
+  } catch {
+    // Storage refused, or full. The screen is unaffected.
+  }
+}
+
+/** Puts them back. */
+function restoreLooseDraft() {
+  let values = null;
+
+  try {
+    values = JSON.parse(window.sessionStorage.getItem(LOOSE_DRAFT_KEY) ?? 'null');
+  } catch {
+    // Unreadable or not there.
+  }
+
+  if (!values) return;
+
+  for (const field of $$('[data-keep]')) {
+    // Disabled means the screen has put it beyond reach and something else is
+    // deciding it - a running timer is filled from the server, and its own
+    // answer outranks anything typed before it started.
+    if (!field.id || field.disabled || !(field.id in values)) continue;
+
+    field.value = values[field.id];
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+/**
  * Puts back what was in the forms when this tab was last loaded.
  *
  * After the loaders and not before: they fill every form from the server, so a
@@ -2160,6 +2216,8 @@ function forgetEveryDraft() {
  * collector box the exporter allows, whether an SSL mode applies at all.
  */
 function restoreDrafts() {
+  restoreLooseDraft();
+
   for (const form of $$('form')) {
     const key = formKey(form);
 
@@ -2187,8 +2245,14 @@ function restoreDrafts() {
       fillBrandingBoxes(draft.brandingLanguage ?? brandingLanguage);
     }
 
+    const restored = [];
+
     for (const field of draftableFields(form)) {
-      if (!(field.name in draft.values)) continue;
+      // A disabled control is not somebody's unsaved work; it is something the
+      // screen has put beyond reach - a shipped role's rights, the project a
+      // running timer is already booked against - and putting a draft into one
+      // would be writing over what the server said.
+      if (field.disabled || !(field.name in draft.values)) continue;
 
       const was = draft.values[field.name];
 
@@ -2200,6 +2264,14 @@ function restoreDrafts() {
         field.value = was;
       }
 
+      restored.push(field);
+    }
+
+    // Announced once every value is in rather than as each one lands. Handlers
+    // derive one field from another here - the database port from the dialect,
+    // which fields are on screen at all from the same - and one that runs part
+    // way through reads a form half restored.
+    for (const field of restored) {
       field.dispatchEvent(new Event('input', { bubbles: true }));
       field.dispatchEvent(new Event('change', { bubbles: true }));
     }
@@ -10526,6 +10598,15 @@ async function init() {
   // into a card the moment it appears is already protected from the loaders
   // filling the cards after it. Forms nothing refills are unaffected by it.
   $$('form').forEach(watchForEditing);
+
+  // And the few controls that hold typed work without belonging to one. Bound to
+  // the document rather than to each control, because some of them are drawn
+  // later than this runs.
+  for (const event of ['input', 'change']) {
+    document.addEventListener(event, (e) => {
+      if (e.target?.dataset?.keep !== undefined) rememberLooseDraft();
+    });
+  }
 
   // Appearance is a device setting and needs no session, so the picker works on
   // the sign-in screen too.
