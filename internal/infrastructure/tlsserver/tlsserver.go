@@ -9,6 +9,7 @@ package tlsserver
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/http"
@@ -20,6 +21,36 @@ import (
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
+
+// namesIn is what a certificate says it is valid for, as one line to log.
+//
+// The subject alternative names, because those are what a browser checks. The
+// common name only where there are none at all, which is a certificate too old
+// for anything modern to accept - but saying which one arrived beats saying
+// nothing about it.
+//
+// Leaf is filled in by LoadX509KeyPair, and a certificate that could not be
+// parsed has already stopped the start by the time this is called. The nil
+// answer is therefore for the impossible case, and it is the empty string
+// because the caller has a sentence to build either way.
+func namesIn(leaf *x509.Certificate) string {
+	if leaf == nil {
+		return ""
+	}
+
+	names := make([]string, 0, len(leaf.DNSNames)+len(leaf.IPAddresses))
+	names = append(names, leaf.DNSNames...)
+
+	for _, ip := range leaf.IPAddresses {
+		names = append(names, ip.String())
+	}
+
+	if len(names) == 0 && leaf.Subject.CommonName != "" {
+		names = append(names, leaf.Subject.CommonName)
+	}
+
+	return strings.Join(names, ", ")
+}
 
 // Config describes how to serve HTTPS.
 type Config struct {
@@ -89,6 +120,19 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 	var (
 		manager     *autocert.Manager
 		certificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)
+
+		// What the line logged at the end of this says the listener answers
+		// for. The same shape from two different questions: with Let's Encrypt
+		// it is the names that were asked for, and with a certificate this
+		// installation brought, the names that certificate carries.
+		//
+		// The second used to be the first, which meant it was nothing: Domains
+		// is empty when a certificate is supplied, so an installation serving
+		// its own logged "serving HTTPS on :8443 for " and stopped there. The
+		// names on the certificate are the more useful answer of the two in any
+		// case - they are what a browser actually checks, and mismatched ones
+		// are most of what goes wrong here.
+		served string
 	)
 
 	if own {
@@ -100,6 +144,7 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 			return nil, fmt.Errorf("cannot read the certificate and key: %w", loadErr)
 		}
 
+		served = namesIn(pair.Leaf)
 		certificate = func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &pair, nil }
 	} else {
 		manager = &autocert.Manager{
@@ -115,6 +160,7 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 			manager.Client = &acme.Client{DirectoryURL: stagingDirectory}
 		}
 
+		served = strings.Join(cfg.Domains, ", ")
 		certificate = manager.GetCertificate
 	}
 
@@ -198,8 +244,16 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 			"HTTPS is unaffected", httpServer.Addr, err)
 	}
 
+	// Built here rather than inside the goroutine, so a listener that answers for
+	// nothing nameable says only where it is listening instead of trailing off
+	// after the word "for".
+	announcement := fmt.Sprintf("serving HTTPS on :%d", cfg.HTTPSPort)
+	if served != "" {
+		announcement += " for " + served
+	}
+
 	go func() {
-		logger.Infof("serving HTTPS on :%d for %s", cfg.HTTPSPort, strings.Join(cfg.Domains, ", "))
+		logger.Infof("%s", announcement)
 
 		if err := httpsServer.ServeTLS(httpsListener, "", ""); err != nil && err != http.ErrServerClosed {
 			logger.Errorf("HTTPS server stopped: %v", err)
