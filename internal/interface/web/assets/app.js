@@ -2577,74 +2577,6 @@ function calendarIcon() {
   return svg;
 }
 
-/**
- * Gives every password field a reveal toggle.
- *
- * Done in script rather than markup so any password field added later is
- * covered automatically. Runs once; already-enhanced fields are skipped.
- */
-function enhancePasswordFields(root = document) {
-  for (const input of $$('input[type="password"]', root)) {
-    if (input.parentElement?.classList.contains('pw-wrap')) continue;
-
-    const wrap = el('span', { class: 'pw-wrap' });
-    input.replaceWith(wrap);
-    wrap.append(input);
-
-    const button = el('button', {
-      type: 'button',
-      class: 'pw-toggle',
-      'aria-label': t('pw.show', 'Show password'),
-      'aria-pressed': 'false',
-    });
-
-    button.append(eyeIcon(false));
-
-    button.addEventListener('click', () => {
-      const revealed = input.type === 'text';
-      input.type = revealed ? 'password' : 'text';
-
-      button.setAttribute('aria-pressed', String(!revealed));
-      button.setAttribute('aria-label', revealed
-        ? t('pw.show', 'Show password')
-        : t('pw.hide', 'Hide password'));
-
-      button.replaceChildren(eyeIcon(!revealed));
-
-      // Keep the caret where the user left it; changing `type` moves it to
-      // the end in some browsers.
-      const caret = input.value.length;
-      input.focus();
-      input.setSelectionRange(caret, caret);
-    });
-
-    wrap.append(button);
-  }
-}
-
-/** Builds the eye icon, struck through when the password is visible. */
-function eyeIcon(revealed) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.setAttribute('aria-hidden', 'true');
-
-  const paths = ['M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z', 'M12 9a3 3 0 100 6 3 3 0 000-6z'];
-  if (revealed) paths.push('M3 3l18 18');
-
-  for (const d of paths) {
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', d);
-    svg.append(path);
-  }
-
-  return svg;
-}
-
 /** Shows or hides every element that declares a data-perm requirement. */
 function applyPermissionVisibility(root = document) {
   for (const node of $$('[data-perm]', root)) {
@@ -3291,8 +3223,6 @@ const TRANSLATIONS = {
     'project.hint': 'Ihre Projekte sind Ihre: nur Sie sehen sie, und nur Sie buchen darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
-    'pw.hide': 'Passwort verbergen',
-    'pw.show': 'Passwort anzeigen',
     'report.result': 'Ergebnis',
     'report.total': '{0} gesamt',
     'report.title': 'Auswertung',
@@ -4882,13 +4812,24 @@ function showRunningConnection(form, ds) {
     form.elements[field].placeholder = running[field] ?? '';
   }
 
-  // The type is deliberately left alone. A select cannot hold a placeholder, so
-  // filling it would present a value this form has not stored as though it had -
-  // and it would do more than look wrong: choosing SQLite hides the server fields
-  // this note exists to explain, password included.
+  // The type is chosen, and this was the one field left blank on purpose.
   //
-  // Nothing is lost by leaving it. The line above already says which database
-  // this process is connected to.
+  // The reasoning was that a select cannot hold a placeholder, so filling it
+  // would present a value this form has not stored as though it had. What that
+  // actually produced was worse than the thing it avoided: a dropdown showing
+  // nothing at all, above fields whose placeholders describe a connection of a
+  // type the card would not name - and, because nothing chosen was read as a
+  // server, a port box filled in with 3306 beside them. A real value in one box
+  // and placeholders in the rest.
+  //
+  // And it did not survive a reload. There is no empty option to go back to, so
+  // a browser restoring this form landed on the first one, and the card came up
+  // claiming SQLite on an installation running PostgreSQL.
+  //
+  // So it names what is running, like every other field here. The note above
+  // says where that came from, which is what stops it reading as something
+  // somebody saved.
+  if (running.dialect) form.elements.dialect.value = running.dialect;
 
   if (note) {
     note.textContent = t('admin.connectionFromEnvironment',
@@ -4899,9 +4840,20 @@ function showRunningConnection(form, ds) {
   }
 }
 
-/** Whether the chosen database is one that lives on a server rather than in a file. */
+/**
+ * Whether the chosen database is one that lives on a server rather than a file.
+ *
+ * Nothing chosen is not a server. It read as one - anything that was not sqlite
+ * counted - so a card with no type selected offered the host, the user and the
+ * password of a server nobody had asked for, and filled the port in with 3306
+ * because that is what a server that is not PostgreSQL uses. A real value in one
+ * box, placeholders in the others and an empty dropdown above all of it, on a
+ * screen whose whole job is to say what this installation is connected to.
+ */
 function datasourceIsServer() {
-  return $('#form-datasource').elements.dialect.value !== 'sqlite';
+  const chosen = $('#form-datasource').elements.dialect.value;
+
+  return chosen !== '' && chosen !== 'sqlite';
 }
 
 /**
@@ -4924,9 +4876,20 @@ function syncDatasourceFields() {
   $('#ds-server-fields').hidden = !server;
   $('#ds-ssl-label').hidden = form.elements.dialect.value !== 'postgres';
 
-  setLeadingText($('#ds-name-label'), server
-    ? t('admin.dbName', 'Database / file name')
-    : t('admin.dbFile', 'Database file - created if it does not exist'));
+  // The key travels with the words. This label says two different things
+  // depending on the type, and only the text was being changed - so the element
+  // went on declaring itself as one of them while showing the other, and a
+  // language chosen afterwards put the declared one back.
+  const nameLabel = $('#ds-name-label');
+
+  if (server) {
+    nameLabel.dataset.i18n = 'admin.dbName';
+    setLeadingText(nameLabel, t('admin.dbName', 'Database / file name'));
+  } else {
+    nameLabel.dataset.i18n = 'admin.dbFile';
+    setLeadingText(nameLabel,
+      t('admin.dbFile', 'Database file - created if it does not exist'));
+  }
 
   if (server && !form.elements.port.value) {
     form.elements.port.value = form.elements.dialect.value === 'postgres' ? '5432' : '3306';
@@ -5892,7 +5855,14 @@ function forgetTheLastAccount() {
 
   // Emptied rather than left to the next render, which may never come: a table
   // whose loader returns early keeps whatever it last held.
-  for (const body of $$('table tbody')) body.replaceChildren();
+  //
+  // The ones a loader fills, which are the ones named by an id. Every table went
+  // before, and one of them is not data at all: the legend under Appearance that
+  // lists what may be written in a banner is part of the markup, filled by
+  // nobody, and once emptied it stayed empty for the rest of the session - a
+  // heading and a closing sentence with the six lines they explain gone from
+  // between them.
+  for (const body of $$('table[id] tbody')) body.replaceChildren();
 
   // The selection bars belong to those rows and would otherwise stand over an
   // empty table offering to delete three things.
@@ -6958,7 +6928,7 @@ function renderSetup() {
 
   // The wizard builds its fields as it goes, so the one-off pass at start-up has
   // already been and gone by the time a password field of its own exists.
-  enhancePasswordFields($('#setup-step-fields'));
+  wirePasswordReveal($('#setup-step-fields'));
 
   $('#setup-back').disabled = index === 0;
 
@@ -7737,8 +7707,12 @@ function wirePasswordReveal(root = document) {
       labelPasswordToggle(button, revealed);
 
       // The caret goes back where it was: the type change moves focus off the
-      // field in some browsers, and continuing to type is the normal next act.
+      // field in some browsers and puts it at the end in others, and continuing
+      // to type is the normal next act.
+      const caret = input.value.length;
+
       input.focus();
+      input.setSelectionRange(caret, caret);
     });
 
     // Submitting is the end of looking at it. Left revealed, the value would
@@ -10588,7 +10562,12 @@ async function init() {
   // the user must still be able to sign in rather than face a form whose
   // submit handler was never attached, which would silently reload the page.
   $('#form-login').addEventListener('submit', submitLogin);
-  enhancePasswordFields();
+
+  // Here rather than with the rest of the wiring below, so the sign-in form has
+  // its reveal before anything that could fail has been tried. It also registers
+  // a submit handler per field, which runs beside a form's own rather than
+  // instead of it - two listeners on one event, in the order they were added.
+  wirePasswordReveal();
 
   // Beside the password fields, and for the same reason: a field added later is
   // covered without anybody remembering to come back here.
@@ -10663,9 +10642,6 @@ async function init() {
     wireReportChart();
     wireWorkbook();
     wireSheetCards();
-    // After the forms are wired, so a submit handler registered here runs
-    // beside theirs rather than instead of one.
-    wirePasswordReveal();
     wireSetup();
     wireTour();
     wireWelcome();

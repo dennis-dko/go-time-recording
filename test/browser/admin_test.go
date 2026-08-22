@@ -700,6 +700,13 @@ func TestAPasswordCanBeRevealedAndHiddenAgain(t *testing.T) {
 
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+	p.waitForFilled("#datasource-active")
+
+	// A database on a server, because that is where a database password exists.
+	// The card opens on whatever this process is connected to, which here is a
+	// file - and a file has no host, no user and nothing to authenticate with, so
+	// those fields are put away and there is no password to reveal.
+	p.run("choose a server", p.chooseOption(`#form-datasource select[name="dialect"]`, "postgres"))
 
 	const field = `#form-datasource input[name="password"]`
 
@@ -4787,5 +4794,257 @@ func TestTheRightsTickedForAnUnsavedRoleSurvive(t *testing.T) {
 	if got := stillTicked("after choosing a language"); got != ticked {
 		t.Errorf("the rights read %s after a language was chosen; %s were ticked",
 			got, ticked)
+	}
+}
+
+// The connection card names what is running and invents nothing.
+//
+// Reported from a container installation. The type stood empty while the boxes
+// beneath it showed placeholders for a connection the card would not name - and
+// the port was not a placeholder at all but a real 3306, because nothing chosen
+// was read as "a server, and not PostgreSQL". A real value in one box and
+// placeholders in the rest.
+//
+// Reloading made it worse rather than better: there is no empty option to go
+// back to, so the browser restored the form onto the first one and the card came
+// up claiming SQLite.
+func TestTheConnectionCardNamesWhatIsRunningAndInventsNothing(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+	p.waitForFilled("#datasource-active")
+	p.settled()
+
+	var state struct {
+		Active string `json:"active"`
+		Stored bool   `json:"stored"`
+	}
+
+	// What the server says this process opened, which is what the card has to
+	// agree with. Read with the answer awaited, which evalJSON does not do.
+	var raw string
+
+	p.run("ask what is running", chromedp.Evaluate(`
+		(async () => {
+			const r = await fetch('/api/v1/settings/datasource', { credentials: 'same-origin' });
+			const body = await r.json();
+
+			return JSON.stringify({
+				active: body?.data?.active ?? '',
+				stored: body?.data?.stored ?? false,
+			});
+		})()`, &raw, awaitPromise))
+
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		t.Fatalf("reading what is running: %v; %s", err, raw)
+	}
+
+	if state.Stored {
+		t.Fatal("this instance has a stored connection, so it is not the case that " +
+			"was reported")
+	}
+
+	shown := func() string { return p.value(`#form-datasource select[name="dialect"]`) }
+
+	if got := shown(); got != state.Active {
+		t.Errorf("the card shows the type %q while the process is connected via %q",
+			got, state.Active)
+	}
+
+	// And a reload keeps it, along with the placeholders it belongs to.
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.waitGone("#login-screen")
+	p.settleWizard()
+	p.settled()
+
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+	p.waitForFilled("#datasource-active")
+
+	if got := shown(); got != state.Active {
+		t.Errorf("the card shows the type %q after a reload; the process is "+
+			"connected via %q", got, state.Active)
+	}
+
+	if got := p.attr(`#form-datasource [name="name"]`, "placeholder"); got == "" {
+		t.Error("the placeholders are gone after a reload, so the card is blank " +
+			"again under a line saying what it is connected to")
+	}
+
+	// And nothing chosen is not a server: no invented port, no server fields.
+	var empty string
+
+	p.run("choose nothing at all", chromedp.Evaluate(`
+		(() => {
+			const form = document.querySelector('#form-datasource');
+
+			form.elements.port.value = '';
+			form.elements.dialect.value = '';
+			form.elements.dialect.dispatchEvent(new Event('change', { bubbles: true }));
+
+			return JSON.stringify({
+				port: form.elements.port.value,
+				serverFieldsHidden: document.querySelector('#ds-server-fields').hidden,
+			});
+		})()`, &empty))
+
+	if !strings.Contains(empty, `"port":""`) {
+		t.Errorf("a card with no type chosen filled the port in by itself: %s", empty)
+	}
+
+	if !strings.Contains(empty, `"serverFieldsHidden":true`) {
+		t.Errorf("a card with no type chosen offers the fields of a server: %s", empty)
+	}
+}
+
+// The legend that explains the placeholders survives somebody signing out.
+//
+// Signing out empties every table on the page, so the next person is not handed
+// the last one's rows. One of those tables is not data: the legend under
+// Appearance listing what may be written in a banner is part of the markup and
+// filled by nobody, so once emptied it stayed empty - a heading and a closing
+// sentence with the six lines they explain gone from between them.
+func TestTheMarkupLegendSurvivesSigningOut(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	rows := func() int {
+		var n int
+
+		p.run("count the legend", chromedp.Evaluate(
+			`document.querySelectorAll('.markup-table tbody tr').length`, &n))
+
+		return n
+	}
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	before := rows()
+
+	if before == 0 {
+		t.Fatal("the legend is empty before anybody signed out, so this case is " +
+			"about to prove nothing")
+	}
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn(harness.AdminEmail, "a-much-better-password")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+
+	if after := rows(); after != before {
+		t.Errorf("the legend has %d lines after signing out and back in; it had %d - "+
+			"it is markup, and nothing draws it again", after, before)
+	}
+}
+
+// Every password field has exactly one eye, and it says which state it is in.
+//
+// There were two implementations of this in one page - one wrapping the field in
+// .pw-wrap with a .pw-toggle, the other in .password-field with a
+// .password-toggle - and each guarded only against itself running twice. So
+// every password field got both: two buttons, one drawn on top of the other, and
+// the eye came out looking like two overlapping eyes. Reported from Firefox and
+// true everywhere.
+//
+// The one that stayed is the one that says what it is doing: pressed or not,
+// labelled in the reader's language, struck through while the password is
+// showing, and put back to hidden when the form is submitted.
+func TestEveryPasswordFieldHasExactlyOneEye(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	count := func(where string) string {
+		var out string
+
+		p.run("count the eyes "+where, chromedp.Evaluate(`
+			(() => {
+				const fields = [...document.querySelectorAll('.password-field')];
+
+				return JSON.stringify({
+					fields: fields.length,
+					worst: fields.reduce((n, f) => Math.max(n, f.querySelectorAll('button').length), 0),
+					bare: fields.filter((f) => f.querySelectorAll('button').length === 0).length,
+					strays: document.querySelectorAll('.pw-toggle, .pw-wrap').length,
+				});
+			})()`, &out))
+
+		return out
+	}
+
+	// The sign-in screen first: it is the one password field somebody meets
+	// before anything else has run.
+	if got := count("on the sign-in screen"); !strings.Contains(got, `"worst":1`) {
+		t.Errorf("the sign-in password field does not have exactly one eye: %s", got)
+	}
+
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+	p.waitForFilled("#datasource-active")
+
+	// A server, so the connection's own password field is on screen too.
+	p.run("choose a server", p.chooseOption(`#form-datasource select[name="dialect"]`, "postgres"))
+
+	got := count("across the screens")
+
+	if !strings.Contains(got, `"worst":1`) {
+		t.Errorf("some password field has more or fewer than one eye: %s", got)
+	}
+
+	if !strings.Contains(got, `"bare":0`) {
+		t.Errorf("some password field has no eye at all: %s", got)
+	}
+
+	if !strings.Contains(got, `"strays":0`) {
+		t.Errorf("the second implementation is still on the page: %s", got)
+	}
+
+	// And it says which state it is in, rather than only changing the field.
+	var state string
+
+	p.run("press it", chromedp.Evaluate(`
+		(() => {
+			const button = document.querySelector('#form-datasource .password-toggle');
+			const input = document.querySelector('#form-datasource input[name="password"]');
+
+			const before = {
+				pressed: button.getAttribute('aria-pressed'),
+				revealed: button.classList.contains('revealed'),
+				type: input.type,
+			};
+
+			button.click();
+
+			return JSON.stringify({
+				before,
+				after: {
+					pressed: button.getAttribute('aria-pressed'),
+					revealed: button.classList.contains('revealed'),
+					type: input.type,
+				},
+			});
+		})()`, &state))
+
+	for _, want := range []string{
+		`"before":{"pressed":"false","revealed":false,"type":"password"}`,
+		`"after":{"pressed":"true","revealed":true,"type":"text"}`,
+	} {
+		if !strings.Contains(state, want) {
+			t.Errorf("pressing the eye did not go from hidden to shown as %s: %s", want, state)
+		}
 	}
 }
