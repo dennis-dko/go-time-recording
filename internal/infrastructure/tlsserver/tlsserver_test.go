@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -215,9 +217,14 @@ func TestAPortThatCannotBeBoundIsReported(t *testing.T) {
 	}
 }
 
-// selfSigned writes a certificate and key this test can hand to Start, so the
-// bind is what fails rather than the certificate before it.
-func selfSigned(t *testing.T) (certFile, keyFile string) {
+// selfSigned writes a certificate and key a test can hand to Start, so the bind
+// is what fails rather than the certificate before it.
+//
+// The names it is valid for, where a case cares: anything that parses as an
+// address goes in as one, the rest as host names, which is the distinction a
+// certificate draws and a browser checks. With none given it carries the one
+// name it always did.
+func selfSigned(t *testing.T, names ...string) (certFile, keyFile string) {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -231,6 +238,20 @@ func selfSigned(t *testing.T) (certFile, keyFile string) {
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		DNSNames:     []string{"gtr.example.com"},
+	}
+
+	if len(names) > 0 {
+		template.DNSNames = nil
+
+		for _, name := range names {
+			if ip := net.ParseIP(name); ip != nil {
+				template.IPAddresses = append(template.IPAddresses, ip)
+
+				continue
+			}
+
+			template.DNSNames = append(template.DNSNames, name)
+		}
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
@@ -258,4 +279,128 @@ func selfSigned(t *testing.T) (certFile, keyFile string) {
 	write(keyFile, "EC PRIVATE KEY", marshalled)
 
 	return certFile, keyFile
+}
+
+// The line that says HTTPS is up names what the certificate is actually for.
+//
+// It used to name TLS_DOMAINS, which is what was asked of Let's Encrypt and is
+// empty whenever a certificate was supplied instead - so an installation
+// serving its own logged "serving HTTPS on :8443 for " and stopped there, in
+// the middle of a sentence. Reported from a Raspberry Pi serving a certificate
+// its own network had signed.
+//
+// The names on the certificate are the better answer of the two in any case:
+// they are what a browser checks, and a mismatch between them and the address
+// somebody typed is most of what goes wrong with TLS on a private network.
+func TestTheAnnouncementNamesWhatTheCertificateCovers(t *testing.T) {
+	wanted := []string{"zeit.home.arpa", "pihole", "192.168.178.2"}
+	certificate, key := selfSigned(t, wanted...)
+
+	spoken := &spokenLogger{}
+
+	stop, err := Start(Config{
+		HTTPSPort: freeTCPPort(t),
+		HTTPPort:  freeTCPPort(t),
+		Backend:   "127.0.0.1:1",
+		CertFile:  certificate,
+		KeyFile:   key,
+	}, spoken)
+	if err != nil {
+		t.Fatalf("could not start: %v", err)
+	}
+
+	defer func() { _ = stop(t.Context()) }()
+
+	said := spoken.waitFor(t, "serving HTTPS")
+
+	for _, name := range wanted {
+		if !strings.Contains(said, name) {
+			t.Errorf("the certificate is valid for %q and the line does not say so: %q",
+				name, said)
+		}
+	}
+
+	// And it is a sentence rather than the beginning of one.
+	if strings.HasSuffix(strings.TrimSpace(said), "for") {
+		t.Errorf("the line trails off after \"for\": %q", said)
+	}
+}
+
+// What a certificate is valid for, asked of the two cases a running server
+// cannot easily be put into.
+//
+// A certificate with no subject alternative names at all is one no browser made
+// this decade would accept - but an installation that has somehow been given
+// one is exactly the installation whose logs need to say which certificate
+// arrived, so it falls back to the common name rather than to silence.
+func TestNamesInFallsBackToTheCommonNameAndThenToNothing(t *testing.T) {
+	if got := namesIn(nil); got != "" {
+		t.Errorf("a certificate that could not be read named %q", got)
+	}
+
+	old := &x509.Certificate{Subject: pkix.Name{CommonName: "gtr.example.com"}}
+	if got := namesIn(old); got != "gtr.example.com" {
+		t.Errorf("a certificate with only a common name named %q", got)
+	}
+}
+
+// spokenLogger keeps what was said, because the line under test is written from
+// a goroutine and there is nothing else to read it from.
+type spokenLogger struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *spokenLogger) Infof(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.lines = append(l.lines, fmt.Sprintf(format, args...))
+}
+
+func (l *spokenLogger) Errorf(string, ...any) {}
+
+// waitFor answers with the first line containing what was asked for, once it
+// has been said.
+func (l *spokenLogger) waitFor(t *testing.T, what string) string {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		l.mu.Lock()
+
+		for _, line := range l.lines {
+			if strings.Contains(line, what) {
+				l.mu.Unlock()
+
+				return line
+			}
+		}
+
+		l.mu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("nothing containing %q was said within five seconds", what)
+
+	return ""
+}
+
+// freeTCPPort answers with a port nothing holds at the moment it is asked.
+func freeTCPPort(t *testing.T) int {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatalf("cannot find a free port: %v", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	if err := listener.Close(); err != nil {
+		t.Fatalf("cannot release the port: %v", err)
+	}
+
+	return port
 }
