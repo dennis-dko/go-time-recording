@@ -168,6 +168,24 @@ jobs:
     permissions:
       contents: write
       packages: write
+
+    # Where the image waits while it is being checked. Named once, because three
+    # steps have to agree about it.
+    env:
+      STAGED_IMAGE: localhost:5000/go-time-recording:${{ needs.version.outputs.version }}
+
+    # A registry on this runner, because the daemon cannot hold what is built
+    # here. An image for two architectures is a manifest list, and `docker load`
+    # takes one platform out of it and drops the rest - so the image was checked
+    # and published as whatever the runner happened to be. This holds both, the
+    # check below takes each back out and starts it, and what is published is a
+    # copy of these bytes rather than a second build of them.
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
     # No outputs. They existed so the deploy job could name the image it was
     # announcing, and nothing else ever read them - so they went with it rather
     # than staying as two lines that look like an interface somebody depends on.
@@ -178,7 +196,16 @@ jobs:
           # necessarily what main points at by now.
           ref: ${{ needs.version.outputs.sha }}
 
+      # So an image built for another architecture can be started on this one.
+      # Only the check below needs it; the build itself cross-compiles.
+      - uses: docker/setup-qemu-action@v3
+
       - uses: docker/setup-buildx-action@v4
+        with:
+          # The builder runs in a container of its own, where "localhost" is its
+          # own loopback rather than this runner's - and the registry it has to
+          # push to is here.
+          driver-opts: network=host
 
       - name: Compute image name
         id: image
@@ -276,21 +303,29 @@ jobs:
           ( cd dist && sha256sum -- * > SHA256SUMS )
           cat dist/SHA256SUMS
 
-      # Built into this runner's daemon rather than pushed, because the next step
-      # is what decides whether it may be pushed at all.
+      # Both architectures, into the registry beside this job rather than out to
+      # the world: the next step is what decides whether any of it may be
+      # published.
+      #
+      # arm64 as well as amd64 because the release has shipped a linux/arm64
+      # binary all along and the image was built for whatever the runner was. A
+      # Raspberry Pi pulling it got "exec format error" from a version that
+      # advertised itself as supporting the machine.
+      #
+      # The Dockerfile cross-compiles, so this costs a second link rather than a
+      # second build under emulation.
       - uses: docker/build-push-action@v7
         with:
           context: .
-          push: false
-          load: true
+          platforms: linux/amd64,linux/arm64
+          push: true
           # The tag is the version, and it has to reach the binary: the footer
           # reads it, and a release that calls itself "dev" is worse than no
           # version at all.
           build-args: |
             VERSION=${{ needs.version.outputs.version }}
           tags: |
-            ${{ steps.image.outputs.name }}:${{ needs.version.outputs.version }}
-            ${{ steps.image.outputs.name }}:latest
+            ${{ env.STAGED_IMAGE }}
 
       # The image has to actually run before anybody is told it exists.
       #
@@ -300,72 +335,96 @@ jobs:
       # It also ended in a warning rather than a failure, which made it a note in
       # a log rather than a gate. Here it is neither: nothing leaves this runner
       # until the application has answered.
-      - name: Smoke-test the image before publishing it
+      - name: Smoke-test every architecture before publishing any of them
         env:
-          IMAGE: ${{ steps.image.outputs.name }}:${{ needs.version.outputs.version }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
 
-          # The image serves on 8000; 9090 is only where this runner reaches it.
-          # An earlier version published 9090:9090, which could never have
-          # answered - and warned rather than failed, so nobody found out.
+          # Each architecture in turn, taken back out of the registry above.
           #
-          # DB_DIALECT alone on purpose: the image supplies DB_NAME itself, so
-          # this also proves that default is still there. Run bare the binary
-          # serves its installer, and an installer answering says nothing about
-          # the application being publishable.
-          docker run -d --name smoke -p 9090:8000 -e DB_DIALECT=sqlite "$IMAGE"
+          # One of them runs natively and the other under emulation, which is
+          # slower and is the only reason the patience below is what it is. An
+          # image that has never been started is an image nobody knows the shape
+          # of - and the arm64 half of this was published unstarted for its whole
+          # existence.
+          for platform in linux/amd64 linux/arm64; do
+            echo "::group::${platform}"
 
-          ok=0
-          body=""
+            docker rm -f smoke >/dev/null 2>&1 || true
+            docker pull --quiet --platform "$platform" "$STAGED_IMAGE"
 
-          for _ in $(seq 1 20); do
-            # The body, not the status. The installer answers every path with its
-            # own page and a 200 - including this one - so a successful request
-            # proves only that something is listening. A version in the answer is
-            # the application.
-            body="$(curl -fsS http://localhost:9090/api/v1/branding 2>/dev/null || true)"
-
-            # And the version it names, not merely that it names one.
+            # The image serves on 8000; 9090 is only where this runner reaches it.
+            # An earlier version published 9090:9090, which could never have
+            # answered - and warned rather than failed, so nobody found out.
             #
-            # The Dockerfile declares ARG VERSION=dev, which is right for anybody
-            # building the image by hand and wrong for everything published from
-            # here - it reaches the binary only because the build step above
-            # passes it. Drop that one line, or misspell it, and the image builds,
-            # answers, passes this check and is published under a version number
-            # while calling itself "dev" in its own footer. Twice on the way here
-            # a comment says that must not happen; this is what stops it.
-            case "$body" in
-              *"\"version\":\"${VERSION}\""*)
-                ok=1
-                break
-                ;;
-            esac
+            # DB_DIALECT alone on purpose: the image supplies DB_NAME itself, so
+            # this also proves that default is still there. Run bare the binary
+            # serves its installer, and an installer answering says nothing about
+            # the application being publishable.
+            docker run -d --name smoke --platform "$platform" -p 9090:8000 -e DB_DIALECT=sqlite "$STAGED_IMAGE"
 
-            sleep 2
+            ok=0
+            body=""
+
+            for _ in $(seq 1 45); do
+              # The body, not the status. The installer answers every path with its
+              # own page and a 200 - including this one - so a successful request
+              # proves only that something is listening. A version in the answer is
+              # the application.
+              body="$(curl -fsS http://localhost:9090/api/v1/branding 2>/dev/null || true)"
+
+              # And the version it names, not merely that it names one.
+              #
+              # The Dockerfile declares ARG VERSION=dev, which is right for anybody
+              # building the image by hand and wrong for everything published from
+              # here - it reaches the binary only because the build step above
+              # passes it. Drop that one line, or misspell it, and the image builds,
+              # answers, passes this check and is published under a version number
+              # while calling itself "dev" in its own footer. Twice on the way here
+              # a comment says that must not happen; this is what stops it.
+              case "$body" in
+                *"\"version\":\"${VERSION}\""*)
+                  ok=1
+                  break
+                  ;;
+              esac
+
+              sleep 2
+            done
+
+            docker logs smoke || true
+            docker rm -f smoke || true
+
+            if [ "$ok" -ne 1 ]; then
+              echo "::error::the ${platform} image never answered on /api/v1/branding as ${VERSION}; nothing was published"
+              echo "last answer: ${body:-<nothing>}" >&2
+              exit 1
+            fi
+
+            echo "::endgroup::"
           done
 
-          docker logs smoke || true
-          docker rm -f smoke || true
-
-          if [ "$ok" -ne 1 ]; then
-            echo "::error::the image never answered on /api/v1/branding as ${VERSION} within 40s; nothing was published"
-            echo "last answer: ${body:-<nothing>}" >&2
-            exit 1
-          fi
-
-      # The image that was tested, not another build of it: pushed from the local
-      # daemon rather than built a second time, so the bytes somebody pulls are
-      # the bytes that answered above.
-      - name: Push the tested image
+      # The image that was tested, not another build of it: copied from the
+      # registry beside this job, so the bytes somebody pulls are the bytes that
+      # answered above - on both architectures.
+      #
+      # imagetools rather than pull-and-push, which would flatten the manifest
+      # list back down to whichever platform this runner is and undo the whole
+      # point of the two steps above.
+      - name: Publish the tested image
         env:
           IMAGE: ${{ steps.image.outputs.name }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          docker push "${IMAGE}:${VERSION}"
-          docker push "${IMAGE}:latest"
+
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${VERSION}" \
+            --tag "${IMAGE}:latest" \
+            "$STAGED_IMAGE"
+
+          docker buildx imagetools inspect "${IMAGE}:${VERSION}"
 
       # Last, because this step creates the tag: everything a release consists of -
       # the binaries and the image - already exists by now, and a tag with nothing
