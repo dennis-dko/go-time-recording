@@ -1497,3 +1497,44 @@ func TestTheSignInScreenIsNeverPutOverASession(t *testing.T) {
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID))
 	p.waitShown("#login-screen")
 }
+
+// What was typed beside the clock is still there after a reload.
+//
+// Almost everything somebody fills in here is in a form, and a form is what a
+// draft is filed under. The timer is not: its project and its description sit
+// beside the clock rather than in one, because starting a timer is a button
+// rather than a submission - so until it is started, the box is the only copy of
+// what somebody has typed, and a reload took it.
+//
+// Once the timer runs the server holds both and gives them back on its own,
+// which is why this is about the window before it is started.
+func TestWhatWasTypedBesideTheClockSurvivesAReload(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// Somebody who records time: the built-in administrator has no timer.
+	p.becomeWorker()
+
+	p.run("open the time view", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#timer-description", chromedp.ByID))
+	p.settled()
+
+	const doing = "Rechnungslauf vorbereitet"
+
+	p.run("say what is being worked on", chromedp.SendKeys(
+		"#timer-description", doing, chromedp.ByID))
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.waitGone("#login-screen")
+	p.settled()
+
+	p.run("open the time view again", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#timer-description", chromedp.ByID))
+
+	if got := p.value("#timer-description"); got != doing {
+		t.Errorf("the description beside the clock reads %q after a reload; %q was typed",
+			got, doing)
+	}
+}
