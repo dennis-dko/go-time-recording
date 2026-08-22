@@ -351,3 +351,42 @@ func TestResettingTheSettingsTakesThePendingNoticeWithThem(t *testing.T) {
 			"is waiting for: %+v", pending)
 	}
 }
+
+// A collector and a share stored while nothing exports are not a restart.
+//
+// They describe where spans go and how many of them, and with no exporter there
+// are no spans. Asking somebody to restart an installation in exchange for a
+// difference in nothing is how the notice became something that could not be
+// cleared: on an installation with tracing off it stood at "recorded share of
+// traces: 0 -> 1" and no save on the screen could take it away, because putting
+// the settings back is what produced it.
+func TestTracingSettingsAreNotWaitingWhileNothingExports(t *testing.T) {
+	t.Parallel()
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	admin.must(admin.api(http.MethodPut, "/settings/telemetry", map[string]any{
+		"tracerUrl":   "jaeger:4317",
+		"tracerRatio": 0.1,
+	}), http.StatusOK)
+
+	if pending := restartState(t, admin).Pending; len(pending) != 0 {
+		t.Errorf("a restart is waiting for settings that describe how spans are "+
+			"exported, on an installation that exports none: %+v", pending)
+	}
+
+	// And the moment something does export, both are waiting again - or the rule
+	// above would be an excuse for saying nothing.
+	admin.must(admin.api(http.MethodPut, "/settings/telemetry", map[string]any{
+		"traceExporter": "otlp",
+		"tracerUrl":     "jaeger:4317",
+		"tracerRatio":   0.1,
+	}), http.StatusOK)
+
+	for _, setting := range []string{"traceExporter", "tracerUrl", "tracerRatio"} {
+		if _, _, found := restartState(t, admin).pendingFor(setting); !found {
+			t.Errorf("%s is not waiting once tracing is switched on", setting)
+		}
+	}
+}
