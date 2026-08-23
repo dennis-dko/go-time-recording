@@ -1,0 +1,68 @@
+name: CodeQL
+
+# This replaces GitHub's default setup, which cannot be given a Go.
+#
+# The default setup runs the Go extractor with GOTOOLCHAIN=local against
+# whatever Go the runner image happens to carry. That is fine until go.mod asks
+# for a version newer than the image - the day this repository moved to 1.27.0
+# the analysis stopped with "go.mod requires go >= 1.27.0 (running go 1.26.6;
+# GOTOOLCHAIN=local)" - and there is nowhere in the default setup to put a
+# setup-go step, because it has no steps.
+#
+# So the build is spelled out. `go-version-file: go.mod` means the analysis is
+# built by the same toolchain as every other job, and the next bump needs no
+# change here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # The weekly run the default setup did. It is not redundant with the two
+  # above: a query added to the default suite finds yesterday's code without
+  # anybody pushing to it.
+  schedule:
+    - cron: '3 4 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    # Named to match what the default setup called it, so a branch protection
+    # rule or a bookmark pointing at "Analyze (go)" still finds it.
+    name: Analyze (go)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          # No query suite named, which is the one the default setup ran. This
+          # change is about who builds the code, not about what is asked of it.
+          build-mode: manual
+
+      # Manual rather than autobuild, because autobuild is the part that could
+      # not find a toolchain. What it does is what autobuild did once it found
+      # one: build the module.
+      - run: go build ./...
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:go
