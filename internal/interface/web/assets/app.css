@@ -993,15 +993,19 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .banner-dismiss:hover { opacity: 1; }
 
-/* The restart notice stays under the top bar rather than scrolling away with
-   the page.
+/* The notices that report a state stay under the top bar rather than scrolling
+   away with the page.
 
-   It is the one banner here that is about the installation rather than about
-   the screen it was caused on, and the administrator who most needs to keep
-   seeing it is exactly the one who has scrolled down to carry on working. Under
-   the bar and not over it: --topbar-height is kept current by trackTopbarHeight,
-   and the z-index is below the bar's so the bar wins where they meet. */
-#restart-banner {
+   They are the banners about the installation rather than about the screen they
+   were caused on, and the administrator who most needs to keep seeing one is
+   exactly the one who has scrolled down to carry on working. Under the bar and
+   not over it: --topbar-height is kept current by trackTopbarHeight, and the
+   z-index is below the bar's so the bar wins where they meet.
+
+   One box around both rather than each sticking on its own: two things stuck to
+   the same edge cover each other, and the one underneath is the one nobody knew
+   was there. */
+#standing-notices {
   position: sticky;
   top: var(--topbar-height, 0);
   z-index: 4;

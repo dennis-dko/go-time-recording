@@ -179,24 +179,33 @@
        Not dismissable, and there is nothing to dismiss it with: it is a state
        rather than news. It goes when the state does - the settings are put back,
        or the application is restarted. -->
-  <div id="restart-banner" class="banner" hidden>
-    <strong data-i18n="restart.title">Restart</strong>
-    <p id="restart-hint" data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>
-    <ul id="restart-pending" class="pending-list"></ul>
-    <div class="row">
-      <button type="button" id="restart-now" data-i18n="restart.now">Restart now</button>
+  <!-- The notices that report a state rather than news, kept where they can be
+       read from any screen. Together in one sticky box rather than each sticking
+       on its own: two things stuck to the same edge cover each other, and the
+       one underneath is the one nobody knew was there. -->
+  <div id="standing-notices">
+    <div id="restart-banner" class="banner" hidden>
+      <strong data-i18n="restart.title">Restart</strong>
+      <p id="restart-hint" data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>
+      <ul id="restart-pending" class="pending-list"></ul>
+      <div class="row">
+        <button type="button" id="restart-now" data-i18n="restart.now">Restart now</button>
+      </div>
+      <p class="minus" id="restart-unsupported" hidden></p>
     </div>
-    <p class="minus" id="restart-unsupported" hidden></p>
-  </div>
 
-  <!-- A release newer than this build, for whoever may install it. News rather
-       than a state, so unlike the two above it can be dismissed - and the
-       dismissal is remembered against that version, so the next release says so
-       again. -->
-  <div id="release-banner" class="banner" hidden>
-    <span id="release-text"></span>
-    <button type="button" id="release-open" class="link-button" data-i18n="update.open">Open Settings</button>
-    <button type="button" id="release-dismiss" class="banner-dismiss" data-i18n-aria="action.dismiss" aria-label="Dismiss">&times;</button>
+    <!-- A release newer than this build, for whoever may install it, and only for
+         them: it is behind the same permission as the screen that installs it.
+
+         Not dismissable, like the restart notice above it. It was, and the
+         dismissal was remembered against that version - which reads as a courtesy
+         and works out as an installation that is three releases behind because
+         somebody clicked the cross once on a busy morning. It goes when it stops
+         being true, which is when the newer version is running. -->
+    <div id="release-banner" class="banner" hidden>
+      <span id="release-text"></span>
+      <button type="button" id="release-open" class="link-button" data-i18n="update.open">Open Settings</button>
+    </div>
   </div>
 
   <!-- The instance's own announcement, set under Settings. -->

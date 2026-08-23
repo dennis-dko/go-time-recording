@@ -483,6 +483,11 @@ function stopPermissionPolling() {
   permissionPoll = null;
 }
 
+/** How often an open tab asks again. A day left open should notice a release. */
+const RELEASE_POLL_MS = 60 * 60 * 1000;
+
+let releasePoll = null;
+
 /**
  * Tells whoever may install one that a newer version exists.
  *
@@ -490,38 +495,16 @@ function stopPermissionPolling() {
  * visits to find out. An installation can sit three releases behind because the
  * only place that mentions it is the place you go once a quarter.
  *
- * A banner rather than a toast, because a toast fades and this is not urgent
- * enough to interrupt but is worth not losing. Dismissable, because it is news
- * rather than a state - the application works perfectly well on the version it is
- * on - and the dismissal is remembered against that version rather than for ever,
- * so the next release says so again.
+ * A banner rather than a toast, because a toast fades and this is worth not
+ * losing - and not dismissable, which it once was. Dismissing read as a
+ * courtesy and worked out as the same three releases behind, arrived at by
+ * clicking a cross once on a busy morning. It is a state rather than news: a
+ * newer version exists whether or not anybody wants to hear it, and it goes
+ * when it stops being true.
  *
- * Per device rather than per account: what somebody has already seen is a fact
- * about the screen in front of them.
+ * Only for the people who can act on it. Everybody else would be told about
+ * work they cannot do, by an application that will not stop mentioning it.
  */
-/**
- * Where a dismissed release is remembered, per account.
- *
- * Per account rather than per device, which is what it was. Dismissing is one
- * administrator saying "I have seen this version"; kept against the machine, it
- * said it on behalf of everybody who signs in there - so the second
- * administrator on a shared machine was never told about a release at all.
- *
- * Keyed this way it survives signing out, which is right: somebody who has seen
- * v1.2.3 has still seen it tomorrow.
- */
-function releaseSeenKey() {
-  return me.user ? `gtr.releaseSeen.${me.user.id}` : '';
-}
-
-/** How often an open tab asks again. A day left open should notice a release. */
-const RELEASE_POLL_MS = 60 * 60 * 1000;
-
-let releasePoll = null;
-
-/** The version the banner is currently about, so dismissing names the right one. */
-let offeredRelease = '';
-
 function startReleaseWatch() {
   stopReleaseWatch();
 
@@ -568,29 +551,15 @@ async function checkForRelease() {
 
   // Newer rather than installable: a container cannot install it from here, and
   // the person reading this is still the one who should know.
-  if (!state?.newer || !state.latest || dismissedRelease() === state.latest) {
+  if (!state?.newer || !state.latest) {
     hideReleaseBanner();
 
     return;
   }
 
-  offeredRelease = state.latest;
-
   // Through the redraw registry, so the sentence follows a language change like
   // everything else the script writes.
   redrawable('release', () => drawReleaseBanner(state));
-}
-
-/** What was last dismissed, if anything. */
-function dismissedRelease() {
-  const key = releaseSeenKey();
-  if (!key) return '';
-
-  try {
-    return localStorage.getItem(key) ?? '';
-  } catch {
-    return '';
-  }
 }
 
 // hideReleaseBanner takes the notice down and stops it being redrawn.
@@ -619,20 +588,6 @@ function drawReleaseBanner(state) {
 function wireReleaseBanner() {
   const banner = $('#release-banner');
   if (!banner) return;
-
-  $('#release-dismiss').addEventListener('click', () => {
-    banner.hidden = true;
-    stopRedrawing('release');
-
-    // Against the version, so this is "I know about that one" rather than "stop
-    // telling me anything".
-    try {
-      localStorage.setItem(releaseSeenKey(), offeredRelease);
-    } catch {
-      // Storage refused: the banner comes back on the next load, which is a
-      // smaller failure than never showing it.
-    }
-  });
 
   $('#release-open').addEventListener('click', () => {
     switchView('admin');
