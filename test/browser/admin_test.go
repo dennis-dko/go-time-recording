@@ -5127,3 +5127,71 @@ func TestADraftFromAnotherVersionIsNotPutBack(t *testing.T) {
 		t.Errorf("a draft written now carries no version: %s", stamped)
 	}
 }
+
+// The release notice cannot be clicked away, and stands where the restart one
+// does.
+//
+// It was dismissable, and the dismissal was remembered against that version.
+// That reads as a courtesy and works out as an installation three releases
+// behind, arrived at by clicking a cross once on a busy morning - which is the
+// exact failure the banner was added to prevent, since the version card had
+// been saying the same thing on a screen nobody visits.
+//
+// It reports a state rather than news: a newer version exists whether or not
+// anybody wants to hear it, and it goes when it stops being true.
+func TestTheReleaseNoticeCannotBeClickedAway(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// Put up the way the watch puts it up, because no newer version exists to
+	// wait for here.
+	p.run("a newer version exists", chromedp.Evaluate(`
+		(() => {
+			drawReleaseBanner({ latest: 'v9.9.9', running: 'v0.0.1' });
+
+			return 1;
+		})()`, nil))
+
+	p.waitShown("#release-banner")
+
+	var shape string
+
+	p.run("look at it", chromedp.Evaluate(`
+		(() => {
+			const banner = document.querySelector('#release-banner');
+
+			// Read defensively: this runs to describe a page that may not have
+			// the box at all, and an exception here would say only that
+			// something threw.
+			const standing = document.querySelector('#standing-notices');
+
+			return JSON.stringify({
+				dismiss: banner.querySelectorAll('.banner-dismiss, #release-dismiss').length,
+				standing: Boolean(banner.closest('#standing-notices')),
+				withRestart: Boolean(document.querySelector('#standing-notices #restart-banner')),
+				sticky: standing ? getComputedStyle(standing).position : 'no such box',
+			});
+		})()`, &shape))
+
+	if !strings.Contains(shape, `"dismiss":0`) {
+		t.Errorf("the release notice still offers a way to click it away: %s", shape)
+	}
+
+	if !strings.Contains(shape, `"standing":true`) || !strings.Contains(shape, `"withRestart":true`) {
+		t.Errorf("the release notice does not stand where the restart notice does: %s", shape)
+	}
+
+	if !strings.Contains(shape, `"sticky":"sticky"`) {
+		t.Errorf("the standing notices scroll away with the page: %s", shape)
+	}
+
+	// And it is still only for the people who can act on it.
+	p.becomeWorker()
+
+	if p.visible("#release-banner") {
+		t.Error("somebody who may not administer this installation is told a newer " +
+			"version exists")
+	}
+}
