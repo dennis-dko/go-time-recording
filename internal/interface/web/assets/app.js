@@ -2095,6 +2095,23 @@ function draftOf(form) {
     values[field.name] = field.value;
   }
 
+  // Stamped with the version that wrote it.
+  //
+  // A draft is a snapshot of a form, and a form is not a fixed thing: fields are
+  // added, a default changes, a card starts filling something in that it used to
+  // leave blank. A draft written before such a change is not a record of what
+  // somebody typed any more - it is a record of how the screen used to behave,
+  // and putting it back re-creates that behaviour on top of the new screen.
+  //
+  // Which is exactly what happened. The connection card learnt to name the
+  // database this process is connected to; a draft from the version before that
+  // still held the empty type it used to leave, and restoring it put the card
+  // back to naming nothing - on an installation that had just been updated to
+  // fix precisely that.
+  //
+  // Dropped rather than migrated. What is lost is one form somebody had half
+  // filled in at the moment they updated, and the alternative is carrying every
+  // past shape of every form around for ever.
   // The appearance card keeps more than its boxes.
   //
   // Its texts exist once per language, and only the chosen language's are on
@@ -2102,11 +2119,13 @@ function draftOf(form) {
   // would come back as the right words filed under the wrong language. What is
   // carried is therefore the whole set and which one is being looked at, and
   // restoring puts the chooser back before the boxes.
+  const version = lastBranding.version ?? '';
+
   if (formKey(form) === 'form-branding') {
-    return { values, brandingDraft, brandingLanguage };
+    return { version, values, brandingDraft, brandingLanguage };
   }
 
-  return { values };
+  return { version, values };
 }
 
 /** Writes down what is in a form, for the next load of this tab. */
@@ -2232,6 +2251,14 @@ function restoreDrafts() {
     }
 
     if (!draft?.values) continue;
+
+    // Written by a version that is no longer running - see draftOf. Cleared as
+    // well as skipped, so it does not sit there being skipped for ever.
+    if ((draft.version ?? '') !== (lastBranding.version ?? '')) {
+      forgetDraft(form);
+
+      continue;
+    }
 
     // The appearance card's language first, so the boxes below land in the
     // language they were typed in rather than over the one the loader chose.
