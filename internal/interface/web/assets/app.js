@@ -4769,6 +4769,31 @@ function drawBranding(branding) {
     img.alt = mark ? (branding.title || '') : '';
   }
 
+  // The shipped mark stands where no logo has been uploaded, and steps aside
+  // where one has. Only in the header: the sign-in card gives a logo the width
+  // of the card, and a 26px glyph in that space would read as something that
+  // failed to load rather than as a mark.
+  //
+  // The attribute rather than the property, because this one is drawn rather
+  // than fetched and an SVG element is not an HTMLElement: `hidden` is defined
+  // on the latter, so assigning it here creates a property nobody reads and
+  // leaves the mark on screen beside the logo that replaced it.
+  // One of the two, never both. The three columns of this bar mean different
+  // things - the installation's identity at the left end, the application's in
+  // the middle - so wearing the same mark in both places at once would blur
+  // exactly the distinction they exist to draw.
+  const ownLogo = Boolean(sized['#brand-logo']);
+
+  for (const [node, showWhenOwned] of [[$('#brand-mark'), false], [$('.app-mark'), true]]) {
+    if (!node) continue;
+
+    // The attribute rather than the property: these are SVG elements, and
+    // `hidden` is defined on HTMLElement - assigning it here would create a
+    // property nobody reads and leave both marks on screen.
+    if (showWhenOwned === ownLogo) node.removeAttribute('hidden');
+    else node.setAttribute('hidden', '');
+  }
+
   // The announcement banner is separate from the "change your password" one.
   // Through the renderer, so a {year} in a copyright line stays right and a link
   // in a footer is a link. Drawn rather than assigned, because none of this is

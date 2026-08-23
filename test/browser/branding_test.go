@@ -173,11 +173,19 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 		t.Error("the header shows a mark on an installation that has configured none")
 	}
 
-	// The application's own mark is there, though, beside the title. It is what
-	// the browser tab shows too, so the two read as one program.
-	if !p.visible(".app-mark") {
-		t.Error("the welcome button has no mark, so nothing on the screen says " +
+	// The application's own mark is there, though - in the logo slot, standing in
+	// for the one this installation has not uploaded. It is what the browser tab
+	// shows too, so the two read as one program.
+	if !p.visible("#brand-mark") {
+		t.Error("the header has no mark at all, so nothing on the screen says " +
 			"which application this is")
+	}
+
+	// And only there. The bar's three columns mean different things - the
+	// installation's identity at the left end, the application's in the middle -
+	// so the same mark in both at once would blur the distinction they draw.
+	if p.visible(".app-mark") {
+		t.Error("the mark is beside the title as well as in the logo slot")
 	}
 
 	// Drawn, not typed. The house character it replaced is a font glyph: a
@@ -208,6 +216,19 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 
 	if !p.visible("#brand-logo") {
 		t.Error("the header's mark is hidden after a logo was configured")
+	}
+
+	// And the slot being taken is what sends the application's own mark back
+	// beside the title, where it says which program this is without claiming to
+	// be the installation's logo.
+	if !p.visible(".app-mark") {
+		t.Error("nothing on the bar says which application this is once the logo " +
+			"slot belongs to the installation")
+	}
+
+	if p.visible("#brand-mark") {
+		t.Error("the shipped mark is still in the logo slot beside the logo that " +
+			"replaced it")
 	}
 
 	// The logo at the left end and the name in the middle, which is the way round
@@ -1107,4 +1128,82 @@ func (p *page) storedTranslations(t *testing.T) map[string]struct {
 	}
 
 	return written
+}
+
+// An installation that has uploaded no logo still has a mark.
+//
+// The left end of the bar was simply empty until somebody configured one, which
+// is a corner of the screen saying nothing on every fresh installation. The
+// application ships one now - drawn rather than fetched, so it costs no request
+// and takes the reader's own theme colours - and it steps aside the moment a
+// real logo is configured, because that one is the installation's identity and
+// this one is only a stand-in for it.
+func TestAnInstallationWithNoLogoStillHasAMark(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	if !p.visible("#brand-mark") {
+		t.Error("an installation with no logo has an empty corner where a mark " +
+			"would be")
+	}
+
+	// The same drawing as the one beside the title, referenced rather than
+	// repeated: two copies of one mark are two drawings that can drift apart.
+	var uses string
+
+	p.run("how the mark is drawn", chromedp.Evaluate(`
+		JSON.stringify({
+			slot: document.querySelector('#brand-mark use')?.getAttribute('href') ?? '',
+			title: document.querySelector('.app-mark use')?.getAttribute('href') ?? '',
+			symbols: document.querySelectorAll('symbol#icon-mark').length,
+		})`, &uses))
+
+	if !strings.Contains(uses, `"slot":"#icon-mark"`) || !strings.Contains(uses, `"title":"#icon-mark"`) {
+		t.Errorf("the mark is drawn out where it is used rather than referenced: %s", uses)
+	}
+
+	if !strings.Contains(uses, `"symbols":1`) {
+		t.Errorf("the mark is defined more or less than once: %s", uses)
+	}
+
+	// A logo of its own. One pixel is enough: what is being asked is which of the
+	// two is on screen, not what either looks like.
+	const dot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-branding", chromedp.ByID))
+	p.settled()
+
+	var saved string
+
+	p.run("configure a logo", chromedp.Evaluate(`
+		(async () => {
+			const csrf = document.cookie.split(';').map((c) => c.trim())
+				.find((c) => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+
+			const res = await fetch('/api/v1/settings/branding', {
+				method: 'PUT',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+				body: JSON.stringify({ title: 'Alpha GmbH', logo: '`+dot+`' }),
+			});
+
+			await loadBranding();
+
+			return String(res.status);
+		})()`, &saved, awaitPromise))
+
+	if saved != "200" {
+		t.Fatalf("the logo was not accepted (%s), so this case is about to prove nothing",
+			saved)
+	}
+
+	p.waitGone("#brand-mark")
+
+	if !p.visible("#brand-logo") {
+		t.Error("the configured logo is not on screen, so the mark stepped aside " +
+			"for nothing")
+	}
 }

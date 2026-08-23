@@ -1299,6 +1299,26 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    shorter, a square mark hits the height. What it costs is bar height, and the
    bar is sticky - so this is the one place where a large logo is paid for on
    every screen. */
+/* The mark this application ships with.
+ *
+ * Sized to the row rather than to the 96px an uploaded logo may claim: this is a
+ * glyph beside the title, not the installation's own identity, and it should not
+ * push the bar taller than it is without one.
+ *
+ * The display rule is not decoration. Elsewhere in this file a flex or grid
+ * display beats the hidden attribute, and an element hidden in the markup goes
+ * on being laid out - so anything that hides by attribute says so here too.
+ */
+.brand-mark {
+  color: var(--accent);
+  flex: none;
+  height: 26px;
+  width: 26px;
+}
+
+.brand-mark[hidden],
+.app-mark[hidden] { display: none; }
+
 .brand-logo {
   height: auto;
   max-height: 96px;
