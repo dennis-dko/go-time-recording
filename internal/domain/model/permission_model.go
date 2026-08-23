@@ -1,5 +1,7 @@
 package model
 
+import "slices"
+
 // Permissions are the atomic rights a role can hold. They are constants rather
 // than database rows because each one is enforced by a specific line of code:
 // a permission that exists only in the database would grant nothing.
@@ -146,13 +148,7 @@ func UserPermissions() []string {
 
 // IsPermission reports whether name is a permission this application enforces.
 func IsPermission(name string) bool {
-	for _, p := range AllPermissions() {
-		if p == name {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(AllPermissions(), name)
 }
 
 // Default role names created on first start.

@@ -1,6 +1,6 @@
 module github.com/dennis-dko/go-time-recording
 
-go 1.26.6
+go 1.27.0
 
 require (
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f

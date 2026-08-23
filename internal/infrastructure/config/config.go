@@ -272,7 +272,7 @@ func ratioOr(raw string, fallback float64) float64 {
 func splitList(raw string) []string {
 	var out []string
 
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		if trimmed := strings.TrimSpace(part); trimmed != "" {
 			out = append(out, trimmed)
 		}

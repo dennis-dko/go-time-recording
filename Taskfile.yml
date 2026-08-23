@@ -514,7 +514,24 @@ tasks:
         go get go@${GOVERSION#go}
       - go get -u ./...
       - task: test
-      - echo "Done. Remember to bump the base images in Dockerfile and deploy/ldap/Dockerfile if the toolchain moved."
+      # The base images carry a toolchain of their own, and nothing notices when
+      # they fall behind: the build still succeeds, quietly on the old one. This
+      # used to be a line of prose asking the reader to remember - and it named
+      # deploy/ldap/Dockerfile, which builds on Debian and has never had a Go in
+      # it, while missing test/Dockerfile.probe, which does.
+      #
+      # So it looks rather than remembers. Whatever carries a golang image is
+      # found by carrying one.
+      - |
+        want=$(go env GOVERSION)
+        want=${want#go}
+        stale=$(grep -rn "golang:" --include='Dockerfile*' --exclude-dir=.git . | grep -v "golang:${want}" || true)
+        if [ -n "$stale" ]; then
+          echo "Still building on an older toolchain than ${want}:"
+          echo "$stale"
+          exit 1
+        fi
+        echo "Done. Base images are on ${want} too."
 
   clean:
     desc: 'Upkeep: remove everything testing and building leave behind.'

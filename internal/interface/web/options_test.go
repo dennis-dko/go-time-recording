@@ -2,6 +2,7 @@ package web_test
 
 import (
 	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -59,13 +60,7 @@ func missing(want, got []string) []string {
 }
 
 func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(values, want)
 }
 
 // The log level select carries the same "follow the configuration file" option

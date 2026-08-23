@@ -110,8 +110,7 @@ func Internal(err error) *Error {
 // KindOf reports the Kind of the first *Error in err's chain, defaulting to
 // KindInternal so unclassified errors are never treated as the client's fault.
 func KindOf(err error) Kind {
-	var e *Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*Error](err); ok {
 		return e.Kind
 	}
 

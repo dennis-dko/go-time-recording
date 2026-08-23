@@ -58,7 +58,7 @@ func TestSequenceNumbersNeverRepeatEvenAfterTheRingWraps(t *testing.T) {
 
 	seen := map[uint64]bool{}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		s.appendLine("INFO", "line")
 	}
 

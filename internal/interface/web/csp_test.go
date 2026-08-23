@@ -50,7 +50,7 @@ func TestNoStyleBlockInTheMarkup(t *testing.T) {
 func TestTheOnlyDataURIsAreImages(t *testing.T) {
 	page := asset(t, "/")
 
-	for _, line := range strings.Split(page, "\n") {
+	for line := range strings.SplitSeq(page, "\n") {
 		if !strings.Contains(line, "data:") {
 			continue
 		}

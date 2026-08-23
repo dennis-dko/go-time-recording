@@ -62,7 +62,7 @@ func validScheduleField(field string, minimum, maximum int) bool {
 		return false
 	}
 
-	for _, item := range strings.Split(field, ",") {
+	for item := range strings.SplitSeq(field, ",") {
 		if !validScheduleItem(item, minimum, maximum) {
 			return false
 		}

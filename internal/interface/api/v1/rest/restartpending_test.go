@@ -18,8 +18,6 @@ func waitingFor(changes []PendingChange, setting string) (PendingChange, bool) {
 	return PendingChange{}, false
 }
 
-func ptr[T any](v T) *T { return &v }
-
 // What a restart would change is what the next start would use, against what
 // this process is using.
 //
@@ -66,9 +64,9 @@ func TestARestartIsReportedWhenTheNextStartWouldDiffer(t *testing.T) {
 
 	t.Run("stored and the same as running", func(t *testing.T) {
 		changes := telemetryPending(model.Telemetry{
-			TraceExporter: ptr("otlp"),
-			TracerURL:     ptr("collector:4317"),
-			TracerRatio:   ptr(1.0),
+			TraceExporter: new("otlp"),
+			TracerURL:     new("collector:4317"),
+			TracerRatio:   new(1.0),
 		}, fromFile, running, true)
 
 		if len(changes) != 0 {
@@ -79,7 +77,7 @@ func TestARestartIsReportedWhenTheNextStartWouldDiffer(t *testing.T) {
 
 	t.Run("stored and different", func(t *testing.T) {
 		changes := telemetryPending(model.Telemetry{
-			TracerRatio: ptr(0.25),
+			TracerRatio: new(0.25),
 		}, fromFile, running, true)
 
 		change, found := waitingFor(changes, "tracerRatio")
@@ -204,9 +202,9 @@ func TestTheShareAndCollectorAreWaitingAgainAsSoonAsAnythingExports(t *testing.T
 
 	// Switched on, with a collector and a share to go with it.
 	stored := model.Telemetry{
-		TraceExporter: ptr("otlp"),
-		TracerURL:     ptr("collector:4317"),
-		TracerRatio:   ptr(0.5),
+		TraceExporter: new("otlp"),
+		TracerURL:     new("collector:4317"),
+		TracerRatio:   new(0.5),
 	}
 
 	changes := telemetryPending(stored, quiet, quiet, true)
@@ -225,7 +223,7 @@ func TestTheShareAndCollectorAreWaitingAgainAsSoonAsAnythingExports(t *testing.T
 		TracerURL: "collector:4317", TracerRatio: 1, MetricsPort: 2121,
 	}
 
-	moved := telemetryPending(model.Telemetry{TracerURL: ptr("elsewhere:4317")},
+	moved := telemetryPending(model.Telemetry{TracerURL: new("elsewhere:4317")},
 		exporting, exporting, true)
 
 	if _, found := waitingFor(moved, "tracerUrl"); !found {

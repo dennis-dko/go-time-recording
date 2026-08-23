@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -30,13 +31,7 @@ type Principal struct {
 
 // Can reports whether the principal holds the permission.
 func (p *Principal) Can(permission string) bool {
-	for _, granted := range p.Permissions {
-		if granted == permission {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(p.Permissions, permission)
 }
 
 // AuthService authenticates users and resolves what they may do.

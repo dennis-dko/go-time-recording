@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -134,15 +135,11 @@ func splitLevels(raw string) []string {
 
 	var levels []string
 
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		name := strings.ToUpper(strings.TrimSpace(part))
 
-		for _, known := range logsink.Levels {
-			if name == known {
-				levels = append(levels, name)
-
-				break
-			}
+		if slices.Contains(logsink.Levels, name) {
+			levels = append(levels, name)
 		}
 	}
 

@@ -236,8 +236,7 @@ func Problemf(code, format string, values ...any) error {
 // with the English wording - the same fallback the interface makes for a code
 // nobody has translated.
 func ProblemOf(err error) (code string, values []any) {
-	var problem rowProblem
-	if errors.As(err, &problem) {
+	if problem, ok := errors.AsType[rowProblem](err); ok {
 		return problem.code, problem.values
 	}
 
@@ -248,8 +247,7 @@ func ProblemOf(err error) (code string, values []any) {
 func rowErrorFor(number int, err error) RowError {
 	out := RowError{Number: number, Reason: err.Error()}
 
-	var problem rowProblem
-	if errors.As(err, &problem) {
+	if problem, ok := errors.AsType[rowProblem](err); ok {
 		out.Code, out.Values = problem.code, problem.values
 	}
 

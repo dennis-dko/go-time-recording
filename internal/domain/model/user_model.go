@@ -1,5 +1,7 @@
 package model
 
+import "slices"
+
 // Defaults applied to a user who has not chosen their own working times.
 const (
 	DefaultDailyTargetHours = 8
@@ -109,13 +111,7 @@ func SupportedLanguages() []string {
 
 // IsSupportedLanguage reports whether the interface has translations for it.
 func IsSupportedLanguage(language string) bool {
-	for _, supported := range SupportedLanguages() {
-		if supported == language {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(SupportedLanguages(), language)
 }
 
 // EffectiveLanguage returns the user's language, falling back to the default.

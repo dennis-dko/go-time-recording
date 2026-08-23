@@ -381,8 +381,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 func writeError(w http.ResponseWriter, status int, err error) {
 	body := map[string]any{"error": err.Error()}
 
-	var detail *apperror.Error
-	if errors.As(err, &detail) {
+	if detail, ok := errors.AsType[*apperror.Error](err); ok {
 		if len(detail.Fields) > 0 {
 			body["param"] = detail.Fields
 		}

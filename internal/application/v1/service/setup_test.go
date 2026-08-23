@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"testing"
 
@@ -45,9 +46,7 @@ func (s *stubSettings) GetAll(_ context.Context) (map[string]string, error) {
 	defer s.mu.RUnlock()
 
 	out := make(map[string]string, len(s.values))
-	for k, v := range s.values {
-		out[k] = v
-	}
+	maps.Copy(out, s.values)
 
 	return out, nil
 }

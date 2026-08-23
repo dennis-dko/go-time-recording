@@ -361,8 +361,7 @@ func unreadableWorkbook(err error) error {
 	// perfectly well, so calling it unreadable is untrue as well as unhelpful -
 	// and the name of the column is the one thing the reader needs, so it travels
 	// as a value rather than only inside the English sentence.
-	var unknown spreadsheet.UnknownColumnError
-	if errors.As(err, &unknown) {
+	if unknown, ok := errors.AsType[spreadsheet.UnknownColumnError](err); ok {
 		return toHTTPError(apperror.Invalidf("%v", err).
 			WithCode("unknownPermissionColumn", unknown.Name))
 	}
