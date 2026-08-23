@@ -186,6 +186,10 @@ func (s *SessionService) OpenSession(ctx context.Context, user *model.User) (*Lo
 		UserID:    user.ID,
 		CreatedAt: now,
 		ExpiresAt: now.Add(s.sessionLifetime(ctx)),
+
+		// A session nobody ever uses is as idle as one abandoned after a day's
+		// work, so the clock starts here rather than at the first request.
+		LastSeenAt: now,
 	}
 
 	if err := s.sessions.Save(ctx, session); err != nil {
@@ -353,7 +357,17 @@ func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal,
 		return nil, apperror.Invalidf("no session").WithCode("noSession")
 	}
 
-	if session.Expired(time.Now()) {
+	now := time.Now()
+
+	// Two different questions, and both end the session.
+	//
+	// The lifetime is absolute and starts at the sign-in: a bound on how long one
+	// act of proving who you are is worth. Idleness is measured from the last use
+	// and asks whether anybody is still there - a person working all morning keeps
+	// their session, and the same person going home at noon loses it.
+	idle := s.idleTimeout(ctx)
+
+	if session.Expired(now) || session.Idle(now, idle) {
 		// Clean up on the way past, so expired rows do not need the sweep to
 		// disappear the moment someone tries to use them.
 		_ = s.sessions.Delete(ctx, session.TokenHash)
@@ -361,12 +375,65 @@ func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal,
 		return nil, apperror.Invalidf("session expired").WithCode("sessionExpired")
 	}
 
+	s.touch(ctx, session, now, idle)
+
 	user, err := s.users.GetByID(ctx, session.UserID)
 	if err != nil {
 		return nil, apperror.Invalidf("no session").WithCode("noSession")
 	}
 
 	return s.auth.principalFor(ctx, user)
+}
+
+// idleTimeout is how long a session may go unused, or zero for no limit.
+func (s *SessionService) idleTimeout(ctx context.Context) time.Duration {
+	if s.limits == nil {
+		return 0
+	}
+
+	return s.limits.SessionIdle(ctx)
+}
+
+// maxTouchInterval is the coarsest the recorded last-use is ever allowed to get.
+//
+// Not every request. Resolve runs on all of them, and a write per request turns
+// reading a screen into a stream of updates to one row - the contention alone
+// would cost more than the feature.
+const maxTouchInterval = time.Minute
+
+// touchInterval is how stale the recorded last-use may get before it is written
+// again.
+//
+// Half the timeout, capped at a minute. The cap alone was the first attempt and
+// it was wrong: with a timeout shorter than the interval, a session in constant
+// use is never written down at all, so it goes on looking untouched since the
+// sign-in and is ended while somebody is working in it. Which is not a
+// theoretical shortness - it is what the case for this uses, and what an
+// installation trying the feature out would set first.
+//
+// Half rather than the whole, so a request arriving just before the deadline
+// still leaves a written record on the near side of it.
+func touchInterval(idle time.Duration) time.Duration {
+	if idle <= 0 || idle/2 > maxTouchInterval {
+		return maxTouchInterval
+	}
+
+	return idle / 2
+}
+
+// touch records that the session is in use, without writing on every request.
+//
+// Failures are ignored on purpose. This is bookkeeping for a timeout, not the
+// request somebody made: refusing to serve a screen because a timestamp could
+// not be updated would turn a slow database into an outage.
+func (s *SessionService) touch(
+	ctx context.Context, session *model.Session, now time.Time, idle time.Duration,
+) {
+	if now.Sub(session.LastSeenAt) < touchInterval(idle) {
+		return
+	}
+
+	_ = s.sessions.Touch(ctx, session.TokenHash, now)
 }
 
 // Logout ends one session.

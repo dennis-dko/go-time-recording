@@ -84,6 +84,10 @@ type Config struct {
 	// authenticate again.
 	SessionLifetime time.Duration
 
+	// SessionIdle ends a session that has gone unused for this long, whatever is
+	// left of its lifetime. Zero is no idle timeout at all.
+	SessionIdle time.Duration
+
 	// TLS serves HTTPS with automatically obtained Let's Encrypt certificates.
 	TLSEnabled bool
 	TLSDomains []string
@@ -292,6 +296,7 @@ func Load(p Provider) Config {
 		// administrative rights should be a deliberate choice, not an oversight.
 		AuthRequired:    boolOr(p.GetOrDefault("AUTH_ENABLED", "true"), true),
 		SessionLifetime: durationOr(p.GetOrDefault("SESSION_LIFETIME", ""), defaultSessionLifetime),
+		SessionIdle:     durationOr(p.GetOrDefault("SESSION_IDLE", ""), 0),
 
 		TLSEnabled:  boolOr(p.GetOrDefault("TLS_ENABLED", "false"), false),
 		TLSDomains:  splitList(p.Get("TLS_DOMAINS")),

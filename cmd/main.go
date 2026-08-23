@@ -513,6 +513,7 @@ func main() {
 	// overridden from the Settings screen keeps coming from here.
 	limits := appservice.NewLimitsProvider(settingsService, model.Limits{
 		SessionLifetimeHours:   cfg.SessionLifetime.Hours(),
+		SessionIdleMinutes:     cfg.SessionIdle.Minutes(),
 		MaxDailyHours:          cfg.MaxDailyHours,
 		RateLimit:              cfg.RateLimit,
 		RateLimitWindowSeconds: int(cfg.RateLimitWindow.Seconds()),

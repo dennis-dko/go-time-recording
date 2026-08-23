@@ -26,8 +26,10 @@ var _ repository.SessionRepository = (*SessionRepository)(nil)
 
 func (r *SessionRepository) Save(ctx context.Context, session *model.Session) error {
 	_, err := r.exec(ctx,
-		"INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-		session.TokenHash, session.UserID, session.CreatedAt, session.ExpiresAt)
+		"INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) "+
+			"VALUES (?, ?, ?, ?, ?)",
+		session.TokenHash, session.UserID, session.CreatedAt, session.ExpiresAt,
+		session.LastSeenAt)
 	if err != nil {
 		return apperror.Internal(err)
 	}
@@ -37,15 +39,17 @@ func (r *SessionRepository) Save(ctx context.Context, session *model.Session) er
 
 func (r *SessionRepository) Get(ctx context.Context, tokenHash string) (*model.Session, error) {
 	row := r.db.QueryRowContext(ctx, r.rebind(
-		"SELECT token_hash, user_id, created_at, expires_at FROM sessions WHERE token_hash = ?"), tokenHash)
+		"SELECT token_hash, user_id, created_at, expires_at, last_seen_at "+
+			"FROM sessions WHERE token_hash = ?"), tokenHash)
 
 	var (
-		session   model.Session
-		createdAt dateTime
-		expiresAt dateTime
+		session    model.Session
+		createdAt  dateTime
+		expiresAt  dateTime
+		lastSeenAt dateTime
 	)
 
-	err := row.Scan(&session.TokenHash, &session.UserID, &createdAt, &expiresAt)
+	err := row.Scan(&session.TokenHash, &session.UserID, &createdAt, &expiresAt, &lastSeenAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, apperror.NotFound("session", "")
 	}
@@ -56,8 +60,31 @@ func (r *SessionRepository) Get(ctx context.Context, tokenHash string) (*model.S
 
 	session.CreatedAt = createdAt.Time
 	session.ExpiresAt = expiresAt.Time
+	session.LastSeenAt = lastSeenAt.Time
+
+	// A row written before the column existed, or by a version that did not
+	// fill it. Its sign-in is the last thing known about it, which is the
+	// honest answer and the same one the migration gave the rows it found.
+	if session.LastSeenAt.IsZero() {
+		session.LastSeenAt = session.CreatedAt
+	}
 
 	return &session, nil
+}
+
+// Touch records that the session was used, for the idle timeout to measure
+// against.
+//
+// One statement, no read-back: the caller has the row already and only the
+// moment matters. It is deliberately not part of Save - a session is opened once
+// and used thousands of times, and the two want different SQL.
+func (r *SessionRepository) Touch(ctx context.Context, tokenHash string, at time.Time) error {
+	if _, err := r.exec(ctx,
+		"UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?", at, tokenHash); err != nil {
+		return apperror.Internal(err)
+	}
+
+	return nil
 }
 
 func (r *SessionRepository) Delete(ctx context.Context, tokenHash string) error {

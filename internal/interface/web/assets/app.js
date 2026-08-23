@@ -247,6 +247,26 @@ async function api(path, options = {}) {
     // wants it, and every caller that does not can go on using err.message.
     err.refusal = body?.error ?? null;
 
+    // A session that is no longer accepted takes the screen with it.
+    //
+    // Only where this page believed it had one: the first load asks before
+    // anybody has signed in and is answered exactly like this, and treating that
+    // as an ending would clear the drafts of a session that never started.
+    //
+    // Guarded against re-entry, because the ending itself makes requests fail -
+    // the pollers it stops are stopped by it, and each of their failures would
+    // otherwise arrive here and start the same ending again.
+    if (res.status === 401 && me.user && !endingTheSession) {
+      endingTheSession = true;
+
+      try {
+        handBackTheScreen(t('err.sessionExpired',
+          'The session has ended. Please sign in again.'));
+      } finally {
+        endingTheSession = false;
+      }
+    }
+
     throw err;
   }
 
@@ -2699,6 +2719,7 @@ const TRANSLATIONS = {
 
     'ops.title': 'Betrieb und Grenzwerte',
     'ops.hint': 'Leer lassen, um den Wert aus der Konfigurationsdatei zu behalten. Änderungen wirken innerhalb weniger Sekunden, ohne Neustart.',
+    'ops.sessionIdle': 'Abmelden nach Untätigkeit (Minuten, 0 = nie)',
     'ops.sessionLifetime': 'Sitzungsdauer (Stunden)',
     'ops.maxDailyHours': 'Maximale Stunden pro Tag (systemweit)',
     'ops.rateLimit': 'Ratenbegrenzung (Anfragen)',
@@ -3095,6 +3116,7 @@ const TRANSLATIONS = {
     'field.projectId': 'Projekt',
     'field.rateLimit': 'Anfragegrenze',
     'field.rateLimitWindowSeconds': 'Zeitfenster der Anfragegrenze (Sekunden)',
+    'field.sessionIdleMinutes': 'Abmelden nach Untätigkeit (Minuten)',
     'field.sessionLifetimeHours': 'Sitzungsdauer (Stunden)',
     'field.startDate': 'Start',
     'field.syncSchedule': 'Zeitplan',
@@ -5881,6 +5903,12 @@ function forgetTheLastAccount() {
   for (const bar of $$('.bulk-bar')) bar.remove();
 }
 
+/**
+ * Whether a session is already being ended, so one ending is not started by the
+ * failures it causes.
+ */
+let endingTheSession = false;
+
 async function doLogout() {
   try {
     await api('/auth/logout', { method: 'POST' });
@@ -5888,6 +5916,25 @@ async function doLogout() {
     // Even a failed call should drop the client back to the sign-in screen.
   }
 
+  handBackTheScreen();
+}
+
+/**
+ * Puts the page back the way somebody who is not signed in should find it.
+ *
+ * Everything doLogout did after telling the server, which is everything that has
+ * to happen when a session ends for any reason. It ends for two: somebody presses
+ * the button, or the server stops accepting the cookie - a lifetime that ran out,
+ * an idle timeout, an administrator ending the session, a password changed
+ * elsewhere.
+ *
+ * One function for both, because the second used to do none of it. An expired
+ * session left the whole interface standing: every screen still drawn, every
+ * poller still asking, the previous account's name in the corner - and a red
+ * notice, once per click, saying to sign in again on a screen with nowhere to do
+ * it.
+ */
+function handBackTheScreen(message) {
   // Before the state is cleared: both pollers ask with the session that is
   // about to end, and a timer left running would keep asking with none and
   // paint the screen with authentication failures. The announcement stream goes
@@ -5935,7 +5982,7 @@ async function doLogout() {
   $('#form-login').reset();
   $('#login-totp-field').hidden = true;
 
-  showLogin();
+  showLogin(message);
 }
 
 // ------------------------------------------------------------- two-factor
@@ -7089,7 +7136,7 @@ function wireSetup() {
 
 /** The fields of the operational form, in the order they appear. */
 const OPERATIONAL_FIELDS = [
-  'sessionLifetimeHours', 'maxDailyHours', 'rateLimit',
+  'sessionLifetimeHours', 'sessionIdleMinutes', 'maxDailyHours', 'rateLimit',
   'rateLimitWindowSeconds', 'ldapSyncMaxDeleteRatio',
 ];
 

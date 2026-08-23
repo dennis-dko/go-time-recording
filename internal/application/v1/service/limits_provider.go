@@ -104,6 +104,17 @@ func (p *LimitsProvider) SessionLifetime(ctx context.Context) time.Duration {
 }
 
 // RateLimit reports the request budget and the window it applies to.
+// SessionIdle is how long a session may go unused before it ends. Zero is no
+// idle timeout, which is what an installation has until somebody sets one.
+func (p *LimitsProvider) SessionIdle(ctx context.Context) time.Duration {
+	minutes := p.Limits(ctx).SessionIdleMinutes
+	if minutes <= 0 {
+		return 0
+	}
+
+	return time.Duration(minutes * float64(time.Minute))
+}
+
 func (p *LimitsProvider) RateLimit(ctx context.Context) (limit int, window time.Duration) {
 	current := p.Limits(ctx)
 

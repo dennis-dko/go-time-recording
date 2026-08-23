@@ -171,6 +171,19 @@ func (s *stubSessions) Get(_ context.Context, tokenHash string) (*model.Session,
 	return session, nil
 }
 
+// Touch records that the session was used, which is what the idle timeout
+// measures against.
+func (s *stubSessions) Touch(_ context.Context, tokenHash string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if session, ok := s.items[tokenHash]; ok {
+		session.LastSeenAt = at
+	}
+
+	return nil
+}
+
 func (s *stubSessions) Delete(_ context.Context, tokenHash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
