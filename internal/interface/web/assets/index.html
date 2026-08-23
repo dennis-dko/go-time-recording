@@ -34,6 +34,16 @@
        with no picture at all. -->
   <svg class="sprite" aria-hidden="true" focusable="false">
     <defs>
+      <!-- The mark this application ships with. Defined once and used twice - in
+           the logo slot while an installation has uploaded none, and beside the
+           title once one has taken that slot - because the same drawing written
+           out twice is two drawings that can drift apart. -->
+      <symbol id="icon-mark" viewBox="0 0 32 32">
+        <rect x="3" y="3" width="26" height="26" rx="7.6" fill="currentColor"/>
+        <path d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/>
+        <path d="M9.6 23.4h12.8L16 16Z" fill="var(--accent-text)" opacity="0.55"/>
+      </symbol>
+
       <symbol id="icon-timesheets" viewBox="0 0 24 24">
         <path d="M3 6h10M3 12h6.5M3 18h4.5"/>
         <circle cx="16.5" cy="15.5" r="5.2"/><path d="M16.5 12.6v2.9l2 1.3"/>
@@ -108,6 +118,23 @@
             <path d="M4 7h16M4 12h16M4 17h16"/>
           </svg>
         </button>
+        <!-- The mark this application ships with, standing in this slot for as
+             long as the installation has uploaded no logo of its own. The corner
+             was simply empty until somebody configured one, which is a fresh
+             installation saying nothing about itself.
+
+             The same drawing as the one beside the title, referenced rather than
+             repeated - and only one of the two is ever on screen. Two columns of
+             this bar mean different things: this one is the installation's own
+             identity and the middle one is the application's, so wearing our
+             mark in both places at once would blur exactly the distinction the
+             three columns exist to draw.
+
+             aria-hidden because the title beside it already says the name; a
+             screen reader announcing the decoration first helps nobody. -->
+        <svg id="brand-mark" class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <use href="#icon-mark"/>
+        </svg>
         <img id="brand-logo" class="brand-logo" alt="" hidden>
       </span>
 
@@ -117,9 +144,7 @@
            so to a keyboard and a screen reader too, which a plain h1 cannot. -->
         <h1><button type="button" id="app-title" class="app-title" data-i18n-aria="welcome.goTo"
                     aria-label="Welcome page"><svg class="app-mark" viewBox="0 0 32 32" aria-hidden="true"
-                    focusable="false"><rect x="3" y="3" width="26" height="26" rx="7.6" fill="currentColor"/><path
-                    d="M9.6 8.6h12.8L16 16Z" fill="var(--accent-text)"/><path d="M9.6 23.4h12.8L16 16Z"
-                    fill="var(--accent-text)" opacity="0.55"/></svg><span id="app-title-text">Time Recording</span></button></h1>
+                    focusable="false"><use href="#icon-mark"/></svg><span id="app-title-text">Time Recording</span></button></h1>
       </span>
 
       <span class="topbar-side topbar-side-end">
