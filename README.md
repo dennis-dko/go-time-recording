@@ -1006,9 +1006,24 @@ force, and *Reset* drops every override at once.
 | Administered from the interface | Applies |
 | --- | --- |
 | `SESSION_LIFETIME` | to the next sign-in |
+| `SESSION_IDLE` | to every session, from the next request |
 | `MAX_DAILY_HOURS` | to the next booking |
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | within seconds |
 | `LDAP_SYNC_MAX_DELETE_RATIO` | at the next synchronisation |
+
+Two of those bound the same thing from different ends, and the difference is
+worth being clear about. `SESSION_LIFETIME` is absolute and starts at the
+sign-in: how long one act of proving who you are is worth, whatever anybody does
+with it. `SESSION_IDLE` is measured from the last request: whether anybody is
+still there. A person working all morning keeps their session by the second rule
+and eventually loses it by the first; the same person going home at noon loses it
+by the second while the first would still have let them back in.
+
+The idle timeout is **off** until somebody sets it — signing people out of a
+screen they left open is a decision about how an office works, not one to impose
+on every installation on the day it updates. When a session does end, for either
+reason, the interface goes back to the sign-in screen and says so, rather than
+standing there refusing every click.
 
 Values are bounded on save, because this is the one screen that can lock its
 own administrator out: a session lifetime of a second would sign everyone out

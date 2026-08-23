@@ -565,6 +565,22 @@ func (r *SessionRepository) Get(_ context.Context, tokenHash string) (*model.Ses
 	return &out, nil
 }
 
+// Touch records that the session was used, for the idle timeout to measure
+// against.
+func (r *SessionRepository) Touch(_ context.Context, tokenHash string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	session, ok := r.sessions[tokenHash]
+	if !ok {
+		return apperror.NotFound("session", tokenHash)
+	}
+
+	session.LastSeenAt = at
+
+	return nil
+}
+
 func (r *SessionRepository) Delete(_ context.Context, tokenHash string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

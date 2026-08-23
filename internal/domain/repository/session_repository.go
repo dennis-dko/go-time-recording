@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
@@ -12,6 +13,11 @@ type SessionRepository interface {
 
 	// Get resolves a session by the stored hash of its token.
 	Get(ctx context.Context, tokenHash string) (*model.Session, error)
+
+	// Touch records that the session was used, which is what an idle timeout
+	// measures against. Separate from Save because a session is opened once and
+	// used thousands of times.
+	Touch(ctx context.Context, tokenHash string, at time.Time) error
 
 	Delete(ctx context.Context, tokenHash string) error
 

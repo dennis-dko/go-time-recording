@@ -1067,6 +1067,14 @@
           <label data-i18n="ops.sessionLifetime">Session lifetime (hours)
             <input type="number" name="sessionLifetimeHours" step="0.25" min="0.25" max="336">
           </label>
+          <!-- Zero, not empty, is how this one is switched off: empty means "follow
+               the configuration file" like every other field here, and the file's
+               own default is off. Both roads lead to the same place; the minimum
+               of five is there so nobody sets a timeout that signs people out
+               while they read. -->
+          <label data-i18n="ops.sessionIdle">Sign out after inactivity (minutes, 0 = never)
+            <input type="number" name="sessionIdleMinutes" step="5" min="0" max="1440">
+          </label>
           <label data-i18n="ops.maxDailyHours">Maximum hours per day (instance-wide)
             <input type="number" name="maxDailyHours" step="0.5" min="0.5" max="24">
           </label>

@@ -28,6 +28,12 @@ type Operational struct {
 	// current ones.
 	SessionLifetimeHours *float64 `json:"sessionLifetimeHours,omitempty"`
 
+	// SessionIdleMinutes ends a session that has gone unused for this long,
+	// whatever is left of its lifetime. Zero switches it off, which is why the
+	// field is a pointer - and off is what an installation has until somebody
+	// decides otherwise.
+	SessionIdleMinutes *float64 `json:"sessionIdleMinutes,omitempty"`
+
 	// MaxDailyHours caps what any one user may book on a single day.
 	MaxDailyHours *float64 `json:"maxDailyHours,omitempty"`
 
@@ -46,6 +52,7 @@ type Operational struct {
 // administrator has not overridden.
 type Limits struct {
 	SessionLifetimeHours   float64
+	SessionIdleMinutes     float64
 	MaxDailyHours          float64
 	RateLimit              int
 	RateLimitWindowSeconds int
@@ -58,6 +65,10 @@ func (o Operational) Resolve(fallback Limits) Limits {
 
 	if o.SessionLifetimeHours != nil {
 		out.SessionLifetimeHours = *o.SessionLifetimeHours
+	}
+
+	if o.SessionIdleMinutes != nil {
+		out.SessionIdleMinutes = *o.SessionIdleMinutes
 	}
 
 	if o.MaxDailyHours != nil {
@@ -94,6 +105,14 @@ func (o Operational) InvalidOperationalFields() []string {
 		invalid = append(invalid, "sessionLifetimeHours")
 	}
 
+	// Zero is a value rather than an omission here: it is how the timeout is
+	// switched off again, so it has to pass.
+	if o.SessionIdleMinutes != nil && *o.SessionIdleMinutes != 0 &&
+		(*o.SessionIdleMinutes < MinSessionIdleMinutes ||
+			*o.SessionIdleMinutes > MaxSessionIdleMinutes) {
+		invalid = append(invalid, "sessionIdleMinutes")
+	}
+
 	if o.MaxDailyHours != nil && (*o.MaxDailyHours <= 0 || *o.MaxDailyHours > HoursPerDay) {
 		invalid = append(invalid, "maxDailyHours")
 	}
@@ -123,6 +142,15 @@ const (
 	// Longer than a fortnight and a forgotten open tab stops being a session
 	// and starts being a permanent credential.
 	MaxSessionLifetimeHours = 24 * 14
+
+	// Shorter than this and somebody reading a long report is signed out while
+	// they read it - the timeout would be measuring how fast people click rather
+	// than whether they are there.
+	MinSessionIdleMinutes = 5
+
+	// Longer than a day and it is not an idle timeout any more; the lifetime is
+	// the bound that matters at that scale.
+	MaxSessionIdleMinutes = 24 * 60
 
 	// HoursPerDay is the ceiling for a daily booking cap; more hours than a day
 	// has cannot be worked in one.

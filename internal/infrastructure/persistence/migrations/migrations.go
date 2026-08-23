@@ -102,7 +102,26 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260819010000: {UP: func(d migration.Datasource) error {
 			return widenTOTPSecret(d, dialect)
 		}},
+		20260824010000: {UP: func(d migration.Datasource) error {
+			return rememberWhenASessionWasLastUsed(d, dialect)
+		}},
 	}
+}
+
+// rememberWhenASessionWasLastUsed adds what an idle timeout measures against.
+//
+// The lifetime a session already had answers "how long is one sign-in worth",
+// which is not the same question as "is anybody still there". Existing sessions
+// get the moment the column arrives rather than a zero time: they are in use,
+// and dating them to 1970 would sign out everybody who is signed in the second
+// an installation updates and switches the timeout on.
+func rememberWhenASessionWasLastUsed(d migration.Datasource, dialect string) error {
+	if err := execAll(d, fmt.Sprintf(
+		"ALTER TABLE sessions ADD COLUMN last_seen_at %s NULL", timestamp(dialect))); err != nil {
+		return err
+	}
+
+	return execAll(d, "UPDATE sessions SET last_seen_at = created_at WHERE last_seen_at IS NULL")
 }
 
 // clearTheAdministratorsWorkingDay takes the daily target off the built-in

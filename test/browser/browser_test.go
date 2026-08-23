@@ -1538,3 +1538,72 @@ func TestWhatWasTypedBesideTheClockSurvivesAReload(t *testing.T) {
 			got, doing)
 	}
 }
+
+// A session the server no longer accepts takes the screen with it.
+//
+// It used to take nothing. The whole interface stayed standing - every screen
+// still drawn, every poller still asking, the previous account's name in the
+// corner - and a red notice arrived once per click saying to sign in again, on a
+// screen with nowhere to do it. Somebody whose session had timed out could only
+// get back in by knowing to reload the page.
+//
+// Ended here by telling the server rather than by waiting one out: what is being
+// checked is what the page does when the cookie stops being worth anything, and
+// how it stopped is the server's business.
+func TestASessionTheServerNoLongerAcceptsTakesTheScreenWithIt(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// Something typed and unsaved, to see that it goes with the rest: a draft
+	// belongs to whoever typed it, and the next person at this browser is not
+	// them.
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+	p.waitForFilled("#datasource-active")
+
+	p.run("type something", chromedp.SendKeys(
+		`#form-datasource [name="name"]`, "gtr_live", chromedp.ByQuery))
+
+	// The session ends underneath the page, which the page has no way of knowing.
+	p.run("end the session behind its back", chromedp.Evaluate(`
+		(async () => {
+			const csrf = document.cookie.split(';').map((c) => c.trim())
+				.find((c) => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+
+			await fetch('/api/v1/auth/logout', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'X-CSRF-Token': csrf },
+			});
+
+			return 1;
+		})()`, nil, awaitPromise))
+
+	// The next thing anybody does finds out.
+	p.run("carry on working", chromedp.Evaluate(
+		`fetch('/api/v1/me', { credentials: 'same-origin' })`, nil))
+	p.run("ask the way the page asks", chromedp.Evaluate(
+		`loadRoles().catch(() => {})`, nil, awaitPromise))
+
+	p.waitShown("#login-screen")
+
+	if said := p.text("#login-error"); said == "" {
+		t.Error("the sign-in screen came back without saying why, which reads as " +
+			"having been signed out for no reason")
+	}
+
+	// And nothing of the previous account is left standing behind it.
+	var left string
+
+	p.run("look behind it", chromedp.Evaluate(`
+		JSON.stringify({
+			drafts: Object.keys(sessionStorage).filter((k) => k.startsWith('gtr.draft.')).length,
+			account: Boolean(me.user),
+		})`, &left))
+
+	if !strings.Contains(left, `"drafts":0`) || !strings.Contains(left, `"account":false`) {
+		t.Errorf("the ended session left something of itself on the page: %s", left)
+	}
+}
