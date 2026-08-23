@@ -5048,3 +5048,82 @@ func TestEveryPasswordFieldHasExactlyOneEye(t *testing.T) {
 		}
 	}
 }
+
+// A draft written by an older version is dropped rather than put back.
+//
+// A draft is a snapshot of a form, and a form is not a fixed thing: fields are
+// added, a default changes, a card starts filling something in that it used to
+// leave blank. A draft from before such a change is no longer a record of what
+// somebody typed - it is a record of how the screen used to behave.
+//
+// Reported as exactly that. The connection card learnt to name the database this
+// process is connected to; a draft from the version before still held the empty
+// type it used to leave, and restoring it put the card back to naming nothing -
+// on an installation that had just been updated to fix precisely that.
+func TestADraftFromAnotherVersionIsNotPutBack(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+	p.waitForFilled("#datasource-active")
+	p.settled()
+
+	running := p.value(`#form-datasource select[name="dialect"]`)
+
+	if running == "" {
+		t.Fatal("the card names no type before anything was drafted, so this case " +
+			"is about to prove nothing")
+	}
+
+	// A draft of the shape the version before this one left behind: the type
+	// blank, written down under a version that is not the one running.
+	p.run("plant a draft from an older version", chromedp.Evaluate(`
+		(() => {
+			sessionStorage.setItem('gtr.draft.form-datasource', JSON.stringify({
+				version: 'v0.0.1-before',
+				values: { dialect: '', name: '', host: '', port: '', user: '', sslMode: '' },
+			}));
+
+			return 1;
+		})()`, nil))
+
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.waitGone("#login-screen")
+	p.settleWizard()
+	p.settled()
+
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+	p.waitForFilled("#datasource-active")
+
+	if got := p.value(`#form-datasource select[name="dialect"]`); got != running {
+		t.Errorf("the card names %q after a draft from another version was found; "+
+			"it named %q before, and the process has not changed database", got, running)
+	}
+
+	// And it is gone rather than skipped again on every load.
+	var left string
+
+	p.run("look for the draft", chromedp.Evaluate(
+		`String(sessionStorage.getItem('gtr.draft.form-datasource') ?? '')`, &left))
+
+	if left != "" {
+		t.Errorf("the draft from another version is still stored: %s", left)
+	}
+
+	// What this version writes is stamped, or the next update repeats all of it.
+	p.run("type something", chromedp.SendKeys(
+		`#form-datasource [name="name"]`, "gtr_live", chromedp.ByQuery))
+
+	var stamped string
+
+	p.run("read what was written down", chromedp.Evaluate(
+		`String(sessionStorage.getItem('gtr.draft.form-datasource') ?? '')`, &stamped))
+
+	if !strings.Contains(stamped, `"version":"`) || strings.Contains(stamped, `"version":""`) {
+		t.Errorf("a draft written now carries no version: %s", stamped)
+	}
+}
