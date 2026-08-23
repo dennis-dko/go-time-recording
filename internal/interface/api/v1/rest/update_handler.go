@@ -11,6 +11,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/restart"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/pkg/hosting"
 )
 
 // UpdateHandler reports whether a newer release exists, and installs it where
@@ -156,7 +157,7 @@ func (h *UpdateHandler) describe(c *gofr.Context) UpdateResponse {
 	out := UpdateResponse{
 		Running:     h.version,
 		Enabled:     h.enabled,
-		Installable: !selfupdate.InContainer(),
+		Installable: !hosting.InContainer(),
 		Restartable: restart.Supported(),
 		RestartCode: restart.Code(),
 		Comparable:  selfupdate.Comparable(h.version),
@@ -291,7 +292,7 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 
 	// Checked again here rather than trusted from the screen. The button is only
 	// offered where this holds, and a POST is not a button.
-	if selfupdate.InContainer() {
+	if hosting.InContainer() {
 		return nil, toHTTPError(apperror.Invalidf("this runs in a container, where " +
 			"replacing the binary is undone by the next recreate").
 			WithCode("updateInContainer"))

@@ -217,6 +217,9 @@
         <button type="button" id="restart-now" data-i18n="restart.now">Restart now</button>
       </div>
       <p class="minus" id="restart-unsupported" hidden></p>
+    <!-- What the button will actually do, which is not one thing. Filled by
+         loadRestart from the mode the server reports. -->
+    <p class="muted" id="restart-mode" hidden></p>
     </div>
 
     <!-- A release newer than this build, for whoever may install it, and only for

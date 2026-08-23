@@ -262,29 +262,6 @@ func parseVersion(raw string) ([3]int, bool) {
 	return out, true
 }
 
-// InContainer reports whether this process is running inside one.
-//
-// Which decides whether installing is offered at all. Two signals, because
-// neither is universal: the file Docker leaves behind, and the container runtime
-// in this process's own cgroup - the second catches podman and a plain
-// containerd, the first catches a Docker container whose cgroup has been
-// namespaced away.
-func InContainer() bool {
-	if _, err := os.Stat("/.dockerenv"); err == nil {
-		return true
-	}
-
-	cgroup, err := os.ReadFile("/proc/self/cgroup")
-	if err != nil {
-		return false
-	}
-
-	text := string(cgroup)
-
-	return strings.Contains(text, "docker") || strings.Contains(text, "containerd") ||
-		strings.Contains(text, "kubepods")
-}
-
 // Install downloads the release and puts it where this process's binary is.
 //
 // It does not restart. Replacing the file and replacing the process are separate

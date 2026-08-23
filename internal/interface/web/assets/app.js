@@ -2741,6 +2741,11 @@ const TRANSLATIONS = {
     'restart.unsupported.noExecve': 'Ein Neustart aus der Anwendung heraus ist unter Windows nicht möglich: dafür wird execve gebraucht, das es dort nicht gibt. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
+    'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
+      + 'hält ihn an, und Ihre Container-Verwaltung startet einen neuen aus dem '
+      + 'Abbild - was sie nur tut, wenn sie dazu angewiesen wurde. Die mit dieser '
+      + 'Anwendung ausgelieferte Bereitstellung ist es.',
+    'restart.modeProcess': 'Die Anwendung ersetzt sich selbst, läuft also durchgehend.',
     'restart.now': 'Jetzt neu starten',
     'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
     'restart.waiting': 'Neustart läuft',
@@ -7496,6 +7501,25 @@ async function loadRestart() {
   const waiting = pending.length > 0;
   $('#restart-hint').hidden = !waiting;
   $('#restart-pending').hidden = !waiting;
+
+  // What the button does, said before it is pressed rather than found out
+  // afterwards. Only where there is a button: with none, the line above already
+  // explains why, and a second sentence about how a restart would work would be
+  // explaining a thing that cannot happen.
+  const mode = $('#restart-mode');
+
+  if (mode) {
+    mode.textContent = state.mode === 'container'
+      ? t('restart.modeContainer',
+        'This installation runs in a container. The button stops it, and your '
+        + 'container manager starts a new one from the image - which it only does '
+        + 'if it was told to restart the container. The deployment shipped with '
+        + 'this application is.')
+      : t('restart.modeProcess',
+        'The application replaces itself, so it is never not running.');
+
+    mode.hidden = !state.supported || !waiting;
+  }
 
   $('#restart-now').hidden = !state.supported;
   $('#restart-unsupported').hidden = state.supported;
