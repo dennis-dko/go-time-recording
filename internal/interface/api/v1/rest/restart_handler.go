@@ -96,8 +96,16 @@ type PendingChange struct {
 
 // RestartResponse describes whether a restart is possible and what it would do.
 type RestartResponse struct {
-	// Supported is false where the process cannot replace itself, in which case
-	// Reason says so in a sentence and ReasonCode names which refusal it is.
+	// Mode says what pressing the button does here, which is not one thing.
+	// Outside a container this process replaces itself and the installation is
+	// never not running; inside one it stops, and a new container is started by
+	// the restart policy - which this process cannot see, so the screen says
+	// which kind of restart is being offered rather than letting somebody find
+	// out afterwards.
+	Mode string `json:"mode"`
+
+	// Supported is false where the process cannot restart itself at all, in which
+	// case Reason says so in a sentence and ReasonCode names which refusal it is.
 	//
 	// Both, because they are for different readers. Reason is English prose written
 	// where the limitation is decided, which is what a log wants and what a client
@@ -132,6 +140,7 @@ func (h *RestartHandler) State(c *gofr.Context) (any, error) {
 		Supported:  restart.Supported(),
 		Reason:     restart.Why(),
 		ReasonCode: restart.Code(),
+		Mode:       restart.Mode(),
 		Pending:    pending,
 		StartedAt:  h.startedAt,
 	}, nil

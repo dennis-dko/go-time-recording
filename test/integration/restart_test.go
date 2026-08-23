@@ -23,6 +23,7 @@ import (
 type RestartState struct {
 	Supported bool   `json:"supported"`
 	Reason    string `json:"reason"`
+	Mode      string `json:"mode"`
 	StartedAt string `json:"startedAt"`
 
 	Pending []struct {
@@ -388,5 +389,26 @@ func TestTracingSettingsAreNotWaitingWhileNothingExports(t *testing.T) {
 		if _, _, found := restartState(t, admin).pendingFor(setting); !found {
 			t.Errorf("%s is not waiting once tracing is switched on", setting)
 		}
+	}
+}
+
+// The screen is told which kind of restart it is offering.
+//
+// It is not one thing. Outside a container this process replaces itself and the
+// installation is never not running; inside one it stops, and a new container is
+// started by a restart policy that this process cannot see. The button reads the
+// same either way, so the sentence beside it is the only place the difference is
+// said - and an empty mode is no sentence at all.
+func TestTheRestartStateSaysWhichKindOfRestartItIs(t *testing.T) {
+	t.Parallel()
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	switch mode := restartState(t, admin).Mode; mode {
+	case "process", "container":
+	default:
+		t.Errorf("the restart state reports the mode %q, which the screen has no "+
+			"sentence for", mode)
 	}
 }

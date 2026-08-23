@@ -31,3 +31,6 @@ func Why() string {
 
 // Now always fails here.
 func Now() error { return ErrUnsupported }
+
+// Mode says what the button would do if it were offered. It is not, here.
+func Mode() string { return ModeProcess }
