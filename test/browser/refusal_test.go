@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,26 +60,15 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 			`#form-datasource [name="`+field+`"]`, value, chromedp.ByQuery))
 	}
 
-	p.run("test the connection", p.click("#datasource-test"))
-
-	// Two waits rather than one, so a failure says which half went wrong.
+	// The box is watched from before the press rather than polled after it. The
+	// line that stands there while the attempt runs is gone the instant the
+	// outcome arrives, and a connection refused by a local port arrives in about a
+	// millisecond - so a poll looking for that line finds it on a loaded runner
+	// and misses it on a fast one, which is exactly the wrong way round.
 	//
-	// The first is the line that stands there while the attempt runs, which only
-	// appears if the press landed at all. Waiting straight for the outcome
-	// reported an empty box, which is equally what a missed click and a slow
-	// connection look like - and on a loaded runner it was one of those.
-	p.waitForText("#datasource-test-result", "wird geprüft")
-
-	// The generic sentence, in German. Waited for on the outcome rather than on
-	// the word "Verbindung", which is also in "Verbindung wird geprüft …".
-	//
-	// Given longer than the usual wait: the attempt is a connection to a port
-	// nobody answers on, and how long that takes to fail is the network stack's
-	// business rather than this application's.
-	// Watched from the page as well as waited on, because "the box is empty" has
-	// two very different causes and the wait cannot tell them apart: the attempt
-	// never started, or something rewrote the box after it did. This records
-	// every state the box passes through, so the next failure says which.
+	// Recording every state the box passes through catches it either way, and
+	// still tells the next failure which half went wrong: nothing recorded at all
+	// means the press never landed.
 	p.run("watch the box", chromedp.Evaluate(`
 		(() => {
 			window.__states = [];
@@ -91,7 +81,28 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 			return 1;
 		})()`, nil))
 
+	p.run("test the connection", p.click("#datasource-test"))
+
+	// The generic sentence, in German. Waited for on the outcome rather than on
+	// the word "Verbindung", which is also in "Verbindung wird geprüft …".
+	//
+	// Given longer than the usual wait: the attempt is a connection to a port
+	// nobody answers on, and how long that takes to fail is the network stack's
+	// business rather than this application's.
 	p.waitForTextWithin("#datasource-test-result", "konnte nicht", 40*time.Second)
+
+	// And the press did land: the running line stood there at some point between
+	// the click and the outcome. Read from the recording, because by the time
+	// anything can be asked about the box the outcome has replaced it.
+	var states []string
+
+	p.run("read what the box said", chromedp.Evaluate(`window.__states`, &states))
+
+	if !slices.ContainsFunc(states, func(said string) bool {
+		return strings.Contains(said, "wird geprüft")
+	}) {
+		t.Errorf("the box never said the check was running; it said: %q", states)
+	}
 
 	// And whatever the outcome, the box says something. A refusal with no words
 	// in it used to render as an empty box - which is the one outcome that says
