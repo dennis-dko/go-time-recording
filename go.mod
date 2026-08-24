@@ -3,6 +3,7 @@ module github.com/dennis-dko/go-time-recording
 go 1.27.0
 
 require (
+	codeberg.org/go-pdf/fpdf v0.12.0
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
 	github.com/go-ldap/ldap/v3 v3.4.14

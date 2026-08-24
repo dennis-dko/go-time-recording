@@ -2879,6 +2879,7 @@ const TRANSLATIONS = {
     'sheet.roles.done': '{0} Zeilen geschrieben.',
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
+    'action.exportPdf': 'Als PDF exportieren',
     'action.new': 'Neu',
     'action.save': 'Speichern',
     'action.dismiss': 'Schließen',
@@ -2887,6 +2888,7 @@ const TRANSLATIONS = {
     'stats.perDay': 'Stunden pro Tag',
     'stats.perProject': 'Stunden pro Projekt',
     'stats.total': 'Gesamt',
+    'stats.filename': 'statistik',
     'stats.noProject': 'Kein Projekt',
     'stats.deletedProject': 'gelöschtes Projekt',
     'stats.empty': 'In diesem Zeitraum wurde nichts erfasst.',
@@ -3048,6 +3050,10 @@ const TRANSLATIONS = {
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
     'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
+    'err.chartNotAPicture': 'Das Diagramm konnte nicht gelesen werden. '
+      + 'Bitte die Auswertung erneut anzeigen und dann exportieren.',
+    'err.documentTooLong': 'Die Auswertung ist zu umfangreich für ein Dokument. '
+      + 'Bitte einen kürzeren Zeitraum wählen.',
     'err.unknownPermissionColumn': '„{0}“ ist kein Recht, das diese Anwendung kennt – '
       + 'die Datei stammt vermutlich aus einer anderen Installation.',
     'err.unsupportedDialect': '„{0}“ ist keine Datenbank, die diese Anwendung öffnen '
@@ -3224,6 +3230,7 @@ const TRANSLATIONS = {
     'nav.timesheets': 'Zeiteinträge',
     'nav.users': 'Benutzer',
     'ot.balance': 'Saldo',
+    'ot.filename': 'ueberstunden',
     'ot.booked': 'Gebucht',
     'ot.empty': 'Keine Buchungen in diesem Zeitraum.',
     'ot.meta': '{0} · Soll {1}/Tag · gebucht {2} von {3}',
@@ -3233,6 +3240,9 @@ const TRANSLATIONS = {
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
     'report.result': 'Ergebnis',
+    'report.filename': 'auswertung',
+    'report.exporting': 'Wird erstellt …',
+    'report.chartFailed': 'Das Diagramm konnte nicht in ein Bild umgewandelt werden.',
     'report.total': '{0} gesamt',
     'report.title': 'Auswertung',
     'report.noProject': 'Kein Projekt',
@@ -8278,18 +8288,14 @@ async function exportWorkbook() {
 }
 
 /**
- * Fetches an export and saves it under a readable name.
+ * Fetches a file and hands it to the browser to save under a readable name.
  *
- * The language travels with the request, so the headings in the file are the ones
- * on the screen of whoever asked for it. It is a query parameter rather than the
- * account's setting: the file is about to be opened by the person looking at this
- * screen, in the language they are reading it in.
+ * Not api(): that one decodes JSON and would have to be taught about blobs, and
+ * about not aborting a read that is a download. This is the plainer thing - ask,
+ * check, save - and the two callers below differ only in how they ask.
  */
-async function downloadSheet(path, name) {
-  const separator = path.includes('?') ? '&' : '?';
-  const url = `${API}${path}${separator}lang=${encodeURIComponent(activeLanguage())}`;
-
-  const res = await fetch(url, { credentials: 'same-origin' });
+async function downloadFile(url, name, extension, request = {}) {
+  const res = await fetch(url, { credentials: 'same-origin', ...request });
 
   if (!res.ok) {
     let body = null;
@@ -8305,7 +8311,7 @@ async function downloadSheet(path, name) {
   const blob = await res.blob();
   const objectURL = URL.createObjectURL(blob);
 
-  const link = el('a', { href: objectURL, download: `${name}-${todayISO()}.xlsx` });
+  const link = el('a', { href: objectURL, download: `${name}-${todayISO()}.${extension}` });
   document.body.append(link);
   link.click();
   link.remove();
@@ -8313,6 +8319,39 @@ async function downloadSheet(path, name) {
   // Released once the browser has taken it; a blob left behind holds the whole
   // file in memory for as long as the page is open.
   URL.revokeObjectURL(objectURL);
+}
+
+/**
+ * Fetches a spreadsheet export.
+ *
+ * The language travels with the request, so the headings in the file are the ones
+ * on the screen of whoever asked for it. It is a query parameter rather than the
+ * account's setting: the file is about to be opened by the person looking at this
+ * screen, in the language they are reading it in.
+ */
+async function downloadSheet(path, name) {
+  const separator = path.includes('?') ? '&' : '?';
+
+  await downloadFile(
+    `${API}${path}${separator}lang=${encodeURIComponent(activeLanguage())}`, name, 'xlsx');
+}
+
+/**
+ * Sends an evaluation to be laid out, and saves the document that comes back.
+ *
+ * No language parameter, unlike the spreadsheet above: there is nothing for the
+ * server to translate, because every word in the document is already in this
+ * request. It was read off the screen, in the language the screen is in.
+ */
+async function downloadDocument(doc, name) {
+  await downloadFile(`${API}/exports/document`, name, 'pdf', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': readCookie('gtr_csrf'),
+    },
+    body: JSON.stringify(doc),
+  });
 }
 
 /** Sends the chosen file, either to look or to write. */
@@ -8469,6 +8508,260 @@ function wireWorkbook() {
     }));
 
   $('#wb-clear').addEventListener('click', resetWorkbookCard);
+}
+
+// --------------------------------------------- an evaluation as a document
+
+/**
+ * What has to be written into a copy of a chart before it can leave the page.
+ *
+ * The drawings take everything from the stylesheet - eight hues named by class,
+ * strokes, type - and a copy lifted out of the document has no stylesheet to
+ * take it from. getComputedStyle is what resolves that: it gives back the
+ * settled value, with every var() and color-mix() already worked out, which is
+ * exactly the colour that is on the screen rather than the recipe for it.
+ */
+const PAINTED = [
+  'fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-linecap',
+  'opacity', 'font-family', 'font-size', 'font-weight', 'text-anchor',
+  'dominant-baseline', 'color',
+];
+
+/**
+ * How much bigger than the screen the picture is drawn.
+ *
+ * The chart on screen is a few hundred pixels wide and goes onto paper at about
+ * 170 millimetres. At one to one that is roughly 40 dots per inch, which looks
+ * like a screenshot of a chart rather than a chart. Twice over is enough to
+ * print cleanly and keeps the file small enough to post.
+ */
+const CHART_SCALE = 2;
+
+/**
+ * Takes a picture of a chart, exactly as it stands.
+ *
+ * The whole reason the document is built from the screen rather than from the
+ * database: these charts are drawn here, by hand, and re-drawing them on the
+ * server would be a second implementation of them in a second language.
+ *
+ * The ground is painted first, in the colour the card has. A dark theme's chart
+ * on white paper would otherwise be pale type on nothing - and this is meant to
+ * be the chart that was on the screen, which on a dark screen is a dark chart.
+ */
+async function chartAsPicture(container) {
+  const source = container?.querySelector('svg');
+  if (!source) return '';
+
+  const box = source.getBoundingClientRect();
+  const width = Math.max(1, Math.round(box.width));
+  const height = Math.max(1, Math.round(box.height));
+
+  const copy = source.cloneNode(true);
+
+  const originals = [source, ...source.querySelectorAll('*')];
+  const copies = [copy, ...copy.querySelectorAll('*')];
+
+  copies.forEach((node, i) => {
+    const settled = window.getComputedStyle(originals[i]);
+
+    node.setAttribute('style', PAINTED
+      .map((property) => [property, settled.getPropertyValue(property)])
+      .filter(([, value]) => value)
+      .map(([property, value]) => `${property}:${value}`)
+      .join(';'));
+  });
+
+  // Named explicitly: an <svg> handed to an <img> is a document of its own, and
+  // one without a namespace or a size does not render at all.
+  copy.setAttribute('xmlns', SVG_NS);
+  copy.setAttribute('width', String(width));
+  copy.setAttribute('height', String(height));
+
+  const drawing = new XMLSerializer().serializeToString(copy);
+
+  const picture = new Image();
+
+  await new Promise((resolve, reject) => {
+    picture.onload = resolve;
+    picture.onerror = () => reject(new Error(t('report.chartFailed',
+      'The chart could not be turned into a picture.')));
+
+    // A data URI rather than a blob: the Content-Security-Policy allows data:
+    // for images and nothing else, and this is the one place that matters.
+    picture.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(drawing)}`;
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width * CHART_SCALE;
+  canvas.height = height * CHART_SCALE;
+
+  const ink = canvas.getContext('2d');
+
+  ink.fillStyle = window.getComputedStyle(container).backgroundColor || '#ffffff';
+  ink.fillRect(0, 0, canvas.width, canvas.height);
+  ink.drawImage(picture, 0, 0, canvas.width, canvas.height);
+
+  return canvas.toDataURL('image/png');
+}
+
+/**
+ * Reads a table off the screen as the figures it is showing.
+ *
+ * The rendered table rather than the answer it was drawn from: what goes in the
+ * document is what somebody is looking at, already sorted, already formatted,
+ * already in their number and date conventions. Reading the response again here
+ * would mean formatting all of it a second time, and the second time would drift
+ * from the first.
+ *
+ * Columns of buttons and of tick boxes are dropped. They are the two things on a
+ * table that are not figures, and neither means anything on paper.
+ */
+function tableAsFigures(table) {
+  if (!table) return null;
+
+  const headings = [...table.querySelectorAll('thead th')];
+
+  const wanted = headings
+    .map((heading, i) => (heading.classList.contains('actions')
+      || heading.classList.contains('pick') ? -1 : i))
+    .filter((i) => i >= 0);
+
+  if (wanted.length === 0) return null;
+
+  const rows = [...table.querySelectorAll('tbody tr')]
+    // The "nothing here" line is a message, not a row of figures.
+    .filter((row) => !row.querySelector('td.empty'))
+    .map((row) => wanted.map((i) => row.children[i]?.textContent.trim() ?? ''));
+
+  return {
+    columns: wanted.map((i) => headings[i].textContent.trim()),
+    numeric: wanted.map((i) => headings[i].classList.contains('num')),
+    rows,
+  };
+}
+
+/**
+ * The period a document covers, worded as the two date fields have it.
+ */
+function periodOf(from, to) {
+  const start = from?.value ? fmtDate(from.value) : '';
+  const end = to?.value ? fmtDate(to.value) : '';
+
+  if (!start && !end) return '';
+
+  return `${start} – ${end}`;
+}
+
+/**
+ * Sends one evaluation off to be laid out, and saves what comes back.
+ *
+ * The whole card is disabled while it runs. Building the picture and posting it
+ * takes a moment on a long table, and a second press would produce a second
+ * identical document rather than a faster one.
+ */
+async function exportEvaluation(button, name, build) {
+  if (!button) return;
+
+  const wasSaying = button.textContent;
+
+  button.disabled = true;
+  button.textContent = t('report.exporting', 'Preparing …');
+
+  try {
+    await downloadDocument(await build(), name);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = wasSaying;
+  }
+}
+
+/** The report screen: the chart as chosen, the table, and the total. */
+async function reportDocument() {
+  const total = $('#report-total').textContent.trim();
+
+  return {
+    title: t('report.title', 'Report'),
+    subtitle: periodOf($('#form-report').elements.from, $('#form-report').elements.to),
+    sections: [{
+      heading: t('report.result', 'Result'),
+      caption: $('#report-chart-caption').textContent.trim(),
+      chart: await chartAsPicture($('#report-chart')),
+      table: tableAsFigures($('#table-report')),
+    }],
+    summary: total ? [{ label: t('stats.total', 'Total'), value: total }] : [],
+  };
+}
+
+/** The statistics screen: both charts, in the order they are on it. */
+async function statisticsDocument() {
+  return {
+    title: t('stats.title', 'My hours'),
+    subtitle: periodOf($('#statistics-from'), $('#statistics-to')),
+    sections: [
+      {
+        heading: t('stats.perDay', 'Hours per day'),
+        chart: await chartAsPicture($('#chart-days')),
+      },
+      {
+        heading: t('stats.perProject', 'Hours per project'),
+        chart: await chartAsPicture($('#chart-projects')),
+      },
+    ],
+    summary: [{
+      label: t('stats.total', 'Total'),
+      value: $('#statistics-total').textContent.replace(/^[^:]*:\s*/, '').trim(),
+    }],
+  };
+}
+
+/** The overtime screen: the day-by-day table and the balance. */
+async function overtimeDocument() {
+  const form = $('#form-overtime');
+
+  return {
+    title: t('nav.overtime', 'Overtime'),
+    subtitle: periodOf(form.elements.from, form.elements.to),
+    sections: [{
+      heading: t('ot.balance', 'Balance'),
+      caption: $('#overtime-meta').textContent.trim(),
+      table: tableAsFigures($('#table-overtime')),
+    }],
+    summary: [{
+      label: t('ot.balance', 'Balance'),
+      value: $('#overtime-total').textContent.trim(),
+    }],
+  };
+}
+
+/**
+ * Wires one button that turns a screen into a document.
+ *
+ * The name is a function rather than a string because it is read when the button
+ * is pressed, not when it is wired: somebody who switches language after the
+ * page loads should get a file named in the language they are now reading.
+ */
+function wireDocumentExport(selector, name, build) {
+  const button = $(selector);
+  if (!button) return;
+
+  button.addEventListener('click', () => exportEvaluation(button, name(), build));
+}
+
+/**
+ * Wires all three.
+ *
+ * The keys are written out at each call rather than gathered into a table above
+ * it. A table would read better and would put every one of them beyond the
+ * reach of the test that checks each key is translated - it scans this file for
+ * t('...') and cannot follow a key through a variable.
+ */
+function wireDocumentExports() {
+  wireDocumentExport('#report-pdf', () => t('report.filename', 'report'), reportDocument);
+  wireDocumentExport('#statistics-pdf', () => t('stats.filename', 'statistics'),
+    statisticsDocument);
+  wireDocumentExport('#overtime-pdf', () => t('ot.filename', 'overtime'), overtimeDocument);
 }
 
 // ------------------------------------------- export and import, table by table
@@ -10733,6 +11026,7 @@ async function init() {
     trackTopbarHeight();
     wireTimer();
     wireStatistics();
+    wireDocumentExports();
     wireReportChart();
     wireWorkbook();
     wireSheetCards();
