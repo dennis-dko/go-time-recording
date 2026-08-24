@@ -813,13 +813,60 @@ that difference is the whole of it.
 | | What the card offers |
 | --- | --- |
 | **C** Single binary | A button. It downloads the release's binary for this platform, checks it against the `SHA256SUMS` published beside it, and puts it where the running file is. |
-| **A/B/D** Container | No button, and the command to run instead. |
+| **A/B/D** Container | A button, and a caveat: the new binary is in this container and not in the image, so the next recreate brings the old one back. |
+| **A/B/D** Container **with `compose.update.yaml`** | A button that pulls a new image, recreates the container from it, and removes the image it replaced. Nothing is left behind. |
 
-**Why no button in a container.** A binary swapped inside a container is undone by
-the next `docker compose up` - which is the moment somebody is most certain the
-update took. Offering it there would be offering an update that silently reverts,
-so the card says `docker compose pull && docker compose up -d` instead. That is
-not a gap in the feature; it is what updating a container is.
+**The caveat, in a container without the overlay.** A binary swapped inside a
+container is undone by the next `docker compose up -d` that recreates it - which
+can be the moment somebody is most certain the update took. It is offered anyway,
+because a restart of the *same* container keeps it and that is what the shipped
+restart policy does: the update works and holds until somebody runs the image
+again. The card says exactly that rather than refusing, which is what it used to
+do - and refusing left the deployment this application ships with no way to
+update from its own interface at all.
+
+### Updating the image from the interface
+
+`compose.update.yaml` adds a second container that does what the application
+cannot: pull an image and recreate a container from it.
+
+```
+docker compose -f compose.yaml -f compose.update.yaml up -d
+```
+
+or add it to `COMPOSE_FILE` in `.env` beside the other overlays. It has to see
+the same set of files you deploy with, or the container it recreates is built
+from a different description than the one running.
+
+**Read this before adding it.** That container mounts the Docker socket, and
+access to the Docker socket is **root on the host** - not root in a container.
+Anything holding it can start a container that mounts the host filesystem. This
+is why the application does not hold it and never will: it is reachable over the
+network, it has a sign-in form, and it is what an attacker reaches first.
+
+What the overlay does instead is put the privilege in a container whose entire
+vocabulary is one sentence. The application writes an empty file into a shared
+volume; the updater sees it and pulls, recreates and cleans up. There is no
+argument to the request: the application cannot name an image, cannot name a
+container, cannot pass a flag. The worst that can be asked of it by somebody who
+owns the application is the update the operator already configured.
+
+That is a real reduction and it is not zero. An installation that would rather
+type two commands should leave this out, and loses nothing but the button.
+
+| | |
+| --- | --- |
+| Image | `docker:28-cli`, pinned to a major |
+| Mounts | the socket, the project directory read-only, the shared request volume, the script read-only |
+| Network | none at all - the daemon does the pulling |
+| Ports | none |
+| Scope | `docker compose up -d --no-deps app`, which touches neither the database nor itself |
+
+**What happens when you press it.** The application announces a restart to every
+open browser, writes the request and stops answering shortly afterwards - the
+updater has recreated it. The page waits for the version to come back, the way it
+waits out any restart. A failed pull or a failed recreate leaves the running
+container exactly as it was and the card says what went wrong.
 
 **Nothing is written into place unverified.** The download is hashed while it is
 written and compared against the release's own `SHA256SUMS`, read from the same
