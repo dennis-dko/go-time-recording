@@ -206,7 +206,7 @@ func servedFromCache(w http.ResponseWriter, r *http.Request, tags etags) bool {
 
 	// Any of the tags the browser offers, which is what the header allows even
 	// though this only ever sends one.
-	for _, offered := range strings.Split(r.Header.Get("If-None-Match"), ",") {
+	for offered := range strings.SplitSeq(r.Header.Get("If-None-Match"), ",") {
 		if strings.TrimSpace(offered) == tag {
 			w.WriteHeader(http.StatusNotModified)
 

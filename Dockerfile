@@ -1,7 +1,7 @@
 # Build a single self-contained binary: the web UI is embedded via go:embed
 # and the SQLite driver is pure Go, so CGO is not needed and the result runs
 # on a scratch-like base.
-FROM --platform=$BUILDPLATFORM golang:1.26.6 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.0 AS build
 
 ARG VERSION=dev
 

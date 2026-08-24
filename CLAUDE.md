@@ -85,6 +85,10 @@ browsers.
   loads. Anything that fills a form must leave alone a form somebody is part
   way through, and anything that reads a copy of server state must not read one
   the reload behind a notice has not refreshed yet.
+- **`go fix ./...` includes `embedlit`, which this repository does not want.**
+  It rewrites `outer{inner: inner{code: c}}` to `outer{code: c}`, which is valid
+  and hides that the field is reached through an embedded type. Run it as `go
+  fix -embedlit=false ./...`; the rest of the modernizers are welcome.
 - **GoFr reads its configuration in `gofr.New()`.** The metrics port, the trace
   exporter and the database connection are decided before there is a screen, so
   administering them means storing them and reporting a pending restart.

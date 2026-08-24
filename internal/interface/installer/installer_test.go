@@ -2,6 +2,7 @@ package installer
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,13 +54,7 @@ func TestTheInstallerOffersEveryDatabaseTheServerAccepts(t *testing.T) {
 }
 
 func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(values, want)
 }
 
 // The installer's wait-for-the-application loop has to be able to tell the

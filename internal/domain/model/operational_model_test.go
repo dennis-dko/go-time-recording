@@ -10,8 +10,6 @@ import (
 // bounds below are not tidiness: they are what stops an administrator locking
 // themselves - and everyone else - out of the instance.
 
-func ptr[T any](v T) *T { return &v }
-
 func envDefaults() model.Limits {
 	return model.Limits{
 		SessionLifetimeHours:   12,
@@ -33,8 +31,8 @@ func TestEmptyOperationalKeepsTheEnvironment(t *testing.T) {
 
 func TestOverridesReplaceOnlyWhatIsSet(t *testing.T) {
 	got := model.Operational{
-		MaxDailyHours: ptr(10.0),
-		RateLimit:     ptr(100),
+		MaxDailyHours: new(10.0),
+		RateLimit:     new(100),
 	}.Resolve(envDefaults())
 
 	if got.MaxDailyHours != 10 {
@@ -56,7 +54,7 @@ func TestOverridesReplaceOnlyWhatIsSet(t *testing.T) {
 // pointer: a plain zero could not be told apart from "not configured here".
 func TestZeroIsAnOverrideNotAnAbsence(t *testing.T) {
 	got := model.Operational{
-		LDAPSyncMaxDeleteRatio: ptr(0.0),
+		LDAPSyncMaxDeleteRatio: new(0.0),
 	}.Resolve(envDefaults())
 
 	if got.LDAPSyncMaxDeleteRatio != 0 {
@@ -72,35 +70,35 @@ func TestValidationRejectsValuesThatWouldBreakTheInstance(t *testing.T) {
 	}{
 		{
 			"a session measured in seconds would sign people out mid-click",
-			model.Operational{SessionLifetimeHours: ptr(0.001)}, "sessionLifetimeHours",
+			model.Operational{SessionLifetimeHours: new(0.001)}, "sessionLifetimeHours",
 		},
 		{
 			"a session lasting months is a permanent credential, not a session",
-			model.Operational{SessionLifetimeHours: ptr(10000.0)}, "sessionLifetimeHours",
+			model.Operational{SessionLifetimeHours: new(10000.0)}, "sessionLifetimeHours",
 		},
 		{
 			"a rate limit this low would refuse the administrator's own sign-in",
-			model.Operational{RateLimit: ptr(1)}, "rateLimit",
+			model.Operational{RateLimit: new(1)}, "rateLimit",
 		},
 		{
 			"more hours than a day has cannot be worked in one",
-			model.Operational{MaxDailyHours: ptr(48.0)}, "maxDailyHours",
+			model.Operational{MaxDailyHours: new(48.0)}, "maxDailyHours",
 		},
 		{
 			"a daily cap of zero would refuse every booking",
-			model.Operational{MaxDailyHours: ptr(0.0)}, "maxDailyHours",
+			model.Operational{MaxDailyHours: new(0.0)}, "maxDailyHours",
 		},
 		{
 			"a ratio above one cannot mean anything",
-			model.Operational{LDAPSyncMaxDeleteRatio: ptr(1.5)}, "ldapSyncMaxDeleteRatio",
+			model.Operational{LDAPSyncMaxDeleteRatio: new(1.5)}, "ldapSyncMaxDeleteRatio",
 		},
 		{
 			"a negative ratio cannot mean anything either",
-			model.Operational{LDAPSyncMaxDeleteRatio: ptr(-0.1)}, "ldapSyncMaxDeleteRatio",
+			model.Operational{LDAPSyncMaxDeleteRatio: new(-0.1)}, "ldapSyncMaxDeleteRatio",
 		},
 		{
 			"a window of zero seconds is not a window",
-			model.Operational{RateLimitWindowSeconds: ptr(0)}, "rateLimitWindowSeconds",
+			model.Operational{RateLimitWindowSeconds: new(0)}, "rateLimitWindowSeconds",
 		},
 	}
 
@@ -121,11 +119,11 @@ func TestValidationRejectsValuesThatWouldBreakTheInstance(t *testing.T) {
 
 func TestValidationAcceptsReasonableValues(t *testing.T) {
 	given := model.Operational{
-		SessionLifetimeHours:   ptr(8.0),
-		MaxDailyHours:          ptr(10.0),
-		RateLimit:              ptr(60),
-		RateLimitWindowSeconds: ptr(60),
-		LDAPSyncMaxDeleteRatio: ptr(0.25),
+		SessionLifetimeHours:   new(8.0),
+		MaxDailyHours:          new(10.0),
+		RateLimit:              new(60),
+		RateLimitWindowSeconds: new(60),
+		LDAPSyncMaxDeleteRatio: new(0.25),
 	}
 
 	if invalid := given.InvalidOperationalFields(); len(invalid) > 0 {

@@ -550,8 +550,8 @@ func withoutGoComments(source []byte) []byte {
 	lines := strings.Split(string(source), "\n")
 
 	for i, line := range lines {
-		if cut := strings.Index(line, "//"); cut >= 0 {
-			lines[i] = line[:cut]
+		if before, _, ok := strings.Cut(line, "//"); ok {
+			lines[i] = before
 		}
 	}
 
@@ -1118,7 +1118,7 @@ func readSource(t *testing.T, path string) string {
 func withoutLineComments(js string) string {
 	var out strings.Builder
 
-	for _, line := range strings.Split(js, "\n") {
+	for line := range strings.SplitSeq(js, "\n") {
 		if at := strings.Index(line, "//"); at >= 0 {
 			line = line[:at]
 		}

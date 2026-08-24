@@ -125,8 +125,8 @@ func TestTheFinderPatternsAreWhereAScannerLooks(t *testing.T) {
 	}
 
 	for _, corner := range corners {
-		for dy := 0; dy < 7; dy++ {
-			for dx := 0; dx < 7; dx++ {
+		for dy := range 7 {
+			for dx := range 7 {
 				at := [2]int{corner[0] + dx, corner[1] + dy}
 
 				// The outer ring is black, the ring inside it white, the 3x3

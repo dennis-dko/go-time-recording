@@ -441,7 +441,7 @@ func (s *Source) checksum(ctx context.Context, release Release) (string, error) 
 
 	wanted := assetName(release.Version)
 
-	for _, line := range strings.Split(string(body), "\n") {
+	for line := range strings.SplitSeq(string(body), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
 			continue

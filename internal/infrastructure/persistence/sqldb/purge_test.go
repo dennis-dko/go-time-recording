@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -40,7 +40,7 @@ func newTestDB(t *testing.T) *sql.DB {
 	}
 
 	// Migrations must run in their declared order.
-	sort.Slice(versions, func(i, j int) bool { return versions[i] < versions[j] })
+	slices.Sort(versions)
 
 	for _, version := range versions {
 		if err := all[version].UP(migration.Datasource{SQL: db}); err != nil {

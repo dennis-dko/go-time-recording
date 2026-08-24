@@ -16,8 +16,6 @@ import (
 // stands on - that an administered value beats the configuration file, and that a
 // value nobody administered is left entirely alone.
 
-func ptr[T any](v T) *T { return &v }
-
 // givenEnvironment sets the keys to what a configuration file would have supplied,
 // so a test can tell "left alone" from "overwritten with the same thing".
 func givenEnvironment(t *testing.T) {
@@ -76,7 +74,7 @@ func TestSwitchingMetricsOffWritesTheDisablingPortRatherThanNothing(t *testing.T
 func TestSwitchingTracingOffLeavesAnEmptyButPresentVariable(t *testing.T) {
 	givenEnvironment(t)
 
-	err := config.ApplyTelemetry(model.Telemetry{TraceExporter: ptr(model.TracingOff)})
+	err := config.ApplyTelemetry(model.Telemetry{TraceExporter: new(model.TracingOff)})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -103,7 +101,7 @@ func TestSwitchingTracingOffLeavesAnEmptyButPresentVariable(t *testing.T) {
 func TestSwitchingTracingOffClearsTheCollectorFromTheFileToo(t *testing.T) {
 	givenEnvironment(t)
 
-	err := config.ApplyTelemetry(model.Telemetry{TraceExporter: ptr(model.TracingOff)})
+	err := config.ApplyTelemetry(model.Telemetry{TraceExporter: new(model.TracingOff)})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -117,9 +115,9 @@ func TestAnAdministeredExporterReplacesTheFile(t *testing.T) {
 	givenEnvironment(t)
 
 	err := config.ApplyTelemetry(model.Telemetry{
-		TraceExporter: ptr(model.TraceExporterOTLP),
-		TracerURL:     ptr("collector:4317"),
-		TracerRatio:   ptr(0.5),
+		TraceExporter: new(model.TraceExporterOTLP),
+		TracerURL:     new("collector:4317"),
+		TracerRatio:   new(0.5),
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
@@ -150,7 +148,7 @@ func TestTheSamplingRatioIsWrittenInAFormGoFrCanParse(t *testing.T) {
 	for given, want := range cases {
 		t.Setenv("TRACER_RATIO", "")
 
-		if err := config.ApplyTelemetry(model.Telemetry{TracerRatio: ptr(given)}); err != nil {
+		if err := config.ApplyTelemetry(model.Telemetry{TracerRatio: new(given)}); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
 
@@ -171,7 +169,7 @@ func TestTheSamplingRatioIsWrittenInAFormGoFrCanParse(t *testing.T) {
 func TestTheLogLevelIsExportedOnlyWhenItSaysSomething(t *testing.T) {
 	givenEnvironment(t)
 
-	if err := config.ApplyTelemetry(model.Telemetry{LogLevel: ptr("debug")}); err != nil {
+	if err := config.ApplyTelemetry(model.Telemetry{LogLevel: new("debug")}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 
@@ -181,7 +179,7 @@ func TestTheLogLevelIsExportedOnlyWhenItSaysSomething(t *testing.T) {
 
 	givenEnvironment(t)
 
-	if err := config.ApplyTelemetry(model.Telemetry{LogLevel: ptr("")}); err != nil {
+	if err := config.ApplyTelemetry(model.Telemetry{LogLevel: new("")}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 
