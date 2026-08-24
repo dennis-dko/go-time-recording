@@ -274,6 +274,50 @@ func readWithHeading(r io.Reader, table Table) ([]string, [][]string, error) {
 }
 
 // read returns the data rows of a workbook, the heading dropped.
+// readRows is what all three readers do: read the sheet, parse every row, and
+// keep the rows that failed beside the rows that did not - an import that stops
+// at the first bad line tells somebody with a hundred rows about one of them.
+//
+// It was these twenty lines three times over, differing in the row type, the
+// table and the parser, which is exactly the list of parameters below. The
+// blank-row rule in the middle is the reason that mattered: it is a decision
+// about what an empty line in a spreadsheet means, and it was written down in
+// three places.
+func readRows[T any](r io.Reader, table Table,
+	parse func(int, []string) (T, error)) ([]T, []RowError, error) {
+
+	raw, err := read(r, table)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rows := make([]T, 0, len(raw))
+	problems := make([]RowError, 0)
+
+	for i, cells := range raw {
+		// The heading was row 1 and has been dropped, so the first data row is 2.
+		number := i + 2
+
+		row, rowErr := parse(number, cells)
+		if rowErr != nil {
+			// A blank line is not a problem to report. Spreadsheets collect them
+			// at the bottom, and somebody who deleted a row would be told off for
+			// it.
+			if errors.Is(rowErr, errBlankRow) {
+				continue
+			}
+
+			problems = append(problems, rowErrorFor(number, rowErr))
+
+			continue
+		}
+
+		rows = append(rows, row)
+	}
+
+	return rows, problems, nil
+}
+
 func read(r io.Reader, table Table) ([][]string, error) {
 	raw, err := rowsOf(r, table)
 	if err != nil {

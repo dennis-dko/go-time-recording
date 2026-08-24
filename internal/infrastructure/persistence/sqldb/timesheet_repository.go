@@ -2,8 +2,6 @@ package sqldb
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"strconv"
 	"strings"
 
@@ -73,12 +71,8 @@ func (r *TimesheetRepository) GetByID(ctx context.Context, id uint) (*model.Time
 	row := r.db.QueryRowContext(ctx, r.rebind("SELECT "+timesheetColumns+" FROM timesheets WHERE id = ?"), id)
 
 	timesheet, err := scanTimesheet(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("timesheet", strconv.FormatUint(uint64(id), 10))
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "timesheet", strconv.FormatUint(uint64(id), 10)); problem != nil {
+		return nil, problem
 	}
 
 	return timesheet, nil

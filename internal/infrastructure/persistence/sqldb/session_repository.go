@@ -2,8 +2,6 @@ package sqldb
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -50,12 +48,8 @@ func (r *SessionRepository) Get(ctx context.Context, tokenHash string) (*model.S
 	)
 
 	err := row.Scan(&session.TokenHash, &session.UserID, &createdAt, &expiresAt, &lastSeenAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("session", "")
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "session", ""); problem != nil {
+		return nil, problem
 	}
 
 	session.CreatedAt = createdAt.Time

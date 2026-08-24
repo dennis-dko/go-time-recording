@@ -2,8 +2,6 @@ package sqldb
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"strconv"
 	"time"
 
@@ -46,12 +44,8 @@ func (r *APITokenRepository) GetByHash(ctx context.Context, tokenHash string) (*
 		r.rebind("SELECT "+apiTokenColumns+" FROM api_tokens WHERE token_hash = ?"), tokenHash)
 
 	token, err := scanAPIToken(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("token", "")
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "token", ""); problem != nil {
+		return nil, problem
 	}
 
 	return token, nil

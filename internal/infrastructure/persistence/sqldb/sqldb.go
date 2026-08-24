@@ -8,9 +8,12 @@ package sqldb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
 // Dialect names as understood by GoFr's DB_DIALECT setting.
@@ -269,6 +272,29 @@ func (d *dateTime) parse(raw string) error {
 
 // ptr returns a pointer to v, or nil when v is the zero value, matching how
 // the domain models express "absent".
+// problemReading says what a caller should return when a single-row read comes
+// back with an error, because the two it can come back with are not the same
+// failure: there is no such row, which is an answer and belongs to whoever
+// asked, and the read itself did not work, which is not an answer and belongs
+// in the log. Nothing wrong reports nothing.
+//
+// It was these seven lines in nine places. Spelled out everywhere they looked
+// so alike that the two which deliberately decide otherwise - a setting never
+// saved reads as empty, and no timer running is the ordinary state - could not
+// be told apart at a glance from the nine that do this. They are now the two
+// that do not call it.
+func problemReading(err error, entity, id string) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return apperror.NotFound(entity, id)
+	}
+
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	return nil
+}
+
 func ptr(d dateTime) *time.Time {
 	if !d.Valid {
 		return nil
