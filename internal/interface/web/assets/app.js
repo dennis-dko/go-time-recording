@@ -3572,6 +3572,7 @@ const TRANSLATIONS = {
     'update.inContainer': 'Dies läuft in einem Container. Ein ausgetauschtes Programm wäre '
       + 'beim nächsten Neuaufbau wieder weg — stattdessen das Abbild aktualisieren: '
       + 'docker compose pull && docker compose up -d',
+    'update.byImage': 'Es wird ein neues Abbild geladen, dieser Container daraus neu erzeugt und das ersetzte Abbild anschließend entfernt. Die Anwendung ist einige Sekunden weg und kommt als neue Fassung zurück – diese Seite wartet darauf.',
     'update.off': 'Die Suche nach neuen Versionen ist auf dieser Installation '
       + 'abgeschaltet (UPDATE_CHECK).',
     'update.confirm': 'Die neue Version herunterladen und installieren? '
@@ -7628,6 +7629,19 @@ function renderUpdate(state) {
     : t('update.willAskRestart', 'The download is checked against the release’s own '
       + 'checksum. Afterwards the application has to be restarted by hand — this '
       + 'platform cannot restart itself.');
+
+  // A container with an updater beside it takes the whole image, so there is
+  // nothing left behind to warn about - and what the button does is different
+  // enough to say plainly. It is not this application replacing its own binary;
+  // it is something else replacing this container.
+  if (state.byImage) {
+    hint.textContent = t('update.byImage',
+      'A new image is pulled and this container is recreated from it, then the '
+      + 'image it replaced is removed. The application is away for a few seconds '
+      + 'and comes back as the new version - this page waits for it.');
+
+    return;
+  }
 
   // In a container, what installing leaves behind is worth saying beside it.
   //
