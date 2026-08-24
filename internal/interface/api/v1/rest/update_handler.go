@@ -110,10 +110,24 @@ type UpdateResponse struct {
 	// here, which is what a container needs to be told.
 	Newer bool `json:"newer"`
 
-	// Installable is false in a container, where a swapped binary is undone by
-	// the next recreate. The screen says what to run instead.
+	// Installable is false where this build cannot replace itself at all.
+	//
+	// It used to be false in a container as well, on the reasoning that a
+	// swapped binary is undone by the next recreate. That is true and it is not
+	// the whole truth: a restart of the same container keeps it - which is what
+	// the shipped deployment's restart policy does - so the update takes effect
+	// and holds until somebody runs the image again. Refusing to install left a
+	// container deployment with no way to update from the interface at all, and
+	// a command to type instead.
+	//
+	// So it installs, and Caveat says what to know about it.
 	Installable bool   `json:"installable"`
 	Why         string `json:"why,omitempty"`
+
+	// Caveat names something true about installing here that is not a refusal.
+	// "inContainer": the new binary lives in this container and not in the image
+	// it was made from, so recreating the container brings the old one back.
+	Caveat string `json:"caveat,omitempty"`
 
 	// Pending is the version already downloaded and waiting for a restart, so the
 	// same update is not offered twice to somebody who has taken it.
@@ -157,18 +171,19 @@ func (h *UpdateHandler) describe(c *gofr.Context) UpdateResponse {
 	out := UpdateResponse{
 		Running:     h.version,
 		Enabled:     h.enabled,
-		Installable: !hosting.InContainer(),
+		Installable: true,
 		Restartable: restart.Supported(),
 		RestartCode: restart.Code(),
 		Comparable:  selfupdate.Comparable(h.version),
 	}
 
-	if pending, ok := selfupdate.Installed(); ok {
-		out.Pending = pending
+	// Installing works here; what it leaves behind is worth saying.
+	if hosting.InContainer() {
+		out.Caveat = "inContainer"
 	}
 
-	if !out.Installable {
-		out.Why = "inContainer"
+	if pending, ok := selfupdate.Installed(); ok {
+		out.Pending = pending
 	}
 
 	if !h.enabled {
@@ -288,14 +303,6 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 	if !h.enabled {
 		return nil, toHTTPError(apperror.Invalidf("updating is switched off on this " +
 			"installation").WithCode("updateDisabled"))
-	}
-
-	// Checked again here rather than trusted from the screen. The button is only
-	// offered where this holds, and a POST is not a button.
-	if hosting.InContainer() {
-		return nil, toHTTPError(apperror.Invalidf("this runs in a container, where " +
-			"replacing the binary is undone by the next recreate").
-			WithCode("updateInContainer"))
 	}
 
 	release, err := h.latest(c)

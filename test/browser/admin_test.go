@@ -4521,9 +4521,21 @@ func TestARestartThatIsWaitingIsSaidOnEveryScreenAndOnlyToAdministrators(t *test
 			"the screen somebody has already left by the time it matters")
 	}
 
-	// And it names what is waiting rather than only that something is.
-	if said := p.text("#restart-pending"); !strings.Contains(said, "jaeger:4317") {
-		t.Errorf("the notice does not say what is waiting: %q", said)
+	// And it says that something is waiting, with the way to what.
+	//
+	// It used to list them here. The list is on the card now: a card's worth of
+	// detail stuck to the top of every screen was saying what the card under
+	// Settings says, and the notice's job is to be seen from anywhere and lead
+	// somewhere.
+	if said := p.text("#restart-summary"); said == "" {
+		t.Error("the notice does not say anything is waiting")
+	}
+
+	p.run("follow the notice", p.click("#restart-open"))
+	p.waitShown("#restart-card")
+
+	if said := p.text("#restart-card-pending"); !strings.Contains(said, "jaeger:4317") {
+		t.Errorf("the card does not say what is waiting: %q", said)
 	}
 
 	// Put back, and it goes with them. Reset rather than clearing the fields one

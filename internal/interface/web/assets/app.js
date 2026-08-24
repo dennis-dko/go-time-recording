@@ -2941,6 +2941,8 @@ const TRANSLATIONS = {
     'password.hide': 'Passwort verbergen',
 
     'restart.title': 'Neustart',
+    'restart.open': 'Zum Neustart',
+    'restart.summary': '{0} gespeicherte Einstellung(en) warten auf einen Neustart.',
     'restart.unsupported.noExecve': 'Ein Neustart aus der Anwendung heraus ist unter Windows nicht möglich: dafür wird execve gebraucht, das es dort nicht gibt. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
@@ -3182,8 +3184,6 @@ const TRANSLATIONS = {
     'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
       + 'warten Sie, bis sie abgeschlossen ist.',
     'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
-    'err.updateInContainer': 'Dies läuft in einem Container. Dort wäre ein ausgetauschtes '
-      + 'Programm beim nächsten Neuaufbau wieder weg — bitte das Abbild aktualisieren.',
     'err.updateNotNewer': 'Diese Installation läuft bereits mit {0}.',
     'err.onlyBuiltInAdminSchedules': 'Nur die eingebaute Administration darf den '
       + 'Verzeichnisabgleich planen.',
@@ -6568,8 +6568,22 @@ function tourTargetIsReachable(node) {
   return Boolean(node);
 }
 
-/** Positions the spotlight and the bubble around one element. */
+/**
+ * Positions the spotlight and the bubble around one element.
+ *
+ * Does nothing if the walk has ended in the meantime. This runs two animation
+ * frames after the step was rendered - the delay is what lets a view that has
+ * just been switched to settle before anything is measured against it - and
+ * ending the tour inside that gap used to leave a bubble on screen belonging to
+ * a walk that had finished, because this unhides what endTour had just hidden.
+ *
+ * Rare by hand and not rare at all for anything driving the application: the
+ * interface says the walk has been decided as soon as it starts, so a caller
+ * that reacts to that and ends it immediately lands in exactly this gap.
+ */
 function placeTour(node) {
+  if (!tour.active) return;
+
   const rect = node.getBoundingClientRect();
   const pad = 6;
   const spotlight = $('#tour-spotlight');
@@ -7608,22 +7622,31 @@ function renderUpdate(state) {
   line.textContent = t('update.found', '{0} is available. This installation runs {1}.')
     .replace('{0}', state.latest).replace('{1}', state.running);
 
-  // Newer, but not from here. The command is the honest answer rather than a
-  // button that would be undone.
-  if (!state.installable) {
-    hint.textContent = t('update.inContainer',
-      'This runs in a container, where replacing the binary would be undone by the '
-      + 'next recreate. Update the image instead: docker compose pull && docker compose up -d');
-
-    return;
-  }
-
-  hint.textContent = state.restartable
+  const promise = state.restartable
     ? t('update.willRestart', 'The download is checked against the release’s own checksum. '
       + 'The application restarts itself afterwards.')
     : t('update.willAskRestart', 'The download is checked against the release’s own '
       + 'checksum. Afterwards the application has to be restarted by hand — this '
       + 'platform cannot restart itself.');
+
+  // In a container, what installing leaves behind is worth saying beside it.
+  //
+  // This card used to refuse here: a command to type instead of a button, on the
+  // reasoning that a swapped binary is undone by the next recreate. That is true
+  // and it is not the whole truth - a restart of the same container keeps it,
+  // which is what the shipped deployment's restart policy does - so the update
+  // takes effect and holds until somebody runs the image again. Refusing left a
+  // container deployment with no way to update from the interface at all.
+  //
+  // The caveat is the honest half of that, and it is a caveat rather than a
+  // refusal: the version in the image is still the old one, so anybody who
+  // recreates this container gets it back.
+  hint.textContent = state.caveat === 'inContainer'
+    ? `${promise} ${t('update.inContainer',
+      'This runs in a container: the new version lives in this container and not '
+      + 'in the image it was made from, so recreating it brings the old one back. '
+      + 'Pull the image when convenient: docker compose pull && docker compose up -d')}`
+    : promise;
 }
 
 /**
@@ -7774,8 +7797,8 @@ async function loadRestart() {
   if (!banner) return;
 
   // The same permission the screen that causes this needs. The banner is on
-  // every screen now rather than on one card, so who may see it is decided here
-  // rather than inherited from where it sat.
+  // every screen rather than behind the tab the card sits on, so who may see it
+  // is decided here rather than inherited from where it sits.
   if (!can('settings:manage')) {
     banner.hidden = true;
 
@@ -7797,16 +7820,15 @@ async function loadRestart() {
   // which has no execve - whether anything was pending or not, on the reasoning
   // that this is a standing property of the installation and worth knowing. It
   // is worth knowing at the moment it matters, which is when you have just saved
-  // something that needs a restart. A warning that is always there is furniture:
-  // it is read once, and after that it is the thing you look past to reach the
-  // card below it, including on the day it finally has something to say.
+  // something that needs a restart. A notice that is always there is furniture:
+  // it is read once, and after that it is the thing you look past.
   //
-  // Nothing is lost by waiting. The banner explains the refusal in place of the
-  // button whenever it does appear, so the first save that needs a restart is
-  // still where somebody finds out they will have to do it by hand.
+  // Nothing is lost by waiting. The card says what restarting does here and why
+  // it cannot, whether or not anything is pending, and it is one press away
+  // whether or not this notice is up.
   banner.hidden = pending.length === 0;
 
-  const list = $('#restart-pending');
+  const list = $('#restart-card-pending');
   list.replaceChildren(...pending.map((change) => {
     const label = el('strong', { text: pendingLabel(change.setting) });
 
@@ -7827,8 +7849,23 @@ async function loadRestart() {
   // The hint promises a list of saved changes and the list follows it, so both go
   // when there are none.
   const waiting = pending.length > 0;
-  $('#restart-hint').hidden = !waiting;
-  $('#restart-pending').hidden = !waiting;
+
+  // The hint promises a list of saved changes and the list follows it, so both
+  // go when there are none. On the card, which is where they live now: the
+  // banner is the notice and points at this.
+  $('#restart-card-hint').hidden = !waiting;
+  $('#restart-card-pending').hidden = !waiting;
+
+  // One line saying how many, because the banner no longer lists them.
+  const summary = $('#restart-summary');
+
+  // The banner is only up while something is waiting, so this is always the
+  // count - there is no "nothing is waiting" wording, because nobody could read
+  // it.
+  if (summary) {
+    summary.textContent = fillIn(t('restart.summary',
+      '{0} saved setting(s) are waiting for a restart.'), [pending.length]);
+  }
 
   // What the button does, said before it is pressed rather than found out
   // afterwards.
@@ -7855,22 +7892,11 @@ async function loadRestart() {
     ? ''
     : t(`restart.unsupported.${state.reasonCode || 'other'}`, state.reason ?? '');
 
-  // Both places, from one answer: the banner that appears when something is
-  // waiting, and the card on the settings screen that is always there.
-  //
-  // The card exists because the banner was the only place the button lived, so
-  // an installation with nothing pending offered no way to restart on purpose -
-  // and said nothing about what restarting means here, which on a container
-  // deployment is the part worth knowing.
-  showRestartControls('#restart-mode', '#restart-now', '#restart-unsupported',
-    description, refusal, state.supported, waiting);
-
   showRestartControls('#restart-card-mode', '#restart-card-now',
     '#restart-card-unsupported', description, refusal, state.supported, true);
 
   const card = $('#restart-card');
   if (card) card.hidden = false;
-
 }
 
 /**
@@ -7955,13 +7981,17 @@ async function waitForRestart(previousStartedAt) {
 }
 
 function wireRestart() {
-  // Two buttons, one action: the one in the banner that appears when something
-  // is waiting, and the one on the settings card that is always there. Wired
-  // from one list rather than twice, which is how the two password reveals and
-  // the two brand marks happened.
-  for (const selector of ['#restart-now', '#restart-card-now']) {
-    wireRestartButton($(selector));
-  }
+  wireRestartButton($('#restart-card-now'));
+
+  // The banner does not restart anything; it says one is waiting and takes you
+  // to where it happens. One button for one action, in the one place the detail
+  // is - which is what stops the notice and the control drifting apart.
+  $('#restart-open')?.addEventListener('click', () => {
+    switchView('admin');
+
+    const card = $('#restart-card');
+    if (card) card.scrollIntoView({ block: 'center' });
+  });
 }
 
 function wireRestartButton(button) {

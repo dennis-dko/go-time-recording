@@ -505,6 +505,22 @@ func TestTheUpdateCheckAnswersAndIsGuarded(t *testing.T) {
 		t.Error("a release with no assets at all is offered as installable")
 	}
 
+	// And no class of installation is turned away in advance.
+	//
+	// This used to be false in a container, so the card printed a docker command
+	// instead of offering a button - which left the deployment this application
+	// ships with no way to update from its own interface. A binary swapped inside
+	// a container is undone the next time the container is recreated, which is
+	// true and is a caveat rather than a refusal: a restart of the same container
+	// keeps it, and that is what the shipped restart policy does.
+	//
+	// Asked here rather than in a container, which no test in this suite runs in:
+	// what can be checked is that the answer no longer depends on it.
+	if !state.Installable {
+		t.Error("this installation is told it cannot install an update at all, " +
+			"before any release has been looked at")
+	}
+
 	// Everybody who may configure this installation may also update it, including
 	// somebody who administers and books their own time.
 	//

@@ -215,17 +215,23 @@
        on its own: two things stuck to the same edge cover each other, and the
        one underneath is the one nobody knew was there. -->
   <div id="standing-notices">
+    <!-- The notice, and the way to the place it is acted on.
+    
+         It used to carry the whole thing: the list of waiting settings, the
+         button, and the explanation of what the button does here. That is a
+         card's worth of screen stuck to the top of every page, and it said the
+         same things the card under Settings says. Now it points, and the card
+         answers - one place to read it and one place to act.
+    
+         Not dismissable, and there is nothing to dismiss it with: it reports a
+         state rather than news, and a state that has been clicked away is still
+         the state. It goes when the settings are put back or the application
+         restarts. -->
     <div id="restart-banner" class="banner" hidden>
       <strong data-i18n="restart.title">Restart</strong>
-      <p id="restart-hint" data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>
-      <ul id="restart-pending" class="pending-list"></ul>
-      <div class="row">
-        <button type="button" id="restart-now" data-i18n="restart.now">Restart now</button>
-      </div>
-      <p class="minus" id="restart-unsupported" hidden></p>
-    <!-- What the button will actually do, which is not one thing. Filled by
-         loadRestart from the mode the server reports. -->
-    <p class="muted" id="restart-mode" hidden></p>
+      <span id="restart-summary"></span>
+      <button type="button" id="restart-open" class="link-button"
+              data-i18n="restart.open">Go to the restart</button>
     </div>
 
     <!-- A release newer than this build, for whoever may install it, and only for
@@ -976,8 +982,27 @@
     </section>
     <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
-      <!-- Above the restart card, because taking an update is the thing that
-           produces something waiting for a restart. -->
+      <!-- Restarting: the notice, the detail and the button, in the place the
+           banner points at.
+      
+           Above the version card rather than below it. A restart is the thing
+           standing between this installation and the settings it has been given
+           - including a version that has been downloaded and is waiting - so it
+           is the first thing on the screen somebody was sent to.
+      
+           The list of what is waiting lives here rather than in the banner: the
+           banner is the notice, and this is where somebody acts on it. -->
+      <div id="restart-card" class="card" hidden>
+        <h2 data-i18n="restart.title">Restart</h2>
+        <p class="muted" id="restart-card-mode"></p>
+        <p id="restart-card-hint" hidden data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>
+        <ul id="restart-card-pending" class="pending-list" hidden></ul>
+        <div class="row">
+          <button type="button" id="restart-card-now" data-i18n="restart.now">Restart now</button>
+        </div>
+        <p class="muted minus" id="restart-card-unsupported" hidden></p>
+      </div>
+
       <div id="update-card" class="card" hidden>
         <h2 data-i18n="update.title">Version</h2>
         <p class="muted" id="update-state"></p>
@@ -988,27 +1013,6 @@
              data-i18n="update.notes">What changed ↗</a>
         </div>
         <p class="muted minus" id="update-problem" hidden></p>
-      </div>
-
-      <!-- Restarting on purpose, which had nowhere to be done from.
-      
-           The banner above every screen is the notice that something is waiting,
-           and it carries a button because that is the moment it matters. It is
-           also the only place the button existed - so an installation with
-           nothing pending offered no way to restart at all, and said nothing
-           about whether restarting was even possible here. On a container
-           deployment, where the answer is the interesting one, the screen was
-           silent about it.
-      
-           Filled by the same function that fills the banner, from the same
-           answer. -->
-      <div id="restart-card" class="card" hidden>
-        <h2 data-i18n="restart.title">Restart</h2>
-        <p class="muted" id="restart-card-mode"></p>
-        <div class="row">
-          <button type="button" id="restart-card-now" data-i18n="restart.now">Restart now</button>
-        </div>
-        <p class="muted minus" id="restart-card-unsupported" hidden></p>
       </div>
 
       <form method="post" id="form-maintenance" class="card form">
