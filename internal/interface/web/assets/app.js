@@ -672,23 +672,49 @@ function drawReleaseBanner(state) {
   const banner = $('#release-banner');
   if (!banner) return;
 
-  $('#release-text').textContent = fillIn(
-    t('update.available', 'Version {0} is available. This installation runs {1}.'),
-    [state.latest, state.running]);
+  const text = $('#release-text');
+
+  text.textContent = '';
+
+  // The version is the link, and the sentence is built around it rather than
+  // followed by a button.
+  //
+  // There was a button beside this reading "Open Settings". Two things to read
+  // where one would do, and the one it left out is the one somebody actually
+  // wants to press: a release has a number, and the number is what they are
+  // deciding about. So the sentence is split at the place the number goes and
+  // the number is put there as the control.
+  //
+  // Split on the placeholder itself rather than on a marker put through the
+  // filler: where the number falls in the sentence is the translator's
+  // business, and the two halves are whatever they wrote around it.
+  const [before, after] = t('update.available',
+    'Version {0} is available. This installation runs {1}.').split('{0}');
+
+  text.append(before ?? '');
+
+  const link = el('button', {
+    type: 'button',
+    class: 'link-button',
+    id: 'release-open',
+    text: state.latest,
+  });
+
+  link.addEventListener('click', openTheVersionCard);
+  text.append(link);
+
+  // The rest of the sentence still has {1} in it, which is the version running.
+  text.append(fillIn(after ?? '', [state.latest, state.running]));
 
   banner.hidden = false;
 }
 
-function wireReleaseBanner() {
-  const banner = $('#release-banner');
-  if (!banner) return;
+/** Takes whoever pressed it to the card that installs the new version. */
+function openTheVersionCard() {
+  switchView('admin');
 
-  $('#release-open').addEventListener('click', () => {
-    switchView('admin');
-
-    const card = $('#update-card');
-    if (card) card.scrollIntoView({ block: 'center' });
-  });
+  const card = $('#update-card');
+  if (card) card.scrollIntoView({ block: 'center' });
 }
 
 // --------------------------------------------------------------- announcements
@@ -2378,6 +2404,66 @@ function restoreDrafts() {
 }
 
 /**
+ * Decides what stands in each of the two mark slots.
+ *
+ * The bar has three columns and the outer two mean different things: the left
+ * one is the installation, the middle one is the application. They used to
+ * share a single drawing and show one of it - so a fresh installation wore the
+ * application's mark on the left and had a bare title in the middle, and an
+ * installation with a logo had it the other way round. The title lost its mark
+ * to a slot that was never about the application.
+ *
+ * Both are always filled now:
+ *
+ *   middle  the application's own mark, beside the title, always
+ *   left    the uploaded logo, or the installation's initial where there is none
+ *
+ * The initial is the first letter of the title this installation was given. It
+ * costs nothing, it differs between installations, and it changes when somebody
+ * changes the title - which is more than a generic placeholder glyph could say,
+ * and it never reads as a picture that failed to load.
+ *
+ * Only in the header. The sign-in card gives a logo the width of the card, and a
+ * 26-pixel chip in that space would read as something broken.
+ */
+function showBrandMark(branding, ownLogo) {
+  const mark = $('#brand-mark');
+
+  // The attribute rather than the property, because these are SVG elements and
+  // `hidden` is defined on HTMLElement: assigning it here creates a property
+  // nobody reads and leaves the chip on screen beside the logo that replaced it.
+  if (mark) {
+    if (ownLogo) mark.setAttribute('hidden', '');
+    else mark.removeAttribute('hidden');
+  }
+
+  const initial = $('#brand-initial');
+  if (initial) initial.textContent = initialOf(brandingIn(branding, 'title'));
+}
+
+/**
+ * The one letter that stands for an installation.
+ *
+ * The first character that is a letter or a digit, upper-cased. Skipping past
+ * anything else matters more than it sounds: a title beginning with a quotation
+ * mark or a bracket would otherwise put punctuation in the chip, which reads as
+ * a fault rather than as a name.
+ *
+ * Upper-cased through the reader's own locale, so a Turkish i becomes the
+ * capital that language uses rather than the English one.
+ *
+ * Falls back to the application's own initial, because an installation whose
+ * title is empty still has to have something in the corner.
+ */
+function initialOf(title) {
+  for (const character of String(title ?? '')) {
+    if (/\p{L}|\p{N}/u.test(character)) return character.toLocaleUpperCase();
+  }
+
+  return 'Z';
+}
+
+/**
  * Whether somebody is part way through filling this form in.
  *
  * Every screen in this application is refilled from the server by loaders that
@@ -3058,7 +3144,6 @@ const TRANSLATIONS = {
     'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
     'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden.',
     'update.available': 'Version {0} ist verfügbar. Diese Installation läuft mit {1}.',
-    'update.open': 'Zu den Einstellungen',
     'announce.installing': 'Eine neue Version ({0}) wird installiert. Du kannst weiterarbeiten; die Anwendung startet gleich neu.',
     'announce.restarting': 'Die Anwendung startet gerade in Version {0}. Diese Seite lädt sich gleich von selbst neu.',
     'announce.pending': 'Version {0} ist installiert und wird beim nächsten Start der Anwendung aktiv. Bis dahin ändert sich nichts.',
@@ -4857,30 +4942,7 @@ function drawBranding(branding) {
     img.alt = mark ? (branding.title || '') : '';
   }
 
-  // The shipped mark stands where no logo has been uploaded, and steps aside
-  // where one has. Only in the header: the sign-in card gives a logo the width
-  // of the card, and a 26px glyph in that space would read as something that
-  // failed to load rather than as a mark.
-  //
-  // The attribute rather than the property, because this one is drawn rather
-  // than fetched and an SVG element is not an HTMLElement: `hidden` is defined
-  // on the latter, so assigning it here creates a property nobody reads and
-  // leaves the mark on screen beside the logo that replaced it.
-  // One of the two, never both. The three columns of this bar mean different
-  // things - the installation's identity at the left end, the application's in
-  // the middle - so wearing the same mark in both places at once would blur
-  // exactly the distinction they exist to draw.
-  const ownLogo = Boolean(sized['#brand-logo']);
-
-  for (const [node, showWhenOwned] of [[$('#brand-mark'), false], [$('.app-mark'), true]]) {
-    if (!node) continue;
-
-    // The attribute rather than the property: these are SVG elements, and
-    // `hidden` is defined on HTMLElement - assigning it here would create a
-    // property nobody reads and leave both marks on screen.
-    if (showWhenOwned === ownLogo) node.removeAttribute('hidden');
-    else node.setAttribute('hidden', '');
-  }
+  showBrandMark(branding, Boolean(sized['#brand-logo']));
 
   // The announcement banner is separate from the "change your password" one.
   // Through the renderer, so a {year} in a copyright line stays right and a link
@@ -5868,6 +5930,13 @@ function hideLogin() {
   // arrived yet. See showLogin, which is the only reader.
   handedToASession = true;
 
+  // A new session has not been greeted yet, whatever the last one was told.
+  // Cleared here rather than on the way out, because signing in is the moment
+  // the question becomes open again - and the marker outliving a sign-out would
+  // tell anything watching that the next account's tour had already been
+  // decided. See greetAfterSignIn.
+  delete document.documentElement.dataset.greeted;
+
   $('#login-screen').classList.remove('checking');
   $('#login-screen').hidden = true;
   $('#login-error').hidden = true;
@@ -6583,7 +6652,51 @@ async function startTour() {
 
   tour.index = 0;
   tour.active = true;
+
+  sealThePage(true);
+
   await renderTourStep();
+}
+
+/**
+ * Puts the page out of reach while the tour is running, and back afterwards.
+ *
+ * Two mechanisms, because they stop different things.
+ *
+ * The blocker is a fixed element over the whole viewport that takes every
+ * press. It has to exist because the spotlight cannot do this job: the
+ * spotlight is one element with a 9999-pixel shadow, and it carries
+ * pointer-events: none so that it does not swallow presses meant for the
+ * control it is drawing a ring around. The result was that every press landed -
+ * on the highlighted control, and on everything under the dimming too. A tour
+ * explaining the stopwatch while somebody starts it is a tour narrating
+ * something that is no longer on the screen it describes.
+ *
+ * inert is the other half, and the blocker cannot do it: a blocker stops the
+ * mouse and nothing else, so Tab still walked into the page behind it and Enter
+ * still pressed what it found. inert takes a subtree out of the tab order, out
+ * of reach of assistive technology, and out of the way of clicks in one go.
+ *
+ * Applied to the body's children rather than to one wrapper, because there is
+ * no wrapper - the bar, the views, the banners and the overlays are siblings.
+ * Everything except the tour's own two elements, which have to keep working:
+ * they are how somebody gets out of this.
+ */
+function sealThePage(sealed) {
+  const spared = new Set(['tour-bubble', 'tour-spotlight', 'tour-blocker']);
+
+  for (const child of document.body.children) {
+    if (spared.has(child.id)) continue;
+
+    // Scripts and templates have nothing to make inert, and marking them would
+    // be noise in the markup for anybody reading it.
+    if (child.tagName === 'SCRIPT' || child.tagName === 'TEMPLATE') continue;
+
+    child.inert = sealed;
+  }
+
+  const blocker = $('#tour-blocker');
+  if (blocker) blocker.hidden = !sealed;
 }
 
 /**
@@ -6596,6 +6709,8 @@ async function endTour() {
   tour.active = false;
   $('#tour-spotlight').hidden = true;
   $('#tour-bubble').hidden = true;
+
+  sealThePage(false);
 
   await recordTourSeen();
 }
@@ -6654,6 +6769,18 @@ function wireTour() {
  */
 async function greetAfterSignIn() {
   await maybeWelcome();
+
+  // Says the question has been settled, whichever way it went.
+  //
+  // The same idea as dataset.loaded and for the same reader: something watching
+  // from outside, which cannot otherwise tell "the tour is not up yet" from
+  // "the tour is not coming". That distinction used to cost nothing, because
+  // the tour let the page be used underneath it. It does not any more - the
+  // page is sealed while it runs - so anything driving this application has to
+  // know whether to wait.
+  //
+  // Set even when nothing was offered: "no tour for this account" is an answer.
+  document.documentElement.dataset.greeted = 'yes';
 }
 
 /**
@@ -7652,6 +7779,9 @@ async function loadRestart() {
   if (!can('settings:manage')) {
     banner.hidden = true;
 
+    const card = $('#restart-card');
+    if (card) card.hidden = true;
+
     return;
   }
 
@@ -7701,26 +7831,15 @@ async function loadRestart() {
   $('#restart-pending').hidden = !waiting;
 
   // What the button does, said before it is pressed rather than found out
-  // afterwards. Only where there is a button: with none, the line above already
-  // explains why, and a second sentence about how a restart would work would be
-  // explaining a thing that cannot happen.
-  const mode = $('#restart-mode');
-
-  if (mode) {
-    mode.textContent = state.mode === 'container'
-      ? t('restart.modeContainer',
-        'This installation runs in a container. The button stops it, and your '
-        + 'container manager starts a new one from the image - which it only does '
-        + 'if it was told to restart the container. The deployment shipped with '
-        + 'this application is.')
-      : t('restart.modeProcess',
-        'The application replaces itself, so it is never not running.');
-
-    mode.hidden = !state.supported || !waiting;
-  }
-
-  $('#restart-now').hidden = !state.supported;
-  $('#restart-unsupported').hidden = state.supported;
+  // afterwards.
+  const description = state.mode === 'container'
+    ? t('restart.modeContainer',
+      'This installation runs in a container. The button stops it, and your '
+      + 'container manager starts a new one from the image - which it only does '
+      + 'if it was told to restart the container. The deployment shipped with '
+      + 'this application is.')
+    : t('restart.modeProcess',
+      'The application replaces itself, so it is never not running.');
 
   // Translated here rather than shown as it arrives: the server writes this in
   // English at the point the limitation is decided, which is right for a log and
@@ -7732,9 +7851,55 @@ async function loadRestart() {
   // Windows and throw away the diagnostic that named the real fault. The server's
   // own wording is the fallback, so a reason nobody has translated still says
   // something true.
-  $('#restart-unsupported').textContent = state.supported
+  const refusal = state.supported
     ? ''
     : t(`restart.unsupported.${state.reasonCode || 'other'}`, state.reason ?? '');
+
+  // Both places, from one answer: the banner that appears when something is
+  // waiting, and the card on the settings screen that is always there.
+  //
+  // The card exists because the banner was the only place the button lived, so
+  // an installation with nothing pending offered no way to restart on purpose -
+  // and said nothing about what restarting means here, which on a container
+  // deployment is the part worth knowing.
+  showRestartControls('#restart-mode', '#restart-now', '#restart-unsupported',
+    description, refusal, state.supported, waiting);
+
+  showRestartControls('#restart-card-mode', '#restart-card-now',
+    '#restart-card-unsupported', description, refusal, state.supported, true);
+
+  const card = $('#restart-card');
+  if (card) card.hidden = false;
+
+}
+
+/**
+ * Writes one set of restart controls: what it would do, the button, the reason
+ * there is none.
+ *
+ * Two sets exist and they show the same answer - the banner and the card - so
+ * this is called twice rather than written twice. The only thing that differs
+ * is when the description is worth showing: in the banner it belongs to the
+ * moment something is waiting, and in the card it is the whole point.
+ */
+function showRestartControls(modeSelector, buttonSelector, refusedSelector,
+  description, refusal, supported, describe) {
+  const mode = $(modeSelector);
+
+  if (mode) {
+    mode.textContent = description;
+    mode.hidden = !supported || !describe;
+  }
+
+  const button = $(buttonSelector);
+  if (button) button.hidden = !supported;
+
+  const refused = $(refusedSelector);
+
+  if (refused) {
+    refused.textContent = refusal;
+    refused.hidden = supported;
+  }
 }
 
 /** The identity of the running process, to tell a restart from a hiccup. */
@@ -7790,7 +7955,16 @@ async function waitForRestart(previousStartedAt) {
 }
 
 function wireRestart() {
-  const button = $('#restart-now');
+  // Two buttons, one action: the one in the banner that appears when something
+  // is waiting, and the one on the settings card that is always there. Wired
+  // from one list rather than twice, which is how the two password reveals and
+  // the two brand marks happened.
+  for (const selector of ['#restart-now', '#restart-card-now']) {
+    wireRestartButton($(selector));
+  }
+}
+
+function wireRestartButton(button) {
   if (!button) return;
 
   button.addEventListener('click', async () => {
@@ -11180,7 +11354,6 @@ async function init() {
     wireTelemetry();
     wireRestart();
     wireUpdate();
-    wireReleaseBanner();
     wireCropChooser();
 
     $('#branding-language')?.addEventListener('change', (e) => {

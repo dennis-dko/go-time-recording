@@ -118,22 +118,28 @@
             <path d="M4 7h16M4 12h16M4 17h16"/>
           </svg>
         </button>
-        <!-- The mark this application ships with, standing in this slot for as
-             long as the installation has uploaded no logo of its own. The corner
-             was simply empty until somebody configured one, which is a fresh
-             installation saying nothing about itself.
-
-             The same drawing as the one beside the title, referenced rather than
-             repeated - and only one of the two is ever on screen. Two columns of
-             this bar mean different things: this one is the installation's own
-             identity and the middle one is the application's, so wearing our
-             mark in both places at once would blur exactly the distinction the
-             three columns exist to draw.
-
+        <!-- What stands where a logo would, until one is uploaded.
+        
+             It was this application's own mark, and only one of it and the one
+             beside the title was ever on screen - which meant a fresh
+             installation had the mark here and a bare title in the middle, and
+             an installation with a logo had it the other way round. The title
+             lost its mark to a slot that is not about the application at all.
+        
+             So the two columns say their own things now, both at once: the
+             middle one is the application, always, and this one is the
+             installation. With no logo uploaded, the installation is named by
+             the first letter of the title it was given - which every
+             installation has, is different for each of them, and changes when
+             somebody changes the title. Filled by showBrandMark.
+        
              aria-hidden because the title beside it already says the name; a
              screen reader announcing the decoration first helps nobody. -->
         <svg id="brand-mark" class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-          <use href="#icon-mark"/>
+          <rect x="3.6" y="3.6" width="24.8" height="24.8" rx="7.2"
+                class="brand-mark-ground"/>
+          <text id="brand-initial" x="16" y="16.9" text-anchor="middle"
+                dominant-baseline="middle" class="brand-mark-letter"></text>
         </svg>
         <img id="brand-logo" class="brand-logo" alt="" hidden>
       </span>
@@ -230,9 +236,12 @@
          and works out as an installation that is three releases behind because
          somebody clicked the cross once on a busy morning. It goes when it stops
          being true, which is when the newer version is running. -->
+    <!-- One sentence, with the new version's number as the way to it. It used
+         to be the sentence plus a button reading "Open Settings", which is a
+         second thing to read that says less than the version does: what
+         somebody wants to press is the release. Filled by drawReleaseBanner. -->
     <div id="release-banner" class="banner" hidden>
       <span id="release-text"></span>
-      <button type="button" id="release-open" class="link-button" data-i18n="update.open">Open Settings</button>
     </div>
   </div>
 
@@ -311,6 +320,18 @@
        described rather than a copy of it, so it always points at the real
        control - one that has moved or been renamed cannot drift out of sync
        with what the tour highlights. -->
+  <!-- What stops the page being used while the tour is running.
+  
+       The spotlight below is decoration - it is one element with an enormous
+       shadow, and it has pointer-events: none so it does not swallow the click
+       it is drawing a ring around. Which meant every click landed: on the
+       highlighted control, and on everything under the dimming as well. A tour
+       explaining a button while somebody presses it is a tour narrating
+       something else.
+  
+       Sits under the spotlight and the bubble, over everything else. The bubble
+       is the one thing above it, so its own buttons still work. -->
+  <div id="tour-blocker" class="tour-blocker" hidden></div>
   <div id="tour-spotlight" class="tour-spotlight" hidden></div>
   <div id="tour-bubble" class="tour-bubble" role="dialog" aria-live="polite" hidden>
     <p class="tour-count" id="tour-count"></p>
@@ -967,6 +988,27 @@
              data-i18n="update.notes">What changed ↗</a>
         </div>
         <p class="muted minus" id="update-problem" hidden></p>
+      </div>
+
+      <!-- Restarting on purpose, which had nowhere to be done from.
+      
+           The banner above every screen is the notice that something is waiting,
+           and it carries a button because that is the moment it matters. It is
+           also the only place the button existed - so an installation with
+           nothing pending offered no way to restart at all, and said nothing
+           about whether restarting was even possible here. On a container
+           deployment, where the answer is the interesting one, the screen was
+           silent about it.
+      
+           Filled by the same function that fills the banner, from the same
+           answer. -->
+      <div id="restart-card" class="card" hidden>
+        <h2 data-i18n="restart.title">Restart</h2>
+        <p class="muted" id="restart-card-mode"></p>
+        <div class="row">
+          <button type="button" id="restart-card-now" data-i18n="restart.now">Restart now</button>
+        </div>
+        <p class="muted minus" id="restart-card-unsupported" hidden></p>
       </div>
 
       <form method="post" id="form-maintenance" class="card form">

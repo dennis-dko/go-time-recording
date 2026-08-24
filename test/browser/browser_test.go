@@ -387,21 +387,27 @@ func (p *page) settleWelcome() {
 	// by a modal with a "Not now" beside it, and that button recorded the tour as
 	// seen, so the one control that looked like "later" meant "never". Skipping it
 	// is what every case but the tour's own wants.
-	deadline := time.Now().Add(5 * time.Second)
+	//
+	// Waits for the answer rather than for the bubble. This used to stop as soon
+	// as the greeting screen appeared, on the reasoning that a tour would have
+	// been up by then - and it usually was. Where it was not, the tour opened a
+	// moment later over a case that had already moved on, and the page is sealed
+	// while it runs: every press afterwards went into the blocker, and the case
+	// failed somewhere else entirely, saying something was not visible.
+	//
+	// dataset.greeted is set when the interface has decided, whichever way it
+	// decided, so there is nothing left to guess about.
+	// One wait rather than a poll. An attribute selector is a condition the
+	// browser can answer for itself, and the suite runs a dozen of these at once
+	// - a round trip every hundred milliseconds from each of them is enough
+	// traffic to make pages fail to load, which is how the first version of this
+	// showed up: unrelated cases dying on net::ERR_ABORTED.
+	p.run("wait for the greeting to be decided",
+		chromedp.WaitReady("html[data-greeted='yes']", chromedp.ByQuery))
 
-	for time.Now().Before(deadline) {
-		if p.visible("#tour-bubble") {
-			p.run("skip the walk through", p.click("#tour-end"))
-			p.waitGone("#tour-bubble")
-
-			break
-		}
-
-		if p.visible("#view-welcome") {
-			break
-		}
-
-		time.Sleep(150 * time.Millisecond)
+	if p.visible("#tour-bubble") {
+		p.run("skip the walk through", p.click("#tour-end"))
+		p.waitGone("#tour-bubble")
 	}
 
 	// And the greeting is a screen rather than something over one, so a sign-in

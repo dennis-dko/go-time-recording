@@ -201,7 +201,19 @@ func TestTheRestartNoticeAppearsOnlyWhenSomethingIsWaiting(t *testing.T) {
 // tab that needs settings:manage, who could see it was decided by the tab; a
 // banner has no tab to inherit from, and nobody who cannot act on this should be
 // told an installation they use is waiting for something.
-func TestTheRestartNoticeIsABannerOnlyAdministratorsSee(t *testing.T) {
+//
+// There is a card again, and this asserted for a while that there was not. The
+// reason given was that the same thing would be said twice and one copy would go
+// stale - which was right about the risk and wrong about what the card is for.
+// The banner is the notice: something is waiting, here is what. The card is the
+// control: this installation can be restarted, here is what that does here, and
+// here is the button. Without it there was no way to restart on purpose at all,
+// and on a container deployment - where what the button does is the interesting
+// part - the screen said nothing about it.
+//
+// The staleness is answered directly instead, below: one function fills both
+// from one answer, so there is nothing to drift.
+func TestTheRestartNoticeIsABannerAndTheControlIsACard(t *testing.T) {
 	js := asset(t, "/app.js")
 	html := asset(t, "/")
 
@@ -209,9 +221,22 @@ func TestTheRestartNoticeIsABannerOnlyAdministratorsSee(t *testing.T) {
 		t.Error("there is no restart banner in the markup")
 	}
 
-	if strings.Contains(html, `id="restart-card"`) {
-		t.Error("the restart card is still under Settings beside the banner, so the " +
-			"same thing is said in two places and one of them can go stale")
+	if !strings.Contains(html, `id="restart-card"`) {
+		t.Error("there is no restart card under Settings, so an installation with " +
+			"nothing pending offers no way to restart on purpose")
+	}
+
+	// The list of what is waiting belongs to the notice and appears once. A copy
+	// on the card is the duplication the card was once removed over.
+	if strings.Contains(html, `id="restart-card-pending"`) {
+		t.Error("the card repeats the list of pending changes, which the banner " +
+			"already carries")
+	}
+
+	// And both are written by one function, from one answer.
+	if strings.Count(js, "showRestartControls(") < 3 {
+		t.Error("the banner and the card are not filled by one shared function, so " +
+			"the two can come to say different things")
 	}
 
 	// Not dismissable, and nothing to dismiss it with. It is a state rather than
