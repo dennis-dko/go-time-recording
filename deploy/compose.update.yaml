@@ -1,0 +1,161 @@
+# Updating the image from the interface.
+#
+# Without this overlay, a container deployment updates the way every container
+# deployment does: `docker compose pull && docker compose up -d`, typed by
+# somebody on the server. The application's own update button does something
+# different and smaller - it swaps the binary inside the running container, and
+# that lasts exactly until the container is recreated, because the image it was
+# made from still holds the old one.
+#
+# This makes the image the unit of update, and puts the button back in charge of
+# it: press it, and a new image is pulled, the application's container is
+# recreated from it, and the image it replaced is removed.
+#
+#
+# WHY THIS IS A SEPARATE CONTAINER, AND WHY IT IS OPTIONAL
+#
+# Pulling images and recreating containers needs the Docker socket, and access
+# to that socket is root on this host. Not "root in a container" - root on the
+# machine, because anything holding it can start a container that mounts the
+# host's filesystem.
+#
+# The application must therefore never hold it. It is reachable over the
+# network, it has a sign-in form, and it is the thing an attacker gets to first;
+# handing it the socket would turn every hole in a time recorder into a hole in
+# the server.
+#
+# So the privilege lives here, in a container whose entire vocabulary is one
+# sentence: "recreate the application's container from its image". It has no
+# ports, no network, and no way to be asked anything else. The application
+# cannot name an image, cannot name a container, and cannot pass an argument -
+# it writes an empty file, and this reads it.
+#
+# That is a real reduction rather than a shuffle. The worst an attacker who owns
+# the application can do through this is make it pull the tag it was already
+# configured to pull, which is the thing the operator asked for anyway.
+#
+# It is still a socket on the host, and that is why this is an overlay you add
+# on purpose rather than part of the deployment. An installation that would
+# rather type two commands should not add it, and loses nothing but the button.
+#
+#
+# USE
+#
+#   GTR_PROJECT_DIR=$(pwd) docker compose -f compose.yaml -f compose.update.yaml up -d
+#
+# GTR_PROJECT_DIR is the absolute path of the directory the compose files are
+# in, and it is required - see the volume below for what goes wrong without it.
+# Put it in .env beside the rest:
+#
+#   GTR_PROJECT_DIR=/home/you/go-time-recording
+#
+# or add it to COMPOSE_FILE in .env, which is what a deployment with several
+# overlays already does:
+#
+#   COMPOSE_FILE=compose.yaml:compose.tls.yaml:compose.update.yaml
+#
+# The updater has to see the same set of files the operator uses, or the
+# recreate it performs would be built from a different description of the
+# application than the one running. It reads COMPOSE_FILE from .env for exactly
+# that reason, which is also why the project directory is mounted.
+
+services:
+  app:
+    volumes:
+      # Where the request is left. The application writes one file into this and
+      # reads one back; nothing else passes between the two.
+      #
+      # A shared volume rather than a socket or a port: there is no listener to
+      # find, nothing to authenticate, and no way to reach the updater from
+      # anywhere but inside this deployment.
+      - update-requests:/var/lib/gtr/update
+
+    environment:
+      # Tells the application an updater is present, so the version card offers
+      # the image rather than the binary. Read as a directory it can write to -
+      # the flag and the channel are the same thing, so they cannot disagree.
+      GTR_UPDATE_REQUESTS: /var/lib/gtr/update
+
+  updater:
+    # The official Docker CLI image, which carries the compose plugin as well.
+    # Pinned to a major: this holds the socket, and "whatever is newest" is not
+    # a thing to be surprised by on the machine where that is true.
+    image: docker:28-cli
+
+    restart: unless-stopped
+
+    # The socket. Everything above is about this line.
+    #
+    # Read-write, because pulling and recreating are writes. There is no
+    # read-only mode that would help: `POST /containers/create` is the dangerous
+    # call and it is the one this needs.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # The compose files, read-only, at the same absolute path they have on the
+      # host. The updater recreates the application from the same description
+      # the operator deployed it with, rather than from what it can infer about
+      # the running container - which is never quite the same thing and drifts
+      # in ways nobody notices until a recreate.
+      #
+      # THE PATH HAS TO MATCH, and this is not a preference.
+      #
+      # A compose file's bind mounts are written relative to the project
+      # directory - `./certs/app:/certs:ro` and the like - and compose turns
+      # them into absolute paths before handing them to the daemon. The daemon
+      # is on the host. So a compose run from inside a container that sees the
+      # project somewhere else computes host paths that do not exist there, and
+      # Docker's answer to a bind source that does not exist is to create an
+      # empty directory and mount that.
+      #
+      # The failure is silent and total: an application recreated that way comes
+      # up with empty mounts. On the deployment this was first tried on, that
+      # meant a container with no certificates, serving plain HTTP, reporting
+      # itself healthy. Mounting the project at its own path is what makes the
+      # two agree, and the script refuses to run if they do not.
+      - ${GTR_PROJECT_DIR:?set GTR_PROJECT_DIR in .env to the absolute path of this directory}:${GTR_PROJECT_DIR}:ro
+
+      - update-requests:/var/lib/gtr/update
+
+    working_dir: ${GTR_PROJECT_DIR}
+
+    environment:
+      # The same set of overlays the operator uses. Compose resolves this
+      # relative to /project, which is why the directory is mounted at a fixed
+      # path rather than at whatever it is called on the host.
+      COMPOSE_FILE: ${COMPOSE_FILE:-compose.yaml}
+
+      # Which service to recreate. Named rather than assumed, so the one thing
+      # this container can be asked to do is written down where it is granted.
+      GTR_UPDATE_SERVICE: app
+
+      # How often the request file is looked for. Seconds, because somebody is
+      # watching a screen when they press it.
+      GTR_UPDATE_POLL: "3"
+
+      # Who the shared directory is given to. The application image runs as this
+      # user, and a named volume arrives owned by root - so without this the
+      # application can see the directory, cannot write into it, and reports no
+      # updater. Which is the correct answer to "can I ask", and a puzzling one
+      # to arrive at.
+      GTR_UPDATE_OWNER: "10001"
+
+      # Where the project is, inside and outside. Read by the script to check
+      # that those two are the same thing before it touches anything.
+      GTR_PROJECT_DIR: ${GTR_PROJECT_DIR}
+
+    # No network at all. It talks to the daemon through the socket, and the
+    # daemon does the pulling - so the updater itself never needs to reach the
+    # registry, or anything else.
+    network_mode: none
+
+    # The script comes from the project directory mounted above, so this needs
+    # no image of its own to be built and published.
+    entrypoint: ["/bin/sh", "-c", "exec sh \"$$GTR_PROJECT_DIR/update/updater.sh\""]
+
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  update-requests:

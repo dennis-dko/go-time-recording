@@ -118,22 +118,28 @@
             <path d="M4 7h16M4 12h16M4 17h16"/>
           </svg>
         </button>
-        <!-- The mark this application ships with, standing in this slot for as
-             long as the installation has uploaded no logo of its own. The corner
-             was simply empty until somebody configured one, which is a fresh
-             installation saying nothing about itself.
-
-             The same drawing as the one beside the title, referenced rather than
-             repeated - and only one of the two is ever on screen. Two columns of
-             this bar mean different things: this one is the installation's own
-             identity and the middle one is the application's, so wearing our
-             mark in both places at once would blur exactly the distinction the
-             three columns exist to draw.
-
+        <!-- What stands where a logo would, until one is uploaded.
+        
+             It was this application's own mark, and only one of it and the one
+             beside the title was ever on screen - which meant a fresh
+             installation had the mark here and a bare title in the middle, and
+             an installation with a logo had it the other way round. The title
+             lost its mark to a slot that is not about the application at all.
+        
+             So the two columns say their own things now, both at once: the
+             middle one is the application, always, and this one is the
+             installation. With no logo uploaded, the installation is named by
+             the first letter of the title it was given - which every
+             installation has, is different for each of them, and changes when
+             somebody changes the title. Filled by showBrandMark.
+        
              aria-hidden because the title beside it already says the name; a
              screen reader announcing the decoration first helps nobody. -->
         <svg id="brand-mark" class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-          <use href="#icon-mark"/>
+          <rect x="3.6" y="3.6" width="24.8" height="24.8" rx="7.2"
+                class="brand-mark-ground"/>
+          <text id="brand-initial" x="16" y="16.9" text-anchor="middle"
+                dominant-baseline="middle" class="brand-mark-letter"></text>
         </svg>
         <img id="brand-logo" class="brand-logo" alt="" hidden>
       </span>
@@ -209,17 +215,23 @@
        on its own: two things stuck to the same edge cover each other, and the
        one underneath is the one nobody knew was there. -->
   <div id="standing-notices">
+    <!-- The notice, and the way to the place it is acted on.
+    
+         It used to carry the whole thing: the list of waiting settings, the
+         button, and the explanation of what the button does here. That is a
+         card's worth of screen stuck to the top of every page, and it said the
+         same things the card under Settings says. Now it points, and the card
+         answers - one place to read it and one place to act.
+    
+         Not dismissable, and there is nothing to dismiss it with: it reports a
+         state rather than news, and a state that has been clicked away is still
+         the state. It goes when the settings are put back or the application
+         restarts. -->
     <div id="restart-banner" class="banner" hidden>
       <strong data-i18n="restart.title">Restart</strong>
-      <p id="restart-hint" data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>
-      <ul id="restart-pending" class="pending-list"></ul>
-      <div class="row">
-        <button type="button" id="restart-now" data-i18n="restart.now">Restart now</button>
-      </div>
-      <p class="minus" id="restart-unsupported" hidden></p>
-    <!-- What the button will actually do, which is not one thing. Filled by
-         loadRestart from the mode the server reports. -->
-    <p class="muted" id="restart-mode" hidden></p>
+      <span id="restart-summary"></span>
+      <button type="button" id="restart-open" class="link-button"
+              data-i18n="restart.open">Go to the restart</button>
     </div>
 
     <!-- A release newer than this build, for whoever may install it, and only for
@@ -230,9 +242,12 @@
          and works out as an installation that is three releases behind because
          somebody clicked the cross once on a busy morning. It goes when it stops
          being true, which is when the newer version is running. -->
+    <!-- One sentence, with the new version's number as the way to it. It used
+         to be the sentence plus a button reading "Open Settings", which is a
+         second thing to read that says less than the version does: what
+         somebody wants to press is the release. Filled by drawReleaseBanner. -->
     <div id="release-banner" class="banner" hidden>
       <span id="release-text"></span>
-      <button type="button" id="release-open" class="link-button" data-i18n="update.open">Open Settings</button>
     </div>
   </div>
 
@@ -311,6 +326,18 @@
        described rather than a copy of it, so it always points at the real
        control - one that has moved or been renamed cannot drift out of sync
        with what the tour highlights. -->
+  <!-- What stops the page being used while the tour is running.
+  
+       The spotlight below is decoration - it is one element with an enormous
+       shadow, and it has pointer-events: none so it does not swallow the click
+       it is drawing a ring around. Which meant every click landed: on the
+       highlighted control, and on everything under the dimming as well. A tour
+       explaining a button while somebody presses it is a tour narrating
+       something else.
+  
+       Sits under the spotlight and the bubble, over everything else. The bubble
+       is the one thing above it, so its own buttons still work. -->
+  <div id="tour-blocker" class="tour-blocker" hidden></div>
   <div id="tour-spotlight" class="tour-spotlight" hidden></div>
   <div id="tour-bubble" class="tour-bubble" role="dialog" aria-live="polite" hidden>
     <p class="tour-count" id="tour-count"></p>
@@ -955,8 +982,27 @@
     </section>
     <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
-      <!-- Above the restart card, because taking an update is the thing that
-           produces something waiting for a restart. -->
+      <!-- Restarting: the notice, the detail and the button, in the place the
+           banner points at.
+      
+           Above the version card rather than below it. A restart is the thing
+           standing between this installation and the settings it has been given
+           - including a version that has been downloaded and is waiting - so it
+           is the first thing on the screen somebody was sent to.
+      
+           The list of what is waiting lives here rather than in the banner: the
+           banner is the notice, and this is where somebody acts on it. -->
+      <div id="restart-card" class="card" hidden>
+        <h2 data-i18n="restart.title">Restart</h2>
+        <p class="muted" id="restart-card-mode"></p>
+        <p id="restart-card-hint" hidden data-i18n="restart.hint">Some settings are only read while the application starts. These are saved and waiting:</p>
+        <ul id="restart-card-pending" class="pending-list" hidden></ul>
+        <div class="row">
+          <button type="button" id="restart-card-now" data-i18n="restart.now">Restart now</button>
+        </div>
+        <p class="muted minus" id="restart-card-unsupported" hidden></p>
+      </div>
+
       <div id="update-card" class="card" hidden>
         <h2 data-i18n="update.title">Version</h2>
         <p class="muted" id="update-state"></p>
@@ -1208,7 +1254,9 @@
              overlay for is the obvious answer, but storing it by default would
              make an installation without that overlay try to export at every
              start and write failures nobody asked for. -->
-        <p class="muted" data-i18n="tel.tracingHint">Running deploy/compose.tracing.yaml beside the application? Then it is exporter OTLP and collector jaeger:4317, and the traces are read at http://127.0.0.1:16686.</p>
+        <!-- Filled by showTracingHint rather than by data-i18n: the address it
+             names is this installation's own, which no dictionary knows. -->
+        <p class="muted" id="tel-tracing-hint"></p>
         <div class="row">
           <button type="submit" data-i18n="action.save">Save</button>
           <button type="button" class="secondary" id="telemetry-reset" data-i18n="tel.reset">Reset all to the configuration file</button>

@@ -387,22 +387,38 @@ func (p *page) settleWelcome() {
 	// by a modal with a "Not now" beside it, and that button recorded the tour as
 	// seen, so the one control that looked like "later" meant "never". Skipping it
 	// is what every case but the tour's own wants.
-	deadline := time.Now().Add(5 * time.Second)
+	//
+	// Waits for the answer rather than for the bubble. This used to stop as soon
+	// as the greeting screen appeared, on the reasoning that a tour would have
+	// been up by then - and it usually was. Where it was not, the tour opened a
+	// moment later over a case that had already moved on, and the page is sealed
+	// while it runs: every press afterwards went into the blocker, and the case
+	// failed somewhere else entirely, saying something was not visible.
+	//
+	// dataset.greeted is set when the interface has decided, whichever way it
+	// decided, so there is nothing left to guess about.
+	// One wait rather than a poll. An attribute selector is a condition the
+	// browser can answer for itself, and the suite runs a dozen of these at once
+	// - a round trip every hundred milliseconds from each of them is enough
+	// traffic to make pages fail to load, which is how the first version of this
+	// showed up: unrelated cases dying on net::ERR_ABORTED.
+	p.run("wait for the greeting to be decided",
+		chromedp.WaitReady("html[data-greeted='yes']", chromedp.ByQuery))
 
-	for time.Now().Before(deadline) {
-		if p.visible("#tour-bubble") {
-			p.run("skip the walk through", p.click("#tour-end"))
-			p.waitGone("#tour-bubble")
-
-			break
-		}
-
-		if p.visible("#view-welcome") {
-			break
-		}
-
-		time.Sleep(150 * time.Millisecond)
-	}
+	// Ended rather than clicked away, and asked for whether or not a bubble can
+	// be seen at that instant.
+	//
+	// Clicking was a race with the tour's own first render: data-greeted is set
+	// once the walk has started, and a moment later the bubble is laid out and
+	// the page is sealed behind it - so a case that looked, saw nothing and
+	// carried on had its next press swallowed by the blocker, and failed as
+	// something invisible somewhere else. endTour is a no-op where no tour is
+	// running, which is the other half of why it can simply be called.
+	//
+	// The tour's own cases still drive its buttons; this is the door every other
+	// case needs to be through.
+	p.run("skip the walk through", chromedp.Evaluate(`endTour()`, nil))
+	p.waitGone("#tour-bubble")
 
 	// And the greeting is a screen rather than something over one, so a sign-in
 	// with nothing to go back to lands on it. Carrying on is what a person does
@@ -986,6 +1002,22 @@ func (p *page) value(selector string) string {
 
 	p.run("read the value of "+selector, chromedp.Evaluate(fmt.Sprintf(
 		`document.querySelector(%q)?.value ?? ""`, selector), &out))
+
+	return strings.TrimSpace(out)
+}
+
+// placeholder reads what a field offers when it is empty.
+//
+// Its own reader beside value, because on this application's connection card
+// the two mean opposite things: a value is what will be saved, and a
+// placeholder is what is running and will not be.
+func (p *page) placeholder(selector string) string {
+	p.t.Helper()
+
+	var out string
+
+	p.run("read the placeholder of "+selector, chromedp.Evaluate(fmt.Sprintf(
+		`document.querySelector(%q)?.placeholder ?? ""`, selector), &out))
 
 	return strings.TrimSpace(out)
 }

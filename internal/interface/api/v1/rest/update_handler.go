@@ -8,6 +8,7 @@ import (
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/announce"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/restart"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
@@ -60,6 +61,30 @@ type UpdateHandler struct {
 	// failedAt is when the last attempt failed, so the next one waits rather
 	// than asking straight into a rate limit that has not cleared.
 	failedAt time.Time
+
+	// images asks the container that holds the Docker socket to pull a new image
+	// and recreate this container from it. Nil, or reporting itself unavailable,
+	// on every deployment that has not added that overlay - which is the default.
+	images *imageupdate.Updater
+}
+
+// WithImageUpdater lets a container deployment update by the image rather than
+// by the binary.
+//
+// The two are different updates and only one of them lasts. Swapping the binary
+// changes this container and not the image it was made from, so the next
+// recreate brings the old version back; pulling the image changes what every
+// future container will be. Where both are possible the image wins, because the
+// other one is a repair that expires.
+func (h *UpdateHandler) WithImageUpdater(images *imageupdate.Updater) *UpdateHandler {
+	h.images = images
+
+	return h
+}
+
+// byImage reports whether this installation updates by pulling an image.
+func (h *UpdateHandler) byImage() bool {
+	return h.images != nil && h.images.Available()
 }
 
 // NewUpdateHandler creates the handler.
@@ -110,10 +135,33 @@ type UpdateResponse struct {
 	// here, which is what a container needs to be told.
 	Newer bool `json:"newer"`
 
-	// Installable is false in a container, where a swapped binary is undone by
-	// the next recreate. The screen says what to run instead.
+	// Installable is false where this build cannot replace itself at all.
+	//
+	// It used to be false in a container as well, on the reasoning that a
+	// swapped binary is undone by the next recreate. That is true and it is not
+	// the whole truth: a restart of the same container keeps it - which is what
+	// the shipped deployment's restart policy does - so the update takes effect
+	// and holds until somebody runs the image again. Refusing to install left a
+	// container deployment with no way to update from the interface at all, and
+	// a command to type instead.
+	//
+	// So it installs, and Caveat says what to know about it.
 	Installable bool   `json:"installable"`
 	Why         string `json:"why,omitempty"`
+
+	// Caveat names something true about installing here that is not a refusal.
+	// "inContainer": the new binary lives in this container and not in the image
+	// it was made from, so recreating the container brings the old one back.
+	Caveat string `json:"caveat,omitempty"`
+
+	// ByImage says this installation updates by pulling an image and recreating
+	// its container, rather than by swapping the binary inside it. True only
+	// where the deployment has added the updater that holds the Docker socket;
+	// see deploy/compose.update.yaml.
+	//
+	// It changes what the button promises, so the screen is told rather than
+	// left to guess from the caveat.
+	ByImage bool `json:"byImage,omitempty"`
 
 	// Pending is the version already downloaded and waiting for a restart, so the
 	// same update is not offered twice to somebody who has taken it.
@@ -157,18 +205,23 @@ func (h *UpdateHandler) describe(c *gofr.Context) UpdateResponse {
 	out := UpdateResponse{
 		Running:     h.version,
 		Enabled:     h.enabled,
-		Installable: !hosting.InContainer(),
+		Installable: true,
 		Restartable: restart.Supported(),
 		RestartCode: restart.Code(),
 		Comparable:  selfupdate.Comparable(h.version),
 	}
 
-	if pending, ok := selfupdate.Installed(); ok {
-		out.Pending = pending
+	// Installing works here; what it leaves behind is worth saying - unless
+	// something can replace the image, in which case nothing is left behind and
+	// there is nothing to warn about.
+	if h.byImage() {
+		out.ByImage = true
+	} else if hosting.InContainer() {
+		out.Caveat = "inContainer"
 	}
 
-	if !out.Installable {
-		out.Why = "inContainer"
+	if pending, ok := selfupdate.Installed(); ok {
+		out.Pending = pending
 	}
 
 	if !h.enabled {
@@ -290,14 +343,6 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 			"installation").WithCode("updateDisabled"))
 	}
 
-	// Checked again here rather than trusted from the screen. The button is only
-	// offered where this holds, and a POST is not a button.
-	if hosting.InContainer() {
-		return nil, toHTTPError(apperror.Invalidf("this runs in a container, where " +
-			"replacing the binary is undone by the next recreate").
-			WithCode("updateInContainer"))
-	}
-
 	release, err := h.latest(c)
 	if err != nil {
 		return nil, toHTTPError(apperror.Internal(err))
@@ -306,6 +351,17 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 	if !selfupdate.Newer(h.version, release.Version) {
 		return nil, toHTTPError(apperror.Invalidf("this installation already runs %s",
 			h.version).WithCode("updateNotNewer", h.version))
+	}
+
+	// A container with an updater beside it takes the image instead.
+	//
+	// Not the binary as well: the two are different updates and only one of them
+	// lasts. Swapping the binary changes this container and not the image it was
+	// made from, so it is a repair that expires at the next recreate - and the
+	// recreate is exactly what the updater is about to perform. Doing both would
+	// download thirty megabytes to throw them away a second later.
+	if h.byImage() {
+		return h.askForTheImage(c, release.Version)
 	}
 
 	// Everybody, before it starts rather than after it finished.
@@ -337,4 +393,39 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 	}
 
 	return state, nil
+}
+
+// askForTheImage hands the job to the container that can do it.
+//
+// Nothing is downloaded here and nothing waits for the answer. The updater
+// pulls, recreates this container, and this process stops existing part way
+// through the reply - which is why the announcement goes out first, and why the
+// browser learns it worked by watching the version come back different rather
+// than by reading a response.
+//
+// Announced as a restart rather than as an install, because that is what it
+// looks like from every screen: the application goes away and comes back. The
+// difference between the two - which is whether the new version survives the
+// next recreate - matters to the person who pressed the button and to nobody
+// else in the building.
+func (h *UpdateHandler) askForTheImage(c *gofr.Context, version string) (any, error) {
+	h.hub.Publish(announce.Installing, version)
+
+	if err := h.images.Ask(); err != nil {
+		h.hub.Publish(announce.Cancelled, version)
+		h.hub.Forget()
+
+		if errors.Is(err, imageupdate.ErrBusy) {
+			return nil, toHTTPError(apperror.Conflictf(
+				"an update is already running").WithCode("updateInstalling"))
+		}
+
+		c.Logger.Errorf("could not ask for a new image: %v", err)
+
+		return nil, toHTTPError(apperror.Internal(err))
+	}
+
+	h.hub.Publish(announce.Restarting, version)
+
+	return h.describe(c), nil
 }
