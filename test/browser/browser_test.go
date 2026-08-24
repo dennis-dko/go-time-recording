@@ -405,10 +405,20 @@ func (p *page) settleWelcome() {
 	p.run("wait for the greeting to be decided",
 		chromedp.WaitReady("html[data-greeted='yes']", chromedp.ByQuery))
 
-	if p.visible("#tour-bubble") {
-		p.run("skip the walk through", p.click("#tour-end"))
-		p.waitGone("#tour-bubble")
-	}
+	// Ended rather than clicked away, and asked for whether or not a bubble can
+	// be seen at that instant.
+	//
+	// Clicking was a race with the tour's own first render: data-greeted is set
+	// once the walk has started, and a moment later the bubble is laid out and
+	// the page is sealed behind it - so a case that looked, saw nothing and
+	// carried on had its next press swallowed by the blocker, and failed as
+	// something invisible somewhere else. endTour is a no-op where no tour is
+	// running, which is the other half of why it can simply be called.
+	//
+	// The tour's own cases still drive its buttons; this is the door every other
+	// case needs to be through.
+	p.run("skip the walk through", chromedp.Evaluate(`endTour()`, nil))
+	p.waitGone("#tour-bubble")
 
 	// And the greeting is a screen rather than something over one, so a sign-in
 	// with nothing to go back to lands on it. Carrying on is what a person does

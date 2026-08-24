@@ -182,9 +182,9 @@ func TestTheRestartNoticeAppearsOnlyWhenSomethingIsWaiting(t *testing.T) {
 	}
 
 	// The hint above the list promises saved changes, so it goes when there are
-	// none: where restarting is impossible the notice is permanent, and a standing
-	// promise above an empty list reads as a rendering fault.
-	if !strings.Contains(js, "$('#restart-hint').hidden = !waiting") {
+	// none: the card is always on the settings screen, and a standing promise
+	// above an empty list reads as a rendering fault.
+	if !strings.Contains(js, "$('#restart-card-hint').hidden = !waiting") {
 		t.Error("the notice promises a list of pending changes even when there are none")
 	}
 }
@@ -226,17 +226,27 @@ func TestTheRestartNoticeIsABannerAndTheControlIsACard(t *testing.T) {
 			"nothing pending offers no way to restart on purpose")
 	}
 
-	// The list of what is waiting belongs to the notice and appears once. A copy
-	// on the card is the duplication the card was once removed over.
-	if strings.Contains(html, `id="restart-card-pending"`) {
-		t.Error("the card repeats the list of pending changes, which the banner " +
-			"already carries")
+	// The list of what is waiting appears once, and it is on the card: that is
+	// where somebody acts on it, and a card's worth of detail stuck to the top of
+	// every screen is what the banner used to be.
+	if !strings.Contains(html, `id="restart-card-pending"`) {
+		t.Error("the card does not list what is waiting, so the banner sends people " +
+			"to a card that does not answer the question")
 	}
 
-	// And both are written by one function, from one answer.
-	if strings.Count(js, "showRestartControls(") < 3 {
-		t.Error("the banner and the card are not filled by one shared function, so " +
-			"the two can come to say different things")
+	if strings.Contains(html, `id="restart-pending"`) {
+		t.Error("the banner still lists the pending changes as well as the card")
+	}
+
+	// The banner points rather than acts. One button for one action, where the
+	// detail is - which is what stops the notice and the control drifting apart,
+	// and was the reason the card was once removed altogether.
+	if !strings.Contains(html, `id="restart-open"`) {
+		t.Error("the banner offers no way to the card it is a notice about")
+	}
+
+	if strings.Contains(html, `id="restart-now"`) {
+		t.Error("the banner still carries a restart button of its own")
 	}
 
 	// Not dismissable, and nothing to dismiss it with. It is a state rather than
@@ -276,5 +286,36 @@ func TestTheFooterNamesThePlatformBesideTheVersion(t *testing.T) {
 
 	if !strings.Contains(js, "${version} (${platform})") {
 		t.Error(`the footer does not render the platform as "version (platform)"`)
+	}
+}
+
+// A container is offered the update, not a command to type.
+//
+// This card refused to install in a container: a swapped binary is undone by
+// the next recreate, so it printed "docker compose pull" instead. That is true
+// and it is not the whole truth - a restart of the same container keeps the new
+// binary, which is what the shipped deployment's restart policy does, so the
+// update takes effect and holds until somebody runs the image again.
+//
+// Refusing left a container deployment with no way to update from the interface
+// at all, which is the deployment this application ships.
+func TestTheUpdateCardOffersAContainerTheButtonAndTheCaveat(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	if strings.Contains(js, "if (!state.installable) {") {
+		t.Error("the card still turns a whole class of installation away instead " +
+			"of offering it the update")
+	}
+
+	if !strings.Contains(js, "state.caveat === 'inContainer'") {
+		t.Error("the card does not say what installing in a container leaves behind")
+	}
+
+	// The caveat follows the promise rather than replacing it: somebody in a
+	// container still has to be told the download is checked and what happens
+	// afterwards.
+	if !strings.Contains(js, "${promise} ${t('update.inContainer'") {
+		t.Error("the container caveat replaces what the card says about the " +
+			"download rather than following it")
 	}
 }
