@@ -93,10 +93,33 @@ func (a *app) newClient() *client {
 		a.t.Fatalf("cannot create a cookie jar: %v", err)
 	}
 
+	// Connections of its own rather than the shared default pool.
+	//
+	// One test replaces the server on a port while keeping the port: the
+	// installer hands over to the application in the same process. A pooled
+	// connection outlives that, and the pool has no way to know the server on
+	// the other end of it is gone - so a request made afterwards can be handed
+	// one that is already dead. A GET survives it, because net/http dials again
+	// and retries an idempotent request; a POST does not, and arrives as "EOF"
+	// from a sign-in against a server that is running perfectly well.
+	//
+	// A client that owns its pool cannot be given a connection older than
+	// itself, and parallel tests stop sharing one pool while they are at it.
+	transport := &http.Transport{}
+
+	// Owning the pool means owning the sockets in it. The suite runs in
+	// parallel and builds clients freely, so they are handed back at the end of
+	// the test that made them rather than whenever the collector notices.
+	a.t.Cleanup(transport.CloseIdleConnections)
+
 	c := &client{
-		t:    a.t,
-		app:  a,
-		http: &http.Client{Jar: jar, Timeout: 15 * time.Second},
+		t:   a.t,
+		app: a,
+		http: &http.Client{
+			Jar:       jar,
+			Timeout:   15 * time.Second,
+			Transport: transport,
+		},
 	}
 
 	// The visit a browser makes before anything else.
