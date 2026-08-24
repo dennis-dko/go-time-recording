@@ -944,25 +944,45 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .muted { color: var(--muted); font-size: 13px; }
 
+/* Centred, and centred again on every line it wraps onto.
+   
+   These run the full width of the window, which on a wide screen is far wider
+   than any sentence in them - a notice set flush left on a 3440-pixel bar sits
+   in the corner with a metre of nothing beside it, and reads as something that
+   failed to lay out rather than as an announcement.
+   
+   The width cap is what makes the wrapping worth having: without it a long
+   notice becomes one very long line, and a line that wide is read by moving
+   your head. With it the text breaks into a column the eye can follow, and
+   text-align keeps every one of those lines centred rather than only the block.
+   
+   Both properties are needed and they are not the same one: the margin centres
+   the column in the bar, and text-align centres the lines inside the column. */
 .banner {
   background: color-mix(in srgb, #d68910 18%, var(--surface));
   border-bottom: 1px solid var(--border);
   padding: 10px 20px;
   font-size: 14px;
+  text-align: center;
+  text-wrap: pretty;
 }
 
-/* The release banner carries two controls, so it is a row rather than a line of
-   text. */
-#release-banner {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+/* The column the words live in. Roughly ninety characters at this size, which
+   is wide enough that ordinary notices stay on one line and narrow enough that
+   the ones that do not are still readable. */
+.banner > * ,
+.banner:not(:has(*)) {
+  margin-inline: auto;
+  max-width: 76ch;
 }
+
+/* The release banner is one sentence with a link inside it, so it wraps as
+   text. It used to be a flex row, which it needed while a button sat beside the
+   words - and a flex row cannot centre a wrapped sentence, it centres two
+   boxes. */
+#release-banner { display: block; }
 
 #release-banner[hidden] { display: none; }
-
-#release-text { flex: 1 1 auto; }
 
 /* A button that reads as a link: this one goes somewhere rather than doing
    something, and a filled button beside a sentence would outweigh the sentence. */
@@ -1014,7 +1034,22 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 #restart-banner[hidden] { display: none; }
 
 #restart-banner p { margin: 6px 0; }
-#restart-banner .pending-list { margin: 6px 0; }
+
+/* The list of waiting settings, centred with the rest of the notice.
+   
+   Without a marker and without the indent that holds one: a bullet in the
+   middle of the bar with its line hanging off to the right is worse than no
+   bullet at all, and the list is three or four short lines rather than a
+   structure anybody needs marking. */
+#restart-banner .pending-list {
+  list-style: none;
+  margin: 6px auto;
+  padding-left: 0;
+}
+
+/* And the controls follow the words. text-align does not reach them: a row is
+   a flex container, and its children are laid out by justify-content. */
+.banner .row { justify-content: center; }
 
 /* Maintenance is not the same kind of news as an announcement, so it does not
    look the same. Stronger, and it sits above the announcement banner. */
@@ -1320,8 +1355,39 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   width: 26px;
 }
 
-.brand-mark[hidden],
-.app-mark[hidden] { display: none; }
+/* The placeholder mark: a tinted chip with the installation's initial in it.
+   
+   Tinted rather than filled with the accent, because the application's own mark
+   is the filled one and it sits four inches away in the same bar. Two solid
+   accent squares would read as two marks of equal standing; this one is
+   deliberately the quieter of the pair, being a stand-in.
+   
+   color-mix against --surface rather than a fixed pale blue: the bar is white in
+   one theme and near-black in the other, and a tint has to be made from the
+   ground it sits on or it stops being a tint. */
+.brand-mark-ground {
+  fill: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  stroke: color-mix(in srgb, var(--accent) 40%, var(--surface));
+  stroke-width: 1.2;
+}
+
+/* Set in the interface's own face at a size that fills the chip without
+   touching it. Not bold: at 26 pixels a heavy letter closes up its counters and
+   reads as a blob. */
+.brand-mark-letter {
+  fill: var(--accent);
+  font-family: inherit;
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+/* An SVG has no `hidden` property, so the attribute is what hides one - and a
+   `display` declared anywhere else beats a bare attribute, which is how the
+   mark once stayed on screen beside the logo that had replaced it.
+   
+   Only the left slot needs this now. The mark beside the title is never hidden:
+   it is the application, and the application is always there. */
+.brand-mark[hidden] { display: none; }
 
 .brand-logo {
   height: auto;
@@ -1813,6 +1879,17 @@ a.tab:hover {
  * a single node whose position is set from the target's bounding rectangle, so
  * the highlight follows the real control rather than a copy of it.
  */
+/* Covers the viewport and takes every press. No colour of its own: the
+   spotlight above it already dims the page, and a second veil would darken it
+   twice. */
+.tour-blocker {
+  inset: 0;
+  position: fixed;
+  z-index: 39;
+}
+
+.tour-blocker[hidden] { display: none; }
+
 .tour-spotlight {
   border: 2px solid var(--accent);
   border-radius: var(--radius);

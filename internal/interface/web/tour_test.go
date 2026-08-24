@@ -182,9 +182,9 @@ func TestTheRestartNoticeAppearsOnlyWhenSomethingIsWaiting(t *testing.T) {
 	}
 
 	// The hint above the list promises saved changes, so it goes when there are
-	// none: where restarting is impossible the notice is permanent, and a standing
-	// promise above an empty list reads as a rendering fault.
-	if !strings.Contains(js, "$('#restart-hint').hidden = !waiting") {
+	// none: the card is always on the settings screen, and a standing promise
+	// above an empty list reads as a rendering fault.
+	if !strings.Contains(js, "$('#restart-card-hint').hidden = !waiting") {
 		t.Error("the notice promises a list of pending changes even when there are none")
 	}
 }
@@ -201,7 +201,19 @@ func TestTheRestartNoticeAppearsOnlyWhenSomethingIsWaiting(t *testing.T) {
 // tab that needs settings:manage, who could see it was decided by the tab; a
 // banner has no tab to inherit from, and nobody who cannot act on this should be
 // told an installation they use is waiting for something.
-func TestTheRestartNoticeIsABannerOnlyAdministratorsSee(t *testing.T) {
+//
+// There is a card again, and this asserted for a while that there was not. The
+// reason given was that the same thing would be said twice and one copy would go
+// stale - which was right about the risk and wrong about what the card is for.
+// The banner is the notice: something is waiting, here is what. The card is the
+// control: this installation can be restarted, here is what that does here, and
+// here is the button. Without it there was no way to restart on purpose at all,
+// and on a container deployment - where what the button does is the interesting
+// part - the screen said nothing about it.
+//
+// The staleness is answered directly instead, below: one function fills both
+// from one answer, so there is nothing to drift.
+func TestTheRestartNoticeIsABannerAndTheControlIsACard(t *testing.T) {
 	js := asset(t, "/app.js")
 	html := asset(t, "/")
 
@@ -209,9 +221,32 @@ func TestTheRestartNoticeIsABannerOnlyAdministratorsSee(t *testing.T) {
 		t.Error("there is no restart banner in the markup")
 	}
 
-	if strings.Contains(html, `id="restart-card"`) {
-		t.Error("the restart card is still under Settings beside the banner, so the " +
-			"same thing is said in two places and one of them can go stale")
+	if !strings.Contains(html, `id="restart-card"`) {
+		t.Error("there is no restart card under Settings, so an installation with " +
+			"nothing pending offers no way to restart on purpose")
+	}
+
+	// The list of what is waiting appears once, and it is on the card: that is
+	// where somebody acts on it, and a card's worth of detail stuck to the top of
+	// every screen is what the banner used to be.
+	if !strings.Contains(html, `id="restart-card-pending"`) {
+		t.Error("the card does not list what is waiting, so the banner sends people " +
+			"to a card that does not answer the question")
+	}
+
+	if strings.Contains(html, `id="restart-pending"`) {
+		t.Error("the banner still lists the pending changes as well as the card")
+	}
+
+	// The banner points rather than acts. One button for one action, where the
+	// detail is - which is what stops the notice and the control drifting apart,
+	// and was the reason the card was once removed altogether.
+	if !strings.Contains(html, `id="restart-open"`) {
+		t.Error("the banner offers no way to the card it is a notice about")
+	}
+
+	if strings.Contains(html, `id="restart-now"`) {
+		t.Error("the banner still carries a restart button of its own")
 	}
 
 	// Not dismissable, and nothing to dismiss it with. It is a state rather than
@@ -251,5 +286,36 @@ func TestTheFooterNamesThePlatformBesideTheVersion(t *testing.T) {
 
 	if !strings.Contains(js, "${version} (${platform})") {
 		t.Error(`the footer does not render the platform as "version (platform)"`)
+	}
+}
+
+// A container is offered the update, not a command to type.
+//
+// This card refused to install in a container: a swapped binary is undone by
+// the next recreate, so it printed "docker compose pull" instead. That is true
+// and it is not the whole truth - a restart of the same container keeps the new
+// binary, which is what the shipped deployment's restart policy does, so the
+// update takes effect and holds until somebody runs the image again.
+//
+// Refusing left a container deployment with no way to update from the interface
+// at all, which is the deployment this application ships.
+func TestTheUpdateCardOffersAContainerTheButtonAndTheCaveat(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	if strings.Contains(js, "if (!state.installable) {") {
+		t.Error("the card still turns a whole class of installation away instead " +
+			"of offering it the update")
+	}
+
+	if !strings.Contains(js, "state.caveat === 'inContainer'") {
+		t.Error("the card does not say what installing in a container leaves behind")
+	}
+
+	// The caveat follows the promise rather than replacing it: somebody in a
+	// container still has to be told the download is checked and what happens
+	// afterwards.
+	if !strings.Contains(js, "${promise} ${t('update.inContainer'") {
+		t.Error("the container caveat replaces what the card says about the " +
+			"download rather than following it")
 	}
 }

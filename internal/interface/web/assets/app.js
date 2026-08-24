@@ -233,6 +233,33 @@ async function api(path, options = {}) {
         banner.textContent = err.message;
         banner.hidden = false;
       }
+
+      // And whoever may not be here while it lasts goes back to the sign-in
+      // screen, where the same sentence is waiting.
+      //
+      // Everything an ordinary account can reach is refused for as long as
+      // maintenance is on, so what they had was a signed-in screen where every
+      // card was an error and every click another one - the interface insisting
+      // they were working while nothing worked. Two clicks after an
+      // administrator flipped the switch, and no way to tell it was deliberate.
+      //
+      // Told to the server rather than only forgotten here: an account signed
+      // out by this should have to sign in again afterwards, and a session left
+      // standing would let the screen come back by itself the moment maintenance
+      // ended.
+      //
+      // Not for whoever may administer the installation - they are the ones who
+      // end it, and the request that brought this back was some other 503.
+      if (me.user && !can('settings:manage') && !endingTheSession) {
+        endingTheSession = true;
+
+        try {
+          void endTheSessionQuietly();
+          handBackTheScreen(err.message);
+        } finally {
+          endingTheSession = false;
+        }
+      }
     }
     // The status alongside the message, so a caller can tell "you are not
     // signed in" from "that did not work" without parsing prose. The log
@@ -495,7 +522,54 @@ function startPermissionPolling() {
     // for as long as the network is unhappy - would be worse than the thing it
     // is watching for.
     api('/me').catch(() => {});
+
+    // On the same beat and for the same reason: whether this screen is still
+    // true. The announcement stream notices maintenance within seconds, and this
+    // is what covers a browser that has no EventSource at all.
+    void checkWhetherStillWelcome();
   }, PERMISSION_POLL_MS);
+}
+
+/**
+ * Asks whether this installation is still open to whoever is looking at it, and
+ * hands the screen back if it is not.
+ *
+ * Maintenance mode refuses everything an ordinary account does, which is the
+ * point - but what it left behind was the whole interface standing, every card
+ * an error and every click another one, with nothing saying that was deliberate.
+ *
+ * /maintenance is one of the endpoints maintenance mode deliberately keeps
+ * answering, so this works from inside it - which is the whole reason the
+ * question can be asked at all.
+ *
+ * Not for whoever may administer the installation. They are the ones who end it,
+ * and signing them out of the screen with the switch on it would be the trap
+ * this mode is written to avoid.
+ */
+async function checkWhetherStillWelcome() {
+  if (!me.user || can('settings:manage') || endingTheSession) return;
+
+  let state;
+
+  try {
+    state = await api('/maintenance');
+  } catch {
+    // Unreachable, or refused. Either way this is a background question and the
+    // answer to a failed one is to ask again next time.
+    return;
+  }
+
+  if (!state?.enabled || endingTheSession) return;
+
+  endingTheSession = true;
+
+  try {
+    void endTheSessionQuietly();
+    handBackTheScreen(state.message || t('err.maintenance',
+      'This installation is temporarily unavailable for maintenance.'));
+  } finally {
+    endingTheSession = false;
+  }
 }
 
 function stopPermissionPolling() {
@@ -598,23 +672,49 @@ function drawReleaseBanner(state) {
   const banner = $('#release-banner');
   if (!banner) return;
 
-  $('#release-text').textContent = fillIn(
-    t('update.available', 'Version {0} is available. This installation runs {1}.'),
-    [state.latest, state.running]);
+  const text = $('#release-text');
+
+  text.textContent = '';
+
+  // The version is the link, and the sentence is built around it rather than
+  // followed by a button.
+  //
+  // There was a button beside this reading "Open Settings". Two things to read
+  // where one would do, and the one it left out is the one somebody actually
+  // wants to press: a release has a number, and the number is what they are
+  // deciding about. So the sentence is split at the place the number goes and
+  // the number is put there as the control.
+  //
+  // Split on the placeholder itself rather than on a marker put through the
+  // filler: where the number falls in the sentence is the translator's
+  // business, and the two halves are whatever they wrote around it.
+  const [before, after] = t('update.available',
+    'Version {0} is available. This installation runs {1}.').split('{0}');
+
+  text.append(before ?? '');
+
+  const link = el('button', {
+    type: 'button',
+    class: 'link-button',
+    id: 'release-open',
+    text: state.latest,
+  });
+
+  link.addEventListener('click', openTheVersionCard);
+  text.append(link);
+
+  // The rest of the sentence still has {1} in it, which is the version running.
+  text.append(fillIn(after ?? '', [state.latest, state.running]));
 
   banner.hidden = false;
 }
 
-function wireReleaseBanner() {
-  const banner = $('#release-banner');
-  if (!banner) return;
+/** Takes whoever pressed it to the card that installs the new version. */
+function openTheVersionCard() {
+  switchView('admin');
 
-  $('#release-open').addEventListener('click', () => {
-    switchView('admin');
-
-    const card = $('#update-card');
-    if (card) card.scrollIntoView({ block: 'center' });
-  });
+  const card = $('#update-card');
+  if (card) card.scrollIntoView({ block: 'center' });
 }
 
 // --------------------------------------------------------------- announcements
@@ -663,7 +763,14 @@ function startAnnouncements() {
   // handled where the reconnection succeeds rather than here, because a failure
   // to reconnect means the application is not back yet and there is nothing to
   // say to anybody about that.
-  announcements.addEventListener('error', () => {});
+  //
+  // It is, however, the first thing a screen notices when the installation goes
+  // out of service: this stream is one of the requests maintenance mode refuses,
+  // and the browser retries it every few seconds. Everything else an idle screen
+  // asks for is exempt - who you are, what the branding is - so without this a
+  // screen nobody is touching would sit there working-looking until its next
+  // click, or until the once-a-minute permission poll came round.
+  announcements.addEventListener('error', () => { void checkWhetherStillWelcome(); });
 
   announcements.addEventListener('open', () => {
     // Back. If the last thing said was that a restart was coming, this is the
@@ -700,6 +807,20 @@ function stopAnnouncements() {
  * stop being the case because somebody closed it.
  */
 function applyAnnouncement(announcement) {
+  // Maintenance is not one of the update banner's messages and must not be
+  // written into it - nor recorded as the last thing announced, which is what
+  // the reconnection handler reads to decide whether a restart just finished.
+  //
+  // It carries nothing of its own on purpose: what the state is, and what the
+  // administrator wrote about it, is read from /maintenance, which keeps
+  // answering while everything else is refused.
+  if (announcement.kind === 'instance.maintenance') {
+    void checkWhetherStillWelcome();
+    void loadMaintenance();
+
+    return;
+  }
+
   announced = announcement.kind;
 
   // Through the redraw registry, so a language change reaches it like everything
@@ -2283,6 +2404,66 @@ function restoreDrafts() {
 }
 
 /**
+ * Decides what stands in each of the two mark slots.
+ *
+ * The bar has three columns and the outer two mean different things: the left
+ * one is the installation, the middle one is the application. They used to
+ * share a single drawing and show one of it - so a fresh installation wore the
+ * application's mark on the left and had a bare title in the middle, and an
+ * installation with a logo had it the other way round. The title lost its mark
+ * to a slot that was never about the application.
+ *
+ * Both are always filled now:
+ *
+ *   middle  the application's own mark, beside the title, always
+ *   left    the uploaded logo, or the installation's initial where there is none
+ *
+ * The initial is the first letter of the title this installation was given. It
+ * costs nothing, it differs between installations, and it changes when somebody
+ * changes the title - which is more than a generic placeholder glyph could say,
+ * and it never reads as a picture that failed to load.
+ *
+ * Only in the header. The sign-in card gives a logo the width of the card, and a
+ * 26-pixel chip in that space would read as something broken.
+ */
+function showBrandMark(branding, ownLogo) {
+  const mark = $('#brand-mark');
+
+  // The attribute rather than the property, because these are SVG elements and
+  // `hidden` is defined on HTMLElement: assigning it here creates a property
+  // nobody reads and leaves the chip on screen beside the logo that replaced it.
+  if (mark) {
+    if (ownLogo) mark.setAttribute('hidden', '');
+    else mark.removeAttribute('hidden');
+  }
+
+  const initial = $('#brand-initial');
+  if (initial) initial.textContent = initialOf(brandingIn(branding, 'title'));
+}
+
+/**
+ * The one letter that stands for an installation.
+ *
+ * The first character that is a letter or a digit, upper-cased. Skipping past
+ * anything else matters more than it sounds: a title beginning with a quotation
+ * mark or a bracket would otherwise put punctuation in the chip, which reads as
+ * a fault rather than as a name.
+ *
+ * Upper-cased through the reader's own locale, so a Turkish i becomes the
+ * capital that language uses rather than the English one.
+ *
+ * Falls back to the application's own initial, because an installation whose
+ * title is empty still has to have something in the corner.
+ */
+function initialOf(title) {
+  for (const character of String(title ?? '')) {
+    if (/\p{L}|\p{N}/u.test(character)) return character.toLocaleUpperCase();
+  }
+
+  return 'Z';
+}
+
+/**
  * Whether somebody is part way through filling this form in.
  *
  * Every screen in this application is refilled from the server by loaders that
@@ -2747,7 +2928,8 @@ const TRANSLATIONS = {
     'tel.url': 'Collector als host:port, ohne http://',
     'tel.ratio': 'Anteil aufgezeichneter Traces (0–1)',
     'tel.ratioShort': 'Anteil aufgezeichneter Traces',
-    'tel.tracingHint': 'Läuft deploy/compose.tracing.yaml neben der Anwendung? Dann ist es Exporter OTLP und Collector jaeger:4317, und die Traces liest man unter http://127.0.0.1:16686.',
+    'tel.tracingHint': 'Läuft deploy/compose.tracing.yaml neben der Anwendung? Dann ist es Exporter OTLP und Collector jaeger:4317, und die Traces liegen unter {0}.',
+    'tel.tracingLoopback': 'Antwortet die Adresse nicht, veröffentlicht die mitgelieferte Datei den Trace-Browser absichtlich nur auf dem Loopback des Servers – dann führt der Weg über {0}.',
     'tel.reset': 'Alles auf die Konfigurationsdatei zurücksetzen',
     'tel.resetDone': 'Metriken und Traces folgen wieder der Konfigurationsdatei',
     'tel.activeMetrics': 'Metriken',
@@ -2759,6 +2941,8 @@ const TRANSLATIONS = {
     'password.hide': 'Passwort verbergen',
 
     'restart.title': 'Neustart',
+    'restart.open': 'Zum Neustart',
+    'restart.summary': '{0} gespeicherte Einstellung(en) warten auf einen Neustart.',
     'restart.unsupported.noExecve': 'Ein Neustart aus der Anwendung heraus ist unter Windows nicht möglich: dafür wird execve gebraucht, das es dort nicht gibt. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
@@ -2962,7 +3146,6 @@ const TRANSLATIONS = {
     'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
     'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden.',
     'update.available': 'Version {0} ist verfügbar. Diese Installation läuft mit {1}.',
-    'update.open': 'Zu den Einstellungen',
     'announce.installing': 'Eine neue Version ({0}) wird installiert. Du kannst weiterarbeiten; die Anwendung startet gleich neu.',
     'announce.restarting': 'Die Anwendung startet gerade in Version {0}. Diese Seite lädt sich gleich von selbst neu.',
     'announce.pending': 'Version {0} ist installiert und wird beim nächsten Start der Anwendung aktiv. Bis dahin ändert sich nichts.',
@@ -3001,8 +3184,6 @@ const TRANSLATIONS = {
     'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
       + 'warten Sie, bis sie abgeschlossen ist.',
     'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
-    'err.updateInContainer': 'Dies läuft in einem Container. Dort wäre ein ausgetauschtes '
-      + 'Programm beim nächsten Neuaufbau wieder weg — bitte das Abbild aktualisieren.',
     'err.updateNotNewer': 'Diese Installation läuft bereits mit {0}.',
     'err.onlyBuiltInAdminSchedules': 'Nur die eingebaute Administration darf den '
       + 'Verzeichnisabgleich planen.',
@@ -3391,6 +3572,7 @@ const TRANSLATIONS = {
     'update.inContainer': 'Dies läuft in einem Container. Ein ausgetauschtes Programm wäre '
       + 'beim nächsten Neuaufbau wieder weg — stattdessen das Abbild aktualisieren: '
       + 'docker compose pull && docker compose up -d',
+    'update.byImage': 'Es wird ein neues Abbild geladen, dieser Container daraus neu erzeugt und das ersetzte Abbild anschließend entfernt. Die Anwendung ist einige Sekunden weg und kommt als neue Fassung zurück – diese Seite wartet darauf.',
     'update.off': 'Die Suche nach neuen Versionen ist auf dieser Installation '
       + 'abgeschaltet (UPDATE_CHECK).',
     'update.confirm': 'Die neue Version herunterladen und installieren? '
@@ -4761,30 +4943,7 @@ function drawBranding(branding) {
     img.alt = mark ? (branding.title || '') : '';
   }
 
-  // The shipped mark stands where no logo has been uploaded, and steps aside
-  // where one has. Only in the header: the sign-in card gives a logo the width
-  // of the card, and a 26px glyph in that space would read as something that
-  // failed to load rather than as a mark.
-  //
-  // The attribute rather than the property, because this one is drawn rather
-  // than fetched and an SVG element is not an HTMLElement: `hidden` is defined
-  // on the latter, so assigning it here creates a property nobody reads and
-  // leaves the mark on screen beside the logo that replaced it.
-  // One of the two, never both. The three columns of this bar mean different
-  // things - the installation's identity at the left end, the application's in
-  // the middle - so wearing the same mark in both places at once would blur
-  // exactly the distinction they exist to draw.
-  const ownLogo = Boolean(sized['#brand-logo']);
-
-  for (const [node, showWhenOwned] of [[$('#brand-mark'), false], [$('.app-mark'), true]]) {
-    if (!node) continue;
-
-    // The attribute rather than the property: these are SVG elements, and
-    // `hidden` is defined on HTMLElement - assigning it here would create a
-    // property nobody reads and leave both marks on screen.
-    if (showWhenOwned === ownLogo) node.removeAttribute('hidden');
-    else node.setAttribute('hidden', '');
-  }
+  showBrandMark(branding, Boolean(sized['#brand-logo']));
 
   // The announcement banner is separate from the "change your password" one.
   // Through the renderer, so a {year} in a copyright line stays right and a link
@@ -4873,7 +5032,10 @@ function showRunningConnection(form, ds) {
   // So it names what is running, like every other field here. The note above
   // says where that came from, which is what stops it reading as something
   // somebody saved.
-  if (running.dialect) form.elements.dialect.value = running.dialect;
+  // Unless somebody is choosing one. This is the one line here that writes a
+  // value rather than describing what is running, so it is the one line that
+  // has to ask.
+  if (running.dialect && !beingEdited(form)) form.elements.dialect.value = running.dialect;
 
   if (note) {
     note.textContent = t('admin.connectionFromEnvironment',
@@ -5018,15 +5180,26 @@ async function loadAdmin() {
   const ds = await api('/settings/datasource');
   const dsForm = $('#form-datasource');
 
-  // Not over a connection somebody is part way through entering. This is the
-  // card the loss was reported from: choosing a language reloads every screen,
-  // so switching to German to read a label put the stored connection back over
-  // the one being typed - and an empty stored connection put back nothing at
-  // all, which looked like a form that had never been filled in.
+  // This card has two halves, and only one of them belongs to whoever is at the
+  // keyboard.
+  //
+  // The values are theirs. This is the card the loss was reported from:
+  // choosing a language reloads every screen, so switching to German to read a
+  // label put the stored connection back over the one being typed - and an
+  // empty stored connection put back nothing at all, which looked like a form
+  // nobody had filled in.
+  //
+  // What this installation is connected to is not theirs, and it was being
+  // skipped along with them. One touch of this form and the card went on saying
+  // "connected via postgres" above five empty boxes for as long as the tab
+  // stayed open - no note saying where the connection came from, and no
+  // placeholders saying what it was. A restored draft did it without anybody
+  // touching anything, because restoring one marks the form as being filled in.
   if (!beingEdited(dsForm)) {
     for (const field of ['dialect', 'name', 'host', 'port', 'user', 'sslMode']) {
       dsForm.elements[field].value = ds[field] ?? '';
     }
+  }
 
   // Nothing stored, which is every installation configured through the
   // environment - a compose deployment, or a container run with DB_* set. The
@@ -5037,11 +5210,10 @@ async function loadAdmin() {
   // Shown as placeholders rather than values, because they are not this form's
   // to save: typing over a placeholder is how somebody changes the connection,
   // and leaving it alone has to keep meaning "leave it alone".
-    showRunningConnection(dsForm, ds);
+  showRunningConnection(dsForm, ds);
 
-    // After the values are in, or the port would be prefilled over a stored one.
-    syncDatasourceFields();
-  }
+  // After the values are in, or the port would be prefilled over a stored one.
+  syncDatasourceFields();
 
   // What this process is connected to, whoever is typing what: it describes the
   // running application rather than the form.
@@ -5759,6 +5931,13 @@ function hideLogin() {
   // arrived yet. See showLogin, which is the only reader.
   handedToASession = true;
 
+  // A new session has not been greeted yet, whatever the last one was told.
+  // Cleared here rather than on the way out, because signing in is the moment
+  // the question becomes open again - and the marker outliving a sign-out would
+  // tell anything watching that the next account's tour had already been
+  // decided. See greetAfterSignIn.
+  delete document.documentElement.dataset.greeted;
+
   $('#login-screen').classList.remove('checking');
   $('#login-screen').hidden = true;
   $('#login-error').hidden = true;
@@ -5919,12 +6098,24 @@ function forgetTheLastAccount() {
  */
 let endingTheSession = false;
 
-async function doLogout() {
+/**
+ * Tells the server the session is over, and says nothing if it cannot.
+ *
+ * Its own function because two things end a session from this side and only one
+ * of them is a person pressing a button: the other is maintenance mode turning
+ * an account away, which happens inside a failed request and must not wait for
+ * this one to answer before the screen changes.
+ */
+async function endTheSessionQuietly() {
   try {
     await api('/auth/logout', { method: 'POST' });
   } catch {
     // Even a failed call should drop the client back to the sign-in screen.
   }
+}
+
+async function doLogout() {
+  await endTheSessionQuietly();
 
   handBackTheScreen();
 }
@@ -6378,8 +6569,22 @@ function tourTargetIsReachable(node) {
   return Boolean(node);
 }
 
-/** Positions the spotlight and the bubble around one element. */
+/**
+ * Positions the spotlight and the bubble around one element.
+ *
+ * Does nothing if the walk has ended in the meantime. This runs two animation
+ * frames after the step was rendered - the delay is what lets a view that has
+ * just been switched to settle before anything is measured against it - and
+ * ending the tour inside that gap used to leave a bubble on screen belonging to
+ * a walk that had finished, because this unhides what endTour had just hidden.
+ *
+ * Rare by hand and not rare at all for anything driving the application: the
+ * interface says the walk has been decided as soon as it starts, so a caller
+ * that reacts to that and ends it immediately lands in exactly this gap.
+ */
 function placeTour(node) {
+  if (!tour.active) return;
+
   const rect = node.getBoundingClientRect();
   const pad = 6;
   const spotlight = $('#tour-spotlight');
@@ -6462,7 +6667,51 @@ async function startTour() {
 
   tour.index = 0;
   tour.active = true;
+
+  sealThePage(true);
+
   await renderTourStep();
+}
+
+/**
+ * Puts the page out of reach while the tour is running, and back afterwards.
+ *
+ * Two mechanisms, because they stop different things.
+ *
+ * The blocker is a fixed element over the whole viewport that takes every
+ * press. It has to exist because the spotlight cannot do this job: the
+ * spotlight is one element with a 9999-pixel shadow, and it carries
+ * pointer-events: none so that it does not swallow presses meant for the
+ * control it is drawing a ring around. The result was that every press landed -
+ * on the highlighted control, and on everything under the dimming too. A tour
+ * explaining the stopwatch while somebody starts it is a tour narrating
+ * something that is no longer on the screen it describes.
+ *
+ * inert is the other half, and the blocker cannot do it: a blocker stops the
+ * mouse and nothing else, so Tab still walked into the page behind it and Enter
+ * still pressed what it found. inert takes a subtree out of the tab order, out
+ * of reach of assistive technology, and out of the way of clicks in one go.
+ *
+ * Applied to the body's children rather than to one wrapper, because there is
+ * no wrapper - the bar, the views, the banners and the overlays are siblings.
+ * Everything except the tour's own two elements, which have to keep working:
+ * they are how somebody gets out of this.
+ */
+function sealThePage(sealed) {
+  const spared = new Set(['tour-bubble', 'tour-spotlight', 'tour-blocker']);
+
+  for (const child of document.body.children) {
+    if (spared.has(child.id)) continue;
+
+    // Scripts and templates have nothing to make inert, and marking them would
+    // be noise in the markup for anybody reading it.
+    if (child.tagName === 'SCRIPT' || child.tagName === 'TEMPLATE') continue;
+
+    child.inert = sealed;
+  }
+
+  const blocker = $('#tour-blocker');
+  if (blocker) blocker.hidden = !sealed;
 }
 
 /**
@@ -6475,6 +6724,8 @@ async function endTour() {
   tour.active = false;
   $('#tour-spotlight').hidden = true;
   $('#tour-bubble').hidden = true;
+
+  sealThePage(false);
 
   await recordTourSeen();
 }
@@ -6533,6 +6784,18 @@ function wireTour() {
  */
 async function greetAfterSignIn() {
   await maybeWelcome();
+
+  // Says the question has been settled, whichever way it went.
+  //
+  // The same idea as dataset.loaded and for the same reader: something watching
+  // from outside, which cannot otherwise tell "the tour is not up yet" from
+  // "the tour is not coming". That distinction used to cost nothing, because
+  // the tour let the page be used underneath it. It does not any more - the
+  // page is sealed while it runs - so anything driving this application has to
+  // know whether to wait.
+  //
+  // Set even when nothing was offered: "no tour for this account" is an answer.
+  document.documentElement.dataset.greeted = 'yes';
 }
 
 /**
@@ -7360,22 +7623,44 @@ function renderUpdate(state) {
   line.textContent = t('update.found', '{0} is available. This installation runs {1}.')
     .replace('{0}', state.latest).replace('{1}', state.running);
 
-  // Newer, but not from here. The command is the honest answer rather than a
-  // button that would be undone.
-  if (!state.installable) {
-    hint.textContent = t('update.inContainer',
-      'This runs in a container, where replacing the binary would be undone by the '
-      + 'next recreate. Update the image instead: docker compose pull && docker compose up -d');
-
-    return;
-  }
-
-  hint.textContent = state.restartable
+  const promise = state.restartable
     ? t('update.willRestart', 'The download is checked against the release’s own checksum. '
       + 'The application restarts itself afterwards.')
     : t('update.willAskRestart', 'The download is checked against the release’s own '
       + 'checksum. Afterwards the application has to be restarted by hand — this '
       + 'platform cannot restart itself.');
+
+  // A container with an updater beside it takes the whole image, so there is
+  // nothing left behind to warn about - and what the button does is different
+  // enough to say plainly. It is not this application replacing its own binary;
+  // it is something else replacing this container.
+  if (state.byImage) {
+    hint.textContent = t('update.byImage',
+      'A new image is pulled and this container is recreated from it, then the '
+      + 'image it replaced is removed. The application is away for a few seconds '
+      + 'and comes back as the new version - this page waits for it.');
+
+    return;
+  }
+
+  // In a container, what installing leaves behind is worth saying beside it.
+  //
+  // This card used to refuse here: a command to type instead of a button, on the
+  // reasoning that a swapped binary is undone by the next recreate. That is true
+  // and it is not the whole truth - a restart of the same container keeps it,
+  // which is what the shipped deployment's restart policy does - so the update
+  // takes effect and holds until somebody runs the image again. Refusing left a
+  // container deployment with no way to update from the interface at all.
+  //
+  // The caveat is the honest half of that, and it is a caveat rather than a
+  // refusal: the version in the image is still the old one, so anybody who
+  // recreates this container gets it back.
+  hint.textContent = state.caveat === 'inContainer'
+    ? `${promise} ${t('update.inContainer',
+      'This runs in a container: the new version lives in this container and not '
+      + 'in the image it was made from, so recreating it brings the old one back. '
+      + 'Pull the image when convenient: docker compose pull && docker compose up -d')}`
+    : promise;
 }
 
 /**
@@ -7526,10 +7811,13 @@ async function loadRestart() {
   if (!banner) return;
 
   // The same permission the screen that causes this needs. The banner is on
-  // every screen now rather than on one card, so who may see it is decided here
-  // rather than inherited from where it sat.
+  // every screen rather than behind the tab the card sits on, so who may see it
+  // is decided here rather than inherited from where it sits.
   if (!can('settings:manage')) {
     banner.hidden = true;
+
+    const card = $('#restart-card');
+    if (card) card.hidden = true;
 
     return;
   }
@@ -7546,16 +7834,15 @@ async function loadRestart() {
   // which has no execve - whether anything was pending or not, on the reasoning
   // that this is a standing property of the installation and worth knowing. It
   // is worth knowing at the moment it matters, which is when you have just saved
-  // something that needs a restart. A warning that is always there is furniture:
-  // it is read once, and after that it is the thing you look past to reach the
-  // card below it, including on the day it finally has something to say.
+  // something that needs a restart. A notice that is always there is furniture:
+  // it is read once, and after that it is the thing you look past.
   //
-  // Nothing is lost by waiting. The banner explains the refusal in place of the
-  // button whenever it does appear, so the first save that needs a restart is
-  // still where somebody finds out they will have to do it by hand.
+  // Nothing is lost by waiting. The card says what restarting does here and why
+  // it cannot, whether or not anything is pending, and it is one press away
+  // whether or not this notice is up.
   banner.hidden = pending.length === 0;
 
-  const list = $('#restart-pending');
+  const list = $('#restart-card-pending');
   list.replaceChildren(...pending.map((change) => {
     const label = el('strong', { text: pendingLabel(change.setting) });
 
@@ -7576,30 +7863,34 @@ async function loadRestart() {
   // The hint promises a list of saved changes and the list follows it, so both go
   // when there are none.
   const waiting = pending.length > 0;
-  $('#restart-hint').hidden = !waiting;
-  $('#restart-pending').hidden = !waiting;
 
-  // What the button does, said before it is pressed rather than found out
-  // afterwards. Only where there is a button: with none, the line above already
-  // explains why, and a second sentence about how a restart would work would be
-  // explaining a thing that cannot happen.
-  const mode = $('#restart-mode');
+  // The hint promises a list of saved changes and the list follows it, so both
+  // go when there are none. On the card, which is where they live now: the
+  // banner is the notice and points at this.
+  $('#restart-card-hint').hidden = !waiting;
+  $('#restart-card-pending').hidden = !waiting;
 
-  if (mode) {
-    mode.textContent = state.mode === 'container'
-      ? t('restart.modeContainer',
-        'This installation runs in a container. The button stops it, and your '
-        + 'container manager starts a new one from the image - which it only does '
-        + 'if it was told to restart the container. The deployment shipped with '
-        + 'this application is.')
-      : t('restart.modeProcess',
-        'The application replaces itself, so it is never not running.');
+  // One line saying how many, because the banner no longer lists them.
+  const summary = $('#restart-summary');
 
-    mode.hidden = !state.supported || !waiting;
+  // The banner is only up while something is waiting, so this is always the
+  // count - there is no "nothing is waiting" wording, because nobody could read
+  // it.
+  if (summary) {
+    summary.textContent = fillIn(t('restart.summary',
+      '{0} saved setting(s) are waiting for a restart.'), [pending.length]);
   }
 
-  $('#restart-now').hidden = !state.supported;
-  $('#restart-unsupported').hidden = state.supported;
+  // What the button does, said before it is pressed rather than found out
+  // afterwards.
+  const description = state.mode === 'container'
+    ? t('restart.modeContainer',
+      'This installation runs in a container. The button stops it, and your '
+      + 'container manager starts a new one from the image - which it only does '
+      + 'if it was told to restart the container. The deployment shipped with '
+      + 'this application is.')
+    : t('restart.modeProcess',
+      'The application replaces itself, so it is never not running.');
 
   // Translated here rather than shown as it arrives: the server writes this in
   // English at the point the limitation is decided, which is right for a log and
@@ -7611,9 +7902,44 @@ async function loadRestart() {
   // Windows and throw away the diagnostic that named the real fault. The server's
   // own wording is the fallback, so a reason nobody has translated still says
   // something true.
-  $('#restart-unsupported').textContent = state.supported
+  const refusal = state.supported
     ? ''
     : t(`restart.unsupported.${state.reasonCode || 'other'}`, state.reason ?? '');
+
+  showRestartControls('#restart-card-mode', '#restart-card-now',
+    '#restart-card-unsupported', description, refusal, state.supported, true);
+
+  const card = $('#restart-card');
+  if (card) card.hidden = false;
+}
+
+/**
+ * Writes one set of restart controls: what it would do, the button, the reason
+ * there is none.
+ *
+ * Two sets exist and they show the same answer - the banner and the card - so
+ * this is called twice rather than written twice. The only thing that differs
+ * is when the description is worth showing: in the banner it belongs to the
+ * moment something is waiting, and in the card it is the whole point.
+ */
+function showRestartControls(modeSelector, buttonSelector, refusedSelector,
+  description, refusal, supported, describe) {
+  const mode = $(modeSelector);
+
+  if (mode) {
+    mode.textContent = description;
+    mode.hidden = !supported || !describe;
+  }
+
+  const button = $(buttonSelector);
+  if (button) button.hidden = !supported;
+
+  const refused = $(refusedSelector);
+
+  if (refused) {
+    refused.textContent = refusal;
+    refused.hidden = supported;
+  }
 }
 
 /** The identity of the running process, to tell a restart from a hiccup. */
@@ -7669,7 +7995,20 @@ async function waitForRestart(previousStartedAt) {
 }
 
 function wireRestart() {
-  const button = $('#restart-now');
+  wireRestartButton($('#restart-card-now'));
+
+  // The banner does not restart anything; it says one is waiting and takes you
+  // to where it happens. One button for one action, in the one place the detail
+  // is - which is what stops the notice and the control drifting apart.
+  $('#restart-open')?.addEventListener('click', () => {
+    switchView('admin');
+
+    const card = $('#restart-card');
+    if (card) card.scrollIntoView({ block: 'center' });
+  });
+}
+
+function wireRestartButton(button) {
   if (!button) return;
 
   button.addEventListener('click', async () => {
@@ -9375,6 +9714,49 @@ function wireTelemetry() {
 
 async function loadTelemetry() {
   fillTelemetryForm(await api('/settings/telemetry'));
+  showTracingHint();
+}
+
+/**
+ * Says where the traces are, on this installation.
+ *
+ * The sentence used to name http://127.0.0.1:16686, which is right on exactly
+ * one machine: the server itself. Read from anywhere else - and this screen is
+ * read from somewhere else, or nobody would be reading it in a browser - it
+ * names the reader's own machine, where nothing is listening.
+ *
+ * So it names the host this page was reached on. The port is the trace
+ * browser's own and does not follow the application's: they are two services,
+ * and 8443 belongs to this one.
+ *
+ * The second line is there because the first may well not answer. The overlay
+ * this repository ships binds the trace browser to the server's loopback on
+ * purpose - it asks nobody to sign in, and traces carry request paths and the
+ * identifiers in them - so on an unchanged deployment the way in is a tunnel,
+ * and the command for it names the same host rather than leaving it as <server>.
+ */
+function showTracingHint() {
+  const hint = $('#tel-tracing-hint');
+  if (!hint) return;
+
+  const host = window.location.hostname;
+
+  hint.textContent = '';
+
+  hint.append(t('tel.tracingHint',
+    'Running deploy/compose.tracing.yaml beside the application? Then it is '
+    + 'exporter OTLP and collector jaeger:4317, and the traces are at {0}.')
+    .replace('{0}', `http://${host}:16686`));
+
+  // Its own line: the first sentence is where to look, and this one is what to
+  // do when looking there gives nothing. Run together they read as one
+  // instruction that contradicts itself.
+  hint.append(el('br'));
+
+  hint.append(t('tel.tracingLoopback',
+    'If that address does not answer, the shipped file publishes the trace '
+    + 'browser on the server\'s loopback only - then the way in is {0}.')
+    .replace('{0}', `ssh -L 16686:127.0.0.1:16686 ${host}`));
 }
 
 /** Both cards, because saving one of these changes what the other has to say. */
@@ -11016,7 +11398,6 @@ async function init() {
     wireTelemetry();
     wireRestart();
     wireUpdate();
-    wireReleaseBanner();
     wireCropChooser();
 
     $('#branding-language')?.addEventListener('change', (e) => {

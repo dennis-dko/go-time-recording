@@ -173,19 +173,29 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 		t.Error("the header shows a mark on an installation that has configured none")
 	}
 
-	// The application's own mark is there, though - in the logo slot, standing in
-	// for the one this installation has not uploaded. It is what the browser tab
-	// shows too, so the two read as one program.
+	// Something stands in the slot all the same: the installation's initial,
+	// taken from the title it was given. The corner was empty until somebody
+	// configured a logo, which is a fresh installation saying nothing about
+	// itself.
 	if !p.visible("#brand-mark") {
-		t.Error("the header has no mark at all, so nothing on the screen says " +
-			"which application this is")
+		t.Error("the logo slot is empty on an installation that has uploaded none, " +
+			"so the corner says nothing about which installation this is")
 	}
 
-	// And only there. The bar's three columns mean different things - the
-	// installation's identity at the left end, the application's in the middle -
-	// so the same mark in both at once would blur the distinction they draw.
-	if p.visible(".app-mark") {
-		t.Error("the mark is beside the title as well as in the logo slot")
+	if letter := p.text("#brand-initial"); letter == "" {
+		t.Error("the placeholder mark carries no letter, so it is an empty chip")
+	}
+
+	// And the application's own mark is beside the title, where it belongs.
+	//
+	// The two used to share one drawing and show one of it, so a fresh
+	// installation wore the application's mark in the logo slot and had a bare
+	// title in the middle - the title losing its mark to a slot that is not
+	// about the application at all. Both are filled now, and they say different
+	// things: the left one is this installation, the middle one is this program.
+	if !p.visible(".app-mark") {
+		t.Error("the title has no mark beside it, so nothing in the middle of the " +
+			"bar says which application this is")
 	}
 
 	// Drawn, not typed. The house character it replaced is a font glyph: a
@@ -218,17 +228,18 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 		t.Error("the header's mark is hidden after a logo was configured")
 	}
 
-	// And the slot being taken is what sends the application's own mark back
-	// beside the title, where it says which program this is without claiming to
-	// be the installation's logo.
+	// The mark beside the title is untouched by any of this: it is the
+	// application, and the application is there whatever the installation has
+	// uploaded.
 	if !p.visible(".app-mark") {
 		t.Error("nothing on the bar says which application this is once the logo " +
 			"slot belongs to the installation")
 	}
 
+	// The placeholder steps aside, though - that is what it is for.
 	if p.visible("#brand-mark") {
-		t.Error("the shipped mark is still in the logo slot beside the logo that " +
-			"replaced it")
+		t.Error("the placeholder initial is still in the logo slot beside the logo " +
+			"that replaced it")
 	}
 
 	// The logo at the left end and the name in the middle, which is the way round
@@ -1155,17 +1166,27 @@ func TestAnInstallationWithNoLogoStillHasAMark(t *testing.T) {
 
 	p.run("how the mark is drawn", chromedp.Evaluate(`
 		JSON.stringify({
-			slot: document.querySelector('#brand-mark use')?.getAttribute('href') ?? '',
 			title: document.querySelector('.app-mark use')?.getAttribute('href') ?? '',
 			symbols: document.querySelectorAll('symbol#icon-mark').length,
+			initial: document.querySelector('#brand-initial')?.textContent ?? '',
 		})`, &uses))
 
-	if !strings.Contains(uses, `"slot":"#icon-mark"`) || !strings.Contains(uses, `"title":"#icon-mark"`) {
+	// The application's mark is referenced from the one definition of it. It is
+	// used beside the title and by nothing else now, which is one use - but a
+	// drawing written out where it is used is a drawing that can be changed in
+	// one place and not the other, and this is the check that noticed.
+	if !strings.Contains(uses, `"title":"#icon-mark"`) {
 		t.Errorf("the mark is drawn out where it is used rather than referenced: %s", uses)
 	}
 
 	if !strings.Contains(uses, `"symbols":1`) {
 		t.Errorf("the mark is defined more or less than once: %s", uses)
+	}
+
+	// The placeholder is not that drawing. It is the installation's initial, and
+	// it is the letter that makes it this installation's rather than anyone's.
+	if strings.Contains(uses, `"initial":""`) {
+		t.Errorf("the logo slot holds no initial: %s", uses)
 	}
 
 	// A logo of its own. One pixel is enough: what is being asked is which of the

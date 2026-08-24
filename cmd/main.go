@@ -31,6 +31,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/announce"
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/directory"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
@@ -753,7 +754,8 @@ func main() {
 	}
 
 	v1.RegisterRoutes(app, v1.Handlers{
-		Auth:       rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone),
+		Auth: rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone).
+			WithMaintenance(maintenanceState),
 		Users:      rest.NewUserHandler(users, userDomain, authorizer, auth, instanceTimezone),
 		Roles:      rest.NewRoleHandler(roles, authorizer, auth),
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
@@ -765,7 +767,11 @@ func main() {
 		Logs:       rest.NewLogHandler(logs, authorizer),
 		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil, fileTelemetry),
 		Update: rest.NewUpdateHandler(authorizer,
-			selfupdate.New(cfg.UpdateFeed, cfg.UpdateToken), hub, version, cfg.UpdateCheck),
+			selfupdate.New(cfg.UpdateFeed, cfg.UpdateToken), hub, version, cfg.UpdateCheck).
+			// Present only where the deployment added the overlay that runs it;
+			// see deploy/compose.update.yaml for what that grants and why the
+			// application is not the thing granted it.
+			WithImageUpdater(imageupdate.New(os.Getenv("GTR_UPDATE_REQUESTS"))),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),
@@ -778,6 +784,7 @@ func main() {
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
 				return ldapClient.TestConnection(ctx, config)
 			}).WithMaintenance(maintenanceState).
+			WithAnnouncements(hub).
 			WithLiveLogLevel(applyLogLevel, logs.Level).
 			WithRunningConnection(ds),
 	})
