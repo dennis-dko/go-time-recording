@@ -7368,6 +7368,39 @@ function renderUpdate(state) {
       + 'platform cannot restart itself.');
 }
 
+/**
+ * Waits out a process that is replacing itself, and says how it went.
+ *
+ * The restart button and the update button both end here, because both leave
+ * the application starting again and both have to tell somebody whether it came
+ * back. Written out twice, the two endings had already drifted: the same
+ * translation key was given two different English fallbacks, one with a hyphen
+ * and one with an em dash, so which sentence an untranslated screen showed
+ * depended on which button had been pressed.
+ *
+ * The screen is refreshed before the good news rather than after it: refreshAll
+ * redraws every card from the process that has just come back, and a message
+ * put up first is a message competing with that.
+ */
+async function settleAfterRestart(previous, done) {
+  const overlay = $('#restart-overlay');
+
+  if (await waitForRestart(previous)) {
+    overlay.hidden = true;
+    await refreshAll();
+    toast(done, 'ok');
+
+    return;
+  }
+
+  // Not an error as such: it may still be coming back. Saying that is more use
+  // than a spinner that never stops.
+  overlay.hidden = true;
+  toast(t('restart.slow',
+    'The application has not answered yet. It may still be starting - please '
+    + 'reload the page in a moment.'), 'error');
+}
+
 function wireUpdate() {
   const button = $('#update-now');
   if (!button) return;
@@ -7435,24 +7468,11 @@ function wireUpdate() {
       return;
     }
 
-    if (await waitForRestart(previous)) {
-      overlay.hidden = true;
-
-      // refreshAll rather than location.reload(): it reloads every screen from
-      // the new process and leaves the reader where they were, which a reload
-      // would not - and the version in the footer is part of what it refreshes,
-      // so the proof that it worked is on screen.
-      await refreshAll();
-
-      toast(t('update.done', 'The new version is running.'), 'ok');
-
-      return;
-    }
-
-    overlay.hidden = true;
-    toast(t('restart.slow',
-      'The application is not answering yet. It may still be starting - please '
-      + 'reload the page in a moment.'), 'error');
+    // refreshAll rather than location.reload(): it reloads every screen from the
+    // new process and leaves the reader where they were, which a reload would
+    // not - and the version in the footer is part of what it refreshes, so the
+    // proof that it worked is on screen.
+    await settleAfterRestart(previous, t('update.done', 'The new version is running.'));
   });
 }
 
@@ -7668,20 +7688,8 @@ function wireRestart() {
       return;
     }
 
-    if (await waitForRestart(previous)) {
-      overlay.hidden = true;
-      toast(t('restart.done', 'The application has restarted and the settings are in force.'), 'ok');
-      await refreshAll();
-
-      return;
-    }
-
-    // Not an error as such: it may still be coming back. Saying that is more
-    // use than a spinner that never stops.
-    overlay.hidden = true;
-    toast(t('restart.slow',
-      'The application has not answered yet. It may still be starting — reload the page in a moment.'),
-    'error');
+    await settleAfterRestart(previous,
+      t('restart.done', 'The application has restarted and the settings are in force.'));
   });
 }
 
@@ -9894,14 +9902,11 @@ function fillMyTimezone() {
   const select = $('#my-timezone');
   const inherit = `${t('tz.inherit', 'Follow the instance setting')}`;
 
-  // The instance's zone, not the one in effect for this account.
-  //
-  // They are the same until somebody picks a zone of their own, and then they
-  // are not: what is in effect is the personal choice. Naming that in this
-  // option made it read "follow the instance setting (Africa/Abidjan)" right
-  // after Africa/Abidjan had been chosen by hand - an offer to change nothing,
-  // and no way to find out what stopping would actually give you.
-  const instance = me.user?.instanceTimezone ?? me.user?.effectiveTimezone ?? 'UTC';
+  // Naming the effective zone in this option made it read "follow the instance
+  // setting (Africa/Abidjan)" right after Africa/Abidjan had been chosen by
+  // hand - an offer to change nothing, and no way to find out what stopping
+  // would actually give you. See instanceZone.
+  const instance = instanceZone();
 
   fillTimezoneSelect(select, me.user?.timezone ?? '', `${inherit} (${instance})`);
 
@@ -9910,40 +9915,51 @@ function fillMyTimezone() {
   showTimeIn(select, $('#my-timezone-now'), instance);
 }
 
+/**
+ * The zone "follow the instance setting" would actually give you.
+ *
+ * Not the zone in effect for this account: they are the same until somebody
+ * picks one of their own, and then they are not. Written here rather than at
+ * each of the two places that need it, because it is one rule about what an
+ * option means and a rule in two places is a rule that can be changed in one.
+ */
+function instanceZone() {
+  return me.user?.instanceTimezone ?? me.user?.effectiveTimezone ?? 'UTC';
+}
+
+/**
+ * Wires one zone picker: the clock beside it follows it, and the form saves it.
+ *
+ * Both pickers on this screen do exactly this and differ in three things - the
+ * controls, where the choice is saved, and which zone the clock falls back to
+ * when nothing is chosen. Those are the arguments.
+ *
+ * `fallback` is a function rather than a value because the personal picker's
+ * answer depends on the account, which arrives after this runs.
+ */
+function wireTimezonePicker(select, clock, form, endpoint, fallback) {
+  // Picking the "follow the instance setting" line has to show the time it
+  // would actually be, not the time in the zone being left.
+  select.addEventListener('change', () => showTimeIn(select, clock, fallback()));
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveForm(e.target,
+      () => api(endpoint, {
+        method: 'PUT', body: JSON.stringify({ timezone: select.value }),
+      }),
+      t('tz.saved', 'Timezone saved'),
+      refreshAll);
+  });
+}
+
 function wireTimezones() {
-  const mine = $('#my-timezone');
-  const myNow = $('#my-timezone-now');
+  wireTimezonePicker($('#my-timezone'), $('#my-timezone-now'), $('#form-my-timezone'),
+    '/me/timezone', instanceZone);
 
-  // The instance's zone as the fallback, for the same reason as in
-  // fillMyTimezone: picking the "follow the instance setting" line has to show
-  // the time it would actually be, not the time in the zone being left.
-  mine.addEventListener('change', () => showTimeIn(mine, myNow,
-    me.user?.instanceTimezone ?? me.user?.effectiveTimezone ?? 'UTC'));
-
-  $('#form-my-timezone').addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveForm(e.target,
-      () => api('/me/timezone', {
-        method: 'PUT', body: JSON.stringify({ timezone: mine.value }),
-      }),
-      t('tz.saved', 'Timezone saved'),
-      refreshAll);
-  });
-
-  const instance = $('#instance-timezone');
-  const instanceNow = $('#instance-timezone-now');
-
-  instance.addEventListener('change', () => showTimeIn(instance, instanceNow, 'UTC'));
-
-  $('#form-timezone').addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveForm(e.target,
-      () => api('/settings/timezone', {
-        method: 'PUT', body: JSON.stringify({ timezone: instance.value }),
-      }),
-      t('tz.saved', 'Timezone saved'),
-      refreshAll);
-  });
+  // UTC, because there is nothing above the instance to inherit from.
+  wireTimezonePicker($('#instance-timezone'), $('#instance-timezone-now'), $('#form-timezone'),
+    '/settings/timezone', () => 'UTC');
 }
 
 // ------------------------------------------------------------------- theme

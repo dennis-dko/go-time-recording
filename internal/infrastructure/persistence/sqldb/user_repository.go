@@ -2,8 +2,6 @@ package sqldb
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -83,12 +81,8 @@ func (r *UserRepository) GetByID(ctx context.Context, id uint) (*model.User, err
 	row := r.db.QueryRowContext(ctx, r.rebind(userSelect+" WHERE u.id = ?"), id)
 
 	user, err := r.scanUser(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("user", strconv.FormatUint(uint64(id), 10))
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "user", strconv.FormatUint(uint64(id), 10)); problem != nil {
+		return nil, problem
 	}
 
 	return user, nil
@@ -104,12 +98,8 @@ func (r *UserRepository) GetByExternalID(ctx context.Context, externalID string)
 	row := r.db.QueryRowContext(ctx, r.rebind(userSelect+" WHERE u.external_id = ?"), externalID)
 
 	user, err := r.scanUser(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("user", externalID)
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "user", externalID); problem != nil {
+		return nil, problem
 	}
 
 	return user, nil
@@ -120,12 +110,8 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.U
 	row := r.db.QueryRowContext(ctx, r.rebind(userSelect+" WHERE u.email = ?"), strings.ToLower(email))
 
 	user, err := r.scanUser(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("user", email)
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "user", email); problem != nil {
+		return nil, problem
 	}
 
 	return user, nil

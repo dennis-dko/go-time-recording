@@ -2,8 +2,6 @@ package sqldb
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"strconv"
 	"time"
 
@@ -86,12 +84,8 @@ func (r *PasskeyRepository) GetByCredentialID(
 		r.rebind("SELECT "+passkeyColumns+" FROM passkeys WHERE credential_id = ?"), credentialID)
 
 	passkey, err := scanPasskey(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("passkey", "credential")
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "passkey", "credential"); problem != nil {
+		return nil, problem
 	}
 
 	return passkey, nil

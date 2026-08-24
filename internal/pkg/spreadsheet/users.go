@@ -1,7 +1,6 @@
 package spreadsheet
 
 import (
-	"errors"
 	"io"
 	"strings"
 )
@@ -61,32 +60,7 @@ func WriteUsers(language string, rows []UserRow) ([]byte, error) {
 
 // ReadUsers parses a workbook of people.
 func ReadUsers(r io.Reader) ([]UserRow, []RowError, error) {
-	raw, err := read(r, users)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	rows := make([]UserRow, 0, len(raw))
-	problems := make([]RowError, 0)
-
-	for i, cells := range raw {
-		number := i + 2
-
-		row, rowErr := parseUserRow(number, cells)
-		if rowErr != nil {
-			if errors.Is(rowErr, errBlankRow) {
-				continue
-			}
-
-			problems = append(problems, rowErrorFor(number, rowErr))
-
-			continue
-		}
-
-		rows = append(rows, row)
-	}
-
-	return rows, problems, nil
+	return readRows(r, users, parseUserRow)
 }
 
 func parseUserRow(number int, cells []string) (UserRow, error) {

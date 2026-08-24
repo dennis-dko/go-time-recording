@@ -9,11 +9,12 @@ run:
   # checked.
   # firefox is here for the same reason as the other two, and was missed when
   # they were added: test/firefox is another few hundred lines that decide
-  # whether a release is trustworthy, and the linter could not see them.
+  # whether a release is trustworthy, and the linter could not see them. It was
+  # then listed twice, which is harmless and still says the wrong thing about
+  # how carefully this list is read.
   build-tags:
     - integration
     - browser
-    - firefox
     - firefox
 
 linters:

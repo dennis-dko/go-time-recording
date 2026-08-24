@@ -2,8 +2,6 @@ package sqldb
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"strconv"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -74,12 +72,8 @@ func (r *RoleRepository) getBy(ctx context.Context, where string, arg any, label
 	var role model.Role
 
 	err := row.Scan(&role.ID, &role.Name, &role.Description, &role.IsSystem)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("role", label)
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "role", label); problem != nil {
+		return nil, problem
 	}
 
 	role.Permissions, err = r.permissionsOf(ctx, role.ID)

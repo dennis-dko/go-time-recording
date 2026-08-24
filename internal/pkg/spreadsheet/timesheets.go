@@ -12,7 +12,6 @@
 package spreadsheet
 
 import (
-	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -90,33 +89,7 @@ func WriteIn(language string, rows []Row) ([]byte, error) {
 // pass: the caller decides whether a file with problems in it is worth writing, and
 // cannot decide that from the first failure alone.
 func Read(r io.Reader) ([]Row, []RowError, error) {
-	raw, err := read(r, timesheets)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	rows := make([]Row, 0, len(raw))
-	problems := make([]RowError, 0)
-
-	for i, cells := range raw {
-		// The heading was row 1 and has been dropped, so the first data row is 2.
-		number := i + 2
-
-		row, rowErr := parseRow(number, cells)
-		if rowErr != nil {
-			if errors.Is(rowErr, errBlankRow) {
-				continue
-			}
-
-			problems = append(problems, rowErrorFor(number, rowErr))
-
-			continue
-		}
-
-		rows = append(rows, row)
-	}
-
-	return rows, problems, nil
+	return readRows(r, timesheets, parseRow)
 }
 
 func parseRow(number int, cells []string) (Row, error) {

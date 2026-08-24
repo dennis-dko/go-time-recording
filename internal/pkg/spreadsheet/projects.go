@@ -1,7 +1,6 @@
 package spreadsheet
 
 import (
-	"errors"
 	"io"
 	"time"
 )
@@ -67,32 +66,7 @@ func WriteProjects(language string, rows []ProjectRow) ([]byte, error) {
 
 // ReadProjects parses a workbook of projects.
 func ReadProjects(r io.Reader) ([]ProjectRow, []RowError, error) {
-	raw, err := read(r, projects)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	rows := make([]ProjectRow, 0, len(raw))
-	problems := make([]RowError, 0)
-
-	for i, cells := range raw {
-		number := i + 2
-
-		row, rowErr := parseProjectRow(number, cells)
-		if rowErr != nil {
-			if errors.Is(rowErr, errBlankRow) {
-				continue
-			}
-
-			problems = append(problems, rowErrorFor(number, rowErr))
-
-			continue
-		}
-
-		rows = append(rows, row)
-	}
-
-	return rows, problems, nil
+	return readRows(r, projects, parseProjectRow)
 }
 
 func parseProjectRow(number int, cells []string) (ProjectRow, error) {

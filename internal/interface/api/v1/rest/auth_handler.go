@@ -148,22 +148,41 @@ func (h *AuthHandler) BeginTOTP(c *gofr.Context) (any, error) {
 	return response, nil
 }
 
-// ConfirmTOTP handles PUT /api/v1/me/totp, activating the second factor.
-func (h *AuthHandler) ConfirmTOTP(c *gofr.Context) (any, error) {
+// askingWith reads the account behind the request and fills req from the body,
+// which is how every personal setting under /me begins.
+//
+// It was those six lines five times over, character for character - which is
+// the state repeated code is in right before it stops being identical, and the
+// point at which a fix reaches one copy and not the other four.
+//
+// The order is the reason this is a function rather than a note asking for it:
+// who is asking is settled before the body is read, so a request from nobody is
+// refused without decoding anything it sent.
+func (h *AuthHandler) askingWith(c *gofr.Context, req any) (uint, error) {
 	principal, err := h.authz.Principal(c)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
+	if err := bind(c, req); err != nil {
+		return 0, toHTTPError(err)
+	}
+
+	return principal.User.ID, nil
+}
+
+// ConfirmTOTP handles PUT /api/v1/me/totp, activating the second factor.
+func (h *AuthHandler) ConfirmTOTP(c *gofr.Context) (any, error) {
 	var req struct {
 		Code string `json:"code"`
 	}
 
-	if err := bind(c, &req); err != nil {
-		return nil, toHTTPError(err)
+	id, err := h.askingWith(c, &req)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := h.sessions.ConfirmTOTP(c, principal.User.ID, req.Code); err != nil {
+	if err := h.sessions.ConfirmTOTP(c, id, req.Code); err != nil {
 		return nil, toHTTPError(err)
 	}
 
@@ -193,20 +212,16 @@ func (h *AuthHandler) DisableTOTP(c *gofr.Context) (any, error) {
 
 // SetLanguage handles PUT /api/v1/me/language.
 func (h *AuthHandler) SetLanguage(c *gofr.Context) (any, error) {
-	principal, err := h.authz.Principal(c)
-	if err != nil {
-		return nil, err
-	}
-
 	var req struct {
 		Language string `json:"language"`
 	}
 
-	if err := bind(c, &req); err != nil {
-		return nil, toHTTPError(err)
+	id, err := h.askingWith(c, &req)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := h.sessions.SetLanguage(c, principal.User.ID, req.Language); err != nil {
+	if err := h.sessions.SetLanguage(c, id, req.Language); err != nil {
 		return nil, toHTTPError(err)
 	}
 
@@ -218,20 +233,16 @@ func (h *AuthHandler) SetLanguage(c *gofr.Context) (any, error) {
 // An empty value is meaningful and not an omission: it clears the choice so the
 // screen follows the time of day again.
 func (h *AuthHandler) SetTheme(c *gofr.Context) (any, error) {
-	principal, err := h.authz.Principal(c)
-	if err != nil {
-		return nil, err
-	}
-
 	var req struct {
 		Theme string `json:"theme"`
 	}
 
-	if err := bind(c, &req); err != nil {
-		return nil, toHTTPError(err)
+	id, err := h.askingWith(c, &req)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := h.sessions.SetTheme(c, principal.User.ID, req.Theme); err != nil {
+	if err := h.sessions.SetTheme(c, id, req.Theme); err != nil {
 		return nil, toHTTPError(err)
 	}
 
@@ -243,20 +254,16 @@ func (h *AuthHandler) SetTheme(c *gofr.Context) (any, error) {
 // An empty value is meaningful and not an omission: it clears the personal
 // setting so the account follows the instance-wide zone again.
 func (h *AuthHandler) SetTimezone(c *gofr.Context) (any, error) {
-	principal, err := h.authz.Principal(c)
-	if err != nil {
-		return nil, err
-	}
-
 	var req struct {
 		Timezone string `json:"timezone"`
 	}
 
-	if err := bind(c, &req); err != nil {
-		return nil, toHTTPError(err)
+	id, err := h.askingWith(c, &req)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := h.sessions.SetTimezone(c, principal.User.ID, req.Timezone); err != nil {
+	if err := h.sessions.SetTimezone(c, id, req.Timezone); err != nil {
 		return nil, toHTTPError(err)
 	}
 
@@ -265,20 +272,16 @@ func (h *AuthHandler) SetTimezone(c *gofr.Context) (any, error) {
 
 // SetTourSeen handles PUT /api/v1/me/tour.
 func (h *AuthHandler) SetTourSeen(c *gofr.Context) (any, error) {
-	principal, err := h.authz.Principal(c)
-	if err != nil {
-		return nil, err
-	}
-
 	var req struct {
 		Seen bool `json:"seen"`
 	}
 
-	if err := bind(c, &req); err != nil {
-		return nil, toHTTPError(err)
+	id, err := h.askingWith(c, &req)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := h.sessions.SetTourSeen(c, principal.User.ID, req.Seen); err != nil {
+	if err := h.sessions.SetTourSeen(c, id, req.Seen); err != nil {
 		return nil, toHTTPError(err)
 	}
 

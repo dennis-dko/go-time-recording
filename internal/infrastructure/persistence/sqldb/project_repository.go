@@ -2,8 +2,6 @@ package sqldb
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"strconv"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -45,12 +43,8 @@ func (r *ProjectRepository) GetByID(ctx context.Context, id uint) (*model.Projec
 	row := r.db.QueryRowContext(ctx, r.rebind("SELECT "+projectColumns+" FROM projects WHERE id = ?"), id)
 
 	project, err := scanProject(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, apperror.NotFound("project", strconv.FormatUint(uint64(id), 10))
-	}
-
-	if err != nil {
-		return nil, apperror.Internal(err)
+	if problem := problemReading(err, "project", strconv.FormatUint(uint64(id), 10)); problem != nil {
+		return nil, problem
 	}
 
 	return project, nil
