@@ -45,6 +45,18 @@ const (
 	// raised by Installing would otherwise stay up for ever, promising a restart
 	// that is not coming.
 	Cancelled Kind = "update.cancelled"
+
+	// Maintenance: the installation has been taken out of service, or put back
+	// into it. Everybody who may not be here while it lasts has to go back to
+	// the sign-in screen, and they have to go now - the alternative is a screen
+	// that looks like it is working while every request on it is refused.
+	//
+	// It carries nothing. What the state actually is, and what the
+	// administrator wrote about it, is read from /maintenance - one of the few
+	// endpoints maintenance mode deliberately keeps answering, which is what
+	// lets a turned-away browser ask at all. An announcement that carried the
+	// message would be a second copy of it, arriving by a different route.
+	Maintenance Kind = "instance.maintenance"
 )
 
 // Announcement is one thing worth interrupting somebody for.

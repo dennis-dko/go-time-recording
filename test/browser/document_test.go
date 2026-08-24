@@ -149,8 +149,16 @@ func TestTheDocumentTakesTheChartThatWasChosen(t *testing.T) {
 }
 
 // chartPicture takes the report chart's picture, the way the export does.
+//
+// Waits for a drawing to be there first. Changing the shape empties the
+// container and fills it again, so a picture taken the instant after the press
+// is a picture of nothing - which this reported as "one of the two shapes
+// produced no picture", on a run where the machine was busy enough for the gap
+// to be visible.
 func (p *page) chartPicture() string {
 	p.t.Helper()
+
+	p.run("wait for a drawing", chromedp.WaitReady("#report-chart svg", chromedp.ByQuery))
 
 	var picture string
 
