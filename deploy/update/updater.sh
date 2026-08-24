@@ -50,11 +50,27 @@ finish() {
 }
 
 update() {
-    # The image the running container was made from, before anything changes it.
-    # Kept so the one it replaces can be removed by id afterwards - `image prune`
-    # would take every dangling image on the host, including ones belonging to
-    # somebody else's deployment.
-    old=$(docker compose images --quiet "$SERVICE" 2>/dev/null | head -n 1 || true)
+    # What is running, and what the tag it came from points at.
+    #
+    # Two different questions, and the first version of this asked the first one
+    # twice. `docker compose images` reports the image of the *container* - which
+    # a pull does not change, because the container goes on running what it
+    # started with. So "did the pull find anything" was answered by comparing the
+    # running image against itself, which is always "no", and this would have
+    # updated nothing, ever. It reported "already on the newest image" on an
+    # installation a day behind, which is the most convincing way to be wrong.
+    #
+    # The container's own record has both: .Image is what it runs, .Config.Image
+    # is the reference it was created from.
+    container=$(docker compose ps -q "$SERVICE" 2>/dev/null | head -n 1 || true)
+
+    old=""
+    reference=""
+
+    if [ -n "$container" ]; then
+        old=$(docker inspect -f '{{.Image}}' "$container" 2>/dev/null || true)
+        reference=$(docker inspect -f '{{.Config.Image}}' "$container" 2>/dev/null || true)
+    fi
 
     log "pulling"
 
@@ -65,7 +81,14 @@ update() {
         return
     fi
 
-    new=$(docker compose images --quiet "$SERVICE" 2>/dev/null | head -n 1 || true)
+    # What the tag points at now. Where there is no container to ask - the
+    # application is stopped - there is nothing to compare and `up` is the right
+    # answer anyway, so this stays empty and the recreate goes ahead.
+    new=""
+
+    if [ -n "$reference" ]; then
+        new=$(docker image inspect -f '{{.Id}}' "$reference" 2>/dev/null || true)
+    fi
 
     # Nothing was published since the last time. Said rather than done: a
     # recreate that changes nothing still interrupts everybody using it.
@@ -103,6 +126,86 @@ update() {
     log "done"
     finish "ok"
 }
+
+# The project has to be at the same path here as it is on the host.
+#
+# Everything this container does with compose ends at the daemon, and the daemon
+# is outside. A compose file's bind mounts are written relative to the project
+# directory and turned into absolute paths before they are sent - so if the
+# project is at /project in here and at /home/you/app out there, every bind the
+# application has is computed as a path the host does not have. Docker's answer
+# to a bind source that does not exist is to create an empty directory and mount
+# it, which means the application comes up with empty mounts and says nothing.
+#
+# That is not a theory. The first deployment of this recreated an application
+# whose certificates are a bind mount, and it came back serving plain HTTP,
+# reporting itself healthy, with an empty /certs.
+#
+# So it is checked, from the one place that knows both answers: this container's
+# own record at the daemon, which lists what each mount is bound from. If the
+# source and the destination of the project mount are not the same path, nothing
+# here is safe to do.
+verify_paths() {
+    # Docker sets HOSTNAME to the container's id, which is what the daemon
+    # answers to. A deployment that sets a hostname of its own breaks that, and
+    # the answer to an unidentifiable container is to say so and carry on rather
+    # than to refuse: this guards against one specific mistake, and a guard that
+    # stops working installations is worse than the mistake it prevents.
+    own="${HOSTNAME:-$(cat /etc/hostname 2>/dev/null || true)}"
+    here=$(pwd)
+
+    if [ -z "$own" ]; then
+        log "cannot identify this container; the project path is unchecked"
+        return 0
+    fi
+
+    template="{{range .Mounts}}{{if eq .Destination \"$here\"}}{{.Source}}{{end}}{{end}}"
+    there=$(docker inspect -f "$template" "$own" 2>/dev/null || true)
+
+    if [ -z "$there" ]; then
+        log "cannot read this container's mounts; the project path is unchecked"
+        return 0
+    fi
+
+    if [ "$there" != "$here" ]; then
+        log "the project is $there on the host and $here in here."
+        log "every bind mount the application has would be computed against a path"
+        log "the host does not have, and Docker would create it empty - an"
+        log "application recreated that way comes up with nothing mounted."
+        log "set GTR_PROJECT_DIR to $there and start this again."
+        return 1
+    fi
+
+    log "the project is at $here on both sides"
+    return 0
+}
+
+if ! verify_paths; then
+    log "refusing to run"
+
+    # Slowly, rather than in a restart loop that fills the log faster than
+    # anybody can read the sentence explaining what to fix.
+    while true; do sleep 3600; done
+fi
+
+# The shared directory has to be writable by the application, which is not root.
+#
+# A named volume is created owned by root, and the application runs as an
+# unprivileged user - so without this it can see the directory, fail to write
+# into it, and correctly report that no updater is available. The button would
+# simply never appear, which is a hard thing to work out from the outside.
+#
+# Done here rather than in the application's image: this is the updater granting
+# the application the ability to ask it for something, so it belongs on this
+# side of the arrangement. It also fixes a volume that already exists, which a
+# line in a Dockerfile could not.
+#
+# The application checks whether it can write on every look rather than once at
+# start-up, so a container that came up before this ran finds the button a
+# moment later without being restarted.
+mkdir -p "$REQUESTS"
+chown "${GTR_UPDATE_OWNER:-10001}" "$REQUESTS" 2>/dev/null ||
+    log "could not give $REQUESTS to uid ${GTR_UPDATE_OWNER:-10001}; the application may not be able to ask"
 
 log "watching $REQUESTS for $SERVICE, every ${POLL}s"
 

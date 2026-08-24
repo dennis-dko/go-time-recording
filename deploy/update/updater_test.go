@@ -20,14 +20,19 @@ import (
 	"time"
 )
 
-// stub writes a fake docker command that answers the way the script expects,
-// and records every call.
+// stub writes a fake docker command that answers the way Docker does, and
+// records every call.
 //
-// Two image ids so "something newer was published" and "nothing was" are
-// different runs: the script compares what the service was built from before
-// and after the pull, and answering the same thing twice is how it recognises
-// an installation that is already current.
-func stub(t *testing.T, before, after string, failOn string) (dir, calls string) {
+// The distinction it has to model is the one that hid a defect for a while: a
+// container goes on running the image it started with, so what the *container*
+// reports never changes when something is pulled. Only the tag moves. A stub
+// that answered the same thing to both questions let a script through that
+// compared the running image with itself and concluded, always, that there was
+// nothing newer.
+//
+//	docker inspect -f {{.Image}}         what the container runs - fixed
+//	docker image inspect -f {{.Id}} REF  what the tag points at - moves on a pull
+func stub(t *testing.T, running, published string, failOn string) (dir, calls string) {
 	t.Helper()
 
 	dir = t.TempDir()
@@ -46,11 +51,37 @@ case "$*" in
 esac
 
 case "$*" in
-  "compose images --quiet "*)
-    if [ -f "` + dir + `/pulled" ]; then
-      echo "` + after + `"
+  "inspect -f {{range .Mounts}}"*)
+    # Where the host has the project. The script compares this against its own
+    # working directory: they have to be the same path, or every bind mount the
+    # compose files declare is computed against somewhere the host has not got.
+    #
+    # Answered with this stub's own directory unless a test says otherwise. The
+    # stub is a child of the script, so that is the same path the script sees -
+    # which matters on a machine where the shell's idea of a path and the test
+    # runner's are written differently.
+    if [ -f "` + dir + `/host-project" ]; then
+      cat "` + dir + `/host-project"
     else
-      echo "` + before + `"
+      pwd
+    fi
+    ;;
+  "compose ps -q "*)
+    echo "container-id"
+    ;;
+  "inspect -f {{.Image}} "*)
+    # What the container runs. A pull does not move this.
+    echo "` + running + `"
+    ;;
+  "inspect -f {{.Config.Image}} "*)
+    echo "registry.example/app:latest"
+    ;;
+  "image inspect -f {{.Id}} "*)
+    # What the tag points at, which is only different once something is pulled.
+    if [ -f "` + dir + `/pulled" ]; then
+      echo "` + published + `"
+    else
+      echo "` + running + `"
     fi
     ;;
   "compose pull "*)
@@ -71,6 +102,18 @@ exit 0
 	return dir, calls
 }
 
+// hostSeesADifferentPath makes the stub answer that the host has the project
+// somewhere other than where this container has it, which is the mistake the
+// script refuses to work through.
+func hostSeesADifferentPath(t *testing.T, stubDir string) {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(stubDir, "host-project"),
+		[]byte("/somewhere/else"), 0o600); err != nil {
+		t.Fatalf("cannot set what the host sees: %v", err)
+	}
+}
+
 // run starts the script against a request directory and stops it once it has
 // answered.
 func run(t *testing.T, stubDir, requests string) string {
@@ -83,10 +126,17 @@ func run(t *testing.T, stubDir, requests string) string {
 
 	cmd := exec.Command("sh", script)
 
+	// The project directory the script checks. Its own, so "the host has this
+	// path" is trivially arrangeable by telling the stub the same thing.
+	project := t.TempDir()
+	cmd.Dir = project
+
 	cmd.Env = append(os.Environ(),
 		"PATH="+stubDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"GTR_UPDATE_REQUESTS="+requests,
 		"GTR_UPDATE_SERVICE=app",
+		// What the daemon knows this container as.
+		"HOSTNAME=container-id",
 		// The loop sleeps between looks, and this test is waiting on it.
 		"GTR_UPDATE_POLL=1",
 	)
@@ -100,8 +150,20 @@ func run(t *testing.T, stubDir, requests string) string {
 		_ = cmd.Wait()
 	})
 
-	// The answer, or the time it should have taken several times over.
-	deadline := time.Now().Add(30 * time.Second)
+	answered := waitForResult(t, requests, 30*time.Second)
+
+	if answered == "" {
+		t.Fatal("the updater never answered")
+	}
+
+	return answered
+}
+
+// waitForResult reads the outcome, or gives up and returns nothing.
+func waitForResult(t *testing.T, requests string, patience time.Duration) string {
+	t.Helper()
+
+	deadline := time.Now().Add(patience)
 
 	for time.Now().Before(deadline) {
 		if raw, err := os.ReadFile(filepath.Join(requests, "result")); err == nil {
@@ -110,8 +172,6 @@ func run(t *testing.T, stubDir, requests string) string {
 
 		time.Sleep(100 * time.Millisecond)
 	}
-
-	t.Fatal("the updater never answered")
 
 	return ""
 }
@@ -221,5 +281,43 @@ func TestAFailedPullLeavesTheRunningContainerAlone(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(requests, "running")); err == nil {
 		t.Error("the working marker outlived the failure and will refuse every " +
 			"future request")
+	}
+}
+
+// A project at a different path on each side is refused, loudly, before
+// anything is touched.
+//
+// This is the mistake that cost the first deployment its HTTPS. A compose file's
+// bind mounts are relative to the project directory and become absolute before
+// they reach the daemon, and the daemon is on the host - so a compose run from
+// inside a container that sees the project somewhere else computes host paths
+// that do not exist. Docker creates them, empty, and mounts those.
+//
+// The application came back with an empty /certs, serving plain HTTP, reporting
+// itself healthy. Nothing said anything was wrong.
+func TestAProjectAtADifferentPathOnEachSideIsRefused(t *testing.T) {
+	t.Parallel()
+
+	stubDir, calls := stub(t, "sha256:old", "sha256:new", "")
+	hostSeesADifferentPath(t, stubDir)
+
+	requests := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(requests, "request"), nil, 0o600); err != nil {
+		t.Fatalf("cannot leave the request: %v", err)
+	}
+
+	// It refuses by not answering: there is nothing safe to do and nothing to
+	// report to a screen that is not there yet. What it does instead is say why
+	// in the log, which is where somebody starting a container looks.
+	if answered := waitForResult(t, requests, 6*time.Second); answered != "" {
+		t.Errorf("the updater acted on a request it should have refused: %q", answered)
+	}
+
+	asked, _ := os.ReadFile(calls)
+
+	if strings.Contains(string(asked), "compose pull") {
+		t.Error("it pulled although the project is at a different path on the host, " +
+			"so the recreate would have mounted empty directories")
 	}
 }
