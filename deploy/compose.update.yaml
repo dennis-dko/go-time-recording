@@ -41,7 +41,13 @@
 #
 # USE
 #
-#   docker compose -f compose.yaml -f compose.update.yaml up -d
+#   GTR_PROJECT_DIR=$(pwd) docker compose -f compose.yaml -f compose.update.yaml up -d
+#
+# GTR_PROJECT_DIR is the absolute path of the directory the compose files are
+# in, and it is required - see the volume below for what goes wrong without it.
+# Put it in .env beside the rest:
+#
+#   GTR_PROJECT_DIR=/home/you/go-time-recording
 #
 # or add it to COMPOSE_FILE in .env, which is what a deployment with several
 # overlays already does:
@@ -86,18 +92,32 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
-      # The compose files, read-only. The updater recreates the application from
-      # the same description the operator deployed it with, rather than from
-      # what it can infer about the running container - which is never quite the
-      # same thing and drifts in ways nobody notices until a recreate.
-      - ${GTR_PROJECT_DIR:-.}:/project:ro
+      # The compose files, read-only, at the same absolute path they have on the
+      # host. The updater recreates the application from the same description
+      # the operator deployed it with, rather than from what it can infer about
+      # the running container - which is never quite the same thing and drifts
+      # in ways nobody notices until a recreate.
+      #
+      # THE PATH HAS TO MATCH, and this is not a preference.
+      #
+      # A compose file's bind mounts are written relative to the project
+      # directory - `./certs/app:/certs:ro` and the like - and compose turns
+      # them into absolute paths before handing them to the daemon. The daemon
+      # is on the host. So a compose run from inside a container that sees the
+      # project somewhere else computes host paths that do not exist there, and
+      # Docker's answer to a bind source that does not exist is to create an
+      # empty directory and mount that.
+      #
+      # The failure is silent and total: an application recreated that way comes
+      # up with empty mounts. On the deployment this was first tried on, that
+      # meant a container with no certificates, serving plain HTTP, reporting
+      # itself healthy. Mounting the project at its own path is what makes the
+      # two agree, and the script refuses to run if they do not.
+      - ${GTR_PROJECT_DIR:?set GTR_PROJECT_DIR in .env to the absolute path of this directory}:${GTR_PROJECT_DIR}:ro
 
       - update-requests:/var/lib/gtr/update
 
-      # The script, so this needs no image of its own to be built and published.
-      - ./update/updater.sh:/usr/local/bin/updater.sh:ro
-
-    working_dir: /project
+    working_dir: ${GTR_PROJECT_DIR}
 
     environment:
       # The same set of overlays the operator uses. Compose resolves this
@@ -113,12 +133,25 @@ services:
       # watching a screen when they press it.
       GTR_UPDATE_POLL: "3"
 
+      # Who the shared directory is given to. The application image runs as this
+      # user, and a named volume arrives owned by root - so without this the
+      # application can see the directory, cannot write into it, and reports no
+      # updater. Which is the correct answer to "can I ask", and a puzzling one
+      # to arrive at.
+      GTR_UPDATE_OWNER: "10001"
+
+      # Where the project is, inside and outside. Read by the script to check
+      # that those two are the same thing before it touches anything.
+      GTR_PROJECT_DIR: ${GTR_PROJECT_DIR}
+
     # No network at all. It talks to the daemon through the socket, and the
     # daemon does the pulling - so the updater itself never needs to reach the
     # registry, or anything else.
     network_mode: none
 
-    entrypoint: ["/bin/sh", "/usr/local/bin/updater.sh"]
+    # The script comes from the project directory mounted above, so this needs
+    # no image of its own to be built and published.
+    entrypoint: ["/bin/sh", "-c", "exec sh \"$$GTR_PROJECT_DIR/update/updater.sh\""]
 
     logging:
       driver: json-file
