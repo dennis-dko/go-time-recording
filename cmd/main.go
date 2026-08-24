@@ -753,7 +753,8 @@ func main() {
 	}
 
 	v1.RegisterRoutes(app, v1.Handlers{
-		Auth:       rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone),
+		Auth: rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone).
+			WithMaintenance(maintenanceState),
 		Users:      rest.NewUserHandler(users, userDomain, authorizer, auth, instanceTimezone),
 		Roles:      rest.NewRoleHandler(roles, authorizer, auth),
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
@@ -778,6 +779,7 @@ func main() {
 			func(ctx *gofr.Context, config model.LDAPConfig) error {
 				return ldapClient.TestConnection(ctx, config)
 			}).WithMaintenance(maintenanceState).
+			WithAnnouncements(hub).
 			WithLiveLogLevel(applyLogLevel, logs.Level).
 			WithRunningConnection(ds),
 	})

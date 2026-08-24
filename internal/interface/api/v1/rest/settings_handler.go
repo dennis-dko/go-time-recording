@@ -7,6 +7,7 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/announce"
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
@@ -25,6 +26,11 @@ type SettingsHandler struct {
 	// activeDialect is what this process actually connected to, which differs
 	// from the stored settings until the next restart.
 	activeDialect string
+
+	// announcements is how every open browser is told the installation has gone
+	// out of service. Nil where nothing subscribes, which is every test that
+	// does not ask about it.
+	announcements *announce.Hub
 
 	// running is the whole connection this process opened, not just its dialect.
 	// It is what the datasource screen shows when nothing has been stored, so an
@@ -67,6 +73,14 @@ type SettingsHandler struct {
 // said before the level was widened to capture everything.
 func (h *SettingsHandler) WithLiveLogLevel(apply func(string), running func() string) *SettingsHandler {
 	h.logLevel, h.runningLevel = apply, running
+
+	return h
+}
+
+// WithAnnouncements lets the handler tell every open browser that the
+// installation has gone out of service, or come back into it.
+func (h *SettingsHandler) WithAnnouncements(hub *announce.Hub) *SettingsHandler {
+	h.announcements = hub
 
 	return h
 }
@@ -873,6 +887,19 @@ func (h *SettingsHandler) SaveMaintenance(c *gofr.Context) (any, error) {
 
 	if h.maintenance != nil {
 		h.maintenance.Invalidate()
+	}
+
+	// Every open screen, at once.
+	//
+	// Nothing an idle screen asks for would tell it. Who you are, what this
+	// installation is called, whether it is out of service - all of those keep
+	// answering during maintenance on purpose, so a browser nobody is touching
+	// went on looking like a working application until its next click, or until
+	// the once-a-minute permission poll came round. The stream this uses is
+	// already open by then, which is the only reason it can be reached at all
+	// once the door is shut behind it.
+	if h.announcements != nil {
+		h.announcements.Publish(announce.Maintenance, "")
 	}
 
 	// Read back rather than echo: the message is trimmed and cut on the way in,

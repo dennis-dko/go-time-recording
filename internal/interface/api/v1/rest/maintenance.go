@@ -204,8 +204,22 @@ func respondUnavailable(w http.ResponseWriter, maintenance model.Maintenance) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)
 
+	body := maintenanceBody(maintenance)
+	body["message"] = maintenance.Text()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": body})
+}
+
+// maintenanceBody is what a refusal for maintenance carries besides its
+// sentence.
+//
+// Written once because two places send one: this middleware, for every request
+// that arrives during maintenance, and the sign-in handler, for an account that
+// may not be here while it lasts. The client tells them apart from every other
+// 503 by the "maintenance" flag, so two spellings of this would be two
+// behaviours on the same screen.
+func maintenanceBody(maintenance model.Maintenance) map[string]any {
 	body := map[string]any{
-		"message":     maintenance.Text(),
 		"maintenance": true,
 		"retryAfter":  maintenanceRetryAfter,
 	}
@@ -218,5 +232,25 @@ func respondUnavailable(w http.ResponseWriter, maintenance model.Maintenance) {
 		body["code"] = "maintenance"
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": body})
+	return body
 }
+
+// maintenanceError is the refusal sign-in sends to somebody who may not be here
+// while the installation is out of service.
+//
+// An error rather than a written response, because it comes from a handler
+// rather than from middleware, and handlers here return errors. The one thing
+// it cannot carry is the Retry-After header - GoFr's responder owns the headers
+// - so the interval is in the body, where the middleware puts it too.
+type maintenanceError struct {
+	state model.Maintenance
+}
+
+func (e maintenanceError) Error() string { return e.state.Text() }
+
+// StatusCode is what GoFr's responder reads to pick the HTTP status. 503 rather
+// than 401: the credentials were right, and telling somebody their password is
+// wrong when it is not sends them to reset it.
+func (maintenanceError) StatusCode() int { return http.StatusServiceUnavailable }
+
+func (e maintenanceError) Response() map[string]any { return maintenanceBody(e.state) }

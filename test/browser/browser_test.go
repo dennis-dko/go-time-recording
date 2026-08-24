@@ -990,6 +990,22 @@ func (p *page) value(selector string) string {
 	return strings.TrimSpace(out)
 }
 
+// placeholder reads what a field offers when it is empty.
+//
+// Its own reader beside value, because on this application's connection card
+// the two mean opposite things: a value is what will be saved, and a
+// placeholder is what is running and will not be.
+func (p *page) placeholder(selector string) string {
+	p.t.Helper()
+
+	var out string
+
+	p.run("read the placeholder of "+selector, chromedp.Evaluate(fmt.Sprintf(
+		`document.querySelector(%q)?.placeholder ?? ""`, selector), &out))
+
+	return strings.TrimSpace(out)
+}
+
 // consoleErrors returns anything the page logged as an error. A page that
 // throws on load still renders, so this is the only way to notice.
 func (p *page) jsBroken() bool {

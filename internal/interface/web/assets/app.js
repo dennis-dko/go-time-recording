@@ -233,6 +233,33 @@ async function api(path, options = {}) {
         banner.textContent = err.message;
         banner.hidden = false;
       }
+
+      // And whoever may not be here while it lasts goes back to the sign-in
+      // screen, where the same sentence is waiting.
+      //
+      // Everything an ordinary account can reach is refused for as long as
+      // maintenance is on, so what they had was a signed-in screen where every
+      // card was an error and every click another one - the interface insisting
+      // they were working while nothing worked. Two clicks after an
+      // administrator flipped the switch, and no way to tell it was deliberate.
+      //
+      // Told to the server rather than only forgotten here: an account signed
+      // out by this should have to sign in again afterwards, and a session left
+      // standing would let the screen come back by itself the moment maintenance
+      // ended.
+      //
+      // Not for whoever may administer the installation - they are the ones who
+      // end it, and the request that brought this back was some other 503.
+      if (me.user && !can('settings:manage') && !endingTheSession) {
+        endingTheSession = true;
+
+        try {
+          void endTheSessionQuietly();
+          handBackTheScreen(err.message);
+        } finally {
+          endingTheSession = false;
+        }
+      }
     }
     // The status alongside the message, so a caller can tell "you are not
     // signed in" from "that did not work" without parsing prose. The log
@@ -495,7 +522,54 @@ function startPermissionPolling() {
     // for as long as the network is unhappy - would be worse than the thing it
     // is watching for.
     api('/me').catch(() => {});
+
+    // On the same beat and for the same reason: whether this screen is still
+    // true. The announcement stream notices maintenance within seconds, and this
+    // is what covers a browser that has no EventSource at all.
+    void checkWhetherStillWelcome();
   }, PERMISSION_POLL_MS);
+}
+
+/**
+ * Asks whether this installation is still open to whoever is looking at it, and
+ * hands the screen back if it is not.
+ *
+ * Maintenance mode refuses everything an ordinary account does, which is the
+ * point - but what it left behind was the whole interface standing, every card
+ * an error and every click another one, with nothing saying that was deliberate.
+ *
+ * /maintenance is one of the endpoints maintenance mode deliberately keeps
+ * answering, so this works from inside it - which is the whole reason the
+ * question can be asked at all.
+ *
+ * Not for whoever may administer the installation. They are the ones who end it,
+ * and signing them out of the screen with the switch on it would be the trap
+ * this mode is written to avoid.
+ */
+async function checkWhetherStillWelcome() {
+  if (!me.user || can('settings:manage') || endingTheSession) return;
+
+  let state;
+
+  try {
+    state = await api('/maintenance');
+  } catch {
+    // Unreachable, or refused. Either way this is a background question and the
+    // answer to a failed one is to ask again next time.
+    return;
+  }
+
+  if (!state?.enabled || endingTheSession) return;
+
+  endingTheSession = true;
+
+  try {
+    void endTheSessionQuietly();
+    handBackTheScreen(state.message || t('err.maintenance',
+      'This installation is temporarily unavailable for maintenance.'));
+  } finally {
+    endingTheSession = false;
+  }
 }
 
 function stopPermissionPolling() {
@@ -663,7 +737,14 @@ function startAnnouncements() {
   // handled where the reconnection succeeds rather than here, because a failure
   // to reconnect means the application is not back yet and there is nothing to
   // say to anybody about that.
-  announcements.addEventListener('error', () => {});
+  //
+  // It is, however, the first thing a screen notices when the installation goes
+  // out of service: this stream is one of the requests maintenance mode refuses,
+  // and the browser retries it every few seconds. Everything else an idle screen
+  // asks for is exempt - who you are, what the branding is - so without this a
+  // screen nobody is touching would sit there working-looking until its next
+  // click, or until the once-a-minute permission poll came round.
+  announcements.addEventListener('error', () => { void checkWhetherStillWelcome(); });
 
   announcements.addEventListener('open', () => {
     // Back. If the last thing said was that a restart was coming, this is the
@@ -700,6 +781,20 @@ function stopAnnouncements() {
  * stop being the case because somebody closed it.
  */
 function applyAnnouncement(announcement) {
+  // Maintenance is not one of the update banner's messages and must not be
+  // written into it - nor recorded as the last thing announced, which is what
+  // the reconnection handler reads to decide whether a restart just finished.
+  //
+  // It carries nothing of its own on purpose: what the state is, and what the
+  // administrator wrote about it, is read from /maintenance, which keeps
+  // answering while everything else is refused.
+  if (announcement.kind === 'instance.maintenance') {
+    void checkWhetherStillWelcome();
+    void loadMaintenance();
+
+    return;
+  }
+
   announced = announcement.kind;
 
   // Through the redraw registry, so a language change reaches it like everything
@@ -2747,7 +2842,8 @@ const TRANSLATIONS = {
     'tel.url': 'Collector als host:port, ohne http://',
     'tel.ratio': 'Anteil aufgezeichneter Traces (0–1)',
     'tel.ratioShort': 'Anteil aufgezeichneter Traces',
-    'tel.tracingHint': 'Läuft deploy/compose.tracing.yaml neben der Anwendung? Dann ist es Exporter OTLP und Collector jaeger:4317, und die Traces liest man unter http://127.0.0.1:16686.',
+    'tel.tracingHint': 'Läuft deploy/compose.tracing.yaml neben der Anwendung? Dann ist es Exporter OTLP und Collector jaeger:4317, und die Traces liegen unter {0}.',
+    'tel.tracingLoopback': 'Antwortet die Adresse nicht, veröffentlicht die mitgelieferte Datei den Trace-Browser absichtlich nur auf dem Loopback des Servers – dann führt der Weg über {0}.',
     'tel.reset': 'Alles auf die Konfigurationsdatei zurücksetzen',
     'tel.resetDone': 'Metriken und Traces folgen wieder der Konfigurationsdatei',
     'tel.activeMetrics': 'Metriken',
@@ -4873,7 +4969,10 @@ function showRunningConnection(form, ds) {
   // So it names what is running, like every other field here. The note above
   // says where that came from, which is what stops it reading as something
   // somebody saved.
-  if (running.dialect) form.elements.dialect.value = running.dialect;
+  // Unless somebody is choosing one. This is the one line here that writes a
+  // value rather than describing what is running, so it is the one line that
+  // has to ask.
+  if (running.dialect && !beingEdited(form)) form.elements.dialect.value = running.dialect;
 
   if (note) {
     note.textContent = t('admin.connectionFromEnvironment',
@@ -5018,15 +5117,26 @@ async function loadAdmin() {
   const ds = await api('/settings/datasource');
   const dsForm = $('#form-datasource');
 
-  // Not over a connection somebody is part way through entering. This is the
-  // card the loss was reported from: choosing a language reloads every screen,
-  // so switching to German to read a label put the stored connection back over
-  // the one being typed - and an empty stored connection put back nothing at
-  // all, which looked like a form that had never been filled in.
+  // This card has two halves, and only one of them belongs to whoever is at the
+  // keyboard.
+  //
+  // The values are theirs. This is the card the loss was reported from:
+  // choosing a language reloads every screen, so switching to German to read a
+  // label put the stored connection back over the one being typed - and an
+  // empty stored connection put back nothing at all, which looked like a form
+  // nobody had filled in.
+  //
+  // What this installation is connected to is not theirs, and it was being
+  // skipped along with them. One touch of this form and the card went on saying
+  // "connected via postgres" above five empty boxes for as long as the tab
+  // stayed open - no note saying where the connection came from, and no
+  // placeholders saying what it was. A restored draft did it without anybody
+  // touching anything, because restoring one marks the form as being filled in.
   if (!beingEdited(dsForm)) {
     for (const field of ['dialect', 'name', 'host', 'port', 'user', 'sslMode']) {
       dsForm.elements[field].value = ds[field] ?? '';
     }
+  }
 
   // Nothing stored, which is every installation configured through the
   // environment - a compose deployment, or a container run with DB_* set. The
@@ -5037,11 +5147,10 @@ async function loadAdmin() {
   // Shown as placeholders rather than values, because they are not this form's
   // to save: typing over a placeholder is how somebody changes the connection,
   // and leaving it alone has to keep meaning "leave it alone".
-    showRunningConnection(dsForm, ds);
+  showRunningConnection(dsForm, ds);
 
-    // After the values are in, or the port would be prefilled over a stored one.
-    syncDatasourceFields();
-  }
+  // After the values are in, or the port would be prefilled over a stored one.
+  syncDatasourceFields();
 
   // What this process is connected to, whoever is typing what: it describes the
   // running application rather than the form.
@@ -5919,12 +6028,24 @@ function forgetTheLastAccount() {
  */
 let endingTheSession = false;
 
-async function doLogout() {
+/**
+ * Tells the server the session is over, and says nothing if it cannot.
+ *
+ * Its own function because two things end a session from this side and only one
+ * of them is a person pressing a button: the other is maintenance mode turning
+ * an account away, which happens inside a failed request and must not wait for
+ * this one to answer before the screen changes.
+ */
+async function endTheSessionQuietly() {
   try {
     await api('/auth/logout', { method: 'POST' });
   } catch {
     // Even a failed call should drop the client back to the sign-in screen.
   }
+}
+
+async function doLogout() {
+  await endTheSessionQuietly();
 
   handBackTheScreen();
 }
@@ -9375,6 +9496,49 @@ function wireTelemetry() {
 
 async function loadTelemetry() {
   fillTelemetryForm(await api('/settings/telemetry'));
+  showTracingHint();
+}
+
+/**
+ * Says where the traces are, on this installation.
+ *
+ * The sentence used to name http://127.0.0.1:16686, which is right on exactly
+ * one machine: the server itself. Read from anywhere else - and this screen is
+ * read from somewhere else, or nobody would be reading it in a browser - it
+ * names the reader's own machine, where nothing is listening.
+ *
+ * So it names the host this page was reached on. The port is the trace
+ * browser's own and does not follow the application's: they are two services,
+ * and 8443 belongs to this one.
+ *
+ * The second line is there because the first may well not answer. The overlay
+ * this repository ships binds the trace browser to the server's loopback on
+ * purpose - it asks nobody to sign in, and traces carry request paths and the
+ * identifiers in them - so on an unchanged deployment the way in is a tunnel,
+ * and the command for it names the same host rather than leaving it as <server>.
+ */
+function showTracingHint() {
+  const hint = $('#tel-tracing-hint');
+  if (!hint) return;
+
+  const host = window.location.hostname;
+
+  hint.textContent = '';
+
+  hint.append(t('tel.tracingHint',
+    'Running deploy/compose.tracing.yaml beside the application? Then it is '
+    + 'exporter OTLP and collector jaeger:4317, and the traces are at {0}.')
+    .replace('{0}', `http://${host}:16686`));
+
+  // Its own line: the first sentence is where to look, and this one is what to
+  // do when looking there gives nothing. Run together they read as one
+  // instruction that contradicts itself.
+  hint.append(el('br'));
+
+  hint.append(t('tel.tracingLoopback',
+    'If that address does not answer, the shipped file publishes the trace '
+    + 'browser on the server\'s loopback only - then the way in is {0}.')
+    .replace('{0}', `ssh -L 16686:127.0.0.1:16686 ${host}`));
 }
 
 /** Both cards, because saving one of these changes what the other has to say. */

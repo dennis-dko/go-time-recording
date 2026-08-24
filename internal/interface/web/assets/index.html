@@ -1208,7 +1208,9 @@
              overlay for is the obvious answer, but storing it by default would
              make an installation without that overlay try to export at every
              start and write failures nobody asked for. -->
-        <p class="muted" data-i18n="tel.tracingHint">Running deploy/compose.tracing.yaml beside the application? Then it is exporter OTLP and collector jaeger:4317, and the traces are read at http://127.0.0.1:16686.</p>
+        <!-- Filled by showTracingHint rather than by data-i18n: the address it
+             names is this installation's own, which no dictionary knows. -->
+        <p class="muted" id="tel-tracing-hint"></p>
         <div class="row">
           <button type="submit" data-i18n="action.save">Save</button>
           <button type="button" class="secondary" id="telemetry-reset" data-i18n="tel.reset">Reset all to the configuration file</button>
