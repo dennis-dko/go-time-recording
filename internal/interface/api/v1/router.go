@@ -27,6 +27,7 @@ type Handlers struct {
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
+	Documents  *rest.DocumentHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -169,6 +170,13 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// the hours that belong to none. Neither can be said with an id in a path, which
 	// is why it is a route of its own rather than a parameter on the one above.
 	app.GET(base+"/reports", h.Timesheets.OwnReport)
+
+	// The evaluations as a document, which is a POST because the charts travel
+	// with it: they are drawn in the browser, and what leaves the screen is the
+	// picture that was on it. One route for all three screens - a report, the
+	// statistics and overtime - because by the time it gets here they are the
+	// same thing: headings, pictures, figures.
+	app.POST(base+"/exports/document", h.Documents.Export)
 
 	// Ahead of the {id} routes, which this router would otherwise match first:
 	// "export" is not an id, and the answer was 400 for a parameter nobody sent.

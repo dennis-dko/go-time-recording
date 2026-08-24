@@ -736,6 +736,22 @@ func main() {
 		return name
 	})
 
+	// What this installation is called, wherever it has to name itself: the
+	// prompt a passkey device shows, and the foot of an exported document.
+	//
+	// The administered title if there is one, so a person sees the name they
+	// know rather than the default the process was started with. One function
+	// rather than one per caller - it was written inline for the first of them,
+	// and the second would have been the same six lines again.
+	instanceName := func(ctx *gofr.Context) string {
+		branding, err := settingsService.Branding(ctx)
+		if err != nil || branding.Title == "" {
+			return cfg.AppName
+		}
+
+		return branding.Title
+	}
+
 	v1.RegisterRoutes(app, v1.Handlers{
 		Auth:       rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone),
 		Users:      rest.NewUserHandler(users, userDomain, authorizer, auth, instanceTimezone),
@@ -754,18 +770,8 @@ func main() {
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
-		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer,
-			// What the device's prompt calls this installation. The
-			// administered title if there is one, so a person sees the name
-			// they know rather than a default.
-			func(ctx *gofr.Context) string {
-				branding, err := settingsService.Branding(ctx)
-				if err != nil || branding.Title == "" {
-					return cfg.AppName
-				}
-
-				return branding.Title
-			}),
+		Passkeys:   rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName),
+		Documents:  rest.NewDocumentHandler(authorizer, instanceName),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,

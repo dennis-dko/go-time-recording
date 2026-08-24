@@ -1369,6 +1369,44 @@
         }
       }
     },
+    "/exports/document": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Export an evaluation as PDF",
+        "description": "Lays out what an evaluation screen is showing and hands it back as a PDF: the report, the statistics, or an overtime calculation. Everything in the document arrives in the request, including the chart, which is drawn in the browser and sent as a PNG data URI - the chart in the file is the chart that was on the screen, in whichever of bars, columns or pie was chosen. Nothing is looked up, so this needs a session and no permission beyond it: there is no data here to be allowed or refused.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A PDF document",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The document is missing a title, or is larger than one document may be"
+          },
+          "401": {
+            "description": "No session"
+          }
+        }
+      }
+    },
     "/timesheets/export": {
       "get": {
         "tags": [
@@ -2020,6 +2058,89 @@
               "completed",
               "archived"
             ]
+          }
+        }
+      },
+      "DocumentTable": {
+        "type": "object",
+        "description": "A set of figures as the screen showed them.",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "numeric": {
+            "type": "array",
+            "items": {
+              "type": "boolean"
+            },
+            "description": "Which columns are set flush right. The interface knows, because its own headings carry a class saying so."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "DocumentSection": {
+        "type": "object",
+        "description": "One heading, with a chart and a table under it. Both are optional: the statistics screen is two charts and no table, and overtime is neither.",
+        "properties": {
+          "heading": {
+            "type": "string"
+          },
+          "caption": {
+            "type": "string"
+          },
+          "chart": {
+            "type": "string",
+            "description": "A PNG as a data URI, beginning `data:image/png;base64,`. Anything else is refused - a URL would be this server fetching whatever address a request named."
+          },
+          "table": {
+            "$ref": "#/components/schemas/DocumentTable"
+          }
+        }
+      },
+      "DocumentRequest": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string",
+            "description": "The period the evaluation covers, as the screen words it."
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentSection"
+            }
+          },
+          "summary": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The figures that stand on their own: a total, or the three numbers an overtime calculation comes to."
           }
         }
       }
