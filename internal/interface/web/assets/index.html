@@ -229,9 +229,11 @@
          restarts. -->
     <div id="restart-banner" class="banner" hidden>
       <strong data-i18n="restart.title">Restart</strong>
-      <span id="restart-summary"></span>
-      <button type="button" id="restart-open" class="link-button"
-              data-i18n="restart.open">Go to the restart</button>
+      <!-- The sentence, with the way to the card inside it rather than beside
+           it. Built by loadRestart: the word that links is part of what is
+           being said, and where it falls in the sentence is the translator's
+           business. -->
+      <p id="restart-summary"></p>
     </div>
 
     <!-- A release newer than this build, for whoever may install it, and only for

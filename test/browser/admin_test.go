@@ -4244,12 +4244,22 @@ func TestWhatSomebodyTypedSurvivesChoosingALanguage(t *testing.T) {
 	p.waitForFilled("#datasource-active")
 
 	// A server dialect, so the fields below the type are on screen at all.
+	//
+	// Picked with the keyboard rather than assigned, for the same reason the
+	// boxes below are typed into rather than assigned - and the distinction is
+	// sharper here than it was. The type follows what this installation is
+	// connected to until somebody chooses otherwise, because it decides which
+	// other fields exist and a stale one makes the whole card describe a
+	// connection that is not there. A value set from a script, events and all,
+	// is what restoring a draft does; only a real press is a choice.
 	p.run("choose postgres",
-		chromedp.SetValue(`#form-datasource select[name="dialect"]`, "postgres",
-			chromedp.ByQuery),
-		chromedp.Evaluate(
-			`document.querySelector('#form-datasource select[name="dialect"]')
-				.dispatchEvent(new Event('change'))`, nil))
+		chromedp.Focus(`#form-datasource select[name="dialect"]`, chromedp.ByQuery),
+		chromedp.SendKeys(`#form-datasource select[name="dialect"]`, "p",
+			chromedp.ByQuery))
+
+	if got := p.value(`#form-datasource select[name="dialect"]`); got != "postgres" {
+		t.Fatalf("the keyboard did not pick PostgreSQL; the type reads %q", got)
+	}
 
 	// Typed rather than assigned. Assigning a value fires no events, and events
 	// are how the page knows somebody is part way through - which is the whole

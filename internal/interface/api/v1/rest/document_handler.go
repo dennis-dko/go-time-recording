@@ -87,6 +87,10 @@ type DocumentRequest struct {
 	Subtitle string                   `json:"subtitle"`
 	Sections []DocumentSectionRequest `json:"sections"`
 	Summary  []document.Line          `json:"summary"`
+
+	// Colours is what the screen is drawn in, so the document is drawn in it
+	// too. Absent falls back to a plain document.
+	Colours document.Palette `json:"colours"`
 }
 
 // Export handles POST /api/v1/exports/document.
@@ -153,6 +157,7 @@ func (r DocumentRequest) document() (document.Document, error) {
 	doc := document.Document{
 		Title:    plain(r.Title),
 		Subtitle: plain(r.Subtitle),
+		Colours:  r.Colours,
 		Sections: make([]document.Section, 0, len(r.Sections)),
 		Summary:  make([]document.Line, 0, len(r.Summary)),
 	}

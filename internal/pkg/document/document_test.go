@@ -279,3 +279,95 @@ func TestAnAbsurdlyWideCellDoesNotDerailTheTable(t *testing.T) {
 		t.Errorf("two rows became %d pages, so the long one was not contained", got)
 	}
 }
+
+// The document is drawn in the colours the screen was.
+//
+// The chart in the middle of it is the installation's palette - it is a picture
+// of the screen - and a page that surrounds it with somebody else's greys is
+// two designs stapled together. It matters more on a dark screen: the chart
+// comes out dark, and type that assumed white around it would be the wrong
+// weight beside it.
+//
+// Asserted as a difference rather than as a colour. What ends up in the file is
+// a PDF colour operator among compressed content, and finding one by hand is
+// asserting on fpdf's output format; that two palettes produce two different
+// files is the claim that matters, and it fails the moment the palette stops
+// being read.
+func TestTheDocumentIsWrittenInTheColoursItWasGiven(t *testing.T) {
+	t.Parallel()
+
+	same := func(colours document.Palette) []byte {
+		out, err := document.Write(document.Document{
+			Title:   "Auswertung",
+			Written: aMoment(),
+			Colours: colours,
+			Sections: []document.Section{{Heading: "Stunden", Table: &document.Table{
+				Columns: []string{"Zeitraum", "Stunden"},
+				Numeric: []bool{false, true},
+				Rows:    [][]string{{"August", "12,5"}},
+			}}},
+			Summary: []document.Line{{Label: "Gesamt", Value: "12,5"}},
+		})
+		if err != nil {
+			t.Fatalf("writing the document: %v", err)
+		}
+
+		return out
+	}
+
+	light := same(document.Palette{
+		Accent: "#2f6feb", Text: "#1c2126", Muted: "#626d78",
+		Border: "#dfe3e8", Surface: "#ffffff",
+	})
+
+	dark := same(document.Palette{
+		Accent: "#5b8dfa", Text: "#e8eaed", Muted: "#98a2ad",
+		Border: "#2c333b", Surface: "#1c2126",
+	})
+
+	if bytes.Equal(light, dark) {
+		t.Error("two palettes produced the same document, so the colours are not read")
+	}
+
+	// And a document given none is still a document rather than a refusal.
+	plain := same(document.Palette{})
+
+	if !bytes.HasPrefix(plain, []byte(pdfHeader)) {
+		t.Error("a document with no palette is not a PDF")
+	}
+
+	if bytes.Equal(plain, light) {
+		t.Error("the fallback shades and a real palette produce the same file, so " +
+			"one of them is not being used")
+	}
+}
+
+// A colour nobody can parse is not a reason to refuse a document.
+//
+// The palette is read off a live screen, and what a browser resolves a token to
+// is not this package's to guarantee: a gradient, a colour function nobody has
+// implemented here, an empty string from a token that does not exist. Each one
+// falls back to the shade beside it and the page still reads.
+func TestAnUnreadableColourFallsBackRatherThanFailing(t *testing.T) {
+	t.Parallel()
+
+	out, err := document.Write(document.Document{
+		Title:   "Auswertung",
+		Written: aMoment(),
+		Colours: document.Palette{
+			Accent:  "linear-gradient(red, blue)",
+			Text:    "",
+			Muted:   "rgb(1 2 3)",
+			Border:  "#12",
+			Surface: "#abc",
+		},
+		Summary: []document.Line{{Label: "Gesamt", Value: "1,0"}},
+	})
+	if err != nil {
+		t.Fatalf("a palette full of nonsense was refused: %v", err)
+	}
+
+	if !bytes.HasPrefix(out, []byte(pdfHeader)) {
+		t.Error("what came back is not a PDF")
+	}
+}

@@ -87,6 +87,91 @@ type Section struct {
 	Table *Table
 }
 
+// Palette is what the screen the document was read from is drawn in.
+//
+// Sent rather than fixed here, for the same reason the chart is sent: the
+// picture in the middle of the page is the installation's colours, and a
+// document that surrounds it with somebody else's greys is two designs stapled
+// together. It also follows a theme - an installation on the dark theme sends a
+// dark chart, and the type around it has to be readable beside that rather than
+// beside the white it would have assumed.
+//
+// Every field is optional. An empty one falls back to the shade below, which is
+// what a document with no palette at all used to look like throughout.
+type Palette struct {
+	// Accent leads: headings, the rule under the title, the figures in the
+	// summary.
+	Accent string `json:"accent"`
+
+	// Text is the body, Muted the second rank - captions, the period under the
+	// title, the footer.
+	Text  string `json:"text"`
+	Muted string `json:"muted"`
+
+	// Border rules the table, and Surface fills its heading row.
+	Border  string `json:"border"`
+	Surface string `json:"surface"`
+}
+
+// The shades a document falls back to, which is what it looked like before a
+// palette could be sent.
+var (
+	defaultAccent  = colour{0x2f, 0x6f, 0xeb}
+	defaultText    = colour{0, 0, 0}
+	defaultMuted   = colour{90, 90, 90}
+	defaultBorder  = colour{200, 200, 200}
+	defaultSurface = colour{238, 238, 238}
+)
+
+// colour is one ink, as the writer wants it.
+type colour struct{ r, g, b int }
+
+// inks resolves a palette into the shades this document is written with.
+type inks struct {
+	accent  colour
+	text    colour
+	muted   colour
+	border  colour
+	surface colour
+}
+
+// resolve reads the palette, keeping the fallback for anything it cannot.
+//
+// Anything: a colour the screen resolved to something this cannot parse - a
+// gradient, a named colour, a function nobody has implemented here - is not an
+// error worth refusing a document over. The shade beside it is used and the
+// page still reads.
+func (p Palette) resolve() inks {
+	return inks{
+		accent:  parseColour(p.Accent, defaultAccent),
+		text:    parseColour(p.Text, defaultText),
+		muted:   parseColour(p.Muted, defaultMuted),
+		border:  parseColour(p.Border, defaultBorder),
+		surface: parseColour(p.Surface, defaultSurface),
+	}
+}
+
+// parseColour reads "#rrggbb", or "#rgb", and gives up quietly.
+func parseColour(value string, fallback colour) colour {
+	value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "#"))
+
+	if len(value) == 3 {
+		// The short form doubles each digit, so #abc is #aabbcc.
+		value = string([]byte{value[0], value[0], value[1], value[1], value[2], value[2]})
+	}
+
+	if len(value) != 6 {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseUint(value, 16, 32)
+	if err != nil {
+		return fallback
+	}
+
+	return colour{int(parsed >> 16 & 0xff), int(parsed >> 8 & 0xff), int(parsed & 0xff)}
+}
+
 // Line is one figure with its name, for the summary at the end.
 type Line struct {
 	Label string `json:"label"`
@@ -99,6 +184,10 @@ type Document struct {
 	Subtitle string
 	Sections []Section
 	Summary  []Line
+
+	// Colours is what the screen this was read from is drawn in. Empty falls
+	// back to a plain document, which is what this looked like before.
+	Colours Palette
 
 	// Footer names the installation and the moment. It is set on this side,
 	// because it is the one thing in here that is not the screen's to say.
@@ -114,6 +203,7 @@ type Document struct {
 // Write lays the document out and returns the PDF.
 func Write(doc Document) ([]byte, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
+	ink := doc.Colours.resolve()
 
 	// The Go fonts rather than fpdf's built-in ones. Those are Latin-1: they
 	// cover German and turn everything else into question marks without saying
@@ -128,18 +218,18 @@ func Write(doc Document) ([]byte, error) {
 	pdf.SetTitle(doc.Title, true)
 	pdf.SetCreationDate(doc.Written)
 
-	writeFooter(pdf, doc.Footer, doc.Written)
+	writeFooter(pdf, ink, doc.Footer, doc.Written)
 
 	pdf.AddPage()
-	writeHeading(pdf, doc)
+	writeHeading(pdf, ink, doc)
 
 	for i, section := range doc.Sections {
-		if err := writeSection(pdf, i, section); err != nil {
+		if err := writeSection(pdf, ink, i, section); err != nil {
 			return nil, err
 		}
 	}
 
-	writeSummary(pdf, doc.Summary)
+	writeSummary(pdf, ink, doc.Summary)
 
 	var out bytes.Buffer
 
@@ -155,11 +245,11 @@ func Write(doc Document) ([]byte, error) {
 // Registered before the first page rather than drawn after the last: a document
 // that runs to three pages has to say on all three where it came from, and a
 // page number is only of use on the page it counts.
-func writeFooter(pdf *fpdf.Fpdf, footer string, written time.Time) {
+func writeFooter(pdf *fpdf.Fpdf, ink inks, footer string, written time.Time) {
 	pdf.SetFooterFunc(func() {
 		pdf.SetY(-15)
 		pdf.SetFont("go", "", captionSize)
-		pdf.SetTextColor(120, 120, 120)
+		use(pdf, ink.muted)
 
 		left := strings.TrimSpace(footer)
 		if !written.IsZero() {
@@ -168,24 +258,37 @@ func writeFooter(pdf *fpdf.Fpdf, footer string, written time.Time) {
 
 		pdf.CellFormat(contentWide/2, 5, left, "", 0, "L", false, 0, "")
 		pdf.CellFormat(contentWide/2, 5, strconv.Itoa(pdf.PageNo()), "", 0, "R", false, 0, "")
-		pdf.SetTextColor(0, 0, 0)
+		use(pdf, ink.text)
 	})
 }
 
 // writeHeading writes the title and the period it covers.
-func writeHeading(pdf *fpdf.Fpdf, doc Document) {
+func writeHeading(pdf *fpdf.Fpdf, ink inks, doc Document) {
 	pdf.SetFont("go", "B", titleSize)
+	use(pdf, ink.accent)
 	pdf.MultiCell(contentWide, lineHeight+3, doc.Title, "", "L", false)
+	use(pdf, ink.text)
 
 	if subtitle := strings.TrimSpace(doc.Subtitle); subtitle != "" {
 		pdf.SetFont("go", "", bodySize)
-		pdf.SetTextColor(90, 90, 90)
+		use(pdf, ink.muted)
 		pdf.MultiCell(contentWide, lineHeight, subtitle, "", "L", false)
-		pdf.SetTextColor(0, 0, 0)
+		use(pdf, ink.text)
 	}
+
+	// A rule in the accent under the title, which is what ties the page to the
+	// picture further down it rather than leaving the two looking unrelated.
+	pdf.SetDrawColor(ink.accent.r, ink.accent.g, ink.accent.b)
+	pdf.SetLineWidth(0.6)
+	pdf.Line(pageMargin, pdf.GetY()+1, pageMargin+contentWide, pdf.GetY()+1)
+	pdf.SetDrawColor(ink.border.r, ink.border.g, ink.border.b)
+	pdf.SetLineWidth(0.2)
 
 	pdf.Ln(4)
 }
+
+// use sets the colour of whatever is written next.
+func use(pdf *fpdf.Fpdf, c colour) { pdf.SetTextColor(c.r, c.g, c.b) }
 
 // writeSection writes one heading, its chart and its table.
 //
@@ -193,18 +296,20 @@ func writeHeading(pdf *fpdf.Fpdf, doc Document) {
 // the chart: fpdf keeps registered images in a map, so two sections whose
 // headings happen to match would have shared one picture - and the statistics
 // screen sends two charts at once.
-func writeSection(pdf *fpdf.Fpdf, number int, section Section) error {
+func writeSection(pdf *fpdf.Fpdf, ink inks, number int, section Section) error {
 	if heading := strings.TrimSpace(section.Heading); heading != "" {
 		pdf.SetFont("go", "B", headingSize)
+		use(pdf, ink.accent)
 		pdf.MultiCell(contentWide, lineHeight, heading, "", "L", false)
+		use(pdf, ink.text)
 		pdf.Ln(1)
 	}
 
 	if caption := strings.TrimSpace(section.Caption); caption != "" {
 		pdf.SetFont("go", "", captionSize)
-		pdf.SetTextColor(90, 90, 90)
+		use(pdf, ink.muted)
 		pdf.MultiCell(contentWide, lineHeight-1, caption, "", "L", false)
-		pdf.SetTextColor(0, 0, 0)
+		use(pdf, ink.text)
 		pdf.Ln(1)
 	}
 
@@ -215,7 +320,7 @@ func writeSection(pdf *fpdf.Fpdf, number int, section Section) error {
 	}
 
 	if section.Table != nil {
-		writeTable(pdf, *section.Table)
+		writeTable(pdf, ink, *section.Table)
 	}
 
 	pdf.Ln(4)
@@ -267,7 +372,7 @@ func writeChart(pdf *fpdf.Fpdf, number int, chart []byte) error {
 //
 // The heading row is repeated on every page the table runs onto, because a
 // column of numbers with nothing above it is a column nobody can read.
-func writeTable(pdf *fpdf.Fpdf, table Table) {
+func writeTable(pdf *fpdf.Fpdf, ink inks, table Table) {
 	if len(table.Columns) == 0 {
 		return
 	}
@@ -276,7 +381,8 @@ func writeTable(pdf *fpdf.Fpdf, table Table) {
 
 	header := func() {
 		pdf.SetFont("go", "B", bodySize)
-		pdf.SetFillColor(238, 238, 238)
+		pdf.SetFillColor(ink.surface.r, ink.surface.g, ink.surface.b)
+		pdf.SetDrawColor(ink.border.r, ink.border.g, ink.border.b)
 
 		for i, column := range table.Columns {
 			pdf.CellFormat(widths[i], rowHeight, fit(pdf, column, widths[i]), "B", 0,
@@ -394,7 +500,7 @@ func fit(pdf *fpdf.Fpdf, cell string, width float64) string {
 
 // writeSummary sets out the figures that stand on their own - a total, or the
 // three numbers an overtime calculation comes to.
-func writeSummary(pdf *fpdf.Fpdf, summary []Line) {
+func writeSummary(pdf *fpdf.Fpdf, ink inks, summary []Line) {
 	if len(summary) == 0 {
 		return
 	}
@@ -403,9 +509,15 @@ func writeSummary(pdf *fpdf.Fpdf, summary []Line) {
 
 	for _, line := range summary {
 		pdf.SetFont("go", "", bodySize)
+		use(pdf, ink.text)
 		pdf.CellFormat(contentWide*0.6, rowHeight, line.Label, "", 0, "L", false, 0, "")
+
+		// The figure in the accent: on a page whose picture is drawn in it, the
+		// number the picture is about should be too.
 		pdf.SetFont("go", "B", bodySize)
+		use(pdf, ink.accent)
 		pdf.CellFormat(contentWide*0.4, rowHeight, line.Value, "", 0, "R", false, 0, "")
+		use(pdf, ink.text)
 		pdf.Ln(-1)
 	}
 }
