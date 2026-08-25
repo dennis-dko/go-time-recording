@@ -4780,7 +4780,10 @@ func TestTheRightsTickedForAnUnsavedRoleSurvive(t *testing.T) {
 		JSON.stringify(Object.keys(sessionStorage).filter((key) => key.startsWith('gtr.draft.')))`,
 		&keys))
 
-	if !strings.Contains(keys, "gtr.draft.form-role") {
+	// The account is in the key too, because a draft belongs to whoever wrote it
+	// and a browser is shared - see draftsOf. What matters here is the form's own
+	// name at the end of it.
+	if !strings.Contains(keys, ".form-role") {
 		t.Errorf("the role form's draft is not under its own name: %s", keys)
 	}
 
@@ -5104,7 +5107,11 @@ func TestADraftFromAnotherVersionIsNotPutBack(t *testing.T) {
 	// blank, written down under a version that is not the one running.
 	p.run("plant a draft from an older version", chromedp.Evaluate(`
 		(() => {
-			sessionStorage.setItem('gtr.draft.form-datasource', JSON.stringify({
+			// Under this account's own prefix: a draft belongs to whoever wrote
+			// it, and one filed under anybody else is not found at all - which
+			// would make this case pass without proving anything.
+			sessionStorage.setItem('gtr.draft.' + me.user.id + '.form-datasource',
+				JSON.stringify({
 				version: 'v0.0.1-before',
 				values: { dialect: '', name: '', host: '', port: '', user: '', sslMode: '' },
 			}));
@@ -5130,7 +5137,8 @@ func TestADraftFromAnotherVersionIsNotPutBack(t *testing.T) {
 	var left string
 
 	p.run("look for the draft", chromedp.Evaluate(
-		`String(sessionStorage.getItem('gtr.draft.form-datasource') ?? '')`, &left))
+		`String(sessionStorage.getItem('gtr.draft.' + me.user.id + '.form-datasource') ?? '')`,
+		&left))
 
 	if left != "" {
 		t.Errorf("the draft from another version is still stored: %s", left)
@@ -5143,7 +5151,8 @@ func TestADraftFromAnotherVersionIsNotPutBack(t *testing.T) {
 	var stamped string
 
 	p.run("read what was written down", chromedp.Evaluate(
-		`String(sessionStorage.getItem('gtr.draft.form-datasource') ?? '')`, &stamped))
+		`String(sessionStorage.getItem('gtr.draft.' + me.user.id + '.form-datasource') ?? '')`,
+		&stamped))
 
 	if !strings.Contains(stamped, `"version":"`) || strings.Contains(stamped, `"version":""`) {
 		t.Errorf("a draft written now carries no version: %s", stamped)

@@ -135,24 +135,19 @@ type UpdateResponse struct {
 	// here, which is what a container needs to be told.
 	Newer bool `json:"newer"`
 
-	// Installable is false where this build cannot replace itself at all.
+	// Installable says the button can do something that lasts.
 	//
-	// It used to be false in a container as well, on the reasoning that a
-	// swapped binary is undone by the next recreate. That is true and it is not
-	// the whole truth: a restart of the same container keeps it - which is what
-	// the shipped deployment's restart policy does - so the update takes effect
-	// and holds until somebody runs the image again. Refusing to install left a
-	// container deployment with no way to update from the interface at all, and
-	// a command to type instead.
+	// False in a container with no updater beside it. Swapping the binary there
+	// works and does not last: it changes this container and not the image it
+	// was made from, so the next recreate brings the old version back - and a
+	// recreate is what a container deployment does to apply anything. Offering
+	// it would be offering an update that reverts on a day nobody connects to
+	// the button they pressed.
 	//
-	// So it installs, and Caveat says what to know about it.
+	// True in a container that has one, because then the image is what changes.
+	// See ByImage, and deploy/compose.update.yaml.
 	Installable bool   `json:"installable"`
 	Why         string `json:"why,omitempty"`
-
-	// Caveat names something true about installing here that is not a refusal.
-	// "inContainer": the new binary lives in this container and not in the image
-	// it was made from, so recreating the container brings the old one back.
-	Caveat string `json:"caveat,omitempty"`
 
 	// ByImage says this installation updates by pulling an image and recreating
 	// its container, rather than by swapping the binary inside it. True only
@@ -202,22 +197,22 @@ func (h *UpdateHandler) State(c *gofr.Context) (any, error) {
 
 // describe builds the answer, asking the feed at most once a minute.
 func (h *UpdateHandler) describe(c *gofr.Context) UpdateResponse {
+	byImage := h.byImage()
+
 	out := UpdateResponse{
 		Running:     h.version,
 		Enabled:     h.enabled,
-		Installable: true,
+		Installable: byImage || !hosting.InContainer(),
+		ByImage:     byImage,
 		Restartable: restart.Supported(),
 		RestartCode: restart.Code(),
 		Comparable:  selfupdate.Comparable(h.version),
 	}
 
-	// Installing works here; what it leaves behind is worth saying - unless
-	// something can replace the image, in which case nothing is left behind and
-	// there is nothing to warn about.
-	if h.byImage() {
-		out.ByImage = true
-	} else if hosting.InContainer() {
-		out.Caveat = "inContainer"
+	// A container with nothing that can replace its image updates the way every
+	// container deployment does, by hand. The screen says which command.
+	if !out.Installable {
+		out.Why = "inContainer"
 	}
 
 	if pending, ok := selfupdate.Installed(); ok {
@@ -362,6 +357,16 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 	// download thirty megabytes to throw them away a second later.
 	if h.byImage() {
 		return h.askForTheImage(c, release.Version)
+	}
+
+	// And a container without one is not offered this at all. Checked here
+	// rather than trusted from the screen: the button is only drawn where this
+	// holds, and a POST is not a button.
+	if hosting.InContainer() {
+		return nil, toHTTPError(apperror.Invalidf("this runs in a container, where " +
+			"replacing the binary is undone by the next recreate; update the image " +
+			"instead, or add deploy/compose.update.yaml to do it from here").
+			WithCode("updateInContainer"))
 	}
 
 	// Everybody, before it starts rather than after it finished.

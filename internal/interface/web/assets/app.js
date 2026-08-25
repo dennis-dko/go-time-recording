@@ -2112,6 +2112,31 @@ function roleChoices() {
 const DRAFT_PREFIX = 'gtr.draft.';
 
 /**
+ * Where one account's drafts are kept, apart from anybody else's.
+ *
+ * A draft is what somebody was part way through writing, and it belongs to
+ * them. The store is a browser's, though, and a browser is shared: signing out
+ * and letting a colleague sign in on the same machine is an ordinary thing to
+ * do at a shared desk, and half a form somebody else had been filling in is
+ * theirs to see rather than the next person's.
+ *
+ * Signing out clears them, which is the first answer and not a complete one: a
+ * tab that is closed by a crash, a machine put to sleep and woken by somebody
+ * else, a session that ended without anybody pressing anything. So the key
+ * carries who wrote it, and a draft belonging to another account is simply not
+ * found - whatever did or did not get cleared.
+ *
+ * Before anybody has signed in there is no account and therefore no draft to
+ * restore, which is right: the only form on screen then is the sign-in one, and
+ * that one keeps nothing on purpose.
+ */
+function draftsOf() {
+  const who = me.user?.id;
+
+  return who ? `${DRAFT_PREFIX}${who}.` : '';
+}
+
+/**
  * The controls a draft is made of.
  *
  * Named ones only: an unnamed control decides what the form shows rather than
@@ -2244,7 +2269,10 @@ function rememberDraft(form) {
   if (!key || form.dataset.noDraft !== undefined) return;
 
   try {
-    window.sessionStorage.setItem(DRAFT_PREFIX + key, JSON.stringify(draftOf(form)));
+    const mine = draftsOf();
+    if (!mine) return;
+
+    window.sessionStorage.setItem(mine + key, JSON.stringify(draftOf(form)));
   } catch {
     // Storage refused, or full. Nothing to do and nothing to say: the form on
     // screen is unaffected, and this was only ever insurance against a reload.
@@ -2258,7 +2286,7 @@ function forgetDraft(form) {
   if (!key) return;
 
   try {
-    window.sessionStorage.removeItem(DRAFT_PREFIX + key);
+    window.sessionStorage.removeItem(draftsOf() + key);
   } catch {
     // Same reasoning as above.
   }
@@ -2290,7 +2318,7 @@ function forgetEveryDraft() {
  * and not a consequence of where it happens to sit. A search box or a filter is
  * a question being asked, not work: they are left out.
  */
-const LOOSE_DRAFT_KEY = `${DRAFT_PREFIX}(loose)`;
+const LOOSE_DRAFT_NAME = '(loose)';
 
 /** Writes down the controls marked to be kept. */
 function rememberLooseDraft() {
@@ -2301,7 +2329,7 @@ function rememberLooseDraft() {
   }
 
   try {
-    window.sessionStorage.setItem(LOOSE_DRAFT_KEY, JSON.stringify(values));
+    window.sessionStorage.setItem(draftsOf() + LOOSE_DRAFT_NAME, JSON.stringify(values));
   } catch {
     // Storage refused, or full. The screen is unaffected.
   }
@@ -2312,7 +2340,7 @@ function restoreLooseDraft() {
   let values = null;
 
   try {
-    values = JSON.parse(window.sessionStorage.getItem(LOOSE_DRAFT_KEY) ?? 'null');
+    values = JSON.parse(window.sessionStorage.getItem(draftsOf() + LOOSE_DRAFT_NAME) ?? 'null');
   } catch {
     // Unreadable or not there.
   }
@@ -2344,6 +2372,11 @@ function restoreLooseDraft() {
  * collector box the exporter allows, whether an SSL mode applies at all.
  */
 function restoreDrafts() {
+  // Whose drafts these are. Nobody's before anybody has signed in, and then
+  // there is nothing to put back - see draftsOf.
+  const mine = draftsOf();
+  if (!mine) return;
+
   restoreLooseDraft();
 
   for (const form of $$('form')) {
@@ -2354,7 +2387,7 @@ function restoreDrafts() {
     let draft = null;
 
     try {
-      draft = JSON.parse(window.sessionStorage.getItem(DRAFT_PREFIX + key) ?? 'null');
+      draft = JSON.parse(window.sessionStorage.getItem(mine + key) ?? 'null');
     } catch {
       // Unreadable or not there. Either way there is nothing to put back.
     }
@@ -3206,6 +3239,7 @@ const TRANSLATIONS = {
     'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
       + 'warten Sie, bis sie abgeschlossen ist.',
     'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
+    'err.updateInContainer': 'Dies läuft in einem Container. Ein dort ausgetauschtes Programm wird beim nächsten Neuerzeugen des Containers überschrieben. Bitte das Abbild von Hand aktualisieren – oder deploy/compose.update.yaml zur Bereitstellung hinzufügen, dann geht es von hier aus.',
     'err.updateNotNewer': 'Diese Installation läuft bereits mit {0}.',
     'err.onlyBuiltInAdminSchedules': 'Nur die eingebaute Administration darf den '
       + 'Verzeichnisabgleich planen.',
@@ -3595,6 +3629,7 @@ const TRANSLATIONS = {
       + 'beim nächsten Neuaufbau wieder weg — stattdessen das Abbild aktualisieren: '
       + 'docker compose pull && docker compose up -d',
     'update.byImage': 'Es wird ein neues Abbild geladen, dieser Container daraus neu erzeugt und das ersetzte Abbild anschließend entfernt. Die Anwendung ist einige Sekunden weg und kommt als neue Fassung zurück – diese Seite wartet darauf.',
+    'update.replacing': 'Ein neues Abbild wird geladen und dieser Container ersetzt …',
     'update.off': 'Die Suche nach neuen Versionen ist auf dieser Installation '
       + 'abgeschaltet (UPDATE_CHECK).',
     'update.confirm': 'Die neue Version herunterladen und installieren? '
@@ -6198,7 +6233,19 @@ function handBackTheScreen(message) {
   handedToASession = false;
 
   // And the unfinished forms, which belong to whoever typed them.
+  //
+  // Both halves, because they are two places. forgetEveryDraft empties the
+  // store a reload would be restored from; the boxes on screen are the other
+  // one, and they keep what was typed into them until something says otherwise.
+  // Nothing did - so signing out and letting somebody else sign in at the same
+  // desk left them looking at a card still holding the previous person's
+  // half-written database connection.
+  //
+  // Reset rather than emptied: a form goes back to what the markup says, which
+  // is what somebody arriving at it should find.
   forgetEveryDraft();
+
+  for (const form of $$('form')) form.reset();
 
   // And what this installation is waiting to restart into, which is the
   // administration of the installation and none of the next person's business.
@@ -7677,37 +7724,37 @@ function renderUpdate(state) {
       + 'checksum. Afterwards the application has to be restarted by hand — this '
       + 'platform cannot restart itself.');
 
-  // A container with an updater beside it takes the whole image, so there is
-  // nothing left behind to warn about - and what the button does is different
-  // enough to say plainly. It is not this application replacing its own binary;
-  // it is something else replacing this container.
+  // A container with an updater beside it takes the whole image, and what the
+  // button does then is different enough to say plainly: it is not this
+  // application replacing its own binary, it is something else replacing this
+  // container.
   if (state.byImage) {
     hint.textContent = t('update.byImage',
       'A new image is pulled and this container is recreated from it, then the '
-      + 'image it replaced is removed. The application is away for a few seconds '
+      + 'image it replaced is removed. The application is away for up to a minute '
       + 'and comes back as the new version - this page waits for it.');
 
     return;
   }
 
-  // In a container, what installing leaves behind is worth saying beside it.
+  // A container without one is not offered a button, and is told what to run.
   //
-  // This card used to refuse here: a command to type instead of a button, on the
-  // reasoning that a swapped binary is undone by the next recreate. That is true
-  // and it is not the whole truth - a restart of the same container keeps it,
-  // which is what the shipped deployment's restart policy does - so the update
-  // takes effect and holds until somebody runs the image again. Refusing left a
-  // container deployment with no way to update from the interface at all.
-  //
-  // The caveat is the honest half of that, and it is a caveat rather than a
-  // refusal: the version in the image is still the old one, so anybody who
-  // recreates this container gets it back.
-  hint.textContent = state.caveat === 'inContainer'
-    ? `${promise} ${t('update.inContainer',
-      'This runs in a container: the new version lives in this container and not '
-      + 'in the image it was made from, so recreating it brings the old one back. '
-      + 'Pull the image when convenient: docker compose pull && docker compose up -d')}`
-    : promise;
+  // Swapping the binary works there and does not last: it changes this
+  // container and not the image it was made from, so the next recreate brings
+  // the old version back - and a recreate is how a container deployment applies
+  // anything. An update that reverts on a day nobody connects to the button
+  // they pressed is worse than no button.
+  if (!state.installable) {
+    hint.textContent = t('update.inContainer',
+      'This runs in a container, where a replaced binary is undone the next time '
+      + 'the container is recreated. Update the image by hand: '
+      + 'docker compose pull && docker compose up -d - or add '
+      + 'deploy/compose.update.yaml to the deployment and this card will do it.');
+
+    return;
+  }
+
+  hint.textContent = promise;
 }
 
 /**
@@ -7724,10 +7771,10 @@ function renderUpdate(state) {
  * redraws every card from the process that has just come back, and a message
  * put up first is a message competing with that.
  */
-async function settleAfterRestart(previous, done) {
+async function settleAfterRestart(previous, done, patience) {
   const overlay = $('#restart-overlay');
 
-  if (await waitForRestart(previous)) {
+  if (await waitForRestart(previous, patience)) {
     overlay.hidden = true;
     await refreshAll();
     toast(done, 'ok');
@@ -7777,6 +7824,25 @@ function wireUpdate() {
     } catch (err) {
       overlay.hidden = true;
       toast(err.message, 'error');
+
+      return;
+    }
+
+    // Something else is replacing this container, so there is nothing to ask
+    // for: the wait is the whole of what is left to do.
+    //
+    // This used to fall through to the restart below, and the result was the
+    // opposite of an update. The POST stopped the application; its restart
+    // policy started the same container again from the same, old image; and the
+    // updater's recreate arrived into the middle of that. The version that came
+    // back was whichever won, which was usually the one that was already there -
+    // reported as "it did not restart, and nothing changed".
+    if (state?.byImage) {
+      status.textContent = t('update.replacing',
+        'A new image is being pulled and this container replaced …');
+
+      await settleAfterRestart(previous,
+        t('update.done', 'The new version is running.'), IMAGE_UPDATE_TIMEOUT_MS);
 
       return;
     }
@@ -8054,14 +8120,25 @@ function announceSave() {
 const RESTART_TIMEOUT_MS = 60000;
 
 /**
+ * And how long where a new image has to be fetched first.
+ *
+ * A restart is this process starting again, which is seconds. Replacing the
+ * image is a download of some tens of megabytes over whatever connection the
+ * server has, then a container recreated from it - and on a small machine at
+ * the end of a domestic line that is minutes, not seconds. Giving up at one
+ * would tell somebody it had failed while it was still working.
+ */
+const IMAGE_UPDATE_TIMEOUT_MS = 5 * 60000;
+
+/**
  * Waits for a different process to answer.
  *
  * Polling for "does it respond" is not enough: replacing the process image takes
  * milliseconds, and a poll that misses that gap would report success without
  * anything having happened. The start time changing is what proves it.
  */
-async function waitForRestart(previousStartedAt) {
-  const deadline = Date.now() + RESTART_TIMEOUT_MS;
+async function waitForRestart(previousStartedAt, patience = RESTART_TIMEOUT_MS) {
+  const deadline = Date.now() + patience;
 
   while (Date.now() < deadline) {
     await new Promise((resolve) => { setTimeout(resolve, 1000); });
