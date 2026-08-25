@@ -198,7 +198,7 @@ jobs:
 
       # So an image built for another architecture can be started on this one.
       # Only the check below needs it; the build itself cross-compiles.
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
 
       - uses: docker/setup-buildx-action@v4
         with:
