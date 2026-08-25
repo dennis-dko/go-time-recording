@@ -119,8 +119,12 @@ func TestTheRestartCardComesBeforeTheVersionCard(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
+	// The version card, not the restart card: the restart card is only on screen
+	// while something is waiting for one, and this asks about where the two sit
+	// relative to each other - which is true of the markup whether either is
+	// showing.
 	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
-		chromedp.WaitVisible("#restart-card", chromedp.ByID))
+		chromedp.WaitVisible("#form-telemetry", chromedp.ByID))
 
 	var order string
 

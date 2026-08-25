@@ -2217,11 +2217,24 @@ function draftOf(form) {
   // restoring puts the chooser back before the boxes.
   const version = lastBranding.version ?? '';
 
+  // Which controls were chosen rather than merely filled in.
+  //
+  // One control cares, and the reason is worth stating here rather than only
+  // where it is read: the connection card's type decides which other fields
+  // exist, so it follows what this installation is actually connected to until
+  // somebody picks something else. That marker lives on the element, and an
+  // element does not survive a reload - so without carrying it, a card somebody
+  // had set to PostgreSQL came back describing the SQLite the environment
+  // happens to run, with their host and user still in the boxes beneath it.
+  const chosen = draftableFields(form)
+    .filter((field) => field.dataset.chosen !== undefined)
+    .map((field) => field.name);
+
   if (formKey(form) === 'form-branding') {
-    return { version, values, brandingDraft, brandingLanguage };
+    return { version, values, chosen, brandingDraft, brandingLanguage };
   }
 
-  return { version, values };
+  return { version, values, chosen };
 }
 
 /** Writes down what is in a form, for the next load of this tab. */
@@ -2397,6 +2410,15 @@ function restoreDrafts() {
     for (const field of restored) {
       field.dispatchEvent(new Event('input', { bubbles: true }));
       field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // And which of them were chosen rather than filled in - see draftOf. Put
+    // back after the events above rather than before: those are dispatched from
+    // here, so the listeners that would otherwise set this mark deliberately
+    // ignore them.
+    for (const name of draft.chosen ?? []) {
+      const field = form.elements[name];
+      if (field) field.dataset.chosen = 'yes';
     }
 
     form.dataset.editing = 'yes';
@@ -2941,8 +2963,8 @@ const TRANSLATIONS = {
     'password.hide': 'Passwort verbergen',
 
     'restart.title': 'Neustart',
-    'restart.open': 'Zum Neustart',
-    'restart.summary': '{0} gespeicherte Einstellung(en) warten auf einen Neustart.',
+    'restart.open': 'Neustart',
+    'restart.summary': '{0} gespeicherte Einstellung(en) warten auf einen {1}.',
     'restart.unsupported.noExecve': 'Ein Neustart aus der Anwendung heraus ist unter Windows nicht möglich: dafür wird execve gebraucht, das es dort nicht gibt. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
@@ -5032,10 +5054,25 @@ function showRunningConnection(form, ds) {
   // So it names what is running, like every other field here. The note above
   // says where that came from, which is what stops it reading as something
   // somebody saved.
-  // Unless somebody is choosing one. This is the one line here that writes a
-  // value rather than describing what is running, so it is the one line that
-  // has to ask.
-  if (running.dialect && !beingEdited(form)) form.elements.dialect.value = running.dialect;
+  // Unless somebody has chosen one themselves.
+  //
+  // Asked of the control rather than of the form. "Somebody is filling this in"
+  // is the right question for the text fields - they hold what was typed and
+  // must not be taken away - and the wrong one for this select, because the
+  // select decides which text fields exist at all. A form counted as being
+  // edited for any reason, including a draft restored from an earlier visit,
+  // left the type on whatever it happened to hold, and the card then described
+  // a SQLite file directly under a line reading "currently connected via
+  // postgres". Two answers to one question, on the one card whose job is to
+  // give it.
+  //
+  // A person choosing a type is a different event from a script setting one:
+  // isTrusted is false for anything dispatched from code, which is what restoring
+  // a draft does. So this follows what is running until somebody actually picks
+  // something, and then it is theirs.
+  if (running.dialect && form.elements.dialect.dataset.chosen === undefined) {
+    form.elements.dialect.value = running.dialect;
+  }
 
   if (note) {
     note.textContent = t('admin.connectionFromEnvironment',
@@ -5463,7 +5500,17 @@ function wireAdmin() {
       });
   });
 
-  $('#form-datasource').elements.dialect.addEventListener('change', syncDatasourceFields);
+  $('#form-datasource').elements.dialect.addEventListener('change', (e) => {
+    // A person picking a type takes it over from here; see
+    // showRunningConnection, which follows the running connection until then.
+    //
+    // isTrusted is what tells the two apart: restoring a draft sets the value
+    // and dispatches a change so the fields that depend on it are redrawn, and
+    // that is the script speaking rather than somebody choosing.
+    if (e.isTrusted) e.target.dataset.chosen = 'yes';
+
+    syncDatasourceFields();
+  });
 
   $('#form-datasource').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -7870,15 +7917,41 @@ async function loadRestart() {
   $('#restart-card-hint').hidden = !waiting;
   $('#restart-card-pending').hidden = !waiting;
 
-  // One line saying how many, because the banner no longer lists them.
-  const summary = $('#restart-summary');
-
+  // One sentence saying how many, with the way to the card inside it.
+  //
   // The banner is only up while something is waiting, so this is always the
   // count - there is no "nothing is waiting" wording, because nobody could read
   // it.
+  //
+  // The link is a word in the sentence rather than a control beside it: what
+  // somebody wants to press is the thing being talked about, and a button
+  // reading "go to the restart" next to a sentence about a restart is the same
+  // word twice. Split on the placeholder, so a translator decides where in
+  // their sentence it falls.
+  const summary = $('#restart-summary');
+
   if (summary) {
-    summary.textContent = fillIn(t('restart.summary',
-      '{0} saved setting(s) are waiting for a restart.'), [pending.length]);
+    summary.textContent = '';
+
+    // Split on the placeholder rather than on a marker put through the filler:
+    // where the link falls in the sentence is the translator's business, and
+    // the two halves are whatever they wrote around it.
+    const [before, after] = t('restart.summary',
+      '{0} saved setting(s) are waiting for a {1}.').split('{1}');
+
+    summary.append(fillIn(before ?? '', [pending.length]));
+
+    const link = el('button', {
+      type: 'button',
+      class: 'link-button',
+      id: 'restart-open',
+      text: t('restart.open', 'restart'),
+    });
+
+    link.addEventListener('click', openTheRestartCard);
+    summary.append(link);
+
+    summary.append(after ?? '');
   }
 
   // What the button does, said before it is pressed rather than found out
@@ -7909,8 +7982,19 @@ async function loadRestart() {
   showRestartControls('#restart-card-mode', '#restart-card-now',
     '#restart-card-unsupported', description, refusal, state.supported, true);
 
+  // The card appears for the same reason the notice does, and goes with it.
+  //
+  // It was always on screen for a while, so that a restart could be asked for
+  // on purpose and so the screen said what one would do here. What that
+  // produced was a card offering a restart beside the version card offering an
+  // update - and the update button restarts by itself, so the two read as two
+  // ways to do one thing, one of which is the wrong one.
+  //
+  // A restart on its own is not a thing anybody wants; it is what some other
+  // change needs. So the card is here when something needs it and says what,
+  // and the update looks after its own.
   const card = $('#restart-card');
-  if (card) card.hidden = false;
+  if (card) card.hidden = !waiting;
 }
 
 /**
@@ -7997,15 +8081,20 @@ async function waitForRestart(previousStartedAt) {
 function wireRestart() {
   wireRestartButton($('#restart-card-now'));
 
-  // The banner does not restart anything; it says one is waiting and takes you
-  // to where it happens. One button for one action, in the one place the detail
-  // is - which is what stops the notice and the control drifting apart.
-  $('#restart-open')?.addEventListener('click', () => {
-    switchView('admin');
+}
 
-    const card = $('#restart-card');
-    if (card) card.scrollIntoView({ block: 'center' });
-  });
+/**
+ * Takes whoever pressed it to the card that performs the restart.
+ *
+ * The banner restarts nothing; it says one is waiting and leads to where it
+ * happens. One button for one action, in the one place the detail is - which is
+ * what stops the notice and the control drifting apart.
+ */
+function openTheRestartCard() {
+  switchView('admin');
+
+  const card = $('#restart-card');
+  if (card) card.scrollIntoView({ block: 'center' });
 }
 
 function wireRestartButton(button) {
@@ -8980,6 +9069,34 @@ function tableAsFigures(table) {
 }
 
 /**
+ * The colours this screen is drawn in, for the document to be drawn in too.
+ *
+ * Read from the page rather than written out here, so a theme, a re-themed
+ * build or a token somebody changes are all followed without this knowing about
+ * any of them. getComputedStyle gives the settled value - the var() and the
+ * color-mix() already worked out - which is the same reason the charts are
+ * copied that way.
+ *
+ * The names are the interface's own tokens. A document made from a dark screen
+ * therefore comes out with the dark theme's type colours around a dark chart,
+ * which is what "the chart exactly as displayed" means once it is more than the
+ * picture.
+ */
+function screenColours() {
+  const settled = window.getComputedStyle(document.documentElement);
+
+  const read = (token) => settled.getPropertyValue(token).trim();
+
+  return {
+    accent: read('--accent'),
+    text: read('--text'),
+    muted: read('--muted'),
+    border: read('--border'),
+    surface: read('--surface'),
+  };
+}
+
+/**
  * The period a document covers, worded as the two date fields have it.
  */
 function periodOf(from, to) {
@@ -9022,6 +9139,7 @@ async function reportDocument() {
 
   return {
     title: t('report.title', 'Report'),
+    colours: screenColours(),
     subtitle: periodOf($('#form-report').elements.from, $('#form-report').elements.to),
     sections: [{
       heading: t('report.result', 'Result'),
@@ -9037,6 +9155,7 @@ async function reportDocument() {
 async function statisticsDocument() {
   return {
     title: t('stats.title', 'My hours'),
+    colours: screenColours(),
     subtitle: periodOf($('#statistics-from'), $('#statistics-to')),
     sections: [
       {
@@ -9061,6 +9180,7 @@ async function overtimeDocument() {
 
   return {
     title: t('nav.overtime', 'Overtime'),
+    colours: screenColours(),
     subtitle: periodOf(form.elements.from, form.elements.to),
     sections: [{
       heading: t('ot.balance', 'Balance'),

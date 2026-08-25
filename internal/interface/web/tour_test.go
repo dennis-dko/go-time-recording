@@ -238,11 +238,20 @@ func TestTheRestartNoticeIsABannerAndTheControlIsACard(t *testing.T) {
 		t.Error("the banner still lists the pending changes as well as the card")
 	}
 
-	// The banner points rather than acts. One button for one action, where the
-	// detail is - which is what stops the notice and the control drifting apart,
-	// and was the reason the card was once removed altogether.
-	if !strings.Contains(html, `id="restart-open"`) {
+	// The banner points rather than acts, and points with a word in its own
+	// sentence rather than a control beside it - what somebody wants to press is
+	// the thing being talked about, and a button reading "go to the restart"
+	// next to a sentence about a restart is the same word twice.
+	//
+	// Drawn rather than written into the markup, because it sits inside a
+	// sentence whose shape belongs to whoever translated it.
+	if !strings.Contains(js, `id: 'restart-open'`) {
 		t.Error("the banner offers no way to the card it is a notice about")
+	}
+
+	if !strings.Contains(js, "').split('{1}')") {
+		t.Error("the link is put beside the sentence rather than into it, so a " +
+			"translation cannot decide where in the sentence it falls")
 	}
 
 	if strings.Contains(html, `id="restart-now"`) {

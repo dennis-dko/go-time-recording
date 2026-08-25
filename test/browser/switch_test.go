@@ -4,6 +4,7 @@ package browser
 
 import (
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -142,15 +143,34 @@ func TestTheStickyBarReservesItsOwnHeight(t *testing.T) {
 			Reserved float64 `json:"reserved"`
 		}
 
-		p.evalJSON(`JSON.stringify((() => {
-			const bar = document.querySelector('.topbar');
-			const reserved = getComputedStyle(document.documentElement).scrollPaddingTop;
+		// The reserved height is kept in step by a ResizeObserver, which is
+		// asynchronous: it runs after the frame the resize was laid out in. So
+		// this waits for the two to agree rather than reading once and calling
+		// the gap a bug - the gap right after a resize is the observer not
+		// having run yet, and it closes on its own.
+		//
+		// Waited for rather than slept through, and it still fails on a bar that
+		// really is taller than what is reserved: the loop gives up and the
+		// assertion below reports the last pair it read.
+		deadline := time.Now().Add(waitPatience)
 
-			return {
-				bar: bar.getBoundingClientRect().height,
-				reserved: parseFloat(reserved) || 0,
-			};
-		})())`, &out)
+		for {
+			p.evalJSON(`JSON.stringify((() => {
+				const bar = document.querySelector('.topbar');
+				const reserved = getComputedStyle(document.documentElement).scrollPaddingTop;
+
+				return {
+					bar: bar.getBoundingClientRect().height,
+					reserved: parseFloat(reserved) || 0,
+				};
+			})())`, &out)
+
+			if out.Reserved >= out.Bar || time.Now().After(deadline) {
+				break
+			}
+
+			time.Sleep(150 * time.Millisecond)
+		}
 
 		if out.Reserved < out.Bar {
 			t.Errorf("at %dpx wide the bar is %.0fpx tall and %.0fpx is reserved "+
