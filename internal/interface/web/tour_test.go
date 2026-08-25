@@ -298,33 +298,66 @@ func TestTheFooterNamesThePlatformBesideTheVersion(t *testing.T) {
 	}
 }
 
-// A container is offered the update, not a command to type.
+// What a container is offered depends on whether anything can replace its image.
 //
-// This card refused to install in a container: a swapped binary is undone by
-// the next recreate, so it printed "docker compose pull" instead. That is true
-// and it is not the whole truth - a restart of the same container keeps the new
-// binary, which is what the shipped deployment's restart policy does, so the
-// update takes effect and holds until somebody runs the image again.
+// Swapping the binary inside a container works and does not last: it changes
+// that container and not the image it was made from, so the next recreate
+// brings the old version back - and a recreate is how a container deployment
+// applies anything at all. An update that reverts on a day nobody connects to
+// the button they pressed is worse than no button, so there is none, and the
+// card says which command to run instead.
 //
-// Refusing left a container deployment with no way to update from the interface
-// at all, which is the deployment this application ships.
-func TestTheUpdateCardOffersAContainerTheButtonAndTheCaveat(t *testing.T) {
+// With deploy/compose.update.yaml beside it there is something that can replace
+// the image, and then the button is the whole update: a new image, a container
+// recreated from it, the old image removed.
+func TestAContainerIsOfferedTheImageOrToldToUpdateByHand(t *testing.T) {
 	js := asset(t, "/app.js")
 
-	if strings.Contains(js, "if (!state.installable) {") {
-		t.Error("the card still turns a whole class of installation away instead " +
-			"of offering it the update")
+	if !strings.Contains(js, "if (state.byImage) {") {
+		t.Error("the card does not offer a container with an updater the image")
 	}
 
-	if !strings.Contains(js, "state.caveat === 'inContainer'") {
-		t.Error("the card does not say what installing in a container leaves behind")
+	if !strings.Contains(js, "if (!state.installable) {") {
+		t.Error("a container with nothing to replace its image is offered a button " +
+			"whose effect the next recreate undoes")
 	}
 
-	// The caveat follows the promise rather than replacing it: somebody in a
-	// container still has to be told the download is checked and what happens
-	// afterwards.
-	if !strings.Contains(js, "${promise} ${t('update.inContainer'") {
-		t.Error("the container caveat replaces what the card says about the " +
-			"download rather than following it")
+	// And it names the overlay, because "update it by hand" is only half an
+	// answer when the other half is a file in this repository.
+	if !strings.Contains(js, "deploy/compose.update.yaml") {
+		t.Error("the card tells a container to update by hand without mentioning " +
+			"what would let it do so from here")
+	}
+}
+
+// The image update waits rather than asking for a restart it is not performing.
+//
+// This is the one that made an update look like nothing happening. The press
+// used to fall through to the restart below it: the POST stopped the
+// application, its restart policy started the same container again from the
+// same old image, and the updater's recreate arrived into the middle of that.
+// Whichever won came back, which was usually the version that was already
+// there.
+func TestTheImageUpdateDoesNotAlsoAskForARestart(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	press := js[strings.Index(js, "function wireUpdate()"):]
+	press = press[:strings.Index(press, "\n}\n")]
+
+	byImage := strings.Index(press, "if (state?.byImage) {")
+	restart := strings.Index(press, "'/settings/restart'")
+
+	if byImage < 0 {
+		t.Fatal("the press does not tell an image update from a restart")
+	}
+
+	if restart >= 0 && restart < byImage {
+		t.Error("the press asks for a restart before it has decided whether " +
+			"something else is already replacing this container")
+	}
+
+	if !strings.Contains(press, "IMAGE_UPDATE_TIMEOUT_MS") {
+		t.Error("the image update is given the same patience as a restart, and it " +
+			"has a download in front of it")
 	}
 }

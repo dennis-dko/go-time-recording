@@ -281,3 +281,97 @@ func TestTheConnectionTypeFollowsWhatIsRunningUntilSomebodyPicks(t *testing.T) {
 		t.Errorf("the type somebody picked (%q) was taken back to %q", picked, got)
 	}
 }
+
+// One person's half-written form is not the next person's.
+//
+// A draft is what somebody was part way through writing. The store it lives in
+// belongs to the browser, though, and a browser is shared: signing out and
+// letting a colleague sign in at the same desk is an ordinary thing to do, and
+// half a form somebody else had been filling in is theirs rather than the next
+// person's to find.
+//
+// Signing out clears them, which is the first answer and not a complete one - a
+// tab closed by a crash, a machine woken by somebody else, a session that ended
+// without anybody pressing anything. So the key carries who wrote it, and a
+// draft belonging to another account is simply not found.
+func TestADraftBelongsToTheAccountThatWroteIt(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.createOrdinaryAccount(t, workerEmail, workerPassword)
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+
+	p.waitForFilled("#datasource-active")
+
+	// Something half written, in a box nobody has saved.
+	const halfWritten = "half-written-by-the-administrator"
+
+	p.run("start filling it in", chromedp.SendKeys(
+		`#form-datasource [name="name"]`, halfWritten, chromedp.ByQuery))
+
+	// It survives a reload for the person who wrote it, which is the whole point
+	// of keeping one at all.
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.settled()
+	p.settleWelcome()
+
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-datasource", chromedp.ByID))
+
+	if got := p.value(`#form-datasource [name="name"]`); !strings.Contains(got, halfWritten) {
+		t.Fatalf("the draft did not survive a reload for its own author; the field "+
+			"reads %q", got)
+	}
+
+	// And somebody else finds their own screen.
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn(workerEmail, workerPassword)
+	p.waitGone("#login-screen")
+	p.settled()
+	p.settleWelcome()
+
+	var leaked bool
+
+	p.run("look for it anywhere on the screen", chromedp.Evaluate(
+		`document.body.textContent.includes(`+"`"+halfWritten+"`"+`)
+			|| [...document.querySelectorAll('input, textarea')]
+				.some((field) => field.value.includes(`+"`"+halfWritten+"`"+`))`, &leaked))
+
+	if leaked {
+		t.Error("what one account was part way through writing is on the next " +
+			"account's screen")
+	}
+
+	// Nor in the store it was kept in, which is what survives a sign-out that
+	// never happened.
+	var kept string
+
+	p.run("look in the store", chromedp.Evaluate(`
+		(() => {
+			const found = [];
+
+			for (let i = 0; i < window.sessionStorage.length; i += 1) {
+				const key = window.sessionStorage.key(i);
+
+				if ((window.sessionStorage.getItem(key) ?? '').includes(
+					`+"`"+halfWritten+"`"+`)) {
+					found.push(key);
+				}
+			}
+
+			return found.join(',');
+		})()`, &kept))
+
+	if kept != "" {
+		// Not a failure on its own - the key names an account, so another one
+		// cannot read it - but worth reporting, because it means the sign-out
+		// did not clear what it is supposed to clear.
+		t.Errorf("the previous account's draft is still in the store under %q", kept)
+	}
+}
