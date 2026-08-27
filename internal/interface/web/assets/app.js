@@ -3193,6 +3193,9 @@ const TRANSLATIONS = {
     'err.notFound': '{0} mit der Kennung {1} wurde nicht gefunden.',
     'err.invalidFields': 'Ungültige Felder',
     'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
+    'err.updateCheckedRecently': 'Die Release-Quelle wurde gerade erst gefragt. '
+      + 'Erneut möglich in {0} Sekunden.',
+    'err.updateCheckOff': 'Die Aktualisierungsprüfung ist für diese Installation abgeschaltet.',
     'err.bodyTooLarge': 'Die gesendeten Daten sind zu groß (Grenze: {0} MB).',
     'err.csrfRejected': 'Diese Seite ist zu lange geöffnet gewesen. Bitte neu laden und noch einmal versuchen.',
     'err.maintenance': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
@@ -3616,6 +3619,8 @@ const TRANSLATIONS = {
     'update.running': 'Diese Installation läuft mit {0}',
     'update.current': '{0} ist die neueste Version.',
     'update.found': '{0} ist verfügbar. Diese Installation läuft mit {1}.',
+    'update.check': 'Aktualisierung suchen',
+    'update.checking': 'Wird gesucht …',
     'update.install': 'Herunterladen und installieren',
     'update.notes': 'Was sich geändert hat ↗',
     'update.pending': '{0} ist heruntergeladen und startet mit dem nächsten Neustart.',
@@ -7790,6 +7795,45 @@ async function settleAfterRestart(previous, done, patience) {
     + 'reload the page in a moment.'), 'error');
 }
 
+/**
+ * The button that asks the release feed now.
+ *
+ * The card is drawn from an answer the server keeps for six hours, because the
+ * feed allows sixty unauthenticated requests an hour per address and every open
+ * card would otherwise spend them. That is right for a screen refreshing itself
+ * and wrong for the minute after somebody publishes a release, when the card
+ * states the version before it and is not going to change its mind until the
+ * evening.
+ *
+ * The whole state comes back, so the card is redrawn from the answer rather than
+ * loaded again - one request, and the same rendering path a fresh load takes.
+ */
+function wireUpdateCheck() {
+  const button = $('#update-check');
+  if (!button) return;
+
+  button.addEventListener('click', async () => {
+    const wasSaying = button.textContent;
+
+    button.disabled = true;
+    button.textContent = t('update.checking', 'Looking …');
+
+    try {
+      const state = await api('/settings/update/check', { method: 'POST' });
+
+      redrawable('update', () => renderUpdate(state));
+    } catch (err) {
+      // Including "asked a moment ago", which is a sentence rather than a
+      // failure: the answer on the card is current, and saying so is better than
+      // a button that appears to do nothing.
+      toast(err.message, 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = wasSaying;
+    }
+  });
+}
+
 function wireUpdate() {
   const button = $('#update-now');
   if (!button) return;
@@ -11607,6 +11651,7 @@ async function init() {
     wireTelemetry();
     wireRestart();
     wireUpdate();
+    wireUpdateCheck();
     wireCropChooser();
 
     $('#branding-language')?.addEventListener('change', (e) => {

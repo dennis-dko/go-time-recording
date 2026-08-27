@@ -1970,6 +1970,26 @@
           }
         }
       }
+    },
+    "/settings/update/check": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Ask the release feed now, rather than waiting out the cached answer",
+        "description": "The version card is built from an answer the application keeps for six hours, because the release feed allows an unauthenticated caller sixty requests an hour per address and every open card would otherwise spend them. That is right for a screen refreshing itself and wrong for the minute after somebody publishes a release, when the card states a version that was newest this morning. This asks the feed at once and answers with the same body as `GET /settings/update`, so the card can be drawn again from what comes back. It has a limit of its own - once every five minutes for the whole installation - and refuses with `updateCheckedRecently` and the seconds remaining, so the button cannot hand back the problem the cache prevents. A feed that will not answer is reported as `problem` with a 200, exactly as the GET does. Needs the rights the built-in administrator has, not merely settings:manage.",
+        "responses": {
+          "201": {
+            "description": "The running version and what is available, freshly asked"
+          },
+          "403": {
+            "description": "Not an administrator of this installation"
+          },
+          "409": {
+            "description": "Asked too recently, or the update check is switched off"
+          }
+        }
+      }
     }
   },
   "components": {

@@ -3,11 +3,13 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -597,5 +599,113 @@ func TestUpdatingCanBeSwitchedOff(t *testing.T) {
 
 	if got := admin.api(http.MethodPost, "/settings/update", nil).Status; got == http.StatusOK {
 		t.Error("an update was installed although checking is switched off")
+	}
+}
+
+// Asking by hand gets past the answer the card is holding on to.
+//
+// The automatic check keeps what the feed said for six hours, so an
+// administrator who has just published a release is told the version before it
+// and has no way to say "look again". This is that way, and the thing worth
+// asserting is exactly the difference: the feed changes its mind, the ordinary
+// GET does not notice, and the manual check does.
+func TestAManualCheckSeesAReleaseTheCachedAnswerMissed(t *testing.T) {
+	t.Parallel()
+
+	var latest atomic.Value
+
+	latest.Store("v99.0.0")
+
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"tag_name":%q,"body":"much better",`+
+			`"html_url":"https://example.invalid/r","assets":[]}`, latest.Load())
+	}))
+	defer feed.Close()
+
+	a := start(t, "UPDATE_FEED="+feed.URL)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	var state struct {
+		Latest string `json:"latest"`
+	}
+
+	// The first look fills the cache.
+	admin.must(admin.api(http.MethodGet, "/settings/update", nil), http.StatusOK).Data(t, &state)
+
+	if state.Latest != "v99.0.0" {
+		t.Fatalf("the feed said v99.0.0 and the card says %q", state.Latest)
+	}
+
+	// A release is published while the card is holding the old answer.
+	latest.Store("v99.1.0")
+
+	admin.must(admin.api(http.MethodGet, "/settings/update", nil), http.StatusOK).Data(t, &state)
+
+	if state.Latest != "v99.0.0" {
+		t.Fatalf("the cache is not being used, so this test proves nothing; got %q", state.Latest)
+	}
+
+	// The button.
+	admin.must(admin.api(http.MethodPost, "/settings/update/check", nil),
+		http.StatusCreated).Data(t, &state)
+
+	if state.Latest != "v99.1.0" {
+		t.Errorf("asking by hand still returned the cached answer: %q", state.Latest)
+	}
+
+	// And the card keeps the fresh answer afterwards, rather than the manual ask
+	// being a one-off that the next load undoes.
+	admin.must(admin.api(http.MethodGet, "/settings/update", nil), http.StatusOK).Data(t, &state)
+
+	if state.Latest != "v99.1.0" {
+		t.Errorf("the fresh answer was not kept; the card fell back to %q", state.Latest)
+	}
+}
+
+// The button has a limit of its own, or it hands back the problem the cache
+// exists to prevent.
+func TestAManualCheckCannotBeUsedToHammerTheFeed(t *testing.T) {
+	t.Parallel()
+
+	var asked atomic.Int64
+
+	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked.Add(1)
+
+		_, _ = w.Write([]byte(`{"tag_name":"v99.0.0","body":"much better",` +
+			`"html_url":"https://example.invalid/r","assets":[]}`))
+	}))
+	defer feed.Close()
+
+	a := start(t, "UPDATE_FEED="+feed.URL)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	if got := admin.api(http.MethodPost, "/settings/update/check", nil).Status; got != http.StatusCreated {
+		t.Fatalf("the first manual check was refused with %d", got)
+	}
+
+	before := asked.Load()
+
+	// Pressed again straight away, several times, as an impatient person does.
+	for range 5 {
+		if got := admin.api(http.MethodPost, "/settings/update/check", nil).Status; got != http.StatusConflict {
+			t.Errorf("a second ask moments later should be refused, got %d", got)
+		}
+	}
+
+	if after := asked.Load(); after != before {
+		t.Errorf("the feed was contacted %d more time(s) despite the refusals", after-before)
+	}
+}
+
+// And it is guarded like everything else on this card.
+func TestAManualCheckNeedsToBeAnAdministrator(t *testing.T) {
+	t.Parallel()
+
+	a, admin, _ := startWithWorker(t)
+	worker := a.signInAsUser(admin, "Nina", "nina@example.com")
+
+	if got := worker.api(http.MethodPost, "/settings/update/check", nil).Status; got != http.StatusForbidden {
+		t.Errorf("somebody who books time may ask the release feed: got %d", got)
 	}
 }
