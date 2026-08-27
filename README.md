@@ -983,6 +983,7 @@ nothing sets the variable.
 | `TLS_STAGING` | `false` | Let's Encrypt test authority |
 | `HSTS_MAX_AGE` | `8760h` | only sent over HTTPS |
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client. **Administered under Settings**; not in `configs/.env` |
+| `TRUSTED_PROXIES` | empty | comma separated CIDR ranges or addresses whose `X-Forwarded-For` the rate limiter may believe. Loopback is always believed, so the built-in HTTPS front end needs no entry — this is for a proxy that is somewhere else, such as an nginx in the next container. Leave it empty when nothing is in front: a forwarded header from the open network is written by the client, so believing it would hand out a fresh sign-in budget per request |
 | `UPDATE_CHECK` | `true` | ask the release feed whether a newer version exists. `false` for an installation that must not reach the internet |
 | `UPDATE_FEED` | GitHub | where to ask — a mirror, a proxy, or a fork's own releases |
 | `UPDATE_TOKEN` | empty | identifies this installation to the feed. Almost never needed: checking takes no credentials. The limit is counted **per address**, so a dozen instances behind one office connection share sixty checks an hour, and running out answers `403` |
