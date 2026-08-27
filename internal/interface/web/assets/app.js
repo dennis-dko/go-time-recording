@@ -3617,7 +3617,7 @@ const TRANSLATIONS = {
     // cannot, and this is a container where replacing the binary would be undone.
     'update.title': 'Version',
     'update.running': 'Diese Installation läuft mit {0}',
-    'update.current': '{0} ist die neueste Version.',
+    'update.current': '{0} ist die aktuelle Version.',
     'update.found': '{0} ist verfügbar. Diese Installation läuft mit {1}.',
     'update.check': 'Aktualisierung suchen',
     'update.checking': 'Wird gesucht …',
