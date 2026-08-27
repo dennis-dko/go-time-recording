@@ -39,7 +39,7 @@ func (h *ProjectHandler) List(c *gofr.Context) (any, error) {
 
 	result, err := h.projects.ListProjects(c, query.ListProjectsQuery{
 		Status:   c.Param("status"),
-		ViewerID: h.viewerID(principal),
+		ViewerID: h.authz.viewerID(principal),
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -64,23 +64,13 @@ func (h *ProjectHandler) Get(c *gofr.Context) (any, error) {
 	}
 
 	result, err := h.projects.GetProject(c, query.GetProjectQuery{
-		ID: id, ViewerID: h.viewerID(principal),
+		ID: id, ViewerID: h.authz.viewerID(principal),
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
 	return newProjectResponse(result.Result), nil
-}
-
-// viewerID returns the id the visibility rules should be evaluated against,
-// or 0 when authorization is switched off entirely.
-func (h *ProjectHandler) viewerID(principal *service.Principal) uint {
-	if !h.authz.Enabled() || principal.User == nil {
-		return 0
-	}
-
-	return principal.User.ID
 }
 
 // requireMayWrite was here, to decide between two rights: a shared project needed
@@ -116,7 +106,7 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 	// Whoever is asking. Zero means enforcement is switched off, and then there is no
 	// "whose" to record - the same reading every other handler takes, and the reads
 	// short-circuit their visibility check in that case too.
-	if owner := h.viewerID(principal); owner != 0 {
+	if owner := h.authz.viewerID(principal); owner != 0 {
 		cmd.OwnerID = &owner
 	}
 
@@ -155,7 +145,7 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 
 	cmd := command.UpdateProjectCommand{
 		ID:          id,
-		ActorID:     h.viewerID(principal),
+		ActorID:     h.authz.viewerID(principal),
 		Name:        req.Name,
 		Description: req.Description,
 		Status:      req.Status,
@@ -195,7 +185,7 @@ func (h *ProjectHandler) Delete(c *gofr.Context) (any, error) {
 	}
 
 	err = h.projects.DeleteProject(c, command.DeleteProjectCommand{
-		ID: id, ActorID: h.viewerID(principal),
+		ID: id, ActorID: h.authz.viewerID(principal),
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -222,7 +212,7 @@ func (h *ProjectHandler) Archive(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	project, err := h.domain.ArchiveProject(c, id, h.viewerID(principal))
+	project, err := h.domain.ArchiveProject(c, id, h.authz.viewerID(principal))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

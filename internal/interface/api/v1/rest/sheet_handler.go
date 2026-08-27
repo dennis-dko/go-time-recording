@@ -104,24 +104,12 @@ func (h *SheetHandler) ExportProjects(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	book, err := h.projects.Export(c, language(c), h.viewerID(principal))
+	book, err := h.projects.Export(c, language(c), h.authz.viewerID(principal))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
 	return response.File{Content: book, ContentType: xlsxContentType}, nil
-}
-
-// viewerID is whose eyes the list is read through.
-//
-// Zero with enforcement switched off, which the list reads as "no scoping" - the
-// same reading every other handler takes.
-func (h *SheetHandler) viewerID(principal *service.Principal) uint {
-	if !h.authz.Enabled() || principal == nil || principal.User == nil {
-		return 0
-	}
-
-	return principal.User.ID
 }
 
 // ImportProjects handles POST /api/v1/projects/import.

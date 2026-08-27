@@ -305,11 +305,38 @@ func (a *Authorizer) requireOwner(principal *service.Principal, ownerID uint) er
 		WithCode("onlyOwnEntriesWrite")
 }
 
+// viewerID is whose eyes a read is made through, or 0 when authorization is
+// switched off entirely - which the services read as "no narrowing", and which
+// is what a local trial with AUTH_ENABLED=false is.
+//
+// One question asked on nearly every read, so it lives with the rest of the
+// answers about the caller. It used to be a method on three handlers, identical
+// in name and signature and not quite identical in body: one guarded the
+// principal and two dereferenced it. Nothing had gone wrong, because every call
+// site follows a successful Require - but that was a property of the callers
+// rather than of the copies, and the copies were what a fourth handler would
+// have been written from.
+//
+// The guarded reading is the one that survived. It costs a comparison and
+// removes the question.
+func (a *Authorizer) viewerID(principal *service.Principal) uint {
+	if a.open || principal == nil || principal.User == nil {
+		return 0
+	}
+
+	return principal.User.ID
+}
+
 // reportScope is whose hours a total covers: the caller's own.
 //
 // Zero means "no narrowing", which is what an installation without authentication
 // gets. Everybody else gets their own id, so a total can never add up hours that
 // are not theirs.
+//
+// Deliberately not viewerID above, which today computes the same number. The
+// two are the same only for as long as a project belongs to exactly one person,
+// and folding them together would quietly make that an assumption nobody
+// records rather than a coincidence two locks happen to share.
 //
 // The second of two locks, and today the redundant one. A project belongs to one
 // person and nobody else may even see it, so a report the caller can open is a report
