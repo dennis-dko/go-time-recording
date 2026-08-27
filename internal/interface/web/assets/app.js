@@ -2080,7 +2080,19 @@ function roleDescription(role) {
  * The value stays the identifier, because that is what the API takes.
  */
 function roleChoices() {
-  return cache.roles.map((role) => {
+  // The roles that ship, when nothing has been loaded.
+  //
+  // The list normally comes from /roles, which is only fetched by somebody
+  // holding roles:read - so a picker built from it is empty for anybody who may
+  // configure the installation without administering its roles, and empty again
+  // whenever that fetch has not happened or did not finish. An empty picker is
+  // the one answer that is always wrong: these three are seeded, cannot be
+  // deleted, and are therefore always a truthful set of choices.
+  const roles = cache.roles.length > 0
+    ? cache.roles
+    : Object.keys(SHIPPED_ROLE_TITLES).map((name) => ({ name }));
+
+  return roles.map((role) => {
     const title = roleTitle(role.name);
     const purpose = roleDescription(role);
 
@@ -3629,7 +3641,7 @@ const TRANSLATIONS = {
     // cannot, and this is a container where replacing the binary would be undone.
     'update.title': 'Version',
     'update.running': 'Diese Installation läuft mit {0}',
-    'update.current': '{0} ist die aktuelle Version.',
+    'update.current': '{0} ist die installierte Version.',
     'update.found': '{0} ist verfügbar. Diese Installation läuft mit {1}.',
     'update.check': 'Aktualisierung suchen',
     'update.checking': 'Wird gesucht …',
@@ -4160,7 +4172,18 @@ async function loadRoles() {
   if (!can('roles:read')) return;
 
   cache.roles = (await api('/roles'))?.items ?? [];
-  cache.permissions = (await api('/permissions'))?.permissions ?? [];
+
+  // Its own failure, rather than everybody's. This runs early in the sequence
+  // that loads every screen, so a refusal here used to abort the rest of it -
+  // and the screens further down, the directory card among them, were left
+  // holding whatever the markup shipped with. The rights editor is the only
+  // thing that needs this list; nothing else on the page should go dark because
+  // it could not be had.
+  try {
+    cache.permissions = (await api('/permissions'))?.permissions ?? [];
+  } catch {
+    cache.permissions = [];
+  }
 
   fillSelect($('#form-user select[name=role]'), roleChoices(),
     { labelKey: 'label', valueKey: 'name' });
@@ -5318,6 +5341,17 @@ async function loadAdmin() {
     'host', 'baseDn', 'bindDn', 'userFilter',
     'nameAttribute', 'emailAttribute', 'idAttribute',
   ];
+  // The options first, and outside the guard below.
+  //
+  // What goes into a picker is the installation's roles, which is server data
+  // rather than anything somebody typed - so protecting a half-filled card from
+  // being overwritten must not take the choices with it. It did, and a card that
+  // had been touched came back offering nothing to choose. fillSelect keeps a
+  // selection that is still among the options, so a role chosen and not yet
+  // saved survives this.
+  fillSelect(ldapForm.elements.defaultRole, roleChoices(),
+    { labelKey: 'label', valueKey: 'name' });
+
   // Not over a directory somebody is part way through configuring. A bind DN
   // and a filter are long enough to be worth not losing to a reload nobody
   // asked for.
@@ -5332,20 +5366,19 @@ async function loadAdmin() {
       ldapForm.elements[flag].checked = Boolean(ldap[flag]);
     }
 
-    fillSelect(ldapForm.elements.defaultRole, roleChoices(),
-      { labelKey: 'label', valueKey: 'name' });
     // || rather than ??, because the value that actually arrives from an older
     // installation is an empty string rather than a missing field - and ?? lets
     // it through, which sets a <select> to a value none of its options carry and
     // leaves it showing nothing at all.
     ldapForm.elements.defaultRole.value = ldap.defaultRole || 'user';
+  }
 
-    // And if even that names a role this installation has not got, show the
-    // first one rather than a blank box: a picker with nothing in it reads as a
-    // broken screen, and there is always at least one role to offer.
-    if (!ldapForm.elements.defaultRole.value) {
-      ldapForm.elements.defaultRole.selectedIndex = 0;
-    }
+  // Whatever happened above, something is selected. A <select> set to a value
+  // none of its options carry selects nothing and draws an empty box, which is
+  // what this card kept showing; there is always at least one role to fall back
+  // to, and none of the options is an empty one.
+  if (!ldapForm.elements.defaultRole.value) {
+    ldapForm.elements.defaultRole.selectedIndex = 0;
   }
 
   // The directory run belongs to the built-in administrator, because it deletes
@@ -7734,7 +7767,7 @@ function renderUpdate(state) {
 
   if (!state.newer) {
     line.textContent = state.latest
-      ? t('update.current', '{0} is the newest version.').replace('{0}', state.running)
+      ? t('update.current', '{0} is the installed version.').replace('{0}', state.running)
       : running;
 
     hint.hidden = true;
