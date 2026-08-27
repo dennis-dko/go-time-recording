@@ -475,3 +475,51 @@ func TestAnUnrecognisedLevelFiltersNothing(t *testing.T) {
 		t.Error("a level nobody recognises hid something")
 	}
 }
+
+// Running the binary with no .env beside it is a supported way to run it, so the
+// framework's complaint about that is not news.
+//
+// GoFr looks for ./configs and, when there is no such directory, asks godotenv
+// for the empty string joined to "/.env" - so the warning names "/.env", a path
+// at the root of the filesystem that nobody configured and that could not have
+// worked. Every value the file would have carried is already the built-in
+// default; deploy/.env.binary.example exists to say so, and its lines are the
+// defaults written out.
+//
+// A configs directory that exists and has no .env in it is a different case and
+// keeps its warning: somebody made the directory, so the missing file is
+// probably a mistake rather than a decision.
+func TestTheFrameworksComplaintAboutAnAbsentEnvFileIsNotShown(t *testing.T) {
+	t.Parallel()
+
+	absent := Record{
+		Level:   "WARN",
+		Message: "Failed to load config from file: /.env, Err: open /.env: no such file or directory",
+	}
+
+	if !isAbsentEnvFile(absent) {
+		t.Error("the binary is told off for not having a file it was never meant to need")
+	}
+
+	// The same complaint about a directory somebody actually made.
+	deliberate := Record{
+		Level:   "WARN",
+		Message: "Failed to load config from file: ./configs/.env, Err: open ./configs/.env: no such file or directory",
+	}
+
+	if isAbsentEnvFile(deliberate) {
+		t.Error("a configs directory with no .env in it is a mistake worth reporting, " +
+			"and this swallows it")
+	}
+
+	// And nothing else is swallowed with it.
+	for _, other := range []Record{
+		{Level: "WARN", Message: "SECRET_KEY is not set"},
+		{Level: "ERROR", Message: "Failed to load config from file: /.env"},
+		{Level: "INFO", Message: "Loaded config from file: ./configs/.env"},
+	} {
+		if isAbsentEnvFile(other) {
+			t.Errorf("this is not the framework's missing-env warning: %q", other.Message)
+		}
+	}
+}
