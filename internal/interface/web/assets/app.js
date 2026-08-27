@@ -2482,18 +2482,30 @@ function restoreDrafts() {
  * 26-pixel chip in that space would read as something broken.
  */
 function showBrandMark(branding, ownLogo) {
-  const mark = $('#brand-mark');
+  // Both places that stand in for a logo: the chip in the header, and the one on
+  // the sign-in screen. The sign-in card used to show nothing when no logo was
+  // configured, which reads as a page still loading rather than as an
+  // installation that has not uploaded one.
+  const letter = initialOf(brandingIn(branding, 'title'));
 
-  // The attribute rather than the property, because these are SVG elements and
-  // `hidden` is defined on HTMLElement: assigning it here creates a property
-  // nobody reads and leaves the chip on screen beside the logo that replaced it.
-  if (mark) {
-    if (ownLogo) mark.setAttribute('hidden', '');
-    else mark.removeAttribute('hidden');
+  for (const [markID, initialID] of [
+    ['#brand-mark', '#brand-initial'],
+    ['#login-mark', '#login-initial'],
+  ]) {
+    const mark = $(markID);
+
+    // The attribute rather than the property, because these are SVG elements and
+    // `hidden` is defined on HTMLElement: assigning it here creates a property
+    // nobody reads and leaves the chip on screen beside the logo that replaced
+    // it.
+    if (mark) {
+      if (ownLogo) mark.setAttribute('hidden', '');
+      else mark.removeAttribute('hidden');
+    }
+
+    const initial = $(initialID);
+    if (initial) initial.textContent = letter;
   }
-
-  const initial = $('#brand-initial');
-  if (initial) initial.textContent = initialOf(brandingIn(branding, 'title'));
 }
 
 /**
