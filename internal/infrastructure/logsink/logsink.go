@@ -140,6 +140,32 @@ func (s *Sink) Level() string {
 	return ""
 }
 
+// isAbsentEnvFile reports whether a record is the framework complaining that
+// there is no .env beside the binary.
+//
+// Running without one is a supported way to run this - a single file, no
+// directory beside it - and every value such a file would carry is already the
+// built-in default. deploy/.env.binary.example exists to say exactly that: its
+// lines are the defaults written out, so a binary with no .env behaves like a
+// binary with that file.
+//
+// What made the warning worse than useless is the path it names. GoFr looks for
+// a ./configs directory and, finding none, joins the empty string to "/.env" -
+// so it reports "/.env", at the root of the filesystem, which nobody configured
+// and which could not have worked if it had existed. Somebody reading their
+// first start-up goes looking for a file that was never part of the design.
+//
+// Matched on that exact shape rather than on the sentence. A ./configs
+// directory that exists with no .env in it produces the same complaint about a
+// real path, and that one is kept: somebody made the directory, so the missing
+// file is a mistake rather than a decision. Only the rootless form is silenced,
+// and only at WARN - the framework raises a fatal for a file it cannot parse,
+// which is a different thing and must still be heard.
+func isAbsentEnvFile(r Record) bool {
+	return r.Level == "WARN" &&
+		strings.HasPrefix(r.Message, "Failed to load config from file: /.env")
+}
+
 // keeps reports whether a record passes the threshold.
 func (s *Sink) keeps(r Record) bool {
 	if r.unlevelled {
@@ -375,6 +401,14 @@ func (s *Sink) drain(from io.Reader, console io.Writer) {
 		// a line dropped here is a line the console never had either, exactly as
 		// if the framework had suppressed it.
 		if !s.keeps(record) {
+			continue
+		}
+
+		// The framework telling the binary off for a file it was never meant to
+		// need. Dropped here for the same reason and by the same means as the
+		// level above: this is the only place the process's own output can be
+		// edited before anybody sees it.
+		if isAbsentEnvFile(record) {
 			continue
 		}
 
