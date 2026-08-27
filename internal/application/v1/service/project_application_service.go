@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -10,6 +9,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/query"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
+	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
@@ -106,23 +106,13 @@ func (s *ProjectApplicationService) GetProject(
 		return nil, err
 	}
 
-	if err := requireVisible(project, q.ViewerID); err != nil {
+	if err := domainservice.RequireVisible(project, q.ViewerID); err != nil {
 		return nil, err
 	}
 
 	return &query.GetProjectQueryResult{
 		Result: common.NewProjectResultFromModel(project)[0],
 	}, nil
-}
-
-// requireVisible hides someone else's private project behind a not-found,
-// so its existence is not revealed by a different status code.
-func requireVisible(project *model.Project, viewerID uint) error {
-	if viewerID == 0 || project.VisibleTo(viewerID) {
-		return nil
-	}
-
-	return apperror.NotFound("project", strconv.FormatUint(uint64(project.ID), 10))
 }
 
 // ListProjects processes the query to get all projects, optionally filtered
@@ -173,7 +163,7 @@ func (s *ProjectApplicationService) UpdateProject(
 		return nil, err
 	}
 
-	if err := requireVisible(existingProject, cmd.ActorID); err != nil {
+	if err := domainservice.RequireVisible(existingProject, cmd.ActorID); err != nil {
 		return nil, err
 	}
 
@@ -254,7 +244,7 @@ func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd comma
 		return err
 	}
 
-	if err := requireVisible(project, cmd.ActorID); err != nil {
+	if err := domainservice.RequireVisible(project, cmd.ActorID); err != nil {
 		return err
 	}
 
