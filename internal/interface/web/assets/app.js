@@ -5322,7 +5322,18 @@ async function loadAdmin() {
 
     fillSelect(ldapForm.elements.defaultRole, roleChoices(),
       { labelKey: 'label', valueKey: 'name' });
-    ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'user';
+    // || rather than ??, because the value that actually arrives from an older
+    // installation is an empty string rather than a missing field - and ?? lets
+    // it through, which sets a <select> to a value none of its options carry and
+    // leaves it showing nothing at all.
+    ldapForm.elements.defaultRole.value = ldap.defaultRole || 'user';
+
+    // And if even that names a role this installation has not got, show the
+    // first one rather than a blank box: a picker with nothing in it reads as a
+    // broken screen, and there is always at least one role to offer.
+    if (!ldapForm.elements.defaultRole.value) {
+      ldapForm.elements.defaultRole.selectedIndex = 0;
+    }
   }
 
   // The directory run belongs to the built-in administrator, because it deletes
