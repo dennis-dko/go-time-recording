@@ -25,6 +25,7 @@
   1. **No parallel agents:** Do NOT spawn multiple background tasks or try to analyze multiple domains simultaneously. Work STRICTLY sequentially: one step, one file, write to report, move on.
   2. **Limit CLI output:** NEVER run unbounded `grep` or `cat` on large or multiple files. Always use limits (e.g., `grep -m 20`, `head -n 50`) to prevent flooding the context window.
   3. **Frequent state saving:** Flush your findings to `AUDIT_REPORT.md` after EVERY single step in the manual deep dive. Do not hold all findings in memory until the end.
+* **Living Document:** `CLAUDE.md` reflects the current reality. If you modify the project's folder layout, introduce a new standard test command, or change a core architectural convention during a task, you MUST automatically update the relevant sections (e.g., Layout, Commands) in this `CLAUDE.md` file.
 
 ## 3. Testing & Commands
 
