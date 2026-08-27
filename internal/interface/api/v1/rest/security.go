@@ -3,7 +3,9 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -105,6 +107,11 @@ type RateLimiter struct {
 	// current, when set, supplies the administered budget instead of the one
 	// configured at start-up, so a change applies without a restart.
 	current func(ctx context.Context) (int, time.Duration)
+
+	// trusted are the addresses whose X-Forwarded-For is worth reading. A
+	// request from anywhere else is keyed on the connection it arrived on,
+	// whatever it claims about itself.
+	trusted []netip.Prefix
 }
 
 type bucket struct {
@@ -120,7 +127,84 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 		window:  window,
 		lastGC:  time.Now(),
 		gcEvery: window * 10,
+
+		// Loopback and nothing else, because that is the one proxy this process
+		// can vouch for without being told: the HTTPS front end in this binary
+		// dials the plain port over it.
+		trusted: loopback(),
 	}
+}
+
+// loopback is the default trust: the front end this process starts itself.
+func loopback() []netip.Prefix {
+	return []netip.Prefix{
+		netip.MustParsePrefix("127.0.0.0/8"),
+		netip.MustParsePrefix("::1/128"),
+	}
+}
+
+// WithTrustedProxies names the addresses a forwarded header may be believed
+// from, as CIDR ranges or single addresses.
+//
+// Needed whenever the proxy is not this process: an nginx in the next container
+// arrives from the bridge network, not from loopback, and without this every
+// request through it keys on the proxy and the whole installation shares one
+// budget - which locks everybody out together the moment anyone is busy.
+//
+// Loopback stays trusted regardless, so naming an external proxy does not
+// switch off the one in here. Anything unparseable is dropped rather than
+// silently widening the trust to everybody.
+func (l *RateLimiter) WithTrustedProxies(cidrs []string) *RateLimiter {
+	l.trusted = loopback()
+
+	for _, raw := range cidrs {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+
+		if prefix, err := netip.ParsePrefix(raw); err == nil {
+			l.trusted = append(l.trusted, prefix)
+
+			continue
+		}
+
+		// A bare address is a range of one, which is how an operator naming a
+		// single proxy would expect to be able to write it.
+		if address, err := netip.ParseAddr(raw); err == nil {
+			l.trusted = append(l.trusted, netip.PrefixFrom(address, address.BitLen()))
+		}
+	}
+
+	return l
+}
+
+// believesForwarded reports whether this connection may speak for somebody else.
+//
+// The address the request arrived from, never a header on it: everything a
+// caller can write is exactly what this is deciding whether to believe.
+func (l *RateLimiter) believesForwarded(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+
+	address, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	if err != nil {
+		return false
+	}
+
+	// An IPv4 address arriving over a dual-stack listener is ::ffff:a.b.c.d,
+	// which matches no IPv4 prefix until it is unmapped.
+	address = address.Unmap()
+
+	for _, prefix := range l.trusted {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // WithLimits makes the budget follow the Settings screen.
@@ -163,7 +247,7 @@ func (l *RateLimiter) Middleware() func(http.Handler) http.Handler {
 
 			limit, window := l.budget(r.Context())
 
-			if !l.allow(clientKey(r), limit, window) {
+			if !l.allow(l.clientKey(r), limit, window) {
 				seconds := int(window.Seconds())
 
 				w.Header().Set("Retry-After", itoa(seconds))
@@ -251,11 +335,25 @@ func (l *RateLimiter) collect(now time.Time) {
 // X-Forwarded-For is only consulted for its last hop, which is the address the
 // nearest proxy observed; the earlier entries are client-supplied and trivial
 // to forge.
-func clientKey(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		parts := strings.Split(forwarded, ",")
+//
+// And only when the connection is one whose word is worth taking. This used to
+// read the header from anybody, which handed the whole defence away: the header
+// is free to write, so a caller inventing a fresh address per attempt was given
+// a fresh budget per attempt and never met the limit at all. Sign-in is the
+// thing this protects and there is no account lockout behind it, so that was
+// the entire obstacle to guessing a password, gone for the cost of one header.
+//
+// The plain port being firewalled is not the answer either. It was reasoned
+// about before as something the HTTPS front end handles - and it does, while it
+// is running, which is not the default: TLS_ENABLED is off until an operator
+// turns it on, and until then the header was believed from the network.
+func (l *RateLimiter) clientKey(r *http.Request) string {
+	if l.believesForwarded(r.RemoteAddr) {
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			parts := strings.Split(forwarded, ",")
 
-		return strings.TrimSpace(parts[len(parts)-1])
+			return strings.TrimSpace(parts[len(parts)-1])
+		}
 	}
 
 	host := r.RemoteAddr

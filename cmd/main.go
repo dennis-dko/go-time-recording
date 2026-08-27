@@ -694,6 +694,7 @@ func main() {
 	app.UseMiddleware(rest.LimitRequestBody())
 	app.UseMiddleware(rest.SecurityHeaders(cfg.HSTSMaxAge))
 	app.UseMiddleware(rest.NewRateLimiter(cfg.RateLimit, cfg.RateLimitWindow).
+		WithTrustedProxies(cfg.TrustedProxies).
 		WithLimits(limits.RateLimit).Middleware())
 	// Before the authentication middleware, so a forged request is turned away
 	// without a session ever being resolved for it.

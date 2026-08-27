@@ -43,7 +43,7 @@ func (s *ProjectDomainService) ArchiveProject(
 		return nil, err
 	}
 
-	if err := requireVisible(project, viewerID); err != nil {
+	if err := RequireVisible(project, viewerID); err != nil {
 		return nil, err
 	}
 

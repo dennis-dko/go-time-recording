@@ -292,7 +292,6 @@ func normalizeProjectID(projectID uint) *uint {
 
 // checkDailyBudget rejects a booking that would push the user over the daily
 // cap. excludeID skips one entry so an update does not count itself twice.
-
 func (s *TimesheetApplicationService) checkDailyBudget(
 	ctx context.Context,
 	userID uint,

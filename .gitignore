@@ -44,3 +44,7 @@ dist/
 # what makes a failure readable - and none of them belongs in the repository. One
 # reached it by way of `git add -A`, which is exactly the accident this prevents.
 test/browser/*.png
+
+# The audit scratchpad. Findings are worked through and land as commits and
+# tests; the running notes behind them are not something the repository needs.
+AUDIT_REPORT.md

@@ -113,6 +113,21 @@ type Config struct {
 	RateLimit       int
 	RateLimitWindow time.Duration
 
+	// TrustedProxies are the addresses whose X-Forwarded-For the rate limiter
+	// may believe, as CIDR ranges or single addresses.
+	//
+	// Loopback is always believed and needs no entry: the HTTPS front end in
+	// this binary reaches the plain port over it. This is for a proxy that is
+	// somewhere else - an nginx in the next container arrives from the bridge
+	// network, and without naming it here every request through it keys on the
+	// proxy, so the whole installation shares one budget and is locked out
+	// together the moment anybody is busy.
+	//
+	// Empty is the safe default rather than the convenient one. A header
+	// believed from the open network is not a client identifier at all, because
+	// the client writes it.
+	TrustedProxies []string
+
 	// LDAPSyncSchedule runs the directory reconciliation. Empty disables the
 	// scheduled run; the administrator can still trigger one by hand.
 	//
@@ -311,6 +326,7 @@ func Load(p Provider) Config {
 		HSTSMaxAge:      durationOr(p.GetOrDefault("HSTS_MAX_AGE", ""), defaultHSTSMaxAge),
 		RateLimit:       intOr(p.GetOrDefault("RATE_LIMIT", ""), defaultRateLimit),
 		RateLimitWindow: durationOr(p.GetOrDefault("RATE_LIMIT_WINDOW", ""), defaultRateLimitWindow),
+		TrustedProxies:  splitList(p.Get("TRUSTED_PROXIES")),
 
 		// Empty by default: a scheduled run deletes people and their hours,
 		// which must be a deliberate choice.

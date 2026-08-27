@@ -3,6 +3,7 @@ package rest
 import (
 	"cmp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,9 +108,22 @@ func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	// Not-found rather than a refusal, and deliberately the same answer the
+	// repository gives for an id nobody holds.
+	//
+	// A refusal here was a way to ask which ids are real: walking the numbers
+	// told a caller where the entries are and how many there are, without ever
+	// being allowed to read one. Saying "not there" to a caller who may not see
+	// it is true from where they stand, and it is the reading the rest of the
+	// application already takes - a private project answers exactly this, for
+	// exactly this reason.
+	//
+	// Listing is the other way round on purpose: a filter naming somebody else
+	// is refused outright, because an empty list would be an answer to a
+	// question that was not asked.
 	if h.authz.Enabled() && result.Result.UserID != principal.User.ID {
-		return nil, forbiddenError{msg: "you may only read your own time entries"}.
-			WithCode("onlyOwnEntriesRead")
+		return nil, toHTTPError(apperror.NotFound("timesheet",
+			strconv.FormatUint(uint64(id), 10)))
 	}
 
 	return newTimesheetResponse(result.Result), nil
@@ -238,17 +252,6 @@ func (h *TimesheetHandler) Delete(c *gofr.Context) (any, error) {
 
 // Transfer handles POST /api/v1/timesheets/{id}/transfer, moving an entry to
 // another project via the domain service.
-// viewerID is who is asking, or 0 when authentication is switched off - the
-// same shape the project handler uses, and 0 means "sees everything", which is
-// what a local trial with AUTH_ENABLED=false is.
-func (h *TimesheetHandler) viewerID(principal *service.Principal) uint {
-	if !h.authz.Enabled() || principal.User == nil {
-		return 0
-	}
-
-	return principal.User.ID
-}
-
 func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermTimesheetTransfer)
 	if err != nil {
@@ -288,7 +291,7 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 
 	// Who is asking, so a transfer onto somebody else's private category is
 	// refused rather than performed.
-	timesheet, err := h.domain.TransferTimesheetToProject(c, id, req.ProjectID, h.viewerID(principal))
+	timesheet, err := h.domain.TransferTimesheetToProject(c, id, req.ProjectID, h.authz.viewerID(principal))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -462,7 +465,7 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 	}
 
 	perUser, err := h.domain.GenerateProjectTimeReport(c, projectID, *from, *to,
-		h.viewerID(principal), h.authz.reportScope(principal))
+		h.authz.viewerID(principal), h.authz.reportScope(principal))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

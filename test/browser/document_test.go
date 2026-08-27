@@ -100,6 +100,34 @@ func TestAnEvaluationLeavesAsADocumentWithItsChart(t *testing.T) {
 		t.Error("the picture is black and white, so the chart lost its colours on " +
 			"the way out of the page")
 	}
+
+	// And it got there without the browser objecting to how.
+	//
+	// The style-src directive is 'self' with no 'unsafe-inline', and the copy is
+	// styled by writing a style attribute onto every node of it - which is the
+	// thing that directive governs. The picture above proves the export works;
+	// it cannot prove the console stayed empty, and a hundred violation reports
+	// per exported chart is the sort of thing that is only ever noticed by
+	// somebody debugging something else.
+	//
+	// Asserted here rather than in a case of its own because the setup is the
+	// setup: getting a chart on screen and taking a picture of it is what had to
+	// happen for the question to be worth asking.
+	objections := []string{}
+
+	for _, complaint := range p.complaints() {
+		// The security policy specifically. A page loaded before anybody has
+		// signed in also reports the 401 from /me, which is the interface asking
+		// whether there is a session and being told there is not.
+		if strings.Contains(complaint, "Content Security Policy") {
+			objections = append(objections, complaint)
+		}
+	}
+
+	if len(objections) > 0 {
+		t.Errorf("taking the picture broke the security policy %d time(s):\n%s",
+			len(objections), strings.Join(objections, "\n"))
+	}
 }
 
 // The chart in the document is the shape that was chosen, not a default.

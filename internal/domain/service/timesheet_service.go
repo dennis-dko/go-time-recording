@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -30,22 +29,6 @@ func NewTimesheetDomainService(
 	}
 }
 
-// requireVisible refuses a project the viewer is not allowed to know about.
-//
-// A not-found rather than a refusal, so a private project's existence is not
-// revealed by the difference between the two status codes - the same reading the
-// application layer takes.
-//
-// A viewer id of zero means authentication is switched off, which is the local
-// trial case and sees everything.
-func requireVisible(project *model.Project, viewerID uint) error {
-	if viewerID == 0 || project.VisibleTo(viewerID) {
-		return nil
-	}
-
-	return apperror.NotFound("project", strconv.FormatUint(uint64(project.ID), 10))
-}
-
 // TransferTimesheetToProject moves a time entry from one project to another.
 //
 // viewerID is who is asking, because the target may be somebody else's private
@@ -68,7 +51,7 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 		return nil, err
 	}
 
-	if err := requireVisible(newProject, viewerID); err != nil {
+	if err := RequireVisible(newProject, viewerID); err != nil {
 		return nil, err
 	}
 
@@ -134,7 +117,7 @@ func (s *TimesheetDomainService) GenerateOwnTimeReport(
 			return 0, err
 		}
 
-		if err := requireVisible(project, userID); err != nil {
+		if err := RequireVisible(project, userID); err != nil {
 			return 0, err
 		}
 	}
@@ -188,7 +171,7 @@ func (s *TimesheetDomainService) GenerateProjectTimeReport(
 	// the hours booked against it were not. Reading a report was enough to learn
 	// what somebody had recorded against their own private category, and how
 	// much.
-	if err := requireVisible(project, viewerID); err != nil {
+	if err := RequireVisible(project, viewerID); err != nil {
 		return nil, err
 	}
 

@@ -9066,14 +9066,26 @@ async function chartAsPicture(container) {
   const originals = [source, ...source.querySelectorAll('*')];
   const copies = [copy, ...copy.querySelectorAll('*')];
 
+  // Set one property at a time rather than writing a style attribute.
+  //
+  // The two look interchangeable and are not: style-src is 'self' with no
+  // 'unsafe-inline', and writing the attribute is exactly what that governs, so
+  // the browser blocked every one of them and said so ninety-six times per
+  // exported chart. The picture still came out, because the attribute value is
+  // set even when applying it is refused and the serializer reads the value -
+  // which is why this went unnoticed: the export worked, and only the console
+  // knew what it cost.
+  //
+  // Assigning through the CSSOM is not an inline style and is not covered by the
+  // directive. It reflects into the attribute the serializer reads, so the copy
+  // carries its colours out exactly as before.
   copies.forEach((node, i) => {
     const settled = window.getComputedStyle(originals[i]);
 
-    node.setAttribute('style', PAINTED
-      .map((property) => [property, settled.getPropertyValue(property)])
-      .filter(([, value]) => value)
-      .map(([property, value]) => `${property}:${value}`)
-      .join(';'));
+    PAINTED.forEach((property) => {
+      const value = settled.getPropertyValue(property);
+      if (value) node.style.setProperty(property, value);
+    });
   });
 
   // Named explicitly: an <svg> handed to an <img> is a document of its own, and

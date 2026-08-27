@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
@@ -346,4 +347,121 @@ func countWithEmail(users []*model.User, email string) int {
 	}
 
 	return count
+}
+
+// localUserWithRole creates an ordinary local account - a password, no
+// directory behind it - in the named role.
+func localUserWithRole(t *testing.T, f *fixture, email, role string) uint {
+	t.Helper()
+
+	created, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
+		Name: email, Email: email, Role: role, Password: "a-password-of-their-own",
+	})
+	if err != nil {
+		t.Fatalf("create %s: %v", email, err)
+	}
+
+	return created.Result.ID
+}
+
+// A directory entry must not be able to become an administrator of this
+// installation by naming one.
+//
+// Matching a directory entry to a local account by its mail address is how an
+// installation moves from local passwords to a directory without anybody losing
+// their hours, so it stays. What it must not carry with it is the installation
+// itself: whoever can write to the directory - a helpdesk account in a company
+// directory, say - could create an entry with an administrator's address and
+// sign in as them, holding every right that account holds.
+//
+// The built-in administrator was already refused for exactly this reason. It is
+// not the only account that administers, and the others were being adopted.
+func TestADirectoryEntryCannotClaimAnAdministratorsAccount(t *testing.T) {
+	f, sessions := newSessionFixture(t, &service.ExternalUser{
+		ID: "uuid-intruder", Email: "chief@example.com", Name: "Not Them",
+	})
+
+	admin := localUserWithRole(t, f, "chief@example.com", model.RoleAdmin)
+
+	if _, err := sessions.Login(context.Background(), "chief@example.com", "anything", ""); err == nil {
+		t.Fatal("the directory signed in as a local administrator")
+	}
+
+	unchanged, err := f.userRepo.GetByID(context.Background(), admin)
+	if err != nil {
+		t.Fatalf("the account must still exist: %v", err)
+	}
+
+	if unchanged.ExternalID != "" {
+		t.Errorf("the directory stamped its identifier on an administrator: %q", unchanged.ExternalID)
+	}
+}
+
+// The same for somebody who can edit roles, which is the installation by
+// another route: tick settings:manage on a role and assign it to yourself.
+func TestADirectoryEntryCannotClaimARoleEditorsAccount(t *testing.T) {
+	f, sessions := newSessionFixture(t, &service.ExternalUser{
+		ID: "uuid-intruder", Email: "editor@example.com",
+	})
+
+	localUserWithRole(t, f, "editor@example.com", model.RoleUserAdmin)
+
+	if _, err := sessions.Login(context.Background(), "editor@example.com", "anything", ""); err == nil {
+		t.Fatal("the directory signed in as somebody who can grant themselves the installation")
+	}
+}
+
+// And the migration this is all for still works: an ordinary member of staff
+// with a local password is adopted by the directory, keeping their account.
+func TestAnOrdinaryLocalAccountIsStillAdoptedByTheDirectory(t *testing.T) {
+	f, sessions := newSessionFixture(t, &service.ExternalUser{
+		ID: "uuid-staff", Email: "worker@example.com",
+	})
+
+	existing := localUserWithRole(t, f, "worker@example.com", model.RoleUser)
+
+	if _, err := sessions.Login(context.Background(), "worker@example.com", "anything", ""); err != nil {
+		t.Fatalf("an ordinary account should migrate to the directory: %v", err)
+	}
+
+	adopted, err := f.userRepo.GetByID(context.Background(), existing)
+	if err != nil {
+		t.Fatalf("the account must still exist: %v", err)
+	}
+
+	if adopted.ExternalID != "uuid-staff" {
+		t.Errorf("expected the identifier to be adopted, got %q", adopted.ExternalID)
+	}
+}
+
+// An administrator whose account is already directory-backed goes on signing in.
+// The rule is about a directory claiming a local account, not about who may
+// administer.
+func TestAnExternalAdministratorStillSignsIn(t *testing.T) {
+	f, sessions := newSessionFixture(t, &service.ExternalUser{
+		ID: "uuid-admin", Email: "boss@example.com",
+	})
+
+	created, err := f.users.CreateUser(context.Background(), command.CreateUserCommand{
+		Name: "boss", Email: "boss@example.com", Role: model.RoleAdmin,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	user, err := f.userRepo.GetByID(context.Background(), created.Result.ID)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+
+	user.IsExternal = true
+	user.ExternalID = "uuid-admin"
+
+	if _, err := f.userRepo.Update(context.Background(), user); err != nil {
+		t.Fatalf("mark external: %v", err)
+	}
+
+	if _, err := sessions.Login(context.Background(), "boss@example.com", "anything", ""); err != nil {
+		t.Errorf("a directory-backed administrator was refused: %v", err)
+	}
 }

@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -221,6 +222,22 @@ func (p *page) thrown() string {
 	}
 
 	return "\n\nthe page threw:\n" + strings.Join(p.scriptErrors, "\n")
+}
+
+// complaints is everything the browser objected to, for a case that wants to
+// assert the page was quiet rather than merely working.
+//
+// watchForScriptErrors collects these on every page, but thrown() only ever
+// shows them as extra context on a step that has already failed. Nothing asked
+// the question on its own, so a page that produces the right result while the
+// browser files errors about how it got there passed in silence - which is
+// exactly the shape of a Content-Security-Policy violation: the feature works,
+// and the console fills up.
+func (p *page) complaints() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return slices.Clone(p.scriptErrors)
 }
 
 // evalJSON runs an expression that returns JSON and unpacks it.
@@ -1022,8 +1039,14 @@ func (p *page) placeholder(selector string) string {
 	return strings.TrimSpace(out)
 }
 
-// consoleErrors returns anything the page logged as an error. A page that
-// throws on load still renders, so this is the only way to notice.
+// jsBroken reports whether app.js failed to initialise.
+//
+// A page whose script threw on load still renders its markup, so it looks
+// almost right: the tabs are there and nothing responds. This asks the page
+// whether the script got far enough to define anything.
+//
+// What the browser complained about on the way is a separate question, and
+// complaints() is where it is asked.
 func (p *page) jsBroken() bool {
 	p.t.Helper()
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -322,6 +323,35 @@ func (s *SessionService) reconcileExternal(
 		return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 	}
 
+	// Nor may the directory claim any other account that administers this
+	// installation.
+	//
+	// Matching by address is how an installation moves from local passwords to a
+	// directory without anybody losing their hours, and that is worth keeping.
+	// What it must not carry with it is the installation itself: whoever can
+	// write an entry to the directory - a helpdesk account in a company
+	// directory is enough - could name an administrator's address and sign in
+	// holding everything that administrator holds.
+	//
+	// The built-in account was refused above for exactly this reason, and it is
+	// not the only account that administers. An installation that gives somebody
+	// the admin role has decided that person administers it, which is precisely
+	// what makes their address worth claiming.
+	//
+	// Only when the directory is claiming an account rather than signing in to
+	// one it already owns: an administrator whose account is directory-backed
+	// already goes on as before, because nothing is being taken over.
+	if !existing.IsExternal {
+		administers, err := s.administers(ctx, existing)
+		if err != nil {
+			return nil, err
+		}
+
+		if administers {
+			return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
+		}
+	}
+
 	changed := false
 
 	if directoryUser.ID != "" && existing.ExternalID != directoryUser.ID {
@@ -344,6 +374,28 @@ func (s *SessionService) reconcileExternal(
 	}
 
 	return s.users.Update(ctx, existing)
+}
+
+// administers reports whether the account holds rights over the installation
+// rather than over a working day.
+//
+// Both rights are asked about, because they are the same right one step apart:
+// settings:manage is the installation, and roles:write is the ability to tick
+// settings:manage on a role and assign it to yourself. Guarding one without the
+// other would leave the door beside the one that was locked.
+//
+// A role that cannot be read counts as no permissions, which is the reading
+// principalFor already takes of the same condition: an account pointing at a
+// deleted role is valid and powerless. Powerless is also nothing worth claiming,
+// so this neither refuses the migration nor gives anything away.
+func (s *SessionService) administers(ctx context.Context, user *model.User) (bool, error) {
+	role, err := s.roles.GetByID(ctx, user.RoleID)
+	if err != nil {
+		return false, nil
+	}
+
+	return slices.Contains(role.Permissions, model.PermSettingsManage) ||
+		slices.Contains(role.Permissions, model.PermRoleWrite), nil
 }
 
 // Resolve turns a session token from a cookie into its principal.
