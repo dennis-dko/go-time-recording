@@ -3641,7 +3641,7 @@ const TRANSLATIONS = {
     // cannot, and this is a container where replacing the binary would be undone.
     'update.title': 'Version',
     'update.running': 'Diese Installation läuft mit {0}',
-    'update.current': '{0} ist die aktuelle Version.',
+    'update.current': '{0} ist die installierte Version.',
     'update.found': '{0} ist verfügbar. Diese Installation läuft mit {1}.',
     'update.check': 'Aktualisierung suchen',
     'update.checking': 'Wird gesucht …',
@@ -7767,7 +7767,7 @@ function renderUpdate(state) {
 
   if (!state.newer) {
     line.textContent = state.latest
-      ? t('update.current', '{0} is the newest version.').replace('{0}', state.running)
+      ? t('update.current', '{0} is the installed version.').replace('{0}', state.running)
       : running;
 
     hint.hidden = true;
