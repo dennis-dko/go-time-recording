@@ -5333,3 +5333,45 @@ func TestTheDirectoryRolePickerOffersTheRolesAfterADraftComesBack(t *testing.T) 
 			"accounts the directory creates")
 	}
 }
+
+// The directory's role picker offers the roles and starts on the ordinary one.
+//
+// Reported twice as still empty after two attempts at it, so this asserts the
+// requirement itself rather than one theory of what breaks it: there are options
+// to choose from, nothing empty is selected, and what is selected before anybody
+// touches it is the ordinary user role.
+func TestTheDirectoryRolePickerIsNeverEmptyAndDefaultsToTheOrdinaryRole(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-ldap", chromedp.ByID))
+
+	if n := p.count("#form-ldap select[name=defaultRole] option"); n == 0 {
+		t.Fatal("the role picker offers nothing to choose")
+	}
+
+	// Nothing empty to choose, so the card cannot store an empty role again.
+	if empty := p.count(`#form-ldap select[name=defaultRole] option[value=""]`); empty != 0 {
+		t.Errorf("the picker offers %d empty option(s), which is what got stored last time", empty)
+	}
+
+	value := p.value("#form-ldap select[name=defaultRole]")
+	if value == "" {
+		t.Fatal("the picker has options but none of them is selected, which is what the " +
+			"empty box on screen actually is")
+	}
+
+	if value != "user" {
+		t.Errorf("a directory nobody has configured should provision ordinary users, "+
+			"the picker starts on %q", value)
+	}
+
+	// And the selected option says something a person can read, rather than a
+	// bare identifier.
+	if label := strings.TrimSpace(p.text("#form-ldap select[name=defaultRole] option[value=user]")); label == "" {
+		t.Error("the chosen role has no label, so the box looks empty even when it is not")
+	}
+}
