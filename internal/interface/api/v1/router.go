@@ -93,6 +93,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// will be executed after the next start. See UpdateHandler.
 	app.GET(base+"/settings/update", h.Update.State)
 	app.POST(base+"/settings/update", h.Update.Apply)
+	app.POST(base+"/settings/update/check", h.Update.Check)
 
 	// The process log. Under /admin rather than /settings because it changes
 	// nothing - and behind the built-in administrator, because it carries

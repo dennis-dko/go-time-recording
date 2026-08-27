@@ -5226,3 +5226,66 @@ func TestTheReleaseNoticeCannotBeClickedAway(t *testing.T) {
 			"version exists")
 	}
 }
+
+// The version card can be asked to look again.
+//
+// The card is drawn from an answer the server keeps for six hours, so somebody
+// who has just published a release is told the version before it and, until this
+// button existed, had no way to say "look again" short of restarting the
+// application.
+//
+// Driven through the interface rather than through the endpoint, because what
+// was missing was a button: the endpoint answering correctly and the card having
+// nothing to press are the same failure to the person reading the screen.
+func TestTheVersionCardCanBeAskedToLookAgain(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#update-card", chromedp.ByID))
+
+	if !p.visible("#update-check") {
+		t.Fatal("the version card offers no way to ask the release feed again")
+	}
+
+	// What it said before, so the press can be seen to have done something even
+	// when the answer is the same one.
+	before := strings.TrimSpace(p.text("#update-state"))
+
+	// What the browser had already objected to before the press. A page loaded
+	// before anybody signed in reports the 401 from /me, which is the interface
+	// asking whether there is a session and being told there is not - counting it
+	// against the button would make this case fail for something it did not do.
+	quietBefore := len(p.complaints())
+
+	p.run("ask again", p.click("#update-check"))
+
+	// The button comes back rather than staying disabled: it says "Looking …"
+	// while the request is out, and a button left in that state is a card that
+	// can only be asked once.
+	deadline := time.Now().Add(waitPatience)
+	for time.Now().Before(deadline) {
+		if !p.disabled("#update-check") {
+			break
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if p.disabled("#update-check") {
+		t.Error("the button never came back, so the card can be asked exactly once")
+	}
+
+	if after := strings.TrimSpace(p.text("#update-state")); after == "" {
+		t.Errorf("the card lost its sentence after asking again; it said %q before", before)
+	}
+
+	// And the press itself was quiet. The card is redrawn from the answer that
+	// comes back, which is the part most likely to go wrong without showing.
+	if raised := p.complaints()[quietBefore:]; len(raised) > 0 {
+		t.Errorf("asking again made the browser complain %d time(s):\n%s",
+			len(raised), strings.Join(raised, "\n"))
+	}
+}

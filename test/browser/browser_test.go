@@ -698,6 +698,21 @@ func (p *page) becomeWorker() {
 
 // visible reports whether an element is on screen, as the browser sees it -
 // not whether it exists in the markup.
+// disabled reports whether a control is refusing to be pressed.
+//
+// A button that says it is working is a button that has to stop saying it: the
+// interesting half of "press it and it goes busy" is that it comes back.
+func (p *page) disabled(selector string) bool {
+	p.t.Helper()
+
+	var result bool
+
+	p.run("check whether "+selector+" is disabled", chromedp.Evaluate(fmt.Sprintf(
+		`Boolean(document.querySelector(%q)?.disabled)`, selector), &result))
+
+	return result
+}
+
 func (p *page) visible(selector string) bool {
 	p.t.Helper()
 

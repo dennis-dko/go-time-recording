@@ -62,6 +62,11 @@ type UpdateHandler struct {
 	// than asking straight into a rate limit that has not cleared.
 	failedAt time.Time
 
+	// checkedManuallyAt is when somebody last asked by hand. Its own clock,
+	// because a manual ask deliberately ignores the two above and therefore
+	// cannot be limited by them.
+	checkedManuallyAt time.Time
+
 	// images asks the container that holds the Docker socket to pull a new image
 	// and recreate this container from it. Nil, or reporting itself unavailable,
 	// on every deployment that has not added that overlay - which is the default.
@@ -116,6 +121,20 @@ func NewUpdateHandler(authz *Authorizer, source *selfupdate.Source, hub *announc
 const (
 	updateCacheFor   = 6 * time.Hour
 	updateRetryAfter = 15 * time.Minute
+
+	// manualCheckEvery is how often the feed may be asked by hand.
+	//
+	// The button exists to get past the six hours, so it cannot be governed by
+	// them - but it must be governed by something, or one card with one button
+	// hands back the exact problem the cache was built to solve. Twelve requests
+	// an hour at worst, against the sixty an unauthenticated caller is allowed,
+	// leaves the automatic checks their room and an administrator theirs.
+	//
+	// Five minutes rather than one because of what the button is for: somebody
+	// has published a release and wants to see it. That is one press, and the
+	// answer it gets is current. A second press a minute later has nothing to
+	// find that the first did not.
+	manualCheckEvery = 5 * time.Minute
 )
 
 // UpdateResponse is what the screen needs to say something true on every
@@ -191,6 +210,36 @@ func (h *UpdateHandler) State(c *gofr.Context) (any, error) {
 	if _, err := h.authz.RequireInstallationAdmin(c); err != nil {
 		return nil, err
 	}
+
+	return h.describe(c), nil
+}
+
+// Check handles POST /api/v1/settings/update/check.
+//
+// The card is built from an answer that may be six hours old, which is right for
+// a screen that refreshes itself and wrong for the moment somebody has just
+// published a release and wants to see it. This is that moment, asked for
+// explicitly, and it answers with the whole state so the card can simply be
+// drawn again from what comes back.
+func (h *UpdateHandler) Check(c *gofr.Context) (any, error) {
+	if _, err := h.authz.RequireInstallationAdmin(c); err != nil {
+		return nil, err
+	}
+
+	if !h.enabled {
+		return nil, toHTTPError(apperror.Conflictf(
+			"the update check is switched off for this installation").
+			WithCode("updateCheckOff"))
+	}
+
+	if wait, ok := h.mayCheckNow(); !ok {
+		return nil, toHTTPError(apperror.Conflictf(
+			"the release feed was asked a moment ago; it may be asked again in %d seconds",
+			int(wait.Seconds())).
+			WithCode("updateCheckedRecently", int(wait.Seconds())+1))
+	}
+
+	h.refresh(c)
 
 	return h.describe(c), nil
 }
@@ -287,6 +336,54 @@ func (h *UpdateHandler) latest(c *gofr.Context) (selfupdate.Release, error) {
 // to stand in for: what is being decided is how old is too old.
 func (h *UpdateHandler) hasFreshAnswer() bool {
 	return h.cached.Version != "" && time.Since(h.cachedAt) < updateCacheFor
+}
+
+// mayCheckNow reports whether a manual check may contact the feed, and when it
+// may not, how long is left to wait.
+//
+// Deliberately blind to hasFreshAnswer and waitingAfterFailure. Both exist to
+// stop the screen asking on its own account, and this is somebody asking on
+// purpose - including after a failure, which is exactly when a person who has
+// just fixed the network wants to try again rather than wait out fifteen
+// minutes for a problem that is already over.
+func (h *UpdateHandler) mayCheckNow() (time.Duration, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.checkedManuallyAt.IsZero() {
+		return 0, true
+	}
+
+	if since := time.Since(h.checkedManuallyAt); since < manualCheckEvery {
+		return manualCheckEvery - since, false
+	}
+
+	return 0, true
+}
+
+// refresh asks the feed whatever is cached, and records the answer.
+//
+// No error is returned: a failure is stored the same way the automatic path
+// stores one, and describe reports it beside the version it still knows. The
+// card saying "v0.2.29, and the feed is not answering" is two facts; an error
+// here would make it a blank.
+func (h *UpdateHandler) refresh(c *gofr.Context) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Recorded before the attempt rather than after it. A feed that hangs for
+	// thirty seconds would otherwise leave the next press free to start a second
+	// slow request behind the first.
+	h.checkedManuallyAt = time.Now()
+
+	release, err := h.source.Latest(c)
+	if err != nil {
+		h.cacheErr, h.failedAt = err, time.Now()
+
+		return
+	}
+
+	h.cached, h.cachedAt, h.cacheErr = release, time.Now(), nil
 }
 
 // waitingAfterFailure reports whether the last attempt failed recently enough
