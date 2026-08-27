@@ -370,6 +370,17 @@ func (s *SettingsService) LDAP(ctx context.Context) (model.LDAPConfig, error) {
 		return model.DefaultLDAPConfig(), nil
 	}
 
+	// A stored empty role beats the default, because unmarshalling writes the
+	// field it finds over the one prepared above. Installations configured
+	// before the role was checked on the way in have exactly that stored, and
+	// what it produces is a picker with nothing selected - which saves the
+	// emptiness again the next time the card is used. Repaired on the way out so
+	// those installations come right without anybody knowing there was anything
+	// to repair.
+	if strings.TrimSpace(config.DefaultRole) == "" {
+		config.DefaultRole = model.RoleUser
+	}
+
 	password, err := s.secrets.Open(config.BindPassword)
 	if err != nil {
 		// Same reasoning as the corrupt entry above, and a different consequence:
@@ -396,6 +407,20 @@ func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig)
 		return apperror.InvalidFields("syncSchedule")
 	}
 
+	// Whether or not the directory is switched on, for the same reason the
+	// schedule above is: the card is saved repeatedly while it is being
+	// configured and switched on last, so everything checked only when enabled is
+	// checked after it has already been stored wrong.
+	config.DefaultRole = strings.TrimSpace(config.DefaultRole)
+	if config.DefaultRole == "" {
+		config.DefaultRole = model.RoleUser
+	}
+
+	// An unknown default role would leave provisioned accounts unusable.
+	if _, err := s.roles.GetByName(ctx, config.DefaultRole); err != nil {
+		return apperror.InvalidFields("defaultRole")
+	}
+
 	if config.Enabled {
 		var invalid []string
 
@@ -417,11 +442,6 @@ func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig)
 
 		if len(invalid) > 0 {
 			return apperror.InvalidFields(invalid...)
-		}
-
-		// An unknown default role would leave provisioned accounts unusable.
-		if _, err := s.roles.GetByName(ctx, config.DefaultRole); err != nil {
-			return apperror.InvalidFields("defaultRole")
 		}
 	}
 

@@ -1634,6 +1634,17 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
  * be cut, and a letterboxed logo reads as deliberate where a beheaded one reads
  * as broken. Anything wider than the card is scaled down to fit, so the width is
  * a bound rather than a target. */
+/* The card gives a logo the width of the card, so the placeholder standing in
+   for one is drawn at the height a logo gets rather than at the header's chip
+   size - a 78-pixel mark centred over a full-width card reads as an afterthought
+   beside the heading under it. */
+.login-mark {
+  align-self: center;
+  height: 96px;
+  margin-bottom: 4px;
+  width: 96px;
+}
+
 .login-card .brand-logo {
   align-self: stretch;
   height: auto;
@@ -2211,11 +2222,29 @@ a.tab:hover {
    to be where the eye lands rather than a screen further down. */
 #form-role .row { margin-top: 22px; }
 
-/* A field that cannot be typed into should not offer a typing cursor.
+/* A field that cannot be typed into should not look like one that can.
    The rights of a shipped role are visibly fixed - the boxes are greyed and
    cannot be ticked - while its name and description looked exactly like every
-   other field on the screen until somebody tried. */
-input[readonly] { cursor: default; }
+   other field on the screen until somebody tried.
+
+   The cursor was the first half and not enough on its own: a readonly field
+   still takes focus, so clicking one still drew the accent border and the focus
+   ring every editable field draws, which says "type here" more loudly than the
+   cursor says otherwise. Greyed like the switches beside them, and quiet when
+   clicked.
+
+   Still focusable on purpose. The text is worth selecting and worth reaching
+   from a keyboard; what it must not do is claim to be editable. */
+input[readonly], textarea[readonly] {
+  cursor: default;
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  color: var(--muted);
+}
+
+input[readonly]:focus, textarea[readonly]:focus {
+  border-color: var(--border);
+  outline: none;
+}
 
 /* A right is a switch, like every other on-or-off control here. The identifier
    sits at the end of the row rather than beside the words, so fifteen rows line

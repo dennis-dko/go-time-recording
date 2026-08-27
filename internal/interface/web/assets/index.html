@@ -378,6 +378,19 @@
          storage, and a shared machine would hand the next person the last one's
          name - which is the same reason signing out resets it. -->
     <form method="post" id="form-login" data-no-draft class="login-card">
+      <!-- The same placeholder the header carries, for an installation that has
+           not uploaded a logo. The sign-in screen used to show nothing at all
+           there, which reads as a page that has not finished loading rather than
+           as an installation without a logo. Its letter is the initial of the
+           configured title in the language being read, so it follows the
+           language the browser was detected in like every other word here. -->
+      <svg id="login-mark" class="brand-mark login-mark" viewBox="0 0 32 32"
+           aria-hidden="true" focusable="false">
+        <rect x="3.6" y="3.6" width="24.8" height="24.8" rx="7.2"
+              class="brand-mark-ground"/>
+        <text id="login-initial" x="16" y="16.9" text-anchor="middle"
+              dominant-baseline="middle" class="brand-mark-letter"></text>
+      </svg>
       <img id="login-logo" class="brand-logo" alt="" hidden>
       <h2 data-i18n="login.title">Sign in</h2>
       <p class="muted" id="login-hint" data-i18n="login.hint">Please sign in with your email address and password.</p>

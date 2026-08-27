@@ -709,3 +709,66 @@ func TestAManualCheckNeedsToBeAnAdministrator(t *testing.T) {
 		t.Errorf("somebody who books time may ask the release feed: got %d", got)
 	}
 }
+
+// A directory that is not switched on yet still has to come back with a role
+// somebody can be given.
+//
+// The check that the default role exists runs only when the directory is
+// enabled, which is the wrong way round for how the card is filled in: it is
+// saved repeatedly while it is still being configured, and switched on last.
+// An empty role saved during that gets stored, and the stored empty value then
+// beats the default the reader has - so the picker comes back with nothing
+// selected, and saving again writes the empty value once more.
+func TestADirectoryThatIsOffStillNamesARoleForNewAccounts(t *testing.T) {
+	t.Parallel()
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	// The card as it is part way through: switched off, and the role picker
+	// showing nothing because nothing was chosen.
+	admin.must(admin.api(http.MethodPut, "/settings/ldap", map[string]any{
+		"enabled":        false,
+		"host":           "",
+		"port":           389,
+		"userFilter":     "(|(uid=%s)(mail=%s))",
+		"nameAttribute":  "cn",
+		"emailAttribute": "mail",
+		"idAttribute":    "entryUUID",
+		"defaultRole":    "",
+	}), http.StatusOK)
+
+	// The response embeds the request, so the field sits at the top level rather
+	// than under an "ldap" key - reading it in the wrong place answers "" for
+	// every installation and would make this case pass for nothing.
+	var saved struct {
+		DefaultRole string `json:"defaultRole"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/settings/ldap", nil), http.StatusOK).Data(t, &saved)
+
+	if saved.DefaultRole == "" {
+		t.Fatal("the directory came back with no default role, so the picker on the " +
+			"card has nothing selected and the next save stores the emptiness again")
+	}
+
+	// And it has to be a role that exists, or accounts the directory creates are
+	// unusable.
+	var roles listOf[struct {
+		Name string `json:"name"`
+	}]
+
+	admin.must(admin.api(http.MethodGet, "/roles", nil), http.StatusOK).Data(t, &roles)
+
+	found := false
+
+	for _, role := range roles.Items {
+		if role.Name == saved.DefaultRole {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Errorf("the default role %q is not one of the roles that exist", saved.DefaultRole)
+	}
+}

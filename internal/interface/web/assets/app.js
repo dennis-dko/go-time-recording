@@ -2482,18 +2482,30 @@ function restoreDrafts() {
  * 26-pixel chip in that space would read as something broken.
  */
 function showBrandMark(branding, ownLogo) {
-  const mark = $('#brand-mark');
+  // Both places that stand in for a logo: the chip in the header, and the one on
+  // the sign-in screen. The sign-in card used to show nothing when no logo was
+  // configured, which reads as a page still loading rather than as an
+  // installation that has not uploaded one.
+  const letter = initialOf(brandingIn(branding, 'title'));
 
-  // The attribute rather than the property, because these are SVG elements and
-  // `hidden` is defined on HTMLElement: assigning it here creates a property
-  // nobody reads and leaves the chip on screen beside the logo that replaced it.
-  if (mark) {
-    if (ownLogo) mark.setAttribute('hidden', '');
-    else mark.removeAttribute('hidden');
+  for (const [markID, initialID] of [
+    ['#brand-mark', '#brand-initial'],
+    ['#login-mark', '#login-initial'],
+  ]) {
+    const mark = $(markID);
+
+    // The attribute rather than the property, because these are SVG elements and
+    // `hidden` is defined on HTMLElement: assigning it here creates a property
+    // nobody reads and leaves the chip on screen beside the logo that replaced
+    // it.
+    if (mark) {
+      if (ownLogo) mark.setAttribute('hidden', '');
+      else mark.removeAttribute('hidden');
+    }
+
+    const initial = $(initialID);
+    if (initial) initial.textContent = letter;
   }
-
-  const initial = $('#brand-initial');
-  if (initial) initial.textContent = initialOf(brandingIn(branding, 'title'));
 }
 
 /**
@@ -3617,7 +3629,7 @@ const TRANSLATIONS = {
     // cannot, and this is a container where replacing the binary would be undone.
     'update.title': 'Version',
     'update.running': 'Diese Installation läuft mit {0}',
-    'update.current': '{0} ist die neueste Version.',
+    'update.current': '{0} ist die aktuelle Version.',
     'update.found': '{0} ist verfügbar. Diese Installation läuft mit {1}.',
     'update.check': 'Aktualisierung suchen',
     'update.checking': 'Wird gesucht …',
@@ -5322,7 +5334,18 @@ async function loadAdmin() {
 
     fillSelect(ldapForm.elements.defaultRole, roleChoices(),
       { labelKey: 'label', valueKey: 'name' });
-    ldapForm.elements.defaultRole.value = ldap.defaultRole ?? 'user';
+    // || rather than ??, because the value that actually arrives from an older
+    // installation is an empty string rather than a missing field - and ?? lets
+    // it through, which sets a <select> to a value none of its options carry and
+    // leaves it showing nothing at all.
+    ldapForm.elements.defaultRole.value = ldap.defaultRole || 'user';
+
+    // And if even that names a role this installation has not got, show the
+    // first one rather than a blank box: a picker with nothing in it reads as a
+    // broken screen, and there is always at least one role to offer.
+    if (!ldapForm.elements.defaultRole.value) {
+      ldapForm.elements.defaultRole.selectedIndex = 0;
+    }
   }
 
   // The directory run belongs to the built-in administrator, because it deletes

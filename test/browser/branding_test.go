@@ -1228,3 +1228,40 @@ func TestAnInstallationWithNoLogoStillHasAMark(t *testing.T) {
 			"for nothing")
 	}
 }
+
+// The sign-in screen stands in for a logo the same way the header does.
+//
+// An installation that has uploaded no logo showed nothing at all above the
+// heading, which reads as a page that has not finished loading rather than as an
+// installation without a logo. The header has carried a lettered chip for this
+// all along; the sign-in card is the one screen everybody sees first, and it had
+// none.
+func TestTheSignInScreenShowsTheLetteredMarkWhenThereIsNoLogo(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	// Before signing in: this is the screen the mark belongs on.
+	if !p.visible("#login-mark") {
+		t.Fatal("the sign-in screen shows no mark where a logo would be")
+	}
+
+	// The letter is the initial of the configured title, so it says something
+	// about this installation rather than being a decoration.
+	letter := strings.TrimSpace(p.text("#login-initial"))
+	if letter == "" {
+		t.Error("the mark on the sign-in screen carries no letter")
+	}
+
+	if len([]rune(letter)) != 1 {
+		t.Errorf("the mark should carry one letter, it carries %q", letter)
+	}
+
+	// And it is the same letter the header uses, rather than a second answer to
+	// the same question.
+	p.readyAdmin()
+
+	if inHeader := strings.TrimSpace(p.text("#brand-initial")); inHeader != letter {
+		t.Errorf("the sign-in screen says %q and the header says %q", letter, inHeader)
+	}
+}

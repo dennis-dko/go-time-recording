@@ -5289,3 +5289,47 @@ func TestTheVersionCardCanBeAskedToLookAgain(t *testing.T) {
 			len(raised), strings.Join(raised, "\n"))
 	}
 }
+
+// The directory's role picker has to offer the roles.
+//
+// It was empty, and the way there is ordinary: start filling in the directory
+// card, reload the page for any of the reasons a page gets reloaded, and the
+// draft comes back with the form marked as being edited. Every later refill is
+// skipped to protect what was typed - including the call that puts the roles
+// into the picker, which is not something anybody typed. The card came back with
+// a chooser that offered nothing to choose.
+func TestTheDirectoryRolePickerOffersTheRolesAfterADraftComesBack(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-ldap", chromedp.ByID))
+
+	if p.count("#form-ldap select[name=defaultRole] option") == 0 {
+		t.Fatal("the role picker is empty before anybody has even touched the form")
+	}
+
+	// Somebody starts configuring the directory, which is what marks the form.
+	p.run("start filling it in",
+		chromedp.SendKeys(`#form-ldap input[name="host"]`, "ldap.example.invalid",
+			chromedp.ByQuery))
+
+	// And the page is reloaded, for whatever reason pages get reloaded.
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.settled()
+
+	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-ldap", chromedp.ByID))
+
+	// The draft is back - that part is deliberate and stays.
+	if host := p.value(`#form-ldap input[name="host"]`); host != "ldap.example.invalid" {
+		t.Errorf("the draft was not restored, so this case is no longer about what it says: %q", host)
+	}
+
+	if n := p.count("#form-ldap select[name=defaultRole] option"); n == 0 {
+		t.Error("the role picker came back empty, so no default role can be chosen for " +
+			"accounts the directory creates")
+	}
+}
