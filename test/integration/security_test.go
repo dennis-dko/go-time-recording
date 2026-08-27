@@ -201,6 +201,46 @@ func TestAUserSeesOnlyTheirOwnEntries(t *testing.T) {
 	}
 }
 
+// Reading somebody else's entry by its id must not be distinguishable from
+// reading one that was never there.
+//
+// This answered 403 for a colleague's entry and 404 for an id nobody holds,
+// which is a way to ask the server which ids are real: walk the numbers and the
+// status tells you where the entries are, how many there are and roughly when
+// they were made, without ever being allowed to read one.
+//
+// The application already takes the other reading everywhere it matters - a
+// private project answers not-found for exactly this reason - so this is the
+// same rule applied to the entries booked against them.
+func TestAnotherPersonsEntryIsIndistinguishableFromNoEntry(t *testing.T) {
+	t.Parallel()
+
+	a, admin, colleague := startWithWorker(t)
+
+	var theirs timesheetResponse
+	colleague.must(colleague.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-03", "durationHours": 4, "description": "A colleague's work",
+	}), http.StatusCreated, http.StatusOK).Data(t, &theirs)
+
+	user := a.signInAsUser(admin, "Rolf", "rolf@example.com")
+
+	theirEntry := user.api(http.MethodGet, path("/timesheets/", theirs.ID), nil)
+
+	// An id far past anything this test created, so the two answers being equal
+	// is the point rather than a coincidence of ordering.
+	noEntry := user.api(http.MethodGet, path("/timesheets/", theirs.ID+9000), nil)
+
+	if theirEntry.Status != noEntry.Status {
+		t.Errorf("an entry that exists answers %d and one that does not answers %d, "+
+			"which tells the caller which ids are real",
+			theirEntry.Status, noEntry.Status)
+	}
+
+	if theirEntry.Status != http.StatusNotFound {
+		t.Errorf("somebody else's entry should read as not being there, got %d", theirEntry.Status)
+	}
+}
+
 func TestAUserCannotAdministerUsersOrRoles(t *testing.T) {
 	t.Parallel()
 

@@ -3,6 +3,7 @@ package rest
 import (
 	"cmp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,9 +108,22 @@ func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	// Not-found rather than a refusal, and deliberately the same answer the
+	// repository gives for an id nobody holds.
+	//
+	// A refusal here was a way to ask which ids are real: walking the numbers
+	// told a caller where the entries are and how many there are, without ever
+	// being allowed to read one. Saying "not there" to a caller who may not see
+	// it is true from where they stand, and it is the reading the rest of the
+	// application already takes - a private project answers exactly this, for
+	// exactly this reason.
+	//
+	// Listing is the other way round on purpose: a filter naming somebody else
+	// is refused outright, because an empty list would be an answer to a
+	// question that was not asked.
 	if h.authz.Enabled() && result.Result.UserID != principal.User.ID {
-		return nil, forbiddenError{msg: "you may only read your own time entries"}.
-			WithCode("onlyOwnEntriesRead")
+		return nil, toHTTPError(apperror.NotFound("timesheet",
+			strconv.FormatUint(uint64(id), 10)))
 	}
 
 	return newTimesheetResponse(result.Result), nil
