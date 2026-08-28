@@ -7871,6 +7871,21 @@ function wireUpdateCheck() {
   button.addEventListener('click', async () => {
     const wasSaying = button.textContent;
 
+    // Hold the width the button already has, for as long as it says something
+    // else.
+    //
+    // "Wird gesucht ..." is not the width of "Aktualisierung suchen", so swapping
+    // the label resized the button, which moved the row, which shifted the card -
+    // and swapping it back a moment later moved everything home again. Pressing
+    // it made the card twitch.
+    //
+    // Measured rather than set in the stylesheet, because the two labels are
+    // different widths in every language and a number that fits both in German
+    // is a gap in English. Through the CSSOM rather than a style attribute: the
+    // policy forbids the attribute, and this is the same distinction the chart
+    // export had to learn.
+    button.style.minWidth = `${button.offsetWidth}px`;
+
     button.disabled = true;
     button.textContent = t('update.checking', 'Looking …');
 
@@ -7886,6 +7901,7 @@ function wireUpdateCheck() {
     } finally {
       button.disabled = false;
       button.textContent = wasSaying;
+      button.style.minWidth = '';
     }
   });
 }

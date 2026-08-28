@@ -698,6 +698,32 @@ func (p *page) becomeWorker() {
 
 // visible reports whether an element is on screen, as the browser sees it -
 // not whether it exists in the markup.
+// pixels reads a layout number off an element, for the cases where what is
+// being asserted is that the page did not move.
+func (p *page) pixels(selector, property string) int {
+	p.t.Helper()
+
+	var out int
+
+	p.run("measure "+property+" of "+selector, chromedp.Evaluate(fmt.Sprintf(
+		`Math.round(document.querySelector(%q)?.%s ?? -1)`, selector, property), &out))
+
+	return out
+}
+
+// styleProperty reads an inline style set from script, which is how a page pins
+// something for the duration of an action and then lets go of it.
+func (p *page) styleProperty(selector, property string) string {
+	p.t.Helper()
+
+	var out string
+
+	p.run("read style."+property+" of "+selector, chromedp.Evaluate(fmt.Sprintf(
+		`document.querySelector(%q)?.style?.%s ?? ""`, selector, property), &out))
+
+	return out
+}
+
 // disabled reports whether a control is refusing to be pressed.
 //
 // A button that says it is working is a button that has to stop saying it: the
