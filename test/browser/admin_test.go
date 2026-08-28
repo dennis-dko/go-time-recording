@@ -5260,6 +5260,9 @@ func TestTheVersionCardCanBeAskedToLookAgain(t *testing.T) {
 	// against the button would make this case fail for something it did not do.
 	quietBefore := len(p.complaints())
 
+	// What it measures before anything is pressed.
+	wasWide := p.pixels("#update-check", "offsetWidth")
+
 	p.run("ask again", p.click("#update-check"))
 
 	// The button comes back rather than staying disabled: it says "Looking …"
@@ -5280,6 +5283,19 @@ func TestTheVersionCardCanBeAskedToLookAgain(t *testing.T) {
 
 	if after := strings.TrimSpace(p.text("#update-state")); after == "" {
 		t.Errorf("the card lost its sentence after asking again; it said %q before", before)
+	}
+
+	// The button is the width it was. While it is working it says something else,
+	// and the two labels are not the same width in any language - so swapping
+	// them resized the button, moved the row and shifted the card, twice. The
+	// width is held for the duration and released afterwards, which is what these
+	// two assertions are: the same width, and nothing left pinning it.
+	if width := p.pixels("#update-check", "offsetWidth"); width != wasWide {
+		t.Errorf("the button is %dpx after asking and was %dpx before", width, wasWide)
+	}
+
+	if pinned := p.styleProperty("#update-check", "minWidth"); pinned != "" {
+		t.Errorf("the button is still pinned to %q, so it can never be narrower again", pinned)
 	}
 
 	// And the press itself was quiet. The card is redrawn from the answer that

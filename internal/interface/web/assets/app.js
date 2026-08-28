@@ -7871,6 +7871,21 @@ function wireUpdateCheck() {
   button.addEventListener('click', async () => {
     const wasSaying = button.textContent;
 
+    // Hold the width the button already has, for as long as it says something
+    // else.
+    //
+    // "Wird gesucht ..." is not the width of "Aktualisierung suchen", so swapping
+    // the label resized the button, which moved the row, which shifted the card -
+    // and swapping it back a moment later moved everything home again. Pressing
+    // it made the card twitch.
+    //
+    // Measured rather than set in the stylesheet, because the two labels are
+    // different widths in every language and a number that fits both in German
+    // is a gap in English. Through the CSSOM rather than a style attribute: the
+    // policy forbids the attribute, and this is the same distinction the chart
+    // export had to learn.
+    button.style.minWidth = `${button.offsetWidth}px`;
+
     button.disabled = true;
     button.textContent = t('update.checking', 'Looking …');
 
@@ -7886,6 +7901,7 @@ function wireUpdateCheck() {
     } finally {
       button.disabled = false;
       button.textContent = wasSaying;
+      button.style.minWidth = '';
     }
   });
 }
@@ -8944,12 +8960,18 @@ async function downloadSheet(path, name) {
 /**
  * Sends an evaluation to be laid out, and saves the document that comes back.
  *
- * No language parameter, unlike the spreadsheet above: there is nothing for the
- * server to translate, because every word in the document is already in this
- * request. It was read off the screen, in the language the screen is in.
+ * One language parameter, unlike everything else here: every word of the body is
+ * already in this request, read off the screen in the language the screen is in.
+ * The footer is not - the installation's name and the moment are the server's to
+ * say, and it has to be told which language is reading in order to say them.
  */
 async function downloadDocument(doc, name) {
-  await downloadFile(`${API}/exports/document`, name, 'pdf', {
+  // The language, which is the one thing in a document the server words itself.
+  // Everything else here was read off the screen and arrives already written;
+  // the footer is the server's line, and it used to be signed off in English
+  // under a German evaluation, with the date in an order no German page uses.
+  await downloadFile(`${API}/exports/document?lang=${encodeURIComponent(activeLanguage())}`,
+    name, 'pdf', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

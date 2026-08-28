@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/png"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -143,12 +144,71 @@ type inks struct {
 // page still reads.
 func (p Palette) resolve() inks {
 	return inks{
-		accent:  parseColour(p.Accent, defaultAccent),
-		text:    parseColour(p.Text, defaultText),
-		muted:   parseColour(p.Muted, defaultMuted),
-		border:  parseColour(p.Border, defaultBorder),
-		surface: parseColour(p.Surface, defaultSurface),
+		// Written with, so it has to be dark enough to read against the page.
+		accent: readable(parseColour(p.Accent, defaultAccent), defaultAccent),
+		text:   readable(parseColour(p.Text, defaultText), defaultText),
+		muted:  readable(parseColour(p.Muted, defaultMuted), defaultMuted),
+
+		// Filled with, so it has to stay lighter than what is written on it.
+		border:  quiet(parseColour(p.Border, defaultBorder), defaultBorder),
+		surface: quiet(parseColour(p.Surface, defaultSurface), defaultSurface),
 	}
+}
+
+// paperContrast is where a shade stops being ink and starts being a fill.
+//
+// The page is white and the palette comes from a screen that may not be. A
+// reader using the dark theme sends its shades - near-white body text, pale grey
+// captions, a surface that is almost black - and every one of them is right
+// there and wrong here. What arrived was a column of solid black bars, because
+// the empty part of a bar is drawn in the surface shade, with the figures beside
+// them in a grey that disappeared into the paper.
+//
+// Three to one is the usual floor for large text and the right kind of number to
+// use: it is a judgement about whether something can be read, and the thing
+// being read is a printed page. The same number separates the two directions,
+// which is what makes it one rule rather than two thresholds to keep in step.
+const paperContrast = 3.0
+
+// contrastOnPaper is how far a shade stands out from a white page, as the ratio
+// the accessibility guidelines define. One is invisible; twenty-one is black.
+func (c colour) contrastOnPaper() float64 {
+	// The channel curve those guidelines use. Perceived lightness is not the
+	// average of three numbers, and a mid grey is not half of white.
+	channel := func(v int) float64 {
+		f := float64(v) / 255
+
+		if f <= 0.04045 {
+			return f / 12.92
+		}
+
+		return math.Pow((f+0.055)/1.055, 2.4)
+	}
+
+	luminance := 0.2126*channel(c.r) + 0.7152*channel(c.g) + 0.0722*channel(c.b)
+
+	return 1.05 / (luminance + 0.05)
+}
+
+// readable keeps a shade that can be written with on white paper, and falls back
+// to the document's own when it cannot.
+func readable(c, fallback colour) colour {
+	if c.contrastOnPaper() >= paperContrast {
+		return c
+	}
+
+	return fallback
+}
+
+// quiet keeps a shade that can be filled with - a rule, a heading row, the empty
+// part of a bar - which means one that stays out of the way of the ink on top of
+// it.
+func quiet(c, fallback colour) colour {
+	if c.contrastOnPaper() <= paperContrast {
+		return c
+	}
+
+	return fallback
 }
 
 // parseColour reads "#rrggbb", or "#rgb", and gives up quietly.
@@ -193,6 +253,12 @@ type Document struct {
 	// because it is the one thing in here that is not the screen's to say.
 	Footer string
 
+	// Language is who is reading, which decides how the moment below is written
+	// down. Everything else in a document arrives already worded, because it was
+	// read off the screen; the footer is the exception, and a date is the half of
+	// it that cannot be translated by choosing a different word.
+	Language string
+
 	// Written is the moment the document says it was made. Given by the caller
 	// rather than read from the clock here, so that the footer and the file's
 	// own creation date agree with each other and with whatever the caller has
@@ -218,7 +284,7 @@ func Write(doc Document) ([]byte, error) {
 	pdf.SetTitle(doc.Title, true)
 	pdf.SetCreationDate(doc.Written)
 
-	writeFooter(pdf, ink, doc.Footer, doc.Written)
+	writeFooter(pdf, ink, doc.Footer, doc.Language, doc.Written)
 
 	pdf.AddPage()
 	writeHeading(pdf, ink, doc)
@@ -245,7 +311,7 @@ func Write(doc Document) ([]byte, error) {
 // Registered before the first page rather than drawn after the last: a document
 // that runs to three pages has to say on all three where it came from, and a
 // page number is only of use on the page it counts.
-func writeFooter(pdf *fpdf.Fpdf, ink inks, footer string, written time.Time) {
+func writeFooter(pdf *fpdf.Fpdf, ink inks, footer, language string, written time.Time) {
 	pdf.SetFooterFunc(func() {
 		pdf.SetY(-15)
 		pdf.SetFont("go", "", captionSize)
@@ -253,7 +319,7 @@ func writeFooter(pdf *fpdf.Fpdf, ink inks, footer string, written time.Time) {
 
 		left := strings.TrimSpace(footer)
 		if !written.IsZero() {
-			left = strings.TrimSpace(left + "  ·  " + written.Format("2006-01-02 15:04"))
+			left = strings.TrimSpace(left + "  ·  " + moment(written, language))
 		}
 
 		pdf.CellFormat(contentWide/2, 5, left, "", 0, "L", false, 0, "")
@@ -262,7 +328,27 @@ func writeFooter(pdf *fpdf.Fpdf, ink inks, footer string, written time.Time) {
 	})
 }
 
+// moment writes a timestamp the way the reader's language writes one.
+//
+// ISO order is unambiguous and is what this used to print for everybody, which
+// made a German document end on a line no German document ends on. The reader is
+// not being given a machine-readable field here - they are being told when the
+// page was made.
+func moment(written time.Time, language string) string {
+	if language == germanLanguage {
+		return written.Format("02.01.2006 15:04")
+	}
+
+	return written.Format("2006-01-02 15:04")
+}
+
+// germanLanguage is named here rather than imported. This package lays out a
+// page and knows nothing else about the application, and one string is a smaller
+// thing to repeat than a dependency on the domain is to add.
+const germanLanguage = "de"
+
 // writeHeading writes the title and the period it covers.
+
 func writeHeading(pdf *fpdf.Fpdf, ink inks, doc Document) {
 	pdf.SetFont("go", "B", titleSize)
 	use(pdf, ink.accent)

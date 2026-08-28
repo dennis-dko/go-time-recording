@@ -747,11 +747,18 @@ func main() {
 	// and the second would have been the same six lines again.
 	instanceName := func(ctx *gofr.Context) string {
 		branding, err := settingsService.Branding(ctx)
-		if err != nil || branding.Title == "" {
+		if err != nil {
 			return cfg.AppName
 		}
 
-		return branding.Title
+		// In the language that asked, where there is one. An installation that
+		// has named itself in German and is read in German should not be signed
+		// off in English at the foot of its own evaluation.
+		if title := branding.TitleIn(strings.TrimSpace(ctx.Param("lang"))); title != "" {
+			return title
+		}
+
+		return cfg.AppName
 	}
 
 	v1.RegisterRoutes(app, v1.Handlers{
