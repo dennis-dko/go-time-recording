@@ -8944,12 +8944,18 @@ async function downloadSheet(path, name) {
 /**
  * Sends an evaluation to be laid out, and saves the document that comes back.
  *
- * No language parameter, unlike the spreadsheet above: there is nothing for the
- * server to translate, because every word in the document is already in this
- * request. It was read off the screen, in the language the screen is in.
+ * One language parameter, unlike everything else here: every word of the body is
+ * already in this request, read off the screen in the language the screen is in.
+ * The footer is not - the installation's name and the moment are the server's to
+ * say, and it has to be told which language is reading in order to say them.
  */
 async function downloadDocument(doc, name) {
-  await downloadFile(`${API}/exports/document`, name, 'pdf', {
+  // The language, which is the one thing in a document the server words itself.
+  // Everything else here was read off the screen and arrives already written;
+  // the footer is the server's line, and it used to be signed off in English
+  // under a German evaluation, with the date in an order no German page uses.
+  await downloadFile(`${API}/exports/document?lang=${encodeURIComponent(activeLanguage())}`,
+    name, 'pdf', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

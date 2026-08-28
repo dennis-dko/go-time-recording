@@ -116,6 +116,7 @@ func (h *DocumentHandler) Export(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	doc.Language = language(c)
 	doc.Footer = strings.TrimSpace(h.instanceName(c))
 	if principal != nil && principal.User != nil {
 		doc.Footer = strings.TrimSpace(doc.Footer + "  ·  " + principal.User.Name)

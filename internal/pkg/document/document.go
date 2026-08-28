@@ -253,6 +253,12 @@ type Document struct {
 	// because it is the one thing in here that is not the screen's to say.
 	Footer string
 
+	// Language is who is reading, which decides how the moment below is written
+	// down. Everything else in a document arrives already worded, because it was
+	// read off the screen; the footer is the exception, and a date is the half of
+	// it that cannot be translated by choosing a different word.
+	Language string
+
 	// Written is the moment the document says it was made. Given by the caller
 	// rather than read from the clock here, so that the footer and the file's
 	// own creation date agree with each other and with whatever the caller has
@@ -278,7 +284,7 @@ func Write(doc Document) ([]byte, error) {
 	pdf.SetTitle(doc.Title, true)
 	pdf.SetCreationDate(doc.Written)
 
-	writeFooter(pdf, ink, doc.Footer, doc.Written)
+	writeFooter(pdf, ink, doc.Footer, doc.Language, doc.Written)
 
 	pdf.AddPage()
 	writeHeading(pdf, ink, doc)
@@ -305,7 +311,7 @@ func Write(doc Document) ([]byte, error) {
 // Registered before the first page rather than drawn after the last: a document
 // that runs to three pages has to say on all three where it came from, and a
 // page number is only of use on the page it counts.
-func writeFooter(pdf *fpdf.Fpdf, ink inks, footer string, written time.Time) {
+func writeFooter(pdf *fpdf.Fpdf, ink inks, footer, language string, written time.Time) {
 	pdf.SetFooterFunc(func() {
 		pdf.SetY(-15)
 		pdf.SetFont("go", "", captionSize)
@@ -313,7 +319,7 @@ func writeFooter(pdf *fpdf.Fpdf, ink inks, footer string, written time.Time) {
 
 		left := strings.TrimSpace(footer)
 		if !written.IsZero() {
-			left = strings.TrimSpace(left + "  ·  " + written.Format("2006-01-02 15:04"))
+			left = strings.TrimSpace(left + "  ·  " + moment(written, language))
 		}
 
 		pdf.CellFormat(contentWide/2, 5, left, "", 0, "L", false, 0, "")
@@ -321,6 +327,25 @@ func writeFooter(pdf *fpdf.Fpdf, ink inks, footer string, written time.Time) {
 		use(pdf, ink.text)
 	})
 }
+
+// moment writes a timestamp the way the reader's language writes one.
+//
+// ISO order is unambiguous and is what this used to print for everybody, which
+// made a German document end on a line no German document ends on. The reader is
+// not being given a machine-readable field here - they are being told when the
+// page was made.
+func moment(written time.Time, language string) string {
+	if language == germanLanguage {
+		return written.Format("02.01.2006 15:04")
+	}
+
+	return written.Format("2006-01-02 15:04")
+}
+
+// germanLanguage is named here rather than imported. This package lays out a
+// page and knows nothing else about the application, and one string is a smaller
+// thing to repeat than a dependency on the domain is to add.
+const germanLanguage = "de"
 
 // writeHeading writes the title and the period it covers.
 

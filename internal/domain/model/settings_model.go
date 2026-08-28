@@ -138,6 +138,25 @@ type Branding struct {
 // nothing has to remember which of the two wins. The tab title where there is
 // one, and the ordinary title otherwise - which is every installation that has
 // never opened this setting.
+// TitleIn is what this installation calls itself in one language.
+//
+// The footer of an exported document is the one place the server writes a word
+// of its own into something otherwise composed entirely on the screen, so it is
+// the one place that has to be told which language is reading - a German
+// evaluation used to be signed off in English.
+//
+// Falls back to the untranslated title, and then to nothing, so an installation
+// that has named itself in one language only is still named.
+func (b Branding) TitleIn(language string) string {
+	if text, ok := b.Translations[language]; ok {
+		if title := strings.TrimSpace(text.Title); title != "" {
+			return title
+		}
+	}
+
+	return strings.TrimSpace(b.Title)
+}
+
 func (b Branding) TabName() string {
 	if tab := strings.TrimSpace(b.TabTitle); tab != "" {
 		return tab
