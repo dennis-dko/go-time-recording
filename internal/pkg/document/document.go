@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/png"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -143,12 +144,71 @@ type inks struct {
 // page still reads.
 func (p Palette) resolve() inks {
 	return inks{
-		accent:  parseColour(p.Accent, defaultAccent),
-		text:    parseColour(p.Text, defaultText),
-		muted:   parseColour(p.Muted, defaultMuted),
-		border:  parseColour(p.Border, defaultBorder),
-		surface: parseColour(p.Surface, defaultSurface),
+		// Written with, so it has to be dark enough to read against the page.
+		accent: readable(parseColour(p.Accent, defaultAccent), defaultAccent),
+		text:   readable(parseColour(p.Text, defaultText), defaultText),
+		muted:  readable(parseColour(p.Muted, defaultMuted), defaultMuted),
+
+		// Filled with, so it has to stay lighter than what is written on it.
+		border:  quiet(parseColour(p.Border, defaultBorder), defaultBorder),
+		surface: quiet(parseColour(p.Surface, defaultSurface), defaultSurface),
 	}
+}
+
+// paperContrast is where a shade stops being ink and starts being a fill.
+//
+// The page is white and the palette comes from a screen that may not be. A
+// reader using the dark theme sends its shades - near-white body text, pale grey
+// captions, a surface that is almost black - and every one of them is right
+// there and wrong here. What arrived was a column of solid black bars, because
+// the empty part of a bar is drawn in the surface shade, with the figures beside
+// them in a grey that disappeared into the paper.
+//
+// Three to one is the usual floor for large text and the right kind of number to
+// use: it is a judgement about whether something can be read, and the thing
+// being read is a printed page. The same number separates the two directions,
+// which is what makes it one rule rather than two thresholds to keep in step.
+const paperContrast = 3.0
+
+// contrastOnPaper is how far a shade stands out from a white page, as the ratio
+// the accessibility guidelines define. One is invisible; twenty-one is black.
+func (c colour) contrastOnPaper() float64 {
+	// The channel curve those guidelines use. Perceived lightness is not the
+	// average of three numbers, and a mid grey is not half of white.
+	channel := func(v int) float64 {
+		f := float64(v) / 255
+
+		if f <= 0.04045 {
+			return f / 12.92
+		}
+
+		return math.Pow((f+0.055)/1.055, 2.4)
+	}
+
+	luminance := 0.2126*channel(c.r) + 0.7152*channel(c.g) + 0.0722*channel(c.b)
+
+	return 1.05 / (luminance + 0.05)
+}
+
+// readable keeps a shade that can be written with on white paper, and falls back
+// to the document's own when it cannot.
+func readable(c, fallback colour) colour {
+	if c.contrastOnPaper() >= paperContrast {
+		return c
+	}
+
+	return fallback
+}
+
+// quiet keeps a shade that can be filled with - a rule, a heading row, the empty
+// part of a bar - which means one that stays out of the way of the ink on top of
+// it.
+func quiet(c, fallback colour) colour {
+	if c.contrastOnPaper() <= paperContrast {
+		return c
+	}
+
+	return fallback
 }
 
 // parseColour reads "#rrggbb", or "#rgb", and gives up quietly.
@@ -263,6 +323,7 @@ func writeFooter(pdf *fpdf.Fpdf, ink inks, footer string, written time.Time) {
 }
 
 // writeHeading writes the title and the period it covers.
+
 func writeHeading(pdf *fpdf.Fpdf, ink inks, doc Document) {
 	pdf.SetFont("go", "B", titleSize)
 	use(pdf, ink.accent)
