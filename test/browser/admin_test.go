@@ -5423,12 +5423,12 @@ func TestAnAdminCorrectsALocalAccountFromTheTable(t *testing.T) {
 	// Two rows, one of them the built-in administrator - which is also the row
 	// whoever is signed in is reading their own name in. So exactly one account
 	// here is somebody else's to correct.
-	if got := p.count("#table-users tbody button.link:not(.danger)"); got != 1 {
+	if got := p.count(`#table-users tbody button[data-action="edit"]`); got != 1 {
 		t.Fatalf("the table offers %d accounts for editing, want 1 - the built-in "+
 			"administrator is the way back in and must not be one of them", got)
 	}
 
-	p.run("open Wilma", p.click("#table-users tbody button.link:not(.danger)"),
+	p.run("open Wilma", p.click(`#table-users tbody button[data-action="edit"]`),
 		chromedp.WaitVisible("#user-cancel", chromedp.ByID))
 
 	if title := p.text("#user-form-title"); !strings.Contains(strings.ToLower(title), "edit") {
@@ -5511,9 +5511,11 @@ func TestADirectoryAccountIsNotOfferedForCorrection(t *testing.T) {
 
 	p.waitForText("#table-users tbody", "sven@example.com")
 
-	if got := p.count("#table-users tbody button.link:not(.danger)"); got != 0 {
-		t.Errorf("a directory account is offered for editing (%d buttons), which the "+
-			"server refuses and the next synchronisation would undo", got)
+	for _, action := range []string{"edit", "reset-password"} {
+		if got := p.count(`#table-users tbody button[data-action="` + action + `"]`); got != 0 {
+			t.Errorf("a directory account is offered %q (%d buttons), which the server "+
+				"refuses and the next synchronisation would undo", action, got)
+		}
 	}
 }
 
@@ -5547,7 +5549,7 @@ func TestAProjectCanBeCorrectedAndItsOptionalFieldsEmptied(t *testing.T) {
 
 	p.waitForText("#table-projects tbody", "Dachsanierung")
 
-	p.run("open it", p.click("#table-projects tbody button.link:not(.danger)"),
+	p.run("open it", p.click(`#table-projects tbody button[data-action="edit"]`),
 		chromedp.WaitVisible("#project-cancel", chromedp.ByID))
 
 	if got := p.value(`#form-project input[name="name"]`); got != "Dachsanierung" {
@@ -5628,5 +5630,96 @@ func TestAProjectCanBeCorrectedAndItsOptionalFieldsEmptied(t *testing.T) {
 	// And the start is filled in again, the same courtesy a first project gets.
 	if p.value(`#form-project input[name="startDate"]`) == "" {
 		t.Error("the start was left empty for the next project")
+	}
+}
+
+// Letting somebody back in, from the table, without learning what they had.
+//
+// The administrator chooses the password rather than the application handing out
+// the documented one, because the must-change flag does not stop signing in - it
+// cannot, or nobody could ever get out of it - so a well-known password would
+// leave a window in which anybody who knows the address takes the account over.
+//
+// And it can be generated, because a password a person invents under mild
+// pressure is a password like the last one they invented. The field takes either.
+func TestAnAdministratorResetsAPasswordFromTheTable(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("add somebody", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#form-user", chromedp.ByID),
+		chromedp.SendKeys(`#form-user input[name="name"]`, "Wilma", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="email"]`, "wilma@example.com",
+			chromedp.ByQuery),
+		p.chooseOption(`#form-user select[name="role"]`, "user"),
+		chromedp.SendKeys(`#form-user input[name="password"]`, "wilma-password-1",
+			chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`))
+
+	p.waitForText("#table-users tbody", "wilma@example.com")
+
+	// One row offers it. Not the built-in administrator's, which is also the row
+	// whoever is signed in is reading their own name in - and their own password
+	// is changed under My account, which asks for the one they have.
+	offered := p.count(`#table-users tbody button[data-action="reset-password"]`)
+
+	if offered != 1 {
+		t.Fatalf("%d rows offer a password reset, want 1", offered)
+	}
+
+	p.run("open it", p.click(`#table-users tbody button[data-action="reset-password"]`),
+		chromedp.WaitVisible("#reset-password-field", chromedp.ByID))
+
+	// The question names the person, because an administrator with a table of
+	// accounts open is one mis-click from resetting the wrong one.
+	if asked := p.text(".confirm-card"); !strings.Contains(asked, "Wilma") {
+		t.Errorf("the question does not say whose password it is about: %q", asked)
+	}
+
+	// Hidden to begin with, and readable through the control every other password
+	// field on this screen already has - rather than a second one built here.
+	if got := p.attr("#reset-password-field", "type"); got != "password" {
+		t.Errorf("the field starts as %q, so the password is on screen before "+
+			"anybody asked for it", got)
+	}
+
+	if p.count(".confirm-card .password-toggle") != 1 {
+		t.Error("the field has no reveal button, or has grown a second one")
+	}
+
+	var generated string
+
+	p.run("let it choose one", p.click("#reset-password-generate"),
+		chromedp.Value("#reset-password-field", &generated, chromedp.ByID))
+
+	if len(generated) < 8 {
+		t.Fatalf("the generated password is %q, which the server would refuse",
+			generated)
+	}
+
+	// Revealed by generating it. One that has to be read out or written down and
+	// cannot be seen is worse than none.
+	if got := p.attr("#reset-password-field", "type"); got != "text" {
+		t.Errorf("the generated password stays hidden (type %q), so nobody can pass "+
+			"it on", got)
+	}
+
+	p.run("reset it", p.click(".confirm-card button.confirm-proceed"))
+
+	p.waitForText("#toast", "assword reset")
+
+	// And it works: the account signs in with what was generated, and is made to
+	// choose its own before it can do anything.
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("wilma@example.com", generated)
+	p.waitGone("#login-screen")
+
+	if !p.visible("#password-banner") {
+		t.Error("the account signed in on the reset password and was not asked to " +
+			"replace it")
 	}
 }

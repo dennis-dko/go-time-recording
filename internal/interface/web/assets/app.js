@@ -3210,6 +3210,7 @@ const TRANSLATIONS = {
     'action.evaluate': 'Auswerten',
     'action.exportPdf': 'Als PDF exportieren',
     'action.reload': 'Neu laden',
+    'action.generate': 'Erzeugen',
     'action.new': 'Neu',
     'action.save': 'Speichern',
     'action.dismiss': 'Schließen',
@@ -3290,6 +3291,7 @@ const TRANSLATIONS = {
     'err.bodyTooLarge': 'Die gesendeten Daten sind zu groß (Grenze: {0} MB).',
     'err.csrfRejected': 'Diese Seite ist zu lange geöffnet gewesen. Bitte neu laden und noch einmal versuchen.',
     'err.maintenance': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
+    'err.cannotResetOwnPassword': 'Das eigene Passwort wird unter „Mein Konto“ geändert — dort wird nach dem aktuellen gefragt.',
     'err.cannotDeleteSelf': 'Das Konto, mit dem du angemeldet bist, kann nicht gelöscht werden.',
     'err.defaultRoleUndeletable': '„{0}“ ist eine mitgelieferte Rolle und kann nicht gelöscht werden.',
     'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
@@ -3477,6 +3479,7 @@ const TRANSLATIONS = {
     'field.from': 'Von',
     'field.hours': 'Stunden',
     'field.maxPerDay': 'Max/Tag',
+    'field.newPassword': 'Neues Passwort',
     'field.password': 'Passwort',
     'field.period': 'Zeitraum',
     'field.project': 'Projekt',
@@ -3537,6 +3540,7 @@ const TRANSLATIONS = {
     'msg.initFailed': 'Initialisierung fehlgeschlagen',
     'msg.loadFailed': 'Konnte nicht alles laden',
     'msg.rightsChanged': 'Deine Berechtigungen haben sich geändert. Bitte die Seite neu laden.',
+    'msg.passwordReset': 'Passwort zurückgesetzt',
     'msg.passwordChanged': 'Passwort geändert. Bitte neu anmelden.',
     'msg.projectArchived': 'Projekt archiviert',
     'msg.projectCompleted': 'Projekt abgeschlossen',
@@ -3752,6 +3756,13 @@ const TRANSLATIONS = {
     'user.fromDirectory': 'Verzeichnis',
     'err.directoryAccountReadOnly': '„{0}“ stammt aus dem Verzeichnis. Name und Adresse werden von dort übernommen; hier lässt sich nur die Rolle ändern.',
     'err.directoryAccountUndeletable': '„{0}“ stammt aus dem Verzeichnis. Bitte den Eintrag dort entfernen — der nächste Abgleich entfernt dieses Konto.',
+    'user.resetPassword': 'Passwort zurücksetzen',
+    'user.resetTitle': 'Passwort zurücksetzen',
+    'user.resetText': 'Gib {0} ein Passwort, mit dem sie sich einmal anmelden '
+      + 'kann. Sie muss dann ein eigenes wählen, bevor sie irgendetwas nutzen '
+      + 'kann, und alle offenen Sitzungen dieses Kontos enden jetzt.',
+    'user.resetConfirm': 'Zurücksetzen',
+    'user.resetHint': 'Mindestens {0} Zeichen.',
     'user.systemAccount': 'Systemkonto',
   },
 };
@@ -4171,8 +4182,25 @@ async function loadUsers() {
     if (can('users:write') && !u.isSystem && !u.isExternal && u.id !== me.user?.id) {
       actions.append(el('button', {
         class: 'link',
+        'data-action': 'edit',
         text: t('action.edit', 'edit'),
         onclick: () => editUser(u),
+      }));
+    }
+
+    // Letting somebody back in who has forgotten their password.
+    //
+    // The same three rows are left out as for editing, and for the same reasons
+    // the server gives: their own account is changed under My account, which
+    // asks for the password they have; the built-in administrator is the way
+    // back into an installation; and a directory account's password lives in the
+    // directory, so one set here could never be used.
+    if (can('users:write') && !u.isSystem && !u.isExternal && u.id !== me.user?.id) {
+      actions.append(el('button', {
+        class: 'link',
+        'data-action': 'reset-password',
+        text: t('user.resetPassword', 'reset password'),
+        onclick: () => resetPassword(u),
       }));
     }
 
@@ -4259,6 +4287,44 @@ async function loadUsers() {
   });
 
   fillTable($('#table-users tbody'), rows, 7, t('user.empty', 'No users yet.'));
+}
+
+/**
+ * Gives an account a password it can get back in with.
+ *
+ * Asked before it is done, and the question names the person: an administrator
+ * with a table of accounts open is one mis-click away from resetting the wrong
+ * one, and "are you sure" would not have said which.
+ *
+ * What the dialog says is what actually happens, both halves of it. The account
+ * has to replace this password before it can use anything, and every session it
+ * has open ends now - a cookie is not re-checked against the password that
+ * opened it, so a reset that left them running would leave the door it was
+ * closing wide open.
+ */
+async function resetPassword(user) {
+  const chosen = await confirmDialog({
+    title: t('user.resetTitle', 'Reset password'),
+    text: fillIn(t('user.resetText',
+      'Give {0} a password to sign in with once. They have to choose their own '
+      + 'before they can use anything, and any session this account has open ends '
+      + 'now.'), [user.name]),
+    confirmLabel: t('user.resetConfirm', 'Reset password'),
+    danger: false,
+    field: {
+      id: 'reset-password-field',
+      generateID: 'reset-password-generate',
+      label: t('field.newPassword', 'New password'),
+      hint: fillIn(t('user.resetHint', 'At least {0} characters.'), [MIN_PASSWORD_LENGTH]),
+      minLength: MIN_PASSWORD_LENGTH,
+      generate: t('action.generate', 'Generate'),
+    },
+  });
+
+  if (!chosen) return;
+
+  await patch(`/users/${user.id}/password`, { password: chosen },
+    t('msg.passwordReset', 'Password reset'), refreshAll);
 }
 
 /** Opens an existing account in the form above the table. */
@@ -4607,6 +4673,7 @@ async function loadProjects() {
     if (can('projects:write')) {
       actions.append(el('button', {
         class: 'link',
+        'data-action': 'edit',
         text: t('action.edit', 'edit'),
         onclick: () => editProject(p),
       }));
@@ -6111,7 +6178,7 @@ const remove = (path, msg, after) => mutate(
  * differs only in its words - and reusing .overlay and .overlay-card means this
  * needs no new styling at all.
  */
-function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
+function confirmDialog({ title, text, detail, confirmLabel, danger = true, field = null }) {
   return new Promise((resolve) => {
     // What had focus before, so it can be given back: a dialog that leaves
     // focus on nothing strands anybody using a keyboard.
@@ -6129,6 +6196,53 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
     // The server's own words, when there are any - the count of what would be
     // destroyed usually lives there rather than in the question.
     if (detail) card.append(el('p', { class: 'muted minus', text: detail }));
+
+    // A question that needs an answer rather than a yes.
+    //
+    // Here rather than in a second dialog written beside this one: a question is
+    // a card, a sentence and two buttons whatever it asks, and the one that came
+    // after this had all three of those and a box. What it resolves to is the
+    // answer - the string typed, or false for a cancel - so a caller reads
+    // truthiness exactly as every existing one already does.
+    const input = field
+      ? el('input', {
+        type: 'password',
+        id: field.id,
+        minlength: String(field.minLength ?? 0),
+        autocomplete: 'off',
+        spellcheck: 'false',
+      })
+      : null;
+
+    if (field) {
+      const controls = el('span', { class: 'row' }, input);
+
+      if (field.generate) {
+        controls.append(el('button', {
+          type: 'button',
+          class: 'secondary',
+          id: field.generateID,
+          text: field.generate,
+          onclick: () => {
+            input.value = invented();
+
+            // And shown, through the reveal this field already has rather than a
+            // second control beside it. A password that has to be read out or
+            // written down and cannot be looked at is worse than none - and
+            // clicking the eye afterwards is a step nobody should have to know
+            // about.
+            const eye = card.querySelector('.password-toggle');
+            if (eye && input.type === 'password') eye.click();
+
+            input.focus();
+          },
+        }));
+      }
+
+      card.append(el('label', { text: field.label }, controls));
+
+      if (field.hint) card.append(el('p', { class: 'muted', text: field.hint }));
+    }
 
     const overlay = el('div', { class: 'overlay confirm-overlay' }, card);
 
@@ -6155,10 +6269,10 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
     });
 
     const proceed = el('button', {
-      class: danger ? 'danger' : '',
+      class: `confirm-proceed${danger ? ' danger' : ''}`,
       type: 'button',
       text: confirmLabel,
-      onclick: () => close(true),
+      onclick: () => close(field ? input.value : true),
     });
 
     card.append(el('div', { class: 'row confirm-actions' }, cancel, proceed));
@@ -6166,10 +6280,69 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
     document.addEventListener('keydown', onKey);
     document.body.append(overlay);
 
+    // The reveal button every password field on this screen gets, given to this
+    // one too - by the same function, so there is one of them rather than two
+    // that drift.
+    if (input) wirePasswordReveal(card);
+
     // Cancel takes the focus, not the destructive button: a stray Enter should
-    // not delete anything.
-    cancel.focus();
+    // not delete anything. Where something has to be typed, the box takes it
+    // instead - there is nothing to protect anybody from until it holds a value,
+    // and a dialog that opens with the cursor somewhere else is one more click.
+    if (input) input.focus();
+    else cancel.focus();
   });
+}
+
+/**
+ * The shortest password the server will hash.
+ *
+ * The same number as security.MinPasswordLength, and written here because the
+ * form has to refuse what the server refuses before somebody presses the button
+ * rather than after.
+ */
+const MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * A password nobody chose.
+ *
+ * For handing an account back to somebody who has lost theirs. A password a
+ * person invents under mild pressure is a password much like the last one they
+ * invented, and this one is going to be spoken down a telephone or typed into a
+ * chat window before it is replaced - so it is worth it being neither guessable
+ * nor a variation on a theme.
+ *
+ * crypto.getRandomValues rather than Math.random, which is not required to be
+ * unpredictable and on some engines is trivially so.
+ *
+ * Rejection rather than a remainder. Taking a byte modulo the alphabet length
+ * makes the first few characters likelier than the rest, which is a small bias
+ * and a pointless one when discarding the overhang costs a loop.
+ *
+ * The alphabet leaves out the characters that are read wrongly rather than
+ * typed wrongly: no O and no zero, no I, l or one. This value is transcribed by
+ * a person at least once, and "did you say ell or one" is the failure it would
+ * otherwise produce.
+ */
+function invented() {
+  const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const limit = 256 - (256 % alphabet.length);
+  const out = [];
+
+  while (out.length < 16) {
+    const bytes = new Uint8Array(16);
+
+    window.crypto.getRandomValues(bytes);
+
+    for (const byte of bytes) {
+      if (byte >= limit || out.length >= 16) continue;
+
+      out.push(alphabet[byte % alphabet.length]);
+    }
+  }
+
+  // In groups, because it is going to be read aloud or copied by eye once.
+  return out.join('').replace(/(.{4})(?=.)/g, '$1-');
 }
 
 /**
