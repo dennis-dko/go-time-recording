@@ -101,6 +101,13 @@ type AssignRoleRequest struct {
 	Role string `json:"role"`
 }
 
+// SetPasswordRequest is an administrator giving an account a password it can
+// get back in with. There is no current password to quote: the point of it is
+// that nobody has one.
+type SetPasswordRequest struct {
+	Password string `json:"password"`
+}
+
 // WorkingTimesRequest sets a user's daily target and cap.
 type WorkingTimesRequest struct {
 	DailyTargetHours *float64 `json:"dailyTargetHours"`

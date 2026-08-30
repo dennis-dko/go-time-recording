@@ -766,7 +766,15 @@ func main() {
 	v1.RegisterRoutes(app, v1.Handlers{
 		Auth: rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone).
 			WithMaintenance(maintenanceState),
-		Users:      rest.NewUserHandler(users, userDomain, authorizer, auth, instanceTimezone),
+		Users: rest.NewUserHandler(users, userDomain, authorizer, auth, instanceTimezone).
+			// A password reset has to reach the sessions as well as the password:
+			// a cookie is not re-checked against the password that opened it, so
+			// without this the account somebody was locked out of stays open
+			// wherever it already was.
+			WithSessionEnder(rest.NewSessionEnder(
+				func(ctx context.Context, userID uint) error {
+					return sessions.LogoutOthers(ctx, userID, "")
+				})),
 		Roles:      rest.NewRoleHandler(roles, authorizer, auth),
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),

@@ -519,3 +519,122 @@ func TestTheConnectionScreenSaysWhatIsRunningWhenNothingIsStored(t *testing.T) {
 			ds.Dialect)
 	}
 }
+
+// An administrator can let somebody back in without destroying their work.
+//
+// There was no way to. A password is set at creation and changed by its owner
+// through /me/password, which asks for the current one - so an account whose
+// owner had forgotten it could only be deleted and made again, and deleting it
+// takes every hour recorded in it. The choice was somebody's time or somebody's
+// access.
+//
+// The password is chosen by whoever resets it rather than being the documented
+// one. The must-change flag stops the account using the application, but it
+// deliberately does not stop signing in or setting a new password - it cannot,
+// or nobody could ever get out of it - so a reset to a password printed in the
+// README would leave a window in which anybody who knows the address can take
+// the account over.
+func TestAnAdministratorResetsAForgottenPassword(t *testing.T) {
+	t.Parallel()
+
+	app := start(t)
+	admin := app.signInAsAdmin("a-much-better-password")
+	worker := app.signInAsUser(admin, "Wera", "wera@example.com")
+
+	var me struct {
+		User userResponse `json:"user"`
+	}
+
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+
+	// Something recorded, so a deletion would not have been an answer.
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-08-03", "durationHours": 4,
+	}), http.StatusCreated, http.StatusOK)
+
+	const chosen = "a-chosen-reset-password"
+
+	admin.must(admin.api(http.MethodPut,
+		fmt.Sprintf("/users/%d/password", me.User.ID),
+		map[string]any{"password": chosen}), http.StatusOK)
+
+	// The session that was open is gone. Whoever reset this did it because
+	// something was wrong, and a session still running somewhere is the thing
+	// that would be left of it.
+	if got := worker.api(http.MethodGet, "/me", nil).Status; got == http.StatusOK {
+		t.Error("the account's open session survived a password reset")
+	}
+
+	// The new password works, and the account is made to replace it before it can
+	// do anything - so what the administrator typed is not left standing as a
+	// password somebody else once knew.
+	returning := app.newClient()
+	returning.signIn("wera@example.com", chosen)
+
+	if got := returning.api(http.MethodGet, "/timesheets", nil).Status; got != http.StatusConflict {
+		t.Errorf("the reset account reads its entries with status %d; it must be made "+
+			"to choose its own password first", got)
+	}
+
+	returning.must(returning.api(http.MethodPut, "/me/password", map[string]any{
+		"currentPassword": chosen, "newPassword": "wera-own-password-1",
+	}), http.StatusOK)
+
+	// And the hours are still there, which is the whole point of not deleting the
+	// account.
+	var entries struct {
+		Items []struct {
+			DurationHours float64 `json:"durationHours"`
+		} `json:"items"`
+	}
+
+	returning.must(returning.api(http.MethodGet, "/timesheets", nil),
+		http.StatusOK).Data(t, &entries)
+
+	if len(entries.Items) != 1 {
+		t.Errorf("the account came back with %d entries, want 1", len(entries.Items))
+	}
+}
+
+// Three accounts it is refused for, and each refusal is the server's rather
+// than the screen's.
+func TestAPasswordResetIsRefusedWhereItWouldBeALie(t *testing.T) {
+	t.Parallel()
+
+	app := start(t)
+	admin := app.signInAsAdmin("a-much-better-password")
+
+	var me struct {
+		User userResponse `json:"user"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+
+	// Their own. /me/password is the way to that and it asks for the current
+	// password; a route that did not would be a way around it for anybody who
+	// walked up to an unlocked screen.
+	if got := admin.api(http.MethodPut, fmt.Sprintf("/users/%d/password", me.User.ID),
+		map[string]any{"password": "straight-past-the-old-one"}).Status; got == http.StatusOK {
+		t.Error("an account reset its own password without being asked for the current one")
+	}
+
+	// Nobody who may not administer accounts.
+	worker := app.signInAsUser(admin, "Wera", "wera@example.com")
+
+	var hers struct {
+		User userResponse `json:"user"`
+	}
+
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &hers)
+
+	if got := worker.api(http.MethodPut, fmt.Sprintf("/users/%d/password", me.User.ID),
+		map[string]any{"password": "not-mine-to-set"}).Status; got != http.StatusForbidden {
+		t.Errorf("an ordinary account reset somebody else's password: status %d", got)
+	}
+
+	// And a password the account could not have used anyway.
+	if got := admin.api(http.MethodPut, fmt.Sprintf("/users/%d/password", hers.User.ID),
+		map[string]any{"password": "short"}).Status; got != http.StatusBadRequest {
+		t.Errorf("a password below the minimum length was accepted: status %d", got)
+	}
+}

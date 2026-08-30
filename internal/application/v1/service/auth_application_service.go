@@ -172,6 +172,56 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint, current, 
 	return nil
 }
 
+// SetPassword gives an account a password without asking for the one it had.
+//
+// For an administrator letting somebody back in who has forgotten theirs. That
+// was impossible: a password is set at creation and changed by its owner through
+// ChangePassword, which asks for the current one, so the only remaining move was
+// to delete the account - taking every hour recorded in it - and make it again.
+// The choice was somebody's time or somebody's access.
+//
+// The account is flagged to change it, exactly as a new one is, so what the
+// administrator typed does not stay standing as a password a second person once
+// knew. Note what that flag does and does not do: it stops the account using the
+// application, and it deliberately does not stop signing in or setting a new
+// password - it cannot, or nobody could ever get out of it.
+//
+// Refused for a directory account. The password of one lives in the directory
+// and is checked against it; the local hash is only consulted for an account
+// that is not external, so writing one here would store something that can never
+// be used and report success for a reset that did not happen.
+//
+// Whether the caller may do this at all, and whether it is their own account, is
+// the interface's question rather than this one's - this is handed a user id and
+// a password and says whether the account can take one.
+func (s *AuthService) SetPassword(ctx context.Context, userID uint, next string) error {
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	if user.IsExternal {
+		return apperror.Conflictf(
+			"%q comes from the directory; its password is kept there and is checked "+
+				"against it, so one set here would never be used", user.Email).
+			WithCode("directoryAccountReadOnly", user.Email)
+	}
+
+	hash, err := security.HashPassword(next)
+	if err != nil {
+		return passwordError(err)
+	}
+
+	user.PasswordHash = hash
+	user.MustChangePassword = true
+
+	if _, err := s.users.Update(ctx, user); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
