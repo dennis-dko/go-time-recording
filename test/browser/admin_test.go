@@ -5391,3 +5391,128 @@ func TestTheDirectoryRolePickerIsNeverEmptyAndDefaultsToTheOrdinaryRole(t *testi
 		t.Error("the chosen role has no label, so the box looks empty even when it is not")
 	}
 }
+
+// An account created here can be corrected here.
+//
+// A name typed with a typo, or somebody whose address changed, had one way out:
+// delete the account - and every hour recorded in it - and make it again. The API
+// has taken the change all along; nothing on the screen ever asked for it.
+//
+// Not every row, and the two exceptions are the ones that go wrong quietly. The
+// built-in administrator is the way back into an installation, and the row
+// somebody is reading their own name in is theirs - neither is somebody else's
+// account to correct from the screen that administers accounts.
+func TestAnAdminCorrectsALocalAccountFromTheTable(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("add somebody", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#form-user", chromedp.ByID),
+		chromedp.SendKeys(`#form-user input[name="name"]`, "Wilma", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="email"]`, "wilma@example.com",
+			chromedp.ByQuery),
+		p.chooseOption(`#form-user select[name="role"]`, "user"),
+		chromedp.SendKeys(`#form-user input[name="password"]`, "wilma-password-1",
+			chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`))
+
+	p.waitForText("#table-users tbody", "wilma@example.com")
+
+	// Two rows, one of them the built-in administrator - which is also the row
+	// whoever is signed in is reading their own name in. So exactly one account
+	// here is somebody else's to correct.
+	if got := p.count("#table-users tbody button.link:not(.danger)"); got != 1 {
+		t.Fatalf("the table offers %d accounts for editing, want 1 - the built-in "+
+			"administrator is the way back in and must not be one of them", got)
+	}
+
+	p.run("open Wilma", p.click("#table-users tbody button.link:not(.danger)"),
+		chromedp.WaitVisible("#user-cancel", chromedp.ByID))
+
+	if title := p.text("#user-form-title"); !strings.Contains(strings.ToLower(title), "edit") {
+		t.Errorf("the form still says %q rather than that it is editing somebody", title)
+	}
+
+	if got := p.value(`#form-user input[name="name"]`); got != "Wilma" {
+		t.Errorf("the form opened on %q rather than on the account that was picked", got)
+	}
+
+	// The role is not on this form while it is editing: the row has a control for
+	// it already, and two places to answer one question is how they end up
+	// disagreeing. Nor is a password - nobody sets somebody else's from here.
+	if p.visible("#user-role-field") || p.visible("#user-password-field") {
+		t.Error("editing an account offers the role and the password as well, which " +
+			"are answered elsewhere")
+	}
+
+	p.run("correct the name",
+		chromedp.SetValue(`#form-user input[name="name"]`, "Wilma Feuerstein",
+			chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`))
+
+	p.waitForText("#table-users tbody", "Wilma Feuerstein")
+
+	if got := p.text("#table-users tbody"); strings.Contains(got, "wilma@example.com") == false {
+		t.Errorf("the address went missing over the correction: %q", got)
+	}
+
+	// And the form is back to adding somebody, rather than sitting on the account
+	// that was just saved - which is how the next new account gets written over an
+	// existing one.
+	if p.visible("#user-cancel") {
+		t.Error("the form stayed in editing after saving")
+	}
+
+	if p.value(`#form-user input[name="name"]`) != "" {
+		t.Error("the form kept the account it was editing after saving it")
+	}
+
+	if !p.visible("#user-role-field") || !p.visible("#user-password-field") {
+		t.Error("the fields a new account needs did not come back")
+	}
+}
+
+// A directory account is not offered for correction.
+//
+// Its name and address are copied from the entry on every synchronisation, so a
+// change made here holds until the next run and then reverts - which looks
+// exactly like it worked. The server refuses it for that reason, and a button
+// that asks for a refusal teaches somebody the screen is broken.
+//
+// The account is supplied rather than synchronised: what is under test is what
+// the table does with one, and standing up a directory to get one would be a
+// different case about a different thing.
+func TestADirectoryAccountIsNotOfferedForCorrection(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Users", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#table-users", chromedp.ByID))
+
+	p.run("answer with one account, kept in a directory", chromedp.Evaluate(`
+		(async () => {
+			const server = api;
+			api = (path, options) => path === '/users'
+				? Promise.resolve({ items: [{
+					id: 4711, name: 'Sven', email: 'sven@example.com', role: 'user',
+					isSystem: false, isExternal: true,
+					dailyTargetHours: 0, maxDailyHours: 0,
+				}] })
+				: server(path, options);
+
+			await loadUsers();
+
+			return 1;
+		})()`, nil, awaitPromise))
+
+	p.waitForText("#table-users tbody", "sven@example.com")
+
+	if got := p.count("#table-users tbody button.link:not(.danger)"); got != 0 {
+		t.Errorf("a directory account is offered for editing (%d buttons), which the "+
+			"server refuses and the next synchronisation would undo", got)
+	}
+}

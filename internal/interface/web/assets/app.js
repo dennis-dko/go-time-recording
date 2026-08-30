@@ -3547,6 +3547,7 @@ const TRANSLATIONS = {
     'msg.roleDeleted': 'Rolle gelöscht',
     'msg.roleSaved': 'Rolle gespeichert',
     'msg.userCreated': 'Benutzer angelegt',
+    'msg.userSaved': 'Benutzer gespeichert',
     'msg.userDeleted': 'Benutzer gelöscht',
     'msg.workingTimesSaved': 'Arbeitszeiten gespeichert',
     'nav.admin': 'Einstellungen',
@@ -3739,6 +3740,7 @@ const TRANSLATIONS = {
     'update.unversionedAlone': 'Dieser Stand wurde nicht aus einem Release gebaut.',
     'update.unreachable': 'Die neueste Version konnte nicht abgefragt werden',
     'user.create': 'Benutzer anlegen',
+    'user.edit': 'Benutzer bearbeiten',
     'user.empty': 'Noch keine Benutzer angelegt.',
     'user.initialPassword': 'leer = Initialpasswort',
     'user.deleteConfirm': 'Trotzdem löschen? Die erfassten Zeiten sind danach unwiederbringlich verloren.',
@@ -4150,6 +4152,28 @@ async function loadUsers() {
   const rows = cache.users.map((u) => {
     const actions = el('td', { class: 'actions' });
 
+    // Whose account this is somebody else's to correct.
+    //
+    // Not the built-in administrator: it is the way back into an installation,
+    // and its name and address are what an operator looks for when everything
+    // else has gone wrong. Not the row somebody is reading their own name in
+    // either - an administration screen is for other people's accounts, and a
+    // person changing their own address here would be doing it in the one place
+    // that cannot ask them for their password first.
+    //
+    // Not a directory account, and that one is the server's rule rather than
+    // this screen's: the name and the address are copied from the entry on every
+    // synchronisation, so a change made here holds until the next run and then
+    // reverts. It is refused for exactly that reason, and a button that asks for
+    // a refusal teaches somebody the screen is broken.
+    if (can('users:write') && !u.isSystem && !u.isExternal && u.id !== me.user?.id) {
+      actions.append(el('button', {
+        class: 'link',
+        text: t('action.edit', 'edit'),
+        onclick: () => editUser(u),
+      }));
+    }
+
     // Not your own, which the server refuses too: deleting it would end the
     // session the request arrived on and leave whoever pressed it looking at a
     // sign-in screen for an account that no longer exists.
@@ -4233,6 +4257,60 @@ async function loadUsers() {
   });
 
   fillTable($('#table-users tbody'), rows, 7, t('user.empty', 'No users yet.'));
+}
+
+/** Opens an existing account in the form above the table. */
+function editUser(user) {
+  const form = $('#form-user');
+  if (!form) return;
+
+  form.elements.id.value = String(user.id);
+  form.elements.name.value = user.name;
+  form.elements.email.value = user.email;
+
+  showUserCreationFields(false);
+
+  $('#user-form-title').textContent = t('user.edit', 'Edit user');
+  $('#user-submit').textContent = t('action.save', 'Save');
+  $('#user-cancel').hidden = false;
+
+  switchView('users');
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.name.focus();
+}
+
+/** Puts the form back to adding somebody. */
+function resetUserForm() {
+  const form = $('#form-user');
+  if (!form) return;
+
+  form.reset();
+  form.elements.id.value = '';
+
+  showUserCreationFields(true);
+
+  $('#user-form-title').textContent = t('user.create', 'Add user');
+  $('#user-submit').textContent = t('action.create', 'Create');
+  $('#user-cancel').hidden = true;
+}
+
+/**
+ * Shows or hides the two fields that only a new account has.
+ *
+ * The required flag goes with the role rather than staying on it. A control that
+ * is hidden and still required is one the browser refuses to submit past and
+ * cannot scroll to, so the form does nothing at all and says nothing about why -
+ * which is a worse outcome than either of the two this is choosing between.
+ */
+function showUserCreationFields(shown) {
+  const role = $('#user-role-field');
+  const password = $('#user-password-field');
+
+  if (role) role.hidden = !shown;
+  if (password) password.hidden = !shown;
+
+  const chooser = $('#form-user select[name=role]');
+  if (chooser) chooser.required = shown;
 }
 
 async function loadRoles() {
@@ -11556,16 +11634,40 @@ async function refreshAll() {
 function wireForms() {
   $('#form-user').addEventListener('submit', (e) => {
     e.preventDefault();
+
+    const form = e.target;
+    const id = form.elements.id.value;
+
+    // Correcting an existing account, which takes the two fields that have no
+    // other control. The role is changed from its own dropdown in the row, and a
+    // password is not set for somebody else here - so neither is read from a form
+    // that is not showing them, and neither is sent.
+    if (id) {
+      const correction = {
+        name: form.elements.name.value.trim(),
+        email: form.elements.email.value.trim(),
+      };
+
+      mutate(() => api(`/users/${id}`,
+        { method: 'PUT', body: JSON.stringify(correction) }),
+      t('msg.userSaved', 'User saved'),
+      async () => { resetUserForm(); await refreshAll(); });
+
+      return;
+    }
+
     // No working times here. A new account starts on the instance default under
     // Settings and its owner changes it under My account - a daily target is a time
     // figure, and administering an installation is not the same job as recording time
     // in it.
-    const body = formData(e.target);
+    const body = formData(form);
 
     mutate(() => api('/users', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.userCreated', 'User created'),
-      async () => { e.target.reset(); await refreshAll(); });
+      async () => { resetUserForm(); await refreshAll(); });
   });
+
+  $('#user-cancel').addEventListener('click', resetUserForm);
 
   $('#form-role').addEventListener('submit', (e) => {
     e.preventDefault();
