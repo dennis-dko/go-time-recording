@@ -171,15 +171,28 @@ func (s *ProjectApplicationService) UpdateProject(
 		existingProject.Name = *cmd.Name
 	}
 
+	// An emptied description is no description rather than an empty one. The
+	// difference reaches the screen: the table writes a dash where a project has
+	// none, and an empty string is a value - so the cell came out blank and read
+	// as a column that had broken.
 	if cmd.Description != nil {
-		existingProject.Description = cmd.Description
+		if *cmd.Description == "" {
+			existingProject.Description = nil
+		} else {
+			existingProject.Description = cmd.Description
+		}
 	}
 
 	if cmd.StartDate != nil {
 		existingProject.StartDate = *cmd.StartDate
 	}
 
-	if cmd.EndDate != nil {
+	// Clearing wins over setting, and both are only what the caller asked for.
+	// Silence changes nothing, which is what every partial update depends on.
+	switch {
+	case cmd.ClearEndDate:
+		existingProject.EndDate = nil
+	case cmd.EndDate != nil:
 		existingProject.EndDate = cmd.EndDate
 	}
 

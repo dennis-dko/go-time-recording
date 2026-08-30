@@ -251,6 +251,30 @@
     <div id="release-banner" class="banner" hidden>
       <span id="release-text"></span>
     </div>
+
+    <!-- What this account may do has changed since the page was loaded.
+
+         A banner rather than the toast this used to be, for the reason the two
+         above it are banners: it reports a state, and a state does not stop
+         being true because a notice faded. The case it exists for is somebody
+         who is not touching the screen at all - the change reaches an open page
+         by itself now - and a message that clears itself after ten seconds is
+         the one case that never sees it.
+
+         Not dismissable, and there is nothing to dismiss it with. The screen is
+         wrong until it is loaded again, and clicking a cross does not make it
+         right.
+
+         The reload is offered here because it is the whole of what there is to
+         do: what a role opens is more than a set of tabs, it is which screens
+         were built at all, and loading the page again is the one way to be sure
+         the whole interface agrees about it. -->
+    <div id="rights-banner" class="banner" hidden>
+      <span data-i18n="msg.rightsChanged">What you may do here has changed. Reload the page to see it.</span>
+      <div class="row">
+        <button type="button" id="rights-reload" class="secondary" data-i18n="action.reload">Reload</button>
+      </div>
+    </div>
   </div>
 
   <!-- The instance's own announcement, set under Settings. -->
@@ -673,8 +697,13 @@
 
     <!-- Projects -->
     <section id="view-projects" class="view" hidden>
+      <!-- One form for making a project and for correcting one, told apart by the
+           id - the same arrangement the booking form and the account form use.
+           Everything else on this screen could be changed except the three things
+           somebody actually mistypes: the name, the period and what it is for. -->
       <form method="post" id="form-project" class="card form" data-perm="projects:write">
-        <h2 data-i18n="project.create">Create project</h2>
+        <h2 id="project-form-title" data-i18n="project.create">Create project</h2>
+        <input type="hidden" name="id">
         <p class="muted" data-i18n="project.hint">Your projects are yours: only you see them, and only you book on them. Two people working on the same thing keep a project each.</p>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
@@ -691,7 +720,10 @@
           <label data-i18n="field.end">End<input type="date" name="endDate" data-i18n-placeholder="field.optional" placeholder="optional"></label>
           <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
-        <button type="submit" data-i18n="action.create">Create</button>
+        <div class="row">
+          <button type="submit" id="project-submit" data-i18n="action.create">Create</button>
+          <button type="button" class="link" id="project-cancel" data-i18n="action.cancelEdit" hidden>cancel editing</button>
+        </div>
       </form>
 
       <div class="card">
@@ -715,17 +747,30 @@
 
     <!-- Users -->
     <section id="view-users" class="view" hidden>
+      <!-- One form for adding somebody and for correcting them, told apart by the
+           id: the same arrangement the booking form and the role form use.
+
+           Two of its fields belong only to a new account. The role has a control
+           of its own in every row of the table below, and offering a second one
+           here is two places to answer one question - which is how they end up
+           disagreeing. A password is not set for somebody else from an
+           administration screen at all. So both are put away while an existing
+           account is open, and come back with the form. -->
       <form method="post" id="form-user" class="card form" data-perm="users:write">
-        <h2 data-i18n="user.create">Add user</h2>
+        <h2 id="user-form-title" data-i18n="user.create">Add user</h2>
+        <input type="hidden" name="id">
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <label data-i18n="field.email">Email<input type="email" name="email" maxlength="255" required></label>
-          <label data-i18n="field.role">Role<select name="role" required></select></label>
-          <label data-i18n="field.password">Password<input type="password" name="password" minlength="8"
+          <label id="user-role-field" data-i18n="field.role">Role<select name="role" required></select></label>
+          <label id="user-password-field" data-i18n="field.password">Password<input type="password" name="password" minlength="8"
                    data-i18n-placeholder="user.initialPassword" placeholder="empty = initial password">
           </label>
         </div>
-        <button type="submit" data-i18n="action.create">Create</button>
+        <div class="row">
+          <button type="submit" id="user-submit" data-i18n="action.create">Create</button>
+          <button type="button" class="link" id="user-cancel" data-i18n="action.cancelEdit" hidden>cancel editing</button>
+        </div>
       </form>
 
       <div class="card">

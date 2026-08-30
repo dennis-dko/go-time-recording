@@ -5391,3 +5391,335 @@ func TestTheDirectoryRolePickerIsNeverEmptyAndDefaultsToTheOrdinaryRole(t *testi
 		t.Error("the chosen role has no label, so the box looks empty even when it is not")
 	}
 }
+
+// An account created here can be corrected here.
+//
+// A name typed with a typo, or somebody whose address changed, had one way out:
+// delete the account - and every hour recorded in it - and make it again. The API
+// has taken the change all along; nothing on the screen ever asked for it.
+//
+// Not every row, and the two exceptions are the ones that go wrong quietly. The
+// built-in administrator is the way back into an installation, and the row
+// somebody is reading their own name in is theirs - neither is somebody else's
+// account to correct from the screen that administers accounts.
+func TestAnAdminCorrectsALocalAccountFromTheTable(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("add somebody", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#form-user", chromedp.ByID),
+		chromedp.SendKeys(`#form-user input[name="name"]`, "Wilma", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="email"]`, "wilma@example.com",
+			chromedp.ByQuery),
+		p.chooseOption(`#form-user select[name="role"]`, "user"),
+		chromedp.SendKeys(`#form-user input[name="password"]`, "wilma-password-1",
+			chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`))
+
+	p.waitForText("#table-users tbody", "wilma@example.com")
+
+	// Two rows, one of them the built-in administrator - which is also the row
+	// whoever is signed in is reading their own name in. So exactly one account
+	// here is somebody else's to correct.
+	if got := p.count(`#table-users tbody button[data-action="edit"]`); got != 1 {
+		t.Fatalf("the table offers %d accounts for editing, want 1 - the built-in "+
+			"administrator is the way back in and must not be one of them", got)
+	}
+
+	p.run("open Wilma", p.click(`#table-users tbody button[data-action="edit"]`),
+		chromedp.WaitVisible("#user-cancel", chromedp.ByID))
+
+	if title := p.text("#user-form-title"); !strings.Contains(strings.ToLower(title), "edit") {
+		t.Errorf("the form still says %q rather than that it is editing somebody", title)
+	}
+
+	if got := p.value(`#form-user input[name="name"]`); got != "Wilma" {
+		t.Errorf("the form opened on %q rather than on the account that was picked", got)
+	}
+
+	// The role is not on this form while it is editing: the row has a control for
+	// it already, and two places to answer one question is how they end up
+	// disagreeing. Nor is a password - nobody sets somebody else's from here.
+	if p.visible("#user-role-field") || p.visible("#user-password-field") {
+		t.Error("editing an account offers the role and the password as well, which " +
+			"are answered elsewhere")
+	}
+
+	p.run("correct the name",
+		chromedp.SetValue(`#form-user input[name="name"]`, "Wilma Feuerstein",
+			chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`))
+
+	p.waitForText("#table-users tbody", "Wilma Feuerstein")
+
+	if got := p.text("#table-users tbody"); strings.Contains(got, "wilma@example.com") == false {
+		t.Errorf("the address went missing over the correction: %q", got)
+	}
+
+	// And the form is back to adding somebody, rather than sitting on the account
+	// that was just saved - which is how the next new account gets written over an
+	// existing one.
+	if p.visible("#user-cancel") {
+		t.Error("the form stayed in editing after saving")
+	}
+
+	if p.value(`#form-user input[name="name"]`) != "" {
+		t.Error("the form kept the account it was editing after saving it")
+	}
+
+	if !p.visible("#user-role-field") || !p.visible("#user-password-field") {
+		t.Error("the fields a new account needs did not come back")
+	}
+}
+
+// A directory account is not offered for correction.
+//
+// Its name and address are copied from the entry on every synchronisation, so a
+// change made here holds until the next run and then reverts - which looks
+// exactly like it worked. The server refuses it for that reason, and a button
+// that asks for a refusal teaches somebody the screen is broken.
+//
+// The account is supplied rather than synchronised: what is under test is what
+// the table does with one, and standing up a directory to get one would be a
+// different case about a different thing.
+func TestADirectoryAccountIsNotOfferedForCorrection(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Users", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#table-users", chromedp.ByID))
+
+	p.run("answer with one account, kept in a directory", chromedp.Evaluate(`
+		(async () => {
+			const server = api;
+			api = (path, options) => path === '/users'
+				? Promise.resolve({ items: [{
+					id: 4711, name: 'Sven', email: 'sven@example.com', role: 'user',
+					isSystem: false, isExternal: true,
+					dailyTargetHours: 0, maxDailyHours: 0,
+				}] })
+				: server(path, options);
+
+			await loadUsers();
+
+			return 1;
+		})()`, nil, awaitPromise))
+
+	p.waitForText("#table-users tbody", "sven@example.com")
+
+	for _, action := range []string{"edit", "reset-password"} {
+		if got := p.count(`#table-users tbody button[data-action="` + action + `"]`); got != 0 {
+			t.Errorf("a directory account is offered %q (%d buttons), which the server "+
+				"refuses and the next synchronisation would undo", action, got)
+		}
+	}
+}
+
+// A project can be corrected after it is made.
+//
+// Everything else on this screen could be changed - a project could be completed,
+// archived and deleted - except the three things somebody actually gets wrong
+// while typing: the name, the period and what it is for. The API has taken all
+// three all along; there was no way to ask for it.
+//
+// And the two optional fields have to be emptiable, which is the half that is
+// easy to miss. A project given an end date by mistake, or one that turned out to
+// be ongoing after all, has to be able to go back to having none - and an empty
+// date is not silence, it is a request.
+func TestAProjectCanBeCorrectedAndItsOptionalFieldsEmptied(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.becomeWorker()
+
+	p.run("make one", p.click(`.tab[data-view="projects"]`),
+		chromedp.WaitVisible("#form-project", chromedp.ByID),
+		chromedp.SetValue(`#form-project input[name="name"]`, "Dachsanierung",
+			chromedp.ByQuery),
+		chromedp.SetValue(`#form-project input[name="endDate"]`, "2027-03-31",
+			chromedp.ByQuery),
+		chromedp.SetValue(`#form-project input[name="description"]`, "Ziegel und Rinnen",
+			chromedp.ByQuery),
+		p.click(`#form-project button[type="submit"]`))
+
+	p.waitForText("#table-projects tbody", "Dachsanierung")
+
+	p.run("open it", p.click(`#table-projects tbody button[data-action="edit"]`),
+		chromedp.WaitVisible("#project-cancel", chromedp.ByID))
+
+	if got := p.value(`#form-project input[name="name"]`); got != "Dachsanierung" {
+		t.Errorf("the form opened on %q rather than on the project that was picked", got)
+	}
+
+	if got := p.value(`#form-project input[name="endDate"]`); got != "2027-03-31" {
+		t.Errorf("the form opened with an end of %q", got)
+	}
+
+	if got := p.value(`#form-project input[name="description"]`); got != "Ziegel und Rinnen" {
+		t.Errorf("the form opened with a description of %q", got)
+	}
+
+	// Emptied the way a person empties them. A date field is two boxes - the one
+	// that is typed in and the native one behind it - and clearing the visible one
+	// is what clears the date; setting the native value from outside would be
+	// testing a path nobody uses.
+	var emptied string
+
+	p.run("empty what was optional", chromedp.Evaluate(`
+		(() => {
+			const native = document.querySelector('#form-project input[name="endDate"]');
+			const shown = native.closest('.date-wrap').querySelector('.date-shown');
+
+			shown.value = '';
+			shown.dispatchEvent(new Event('input', { bubbles: true }));
+
+			const about = document.querySelector('#form-project input[name="description"]');
+
+			about.value = '';
+			about.dispatchEvent(new Event('input', { bubbles: true }));
+
+			return native.value + '|' + about.value;
+		})()`, &emptied))
+
+	if emptied != "|" {
+		t.Fatalf("the fields did not empty (%q), so nothing below proves anything",
+			emptied)
+	}
+
+	p.run("correct the name and save",
+		chromedp.SetValue(`#form-project input[name="name"]`, "Dachsanierung Nord",
+			chromedp.ByQuery),
+		p.click(`#form-project button[type="submit"]`))
+
+	p.waitForText("#table-projects tbody", "Dachsanierung Nord")
+
+	row := p.text("#table-projects tbody")
+
+	// The end is gone rather than kept, which is the half a partial update gets
+	// wrong: an empty field that is simply dropped leaves the old value standing.
+	if strings.Contains(row, "2027") {
+		t.Errorf("the end date survived being emptied: %q", row)
+	}
+
+	// And the description with it - as no description, which is a dash, rather
+	// than as an empty one, which is a cell that reads like a fault.
+	if strings.Contains(row, "Ziegel") {
+		t.Errorf("the description survived being emptied: %q", row)
+	}
+
+	if !strings.Contains(row, "–") {
+		t.Errorf("the emptied fields left blank cells rather than saying there is "+
+			"nothing there: %q", row)
+	}
+
+	// The form goes back to making one, rather than sitting on the project just
+	// saved - which is how the next new project gets written over an existing one.
+	if p.visible("#project-cancel") {
+		t.Error("the form stayed in editing after saving")
+	}
+
+	if p.value(`#form-project input[name="name"]`) != "" {
+		t.Error("the form kept the project it was editing after saving it")
+	}
+
+	// And the start is filled in again, the same courtesy a first project gets.
+	if p.value(`#form-project input[name="startDate"]`) == "" {
+		t.Error("the start was left empty for the next project")
+	}
+}
+
+// Letting somebody back in, from the table, without learning what they had.
+//
+// The administrator chooses the password rather than the application handing out
+// the documented one, because the must-change flag does not stop signing in - it
+// cannot, or nobody could ever get out of it - so a well-known password would
+// leave a window in which anybody who knows the address takes the account over.
+//
+// And it can be generated, because a password a person invents under mild
+// pressure is a password like the last one they invented. The field takes either.
+func TestAnAdministratorResetsAPasswordFromTheTable(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("add somebody", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#form-user", chromedp.ByID),
+		chromedp.SendKeys(`#form-user input[name="name"]`, "Wilma", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="email"]`, "wilma@example.com",
+			chromedp.ByQuery),
+		p.chooseOption(`#form-user select[name="role"]`, "user"),
+		chromedp.SendKeys(`#form-user input[name="password"]`, "wilma-password-1",
+			chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`))
+
+	p.waitForText("#table-users tbody", "wilma@example.com")
+
+	// One row offers it. Not the built-in administrator's, which is also the row
+	// whoever is signed in is reading their own name in - and their own password
+	// is changed under My account, which asks for the one they have.
+	offered := p.count(`#table-users tbody button[data-action="reset-password"]`)
+
+	if offered != 1 {
+		t.Fatalf("%d rows offer a password reset, want 1", offered)
+	}
+
+	p.run("open it", p.click(`#table-users tbody button[data-action="reset-password"]`),
+		chromedp.WaitVisible("#reset-password-field", chromedp.ByID))
+
+	// The question names the person, because an administrator with a table of
+	// accounts open is one mis-click from resetting the wrong one.
+	if asked := p.text(".confirm-card"); !strings.Contains(asked, "Wilma") {
+		t.Errorf("the question does not say whose password it is about: %q", asked)
+	}
+
+	// Hidden to begin with, and readable through the control every other password
+	// field on this screen already has - rather than a second one built here.
+	if got := p.attr("#reset-password-field", "type"); got != "password" {
+		t.Errorf("the field starts as %q, so the password is on screen before "+
+			"anybody asked for it", got)
+	}
+
+	if p.count(".confirm-card .password-toggle") != 1 {
+		t.Error("the field has no reveal button, or has grown a second one")
+	}
+
+	var generated string
+
+	p.run("let it choose one", p.click("#reset-password-generate"),
+		chromedp.Value("#reset-password-field", &generated, chromedp.ByID))
+
+	if len(generated) < 8 {
+		t.Fatalf("the generated password is %q, which the server would refuse",
+			generated)
+	}
+
+	// Revealed by generating it. One that has to be read out or written down and
+	// cannot be seen is worse than none.
+	if got := p.attr("#reset-password-field", "type"); got != "text" {
+		t.Errorf("the generated password stays hidden (type %q), so nobody can pass "+
+			"it on", got)
+	}
+
+	p.run("reset it", p.click(".confirm-card button.confirm-proceed"))
+
+	p.waitForText("#toast", "assword reset")
+
+	// And it works: the account signs in with what was generated, and is made to
+	// choose its own before it can do anything.
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("wilma@example.com", generated)
+	p.waitGone("#login-screen")
+
+	if !p.visible("#password-banner") {
+		t.Error("the account signed in on the reset password and was not asked to " +
+			"replace it")
+	}
+}

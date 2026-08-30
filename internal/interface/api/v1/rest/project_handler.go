@@ -156,9 +156,17 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 		cmd.StartDate = &start
 	}
 
+	// An end date that is present but empty is the request to take it off. Absent
+	// still means "leave it alone", which is what a partial update is for, so the
+	// two need telling apart - and an empty string is how a form field that has
+	// been cleared arrives.
 	if req.EndDate != nil {
-		end := req.EndDate.Time
-		cmd.EndDate = &end
+		if req.EndDate.IsZero() {
+			cmd.ClearEndDate = true
+		} else {
+			end := req.EndDate.Time
+			cmd.EndDate = &end
+		}
 	}
 
 	result, err := h.projects.UpdateProject(c, cmd)

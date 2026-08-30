@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"context"
+
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -18,6 +20,28 @@ type UserHandler struct {
 	authz    *Authorizer
 	auth     *service.AuthService
 	timezone InstanceTimezoneFunc
+
+	// sessions is what a password reset has to reach as well as the password.
+	//
+	// Whoever resets one does it because something is wrong, and a session still
+	// running on a device somewhere is exactly what would be left of it - the
+	// cookie goes on working, because a session is not re-checked against the
+	// password that opened it.
+	sessions *SessionEnder
+}
+
+// SessionEnder ends every session an account has open.
+//
+// An interface rather than the session service itself, because this handler
+// needs one thing from it and taking the whole service would make a package that
+// administers accounts depend on the one that opens them.
+type SessionEnder struct {
+	end func(ctx context.Context, userID uint) error
+}
+
+// NewSessionEnder wraps whatever can end an account's sessions.
+func NewSessionEnder(end func(ctx context.Context, userID uint) error) *SessionEnder {
+	return &SessionEnder{end: end}
 }
 
 // NewUserHandler creates a user handler.
@@ -31,6 +55,14 @@ func NewUserHandler(
 	return &UserHandler{
 		users: users, domain: domain, authz: authz, auth: auth, timezone: timezone,
 	}
+}
+
+// WithSessionEnder gives the handler a way to end the sessions of an account
+// whose password has just been reset.
+func (h *UserHandler) WithSessionEnder(sessions *SessionEnder) *UserHandler {
+	h.sessions = sessions
+
+	return h
 }
 
 // List handles GET /api/v1/users
@@ -200,6 +232,60 @@ func (h *UserHandler) AssignRole(c *gofr.Context) (any, error) {
 	}
 
 	return newUserResponseFromModel(user, h.timezone.resolve(c)), nil
+}
+
+// SetPassword handles PUT /api/v1/users/{id}/password.
+//
+// Guarded by users:write, the same right that creates an account and moves it to
+// another role. A narrower one was considered and is not worth its cost: anybody
+// holding this can already give themselves any role there is, so a second
+// permission would be a step rather than a wall, and every role, every
+// translation and every test would have to learn about it.
+//
+// Not the caller's own account. /me/password is the way to that and it asks for
+// the current password; a route that skipped the question would be a way round it
+// for anybody who walked up to an unlocked screen. Refused rather than confirmed,
+// because there is no version of this that somebody meant to do.
+func (h *UserHandler) SetPassword(c *gofr.Context) (any, error) {
+	principal, err := h.authz.Require(c, model.PermUserWrite)
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := pathID(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if principal.User != nil && principal.User.ID == id {
+		return nil, toHTTPError(apperror.Conflictf(
+			"use the password change under your own account, which asks for the " +
+				"password you have now").
+			WithCode("cannotResetOwnPassword"))
+	}
+
+	var req SetPasswordRequest
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if err := h.auth.SetPassword(c, id, req.Password); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	// After the password rather than before it. A failed reset that had already
+	// signed somebody out would be the worst of both: they still cannot get in
+	// with a new password, and they have lost the session they had.
+	//
+	// A failure to end them is not a failure of the reset. The password is
+	// changed, which is what was asked for, and reporting an error would say the
+	// opposite - so it is logged by whatever ends them and the answer stays what
+	// it is.
+	if h.sessions != nil {
+		_ = h.sessions.end(c.Context, id)
+	}
+
+	return map[string]string{"status": "reset"}, nil
 }
 
 // UpdateWorkingTimes handles PUT /api/v1/users/{id}/working-times.

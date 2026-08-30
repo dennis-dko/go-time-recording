@@ -950,6 +950,55 @@
         }
       }
     },
+    "/users/{id}/password": {
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Reset an account password",
+        "description": "Gives an account a password chosen by whoever holds users:write, for letting somebody back in who has forgotten theirs. The account is flagged to replace it before it can use anything, and every session it has open ends. Refused for the caller’s own account, which is changed through /me/password with the current password, and for a directory account, whose password lives in the directory.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "password"
+                ],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "minLength": 8
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reset"
+          },
+          "400": {
+            "description": "The password is too short"
+          },
+          "409": {
+            "description": "Your own account, or one kept in the directory"
+          }
+        }
+      }
+    },
     "/users/{id}/working-times": {
       "put": {
         "tags": [

@@ -126,3 +126,57 @@ func TestTheUpdateCardSaysWhenCheckingIsOff(t *testing.T) {
 		t.Error("an update is offered although checking is switched off")
 	}
 }
+
+// Pressing "Check for updates" puts the banner up, not only the card.
+//
+// The banner and the card answer the same question and were fed from two
+// different places: the banner from the hourly watch, the card from the button.
+// So the one moment somebody is certainly looking - they pressed the button
+// because they wanted to know - was the one moment the banner did not follow.
+// The card said a new version exists and the stripe across the top of every
+// screen went on saying nothing, until an hour later or the next sign-in.
+//
+// The answer is supplied here rather than waited for. Whether a newer release
+// exists is somebody else's feed, and this build calls itself "dev", which can
+// never be older than anything - so a real check can only ever answer "no" and
+// would prove the opposite of what this is about.
+func TestPressingCheckForUpdatesRaisesTheBannerAsWell(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#update-card", chromedp.ByID))
+
+	if p.visible("#release-banner") {
+		t.Fatal("the notice is already up, so nothing here would prove it went up")
+	}
+
+	p.run("answer the next check with a newer version", chromedp.Evaluate(`
+		(() => {
+			const server = api;
+			api = (path, options) => path === '/settings/update/check'
+				? Promise.resolve({ running: 'v1.0.0', latest: 'v9.9.9', newer: true,
+					enabled: true, comparable: true, installable: true,
+					available: true, restartable: true })
+				: server(path, options);
+			return 1;
+		})()`, nil))
+
+	p.run("press it", p.click("#update-check"))
+
+	p.waitShown("#release-banner")
+
+	if text := p.text("#release-text"); !strings.Contains(text, "v9.9.9") {
+		t.Errorf("the notice says %q rather than naming the version that was found", text)
+	}
+
+	// And it stays. It is a state rather than news - the version exists whether
+	// or not anybody wants to hear about it - so nothing here takes it down again.
+	p.settled()
+
+	if !p.visible("#release-banner") {
+		t.Error("the notice went up and disappeared again")
+	}
+}

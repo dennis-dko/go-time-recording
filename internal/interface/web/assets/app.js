@@ -460,10 +460,18 @@ function can(...permissions) {
  * refusal on a button that was still on screen, and a right granted showed up as
  * nothing at all until the next sign-in.
  *
- * Every response carries the current revision; this compares it with the one that
- * came with /me. Once per change, because the header arrives on every request and
- * a notice per request would be a wall of them - the recorded value moves forward
- * so the second response through here is already in agreement.
+ * Three things arrive here, and all of them arrive as a revision to compare with
+ * the one /me gave: the header on every response, the once-a-minute poll below,
+ * and the announcement stream, which is the only one of the three that reaches a
+ * page nobody is touching. Once per change, whichever of them got here first -
+ * the recorded value moves forward, so the next one through is already in
+ * agreement and says nothing.
+ *
+ * A banner rather than a toast. The case this is written for is a screen somebody
+ * is reading rather than working in, and a notice that takes itself down after a
+ * few seconds is one that a person who stepped away never sees - they come back
+ * to a screen that looks right and is not. It is a state, like the two notices
+ * above it: true until the page is loaded again.
  *
  * A reload rather than re-reading /me in place: what a role opens is more than a
  * set of tabs - it is which screens were loaded at all - and reloading is the one
@@ -475,8 +483,25 @@ function noticePermissionChange(revision) {
 
   me.permissionsRevision = revision;
 
-  toast(t('msg.rightsChanged',
-    'What you may do here has changed. Reload the page to see it.'), 'error');
+  showRightsChanged();
+}
+
+/** Puts the notice up, where it stays until the page is loaded again. */
+function showRightsChanged() {
+  const banner = $('#rights-banner');
+  if (banner) banner.hidden = false;
+}
+
+/**
+ * Takes it down.
+ *
+ * For a screen that is about to belong to somebody else: a session that ends
+ * leaves every card behind it, and the previous account's news is the one thing
+ * that must not be waiting for whoever signs in next.
+ */
+function hideRightsChanged() {
+  const banner = $('#rights-banner');
+  if (banner) banner.hidden = true;
 }
 
 /**
@@ -485,15 +510,18 @@ function noticePermissionChange(revision) {
  * The revision travels on every response, so anybody clicking around finds out
  * without this. Somebody reading a screen is not clicking around, and the case
  * that matters is exactly that one: a right is withdrawn while the person it was
- * withdrawn from is looking at the screen it opened. Without a poll they found
- * out on their next navigation, which on the overtime screen could be a long
- * time - and, in the meantime, the buttons they no longer have any business
- * pressing were still on screen.
+ * withdrawn from is looking at the screen it opened.
  *
- * A minute, because this is a notice rather than an enforcement: the API refuses
- * a withdrawn right on the very next call whatever the interface believes, so
- * the only thing at stake is how long somebody looks at a screen that has
- * stopped being true.
+ * The stream is what covers that case now - the server checks the account behind
+ * an open connection and writes down it when the answer moves, so the notice
+ * arrives within seconds of the change and without anybody doing anything. This
+ * is the fallback underneath it: a browser with no EventSource, a connection a
+ * proxy has quietly dropped, a stream that has not reconnected yet.
+ *
+ * A minute is right for a fallback. This is a notice rather than an enforcement -
+ * the API refuses a withdrawn right on the very next call whatever the interface
+ * believes - so the only thing at stake is how long somebody looks at a screen
+ * that has stopped being true.
  */
 const PERMISSION_POLL_MS = 60000;
 
@@ -643,6 +671,20 @@ async function checkForRelease() {
     return;
   }
 
+  showReleaseState(state);
+}
+
+/**
+ * Puts an answer about the newest version on screen, or takes the notice down.
+ *
+ * Its own function because two things ask that question and both have to end at
+ * the same banner: the hourly watch above, and the button on the version card.
+ * The button redrew only the card, so the one moment somebody is certainly
+ * looking - they pressed it to find out - was the one moment the stripe across
+ * the top of every screen went on saying nothing. An hour later it agreed with
+ * the card, which is a long time to be told two things at once.
+ */
+function showReleaseState(state) {
   // Newer rather than installable: a container cannot install it from here, and
   // the person reading this is still the one who should know.
   if (!state?.newer || !state.latest) {
@@ -756,6 +798,26 @@ function startAnnouncements() {
     }
 
     applyAnnouncement(announcement);
+  });
+
+  // The other thing this connection carries, and the only one that is about the
+  // account holding it rather than about the installation.
+  //
+  // Here rather than in a poll of its own because the connection is already open
+  // and already belongs to this account, so the answer costs nothing to receive
+  // and arrives at the moment it becomes true. That is the whole point: the
+  // person a right was taken from is, by definition, not the person clicking
+  // around to find out.
+  announcements.addEventListener('permissions', (event) => {
+    let change;
+
+    try {
+      change = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    noticePermissionChange(change.revision);
   });
 
   // The connection dropping is not an error to report. It is the ordinary way a
@@ -3147,6 +3209,8 @@ const TRANSLATIONS = {
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
     'action.exportPdf': 'Als PDF exportieren',
+    'action.reload': 'Neu laden',
+    'action.generate': 'Erzeugen',
     'action.new': 'Neu',
     'action.save': 'Speichern',
     'action.dismiss': 'Schließen',
@@ -3227,6 +3291,7 @@ const TRANSLATIONS = {
     'err.bodyTooLarge': 'Die gesendeten Daten sind zu groß (Grenze: {0} MB).',
     'err.csrfRejected': 'Diese Seite ist zu lange geöffnet gewesen. Bitte neu laden und noch einmal versuchen.',
     'err.maintenance': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
+    'err.cannotResetOwnPassword': 'Das eigene Passwort wird unter „Mein Konto“ geändert — dort wird nach dem aktuellen gefragt.',
     'err.cannotDeleteSelf': 'Das Konto, mit dem du angemeldet bist, kann nicht gelöscht werden.',
     'err.defaultRoleUndeletable': '„{0}“ ist eine mitgelieferte Rolle und kann nicht gelöscht werden.',
     'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
@@ -3414,6 +3479,7 @@ const TRANSLATIONS = {
     'field.from': 'Von',
     'field.hours': 'Stunden',
     'field.maxPerDay': 'Max/Tag',
+    'field.newPassword': 'Neues Passwort',
     'field.password': 'Passwort',
     'field.period': 'Zeitraum',
     'field.project': 'Projekt',
@@ -3474,16 +3540,19 @@ const TRANSLATIONS = {
     'msg.initFailed': 'Initialisierung fehlgeschlagen',
     'msg.loadFailed': 'Konnte nicht alles laden',
     'msg.rightsChanged': 'Deine Berechtigungen haben sich geändert. Bitte die Seite neu laden.',
+    'msg.passwordReset': 'Passwort zurückgesetzt',
     'msg.passwordChanged': 'Passwort geändert. Bitte neu anmelden.',
     'msg.projectArchived': 'Projekt archiviert',
     'msg.projectCompleted': 'Projekt abgeschlossen',
     'msg.projectCreated': 'Projekt angelegt',
+    'msg.projectSaved': 'Projekt gespeichert',
     'msg.projectDeleted': 'Projekt gelöscht',
     'msg.roleChanged': 'Rolle geändert',
     'msg.roleCreated': 'Rolle angelegt',
     'msg.roleDeleted': 'Rolle gelöscht',
     'msg.roleSaved': 'Rolle gespeichert',
     'msg.userCreated': 'Benutzer angelegt',
+    'msg.userSaved': 'Benutzer gespeichert',
     'msg.userDeleted': 'Benutzer gelöscht',
     'msg.workingTimesSaved': 'Arbeitszeiten gespeichert',
     'nav.admin': 'Einstellungen',
@@ -3504,6 +3573,7 @@ const TRANSLATIONS = {
     'ot.meta': '{0} · Soll {1}/Tag · gebucht {2} von {3}',
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
+    'project.edit': 'Projekt bearbeiten',
     'project.hint': 'Ihre Projekte sind Ihre: nur Sie sehen sie, und nur Sie buchen darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
@@ -3676,6 +3746,7 @@ const TRANSLATIONS = {
     'update.unversionedAlone': 'Dieser Stand wurde nicht aus einem Release gebaut.',
     'update.unreachable': 'Die neueste Version konnte nicht abgefragt werden',
     'user.create': 'Benutzer anlegen',
+    'user.edit': 'Benutzer bearbeiten',
     'user.empty': 'Noch keine Benutzer angelegt.',
     'user.initialPassword': 'leer = Initialpasswort',
     'user.deleteConfirm': 'Trotzdem löschen? Die erfassten Zeiten sind danach unwiederbringlich verloren.',
@@ -3685,6 +3756,13 @@ const TRANSLATIONS = {
     'user.fromDirectory': 'Verzeichnis',
     'err.directoryAccountReadOnly': '„{0}“ stammt aus dem Verzeichnis. Name und Adresse werden von dort übernommen; hier lässt sich nur die Rolle ändern.',
     'err.directoryAccountUndeletable': '„{0}“ stammt aus dem Verzeichnis. Bitte den Eintrag dort entfernen — der nächste Abgleich entfernt dieses Konto.',
+    'user.resetPassword': 'Passwort zurücksetzen',
+    'user.resetTitle': 'Passwort zurücksetzen',
+    'user.resetText': 'Gib {0} ein Passwort, mit dem sie sich einmal anmelden '
+      + 'kann. Sie muss dann ein eigenes wählen, bevor sie irgendetwas nutzen '
+      + 'kann, und alle offenen Sitzungen dieses Kontos enden jetzt.',
+    'user.resetConfirm': 'Zurücksetzen',
+    'user.resetHint': 'Mindestens {0} Zeichen.',
     'user.systemAccount': 'Systemkonto',
   },
 };
@@ -4087,6 +4165,45 @@ async function loadUsers() {
   const rows = cache.users.map((u) => {
     const actions = el('td', { class: 'actions' });
 
+    // Whose account this is somebody else's to correct.
+    //
+    // Not the built-in administrator: it is the way back into an installation,
+    // and its name and address are what an operator looks for when everything
+    // else has gone wrong. Not the row somebody is reading their own name in
+    // either - an administration screen is for other people's accounts, and a
+    // person changing their own address here would be doing it in the one place
+    // that cannot ask them for their password first.
+    //
+    // Not a directory account, and that one is the server's rule rather than
+    // this screen's: the name and the address are copied from the entry on every
+    // synchronisation, so a change made here holds until the next run and then
+    // reverts. It is refused for exactly that reason, and a button that asks for
+    // a refusal teaches somebody the screen is broken.
+    if (can('users:write') && !u.isSystem && !u.isExternal && u.id !== me.user?.id) {
+      actions.append(el('button', {
+        class: 'link',
+        'data-action': 'edit',
+        text: t('action.edit', 'edit'),
+        onclick: () => editUser(u),
+      }));
+    }
+
+    // Letting somebody back in who has forgotten their password.
+    //
+    // The same three rows are left out as for editing, and for the same reasons
+    // the server gives: their own account is changed under My account, which
+    // asks for the password they have; the built-in administrator is the way
+    // back into an installation; and a directory account's password lives in the
+    // directory, so one set here could never be used.
+    if (can('users:write') && !u.isSystem && !u.isExternal && u.id !== me.user?.id) {
+      actions.append(el('button', {
+        class: 'link',
+        'data-action': 'reset-password',
+        text: t('user.resetPassword', 'reset password'),
+        onclick: () => resetPassword(u),
+      }));
+    }
+
     // Not your own, which the server refuses too: deleting it would end the
     // session the request arrived on and leave whoever pressed it looking at a
     // sign-in screen for an account that no longer exists.
@@ -4170,6 +4287,98 @@ async function loadUsers() {
   });
 
   fillTable($('#table-users tbody'), rows, 7, t('user.empty', 'No users yet.'));
+}
+
+/**
+ * Gives an account a password it can get back in with.
+ *
+ * Asked before it is done, and the question names the person: an administrator
+ * with a table of accounts open is one mis-click away from resetting the wrong
+ * one, and "are you sure" would not have said which.
+ *
+ * What the dialog says is what actually happens, both halves of it. The account
+ * has to replace this password before it can use anything, and every session it
+ * has open ends now - a cookie is not re-checked against the password that
+ * opened it, so a reset that left them running would leave the door it was
+ * closing wide open.
+ */
+async function resetPassword(user) {
+  const chosen = await confirmDialog({
+    title: t('user.resetTitle', 'Reset password'),
+    text: fillIn(t('user.resetText',
+      'Give {0} a password to sign in with once. They have to choose their own '
+      + 'before they can use anything, and any session this account has open ends '
+      + 'now.'), [user.name]),
+    confirmLabel: t('user.resetConfirm', 'Reset password'),
+    danger: false,
+    field: {
+      id: 'reset-password-field',
+      generateID: 'reset-password-generate',
+      label: t('field.newPassword', 'New password'),
+      hint: fillIn(t('user.resetHint', 'At least {0} characters.'), [MIN_PASSWORD_LENGTH]),
+      minLength: MIN_PASSWORD_LENGTH,
+      generate: t('action.generate', 'Generate'),
+    },
+  });
+
+  if (!chosen) return;
+
+  await patch(`/users/${user.id}/password`, { password: chosen },
+    t('msg.passwordReset', 'Password reset'), refreshAll);
+}
+
+/** Opens an existing account in the form above the table. */
+function editUser(user) {
+  const form = $('#form-user');
+  if (!form) return;
+
+  form.elements.id.value = String(user.id);
+  form.elements.name.value = user.name;
+  form.elements.email.value = user.email;
+
+  showUserCreationFields(false);
+
+  $('#user-form-title').textContent = t('user.edit', 'Edit user');
+  $('#user-submit').textContent = t('action.save', 'Save');
+  $('#user-cancel').hidden = false;
+
+  switchView('users');
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.name.focus();
+}
+
+/** Puts the form back to adding somebody. */
+function resetUserForm() {
+  const form = $('#form-user');
+  if (!form) return;
+
+  form.reset();
+  form.elements.id.value = '';
+
+  showUserCreationFields(true);
+
+  $('#user-form-title').textContent = t('user.create', 'Add user');
+  $('#user-submit').textContent = t('action.create', 'Create');
+  $('#user-cancel').hidden = true;
+}
+
+/**
+ * Shows or hides the two fields that only a new account has.
+ *
+ * The required flag goes with the role rather than staying on it. A control that
+ * is hidden and still required is one the browser refuses to submit past and
+ * cannot scroll to, so the form does nothing at all and says nothing about why -
+ * which is a worse outcome than either of the two this is choosing between.
+ */
+function showUserCreationFields(shown) {
+  const role = $('#user-role-field');
+  const password = $('#user-password-field');
+
+  if (role) role.hidden = !shown;
+  if (password) password.hidden = !shown;
+
+  const chooser = $('#form-user select[name=role]');
+  if (chooser) chooser.required = shown;
 }
 
 async function loadRoles() {
@@ -4457,6 +4666,19 @@ async function loadProjects() {
     // organising your hours whatever your project permissions say.
     const mine = me.user && p.ownerId === me.user.id;
 
+    // Offered whatever the status. An archived project is a closed record and a
+    // name typed wrongly is still typed wrongly in it - and the server does not
+    // refuse the change, so a screen that hid the button would be inventing a
+    // rule of its own rather than reflecting one.
+    if (can('projects:write')) {
+      actions.append(el('button', {
+        class: 'link',
+        'data-action': 'edit',
+        text: t('action.edit', 'edit'),
+        onclick: () => editProject(p),
+      }));
+    }
+
     if (can('projects:write') && p.status === 'active') {
       actions.append(el('button', {
         class: 'link',
@@ -4499,6 +4721,50 @@ async function loadProjects() {
   });
 
   fillTable($('#table-projects tbody'), rows, 5, t('project.empty', 'No projects yet.'));
+}
+
+/** Opens an existing project in the form above the table. */
+function editProject(project) {
+  const form = $('#form-project');
+  if (!form) return;
+
+  form.elements.id.value = String(project.id);
+  form.elements.name.value = project.name;
+  form.elements.description.value = project.description ?? '';
+
+  // Through setDateField, because the visible box beside a date input is a second
+  // field kept in step with it: writing the value straight in changes the one
+  // nobody looks at and leaves the one everybody does reading the old date.
+  setDateField(form.elements.startDate, project.startDate ?? '');
+  setDateField(form.elements.endDate, project.endDate ?? '');
+
+  $('#project-form-title').textContent = t('project.edit', 'Edit project');
+  $('#project-submit').textContent = t('action.save', 'Save');
+  $('#project-cancel').hidden = false;
+
+  switchView('projects');
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.name.focus();
+}
+
+/** Puts the form back to making one. */
+function resetProjectForm() {
+  const form = $('#form-project');
+  if (!form) return;
+
+  form.reset();
+  form.elements.id.value = '';
+
+  // Emptied through setDateField for the same reason they were filled through it,
+  // and only then today back into the start: reset empties it, and making a
+  // second project should ask no more than the first one did.
+  setDateField(form.elements.startDate, '');
+  setDateField(form.elements.endDate, '');
+  fillToday(form.elements.startDate);
+
+  $('#project-form-title').textContent = t('project.create', 'Create project');
+  $('#project-submit').textContent = t('action.create', 'Create');
+  $('#project-cancel').hidden = true;
 }
 
 /**
@@ -5912,7 +6178,7 @@ const remove = (path, msg, after) => mutate(
  * differs only in its words - and reusing .overlay and .overlay-card means this
  * needs no new styling at all.
  */
-function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
+function confirmDialog({ title, text, detail, confirmLabel, danger = true, field = null }) {
   return new Promise((resolve) => {
     // What had focus before, so it can be given back: a dialog that leaves
     // focus on nothing strands anybody using a keyboard.
@@ -5930,6 +6196,53 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
     // The server's own words, when there are any - the count of what would be
     // destroyed usually lives there rather than in the question.
     if (detail) card.append(el('p', { class: 'muted minus', text: detail }));
+
+    // A question that needs an answer rather than a yes.
+    //
+    // Here rather than in a second dialog written beside this one: a question is
+    // a card, a sentence and two buttons whatever it asks, and the one that came
+    // after this had all three of those and a box. What it resolves to is the
+    // answer - the string typed, or false for a cancel - so a caller reads
+    // truthiness exactly as every existing one already does.
+    const input = field
+      ? el('input', {
+        type: 'password',
+        id: field.id,
+        minlength: String(field.minLength ?? 0),
+        autocomplete: 'off',
+        spellcheck: 'false',
+      })
+      : null;
+
+    if (field) {
+      const controls = el('span', { class: 'row' }, input);
+
+      if (field.generate) {
+        controls.append(el('button', {
+          type: 'button',
+          class: 'secondary',
+          id: field.generateID,
+          text: field.generate,
+          onclick: () => {
+            input.value = invented();
+
+            // And shown, through the reveal this field already has rather than a
+            // second control beside it. A password that has to be read out or
+            // written down and cannot be looked at is worse than none - and
+            // clicking the eye afterwards is a step nobody should have to know
+            // about.
+            const eye = card.querySelector('.password-toggle');
+            if (eye && input.type === 'password') eye.click();
+
+            input.focus();
+          },
+        }));
+      }
+
+      card.append(el('label', { text: field.label }, controls));
+
+      if (field.hint) card.append(el('p', { class: 'muted', text: field.hint }));
+    }
 
     const overlay = el('div', { class: 'overlay confirm-overlay' }, card);
 
@@ -5956,10 +6269,10 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
     });
 
     const proceed = el('button', {
-      class: danger ? 'danger' : '',
+      class: `confirm-proceed${danger ? ' danger' : ''}`,
       type: 'button',
       text: confirmLabel,
-      onclick: () => close(true),
+      onclick: () => close(field ? input.value : true),
     });
 
     card.append(el('div', { class: 'row confirm-actions' }, cancel, proceed));
@@ -5967,10 +6280,69 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true }) {
     document.addEventListener('keydown', onKey);
     document.body.append(overlay);
 
+    // The reveal button every password field on this screen gets, given to this
+    // one too - by the same function, so there is one of them rather than two
+    // that drift.
+    if (input) wirePasswordReveal(card);
+
     // Cancel takes the focus, not the destructive button: a stray Enter should
-    // not delete anything.
-    cancel.focus();
+    // not delete anything. Where something has to be typed, the box takes it
+    // instead - there is nothing to protect anybody from until it holds a value,
+    // and a dialog that opens with the cursor somewhere else is one more click.
+    if (input) input.focus();
+    else cancel.focus();
   });
+}
+
+/**
+ * The shortest password the server will hash.
+ *
+ * The same number as security.MinPasswordLength, and written here because the
+ * form has to refuse what the server refuses before somebody presses the button
+ * rather than after.
+ */
+const MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * A password nobody chose.
+ *
+ * For handing an account back to somebody who has lost theirs. A password a
+ * person invents under mild pressure is a password much like the last one they
+ * invented, and this one is going to be spoken down a telephone or typed into a
+ * chat window before it is replaced - so it is worth it being neither guessable
+ * nor a variation on a theme.
+ *
+ * crypto.getRandomValues rather than Math.random, which is not required to be
+ * unpredictable and on some engines is trivially so.
+ *
+ * Rejection rather than a remainder. Taking a byte modulo the alphabet length
+ * makes the first few characters likelier than the rest, which is a small bias
+ * and a pointless one when discarding the overhang costs a loop.
+ *
+ * The alphabet leaves out the characters that are read wrongly rather than
+ * typed wrongly: no O and no zero, no I, l or one. This value is transcribed by
+ * a person at least once, and "did you say ell or one" is the failure it would
+ * otherwise produce.
+ */
+function invented() {
+  const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const limit = 256 - (256 % alphabet.length);
+  const out = [];
+
+  while (out.length < 16) {
+    const bytes = new Uint8Array(16);
+
+    window.crypto.getRandomValues(bytes);
+
+    for (const byte of bytes) {
+      if (byte >= limit || out.length >= 16) continue;
+
+      out.push(alphabet[byte % alphabet.length]);
+    }
+  }
+
+  // In groups, because it is going to be read aloud or copied by eye once.
+  return out.join('').replace(/(.{4})(?=.)/g, '$1-');
 }
 
 /**
@@ -6301,6 +6673,11 @@ function handBackTheScreen(message) {
   stopPermissionPolling();
   stopAnnouncements();
   stopReleaseWatch();
+
+  // And the notice those two could have put up. It is about what the account
+  // that is leaving may do, and it must not be waiting for whoever signs in at
+  // the same desk next.
+  hideRightsChanged();
 
   // The screen goes back to being nobody's, which is what lets showLogin put it
   // up again at the end of this.
@@ -7906,6 +8283,11 @@ function wireUpdateCheck() {
       const state = await api('/settings/update/check', { method: 'POST' });
 
       redrawable('update', () => renderUpdate(state));
+
+      // And the banner, which is the same answer put where whoever is not on
+      // this screen would see it. It stays up until it stops being true: a
+      // version that exists goes on existing after the card has scrolled away.
+      showReleaseState(state);
     } catch (err) {
       // Including "asked a moment ago", which is a sentence rather than a
       // failure: the answer on the card is current, and saying so is better than
@@ -11483,16 +11865,40 @@ async function refreshAll() {
 function wireForms() {
   $('#form-user').addEventListener('submit', (e) => {
     e.preventDefault();
+
+    const form = e.target;
+    const id = form.elements.id.value;
+
+    // Correcting an existing account, which takes the two fields that have no
+    // other control. The role is changed from its own dropdown in the row, and a
+    // password is not set for somebody else here - so neither is read from a form
+    // that is not showing them, and neither is sent.
+    if (id) {
+      const correction = {
+        name: form.elements.name.value.trim(),
+        email: form.elements.email.value.trim(),
+      };
+
+      mutate(() => api(`/users/${id}`,
+        { method: 'PUT', body: JSON.stringify(correction) }),
+      t('msg.userSaved', 'User saved'),
+      async () => { resetUserForm(); await refreshAll(); });
+
+      return;
+    }
+
     // No working times here. A new account starts on the instance default under
     // Settings and its owner changes it under My account - a daily target is a time
     // figure, and administering an installation is not the same job as recording time
     // in it.
-    const body = formData(e.target);
+    const body = formData(form);
 
     mutate(() => api('/users', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.userCreated', 'User created'),
-      async () => { e.target.reset(); await refreshAll(); });
+      async () => { resetUserForm(); await refreshAll(); });
   });
+
+  $('#user-cancel').addEventListener('click', resetUserForm);
 
   $('#form-role').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -11527,19 +11933,45 @@ function wireForms() {
 
   $('#form-project').addEventListener('submit', (e) => {
     e.preventDefault();
-    const body = formData(e.target);
+
+    const form = e.target;
+    const id = form.elements.id.value;
+
+    if (id) {
+      // Written out rather than read with formData, which drops an empty value -
+      // and an emptied optional field is the whole point here. A description and
+      // an end date that have been cleared have to travel as empty, because the
+      // server tells "there is none any more" from "I said nothing about it" by
+      // whether the field arrived at all.
+      const changes = {
+        name: form.elements.name.value.trim(),
+        description: form.elements.description.value.trim(),
+        endDate: form.elements.endDate.value,
+      };
+
+      // The start is the exception: it is the one date a project must have, so an
+      // empty one is somebody clearing a field rather than removing a fact, and
+      // sending it would be refused. Left out, it stays what it was.
+      if (form.elements.startDate.value) {
+        changes.startDate = form.elements.startDate.value;
+      }
+
+      mutate(() => api(`/projects/${id}`,
+        { method: 'PUT', body: JSON.stringify(changes) }),
+      t('msg.projectSaved', 'Project saved'),
+      async () => { resetProjectForm(); await refreshAll(); });
+
+      return;
+    }
+
+    const body = formData(form);
+
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.projectCreated', 'Project created'),
-      async () => {
-        e.target.reset();
-
-        // And today back into the start, because reset empties it: making a
-        // second project should ask no more than the first one did.
-        fillToday($('#form-project input[name="startDate"]'));
-
-        await refreshAll();
-      });
+      async () => { resetProjectForm(); await refreshAll(); });
   });
+
+  $('#project-cancel').addEventListener('click', resetProjectForm);
 
   $('#form-timesheet').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -11777,6 +12209,10 @@ async function init() {
     wireUpdate();
     wireUpdateCheck();
     wireCropChooser();
+
+    // The one control on the rights notice, and the whole of what there is to do
+    // about it.
+    $('#rights-reload')?.addEventListener('click', () => window.location.reload());
 
     $('#branding-language')?.addEventListener('change', (e) => {
       showBrandingLanguage(e.target.value);

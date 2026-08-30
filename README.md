@@ -1,4 +1,4 @@
-<h1><img src="internal/interface/web/assets/favicon.svg" alt="" width="78" align="middle">&nbsp; Go-Time-Recording</h1>
+<h1><img src="internal/interface/web/assets/favicon.svg" alt="" width="78" align="absmiddle">&nbsp; Go-Time-Recording</h1>
 
 Project time tracking as **a single self-contained binary**: the REST API and
 the web interface live in the same executable (the UI assets are embedded with

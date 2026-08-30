@@ -141,6 +141,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/users/{id}", h.Users.Update)
 	app.DELETE(base+"/users/{id}", h.Users.Delete)
 	app.PUT(base+"/users/{id}/role", h.Users.AssignRole)
+	app.PUT(base+"/users/{id}/password", h.Users.SetPassword)
 	app.PUT(base+"/users/{id}/working-times", h.Users.UpdateWorkingTimes)
 	app.GET(base+"/users/{id}/overtime", h.Me.Overtime)
 

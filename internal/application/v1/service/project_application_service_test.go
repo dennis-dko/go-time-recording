@@ -36,6 +36,81 @@ func TestCreateProjectRejectsEndBeforeStart(t *testing.T) {
 	requireKind(t, err, apperror.KindInvalid)
 }
 
+// An end date that was set can be taken off again.
+//
+// Every optional field in this command is a pointer, and a nil one means "leave
+// it alone" - which is right for a partial update and leaves no way at all to say
+// "there is no end any more". A project that got an end date by mistake, or one
+// that turned out to be ongoing after all, was stuck with it: sending an empty
+// date is a zero time, and a zero time is before every start date there is, so
+// the request came back as an invalid endDate.
+//
+// So clearing is said separately from setting, and the two cannot be confused
+// with each other or with silence.
+func TestAnEndDateCanBeClearedAndSilenceStillLeavesItAlone(t *testing.T) {
+	f := newFixture(t)
+
+	end := day(20)
+
+	if _, err := f.projects.UpdateProject(context.Background(),
+		command.UpdateProjectCommand{ID: f.projectID, EndDate: &end}); err != nil {
+		t.Fatalf("set an end: %v", err)
+	}
+
+	// Silence leaves it: this is what every other caller sends, the spreadsheet
+	// import among them, and it must go on meaning "unchanged".
+	name := "Website again"
+
+	after, err := f.projects.UpdateProject(context.Background(),
+		command.UpdateProjectCommand{ID: f.projectID, Name: &name})
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	if after.Result.EndDate == nil {
+		t.Fatal("a change that said nothing about the end date removed it")
+	}
+
+	cleared, err := f.projects.UpdateProject(context.Background(),
+		command.UpdateProjectCommand{ID: f.projectID, ClearEndDate: true})
+	if err != nil {
+		t.Fatalf("clear the end: %v", err)
+	}
+
+	if cleared.Result.EndDate != nil {
+		t.Errorf("the end date is still %v, so a project cannot be made open-ended again",
+			*cleared.Result.EndDate)
+	}
+}
+
+// And a description emptied is a description gone, not an empty one.
+//
+// The difference shows on screen: the table writes a dash where a project has no
+// description, and an empty string is not nothing - it is a value, so the cell
+// came out blank and read as a column that had broken.
+func TestAnEmptiedDescriptionIsNoDescription(t *testing.T) {
+	f := newFixture(t)
+
+	written := "Everything about the site"
+
+	if _, err := f.projects.UpdateProject(context.Background(),
+		command.UpdateProjectCommand{ID: f.projectID, Description: &written}); err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+
+	empty := ""
+
+	cleared, err := f.projects.UpdateProject(context.Background(),
+		command.UpdateProjectCommand{ID: f.projectID, Description: &empty})
+	if err != nil {
+		t.Fatalf("empty the description: %v", err)
+	}
+
+	if cleared.Result.Description != nil {
+		t.Errorf("the description is %q rather than absent", *cleared.Result.Description)
+	}
+}
+
 func TestArchiveRequiresCompleted(t *testing.T) {
 	f := newFixture(t)
 
