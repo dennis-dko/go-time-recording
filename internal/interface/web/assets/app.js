@@ -460,10 +460,18 @@ function can(...permissions) {
  * refusal on a button that was still on screen, and a right granted showed up as
  * nothing at all until the next sign-in.
  *
- * Every response carries the current revision; this compares it with the one that
- * came with /me. Once per change, because the header arrives on every request and
- * a notice per request would be a wall of them - the recorded value moves forward
- * so the second response through here is already in agreement.
+ * Three things arrive here, and all of them arrive as a revision to compare with
+ * the one /me gave: the header on every response, the once-a-minute poll below,
+ * and the announcement stream, which is the only one of the three that reaches a
+ * page nobody is touching. Once per change, whichever of them got here first -
+ * the recorded value moves forward, so the next one through is already in
+ * agreement and says nothing.
+ *
+ * A banner rather than a toast. The case this is written for is a screen somebody
+ * is reading rather than working in, and a notice that takes itself down after a
+ * few seconds is one that a person who stepped away never sees - they come back
+ * to a screen that looks right and is not. It is a state, like the two notices
+ * above it: true until the page is loaded again.
  *
  * A reload rather than re-reading /me in place: what a role opens is more than a
  * set of tabs - it is which screens were loaded at all - and reloading is the one
@@ -475,8 +483,25 @@ function noticePermissionChange(revision) {
 
   me.permissionsRevision = revision;
 
-  toast(t('msg.rightsChanged',
-    'What you may do here has changed. Reload the page to see it.'), 'error');
+  showRightsChanged();
+}
+
+/** Puts the notice up, where it stays until the page is loaded again. */
+function showRightsChanged() {
+  const banner = $('#rights-banner');
+  if (banner) banner.hidden = false;
+}
+
+/**
+ * Takes it down.
+ *
+ * For a screen that is about to belong to somebody else: a session that ends
+ * leaves every card behind it, and the previous account's news is the one thing
+ * that must not be waiting for whoever signs in next.
+ */
+function hideRightsChanged() {
+  const banner = $('#rights-banner');
+  if (banner) banner.hidden = true;
 }
 
 /**
@@ -485,15 +510,18 @@ function noticePermissionChange(revision) {
  * The revision travels on every response, so anybody clicking around finds out
  * without this. Somebody reading a screen is not clicking around, and the case
  * that matters is exactly that one: a right is withdrawn while the person it was
- * withdrawn from is looking at the screen it opened. Without a poll they found
- * out on their next navigation, which on the overtime screen could be a long
- * time - and, in the meantime, the buttons they no longer have any business
- * pressing were still on screen.
+ * withdrawn from is looking at the screen it opened.
  *
- * A minute, because this is a notice rather than an enforcement: the API refuses
- * a withdrawn right on the very next call whatever the interface believes, so
- * the only thing at stake is how long somebody looks at a screen that has
- * stopped being true.
+ * The stream is what covers that case now - the server checks the account behind
+ * an open connection and writes down it when the answer moves, so the notice
+ * arrives within seconds of the change and without anybody doing anything. This
+ * is the fallback underneath it: a browser with no EventSource, a connection a
+ * proxy has quietly dropped, a stream that has not reconnected yet.
+ *
+ * A minute is right for a fallback. This is a notice rather than an enforcement -
+ * the API refuses a withdrawn right on the very next call whatever the interface
+ * believes - so the only thing at stake is how long somebody looks at a screen
+ * that has stopped being true.
  */
 const PERMISSION_POLL_MS = 60000;
 
@@ -770,6 +798,26 @@ function startAnnouncements() {
     }
 
     applyAnnouncement(announcement);
+  });
+
+  // The other thing this connection carries, and the only one that is about the
+  // account holding it rather than about the installation.
+  //
+  // Here rather than in a poll of its own because the connection is already open
+  // and already belongs to this account, so the answer costs nothing to receive
+  // and arrives at the moment it becomes true. That is the whole point: the
+  // person a right was taken from is, by definition, not the person clicking
+  // around to find out.
+  announcements.addEventListener('permissions', (event) => {
+    let change;
+
+    try {
+      change = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    noticePermissionChange(change.revision);
   });
 
   // The connection dropping is not an error to report. It is the ordinary way a
@@ -3161,6 +3209,7 @@ const TRANSLATIONS = {
     'action.edit': 'bearbeiten',
     'action.evaluate': 'Auswerten',
     'action.exportPdf': 'Als PDF exportieren',
+    'action.reload': 'Neu laden',
     'action.new': 'Neu',
     'action.save': 'Speichern',
     'action.dismiss': 'Schließen',
@@ -6315,6 +6364,11 @@ function handBackTheScreen(message) {
   stopPermissionPolling();
   stopAnnouncements();
   stopReleaseWatch();
+
+  // And the notice those two could have put up. It is about what the account
+  // that is leaving may do, and it must not be waiting for whoever signs in at
+  // the same desk next.
+  hideRightsChanged();
 
   // The screen goes back to being nobody's, which is what lets showLogin put it
   // up again at the end of this.
@@ -11796,6 +11850,10 @@ async function init() {
     wireUpdate();
     wireUpdateCheck();
     wireCropChooser();
+
+    // The one control on the rights notice, and the whole of what there is to do
+    // about it.
+    $('#rights-reload')?.addEventListener('click', () => window.location.reload());
 
     $('#branding-language')?.addEventListener('change', (e) => {
       showBrandingLanguage(e.target.value);

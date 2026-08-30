@@ -6,27 +6,42 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 )
 
-// An update is the one thing this application says without being asked.
+// Two things this application says without being asked.
 //
-// Everything else a browser learns, it learns by asking. That is right for
-// almost all of it and wrong for exactly this: the binary underneath is being
-// replaced and, where the platform allows it, the process is restarted seconds
-// later. Somebody halfway through an entry finds out when the page stops
-// answering.
+// Everything else a browser learns, it learns by asking. That is right for almost
+// all of it and wrong for exactly two: the binary underneath is being replaced
+// and, where the platform allows it, the process is restarted seconds later - and
+// what the account looking at the screen is still allowed to do. Somebody halfway
+// through an entry finds out about the first when the page stops answering, and
+// about the second when a button they no longer have any business pressing is
+// refused.
 //
 // So there is a stream, and these are the properties that make it worth having:
-// anybody signed in can open one, nobody signed out can, and something published
-// while it is open arrives on it.
+// anybody signed in can open one, nobody signed out can, and both of those arrive
+// on it while it is open.
 
-// openStream connects to the announcement stream and returns the announcements
-// read from it, plus the status the server answered with.
-func openStream(t *testing.T, c *client) (<-chan map[string]any, int, func()) {
+// frame is one server-sent event: the name it was sent under, and its payload.
+//
+// The name matters here in a way it did not when there was one kind of event. A
+// stream now carries announcements, which belong to the whole installation, and
+// permission changes, which belong to the one account holding the connection -
+// and a reader that takes every data line as the same thing would hand one to
+// the code written for the other.
+type frame struct {
+	event string
+	data  map[string]any
+}
+
+// openFrames connects to the stream and returns everything read from it, plus the
+// status the server answered with.
+func openFrames(t *testing.T, c *client) (<-chan frame, int, func()) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -60,7 +75,7 @@ func openStream(t *testing.T, c *client) (<-chan map[string]any, int, func()) {
 		return nil, status, func() {}
 	}
 
-	out := make(chan map[string]any, 8)
+	out := make(chan frame, 8)
 
 	go func() {
 		defer close(out)
@@ -68,27 +83,68 @@ func openStream(t *testing.T, c *client) (<-chan map[string]any, int, func()) {
 
 		scanner := bufio.NewScanner(res.Body)
 
+		// The name arrives on its own line, ahead of the payload it belongs to,
+		// and is remembered until that payload turns up. A keep-alive comment in
+		// between carries neither and leaves it alone.
+		name := ""
+
 		for scanner.Scan() {
 			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
+
+			if rest, found := strings.CutPrefix(line, "event: "); found {
+				name = rest
+
 				continue
 			}
 
-			var announcement map[string]any
-			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")),
-				&announcement); err != nil {
+			payload, found := strings.CutPrefix(line, "data: ")
+			if !found {
+				continue
+			}
+
+			var decoded map[string]any
+			if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
 				continue
 			}
 
 			select {
-			case out <- announcement:
+			case out <- frame{event: name, data: decoded}:
 			case <-ctx.Done():
 				return
 			}
+
+			name = ""
 		}
 	}()
 
 	return out, res.StatusCode, cancel
+}
+
+// openStream is openFrames narrowed to announcements, which is what the cases
+// about updates are asking for.
+func openStream(t *testing.T, c *client) (<-chan map[string]any, int, func()) {
+	t.Helper()
+
+	frames, status, done := openFrames(t, c)
+	if frames == nil {
+		return nil, status, done
+	}
+
+	out := make(chan map[string]any, 8)
+
+	go func() {
+		defer close(out)
+
+		for f := range frames {
+			if f.event != "announcement" {
+				continue
+			}
+
+			out <- f.data
+		}
+	}()
+
+	return out, status, done
 }
 
 // Somebody signed in gets a stream, and what is published arrives on it.
@@ -186,5 +242,87 @@ func TestTheStreamAnnouncesItselfAsOne(t *testing.T) {
 	if got := res.Header.Get("Cache-Control"); !strings.Contains(got, "no-store") {
 		t.Errorf("the stream is cacheable (%q), so an announcement could be "+
 			"delivered once and served from a cache for ever after", got)
+	}
+}
+
+// A right that changes reaches the screen it changed on, with nobody clicking.
+//
+// The server has always enforced a change on the very next request - who is
+// calling is resolved from the database every time - and the interface read /me
+// once at start-up and kept what it was given. So the screen went on offering
+// what the account could no longer do, and the person looking at it found out by
+// pressing something and being refused.
+//
+// The gap that matters is exactly the one nobody is clicking through: a right is
+// withdrawn while the person it was withdrawn from is reading a screen it opened.
+// There is a poll for that, once a minute, and a minute of a screen that has
+// stopped being true is a long time to be looking at one. This connection is
+// already open and already belongs to that account, so it is the one place the
+// answer can arrive without being asked for.
+func TestARoleChangeReachesTheStreamOfTheAccountItWasMadeTo(t *testing.T) {
+	t.Parallel()
+
+	app := start(t)
+	admin := app.signInAsAdmin("a-much-better-password")
+	worker := app.signInAsUser(admin, "Wera", "wera@example.com")
+
+	var before struct {
+		User                userResponse `json:"user"`
+		PermissionsRevision string       `json:"permissionsRevision"`
+	}
+
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &before)
+
+	if before.PermissionsRevision == "" {
+		t.Fatal("/me says nothing about what this account may do, so there is nothing " +
+			"for a change to be measured against")
+	}
+
+	frames, status, done := openFrames(t, worker)
+	defer done()
+
+	if status != http.StatusOK {
+		t.Fatalf("opening the stream answered %d", status)
+	}
+
+	// Made by somebody else entirely. From here on the browser holding the stream
+	// does nothing at all - which is the whole point of the case.
+	admin.must(admin.api(http.MethodPut,
+		fmt.Sprintf("/users/%d/role", before.User.ID),
+		map[string]any{"role": "user-admin"}), http.StatusOK)
+
+	deadline := time.After(30 * time.Second)
+
+	for {
+		select {
+		case f, ok := <-frames:
+			if !ok {
+				t.Fatalf("the stream closed before it said anything; application log: %s",
+					app.log())
+			}
+
+			if f.event != "permissions" {
+				continue
+			}
+
+			revision, _ := f.data["revision"].(string)
+
+			if revision == "" {
+				t.Fatalf("the stream said the rights changed without saying to what: %v",
+					f.data)
+			}
+
+			if revision == before.PermissionsRevision {
+				t.Fatalf("the stream reported %q, which is what this account already had",
+					revision)
+			}
+
+			return
+
+		case <-deadline:
+			t.Fatalf("nothing on the stream said the rights had changed, so a screen "+
+				"nobody is touching goes on offering what this account may no longer "+
+				"do; application log: %s", app.log())
+		}
 	}
 }

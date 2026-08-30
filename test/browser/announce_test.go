@@ -140,3 +140,72 @@ func TestAnAnnouncementBecomesABannerNobodyCanMiss(t *testing.T) {
 		t.Error("the announcement can be dismissed, which it must not be")
 	}
 }
+
+// A change of rights arrives on the same connection, and stays on the screen.
+//
+// The server writes it down the stream the moment the answer moves, which is the
+// only route that reaches a page nobody is touching - and that is the case worth
+// covering, because the person a right was taken from is by definition not the
+// person clicking around to find out.
+//
+// So two things are checked here, and they are the two that used to be wrong. The
+// stream is listened to at all: a listener quietly never registered fails
+// nothing, and the notice simply goes back to arriving on the next click. And the
+// notice is a banner rather than the toast it was - somebody who stepped away for
+// a minute came back to a screen that looked right, was not, and had already
+// cleared away the only thing that said so.
+func TestAChangeOfRightsArrivesOnTheStreamAndStays(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	if p.visible("#rights-banner") {
+		t.Fatal("the notice is up before anything has changed")
+	}
+
+	// Delivered the way the server delivers it, through the listener on the stream
+	// rather than by calling what the listener calls. That is the half that was
+	// missing: the connection was open and nothing was reading this off it.
+	p.run("the server says the rights moved", chromedp.Evaluate(`
+		announcements.dispatchEvent(new MessageEvent('permissions', {
+			data: JSON.stringify({ revision: 'something-else-entirely' }),
+		}))`, nil))
+
+	p.waitShown("#rights-banner")
+
+	if standing := p.text("#rights-banner"); !strings.Contains(standing, "may do") {
+		t.Errorf("the notice reads %q rather than saying what changed", standing)
+	}
+
+	// And not as a toast as well. The stack is where a fading notice would be, and
+	// the whole point of this one is that it does not fade.
+	if notes := p.text("#toast"); strings.Contains(notes, "may do") {
+		t.Errorf("the change was also reported in the corner, where it clears "+
+			"itself while nobody is looking: %q", notes)
+	}
+
+	// The way out, and the only thing there is to do about it: what a role opens is
+	// which screens were built at all, so the page has to be loaded again.
+	if p.count("#rights-reload") != 1 {
+		t.Error("the notice offers no way to act on it")
+	}
+
+	// German, because whoever is being told their screen has stopped being true is
+	// owed that in their own language.
+	p.chooseLanguage("de")
+	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
+
+	if standing := p.text("#rights-banner"); !strings.Contains(standing, "Berechtigungen") {
+		t.Errorf("the standing notice reads %q after switching to German", standing)
+	}
+
+	// It belongs to the account it is about. Left standing, the next person at the
+	// same desk is told their rights changed, which they did not.
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	if p.visible("#rights-banner") {
+		t.Error("the notice outlasted the session it was raised in")
+	}
+}

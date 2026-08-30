@@ -45,6 +45,28 @@ func NewAuthService(users repository.UserRepository, roles repository.RoleReposi
 	return &AuthService{users: users, roles: roles}
 }
 
+// PrincipalByID resolves what an account may do right now, from the account
+// alone.
+//
+// Deliberately not SessionService.Resolve, which answers the same question for a
+// request and does one more thing on the way: it records the session as used.
+// That is right for a request somebody made and wrong for a background check -
+// the idle timeout exists to end a session nobody is using, and a check asking
+// on behalf of a tab that is merely open would be the thing that stops it ever
+// firing.
+//
+// So this reads the account and its role and nothing else. It says what the
+// rights are, never that the session is still good; whoever calls it already
+// knows which account it is asking about.
+func (s *AuthService) PrincipalByID(ctx context.Context, id uint) (*Principal, error) {
+	user, err := s.users.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.principalFor(ctx, user)
+}
+
 func (s *AuthService) principalFor(ctx context.Context, user *model.User) (*Principal, error) {
 	role, err := s.roles.GetByID(ctx, user.RoleID)
 	if err != nil {

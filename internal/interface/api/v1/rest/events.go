@@ -1,10 +1,12 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
 
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/announce"
 )
 
@@ -20,6 +22,37 @@ const EventsPath = "/api/v1/events"
 // naming.
 const heartbeat = 20 * time.Second
 
+// permissionCheck is how often an open stream asks whether the account holding
+// it may still do what it could a moment ago.
+//
+// The revision travels on every response, so anybody clicking around finds out
+// without this. Somebody reading a screen is not clicking around, and that is
+// precisely the case worth covering: a right is withdrawn while the person it
+// was withdrawn from is looking at the screen it opened. The browser polls for
+// that once a minute, and a minute is a long time to leave somebody in front of
+// controls that have stopped meaning anything.
+//
+// Derived rather than published. Nothing tells this stream that a role changed,
+// because there is no one place such a change passes through - a role
+// assignment, the rights on a role, and a directory synchronisation are three
+// different paths - and a notification that one of them forgets to send is worse
+// than none at all. It is the same reasoning that made PermissionRevision a
+// digest rather than a counter.
+//
+// The cost is two indexed reads per open stream per interval, which is what any
+// single request already does to work out who is calling. Ten seconds reads as
+// "at once" to somebody watching a screen, and this is a notice rather than an
+// enforcement in any case: the API refuses a withdrawn right on the very next
+// call whatever the browser believes.
+const permissionCheck = 10 * time.Second
+
+// permissionsChanged is what a stream says when what its account may do has
+// moved. It carries the new revision and nothing else - the browser compares it
+// with the one /me gave it, and says so once.
+type permissionsChanged struct {
+	Revision string `json:"revision"`
+}
+
 // EventStream serves server-sent events to signed-in browsers.
 //
 // Middleware rather than a GoFr handler, for the same reason the interface is:
@@ -29,7 +62,7 @@ const heartbeat = 20 * time.Second
 // for that by construction.
 //
 // Placed after the session middleware, so the caller is already resolved.
-func EventStream(hub *announce.Hub) func(http.Handler) http.Handler {
+func EventStream(hub *announce.Hub, auth *service.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != EventsPath {
@@ -50,7 +83,8 @@ func EventStream(hub *announce.Hub) func(http.Handler) http.Handler {
 			// business and no user's secret - it carries no data belonging to
 			// anybody. Requiring a permission would only mean that the people who
 			// most need the warning are the ones who do not get it.
-			if _, ok := principalFromContext(r.Context()); !ok {
+			principal, ok := principalFromContext(r.Context())
+			if !ok {
 				http.Error(w, "not authenticated", http.StatusUnauthorized)
 
 				return
@@ -106,6 +140,21 @@ func EventStream(hub *announce.Hub) func(http.Handler) http.Handler {
 			ticker := time.NewTicker(heartbeat)
 			defer ticker.Stop()
 
+			// Whose stream this is, and what they could do when it opened. Both
+			// are read once: the connection belongs to that account for as long
+			// as it is held, and the revision is what every later answer is
+			// compared against.
+			var watching uint
+
+			revision := PermissionRevision(principal)
+
+			if principal.User != nil {
+				watching = principal.User.ID
+			}
+
+			rights := time.NewTicker(permissionCheck)
+			defer rights.Stop()
+
 			for {
 				select {
 				case <-r.Context().Done():
@@ -141,8 +190,52 @@ func EventStream(hub *announce.Hub) func(http.Handler) http.Handler {
 					}
 
 					_ = controller.Flush()
+
+				case <-rights.C:
+					current, answered := currentRevision(r.Context(), auth, watching)
+					if !answered || current == revision {
+						// Unchanged, or unanswerable for the moment - a database
+						// that is briefly busy is not news, and the next tick asks
+						// again. Nothing is written either way: keeping the
+						// connection alive is the other timer's job.
+						continue
+					}
+
+					revision = current
+
+					body, err := json.Marshal(permissionsChanged{Revision: current})
+					if err != nil {
+						continue
+					}
+
+					if _, err := w.Write([]byte("event: permissions\ndata: " +
+						string(body) + "\n\n")); err != nil {
+						return
+					}
+
+					_ = controller.Flush()
 				}
 			}
 		})
 	}
+}
+
+// currentRevision is what the account may do at this moment, and whether that
+// could be answered at all.
+//
+// A false is not an error worth reporting anywhere. This runs on a timer nobody
+// asked for, on behalf of a browser that is not waiting for it, and the honest
+// response to an account that has just been deleted, or to a database that is
+// busy, is to say nothing and ask again on the next tick.
+func currentRevision(ctx context.Context, auth *service.AuthService, id uint) (string, bool) {
+	if auth == nil || id == 0 {
+		return "", false
+	}
+
+	principal, err := auth.PrincipalByID(ctx, id)
+	if err != nil {
+		return "", false
+	}
+
+	return PermissionRevision(principal), true
 }

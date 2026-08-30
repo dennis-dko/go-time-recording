@@ -711,10 +711,12 @@ func main() {
 	// UI, so the assets are still served and the page can render the notice.
 	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState))
 
-	// The one thing this application says without being asked. After the session
+	// The two things this application says without being asked: that it is about
+	// to restart into a new version, and that the account holding the connection
+	// may suddenly do more, or less, than it could a moment ago. After the session
 	// middleware, which is what makes a stream belong to somebody, and before the
 	// interface, which would otherwise answer for a path it does not own.
-	app.UseMiddleware(rest.EventStream(hub))
+	app.UseMiddleware(rest.EventStream(hub, auth))
 
 	if cfg.UIEnabled {
 		// GoFr's AddStaticFiles only serves a directory from disk, which would
