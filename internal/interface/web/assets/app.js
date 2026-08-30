@@ -2032,6 +2032,10 @@ function permissionGroup(right) {
   return { key: area, label: t(`perm.group.${area}`, PERMISSION_GROUPS[area] ?? area) };
 }
 
+// The role somebody gets when nobody has said otherwise: the one that records
+// time and administers nothing.
+const ORDINARY_ROLE = 'user';
+
 const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
@@ -5370,16 +5374,25 @@ async function loadAdmin() {
     // installation is an empty string rather than a missing field - and ?? lets
     // it through, which sets a <select> to a value none of its options carry and
     // leaves it showing nothing at all.
-    ldapForm.elements.defaultRole.value = ldap.defaultRole || 'user';
+    ldapForm.elements.defaultRole.value = ldap.defaultRole || ORDINARY_ROLE;
   }
 
   // Whatever happened above, something is selected. A <select> set to a value
   // none of its options carry selects nothing and draws an empty box, which is
   // what this card kept showing; there is always at least one role to fall back
   // to, and none of the options is an empty one.
-  if (!ldapForm.elements.defaultRole.value) {
-    ldapForm.elements.defaultRole.selectedIndex = 0;
-  }
+  //
+  // The ordinary user role before the first option in the list, because the two
+  // are not the same answer: the list is in whatever order the roles came back
+  // in, and the first of them can as easily be the administrator. A directory
+  // nobody has configured yet should provision people who record time, not
+  // people who can reconfigure the installation - so if the stored role is
+  // missing or unknown, this lands on the safe one rather than the nearest one.
+  const picker = ldapForm.elements.defaultRole;
+
+  if (!picker.value) picker.value = ORDINARY_ROLE;
+
+  if (!picker.value) picker.selectedIndex = 0;
 
   // The directory run belongs to the built-in administrator, because it deletes
   // the accounts the directory no longer holds along with everything they
