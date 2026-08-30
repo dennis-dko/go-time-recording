@@ -2032,6 +2032,10 @@ function permissionGroup(right) {
   return { key: area, label: t(`perm.group.${area}`, PERMISSION_GROUPS[area] ?? area) };
 }
 
+// The role somebody gets when nobody has said otherwise: the one that records
+// time and administers nothing.
+const ORDINARY_ROLE = 'user';
+
 const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
@@ -5370,16 +5374,25 @@ async function loadAdmin() {
     // installation is an empty string rather than a missing field - and ?? lets
     // it through, which sets a <select> to a value none of its options carry and
     // leaves it showing nothing at all.
-    ldapForm.elements.defaultRole.value = ldap.defaultRole || 'user';
+    ldapForm.elements.defaultRole.value = ldap.defaultRole || ORDINARY_ROLE;
   }
 
   // Whatever happened above, something is selected. A <select> set to a value
   // none of its options carry selects nothing and draws an empty box, which is
   // what this card kept showing; there is always at least one role to fall back
   // to, and none of the options is an empty one.
-  if (!ldapForm.elements.defaultRole.value) {
-    ldapForm.elements.defaultRole.selectedIndex = 0;
-  }
+  //
+  // The ordinary user role before the first option in the list, because the two
+  // are not the same answer: the list is in whatever order the roles came back
+  // in, and the first of them can as easily be the administrator. A directory
+  // nobody has configured yet should provision people who record time, not
+  // people who can reconfigure the installation - so if the stored role is
+  // missing or unknown, this lands on the safe one rather than the nearest one.
+  const picker = ldapForm.elements.defaultRole;
+
+  if (!picker.value) picker.value = ORDINARY_ROLE;
+
+  if (!picker.value) picker.selectedIndex = 0;
 
   // The directory run belongs to the built-in administrator, because it deletes
   // the accounts the directory no longer holds along with everything they
@@ -9165,15 +9178,33 @@ const PAINTED = [
 const CHART_SCALE = 2;
 
 /**
+ * The two shades a printed chart is fixed to, whatever the screen was set to.
+ *
+ * A chart goes onto white paper, and the theme somebody reads in is not a fact
+ * about the page. The bars keep the colours they have - those say which series
+ * is which, and are the whole point of the picture - but the words beside them
+ * are written in ink and the empty part of a bar is unprinted paper.
+ *
+ * What made this worth fixing was the dark theme: labels are drawn in the muted
+ * shade and the empty part of a bar in the page background, so an exported chart
+ * arrived as a column of solid black bars with figures beside them in a grey
+ * that disappeared.
+ */
+const PAPER_INK = '#000000';
+const PAPER_GROUND = '#ffffff';
+
+/**
  * Takes a picture of a chart, exactly as it stands.
  *
  * The whole reason the document is built from the screen rather than from the
  * database: these charts are drawn here, by hand, and re-drawing them on the
  * server would be a second implementation of them in a second language.
  *
- * The ground is painted first, in the colour the card has. A dark theme's chart
- * on white paper would otherwise be pale type on nothing - and this is meant to
- * be the chart that was on the screen, which on a dark screen is a dark chart.
+ * The ground is painted first, and it is white, because the picture is going onto
+ * paper. This used to take the card's own background on the reasoning that the
+ * document should show the chart that was on the screen - which is true of the
+ * shape and the colours and is not true of the theme: a dark screen produced a
+ * dark rectangle with pale type on it, printed onto a white page.
  */
 async function chartAsPicture(container) {
   const source = container?.querySelector('svg');
@@ -9210,6 +9241,19 @@ async function chartAsPicture(container) {
     });
   });
 
+  // And then the two things that are about paper rather than about the screen.
+  //
+  // After the loop above rather than instead of it: everything else the chart
+  // says with colour is kept, because a bar's colour is which series it is. Only
+  // the ink and the unprinted part are overruled.
+  for (const words of copy.querySelectorAll('text')) {
+    words.style.setProperty('fill', PAPER_INK);
+  }
+
+  for (const empty of copy.querySelectorAll('.chart-track')) {
+    empty.style.setProperty('fill', PAPER_GROUND);
+  }
+
   // Named explicitly: an <svg> handed to an <img> is a document of its own, and
   // one without a namespace or a size does not render at all.
   copy.setAttribute('xmlns', SVG_NS);
@@ -9236,7 +9280,9 @@ async function chartAsPicture(container) {
 
   const ink = canvas.getContext('2d');
 
-  ink.fillStyle = window.getComputedStyle(container).backgroundColor || '#ffffff';
+  // The page, not the card. This took the card's own background, which is what
+  // put a dark rectangle behind a chart exported from the dark theme.
+  ink.fillStyle = PAPER_GROUND;
   ink.fillRect(0, 0, canvas.width, canvas.height);
   ink.drawImage(picture, 0, 0, canvas.width, canvas.height);
 

@@ -288,12 +288,16 @@ func TestAnAbsurdlyWideCellDoesNotDerailTheTable(t *testing.T) {
 // comes out dark, and type that assumed white around it would be the wrong
 // weight beside it.
 //
-// Asserted as a difference rather than as a colour. What ends up in the file is
-// a PDF colour operator among compressed content, and finding one by hand is
-// asserting on fpdf's output format; that two palettes produce two different
-// files is the claim that matters, and it fails the moment the palette stops
-// being read.
-func TestTheDocumentIsWrittenInTheColoursItWasGiven(t *testing.T) {
+// Asserted here only as "still a PDF". What the shades actually resolve to is
+// asserted in paper_test.go, against the resolution itself.
+//
+// It used to be asserted here as a difference: two palettes in, two different
+// files out. That claim cannot be made this way and never could - fpdf writes a
+// creation timestamp and an id into every file, so the same document written
+// twice is already two different files. The test passed for that reason and
+// would have gone on passing with the palette ignored completely, which is very
+// nearly what it was meant to catch.
+func TestADocumentIsAPDFWhateverPaletteItIsGiven(t *testing.T) {
 	t.Parallel()
 
 	same := func(colours document.Palette) []byte {
@@ -315,30 +319,23 @@ func TestTheDocumentIsWrittenInTheColoursItWasGiven(t *testing.T) {
 		return out
 	}
 
-	light := same(document.Palette{
-		Accent: "#2f6feb", Text: "#1c2126", Muted: "#626d78",
-		Border: "#dfe3e8", Surface: "#ffffff",
-	})
-
-	dark := same(document.Palette{
-		Accent: "#5b8dfa", Text: "#e8eaed", Muted: "#98a2ad",
-		Border: "#2c333b", Surface: "#1c2126",
-	})
-
-	if bytes.Equal(light, dark) {
-		t.Error("two palettes produced the same document, so the colours are not read")
-	}
-
-	// And a document given none is still a document rather than a refusal.
-	plain := same(document.Palette{})
-
-	if !bytes.HasPrefix(plain, []byte(pdfHeader)) {
-		t.Error("a document with no palette is not a PDF")
-	}
-
-	if bytes.Equal(plain, light) {
-		t.Error("the fallback shades and a real palette produce the same file, so " +
-			"one of them is not being used")
+	for _, palette := range []struct {
+		name    string
+		colours document.Palette
+	}{
+		{"a dark screen", document.Palette{
+			Accent: "#5b8dfa", Text: "#e8eaed", Muted: "#98a2ad",
+			Border: "#2c333b", Surface: "#1c2126",
+		}},
+		{"a light screen", document.Palette{
+			Accent: "#2f6feb", Text: "#1c2126", Muted: "#626d78",
+			Border: "#dfe3e8", Surface: "#ffffff",
+		}},
+		{"no palette at all", document.Palette{}},
+	} {
+		if out := same(palette.colours); !bytes.HasPrefix(out, []byte(pdfHeader)) {
+			t.Errorf("%s did not produce a PDF", palette.name)
+		}
 	}
 }
 

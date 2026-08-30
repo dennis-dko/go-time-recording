@@ -144,14 +144,24 @@ type inks struct {
 // page still reads.
 func (p Palette) resolve() inks {
 	return inks{
-		// Written with, so it has to be dark enough to read against the page.
+		// The one shade that is about the installation rather than about the
+		// screen it was read from, so the one worth taking. Checked all the same:
+		// the title and every filled bar are drawn in it, and an installation is
+		// free to choose something too pale to print.
 		accent: readable(parseColour(p.Accent, defaultAccent), defaultAccent),
-		text:   readable(parseColour(p.Text, defaultText), defaultText),
-		muted:  readable(parseColour(p.Muted, defaultMuted), defaultMuted),
 
-		// Filled with, so it has to stay lighter than what is written on it.
-		border:  quiet(parseColour(p.Border, defaultBorder), defaultBorder),
-		surface: quiet(parseColour(p.Surface, defaultSurface), defaultSurface),
+		// And the rest is the page's own, whatever the screen was set to.
+		//
+		// This used to take whichever of these were dark enough to read, which
+		// meant the light theme's shades were used as sent and the dark theme's
+		// were replaced - two different documents from one installation,
+		// depending on how the person exporting it happened to be reading. The
+		// theme is a fact about a screen at a moment; it is not a fact about a
+		// printed page, and a page that is filed or sent on should not carry it.
+		text:    defaultText,
+		muted:   defaultMuted,
+		border:  defaultBorder,
+		surface: defaultSurface,
 	}
 }
 
@@ -194,17 +204,6 @@ func (c colour) contrastOnPaper() float64 {
 // to the document's own when it cannot.
 func readable(c, fallback colour) colour {
 	if c.contrastOnPaper() >= paperContrast {
-		return c
-	}
-
-	return fallback
-}
-
-// quiet keeps a shade that can be filled with - a rule, a heading row, the empty
-// part of a bar - which means one that stays out of the way of the ink on top of
-// it.
-func quiet(c, fallback colour) colour {
-	if c.contrastOnPaper() <= paperContrast {
 		return c
 	}
 
