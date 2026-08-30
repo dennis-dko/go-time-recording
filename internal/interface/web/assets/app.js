@@ -643,6 +643,20 @@ async function checkForRelease() {
     return;
   }
 
+  showReleaseState(state);
+}
+
+/**
+ * Puts an answer about the newest version on screen, or takes the notice down.
+ *
+ * Its own function because two things ask that question and both have to end at
+ * the same banner: the hourly watch above, and the button on the version card.
+ * The button redrew only the card, so the one moment somebody is certainly
+ * looking - they pressed it to find out - was the one moment the stripe across
+ * the top of every screen went on saying nothing. An hour later it agreed with
+ * the card, which is a long time to be told two things at once.
+ */
+function showReleaseState(state) {
   // Newer rather than installable: a container cannot install it from here, and
   // the person reading this is still the one who should know.
   if (!state?.newer || !state.latest) {
@@ -7906,6 +7920,11 @@ function wireUpdateCheck() {
       const state = await api('/settings/update/check', { method: 'POST' });
 
       redrawable('update', () => renderUpdate(state));
+
+      // And the banner, which is the same answer put where whoever is not on
+      // this screen would see it. It stays up until it stops being true: a
+      // version that exists goes on existing after the card has scrolled away.
+      showReleaseState(state);
     } catch (err) {
       // Including "asked a moment ago", which is a sentence rather than a
       // failure: the answer on the card is current, and saying so is better than
