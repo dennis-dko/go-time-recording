@@ -3541,6 +3541,7 @@ const TRANSLATIONS = {
     'msg.projectArchived': 'Projekt archiviert',
     'msg.projectCompleted': 'Projekt abgeschlossen',
     'msg.projectCreated': 'Projekt angelegt',
+    'msg.projectSaved': 'Projekt gespeichert',
     'msg.projectDeleted': 'Projekt gelöscht',
     'msg.roleChanged': 'Rolle geändert',
     'msg.roleCreated': 'Rolle angelegt',
@@ -3568,6 +3569,7 @@ const TRANSLATIONS = {
     'ot.meta': '{0} · Soll {1}/Tag · gebucht {2} von {3}',
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
+    'project.edit': 'Projekt bearbeiten',
     'project.hint': 'Ihre Projekte sind Ihre: nur Sie sehen sie, und nur Sie buchen darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
@@ -4598,6 +4600,18 @@ async function loadProjects() {
     // organising your hours whatever your project permissions say.
     const mine = me.user && p.ownerId === me.user.id;
 
+    // Offered whatever the status. An archived project is a closed record and a
+    // name typed wrongly is still typed wrongly in it - and the server does not
+    // refuse the change, so a screen that hid the button would be inventing a
+    // rule of its own rather than reflecting one.
+    if (can('projects:write')) {
+      actions.append(el('button', {
+        class: 'link',
+        text: t('action.edit', 'edit'),
+        onclick: () => editProject(p),
+      }));
+    }
+
     if (can('projects:write') && p.status === 'active') {
       actions.append(el('button', {
         class: 'link',
@@ -4640,6 +4654,50 @@ async function loadProjects() {
   });
 
   fillTable($('#table-projects tbody'), rows, 5, t('project.empty', 'No projects yet.'));
+}
+
+/** Opens an existing project in the form above the table. */
+function editProject(project) {
+  const form = $('#form-project');
+  if (!form) return;
+
+  form.elements.id.value = String(project.id);
+  form.elements.name.value = project.name;
+  form.elements.description.value = project.description ?? '';
+
+  // Through setDateField, because the visible box beside a date input is a second
+  // field kept in step with it: writing the value straight in changes the one
+  // nobody looks at and leaves the one everybody does reading the old date.
+  setDateField(form.elements.startDate, project.startDate ?? '');
+  setDateField(form.elements.endDate, project.endDate ?? '');
+
+  $('#project-form-title').textContent = t('project.edit', 'Edit project');
+  $('#project-submit').textContent = t('action.save', 'Save');
+  $('#project-cancel').hidden = false;
+
+  switchView('projects');
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.name.focus();
+}
+
+/** Puts the form back to making one. */
+function resetProjectForm() {
+  const form = $('#form-project');
+  if (!form) return;
+
+  form.reset();
+  form.elements.id.value = '';
+
+  // Emptied through setDateField for the same reason they were filled through it,
+  // and only then today back into the start: reset empties it, and making a
+  // second project should ask no more than the first one did.
+  setDateField(form.elements.startDate, '');
+  setDateField(form.elements.endDate, '');
+  fillToday(form.elements.startDate);
+
+  $('#project-form-title').textContent = t('project.create', 'Create project');
+  $('#project-submit').textContent = t('action.create', 'Create');
+  $('#project-cancel').hidden = true;
 }
 
 /**
@@ -11702,19 +11760,45 @@ function wireForms() {
 
   $('#form-project').addEventListener('submit', (e) => {
     e.preventDefault();
-    const body = formData(e.target);
+
+    const form = e.target;
+    const id = form.elements.id.value;
+
+    if (id) {
+      // Written out rather than read with formData, which drops an empty value -
+      // and an emptied optional field is the whole point here. A description and
+      // an end date that have been cleared have to travel as empty, because the
+      // server tells "there is none any more" from "I said nothing about it" by
+      // whether the field arrived at all.
+      const changes = {
+        name: form.elements.name.value.trim(),
+        description: form.elements.description.value.trim(),
+        endDate: form.elements.endDate.value,
+      };
+
+      // The start is the exception: it is the one date a project must have, so an
+      // empty one is somebody clearing a field rather than removing a fact, and
+      // sending it would be refused. Left out, it stays what it was.
+      if (form.elements.startDate.value) {
+        changes.startDate = form.elements.startDate.value;
+      }
+
+      mutate(() => api(`/projects/${id}`,
+        { method: 'PUT', body: JSON.stringify(changes) }),
+      t('msg.projectSaved', 'Project saved'),
+      async () => { resetProjectForm(); await refreshAll(); });
+
+      return;
+    }
+
+    const body = formData(form);
+
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.projectCreated', 'Project created'),
-      async () => {
-        e.target.reset();
-
-        // And today back into the start, because reset empties it: making a
-        // second project should ask no more than the first one did.
-        fillToday($('#form-project input[name="startDate"]'));
-
-        await refreshAll();
-      });
+      async () => { resetProjectForm(); await refreshAll(); });
   });
+
+  $('#project-cancel').addEventListener('click', resetProjectForm);
 
   $('#form-timesheet').addEventListener('submit', (e) => {
     e.preventDefault();

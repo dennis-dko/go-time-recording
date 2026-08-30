@@ -697,8 +697,13 @@
 
     <!-- Projects -->
     <section id="view-projects" class="view" hidden>
+      <!-- One form for making a project and for correcting one, told apart by the
+           id - the same arrangement the booking form and the account form use.
+           Everything else on this screen could be changed except the three things
+           somebody actually mistypes: the name, the period and what it is for. -->
       <form method="post" id="form-project" class="card form" data-perm="projects:write">
-        <h2 data-i18n="project.create">Create project</h2>
+        <h2 id="project-form-title" data-i18n="project.create">Create project</h2>
+        <input type="hidden" name="id">
         <p class="muted" data-i18n="project.hint">Your projects are yours: only you see them, and only you book on them. Two people working on the same thing keep a project each.</p>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
@@ -715,7 +720,10 @@
           <label data-i18n="field.end">End<input type="date" name="endDate" data-i18n-placeholder="field.optional" placeholder="optional"></label>
           <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
-        <button type="submit" data-i18n="action.create">Create</button>
+        <div class="row">
+          <button type="submit" id="project-submit" data-i18n="action.create">Create</button>
+          <button type="button" class="link" id="project-cancel" data-i18n="action.cancelEdit" hidden>cancel editing</button>
+        </div>
       </form>
 
       <div class="card">
