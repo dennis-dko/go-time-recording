@@ -267,8 +267,21 @@ func TestTheExportButtonSavesAPDF(t *testing.T) {
 
 	into := t.TempDir()
 
+	// Handed over in this platform's own separators, whatever the ones it arrived
+	// in.
+	//
+	// t.TempDir() builds on GOTMPDIR, and this repository sets that - so a value
+	// written with forward slashes, which is what a POSIX shell on Windows
+	// produces and what the Taskfile does not, reaches Chrome as
+	// "C:/a/b\TestX/001". It accepts that without complaint, downloads nothing
+	// into it, and reports nothing at all. The case then fails as "no .pdf was
+	// downloaded", which reads as a broken export and is a path the browser could
+	// not use - an afternoon of looking at the wrong end of it.
+	//
+	// A no-op everywhere else: FromSlash only changes anything on a platform
+	// whose separator is not the slash.
 	p.run("take downloads here", browser.SetDownloadBehavior(browser.SetDownloadBehaviorBehaviorAllow).
-		WithDownloadPath(into).WithEventsEnabled(true))
+		WithDownloadPath(filepath.FromSlash(into)).WithEventsEnabled(true))
 
 	p.run("open overtime", p.click(`.tab[data-view="overtime"]`),
 		chromedp.WaitVisible("#statistics-card", chromedp.ByID))
