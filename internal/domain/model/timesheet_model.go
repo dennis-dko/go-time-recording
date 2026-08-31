@@ -22,6 +22,26 @@ type Timesheet struct {
 	Date          time.Time
 	DurationHours float64
 	Description   *string
+
+	// CreatedAt is when the entry was recorded and UpdatedAt when it was last
+	// changed. Neither is Date, which is the day the work was done - the one field
+	// a correction leaves alone, and therefore the one that cannot say whether the
+	// figure has moved since somebody first wrote it down.
+	//
+	// Zero means unknown rather than 1970: an entry booked before the columns
+	// existed has no recorded moment, and nothing invents one for it. Both are
+	// written by the repository, so every write path gets them without each caller
+	// remembering to.
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Recorded reports whether this entry knows when it was booked.
+//
+// False for a row that predates the audit columns, which is what lets a caller
+// say nothing instead of showing a date nobody recorded.
+func (t *Timesheet) Recorded() bool {
+	return !t.CreatedAt.IsZero()
 }
 
 // HasProject reports whether the entry is assigned to a project.

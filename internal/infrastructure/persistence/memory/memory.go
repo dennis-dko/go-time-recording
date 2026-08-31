@@ -457,8 +457,19 @@ func NewTimesheetRepository() *TimesheetRepository {
 
 var _ repository.TimesheetRepository = (*TimesheetRepository)(nil)
 
+// Save stamps the recording moment the same way the SQL repository does.
+//
+// Not a detail the in-memory store may skip: a service test that checks an entry
+// knows when it was booked would pass here and fail against a database, or the
+// reverse, and either way the suite would be proving something about a store
+// nobody deploys.
 func (r *TimesheetRepository) Save(_ context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	return r.store.add(timesheet, func(t *model.Timesheet, id uint) { t.ID = id }), nil
+	now := time.Now().UTC()
+
+	return r.store.add(timesheet, func(t *model.Timesheet, id uint) {
+		t.ID = id
+		t.CreatedAt, t.UpdatedAt = now, now
+	}), nil
 }
 
 func (r *TimesheetRepository) GetByID(_ context.Context, id uint) (*model.Timesheet, error) {
@@ -508,8 +519,21 @@ func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool 
 	}
 }
 
+// Update moves the correction moment and keeps the recording one.
+//
+// The caller hands over a whole entry, and the one it was given may have travelled
+// through a DTO that never carried created_at - so the stored value is read back
+// rather than trusted, which is what the SQL repository gets for free by leaving
+// the column out of its UPDATE.
 func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	return r.store.update(timesheet.ID, timesheet)
+	corrected := *timesheet
+	corrected.UpdatedAt = time.Now().UTC()
+
+	if existing, err := r.store.get(timesheet.ID); err == nil {
+		corrected.CreatedAt = existing.CreatedAt
+	}
+
+	return r.store.update(timesheet.ID, &corrected)
 }
 
 func (r *TimesheetRepository) Delete(_ context.Context, id uint) error {

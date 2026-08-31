@@ -105,7 +105,36 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260824010000: {UP: func(d migration.Datasource) error {
 			return rememberWhenASessionWasLastUsed(d, dialect)
 		}},
+		20260831010000: {UP: func(d migration.Datasource) error {
+			return rememberWhenAnEntryWasBookedAndCorrected(d, dialect)
+		}},
 	}
+}
+
+// rememberWhenAnEntryWasBookedAndCorrected gives a time entry the two moments a
+// disputed figure is argued over.
+//
+// The only date the row carried is the day the work was done, and that is
+// precisely the field an edit leaves alone: a figure corrected the day after it
+// was booked looked identical to one that had stood untouched for a month. These
+// are the hours somebody is paid for, so the record of when the number appeared
+// and when it last moved is part of the number.
+//
+// Both are nullable and nothing is backfilled. An entry that predates the columns
+// has no known booking moment, and the two candidates for inventing one are both
+// lies: the day of the work is not when it was typed in, and the moment of the
+// migration says every historical entry was recorded the day this version was
+// installed. A null reads as "before this was recorded", which is the truth.
+//
+// There is no actor column. This application has no timesheets:write:all - nobody
+// can book or change time in another person's name - so a "changed by" would hold
+// the owner's own id in every row, and a column whose value is derivable from
+// another column is a column that will eventually disagree with it.
+func rememberWhenAnEntryWasBookedAndCorrected(d migration.Datasource, dialect string) error {
+	return execAll(d,
+		fmt.Sprintf("ALTER TABLE timesheets ADD COLUMN created_at %s NULL", timestamp(dialect)),
+		fmt.Sprintf("ALTER TABLE timesheets ADD COLUMN updated_at %s NULL", timestamp(dialect)),
+	)
 }
 
 // rememberWhenASessionWasLastUsed adds what an idle timeout measures against.
