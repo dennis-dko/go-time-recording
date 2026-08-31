@@ -43,21 +43,56 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 
 	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
 
-	// A host nobody is listening on. Postgres rather than the file the instance
-	// actually runs on, so the failure is a refused connection rather than a
-	// complaint about a field.
-	p.run("point it at nothing",
-		chromedp.SetValue(`#form-datasource select[name="dialect"]`, "postgres",
-			chromedp.ByQuery),
-		chromedp.Evaluate(
-			`document.querySelector('#form-datasource select[name="dialect"]')
-				.dispatchEvent(new Event('change'))`, nil))
+	var protected bool
 
-	for field, value := range map[string]string{
-		"host": "127.0.0.1", "port": "1", "name": "gtr", "user": "gtr", "password": "gtr",
-	} {
-		p.run("fill "+field, chromedp.SetValue(
-			`#form-datasource [name="`+field+`"]`, value, chromedp.ByQuery))
+	// Filled the way a person fills it, and that is not a detail.
+	//
+	// This card is refilled from the server by loaders that run for reasons
+	// having nothing to do with whoever is at the keyboard - the language switch
+	// two lines above is one - and what stops a late one landing on top of typed
+	// values is the form being marked as being edited. What marks it is an input
+	// or a change event reaching the *form*, which is where watchForEditing
+	// listens.
+	//
+	// Neither happened here. Setting a value from script fires nothing at all,
+	// which is exactly the distinction that mechanism rests on, and the change
+	// dispatched on the select did not bubble, so it reached the select's own
+	// listener and never the form. So the form was unprotected, the refill from
+	// the language switch could arrive after these lines, and the connection
+	// tested was the instance's own working one - the case failed reporting "Die
+	// Verbindung funktioniert."
+	//
+	// Only ever under load, because the refill has to be slow enough to arrive
+	// late. It went green here and red on a busy runner, which is the least
+	// useful way for a case to be wrong.
+	p.run("point it at nothing", chromedp.Evaluate(`
+		(() => {
+			const form = document.querySelector('#form-datasource');
+			const typed = (field, value) => {
+				field.value = value;
+				field.dispatchEvent(new Event('input', { bubbles: true }));
+			};
+
+			// The type first, and with its own change: the fields below depend on
+			// it, and picking one prefills the port.
+			form.elements.dialect.value = 'postgres';
+			form.elements.dialect.dispatchEvent(new Event('change', { bubbles: true }));
+
+			// A host nobody is listening on. Postgres rather than the file the
+			// instance actually runs on, so the failure is a refused connection
+			// rather than a complaint about a field.
+			typed(form.elements.host, '127.0.0.1');
+			typed(form.elements.port, '1');
+			typed(form.elements.name, 'gtr');
+			typed(form.elements.user, 'gtr');
+			typed(form.elements.password, 'gtr');
+
+			return form.dataset.editing === 'yes';
+		})()`, &protected))
+
+	if !protected {
+		t.Fatal("the form was not marked as being edited, so a loader may still put " +
+			"the stored connection back over what was just typed")
 	}
 
 	// The box is watched from before the press rather than polled after it. The
