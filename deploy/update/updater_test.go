@@ -124,7 +124,7 @@ func run(t *testing.T, stubDir, requests string) string {
 		t.Fatalf("cannot find the script: %v", err)
 	}
 
-	cmd := exec.Command("sh", script)
+	cmd := exec.Command(posixShell(t), script)
 
 	// The project directory the script checks. Its own, so "the host has this
 	// path" is trivially arrangeable by telling the stub the same thing.
@@ -157,6 +157,56 @@ func run(t *testing.T, stubDir, requests string) string {
 	}
 
 	return answered
+}
+
+// posixShell finds a shell that can run updater.sh.
+//
+// exec.LookPath is the whole answer on Linux and in CI, which is the platform
+// this script actually runs on. On Windows there is usually no sh on the PATH
+// and there usually is one on the disk: Git for Windows ships a real POSIX
+// shell, and updater.sh is a /bin/sh script with nothing exotic in it. Leaving
+// that unused would mean a developer on Windows gets three red cases for a
+// script that is fine, which teaches exactly the wrong thing.
+//
+// Found through git rather than by guessing at Program Files, so a user-scope
+// or portable installation is found too: git.exe sits in <root>\cmd or
+// <root>in, so the root is two directories up, and the shell is under bin or
+// usrin from there.
+//
+// Skipped rather than failed where there is genuinely none. A machine with no
+// POSIX shell cannot run this script at all, and reporting that as a broken
+// updater says something untrue about the updater.
+func posixShell(t *testing.T) string {
+	t.Helper()
+
+	if found, err := exec.LookPath("sh"); err == nil {
+		return found
+	}
+
+	for _, candidate := range shellsBesideGit() {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+
+	t.Skip("no POSIX shell on this machine, so the updater script cannot be run here")
+
+	return ""
+}
+
+// shellsBesideGit is where a Git installation keeps a shell, if there is one.
+func shellsBesideGit() []string {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		return nil
+	}
+
+	root := filepath.Dir(filepath.Dir(git))
+
+	return []string{
+		filepath.Join(root, "bin", "sh.exe"),
+		filepath.Join(root, "usr", "bin", "sh.exe"),
+	}
 }
 
 // waitForResult reads the outcome, or gives up and returns nothing.
