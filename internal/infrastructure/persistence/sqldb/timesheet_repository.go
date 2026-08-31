@@ -26,15 +26,34 @@ func NewTimesheetRepository(db DB, dialect string) *TimesheetRepository {
 
 var _ repository.TimesheetRepository = (*TimesheetRepository)(nil)
 
+// recordedNow is the moment a write is stamped with.
+//
+// Truncated to the second, and that is the whole of what makes the value this
+// returns the value that is stored. The three dialects keep three different
+// resolutions - PostgreSQL's TIMESTAMPTZ microseconds, MySQL's DATETIME whole
+// seconds, SQLite whatever the driver wrote - so a nanosecond moment handed back
+// in the creation response was a moment no database had. Correcting the entry then
+// read the stored one back and the two disagreed in the sixth decimal place, which
+// is how the PostgreSQL leg of the integration suite found this and the SQLite leg
+// did not.
+//
+// One second is the resolution this records anyway: it answers when a figure was
+// written down and whether it has moved since, and MySQL could not have kept more
+// without changing the column type on a table that already exists.
+//
+// UTC because MySQL's column keeps no zone, and a server that is moved would
+// otherwise re-read its own history an hour out.
+func recordedNow() time.Time {
+	return time.Now().UTC().Truncate(time.Second)
+}
+
 // Save writes a new entry, stamping when it was recorded.
 //
 // The moment is taken here rather than by the caller so that every write path gets
 // it - the form, the stopwatch and the spreadsheet import all arrive through a
-// repository, and only one of them would have remembered. UTC because the column
-// on MySQL keeps no zone, and a server that is moved would otherwise re-read its
-// own history an hour out.
+// repository, and only one of them would have remembered.
 func (r *TimesheetRepository) Save(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	now := time.Now().UTC()
+	now := recordedNow()
 
 	id, err := r.insert(ctx,
 		"INSERT INTO timesheets (user_id, project_id, date, duration_hours, description, "+
@@ -64,7 +83,7 @@ func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Tim
 	// One moment for the whole file rather than one per row: they were recorded by
 	// a single act, and rows differing by a few milliseconds would invite somebody
 	// to read an order into them that the spreadsheet never had.
-	now := time.Now().UTC()
+	now := recordedNow()
 
 	return r.withTx(ctx, func(tx base) error {
 		for _, entry := range entries {
@@ -162,7 +181,7 @@ func (r *TimesheetRepository) GetAll(ctx context.Context) ([]*model.Timesheet, e
 // written down does not change because it was later found to be wrong, and that
 // difference is the whole point of keeping both.
 func (r *TimesheetRepository) Update(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	now := time.Now().UTC()
+	now := recordedNow()
 
 	found, err := r.update(ctx, "timesheets",
 		"UPDATE timesheets SET user_id = ?, project_id = ?, date = ?, duration_hours = ?, "+
