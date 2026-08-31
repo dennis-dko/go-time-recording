@@ -256,7 +256,7 @@
           "me"
         ],
         "summary": "List your registered passkeys",
-        "description": "Carries no key material. The public half could be sent harmlessly - it verifies signatures and cannot produce them - but sending it invites building something on a value that is meaningless outside a ceremony.",
+        "description": "Carries no key material. The public half could be sent harmlessly - it verifies signatures and cannot produce them - but sending it invites building something on a value that is meaningless outside a ceremony. `createdAt` and `lastUsedAt` are RFC 3339 moments rather than dates, for the reason the token listing gives.",
         "responses": {
           "200": {
             "description": "OK"
@@ -365,7 +365,8 @@
           "200": {
             "description": "Tokens"
           }
-        }
+        },
+        "description": "`createdAt`, `expiresAt` and `lastUsedAt` are RFC 3339 moments, not dates. They used to be days, which is the wrong answer for the field somebody reads when they think a token has been taken: a token used at three in the morning read exactly like one used at three in the afternoon, and one used twice today read as used once."
       },
       "post": {
         "tags": [

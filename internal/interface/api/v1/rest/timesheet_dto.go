@@ -80,19 +80,6 @@ func newTimesheetResponse(r *common.TimesheetResult) TimesheetResponse {
 	}
 }
 
-// momentOrNil renders an unrecorded moment as null rather than as the zero time.
-//
-// A client that received "0001-01-01T00:00:00Z" would have to know to special-case
-// it, and the one that did not would show it to somebody as the day their hours
-// were booked.
-func momentOrNil(t time.Time) *time.Time {
-	if t.IsZero() {
-		return nil
-	}
-
-	return &t
-}
-
 func newTimesheetResponses(results []*common.TimesheetResult) []TimesheetResponse {
 	out := make([]TimesheetResponse, 0, len(results))
 	for _, r := range results {

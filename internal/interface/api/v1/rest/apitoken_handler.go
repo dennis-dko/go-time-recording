@@ -78,14 +78,26 @@ func NewAPITokenHandler(tokens *service.APITokenService, authz *Authorizer) *API
 
 // APITokenResponse describes a token without its secret.
 type APITokenResponse struct {
-	ID         uint    `json:"id"`
-	Name       string  `json:"name"`
-	Prefix     string  `json:"prefix"`
-	CreatedAt  Date    `json:"createdAt"`
-	ExpiresAt  *Date   `json:"expiresAt"`
-	LastUsedAt *Date   `json:"lastUsedAt"`
-	Expired    bool    `json:"expired"`
-	Secret     *string `json:"secret,omitempty"`
+	ID     uint   `json:"id"`
+	Name   string `json:"name"`
+	Prefix string `json:"prefix"`
+
+	// Moments rather than this package's Date, which formats a day and throws the
+	// rest away. Right for the day a booking belongs to, wrong for a credential:
+	// "last used" is the field somebody reads when they think a token has been
+	// taken, and a day tells them nothing they did not already know. A token used
+	// at three in the morning read exactly like one used at three in the
+	// afternoon, and one used twice today read as used once.
+	//
+	// RFC 3339 in UTC, as stored. A client that parsed these strictly as dates has
+	// to be updated; that is a deliberate change to the contract, made because the
+	// field was answering the wrong question.
+	CreatedAt  time.Time  `json:"createdAt"`
+	ExpiresAt  *time.Time `json:"expiresAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt"`
+
+	Expired bool    `json:"expired"`
+	Secret  *string `json:"secret,omitempty"`
 }
 
 // CreateAPITokenRequest asks for a new token.
@@ -168,17 +180,17 @@ func newAPITokenResponse(token *model.APIToken, secret *string) APITokenResponse
 		ID:        token.ID,
 		Name:      token.Name,
 		Prefix:    token.Prefix,
-		CreatedAt: Date{Time: token.CreatedAt},
+		CreatedAt: token.CreatedAt,
 		Expired:   token.Expired(time.Now()),
 		Secret:    secret,
 	}
 
 	if token.ExpiresAt != nil {
-		resp.ExpiresAt = &Date{Time: *token.ExpiresAt}
+		resp.ExpiresAt = momentOrNil(*token.ExpiresAt)
 	}
 
 	if token.LastUsedAt != nil {
-		resp.LastUsedAt = &Date{Time: *token.LastUsedAt}
+		resp.LastUsedAt = momentOrNil(*token.LastUsedAt)
 	}
 
 	return resp
