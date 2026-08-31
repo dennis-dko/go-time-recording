@@ -24,6 +24,19 @@ const cache = { users: [], projects: [], roles: [], permissions: [] };
  */
 let lastBranding = {};
 
+/**
+ * The version this document came from, read once and never moved.
+ *
+ * Not lastBranding.version, which follows the process the page is talking to -
+ * so after an update it becomes the new version, and a comparison against it
+ * would say nothing changed at the one moment everything did.
+ *
+ * What it answers is a different question: which build wrote the script, the
+ * stylesheet and the markup this tab is running. Nothing can change that but a
+ * load, which is exactly why it is worth knowing.
+ */
+let loadedVersion = null;
+
 /** The signed-in user, their permissions, and whether auth is on at all. */
 let me = { user: null, permissions: [], authEnabled: false };
 
@@ -5231,6 +5244,10 @@ async function loadBranding() {
 
   lastBranding = branding;
 
+  // The first answer of the page's life, which is the build this document was
+  // written by. Every later one is about the process rather than about the tab.
+  if (loadedVersion === null) loadedVersion = branding.version ?? '';
+
   // Drawn through the redraw registry, so switching language picks the texts
   // again. Everything on this screen that a language change reaches goes the same
   // way; a title and a banner written in two languages would otherwise stay in
@@ -8229,6 +8246,37 @@ async function settleAfterRestart(previous, done, patience) {
   const overlay = $('#restart-overlay');
 
   if (await waitForRestart(previous, patience)) {
+    // A different build came back, so everything in this tab is last version's.
+    //
+    // This was the one tab that did not reload. Every other open one did: the
+    // announcement stream drops when the application goes away, reconnects to
+    // the new one, and reloads because the last thing it heard was that a
+    // restart was coming. The tab that pressed the button ran this instead,
+    // which refreshed every card from the new server and left the script, the
+    // stylesheet and the markup exactly as the old version had built them - so
+    // an update that changed the interface showed nothing at all until somebody
+    // reloaded by hand.
+    //
+    // And it was worse than doing nothing, because refreshAll below restarts
+    // the announcement stream, and restarting it clears the record of what was
+    // last announced. The reconnection that would have reloaded this tab a
+    // moment later found nothing to act on. The one tab that knew an update had
+    // happened was the one that forgot.
+    //
+    // Decided on the version rather than on which button was pressed. A restart
+    // that comes back as the same build changed no assets, and throwing away
+    // the scroll position, the open card and whatever is half-typed would be a
+    // cost with nothing bought by it.
+    //
+    // The overlay is left standing on purpose: hiding it and then reloading is
+    // a flash of a screen nobody gets to use.
+    if (await theVersionChanged()) {
+      sayAfterTheReload(done);
+      window.location.reload();
+
+      return;
+    }
+
     overlay.hidden = true;
     await refreshAll();
     toast(done, 'ok');
@@ -8242,6 +8290,73 @@ async function settleAfterRestart(previous, done, patience) {
   toast(t('restart.slow',
     'The application has not answered yet. It may still be starting - please '
     + 'reload the page in a moment.'), 'error');
+}
+
+/**
+ * Whether the process that came back is a different build from the one that
+ * built this page.
+ *
+ * /branding rather than the version card: it is one small public answer that
+ * every deployment gives, it is the same one this page read at start-up, and it
+ * needs no permission - so this holds for whoever happened to press the button.
+ *
+ * A failure is not a version change. The application has only just come back and
+ * one refused request is not evidence of anything; saying "no" leaves the screen
+ * exactly as it was, which is the outcome that loses nothing.
+ */
+async function theVersionChanged() {
+  if (!loadedVersion) return false;
+
+  try {
+    const branding = await api('/branding');
+
+    return Boolean(branding?.version) && branding.version !== loadedVersion;
+  } catch {
+    return false;
+  }
+}
+
+/** Where a message waits out a reload. */
+const AFTER_RELOAD_KEY = 'gtr_after_reload';
+
+/**
+ * Keeps one sentence for the document that comes next.
+ *
+ * Somebody pressed a button and is owed the answer to it, and the answer arrives
+ * after the page it was pressed on has been thrown away. Without this the update
+ * would finish in silence: the overlay goes, a new document appears, and nothing
+ * on it says that what was asked for actually happened.
+ *
+ * sessionStorage rather than a query parameter: it belongs to this tab, it does
+ * not survive into a bookmark, and it does not put a message in the address bar
+ * that a reload would show again.
+ */
+function sayAfterTheReload(message) {
+  try {
+    window.sessionStorage.setItem(AFTER_RELOAD_KEY, message);
+  } catch {
+    // A browser with no storage, or one refusing it. The reload is the point and
+    // it still happens; only the sentence is lost.
+  }
+}
+
+/**
+ * Says it, once.
+ *
+ * Removed before it is shown rather than after, so a failure to draw it cannot
+ * leave a message that reappears on every load for the rest of the session.
+ */
+function saySoAfterTheReload() {
+  let message = null;
+
+  try {
+    message = window.sessionStorage.getItem(AFTER_RELOAD_KEY);
+    window.sessionStorage.removeItem(AFTER_RELOAD_KEY);
+  } catch {
+    return;
+  }
+
+  if (message) toast(message, 'ok');
 }
 
 /**
@@ -8390,10 +8505,18 @@ function wireUpdate() {
       return;
     }
 
-    // refreshAll rather than location.reload(): it reloads every screen from the
-    // new process and leaves the reader where they were, which a reload would
-    // not - and the version in the footer is part of what it refreshes, so the
-    // proof that it worked is on screen.
+    // This used to read "refreshAll rather than location.reload()", on the
+    // grounds that refreshing every screen from the new process leaves the
+    // reader where they were and a reload would not. Half of that is true and
+    // the half it missed is the one that matters: refreshAll reloads the data,
+    // and the script, the stylesheet and the markup in this tab are still the
+    // ones the *previous* version wrote. So an update that changed anything
+    // about the interface showed none of it until somebody reloaded by hand,
+    // and the version in the footer - offered as the proof it had worked - was
+    // the one thing that did update, which made it look like it had.
+    //
+    // settleAfterRestart now decides by what came back: a different build
+    // reloads, the same build refreshes.
     await settleAfterRestart(previous, t('update.done', 'The new version is running.'));
   });
 }
@@ -12260,6 +12383,11 @@ async function init() {
     // After the first view is up, so the tour highlights something that is
     // actually on screen.
     await greetAfterSignIn();
+
+    // And whatever the document before this one was told to say. An update
+    // finishes by throwing the page away, so the answer to the button somebody
+    // pressed arrives here rather than there.
+    saySoAfterTheReload();
   } catch {
     // No usable session: the sign-in screen is the whole interface until
     // there is one. Unless somebody signed in while this was running, which

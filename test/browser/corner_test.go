@@ -257,6 +257,14 @@ func TestTheConnectionTypeFollowsWhatIsRunningUntilSomebodyPicks(t *testing.T) {
 	p.chooseLanguage("de")
 	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
 
+	// Waited for rather than read once. What the language switch starts is a
+	// screenful of requests, and the one that refills this card is not the one
+	// that renames the tabs - so on a loaded runner the read below happened
+	// before the card had been answered and found the value the script had left,
+	// which is the state this case exists to say is temporary.
+	p.waitEvaluates("the connection type on the card",
+		`document.querySelector('#form-datasource [name="dialect"]').value`, running)
+
 	if got := p.value(`#form-datasource [name="dialect"]`); got != running {
 		t.Errorf("the card shows %q while the installation runs %q", got, running)
 	}

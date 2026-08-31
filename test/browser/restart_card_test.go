@@ -173,3 +173,118 @@ func TestOnlyAnAdministratorIsToldAboutRestarts(t *testing.T) {
 		t.Error("an ordinary account can reach the settings screen")
 	}
 }
+
+// A version that came back different takes the page with it.
+//
+// The tab that pressed the button was the one tab that did not reload. Every
+// other open one did: the announcement stream drops when the application goes
+// away, reconnects to the new one, and reloads because the last thing it heard
+// was that a restart was coming. The presser instead ran settleAfterRestart,
+// which refreshed every card from the new server and left the script, the
+// stylesheet and the markup in the tab exactly as the old version had built
+// them - so an update that changed the interface showed nothing until somebody
+// reloaded by hand.
+//
+// Worse than doing nothing, in fact: refreshAll restarts the announcement
+// stream, and restarting it clears the record of what was last announced - so
+// the reconnection that would have reloaded this tab found nothing to act on.
+// The one tab that knew an update had happened was the one that forgot.
+//
+// Decided on the version rather than on which button was pressed. A restart
+// that comes back as the same build changed no assets and has no business
+// throwing away what is on screen; one that comes back as a different build has
+// changed all of them.
+func TestAnUpdateThatChangesTheVersionReloadsThePage(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// Something to notice the reload by. It goes away with the document, and
+	// nothing else on this page removes it.
+	p.run("mark this document", chromedp.Evaluate(`window.__sameDocument = 1`, nil))
+
+	// The answers a completed update produces, without an update: a process that
+	// says it started at a different moment, and a build that says it is a
+	// different version from the one this page was loaded from.
+	p.run("answer as a new version", chromedp.Evaluate(`
+		(() => {
+			const server = api;
+
+			api = (path, options) => {
+				if (path === '/settings/restart') {
+					return Promise.resolve({ startedAt: 'a-different-moment' });
+				}
+
+				if (path === '/branding') {
+					return Promise.resolve({ ...lastBranding, version: 'v99.9.9' });
+				}
+
+				return server(path, options);
+			};
+
+			return 1;
+		})()`, nil))
+
+	p.run("settle after it", chromedp.Evaluate(
+		`settleAfterRestart('whatever-it-was-before', 'done', 30000)`, nil))
+
+	deadline := time.Now().Add(waitPatience)
+
+	for time.Now().Before(deadline) {
+		var same bool
+
+		p.run("still the same document?", chromedp.Evaluate(
+			`window.__sameDocument === 1`, &same))
+
+		if !same {
+			return
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	t.Error("the page was still the document the old version built, so anything " +
+		"the update changed about the interface stays invisible until somebody " +
+		"reloads by hand")
+}
+
+// And a restart that comes back as the same build leaves the screen alone.
+//
+// Every card is refreshed from the process that just came back, which is the
+// whole of what changed - throwing away the scroll position, the open card and
+// whatever was half-typed would be a cost with nothing bought by it.
+func TestARestartOntoTheSameVersionDoesNotReloadThePage(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("mark this document", chromedp.Evaluate(`window.__sameDocument = 1`, nil))
+
+	p.run("answer as the same version", chromedp.Evaluate(`
+		(() => {
+			const server = api;
+
+			api = (path, options) => path === '/settings/restart'
+				? Promise.resolve({ startedAt: 'a-different-moment' })
+				: server(path, options);
+
+			return 1;
+		})()`, nil))
+
+	p.run("settle after it", chromedp.Evaluate(
+		`settleAfterRestart('whatever-it-was-before', 'Restarted.', 30000)`, nil))
+
+	p.waitForText("#toast", "Restarted.")
+
+	var same bool
+
+	p.run("still the same document?", chromedp.Evaluate(
+		`window.__sameDocument === 1`, &same))
+
+	if !same {
+		t.Error("a restart onto the same build threw the page away, losing whatever " +
+			"was on screen for no change at all")
+	}
+}
