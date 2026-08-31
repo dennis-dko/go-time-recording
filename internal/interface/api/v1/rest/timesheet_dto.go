@@ -1,6 +1,10 @@
 package rest
 
-import "github.com/dennis-dko/go-time-recording/internal/application/v1/common"
+import (
+	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
+)
 
 // TimesheetResponse is the wire representation of a time entry.
 type TimesheetResponse struct {
@@ -13,6 +17,16 @@ type TimesheetResponse struct {
 	Date          Date    `json:"date"`
 	DurationHours float64 `json:"durationHours"`
 	Description   *string `json:"description"`
+
+	// When the entry was recorded, and when it was last corrected. Null together
+	// for one booked before those were kept.
+	//
+	// time.Time rather than this package's Date, which formats a day and throws the
+	// rest away - right for the day the work was done and wrong for these, where a
+	// correction made the same afternoon would otherwise be indistinguishable from
+	// the booking it corrected. RFC 3339, in UTC, as stored.
+	CreatedAt *time.Time `json:"createdAt"`
+	UpdatedAt *time.Time `json:"updatedAt"`
 }
 
 // CreateTimesheetRequest is the payload for booking time.
@@ -61,7 +75,22 @@ func newTimesheetResponse(r *common.TimesheetResult) TimesheetResponse {
 		Date:          Date{Time: r.Date},
 		DurationHours: r.DurationHours,
 		Description:   r.Description,
+		CreatedAt:     momentOrNil(r.CreatedAt),
+		UpdatedAt:     momentOrNil(r.UpdatedAt),
 	}
+}
+
+// momentOrNil renders an unrecorded moment as null rather than as the zero time.
+//
+// A client that received "0001-01-01T00:00:00Z" would have to know to special-case
+// it, and the one that did not would show it to somebody as the day their hours
+// were booked.
+func momentOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+
+	return &t
 }
 
 func newTimesheetResponses(results []*common.TimesheetResult) []TimesheetResponse {
