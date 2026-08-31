@@ -465,7 +465,10 @@ var _ repository.TimesheetRepository = (*TimesheetRepository)(nil)
 // reverse, and either way the suite would be proving something about a store
 // nobody deploys.
 func (r *TimesheetRepository) Save(_ context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	now := time.Now().UTC()
+	// Truncated the way the SQL repository truncates, and for its reason: a store
+	// whose stamps are finer than any database's would let a test pass here that
+	// cannot pass against PostgreSQL.
+	now := time.Now().UTC().Truncate(time.Second)
 
 	return r.store.add(timesheet, func(t *model.Timesheet, id uint) {
 		t.ID = id
@@ -578,7 +581,7 @@ func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool 
 // the column out of its UPDATE.
 func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
 	corrected := *timesheet
-	corrected.UpdatedAt = time.Now().UTC()
+	corrected.UpdatedAt = time.Now().UTC().Truncate(time.Second)
 
 	if existing, err := r.store.get(timesheet.ID); err == nil {
 		corrected.CreatedAt = existing.CreatedAt

@@ -49,11 +49,13 @@ func recordedAndCorrected(t *testing.T, entry timesheetResponse) (time.Time, tim
 		t.Fatalf("updatedAt %q is not a timestamp: %v", *entry.UpdatedAt, err)
 	}
 
-	// A bare date would parse as midnight, which is almost never when anybody
-	// booked anything, and would mean the wire format had thrown the time away.
-	if created.Hour() == 0 && created.Minute() == 0 && created.Second() == 0 {
-		t.Errorf("createdAt %q has no time of day; a correction made the same day "+
-			"would be indistinguishable from the booking", *entry.CreatedAt)
+	// The wire format must carry the time of day, not only the date. Asked by
+	// trying to read it as a bare date rather than by looking for midnight in the
+	// parsed value: midnight is a real moment, and a booking made in the minute
+	// after it would have failed this check once a day for no reason.
+	if _, err := time.Parse(time.DateOnly, *entry.CreatedAt); err == nil {
+		t.Errorf("createdAt %q is a bare date; a correction made the same day would "+
+			"be indistinguishable from the booking it corrected", *entry.CreatedAt)
 	}
 
 	return created, updated
