@@ -1195,6 +1195,37 @@
         }
       }
     },
+    "/setup/claim": {
+      "post": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "Claim the session the installer earned",
+        "description": "Answered before anybody is signed in, and only on a process that actually served an installer. The browser holding that installer’s setup token is given a session for the built-in administrator, so the first screen after the installation is the one asking for a password rather than one asking for the documented initial password. Refused once a password has been chosen, and refused entirely on an installation configured without the installer.",
+        "parameters": [
+          {
+            "name": "X-Setup-Token",
+            "in": "header",
+            "required": true,
+            "description": "The token the installer printed to this process’s log.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A session cookie is set"
+          },
+          "401": {
+            "description": "The token does not match"
+          },
+          "409": {
+            "description": "No installer ran, or the installation has already been taken into use"
+          }
+        }
+      }
+    },
     "/settings/operational": {
       "get": {
         "tags": [

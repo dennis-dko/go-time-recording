@@ -56,6 +56,18 @@ Setting `DB_DIALECT` skips the installer entirely, which is how a container
 deployment configures itself; see [Deployment](#deployment). `task dev` sets it
 too, so development never meets this screen.
 
+**Answering the installer is the sign-in.** When the application takes the port,
+the page that was the installer hands itself over already signed in as the
+built-in administrator, and lands on the first thing that matters: choosing a
+password. Nothing has to be typed out of the documentation.
+
+It grants nothing that was not already granted. Whoever answered that screen read
+the setup token out of this process's log and decided where every account,
+project and hour will be kept — and the account they are handed is, until its
+password is changed, reachable by anybody who has read the table below. The
+handover is refused on an installation configured without the installer, and
+stops working the moment a real password is chosen.
+
 **First sign-in.** An administrator account is created on first start:
 
 | | |

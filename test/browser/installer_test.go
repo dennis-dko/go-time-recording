@@ -118,3 +118,86 @@ func TestTheInstallerRefusesInTheReadersLanguage(t *testing.T) {
 			"the way the label above it does", emptyName)
 	}
 }
+
+// Answering the installer is the sign-in.
+//
+// Whoever fills this screen in has already proved more than a password does: the
+// setup token is printed to this process's log, and what they decide with it is
+// where every account, project and hour will be kept. Sending them on to a
+// sign-in form to type the initial password out of the documentation establishes
+// nothing that was not established a moment ago - and it is the step that puts
+// "changeme123" in front of a person as a thing to remember.
+//
+// So the page hands itself over signed in, and what it lands on is the first
+// screen that matters: choose a password. This drives the whole way through,
+// because the two halves - the installer finishing, and the application coming
+// up with a session already in the browser - only mean anything together.
+func TestAnsweringTheInstallerLeavesTheBrowserSignedIn(t *testing.T) {
+	t.Parallel()
+
+	app := harness.StartUnconfigured(t)
+
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("lang", "en-US"),
+		chromedp.NoSandbox,
+	)
+
+	if path := os.Getenv("CHROME_PATH"); path != "" {
+		opts = append(opts, chromedp.ExecPath(path))
+	}
+
+	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
+	defer cancelAlloc()
+
+	ctx, cancel := chromedp.NewContext(alloc)
+	defer cancel()
+
+	ctx, cancelTimeout := context.WithTimeout(ctx, 120*time.Second)
+	defer cancelTimeout()
+
+	var signedInAs string
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(app.BaseURL()),
+		chromedp.WaitVisible("#heading", chromedp.ByID),
+
+		// The token out of the process's own log, which is what an operator does.
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			m := regexp.MustCompile(`setup token: ([0-9a-f]+)`).FindStringSubmatch(app.Log())
+			if m == nil {
+				t.Fatalf("no setup token in the log: %.400s", app.Log())
+			}
+
+			return chromedp.Evaluate(
+				`document.querySelector('#token').value = '`+m[1]+`';`+
+					`document.querySelector('#dialect').value = 'sqlite';`+
+					`document.querySelector('#dialect').dispatchEvent(new Event('change'));`+
+					`document.querySelector('#name').value = 'chosen'`, nil).Do(ctx)
+		}),
+
+		chromedp.Click("#save", chromedp.ByID),
+
+		// The application takes the port in this same process, the page waits for
+		// it and reloads - and what has to be waiting on the other side is the
+		// interface rather than a sign-in form.
+		chromedp.WaitVisible("#password-banner", chromedp.ByID),
+
+		chromedp.Evaluate(`(async () => {
+			const res = await fetch('/api/v1/me', { credentials: 'same-origin' });
+			if (!res.ok) return 'not signed in: ' + res.status;
+
+			const body = await res.json();
+
+			return (body.data && body.data.user && body.data.user.email) || 'no account';
+		})()`, &signedInAs, awaitPromise),
+	); err != nil {
+		t.Fatalf("driving the installer through to the application: %v\n\n%s",
+			err, app.Log())
+	}
+
+	if signedInAs != "admin@local" {
+		t.Errorf("after the installer the browser is %q rather than signed in as the "+
+			"built-in administrator", signedInAs)
+	}
+}

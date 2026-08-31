@@ -90,15 +90,29 @@ type Config struct {
 	Logf func(format string, args ...any)
 }
 
+// Result is what answering the installer settled.
+type Result struct {
+	// Datasource is the connection that was accepted. It has been probed with
+	// the application's own drivers, so the caller can rely on it rather than
+	// discovering a bad password during migrations.
+	Datasource appconfig.Datasource
+
+	// Token is the one this installer accepted, generated here unless the
+	// environment supplied it.
+	//
+	// Returned because the application that starts next has one more thing to do
+	// with it: whoever answered this screen is holding it in a browser, and it is
+	// what lets that browser be handed a session instead of being asked for the
+	// documented initial password. See the setup handler's claim, which is where
+	// the conditions on that live.
+	Token string
+}
+
 // Serve blocks until a working database connection has been saved, and returns
-// it.
-//
-// The returned connection has been probed with the application's own drivers, so
-// the caller can rely on it rather than discovering a bad password during
-// migrations.
-func Serve(ctx context.Context, cfg Config) (appconfig.Datasource, error) {
+// it together with the token that was used to save it.
+func Serve(ctx context.Context, cfg Config) (Result, error) {
 	if cfg.Logf == nil {
-		return appconfig.Datasource{}, errors.New("installer: Logf is required")
+		return Result{}, errors.New("installer: Logf is required")
 	}
 
 	if cfg.DatasourceFile == "" {
@@ -109,7 +123,7 @@ func Serve(ctx context.Context, cfg Config) (appconfig.Datasource, error) {
 	if generated {
 		token, err := newToken()
 		if err != nil {
-			return appconfig.Datasource{}, err
+			return Result{}, err
 		}
 
 		cfg.Token = token
@@ -133,7 +147,7 @@ func Serve(ctx context.Context, cfg Config) (appconfig.Datasource, error) {
 
 	listener, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
-		return appconfig.Datasource{}, err
+		return Result{}, err
 	}
 
 	go func() {
@@ -162,7 +176,7 @@ func Serve(ctx context.Context, cfg Config) (appconfig.Datasource, error) {
 
 	_ = httpServer.Shutdown(shutdownCtx)
 
-	return accepted, waitErr
+	return Result{Datasource: accepted, Token: cfg.Token}, waitErr
 }
 
 type server struct {

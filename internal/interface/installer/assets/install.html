@@ -475,6 +475,7 @@
         const res = await fetch('/', { cache: 'no-store' });
         if (res.ok) {
           clearInterval(tick);
+          await claimTheSession();
           location.reload();
         }
       } catch {
@@ -487,6 +488,48 @@
           'The application has not come up after two minutes. Check this process\'s log.'), 'bad');
       }
     }, 1000);
+  }
+
+  /**
+   * Asks the application, now that it is the one answering, for the session this
+   * token earned.
+   *
+   * Whoever filled this screen in has already proved more than a password does:
+   * the token is printed to the process's log, so they can read the process, and
+   * what they just decided is where every account, project and hour will live.
+   * Sending them on to a sign-in form to type the initial password out of the
+   * documentation establishes nothing that was not established a moment ago -
+   * and it is the step that puts a password in front of somebody as a thing to
+   * remember. So the browser is handed a session and arrives at the first screen
+   * that matters, which is the one asking it to choose a password of its own.
+   *
+   * The CSRF token comes from the cookie the application set on the request that
+   * just answered: it mints one for any caller that has none, so by the time this
+   * runs the browser is holding a usable one.
+   *
+   * A failure is ignored, deliberately and quietly. The application is up either
+   * way, and all a refused claim costs is the sign-in screen this page has always
+   * reloaded into.
+   */
+  async function claimTheSession() {
+    const csrf = document.cookie.split(';')
+      .map((c) => c.trim())
+      .find((c) => c.startsWith('gtr_csrf='));
+
+    try {
+      await fetch('/api/v1/setup/claim', {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+          'X-Setup-Token': $('token').value.trim(),
+          'X-CSRF-Token': csrf ? csrf.slice('gtr_csrf='.length) : '',
+        },
+      });
+    } catch {
+      // Nothing to say and nothing to do: the reload below shows whichever of
+      // the two screens the application decides this browser has earned.
+    }
   }
 
   (async function start() {
