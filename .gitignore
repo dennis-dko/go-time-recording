@@ -38,6 +38,14 @@ dist/
 # would be linked with whatever version it was written with, for ever.
 *.syso
 
+# The intermediate that resource is compiled from, written in the directory the
+# template lives in rather than into bin/. build/windows-resource.sh creates it,
+# hands it to goversioninfo and deletes it again - but it runs under `set -eu`,
+# so on a machine with no goversioninfo on PATH it exits at that call and never
+# reaches the delete. `task build` swallows that failure on purpose ("building
+# without the resource"), which is right for the build and leaves the file.
+build/versioninfo.json
+
 # Screenshots the browser suite writes while it works.
 #
 # A case that measures something visual saves the picture it measured, which is

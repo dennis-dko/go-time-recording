@@ -5,6 +5,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -457,8 +458,22 @@ func NewTimesheetRepository() *TimesheetRepository {
 
 var _ repository.TimesheetRepository = (*TimesheetRepository)(nil)
 
+// Save stamps the recording moment the same way the SQL repository does.
+//
+// Not a detail the in-memory store may skip: a service test that checks an entry
+// knows when it was booked would pass here and fail against a database, or the
+// reverse, and either way the suite would be proving something about a store
+// nobody deploys.
 func (r *TimesheetRepository) Save(_ context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	return r.store.add(timesheet, func(t *model.Timesheet, id uint) { t.ID = id }), nil
+	// Truncated the way the SQL repository truncates, and for its reason: a store
+	// whose stamps are finer than any database's would let a test pass here that
+	// cannot pass against PostgreSQL.
+	now := time.Now().UTC().Truncate(time.Second)
+
+	return r.store.add(timesheet, func(t *model.Timesheet, id uint) {
+		t.ID = id
+		t.CreatedAt, t.UpdatedAt = now, now
+	}), nil
 }
 
 func (r *TimesheetRepository) GetByID(_ context.Context, id uint) (*model.Timesheet, error) {
@@ -488,7 +503,57 @@ func (r *TimesheetRepository) GetByFilter(
 		out = append(out, ts)
 	}
 
-	return out, nil
+	// The same order the SQL repository gives, because paging is defined in terms
+	// of it: newest day first, and an entry booked later on the same day ahead of
+	// one booked earlier. The in-memory store hands rows back in insertion order,
+	// which agrees with neither.
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].Date.Equal(out[j].Date) {
+			return out[i].Date.After(out[j].Date)
+		}
+
+		return out[i].ID > out[j].ID
+	})
+
+	return page(out, filter.Limit, filter.Offset), nil
+}
+
+// CountByFilter counts the matching entries, ignoring Limit and Offset.
+func (r *TimesheetRepository) CountByFilter(
+	_ context.Context,
+	filter repository.TimesheetFilter,
+) (uint, error) {
+	filter = filter.OverWholeDays()
+
+	var total uint
+
+	for _, ts := range r.store.all() {
+		if matchesFilter(ts, filter) {
+			total++
+		}
+	}
+
+	return total, nil
+}
+
+// page applies a limit and an offset the way a SQL LIMIT/OFFSET would, including
+// answering with nothing for an offset past the end rather than with the last
+// page, which is what a hand-rolled slice usually gets wrong.
+func page[T any](all []T, limit, offset uint) []T {
+	if limit == 0 {
+		return all
+	}
+
+	if offset >= uint(len(all)) {
+		return all[:0]
+	}
+
+	end := offset + limit
+	if end > uint(len(all)) {
+		end = uint(len(all))
+	}
+
+	return all[offset:end]
 }
 
 func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool {
@@ -508,8 +573,21 @@ func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool 
 	}
 }
 
+// Update moves the correction moment and keeps the recording one.
+//
+// The caller hands over a whole entry, and the one it was given may have travelled
+// through a DTO that never carried created_at - so the stored value is read back
+// rather than trusted, which is what the SQL repository gets for free by leaving
+// the column out of its UPDATE.
 func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	return r.store.update(timesheet.ID, timesheet)
+	corrected := *timesheet
+	corrected.UpdatedAt = time.Now().UTC().Truncate(time.Second)
+
+	if existing, err := r.store.get(timesheet.ID); err == nil {
+		corrected.CreatedAt = existing.CreatedAt
+	}
+
+	return r.store.update(timesheet.ID, &corrected)
 }
 
 func (r *TimesheetRepository) Delete(_ context.Context, id uint) error {

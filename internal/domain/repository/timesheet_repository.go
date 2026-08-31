@@ -17,6 +17,21 @@ type TimesheetFilter struct {
 	// A zero ProjectID means "any project", so a separate flag is needed to
 	// ask for the uncategorised ones.
 	WithoutProject bool
+
+	// Limit is how many entries to return and Offset how many to skip first.
+	//
+	// Zero Limit means no bound, which is what every caller that totals or exports
+	// wants: a report over a year has to read the year. It is the *listing* that
+	// must not, and the bound is applied by whoever is answering a screen rather
+	// than by every reader of this filter. Offset without Limit is meaningless and
+	// is ignored.
+	//
+	// Both are only well defined because GetByFilter has always returned a stable
+	// order, newest day first and ties broken by id. Paging an unordered query
+	// shows one entry twice and hides another, and the two look identical from the
+	// outside.
+	Limit  uint
+	Offset uint
 }
 
 // OverWholeDays widens the range to the calendar days its ends fall on, and is
@@ -72,6 +87,14 @@ type TimesheetRepository interface {
 	GetByID(ctx context.Context, id uint) (*model.Timesheet, error)
 
 	GetByFilter(ctx context.Context, filter TimesheetFilter) ([]*model.Timesheet, error)
+
+	// CountByFilter is how many entries match, ignoring Limit and Offset.
+	//
+	// Separate from GetByFilter rather than derived from it, because the number a
+	// page has to report is the size of the whole match and counting the rows that
+	// came back would report the size of the page. Reading every row to count them
+	// is the cost this exists to avoid.
+	CountByFilter(ctx context.Context, filter TimesheetFilter) (uint, error)
 
 	GetAll(ctx context.Context) ([]*model.Timesheet, error)
 

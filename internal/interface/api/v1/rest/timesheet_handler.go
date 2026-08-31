@@ -74,12 +74,19 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	limit, offset, err := pageOf(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
 	result, err := h.timesheets.ListTimesheets(c, query.ListTimesheetsQuery{
 		UserID:         userID,
 		ProjectID:      projectID,
 		WithoutProject: withoutProject,
 		StartDate:      from,
 		EndDate:        to,
+		Limit:          limit,
+		Offset:         offset,
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -88,7 +95,79 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 	return listResponse[TimesheetResponse]{
 		Items:      newTimesheetResponses(result.Result),
 		TotalCount: result.TotalCount,
+		PageSize:   limit,
 	}, nil
+}
+
+// How much of somebody's history one request may carry.
+//
+// This listing used to have no bound at all: it read every entry the caller had
+// ever booked, and the entries screen asked for exactly that on every load and
+// after every save. One person's own history rather than the whole table, which is
+// why it was slow rather than dangerous - and a screen that gets slower every week
+// is a defect nobody ever gets round to filing.
+//
+// DefaultPageSize is what a request that names no limit gets. It is a change to
+// what this endpoint answers, and a deliberate one: the alternative is leaving the
+// query unbounded for every client that has not been updated, which is the state
+// this replaces. totalCount has always been in the envelope and now means what it
+// says, so a client can see there is more.
+//
+// MaxPageSize is a refusal rather than a ceiling that quietly applies. That is
+// this endpoint's own rule about listings, and it is written down in its OpenAPI
+// description: a list that does not match what was asked for is worse than a plain
+// no.
+const (
+	DefaultPageSize = 100
+	MaxPageSize     = 500
+)
+
+// pageOf reads the paging parameters, applying the default and refusing a page
+// larger than the maximum.
+func pageOf(c *gofr.Context) (limit, offset uint, err error) {
+	limit, err = queryCount(c, "limit")
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if limit == 0 {
+		limit = DefaultPageSize
+	}
+
+	if limit > MaxPageSize {
+		return 0, 0, apperror.Invalidf("a page may hold at most %d entries", MaxPageSize).
+			WithCode("pageSizeTooLarge", MaxPageSize)
+	}
+
+	offset, err = queryCount(c, "offset")
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return limit, offset, nil
+}
+
+// queryCount reads an optional count, where zero is a value and not an absence.
+//
+// queryUint cannot: it is built on parseUint, which refuses zero on purpose
+// because it reads ids, and there zero is how "not given" arrives. An offset of
+// zero is what every first page sends, so the listing answered its own opening
+// request with "invalid parameter(s): offset" - found by the browser case, which
+// is the only reader that asks for a first page the way the screen does.
+//
+// Read at the destination's width for the same reason parseUint gives.
+func queryCount(c *gofr.Context, name string) (uint, error) {
+	raw := strings.TrimSpace(c.Param(name))
+	if raw == "" {
+		return 0, nil
+	}
+
+	v, err := strconv.ParseUint(raw, 10, strconv.IntSize)
+	if err != nil {
+		return 0, apperror.InvalidFields(name)
+	}
+
+	return uint(v), nil
 }
 
 // Get handles GET /api/v1/timesheets/{id}

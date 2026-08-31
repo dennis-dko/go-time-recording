@@ -73,6 +73,18 @@ func (d Date) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Format(time.DateOnly))
 }
 
+// momentOrNil renders an absent moment as null rather than as the zero time.
+//
+// A client that received "0001-01-01T00:00:00Z" would have to know to special-case
+// it, and the one that did not would show it to somebody as a real date.
+func momentOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+
+	return &t
+}
+
 // pathID reads the ":id" path parameter as a positive integer.
 func pathID(c *gofr.Context) (uint, error) {
 	return parseUint(c.PathParam("id"), "id")
@@ -159,4 +171,15 @@ func bind(c *gofr.Context, target any) error {
 type listResponse[T any] struct {
 	Items      []T  `json:"items"`
 	TotalCount uint `json:"totalCount"`
+
+	// PageSize is the bound that was applied, and is omitted by the collections
+	// that have none. Present, it is what lets a caller tell a complete answer from
+	// the first page of a longer one without counting the items itself and guessing
+	// at the reason the two numbers differ.
+	//
+	// The collections that are bounded by what they are - roles, the accounts on an
+	// installation - deliberately do not send it. A field that appeared everywhere
+	// with a made-up value would say every listing pages, and none of them would
+	// honour an offset.
+	PageSize uint `json:"pageSize,omitempty"`
 }

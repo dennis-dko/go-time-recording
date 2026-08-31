@@ -670,6 +670,30 @@ const (
 //
 // The administrator is still needed first: the initial password has to be replaced
 // before anything else answers, and only it can create an account.
+// thisMonth is the statistics range these cases evaluate, and how many days it
+// holds.
+//
+// Derived rather than written down. It used to be the literal 2026-08-01 to
+// 2026-08-31, which was the current month on the day it was written and stopped
+// containing anything at all the moment September began: the entry these cases
+// book carries the booking form's default, which is today, so from the first of
+// the next month the chart was a month of empty days.
+//
+// One of the three said so - TestTheOwnHoursChartsAreDrawn failed with every bar
+// at 0.00 h. The other two failed quietly, exporting a picture of nothing while
+// their own comments observed that an empty chart would prove very little. A test
+// that goes on passing while it stops testing anything is the worse half of this.
+//
+// A calendar month rather than a rolling window, because the chart draws one row
+// per day of a month and the row count is asserted against this.
+func thisMonth() (from, to string, days int) {
+	now := time.Now()
+	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	last := first.AddDate(0, 1, -1)
+
+	return first.Format(time.DateOnly), last.Format(time.DateOnly), last.Day()
+}
+
 func (p *page) readyWorker() {
 	p.t.Helper()
 

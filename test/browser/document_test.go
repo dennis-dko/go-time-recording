@@ -52,9 +52,11 @@ func TestAnEvaluationLeavesAsADocumentWithItsChart(t *testing.T) {
 	p.run("open overtime", p.click(`.tab[data-view="overtime"]`),
 		chromedp.WaitVisible("#statistics-card", chromedp.ByID))
 
+	from, to, _ := thisMonth()
+
 	p.run("evaluate",
-		chromedp.SetValue("#statistics-from", "2026-08-01", chromedp.ByID),
-		chromedp.SetValue("#statistics-to", "2026-08-31", chromedp.ByID),
+		chromedp.SetValue("#statistics-from", from, chromedp.ByID),
+		chromedp.SetValue("#statistics-to", to, chromedp.ByID),
 		p.click("#statistics-load"))
 
 	deadline := time.Now().Add(waitPatience)
@@ -286,9 +288,11 @@ func TestTheExportButtonSavesAPDF(t *testing.T) {
 	p.run("open overtime", p.click(`.tab[data-view="overtime"]`),
 		chromedp.WaitVisible("#statistics-card", chromedp.ByID))
 
+	from, to, _ := thisMonth()
+
 	p.run("evaluate",
-		chromedp.SetValue("#statistics-from", "2026-08-01", chromedp.ByID),
-		chromedp.SetValue("#statistics-to", "2026-08-31", chromedp.ByID),
+		chromedp.SetValue("#statistics-from", from, chromedp.ByID),
+		chromedp.SetValue("#statistics-to", to, chromedp.ByID),
 		p.click("#statistics-load"))
 
 	deadline := time.Now().Add(waitPatience)

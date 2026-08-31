@@ -517,6 +517,12 @@ type timesheetResponse struct {
 	Date          string  `json:"date"`
 	DurationHours float64 `json:"durationHours"`
 	Description   *string `json:"description"`
+
+	// Null for an entry booked before the columns existed. Strings rather than
+	// time.Time so a case can check the wire format itself: a bare date would
+	// unmarshal happily and silently lose the time of day.
+	CreatedAt *string `json:"createdAt"`
+	UpdatedAt *string `json:"updatedAt"`
 }
 
 type projectResponse struct {
@@ -529,6 +535,10 @@ type projectResponse struct {
 type listOf[T any] struct {
 	Items      []T  `json:"items"`
 	TotalCount uint `json:"totalCount"`
+
+	// Only the endpoints that page send this, so it is zero everywhere else and a
+	// case that reads it is saying it expects a paged listing.
+	PageSize uint `json:"pageSize"`
 }
 
 // parseURL is url.Parse, wrapped so the import stays out of the type section.
