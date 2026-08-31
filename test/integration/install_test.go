@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -258,5 +259,186 @@ func TestAConfiguredDatabaseSkipsTheInstallerEntirely(t *testing.T) {
 	body := get(t, a.BaseURL()+"/")
 	if strings.Contains(body, "Setup token") {
 		t.Error("the installer page is being served to a configured installation")
+	}
+}
+
+// claim asks the application, once it is up, for the session the installer earned.
+func claim(t *testing.T, c *client, token string) response {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		c.app.BaseURL()+"/api/v1/setup/claim", nil)
+	if err != nil {
+		t.Fatalf("cannot build the request: %v", err)
+	}
+
+	req.Header.Set("Origin", c.app.BaseURL())
+	req.Header.Set("X-CSRF-Token", c.csrfToken())
+	req.Header.Set("X-Setup-Token", token)
+
+	return c.send(req, http.MethodPost, "/api/v1/setup/claim")
+}
+
+// waitForTheApplication blocks until the process that was serving an installer
+// is serving the application instead.
+func waitForTheApplication(t *testing.T, c *installerClient) {
+	t.Helper()
+
+	deadline := time.Now().Add(harness.StartupTimeout)
+
+	for time.Now().Before(deadline) {
+		if body := tryGet(c.app.BaseURL() + "/api/v1/branding"); strings.Contains(body, `"title"`) {
+			return
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	t.Fatalf("the application never took over the port:\n%s", c.app.Log())
+}
+
+// Answering the installer is the sign-in.
+//
+// Whoever completes it has proved more than a password does: the setup token is
+// printed to this process's log, so they can already read the process - and what
+// they just decided is where every account, project and hour will be kept. Making
+// them then find the documented initial password and type it into a sign-in form
+// is a step that establishes nothing, and it is the step that puts "changeme123"
+// in front of somebody as a thing to remember.
+//
+// So the installer hands the browser a session for the built-in administrator,
+// and the wizard's first screen - choose a password - is what they actually
+// arrive at.
+func TestTheInstallerHandsTheBrowserASignedInSession(t *testing.T) {
+	t.Parallel()
+
+	c := openInstaller(t)
+
+	if status, body := c.post("/install/save", c.token, sqliteDatasource()); status != http.StatusOK {
+		t.Fatalf("saving a working connection: got %d, %v", status, body)
+	}
+
+	waitForTheApplication(t, c)
+
+	browser := (&app{App: c.app, t: t}).newClient()
+
+	if got := browser.api(http.MethodGet, "/me", nil).Status; got == http.StatusOK {
+		t.Fatal("this client is signed in before it claimed anything, so nothing " +
+			"below would prove the claim did it")
+	}
+
+	// 200 or 201: GoFr answers a POST that returns a body with Created, which is
+	// what every other creating route here answers too.
+	if got := claim(t, browser, c.token); got.Status != http.StatusOK &&
+		got.Status != http.StatusCreated {
+		t.Fatalf("the installer's own token did not open a session: %d %s",
+			got.Status, got.Body)
+	}
+
+	var me struct {
+		User struct {
+			Email              string `json:"email"`
+			IsSystem           bool   `json:"isSystem"`
+			MustChangePassword bool   `json:"mustChangePassword"`
+		} `json:"user"`
+	}
+
+	browser.must(browser.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+
+	if me.User.Email != adminEmail || !me.User.IsSystem {
+		t.Errorf("the session belongs to %q (system: %v), not to the built-in "+
+			"administrator", me.User.Email, me.User.IsSystem)
+	}
+
+	// Still the first thing it has to do. The session is a way past typing a
+	// documented password, not a way past choosing a real one.
+	if !me.User.MustChangePassword {
+		t.Error("the handed-over session is not asked to choose a password, so the " +
+			"installation stays reachable on the documented one")
+	}
+
+	if got := browser.api(http.MethodGet, "/users", nil).Status; got != http.StatusConflict {
+		t.Errorf("the handed-over session reads accounts with status %d; everything "+
+			"but the password change has to stay shut until one is chosen", got)
+	}
+}
+
+// A wrong token opens nothing.
+func TestTheHandedOverSessionNeedsTheInstallersOwnToken(t *testing.T) {
+	t.Parallel()
+
+	c := openInstaller(t)
+
+	if status, body := c.post("/install/save", c.token, sqliteDatasource()); status != http.StatusOK {
+		t.Fatalf("saving a working connection: got %d, %v", status, body)
+	}
+
+	waitForTheApplication(t, c)
+
+	browser := (&app{App: c.app, t: t}).newClient()
+
+	for _, wrong := range []string{"", "0123456789abcdef0123456789abcdef"} {
+		if got := claim(t, browser, wrong); got.Status == http.StatusOK ||
+			got.Status == http.StatusCreated {
+			t.Errorf("the token %q opened a session", wrong)
+		}
+	}
+
+	if got := browser.api(http.MethodGet, "/me", nil).Status; got == http.StatusOK {
+		t.Error("a refused claim left a session behind anyway")
+	}
+}
+
+// An installation that never ran an installer hands out nothing at all.
+//
+// The case that matters, and the one an empty-string comparison would get
+// wrong: a deployment configured from a compose file has no setup token, and a
+// request arriving with no token header must not match it.
+func TestAnInstallationThatSkippedTheInstallerHandsOutNoSession(t *testing.T) {
+	t.Parallel()
+
+	a := start(t)
+	browser := a.newClient()
+
+	for _, attempt := range []string{"", "0123456789abcdef0123456789abcdef"} {
+		if got := claim(t, browser, attempt); got.Status == http.StatusOK ||
+			got.Status == http.StatusCreated {
+			t.Errorf("an installation with no installer opened a session for token %q",
+				attempt)
+		}
+	}
+
+	if got := browser.api(http.MethodGet, "/me", nil).Status; got == http.StatusOK {
+		t.Error("a refused claim left a session behind anyway")
+	}
+}
+
+// And the door closes the moment the installation is taken into use.
+//
+// The claim is only ever a substitute for the documented password, so it lasts
+// exactly as long as that password does: once a real one has been chosen, the
+// token is no longer a way in, whoever still has a copy of the log.
+func TestTheHandOverStopsOnceAPasswordHasBeenChosen(t *testing.T) {
+	t.Parallel()
+
+	c := openInstaller(t)
+
+	if status, body := c.post("/install/save", c.token, sqliteDatasource()); status != http.StatusOK {
+		t.Fatalf("saving a working connection: got %d, %v", status, body)
+	}
+
+	waitForTheApplication(t, c)
+
+	instance := &app{App: c.app, t: t}
+
+	// Taken into use the ordinary way, which is what signInAsAdmin does: sign in
+	// on the documented password and replace it.
+	instance.signInAsAdmin("a-much-better-password")
+
+	browser := instance.newClient()
+
+	if got := claim(t, browser, c.token); got.Status == http.StatusOK ||
+		got.Status == http.StatusCreated {
+		t.Error("the setup token still opened a session after a password was chosen")
 	}
 }

@@ -165,6 +165,44 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 	return s.OpenSession(ctx, user)
 }
 
+// OpenFirstSession issues the session the installer earned, or refuses.
+//
+// Whoever answered the installer proved more than a password does. The setup
+// token is printed to this process's log, so they can already read the process,
+// and what they decided with it is where every account, project and hour will be
+// kept. Sending them on to find the documented initial password and type it into
+// a sign-in form establishes nothing that has not just been established - and it
+// is the step that puts "changeme123" in front of a person as something to
+// remember.
+//
+// So this is a third caller of OpenSession, beside a password and a passkey, and
+// the identity it establishes is established by the caller: the handler checks
+// the setup token, and this checks that the installation has never been taken
+// into use.
+//
+// That second condition is the whole of the safety here, and it is deliberately
+// the same one the documented password already turns on. While the built-in
+// administrator still has to change its password, that account is reachable by
+// anybody who has read the README - so a token that opens it as well grants
+// nothing new. The moment a real password is chosen, both doors close together:
+// this one refuses for ever afterwards, whoever still has a copy of the log.
+func (s *SessionService) OpenFirstSession(ctx context.Context) (*LoginResult, error) {
+	user, err := s.users.GetByEmail(ctx, SystemUserEmail)
+	if err != nil {
+		return nil, apperror.Conflictf("this installation has no built-in administrator").
+			WithCode("noBuiltInAdmin")
+	}
+
+	if !user.MustChangePassword {
+		return nil, apperror.Conflictf(
+			"this installation has already been taken into use; sign in with the " +
+				"password that was chosen for it").
+			WithCode("installationAlreadyInUse")
+	}
+
+	return s.OpenSession(ctx, user)
+}
+
 // OpenSession issues a session for a user whose identity has already been
 // established.
 //

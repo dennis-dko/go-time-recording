@@ -67,7 +67,7 @@ func isCharDevice(f *os.File) bool {
 // constructed yet - and cannot be, since constructing it is what needs the
 // database. Only the port and the instance name are wanted, and both have a
 // sensible answer without a database behind them.
-func runInstaller() (appconfig.Datasource, error) {
+func runInstaller() (installer.Result, error) {
 	settings := appconfig.InstallerSettings()
 
 	// A signal ends the wait, so a container that is stopped while sitting on
@@ -297,13 +297,20 @@ func main() {
 	// Nothing anywhere: serve the installer until somebody chooses a database,
 	// then carry on into the application in this same process. See the installer
 	// package for why this cannot be a step of the in-application wizard.
+	// The token this process's installer accepted, empty on every start that did
+	// not serve one. It is what lets the browser that answered the installer be
+	// handed a session instead of being sent to find the documented initial
+	// password; see rest.SetupHandler.Claim for the conditions on that.
+	var installerToken string
+
 	if !configured {
 		chosen, err := runInstaller()
 		if err != nil {
 			die(restoreOutput, "cannot run the installer: %v", err)
 		}
 
-		ds = chosen
+		ds = chosen.Datasource
+		installerToken = chosen.Token
 	}
 
 	// Proven before GoFr touches it, with the same drivers GoFr will use. GoFr
@@ -763,6 +770,15 @@ func main() {
 		return cfg.AppName
 	}
 
+	setupHandler := rest.NewSetupHandler(setup, authorizer)
+
+	// Only where this process served an installer. On every other start there is
+	// no token, and the claim then has no working path at all rather than one
+	// guarded by a comparison against an empty string.
+	if installerToken != "" {
+		setupHandler = setupHandler.FromInstaller(installerToken, sessions)
+	}
+
 	v1.RegisterRoutes(app, v1.Handlers{
 		Auth: rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone).
 			WithMaintenance(maintenanceState),
@@ -781,7 +797,7 @@ func main() {
 		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone),
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
-		Setup:      rest.NewSetupHandler(setup, authorizer),
+		Setup:      setupHandler,
 		Logs:       rest.NewLogHandler(logs, authorizer),
 		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil, fileTelemetry),
 		Update: rest.NewUpdateHandler(authorizer,

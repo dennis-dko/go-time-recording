@@ -72,6 +72,9 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/settings/ldap/sync", h.LDAPSync.Run)
 	app.GET(base+"/setup", h.Setup.State)
 	app.POST(base+"/setup/complete", h.Setup.Complete)
+	// Answered before anybody is signed in, which is the one thing that makes
+	// it different from every other route here. See SetupHandler.Claim.
+	app.POST(base+"/setup/claim", h.Setup.Claim)
 	app.GET(base+"/settings/operational", h.Settings.Operational)
 	app.PUT(base+"/settings/operational", h.Settings.SaveOperational)
 	app.GET(base+"/settings/timezone", h.Settings.Timezone)
