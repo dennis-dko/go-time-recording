@@ -53,3 +53,32 @@ go.sum      text eol=lf
 *.html      text eol=lf
 *.json      text eol=lf
 *.md        text eol=lf
+
+# And the asset the rules above still missed, by the same suffix trap the
+# templates were added for: the shipped mark is an SVG, which is text, embedded
+# with go:embed and served byte for byte - and *.svg matched none of the globs
+# above. So a build on Windows put it in the binary with CRLF while the same
+# commit built on the Linux runner baked in LF, and the two binaries served
+# different bytes, and different ETags, for one unchanged file.
+*.svg       text eol=lf
+
+# A substituted file again, and again a suffix the rule for its own type does
+# not reach: build/versioninfo.json.in is read by sed inside
+# build/windows-resource.sh, and the JSON that comes out is handed to
+# goversioninfo. *.json does not match a name ending in .json.in, exactly as
+# *.conf did not match slapd.conf.template.
+*.in        text eol=lf
+
+# The icons are binary. Git works that out on its own from the NUL bytes in
+# their headers and would leave them alone regardless - but a byte-for-byte
+# served asset is not where that detection should be load-bearing, and saying
+# so costs one line.
+*.ico       binary
+
+# Git's own two files, pinned for the sake of the check rather than for anything
+# that reads them. `git ls-files --eol` is how a wrong line ending gets found
+# here, and it is only worth running while every row reads w/lf: two permanent
+# exceptions teach whoever runs it to skim past the output, which is the state
+# this whole file exists to avoid.
+.gitattributes text eol=lf
+.gitignore     text eol=lf
