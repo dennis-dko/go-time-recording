@@ -5,6 +5,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -499,7 +500,57 @@ func (r *TimesheetRepository) GetByFilter(
 		out = append(out, ts)
 	}
 
-	return out, nil
+	// The same order the SQL repository gives, because paging is defined in terms
+	// of it: newest day first, and an entry booked later on the same day ahead of
+	// one booked earlier. The in-memory store hands rows back in insertion order,
+	// which agrees with neither.
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].Date.Equal(out[j].Date) {
+			return out[i].Date.After(out[j].Date)
+		}
+
+		return out[i].ID > out[j].ID
+	})
+
+	return page(out, filter.Limit, filter.Offset), nil
+}
+
+// CountByFilter counts the matching entries, ignoring Limit and Offset.
+func (r *TimesheetRepository) CountByFilter(
+	_ context.Context,
+	filter repository.TimesheetFilter,
+) (uint, error) {
+	filter = filter.OverWholeDays()
+
+	var total uint
+
+	for _, ts := range r.store.all() {
+		if matchesFilter(ts, filter) {
+			total++
+		}
+	}
+
+	return total, nil
+}
+
+// page applies a limit and an offset the way a SQL LIMIT/OFFSET would, including
+// answering with nothing for an offset past the end rather than with the last
+// page, which is what a hand-rolled slice usually gets wrong.
+func page[T any](all []T, limit, offset uint) []T {
+	if limit == 0 {
+		return all
+	}
+
+	if offset >= uint(len(all)) {
+		return all[:0]
+	}
+
+	end := offset + limit
+	if end > uint(len(all)) {
+		end = uint(len(all))
+	}
+
+	return all[offset:end]
 }
 
 func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool {

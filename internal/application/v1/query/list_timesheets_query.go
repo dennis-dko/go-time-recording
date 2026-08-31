@@ -18,10 +18,20 @@ type ListTimesheetsQuery struct {
 	// question - and it is one people ask, because the hours that never got a
 	// project are exactly the ones somebody goes looking for.
 	WithoutProject bool
+
+	// Limit is the page size and Offset how many matching entries to skip. A zero
+	// Limit reads everything, which is what the exports and the evaluations want;
+	// the listing that answers a screen always names one.
+	Limit  uint
+	Offset uint
 }
 
 // ListTimesheetsQueryResult query to get list result of all existing timesheets
 type ListTimesheetsQueryResult struct {
-	Result     []*common.TimesheetResult
+	Result []*common.TimesheetResult
+
+	// TotalCount is how many entries match, not how many came back. Those differ
+	// exactly when there is another page, which is the one thing a caller cannot
+	// work out for itself.
 	TotalCount uint
 }
