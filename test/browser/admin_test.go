@@ -1368,12 +1368,16 @@ func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
 		t.Fatal("the overtime view is open but the statistics card is not visible")
 	}
 
-	// An explicit range, so the number of rows below is a fixed expectation. The
-	// default is the first of the month to today, which is a different length
-	// every day.
+	// An explicit range, so the number of rows below is a fixed expectation - the
+	// default is the first of the month to today, which is a different length every
+	// day. This month rather than a written-down one: the entry above is booked on
+	// today, so a range that names a past month is a month of empty days. See
+	// thisMonth.
+	from, to, daysInMonth := thisMonth()
+
 	p.run("evaluate",
-		chromedp.SetValue("#statistics-from", "2026-08-01", chromedp.ByID),
-		chromedp.SetValue("#statistics-to", "2026-08-31", chromedp.ByID),
+		chromedp.SetValue("#statistics-from", from, chromedp.ByID),
+		chromedp.SetValue("#statistics-to", to, chromedp.ByID),
 		p.click("#statistics-load"))
 
 	// A bar exists, and the SVG is in the right namespace - an HTML-namespace
@@ -1413,9 +1417,9 @@ func TestTheOwnHoursChartsAreDrawn(t *testing.T) {
 	p.run("count the rows",
 		chromedp.Evaluate(`document.querySelectorAll('#chart-days .chart-track').length`, &rows))
 
-	if rows != 31 {
-		t.Errorf("the day chart has %d rows, want 31 - one for every day of August, "+
-			"including the empty ones", rows)
+	if rows != daysInMonth {
+		t.Errorf("the day chart has %d rows, want %d - one for every day of the month, "+
+			"including the empty ones", rows, daysInMonth)
 	}
 
 	// And the project chart drew the uncategorised bucket, since the entry has no
@@ -2947,11 +2951,22 @@ func (p *page) bookAnHourOn(t *testing.T, name string) {
 
 			const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf };
 
+			// Today in this browser's own zone, which is what the application means
+			// by today. toISOString() is UTC, and between local midnight and UTC
+			// midnight the two are different days - so east of Greenwich this booked
+			// yesterday, the statistics card evaluated the default period of "the
+			// first of this month to today", and the entry was outside it. The chart
+			// then drew nothing, for two hours a night, on a machine in Berlin.
+			const now = new Date();
+			const today = now.getFullYear() + '-'
+				+ String(now.getMonth() + 1).padStart(2, '0') + '-'
+				+ String(now.getDate()).padStart(2, '0');
+
 			const made = await fetch('/api/v1/projects', {
 				method: 'POST',
 				credentials: 'same-origin',
 				headers,
-				body: JSON.stringify({ name: %q, startDate: new Date().toISOString().slice(0, 10) }),
+				body: JSON.stringify({ name: %q, startDate: today }),
 			});
 
 			if (!made.ok) return 'project ' + made.status;
@@ -2964,7 +2979,7 @@ func (p *page) bookAnHourOn(t *testing.T, name string) {
 				headers,
 				body: JSON.stringify({
 					projectId: project.id,
-					date: new Date().toISOString().slice(0, 10),
+					date: today,
 					durationHours: 1,
 				}),
 			});

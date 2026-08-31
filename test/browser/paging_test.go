@@ -34,6 +34,10 @@ func seedEntries(t *testing.T, p *page, count int) {
 		window.__seedMs = 0;
 		(async () => {
 			const began = Date.now();
+			// An explicit UTC anchor, and toISOString below is therefore right: these
+			// are arbitrary distinct days in the past, not "today", so the trap that
+			// bookAnHourOn fell into - UTC and the reader's zone being different days
+			// for part of the night - cannot apply here.
 			const day = new Date(Date.UTC(2026, 0, 1));
 			for (let i = 0; i < `+strconv.Itoa(count)+`; i++) {
 				const on = new Date(day.getTime() + i * 86400000);
