@@ -73,6 +73,18 @@ func (d Date) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Format(time.DateOnly))
 }
 
+// momentOrNil renders an absent moment as null rather than as the zero time.
+//
+// A client that received "0001-01-01T00:00:00Z" would have to know to special-case
+// it, and the one that did not would show it to somebody as a real date.
+func momentOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+
+	return &t
+}
+
 // pathID reads the ":id" path parameter as a positive integer.
 func pathID(c *gofr.Context) (uint, error) {
 	return parseUint(c.PathParam("id"), "id")

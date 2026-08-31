@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"gofr.dev/pkg/gofr"
@@ -77,10 +78,15 @@ func (h *PasskeyHandler) relyingParty(c *gofr.Context) service.RelyingParty {
 // somebody to build something on a value that is meaningless outside a
 // ceremony.
 type PasskeyResponse struct {
-	ID         uint    `json:"id"`
-	Name       string  `json:"name"`
-	CreatedAt  Date    `json:"createdAt"`
-	LastUsedAt *Date   `json:"lastUsedAt"`
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
+
+	// Moments, for the reason APITokenResponse gives: a key last used at three in
+	// the morning is the thing somebody is looking at when they suspect it has been
+	// taken, and a date cannot tell them.
+	CreatedAt  time.Time  `json:"createdAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt"`
+
 	Transports string  `json:"transports"`
 	BackedUp   bool    `json:"backedUp"`
 	SignCount  *uint32 `json:"signCount,omitempty"`
@@ -90,13 +96,13 @@ func newPasskeyResponse(p *model.Passkey) PasskeyResponse {
 	out := PasskeyResponse{
 		ID:         p.ID,
 		Name:       p.Name,
-		CreatedAt:  Date{Time: p.CreatedAt},
+		CreatedAt:  p.CreatedAt,
 		Transports: p.Transports,
 		BackedUp:   p.BackedUp,
 	}
 
 	if p.LastUsedAt != nil {
-		out.LastUsedAt = &Date{Time: *p.LastUsedAt}
+		out.LastUsedAt = momentOrNil(*p.LastUsedAt)
 	}
 
 	if p.SignCount > 0 {

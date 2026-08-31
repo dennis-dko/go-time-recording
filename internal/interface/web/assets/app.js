@@ -1696,6 +1696,39 @@ function fmtDate(iso) {
 }
 
 /**
+ * A moment - a day and a time of day - in the reader's own convention.
+ *
+ * Deliberately not fmtDate, and the difference is not cosmetic. That one renders a
+ * calendar day and pins the zone to UTC, because a booking's day carries no zone
+ * and must not be shifted by one. These are instants, and the question they answer
+ * - when was this credential last used - only means anything in the zone the
+ * reader lives in.
+ *
+ * fmtDate cannot be reused for them in any case: it splits an ISO string on its
+ * hyphens, so a timestamp makes its third field NaN and the raw wire format
+ * reaches the screen.
+ *
+ * Minutes and no finer. A token's last use is read to work out whether somebody
+ * else has it, and seconds add nothing to that while making the column wider than
+ * the answer.
+ */
+function fmtMoment(iso) {
+  if (!iso) return '–';
+
+  const at = new Date(iso);
+
+  if (Number.isNaN(at.getTime())) return iso;
+
+  return new Intl.DateTimeFormat(activeLocale(), {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    // The account's own zone, falling back to the browser's before sign-in and on
+    // an installation that never chose one.
+    timeZone: me.user?.effectiveTimezone || undefined,
+  }).format(at);
+}
+
+/**
  * A figure with two decimal places, written the way the reader writes one.
  *
  * toFixed always produces a dot, so every hour figure on screen read 5.00 h to a
@@ -5234,9 +5267,9 @@ async function loadTokens() {
   const rows = tokens.map((token) => el('tr', { class: token.expired ? 'empty' : '' },
     el('td', { text: token.name }),
     el('td', {}, el('code', { text: `${token.prefix}…` })),
-    el('td', { text: fmtDate(token.createdAt) }),
-    el('td', { text: token.expiresAt ? fmtDate(token.expiresAt) : t('token.never', 'unlimited') }),
-    el('td', { text: token.lastUsedAt ? fmtDate(token.lastUsedAt) : t('token.unused', 'never') }),
+    el('td', { text: fmtMoment(token.createdAt) }),
+    el('td', { text: token.expiresAt ? fmtMoment(token.expiresAt) : t('token.never', 'unlimited') }),
+    el('td', { text: token.lastUsedAt ? fmtMoment(token.lastUsedAt) : t('token.unused', 'never') }),
     el('td', { class: 'actions' }, deleteButton({
       // Called revoking rather than deleting, because that is what it means for
       // a token - but it is the same request, so it joins the batch too.
@@ -10924,9 +10957,9 @@ async function loadPasskeys() {
 
   const rows = passkeys.map((passkey) => el('tr', {},
     el('td', { text: passkey.name }),
-    el('td', { text: fmtDate(passkey.createdAt) }),
+    el('td', { text: fmtMoment(passkey.createdAt) }),
     el('td', {
-      text: passkey.lastUsedAt ? fmtDate(passkey.lastUsedAt) : t('passkey.never', 'never'),
+      text: passkey.lastUsedAt ? fmtMoment(passkey.lastUsedAt) : t('passkey.never', 'never'),
     }),
     el('td', { class: 'actions' }, deleteButton({
       label: `${t('passkey.name', 'Name')} "${passkey.name}"`,
