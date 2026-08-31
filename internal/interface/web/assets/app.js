@@ -3373,6 +3373,7 @@ const TRANSLATIONS = {
     'err.projectClosedForBooking': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
     'err.projectIsBeingTimed': 'Bei {0} Person(en) läuft gerade eine Stoppuhr auf dieses Projekt. Es kann gelöscht werden, sobald sie gestoppt haben.',
     'err.projectHasEntries': 'Das Projekt hat noch {0} Zeiteinträge und kann nicht gelöscht werden.',
+    'err.pageSizeTooLarge': 'Eine Seite darf höchstens {0} Einträge enthalten.',
     'err.rangeInverted': '„bis“ darf nicht vor „von“ liegen.',
     'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',
     'err.roleStillAssigned': 'Rolle „{0}“ ist noch {1} Benutzer(n) zugewiesen.',
@@ -3721,6 +3722,8 @@ const TRANSLATIONS = {
     'totp.title': 'Zwei-Faktor-Authentifizierung',
     'ts.book': 'Zeit buchen',
     'ts.empty': 'Keine Einträge für diesen Filter.',
+    'ts.more': 'Mehr anzeigen',
+    'ts.showing': '{0} von {1} Einträgen',
     'ts.edit': 'Eintrag bearbeiten',
     'ts.entries': 'Einträge',
     'ts.noProject': 'Kein Projekt',
@@ -4890,15 +4893,55 @@ async function reloadTimeViews() {
   await loadCalendar();
 }
 
-async function loadTimesheets() {
+/**
+ * How many entries the list asks for at a time.
+ *
+ * A screenful rather than everything. This list used to ask for every entry the
+ * account had ever booked, on every load and again after every save, and the
+ * request grew for as long as somebody kept recording time - the kind of slow
+ * that arrives a week at a time and never becomes a bug report.
+ *
+ * Smaller than the API's own default page, deliberately: the endpoint answers
+ * clients that are fetching rather than showing, and a table asks for what it can
+ * put on a screen. Both are bounded, which is the part that matters.
+ */
+const TIMESHEET_PAGE = 25;
+
+/** The entries the table is showing, which is a page of them at a time. */
+let timesheetEntries = [];
+
+/** How many there are altogether, which is what says whether there are more. */
+let timesheetTotal = 0;
+
+/**
+ * Loads the entries, one page at a time.
+ *
+ * `more` appends the next page instead of starting again. Everything else -
+ * changing the filter, booking, correcting, deleting - starts again from the
+ * first page on purpose: the list has changed underneath, and an offset into a
+ * list that has moved skips one entry and repeats another.
+ */
+async function loadTimesheets(more = false) {
   if (!can('timesheets:read:own')) return;
 
   const params = new URLSearchParams();
   const projectId = $('#filter-ts-project').value;
   if (projectId) params.set('projectId', projectId);
 
-  const suffix = params.toString() ? `?${params}` : '';
-  const entries = (await api(`/timesheets${suffix}`))?.items ?? [];
+  if (!more) timesheetEntries = [];
+
+  params.set('limit', String(TIMESHEET_PAGE));
+  params.set('offset', String(timesheetEntries.length));
+
+  const answer = await api(`/timesheets?${params}`);
+  const page = answer?.items ?? [];
+
+  // What the server says, not what arrived: those differ exactly when there is
+  // another page, which is the whole question this screen has to answer.
+  timesheetTotal = answer?.totalCount ?? page.length;
+  timesheetEntries = timesheetEntries.concat(page);
+
+  const entries = timesheetEntries;
 
   // Named `entry` rather than `t`, which would shadow the translation helper.
   // No user column and no "this row is yours" highlight: every row is, so a column
@@ -4919,6 +4962,26 @@ async function loadTimesheets() {
   });
 
   fillTable($('#table-timesheets tbody'), rows, 5, t('ts.empty', 'No entries for this filter.'));
+
+  showTimesheetTally();
+}
+
+/**
+ * Says how much of the list is on screen, and offers the rest.
+ *
+ * Both go down together once everything is showing. A table that is complete and
+ * one that has been cut short are otherwise the same picture, which is the only
+ * way bounding the request could have gone wrong quietly.
+ */
+function showTimesheetTally() {
+  const more = timesheetEntries.length < timesheetTotal;
+
+  $('#ts-more-row').hidden = !more;
+
+  $('#ts-shown').textContent = more
+    ? fillIn(t('ts.showing', 'Showing {0} of {1} entries'),
+      [timesheetEntries.length, timesheetTotal])
+    : '';
 }
 
 // ----------------------------------------------------------------- calendar
@@ -12244,6 +12307,11 @@ function wireForms() {
 
   $('#filter-ts-project').addEventListener('change',
     () => mutate(loadTimesheets, null, null));
+
+  // Through mutate like every other loader, so a half-filled booking form is left
+  // alone while the table grows underneath it.
+  $('#ts-more').addEventListener('click',
+    () => mutate(() => loadTimesheets(true), null, null));
 
   $('#tabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');

@@ -115,20 +115,33 @@ func (s *TimesheetApplicationService) ListTimesheets(
 	ctx context.Context,
 	q query.ListTimesheetsQuery,
 ) (*query.ListTimesheetsQueryResult, error) {
-	allTimesheets, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
+	filter := repository.TimesheetFilter{
 		UserID:         q.UserID,
 		ProjectID:      q.ProjectID,
 		WithoutProject: q.WithoutProject,
 		StartDate:      q.StartDate,
 		EndDate:        q.EndDate,
-	})
+		Limit:          q.Limit,
+		Offset:         q.Offset,
+	}
+
+	timesheets, err := s.timesheetRepository.GetByFilter(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Counted rather than measured. len() was the total for as long as the query
+	// had no bound, and the moment one arrived it would have become the size of the
+	// page - so a client on page one of nine would have been told there were as
+	// many entries as it could already see.
+	total, err := s.timesheetRepository.CountByFilter(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
 	return &query.ListTimesheetsQueryResult{
-		Result:     common.NewTimesheetResultFromModel(allTimesheets...),
-		TotalCount: uint(len(allTimesheets)),
+		Result:     common.NewTimesheetResultFromModel(timesheets...),
+		TotalCount: total,
 	}, nil
 }
 

@@ -436,7 +436,7 @@
           "timesheets"
         ],
         "summary": "List time entries",
-        "description": "Your own entries. `userId` may name you, which is a reasonable thing for a client to send; naming anybody else is refused rather than quietly answered with your own rows, because a list that does not match what was asked for is worse than a plain no.",
+        "description": "Your own entries, one page at a time. `userId` may name you, which is a reasonable thing for a client to send; naming anybody else is refused rather than quietly answered with your own rows, because a list that does not match what was asked for is worse than a plain no. A request naming no `limit` gets the default page rather than every entry you have ever booked, and `totalCount` is how many match altogether - so a page shorter than `totalCount` means there is another one. For the same reason a `limit` above the maximum is refused rather than reduced.",
         "parameters": [
           {
             "name": "userId",
@@ -466,6 +466,24 @@
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Entries per page. Default 100, maximum 500; above that the request is refused.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "How many matching entries to skip. Only meaningful with a stable order, which this listing has: newest day first, ties broken by id.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
             }
           }
         ],

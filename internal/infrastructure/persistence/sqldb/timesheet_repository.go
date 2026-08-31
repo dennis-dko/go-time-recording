@@ -105,43 +105,51 @@ func (r *TimesheetRepository) GetByFilter(
 	// ends arrive carrying the reader's zone and the stored dates carry none.
 	filter = filter.OverWholeDays()
 
-	var (
-		conditions []string
-		args       []any
-	)
+	conditions, args := timesheetConditions(filter)
 
-	if filter.UserID != 0 {
-		conditions = append(conditions, "user_id = ?")
-		args = append(args, filter.UserID)
-	}
+	query := "SELECT " + timesheetColumns + " FROM timesheets" + where(conditions)
 
-	if filter.ProjectID != 0 {
-		conditions = append(conditions, "project_id = ?")
-		args = append(args, filter.ProjectID)
-	}
-
-	if filter.WithoutProject {
-		conditions = append(conditions, "project_id IS NULL")
-	}
-
-	if filter.StartDate != nil {
-		conditions = append(conditions, "date >= ?")
-		args = append(args, *filter.StartDate)
-	}
-
-	if filter.EndDate != nil {
-		conditions = append(conditions, "date <= ?")
-		args = append(args, *filter.EndDate)
-	}
-
-	query := "SELECT " + timesheetColumns + " FROM timesheets"
-	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
-	}
-
+	// The order is what makes paging mean anything: without it two pages can show
+	// one entry twice and never show another, and nothing about the result says so.
 	query += " ORDER BY date DESC, id DESC"
 
+	// Offset without limit is ignored rather than translated, because SQL wants the
+	// limit first and inventing one here would answer a question nobody asked.
+	if filter.Limit > 0 {
+		query += " LIMIT ? OFFSET ?"
+		args = append(args, filter.Limit, filter.Offset)
+	}
+
 	return r.query(ctx, r.rebind(query), args...)
+}
+
+// CountByFilter counts the matching entries without reading them.
+func (r *TimesheetRepository) CountByFilter(
+	ctx context.Context,
+	filter repository.TimesheetFilter,
+) (uint, error) {
+	filter = filter.OverWholeDays()
+
+	conditions, args := timesheetConditions(filter)
+
+	var total uint
+
+	row := r.db.QueryRowContext(ctx,
+		r.rebind("SELECT COUNT(*) FROM timesheets"+where(conditions)), args...)
+	if err := row.Scan(&total); err != nil {
+		return 0, apperror.Internal(err)
+	}
+
+	return total, nil
+}
+
+// where renders the collected conditions, or nothing at all.
+func where(conditions []string) string {
+	if len(conditions) == 0 {
+		return ""
+	}
+
+	return " WHERE " + strings.Join(conditions, " AND ")
 }
 
 func (r *TimesheetRepository) GetAll(ctx context.Context) ([]*model.Timesheet, error) {
@@ -233,4 +241,44 @@ func scanTimesheet(s scanner) (*model.Timesheet, error) {
 	timesheet.CreatedAt, timesheet.UpdatedAt = created.Time, updated.Time
 
 	return &timesheet, nil
+}
+
+// timesheetConditions turns a filter into the WHERE clause both the listing and
+// the count run.
+//
+// Shared rather than written twice, because a page and its total have to describe
+// the same set: a count that narrows differently from the query it is reported
+// beside is a number that tells the reader there is more when there is not.
+// Expects a filter that has already been through OverWholeDays.
+func timesheetConditions(filter repository.TimesheetFilter) ([]string, []any) {
+	var (
+		conditions []string
+		args       []any
+	)
+
+	if filter.UserID != 0 {
+		conditions = append(conditions, "user_id = ?")
+		args = append(args, filter.UserID)
+	}
+
+	if filter.ProjectID != 0 {
+		conditions = append(conditions, "project_id = ?")
+		args = append(args, filter.ProjectID)
+	}
+
+	if filter.WithoutProject {
+		conditions = append(conditions, "project_id IS NULL")
+	}
+
+	if filter.StartDate != nil {
+		conditions = append(conditions, "date >= ?")
+		args = append(args, *filter.StartDate)
+	}
+
+	if filter.EndDate != nil {
+		conditions = append(conditions, "date <= ?")
+		args = append(args, *filter.EndDate)
+	}
+
+	return conditions, args
 }

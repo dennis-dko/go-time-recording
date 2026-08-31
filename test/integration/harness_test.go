@@ -535,6 +535,10 @@ type projectResponse struct {
 type listOf[T any] struct {
 	Items      []T  `json:"items"`
 	TotalCount uint `json:"totalCount"`
+
+	// Only the endpoints that page send this, so it is zero everywhere else and a
+	// case that reads it is saying it expects a paged listing.
+	PageSize uint `json:"pageSize"`
 }
 
 // parseURL is url.Parse, wrapped so the import stays out of the type section.
