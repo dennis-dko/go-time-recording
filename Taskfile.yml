@@ -213,6 +213,15 @@ tasks:
       it is a separate task rather than part of `task test`. CI runs both, and
       against both dialects.
 
+      Four at a time, which is what ci.yml runs and therefore what the gate
+      actually measures. Without -parallel, `go test` uses GOMAXPROCS - twenty-four
+      on this machine - and every one of those cases starts its own instance of the
+      application, each opening its own database. The server dialects cannot keep
+      up: the run comes back with a handful of "the application did not become
+      ready within 1m0s", a different handful every time, and none of them says
+      anything about the change being tested. A local gate that fails at random is
+      one people stop reading.
+
       Usage:
         task test:integration              against SQLite, a file per test
         task test:integration DB=postgres  against `task env:up PROFILE=postgres`
@@ -229,7 +238,7 @@ tasks:
       - '{{if or (eq .DB "postgres") (eq .DB "mysql")}}task env:up PROFILE={{.DB}}{{end}}'
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
-      - go test -tags integration -count=1 -timeout 15m ./test/integration/
+      - go test -tags integration -count=1 -timeout 15m -parallel 4 ./test/integration/
 
   test:ldap:
     desc: 'Verify: sign in against a real directory, and check nobody gets deleted for it.'
@@ -300,12 +309,19 @@ tasks:
 
       This project shipped exactly that: a sign-in form that authenticated
       correctly and then left the overlay on screen. Every API check passed.
+
+      Two at a time, which is what ci.yml runs. Each case here is an instance of
+      the application *and* a headless browser driving it, so the unbounded default
+      - GOMAXPROCS, twenty-four on this machine - is two dozen of each at once.
+      What that produces is not a clean failure but a scatter of cases that pass
+      when re-run alone, which is the most expensive kind of red there is: it
+      teaches whoever reads it to re-run rather than to look.
     env:
       GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
     cmds:
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
-      - go test -tags browser -count=1 -timeout 20m ./test/browser/
+      - go test -tags browser -count=1 -timeout 20m -parallel 2 ./test/browser/
 
   test:firefox:
     desc: 'Verify: drive the real interface in a second engine.'
