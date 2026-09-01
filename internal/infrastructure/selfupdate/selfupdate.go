@@ -80,9 +80,10 @@ type Source struct {
 	// Downloader fetches the binary, and is a second client for one reason.
 	//
 	// http.Client.Timeout covers the whole exchange, body included, so the
-	// lookup's ten seconds were also the budget for about thirty megabytes -
-	// roughly 24 Mbit/s sustained, with the redirect to the asset host and its
-	// handshake paid out of the same ten. Below that every update failed, saying
+	// lookup's ten seconds were also the budget for the whole binary - 45 to 50 MB,
+	// measured on v0.2.46's four published assets rather than estimated, so about
+	// 40 Mbit/s sustained, with the redirect to the asset host and its handshake
+	// paid out of the same ten. Below that every update failed, saying
 	// "the download broke off", which reads as a connection that dropped rather
 	// than a limit too small for the job. The handler that calls this had the
 	// right number written above it: "The download and its checks take tens of
@@ -550,8 +551,14 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 	return nil
 }
 
-// maxDownload bounds what will be written to disk. The published binaries are
-// around thirty megabytes; a hundred is room to grow and still a bound.
+// maxDownload bounds what will be written to disk.
+//
+// The published binaries are 45 to 50 MB - measured on v0.2.46, where the four
+// assets run from 45.5 to 49.7 MB - so a hundred is a little over twice the
+// current size. That was written down as "around thirty megabytes" and is worth
+// keeping honest, because this bound is the one that turns into a failed update
+// rather than a refused request if the binary keeps growing: at the present rate
+// it is the number to revisit before it is the number that breaks.
 const maxDownload = 100 << 20
 
 // Installed reports the version of a staged update that is waiting for a
