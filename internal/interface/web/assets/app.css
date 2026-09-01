@@ -992,20 +992,6 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .link-button:hover { color: var(--text); }
 
-/* Dismissal. Quiet, because the notice is worth reading once and the way to make
-   somebody read it is not to make the way out loud. */
-.banner-dismiss {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  opacity: 0.6;
-  padding: 0 4px;
-}
-
-.banner-dismiss:hover { opacity: 1; }
 
 /* The notices that report a state stay under the top bar rather than scrolling
    away with the page.

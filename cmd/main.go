@@ -845,6 +845,19 @@ func main() {
 
 		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", func(ctx *gofr.Context) {
 			report, err := ldapSync.Sync(ctx)
+
+			// What it did, before whether it finished. A run that removed three
+			// accounts and then lost the database used to log "directory sync
+			// failed" and nothing else - three people's recorded hours gone, and
+			// no line naming them. The deletions are logged from the report
+			// whichever way the run ended.
+			if report != nil {
+				for _, removed := range report.Deleted {
+					ctx.Logger.Warnf("directory sync removed %q (%d time entries)",
+						removed.Email, removed.Timesheets)
+				}
+			}
+
 			if err != nil {
 				ctx.Logger.Errorf("directory sync failed: %v", err)
 
@@ -855,11 +868,6 @@ func main() {
 				ctx.Logger.Warnf("directory sync refused: %s", report.Aborted)
 
 				return
-			}
-
-			for _, removed := range report.Deleted {
-				ctx.Logger.Warnf("directory sync removed %q (%d time entries)",
-					removed.Email, removed.Timesheets)
 			}
 
 			if len(report.Created) > 0 {

@@ -221,8 +221,10 @@ func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, er
 		return report, nil
 	}
 
+	// The report goes back with the error here too: createMissing may have
+	// written accounts before it failed, and what it wrote is in the report.
 	if err := s.createMissing(ctx, directoryUsers, knownIDs, knownEmails, report, dryRun); err != nil {
-		return nil, err
+		return report, err
 	}
 
 	if dryRun {
@@ -231,7 +233,15 @@ func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, er
 
 	for _, candidate := range report.Candidates {
 		if err := s.purger.PurgeUser(ctx, candidate.UserID); err != nil {
-			return nil, err
+			// The report goes back with the error, and that is the point rather
+			// than tidiness. Each purge is its own transaction, so the ones before
+			// this are done and cannot be undone - and the only record of an
+			// irreversible deletion is the line a caller writes from
+			// report.Deleted. Returning nil here left a run that removed three
+			// accounts and then lost the database saying "directory sync failed"
+			// and nothing else: three people's hours gone, and nothing naming
+			// them.
+			return report, err
 		}
 
 		report.Deleted = append(report.Deleted, candidate)
@@ -316,9 +326,26 @@ func (s *LDAPSyncService) createMissing(
 			continue
 		}
 
-		report.Created = append(report.Created, email)
+		// Known from here on, including to this loop.
+		//
+		// The two maps are built once from the local accounts, and nothing told
+		// them about the accounts this run had just made. A directory answer
+		// holding the same person twice - a search matching an entry in two
+		// organisational units, a filter joining a group membership - therefore
+		// reached the save twice, and the second was refused as a duplicate
+		// address. That error aborted the whole run, after some accounts had been
+		// created and before any deletion had been made, and it reported "a user
+		// with that email already exists", which reads as a problem with the
+		// address rather than with the answer.
+		knownEmails[email] = true
+
+		if directoryUser.ID != "" {
+			knownIDs[directoryUser.ID] = true
+		}
 
 		if dryRun {
+			report.Created = append(report.Created, email)
+
 			continue
 		}
 
@@ -344,6 +371,11 @@ func (s *LDAPSyncService) createMissing(
 			return err
 		}
 
+		// After the write, not before it. Recording an account as created and
+		// then failing to create it is the report saying something that did not
+		// happen - and this report is what a caller logs and what the screen shows.
+		report.Created = append(report.Created, email)
+
 		s.count(ctx, MetricDirectoryAccounts, "action", "created")
 	}
 
@@ -366,11 +398,22 @@ func (s *LDAPSyncService) WithLimits(limits *LimitsProvider) *LDAPSyncService {
 	return s
 }
 
+// countTimesheets is how many entries a departure would destroy.
+//
+// Through CountByFilter, which exists for this and says so: "Reading every row to
+// count them is the cost this exists to avoid." It read them, and took len() of
+// the slice.
+//
+// The preview is what makes that worth avoiding rather than the run. It is the
+// screen somebody opens to decide, it happens before anything is deleted, and it
+// pays this once per candidate - so an installation where a few long-serving
+// people have left reads years of entries into memory to print a handful of
+// numbers, on a machine that may be a Raspberry Pi.
 func (s *LDAPSyncService) countTimesheets(ctx context.Context, userID uint) (int, error) {
-	entries, err := s.timesheets.GetByFilter(ctx, repository.TimesheetFilter{UserID: userID})
+	total, err := s.timesheets.CountByFilter(ctx, repository.TimesheetFilter{UserID: userID})
 	if err != nil {
 		return 0, err
 	}
 
-	return len(entries), nil
+	return int(total), nil
 }

@@ -559,6 +559,29 @@ func validateLogo(dataURI string) error {
 			WithCode("logoTooLarge", maxLogoBytes/1024)
 	}
 
+	// And how large it is once decoded, which the byte count does not say. A PNG
+	// of one flat colour compresses at about 1250:1, so 8000 by 8000 arrives as
+	// 199 KB - inside the limit above - and becomes 244 MB in memory, three times
+	// over, once per derivative.
+	//
+	// Refused here rather than only inside imaging, because imaging is reached
+	// from deriveLogoSizes, which swallows its errors on purpose: a logo that
+	// scales badly must not refuse the title beside it. That is right for a logo
+	// that is merely awkward and wrong for one that cannot be used at all - it
+	// would be stored, served to every visitor at full size, and silently missing
+	// from the header, the sign-in card and the tab, with nothing said.
+	pixels, err := imaging.PixelsIn(dataURI)
+	if err != nil {
+		return apperror.Invalidf("the logo must be a PNG or a JPEG").
+			WithCode("logoNotRaster")
+	}
+
+	if pixels > imaging.MaxPixels {
+		return apperror.Invalidf("the logo must be at most %d megapixels",
+			imaging.MaxPixels>>20).
+			WithCode("logoTooManyPixels", imaging.MaxPixels>>20)
+	}
+
 	return nil
 }
 

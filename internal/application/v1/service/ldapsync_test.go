@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
 )
 
@@ -33,9 +35,17 @@ func (d *fakeDirectory) ListUsers(context.Context) ([]service.ExternalUser, erro
 type recordingPurger struct {
 	users  *memory.UserRepository
 	purged []uint
+
+	// failAfter refuses once this many accounts have gone, standing in for a
+	// database that becomes unreachable partway down the list.
+	failAfter int
 }
 
 func (p *recordingPurger) PurgeUser(ctx context.Context, userID uint) error {
+	if p.failAfter > 0 && len(p.purged) >= p.failAfter {
+		return errors.New("the database went away")
+	}
+
 	p.purged = append(p.purged, userID)
 
 	return p.users.Delete(ctx, userID)
@@ -91,6 +101,185 @@ func externalUser(t *testing.T, f *fixture, email string) uint {
 	}
 
 	return created.Result.ID
+}
+
+// A run that fails partway still says whom it had already deleted.
+//
+// This is the one operation in the application that removes people together with
+// the hours they recorded, and the record of it is a log line per account written
+// by the caller from report.Deleted. On the failure path the report was thrown
+// away - `return nil, err` - so a run that purged three accounts and then lost
+// the database logged "directory sync failed" and nothing else. The three are
+// gone, irreversibly, and the only place that named them was a metric counter.
+//
+// Whoever runs this then has an error, a user list that is short by an unknown
+// number, and no way to find out which without comparing against a backup.
+func TestAFailedSyncStillReportsWhatItAlreadyDeleted(t *testing.T) {
+	f := newSyncFixture(t, 1)
+
+	first := externalUser(t, f.fixture, "aaa@example.com")
+	externalUser(t, f.fixture, "bbb@example.com")
+
+	// Nobody is in the directory any more, so both are candidates - but the
+	// directory answers with somebody, or the run would refuse before deleting.
+	f.directory.users = []service.ExternalUser{{ID: "kept", Email: "kept@example.com"}}
+
+	// The first goes; the second is where the database is lost.
+	f.purger.failAfter = 1
+
+	report, err := f.sync.Sync(context.Background())
+	if err == nil {
+		t.Fatal("a purge that failed reported success")
+	}
+
+	if report == nil {
+		t.Fatal("a run that deleted an account before failing reported nothing " +
+			"about it; the account and its hours are gone and nothing names them")
+	}
+
+	if len(report.Deleted) != 1 {
+		t.Fatalf("the report names %d deletion(s), want the 1 that happened",
+			len(report.Deleted))
+	}
+
+	if report.Deleted[0].UserID != first {
+		t.Errorf("the report names account %d, want %d",
+			report.Deleted[0].UserID, first)
+	}
+}
+
+// The same person twice in one directory answer creates them once.
+//
+// A search that matches an entry in two organisational units, or a filter that
+// joins a group membership, returns duplicates - which is a shape of answer this
+// has to survive rather than a shape it can rule out. It did not: the "already
+// known" test is built once from the local accounts at the start of the run and
+// was never told about the accounts the run itself had just created, so the
+// second copy was treated as new, and saving it was refused as a duplicate
+// address. That error aborted the whole run.
+//
+// Aborting is the expensive part. It happens after some accounts have been
+// created and, on a run that also had deletions to make, before any of them - so
+// a directory with one duplicate in it quietly stops reconciling, and the reason
+// on the screen is "a user with that email already exists", which reads as a
+// problem with the address rather than with the answer.
+func TestTheSameAddressTwiceInTheDirectoryCreatesOneAccount(t *testing.T) {
+	f := newSyncFixture(t, 0.5)
+
+	f.directory.users = []service.ExternalUser{
+		{ID: "one", Name: "Nils", Email: "nils@example.com"},
+		{ID: "two", Name: "Nils", Email: "nils@example.com"},
+	}
+
+	report, err := f.sync.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("a directory answer with a repeated address failed the run: %v", err)
+	}
+
+	if len(report.Created) != 1 {
+		t.Errorf("the report names %d creation(s) for one person, want 1: %v",
+			len(report.Created), report.Created)
+	}
+
+	all, err := f.userRepo.GetAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seen := 0
+
+	for _, user := range all {
+		if user.Email == "nils@example.com" {
+			seen++
+		}
+	}
+
+	if seen != 1 {
+		t.Errorf("%d accounts exist for one directory entry, want 1", seen)
+	}
+}
+
+// Counting somebody's entries does not read them.
+//
+// The preview shows an administrator how many time entries each departure would
+// destroy, and that number was produced by fetching every one of those entries
+// and taking len() of the slice. TimesheetRepository.CountByFilter exists for
+// exactly this and says so: "Reading every row to count them is the cost this
+// exists to avoid."
+//
+// It is the preview that makes it worth fixing rather than the sync. The preview
+// is the screen somebody opens to decide, it runs before anything is deleted, and
+// it pays this for every candidate - so an installation with a few long-serving
+// people who have left reads years of entries into memory to print a handful of
+// numbers.
+type countingTimesheets struct {
+	repository.TimesheetRepository
+
+	rowsRead int
+	counted  int
+}
+
+func (c *countingTimesheets) GetByFilter(
+	ctx context.Context,
+	filter repository.TimesheetFilter,
+) ([]*model.Timesheet, error) {
+	entries, err := c.TimesheetRepository.GetByFilter(ctx, filter)
+	c.rowsRead += len(entries)
+
+	return entries, err
+}
+
+func (c *countingTimesheets) CountByFilter(
+	ctx context.Context,
+	filter repository.TimesheetFilter,
+) (uint, error) {
+	c.counted++
+
+	return c.TimesheetRepository.CountByFilter(ctx, filter)
+}
+
+func TestThePreviewCountsEntriesWithoutReadingThem(t *testing.T) {
+	f := newFixture(t)
+
+	counting := &countingTimesheets{TimesheetRepository: f.timesheetRepo}
+	directory := &fakeDirectory{enabled: true}
+	purger := &recordingPurger{users: f.userRepo}
+
+	sync := service.NewLDAPSyncService(directory, f.userRepo, f.roleRepo,
+		counting, purger, 1, model.RoleUser)
+
+	leaver := externalUser(t, f, "leaver@example.com")
+
+	for day := 1; day <= 5; day++ {
+		if _, err := f.timesheetRepo.Save(context.Background(), &model.Timesheet{
+			UserID: leaver, Date: model.CalendarDay(time.Date(2026, 8, day, 0, 0, 0, 0, time.UTC)),
+			DurationHours: 2,
+		}); err != nil {
+			t.Fatalf("booking an entry: %v", err)
+		}
+	}
+
+	// Somebody is still there, or the run refuses before it counts anything.
+	directory.users = []service.ExternalUser{{ID: "kept", Email: "kept@example.com"}}
+
+	report, err := sync.Preview(context.Background())
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	if len(report.Candidates) != 1 || report.Candidates[0].Timesheets != 5 {
+		t.Fatalf("the preview reports %d candidate(s) with %v entries, want 1 with 5",
+			len(report.Candidates), report.Candidates)
+	}
+
+	if counting.rowsRead != 0 {
+		t.Errorf("the preview read %d entry row(s) to produce a count of 5; "+
+			"CountByFilter exists so it does not have to", counting.rowsRead)
+	}
+
+	if counting.counted == 0 {
+		t.Error("the preview did not use CountByFilter at all")
+	}
 }
 
 // A directory that answers with nothing is almost certainly broken, and must

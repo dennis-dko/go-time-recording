@@ -331,10 +331,28 @@ func read(r io.Reader, table Table) ([][]string, error) {
 	return raw[1:], nil
 }
 
+// maxUnzippedBytes bounds what an uploaded workbook may become once unpacked.
+//
+// An .xlsx is a zip, so the size of the upload says nothing about the size of
+// what it holds. The endpoint accepts 32 MB (rest.maxImportBody), and without
+// this that 32 MB was allowed to expand as far as excelize's own default, which
+// is 16 GB - a number this application never chose and would not choose. Measured
+// on the shape a sheet actually has, a run of identical cells, deflate reaches
+// 408:1: a 32 MB upload becomes 13 GB, which is under that default and so would
+// not have been refused by it either. Worksheet XML past UnzipXMLSizeLimit goes
+// to the temporary directory rather than into memory, so what that costs is the
+// disk - and this application is run on machines whose disk is an SD card.
+//
+// 128 MB is the bound instead. Measured against a real file rather than guessed:
+// 200,000 rows written by this package's own writer unpack to 34.5 MB, so this is
+// about four times any import anybody will legitimately make, and four orders of
+// magnitude below what was allowed before.
+const maxUnzippedBytes = 128 << 20
+
 // rowsOf opens a workbook and returns every row of the sheet that belongs to this
 // table, heading included.
 func rowsOf(r io.Reader, table Table) ([][]string, error) {
-	book, err := excelize.OpenReader(r)
+	book, err := excelize.OpenReader(r, excelize.Options{UnzipSizeLimit: maxUnzippedBytes})
 	if err != nil {
 		return nil, fmt.Errorf("reading the workbook: %w", err)
 	}

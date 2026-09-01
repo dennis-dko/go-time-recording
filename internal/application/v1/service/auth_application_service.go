@@ -239,5 +239,13 @@ func passwordError(err error) *apperror.Error {
 			WithCode("passwordTooShort", security.MinPasswordLength)
 	}
 
+	// The other end, and the one that used to escape as bcrypt's own sentence.
+	// The limit is in bytes, so the message says characters and the translation
+	// says why a German passphrase reaches it sooner.
+	if errors.Is(err, security.ErrPasswordTooLong) {
+		return apperror.Invalidf("%v", err).
+			WithCode("passwordTooLong", security.MaxPasswordLength)
+	}
+
 	return apperror.Invalidf("%v", err)
 }

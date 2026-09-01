@@ -452,6 +452,41 @@ func TestSomethingThatIsNotAWorkbookIsRefusedOutright(t *testing.T) {
 	}
 }
 
+// A workbook of the wrong kind is a different refusal from a file that is not a
+// workbook at all.
+//
+// The two exports leave the browser as .xlsx files that look identical in a file
+// manager, and picking the wrong one is the ordinary mistake here - the projects
+// sheet uploaded to the time entries importer. Answering "this is not a readable
+// .xlsx workbook" sends whoever did that looking for a corrupt file, when the
+// file is perfectly good and only needs uploading somewhere else. The reader
+// already knows which sheet it found and which it wanted; wrongWorkbook is how
+// that reaches the screen.
+func TestAWorkbookOfTheWrongKindSaysWhichKindItIs(t *testing.T) {
+	t.Parallel()
+
+	_, _, worker := startWithWorker(t)
+
+	book, err := spreadsheet.WriteProjects("", []spreadsheet.ProjectRow{
+		{Name: "Roof", Status: "active"},
+	})
+	if err != nil {
+		t.Fatalf("building the projects workbook: %v", err)
+	}
+
+	r := worker.upload("/timesheets/import", "file", "projects.xlsx", book,
+		map[string]string{"dryRun": "true"})
+
+	if r.Status != http.StatusBadRequest {
+		t.Fatalf("a projects workbook answered %d, want 400: %s", r.Status, r.Body)
+	}
+
+	if code := errorCode(t, r); code != "wrongWorkbook" {
+		t.Errorf("a projects workbook was refused as %q, want wrongWorkbook: %s",
+			code, r.Message())
+	}
+}
+
 // An export holds the caller's own entries and nobody else's, the same way the list
 // does - an export that saw more than the screen would be a way around the screen.
 //
@@ -460,6 +495,70 @@ func TestSomethingThatIsNotAWorkbookIsRefusedOutright(t *testing.T) {
 // account can do that now, so the contrast is drawn the other way round - each of the
 // two accounts exports exactly its own row, which distinguishes a scope from an empty
 // answer just as well and does not need a right that no longer exists.
+// And the export answers the same rows the list does for the same filter.
+//
+// The user scoping is proved above, and it was the only half being proved. The
+// other three parameters - the project, and the two ends of the date range - were
+// read by two functions that happened to parse them identically, with a comment
+// on one claiming the other called it. They are one function now, and this is
+// what would notice if they stopped being: an export that ignored `from` hands
+// over months of entries to whoever asked for a week of them.
+func TestAnExportHonoursTheSameFilterTheListDoes(t *testing.T) {
+	t.Parallel()
+
+	_, _, worker := startWithWorker(t)
+
+	for _, day := range []string{"2026-08-03", "2026-08-04", "2026-08-05"} {
+		worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
+			"date": day, "durationHours": 2, "description": day,
+		}), http.StatusCreated, http.StatusOK)
+	}
+
+	const window = "?from=2026-08-04&to=2026-08-05"
+
+	var listed struct {
+		Items []struct {
+			Description string `json:"description"`
+		} `json:"items"`
+		TotalCount int `json:"totalCount"`
+	}
+
+	worker.must(worker.api(http.MethodGet, "/timesheets"+window, nil),
+		http.StatusOK).Data(t, &listed)
+
+	if listed.TotalCount != 2 {
+		t.Fatalf("the list answered %d entries for the window, want 2", listed.TotalCount)
+	}
+
+	exported := worker.must(worker.api(http.MethodGet, "/timesheets/export"+window, nil),
+		http.StatusOK)
+
+	rows, _, err := spreadsheet.Read(bytes.NewReader(exported.Body))
+	if err != nil {
+		t.Fatalf("reading the export: %v", err)
+	}
+
+	if len(rows) != len(listed.Items) {
+		t.Fatalf("the export has %d row(s) and the list %d for the same filter",
+			len(rows), len(listed.Items))
+	}
+
+	inExport := map[string]bool{}
+	for _, row := range rows {
+		inExport[row.Description] = true
+	}
+
+	for _, item := range listed.Items {
+		if !inExport[item.Description] {
+			t.Errorf("the list answered %q and the export did not", item.Description)
+		}
+	}
+
+	if inExport["2026-08-03"] {
+		t.Error("the export ignored 'from' and handed over an entry outside the window")
+	}
+}
+
 func TestAnExportIsScopedTheSameWayTheListIs(t *testing.T) {
 	t.Parallel()
 

@@ -2,11 +2,15 @@ package model
 
 import "slices"
 
-// Defaults applied to a user who has not chosen their own working times.
-const (
-	DefaultDailyTargetHours = 8
-	DefaultMaxDailyHours    = 12
-)
+// DefaultDailyTargetHours is the target applied to a user who has not chosen
+// their own.
+//
+// There was a DefaultMaxDailyHours beside it, and it is gone with the method that
+// was its only reader. A default daily *cap* was the wrong shape for the rule
+// this application actually has: the ceiling belongs to the installation, and a
+// personal figure may only make somebody's own day shorter than it. See
+// TimesheetApplicationService.dailyLimitFor, which takes the stricter of the two.
+const DefaultDailyTargetHours = 8
 
 // User model
 type User struct {
@@ -131,14 +135,4 @@ func (u *User) EffectiveDailyTarget() float64 {
 	}
 
 	return u.DailyTargetHours
-}
-
-// EffectiveMaxDaily returns the user's daily cap, falling back to fallback
-// (the instance-wide limit) when the user has not set one.
-func (u *User) EffectiveMaxDaily(fallback float64) float64 {
-	if u.MaxDailyHours <= 0 {
-		return fallback
-	}
-
-	return u.MaxDailyHours
 }

@@ -143,9 +143,10 @@ func everyDayInRange(from, to time.Time, totals map[string]float64) []DayTotal {
 	days := make([]DayTotal, 0, len(totals)+1)
 
 	// Midnight in the range's own location, so adding a day cannot land on the
-	// same day twice across a daylight-saving change.
-	day := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
-	last := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, to.Location())
+	// same day twice across a daylight-saving change. startOfDay is that rule,
+	// and deliberately not model.CalendarDay - see the comment there.
+	day := startOfDay(from)
+	last := startOfDay(to)
 
 	for !day.After(last) {
 		days = append(days, DayTotal{Date: day, Hours: totals[day.Format(dayKey)]})

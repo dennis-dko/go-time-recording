@@ -504,6 +504,109 @@ func TestStartingTheNewVersionKeepsThePreviousOne(t *testing.T) {
 	}
 }
 
+// The swap keeps the version that was working, and puts it back if the install
+// does not finish.
+//
+// Nothing covered `swap` at all, which is the function that renames the binary
+// this process is running out of. Everything after it - Rollback, the "restart to
+// use it" notice, the operations manual's way back from an update that installs
+// and will not serve - is built on the two files it leaves behind, and none of
+// that was being proved.
+//
+// The failure is provoked with a staged path that is not there, because that is
+// the shape of every real way the second rename loses: a full disk, a different
+// filesystem, an antivirus holding the download open. What matters is not which
+// of those it was but that the binary at the installation's own path is the one
+// that was working a moment ago, rather than nothing at all.
+func TestTheSwapPutsTheWorkingBinaryBackIfTheInstallFails(t *testing.T) {
+	dir := t.TempDir()
+	self := filepath.Join(dir, "go-time-recording"+exeSuffix())
+
+	if err := os.WriteFile(self, []byte("the version that works"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A leftover from an earlier update. The swap removes it first, so this also
+	// pins that the copy kept is the one that was running rather than an older one.
+	if err := os.WriteFile(self+".old", []byte("two versions ago"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := swap(self, filepath.Join(dir, "never-downloaded"), "v9.9.9")
+	if err == nil {
+		t.Fatal("an install from a staged file that is not there reported success")
+	}
+
+	if !strings.Contains(err.Error(), "cannot put the new binary in place") {
+		t.Errorf("the refusal does not say which half failed: %v", err)
+	}
+
+	running, readErr := os.ReadFile(self)
+	if readErr != nil {
+		t.Fatalf("the installation has no binary at its own path: %v", readErr)
+	}
+
+	if string(running) != "the version that works" {
+		t.Errorf("the path holds %q, want the version that was running", running)
+	}
+
+	if _, err := os.Stat(self + ".pending"); err == nil {
+		t.Error("an install that failed still reports a version waiting to be run")
+	}
+}
+
+// The swap that succeeds keeps the previous binary and says which version is
+// waiting.
+//
+// The two files are the contract the rest of the update reads: RollbackOver
+// refuses without the .old, and the card says "restart to use it" from the
+// .pending. A swap that installed correctly and wrote neither would look exactly
+// like a swap that had not run.
+func TestTheSwapKeepsThePreviousBinaryAndNotesTheVersion(t *testing.T) {
+	dir := t.TempDir()
+	self := filepath.Join(dir, "go-time-recording"+exeSuffix())
+	staged := filepath.Join(dir, "staged")
+
+	if err := os.WriteFile(self, []byte("the version that works"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(staged, []byte("the new version"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := swap(self, staged, "v9.9.9"); err != nil {
+		t.Fatalf("swapping in a staged binary: %v", err)
+	}
+
+	installed, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatalf("nothing at the installation's own path: %v", err)
+	}
+
+	if string(installed) != "the new version" {
+		t.Errorf("the path holds %q, want the staged version", installed)
+	}
+
+	previous, err := os.ReadFile(self + ".old")
+	if err != nil {
+		t.Fatalf("the way back was not kept: %v", err)
+	}
+
+	if string(previous) != "the version that works" {
+		t.Errorf("the kept copy is %q, want the version that was running", previous)
+	}
+
+	pending, err := os.ReadFile(self + ".pending")
+	if err != nil {
+		t.Fatalf("nothing records which version is waiting: %v", err)
+	}
+
+	if string(pending) != "v9.9.9" {
+		t.Errorf("the note reads %q, want v9.9.9", pending)
+	}
+}
+
 // A refusal from the feed says what the feed said.
 //
 // "the release feed answered 403" was the whole message, and it reads as a

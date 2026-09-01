@@ -180,6 +180,72 @@ func ToIcon(body []byte) ([]byte, error) {
 	return fitInto(body, Crop{}, iconSize, iconSize, true)
 }
 
+// MaxPixels bounds what a logo may decode to, in pixels.
+//
+// The size limit on a logo is 256 KB, and until this was added that was the only
+// limit: nothing said what those bytes were allowed to become. A PNG of one flat
+// colour compresses at about 1250:1, so 8000 by 8000 encodes to 199 KB - inside
+// the limit - and decodes to 244 MB. Measured rather than estimated. Saving the
+// appearance then decodes the stored logo three times, once per derivative.
+//
+// Sixteen megapixels is 4096 by 4096, which is four times across what the comment
+// at the top of this file already called the sensible ceiling ("a few thousand
+// pixels across"), and around sixty times the largest box anything here scales
+// into. A logo bigger than that is a mistake or an attack, and in neither case is
+// scaling it the right answer.
+const MaxPixels = 16 << 20
+
+// PixelsIn is how many pixels a stored logo would decode to.
+//
+// The fact, not the policy: what counts as too many is decided beside the other
+// things decided about a logo - that it is a raster image, and that it is under
+// 256 KB - rather than here. What this package will not do either way is scale
+// something enormous, which refuseTooManyPixels enforces on the way in.
+//
+// The header alone is read, so this costs nothing on an ordinary file.
+func PixelsIn(dataURI string) (int, error) {
+	body, _, ok := decodeDataURI(dataURI)
+	if !ok {
+		return 0, fmt.Errorf("the logo is not an inline image")
+	}
+
+	config, _, err := image.DecodeConfig(bytes.NewReader(body))
+	if err != nil {
+		return 0, fmt.Errorf("the logo could not be read as an image: %w", err)
+	}
+
+	if config.Width <= 0 || config.Height <= 0 {
+		return 0, fmt.Errorf("the logo has no size")
+	}
+
+	return config.Width * config.Height, nil
+}
+
+// refuseTooManyPixels reads the header and stops before the pixels.
+//
+// image.DecodeConfig parses only enough to answer the dimensions, which on the
+// file above took no measurable time - so this costs nothing on an ordinary logo
+// and is the whole defence on a crafted one. Bounded on width times height rather
+// than on either side, because it is the product that is allocated: a 40000 by 400
+// strip costs the same as a square of the same area.
+func refuseTooManyPixels(body []byte) error {
+	config, _, err := image.DecodeConfig(bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("the logo could not be read as an image: %w", err)
+	}
+
+	if config.Width <= 0 || config.Height <= 0 {
+		return fmt.Errorf("the logo has no size")
+	}
+
+	if config.Width*config.Height > MaxPixels {
+		return fmt.Errorf("the logo is too large at %dx%d pixels; at most %d "+
+			"megapixels are accepted", config.Width, config.Height, MaxPixels>>20)
+	}
+
+	return nil
+}
+
 // fitInto scales an image to fit inside a box.
 //
 // With pad, the result is exactly the box and the image sits centred in it on
@@ -187,6 +253,10 @@ func ToIcon(body []byte) ([]byte, error) {
 // image at its scaled size and nothing more, because a header and a sign-in card
 // place it themselves and a transparent margin would only fight them for room.
 func fitInto(body []byte, crop Crop, boxWidth, boxHeight int, pad bool) ([]byte, error) {
+	if err := refuseTooManyPixels(body); err != nil {
+		return nil, err
+	}
+
 	decoded, _, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("the logo could not be read as an image: %w", err)

@@ -1127,6 +1127,16 @@ mistakes it for a configured installation.
 
 ## Things that will surprise you
 
+- **`AUTH_ENABLED=false` is not reversible for the projects created under it.**
+  With enforcement off there is no "whose" to record, so a project made then has
+  no owner. That is consistent while it lasts - every caller sees everything. Turn
+  authentication on afterwards and those projects belong to nobody, which means
+  they are visible to nobody: not in the list, not to their creator, and not to an
+  administrator, because ownership *is* visibility here and there is no screen
+  that reaches a project it cannot see. The time entries booked against them
+  remain and still count. This is the concrete reason the mode is documented above
+  as suiting "a throwaway local trial and nothing else" - the trial's projects do
+  not survive the promotion.
 - Parsing is forgiving, not strict. A duration, integer or float that does not
   parse becomes the default **silently**. `LOG_LEVEL` resolves any unrecognised
   name to `INFO`. A `TRACER_RATIO` it cannot read samples nothing.

@@ -37,41 +37,23 @@ func NewTimesheetHandler(
 	}
 }
 
-// List handles GET /api/v1/timesheets, filtered by user, project, status and
-// date range. A caller who may only see their own entries is pinned to their
-// own id regardless of the filter they sent.
+// List handles GET /api/v1/timesheets, filtered by user, project and date
+// range. A caller who may only see their own entries is pinned to their own id
+// regardless of the filter they sent.
+//
+// Not by status, and the word used to be in this sentence. A time entry has none:
+// everybody keeps their own hours and there is nobody to approve them, so a
+// filter for one would be a filter over a field that does not exist. A comment
+// advertising it is how somebody comes to add it.
 func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermTimesheetReadOwn)
 	if err != nil {
 		return nil, err
 	}
 
-	requestedUserID, err := queryUint(c, "userId")
-	if err != nil {
-		return nil, toHTTPError(err)
-	}
-
-	userID, err := h.authz.scopeUserID(principal, requestedUserID)
+	scope, err := timesheetScopeOf(c, h.authz, principal)
 	if err != nil {
 		return nil, err
-	}
-
-	// "none" rather than a number, matching what the evaluation already takes: a
-	// zero id means "any project", so the entries that belong to none cannot be
-	// asked for with a number at all.
-	projectID, withoutProject, err := projectFilter(c)
-	if err != nil {
-		return nil, toHTTPError(err)
-	}
-
-	from, err := queryDate(c, "from")
-	if err != nil {
-		return nil, toHTTPError(err)
-	}
-
-	to, err := queryDate(c, "to")
-	if err != nil {
-		return nil, toHTTPError(err)
 	}
 
 	limit, offset, err := pageOf(c)
@@ -80,11 +62,11 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 	}
 
 	result, err := h.timesheets.ListTimesheets(c, query.ListTimesheetsQuery{
-		UserID:         userID,
-		ProjectID:      projectID,
-		WithoutProject: withoutProject,
-		StartDate:      from,
-		EndDate:        to,
+		UserID:         scope.UserID,
+		ProjectID:      scope.ProjectID,
+		WithoutProject: scope.WithoutProject,
+		StartDate:      scope.From,
+		EndDate:        scope.To,
 		Limit:          limit,
 		Offset:         offset,
 	})
@@ -572,6 +554,77 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 // projectFilter reads the projectId query parameter, which asks one of three
 // questions.
 //
+// timesheetScope is what the entry listing and the entry export both filter on:
+// whose entries, which project, and between which dates - read from the query and
+// already narrowed to what the caller may see.
+//
+// One reader for both, and that is the export's whole safety property rather than
+// a tidiness argument: an export that saw more than the screen it was started
+// from would be a way around the screen. That used to be two functions parsing
+// the same four parameters, with a comment on one of them claiming the other
+// called it. They agreed, which is what two parallel copies do until one of them
+// gains a fifth parameter.
+//
+// Paging is deliberately not here. The listing answers a page and the export
+// answers the whole selection, which is the one place the two are meant to
+// differ.
+type timesheetScope struct {
+	UserID         uint
+	ProjectID      uint
+	WithoutProject bool
+
+	From *time.Time
+	To   *time.Time
+}
+
+// timesheetScopeOf reads the scope, refusing the way each parameter refuses.
+//
+// scopeUserID is the security-relevant line: a caller who may only read their own
+// entries is pinned to their own id whatever they asked for.
+func timesheetScopeOf(
+	c *gofr.Context,
+	authz *Authorizer,
+	principal *service.Principal,
+) (timesheetScope, error) {
+	var empty timesheetScope
+
+	requested, err := queryUint(c, "userId")
+	if err != nil {
+		return empty, toHTTPError(err)
+	}
+
+	userID, err := authz.scopeUserID(principal, requested)
+	if err != nil {
+		return empty, err
+	}
+
+	// "none" rather than a number, matching what the evaluation already takes: a
+	// zero id means "any project", so the entries that belong to none cannot be
+	// asked for with a number at all.
+	projectID, withoutProject, err := projectFilter(c)
+	if err != nil {
+		return empty, toHTTPError(err)
+	}
+
+	from, err := queryDate(c, "from")
+	if err != nil {
+		return empty, toHTTPError(err)
+	}
+
+	to, err := queryDate(c, "to")
+	if err != nil {
+		return empty, toHTTPError(err)
+	}
+
+	return timesheetScope{
+		UserID:         userID,
+		ProjectID:      projectID,
+		WithoutProject: withoutProject,
+		From:           from,
+		To:             to,
+	}, nil
+}
+
 // Absent or empty is every project. The literal "none" is the entries that were
 // never given one - a question a number cannot express, because zero already
 // means "any". Anything else is that project.

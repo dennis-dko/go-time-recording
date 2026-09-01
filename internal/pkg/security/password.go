@@ -14,13 +14,41 @@ import (
 // length rule that forces workarounds helps nobody.
 const MinPasswordLength = 8
 
+// MaxPasswordLength is bcrypt's limit rather than a policy, and it is in bytes.
+//
+// bcrypt takes at most 72 bytes and refuses anything longer. There was no
+// maximum here, so the refusal came out of the library - "bcrypt: password
+// length exceeds 72 bytes" - and reached the person setting the password: an
+// algorithm they did not choose, counted in a unit they did not type, and, since
+// only ErrPasswordTooShort was mapped to a code, the one message in this API that
+// arrived untranslated whatever language they were reading.
+//
+// Bytes, not characters, and that is the part worth stating out loud. "Correct
+// Horse Battery Staple And Several More Words To Be Safe Against Guessing" is 79
+// bytes and was refused. In German it bites sooner: an umlaut is two bytes in
+// UTF-8, so a 60-character German passphrase can be over a limit that a
+// 70-character English one is under.
+//
+// Not worked around by pre-hashing. Feeding bcrypt a digest would lift the limit
+// and would also change what every stored hash means, which is a migration over
+// everybody's password to buy a longer passphrase than anyone here is typing.
+const MaxPasswordLength = 72
+
 // ErrPasswordTooShort is returned by HashPassword for unusable input.
 var ErrPasswordTooShort = errors.New("password must be at least 8 characters")
+
+// ErrPasswordTooLong is returned for one past what bcrypt will take.
+var ErrPasswordTooLong = errors.New("password must be at most 72 bytes")
 
 // HashPassword returns a bcrypt hash of the password.
 func HashPassword(password string) (string, error) {
 	if len(password) < MinPasswordLength {
 		return "", ErrPasswordTooShort
+	}
+
+	// Before bcrypt is asked, so the reason is this application's own.
+	if len(password) > MaxPasswordLength {
+		return "", ErrPasswordTooLong
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
