@@ -36,14 +36,6 @@ type Timesheet struct {
 	UpdatedAt time.Time
 }
 
-// Recorded reports whether this entry knows when it was booked.
-//
-// False for a row that predates the audit columns, which is what lets a caller
-// say nothing instead of showing a date nobody recorded.
-func (t *Timesheet) Recorded() bool {
-	return !t.CreatedAt.IsZero()
-}
-
 // HasProject reports whether the entry is assigned to a project.
 func (t *Timesheet) HasProject() bool {
 	return t.ProjectID != nil && *t.ProjectID != 0
