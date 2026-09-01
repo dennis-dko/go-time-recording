@@ -7,6 +7,19 @@
  * forbids external scripts, and shipping a megabyte of third-party assets would
  * work against the single-binary goal. The specification itself is standard
  * OpenAPI, so anyone preferring Swagger UI can load /openapi.json into it.
+ *
+ * English only, and deliberately - this is the one page in the application that
+ * does not go through t(). Everything on it that carries meaning comes out of
+ * /openapi.json: the route paths, the parameter and JSON field names, and the
+ * descriptions, all of which are English and none of which can be translated
+ * from here. Translating the seven labels around them - "Parameters",
+ * "Responses", "Example" - would produce a German frame around an English page,
+ * which reads as an unfinished translation rather than a finished one.
+ *
+ * So api-docs.html declares lang="en" and means it, while the application's own
+ * documentElement.lang is kept in step with the reader's choice by app.js. Note
+ * that the i18n tests read only / and /app.js, so nothing here would report a
+ * half-translated version of this page: the decision is the guard.
  */
 
 const $ = (sel, root = document) => root.querySelector(sel);
