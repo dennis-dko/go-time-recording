@@ -71,9 +71,31 @@ type Source struct {
 	// API is the releases endpoint. GitHub's by default.
 	API string
 
-	// Client is who does the asking. Given a short timeout by New, because this
-	// runs inside a request somebody is waiting on.
+	// Client asks what the newest release is, and reads the checksum file. Given
+	// a short whole-exchange timeout by New, because both are small documents on
+	// a request somebody is waiting on: one that has not arrived by then is not
+	// coming.
 	Client *http.Client
+
+	// Downloader fetches the binary, and is a second client for one reason.
+	//
+	// http.Client.Timeout covers the whole exchange, body included, so the
+	// lookup's ten seconds were also the budget for about thirty megabytes -
+	// roughly 24 Mbit/s sustained, with the redirect to the asset host and its
+	// handshake paid out of the same ten. Below that every update failed, saying
+	// "the download broke off", which reads as a connection that dropped rather
+	// than a limit too small for the job. The handler that calls this had the
+	// right number written above it: "The download and its checks take tens of
+	// seconds."
+	//
+	// So this one is bounded by progress rather than by duration. A server that
+	// accepts the connection and never answers is cut off by
+	// ResponseHeaderTimeout; a body that stops arriving is cut off by the caller's
+	// context, which is the only thing that can tell it from a slow one; and the
+	// size is bounded by maxDownload regardless.
+	//
+	// Nil falls back to Client, so a test that supplies only the one still works.
+	Downloader *http.Client
 
 	// Token identifies this installation to the feed, where it has been given
 	// one. Optional and empty by default: checking for a release needs no
@@ -112,8 +134,33 @@ func New(api, token string) *Source {
 
 		// Short, and no keep-alive worth speaking of: this is a courtesy lookup
 		// on an administration screen, not something the application needs.
-		Client: &http.Client{Timeout: 10 * time.Second},
+		Client: &http.Client{Timeout: lookupTimeout},
+
+		// No whole-exchange timeout. See the field.
+		Downloader: &http.Client{
+			Transport: &http.Transport{
+				// As http.DefaultTransport has them, because a deployment behind a
+				// proxy has to reach the asset host the same way it reaches the feed.
+				Proxy:                 http.ProxyFromEnvironment,
+				ForceAttemptHTTP2:     true,
+				TLSHandshakeTimeout:   lookupTimeout,
+				ResponseHeaderTimeout: lookupTimeout,
+			},
+		},
 	}
+}
+
+// lookupTimeout bounds the calls that fetch a small document, and the handshake
+// and header phases of the one that does not.
+const lookupTimeout = 10 * time.Second
+
+// downloadClient is who fetches the binary.
+func (s *Source) downloadClient() *http.Client {
+	if s.Downloader != nil {
+		return s.Downloader
+	}
+
+	return s.Client
 }
 
 // assetName is what this platform's binary is called in a release.
@@ -464,7 +511,7 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 		return err
 	}
 
-	res, err := s.Client.Do(req)
+	res, err := s.downloadClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("cannot download the release: %w", err)
 	}
