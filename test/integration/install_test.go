@@ -287,7 +287,7 @@ func waitForTheApplication(t *testing.T, c *installerClient) {
 	deadline := time.Now().Add(harness.StartupTimeout)
 
 	for time.Now().Before(deadline) {
-		if body := tryGet(c.app.BaseURL() + "/api/v1/branding"); strings.Contains(body, `"title"`) {
+		if theApplicationAnswered(tryGet(c.app.BaseURL() + "/api/v1/branding")) {
 			return
 		}
 
@@ -295,6 +295,44 @@ func waitForTheApplication(t *testing.T, c *installerClient) {
 	}
 
 	t.Fatalf("the application never took over the port:\n%s", c.app.Log())
+}
+
+// theApplicationAnswered reports whether that body came from the application
+// rather than from the installer still standing on the port.
+//
+// It has to be told apart, and a substring could not do it. The installer mounts
+// its page at "/" and therefore answers *every* path, including the one this
+// polls - and its markup carries `data-i18n="title"`, which is the exact string
+// the old check searched for. So the wait could be satisfied by the installer,
+// return while the handover had not begun, and hand the caller a port that was
+// about to close: the installer stops, and TestDatasource, ApplyDatasource,
+// gofr.New and the migrations all run before anything binds it again. The next
+// request in the test then met "connection refused".
+//
+// It is rare because the installer has usually stopped answering by the first
+// poll, 250ms after the save. It is not rare enough: it took CI on main red
+// once, which skipped the release, since Release triggers on CI completing.
+//
+// Decoded rather than searched. The application answers this route with JSON and
+// the installer answers it with HTML, so parsing is the difference itself rather
+// than a proxy for it, and a title that happens to appear in future markup cannot
+// bring the confusion back.
+func theApplicationAnswered(body string) bool {
+	// Through GoFr's envelope, which is where the answer actually is. Decoding
+	// the bare object instead parses this perfectly well and finds no title, so
+	// the wait never returns at all - which is how the first attempt at this fix
+	// turned one occasional flake into three reliable timeouts.
+	var answer struct {
+		Data struct {
+			Title *string `json:"title"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal([]byte(body), &answer); err != nil {
+		return false
+	}
+
+	return answer.Data.Title != nil
 }
 
 // Answering the installer is the sign-in.
@@ -410,6 +448,34 @@ func TestAnInstallationThatSkippedTheInstallerHandsOutNoSession(t *testing.T) {
 
 	if got := browser.api(http.MethodGet, "/me", nil).Status; got == http.StatusOK {
 		t.Error("a refused claim left a session behind anyway")
+	}
+}
+
+// The wait for the application is not satisfied by the installer.
+//
+// waitForTheApplication is what every handover case leans on, so a wait that can
+// be satisfied early makes all of them flaky at once - and it was: the installer
+// answers every path with its own page, and that page carried the exact string
+// the wait searched for.
+//
+// Deterministic, where the failure it fixes is a race. Before anything is saved
+// the application cannot possibly be up, so whatever answers here is the
+// installer by definition, and the wait must not accept it.
+func TestTheWaitForTheApplicationIsNotSatisfiedByTheInstaller(t *testing.T) {
+	t.Parallel()
+
+	c := openInstaller(t)
+
+	body := tryGet(c.app.BaseURL() + "/api/v1/branding")
+	if body == "" {
+		t.Fatal("the installer did not answer the path the wait polls; if it has " +
+			"stopped answering every path, this case is no longer about anything")
+	}
+
+	if theApplicationAnswered(body) {
+		t.Errorf("the wait accepts the installer's own page as the application, so "+
+			"it returns before the handover has begun and hands back a port that is "+
+			"about to close. The installer answered:\n%.200s", body)
 	}
 }
 

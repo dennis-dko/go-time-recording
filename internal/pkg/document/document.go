@@ -413,6 +413,33 @@ func writeSection(pdf *fpdf.Fpdf, ink inks, number int, section Section) error {
 	return nil
 }
 
+// MaxChartPixels bounds what a chart may decode to, in pixels.
+//
+// The endpoint bounds the picture at a megabyte, and that says nothing about what
+// it costs to read: a PNG compresses by orders of magnitude, and the browser
+// sends exactly the kind that costs most. A canvas produces colour type 6, so the
+// alpha channel must be split from the colour, and splitting it means inflating
+// the whole image.
+//
+// Measured through Write with a flat RGBA chart rather than estimated: 8000
+// square arrives as 260 KB and allocates 782 MB; 12000 square arrives as 566 KB
+// and allocates 2.6 GB. Both are inside the byte limit, and extrapolated to it,
+// about 16000 square - roughly 5 GB, on machines whose memory is measured in
+// single-figure gigabytes.
+//
+// Sixteen megapixels is far above any chart that exists. app.js draws one at the
+// chart card's own box times CHART_SCALE, which is 2, so even a chart running the
+// full width of a 5120-pixel screen is around 8 megapixels. It is also far above
+// what the page can show: this is placed at the text width, about 170mm, which is
+// some 2000 pixels at 300 dpi.
+//
+// What it leaves is around 290 MB in the worst case, at the same 18 bytes per
+// pixel the measurements above work out to. That is not nothing, and it is the
+// honest trade: bounding tighter would start refusing a real report from a wide
+// screen, and the byte limit that was supposed to cover this cannot, because
+// bytes do not predict pixels.
+const MaxChartPixels = 16 << 20
+
 // writeChart places the picture the browser drew, at the width of the text.
 //
 // Its own proportions rather than a fixed height, so a chart of thirty projects
@@ -427,6 +454,14 @@ func writeChart(pdf *fpdf.Fpdf, number int, chart []byte) error {
 
 	if config.Width <= 0 || config.Height <= 0 {
 		return fmt.Errorf("the chart has no size: %dx%d", config.Width, config.Height)
+	}
+
+	// The other end of the same question, which was missing. DecodeConfig has
+	// already read the header and nothing has been inflated yet, so this refuses
+	// before the cost is paid rather than after.
+	if config.Width*config.Height > MaxChartPixels {
+		return fmt.Errorf("the chart is too large at %dx%d pixels; at most %d "+
+			"megapixels are accepted", config.Width, config.Height, MaxChartPixels>>20)
 	}
 
 	name := "chart-" + strconv.Itoa(number)

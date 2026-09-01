@@ -1,7 +1,9 @@
 package rest
 
 import (
+	"bytes"
 	"encoding/base64"
+	"image/png"
 	"strings"
 	"time"
 	"unicode"
@@ -270,6 +272,33 @@ func decodeChart(chart string) ([]byte, error) {
 	if len(picture) > maxChartBytes {
 		return nil, apperror.Invalidf("a chart is at most %d bytes; this one is %d",
 			maxChartBytes, len(picture)).WithCode("documentTooLong")
+	}
+
+	// And how large it is once read, which the byte count does not say. A PNG
+	// compresses by orders of magnitude, and a canvas produces the kind that costs
+	// most to read - colour type 6, whose alpha has to be split from the colour,
+	// which means inflating the whole image. Measured: 8000 square arrives as
+	// 260 KB, inside the limit above, and allocates 782 MB.
+	//
+	// Refused here as well as in the document package, and for the reason the logo
+	// needed both: the package refuses so nothing can be made to allocate that
+	// much whatever calls it, and this refuses so the person who asked for the
+	// report is told why, in their own language, instead of meeting whatever a
+	// failed render turns into.
+	// png rather than image: the prefix above already required a PNG, and the
+	// generic decoder would answer only because some other package in this binary
+	// happens to have registered the format.
+	config, err := png.DecodeConfig(bytes.NewReader(picture))
+	if err != nil {
+		return nil, apperror.Invalidf("the chart is not readable: %v", err).
+			WithCode("chartNotAPicture")
+	}
+
+	if config.Width*config.Height > document.MaxChartPixels {
+		return nil, apperror.Invalidf(
+			"a chart is at most %d megapixels; this one is %dx%d",
+			document.MaxChartPixels>>20, config.Width, config.Height).
+			WithCode("chartTooManyPixels", document.MaxChartPixels>>20)
 	}
 
 	return picture, nil
