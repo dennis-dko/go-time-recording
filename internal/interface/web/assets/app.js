@@ -3437,6 +3437,9 @@ const TRANSLATIONS = {
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
     'err.chartNotAPicture': 'Das Diagramm konnte nicht gelesen werden. '
       + 'Bitte die Auswertung erneut anzeigen und dann exportieren.',
+    'err.chartTooManyPixels': 'Das Diagramm darf höchstens {0} Megapixel haben. '
+      + 'Die Dateigröße sagt darüber nichts – ein Bild kann klein ankommen und '
+      + 'trotzdem sehr viele Bildpunkte enthalten.',
     'err.documentTooLong': 'Die Auswertung ist zu umfangreich für ein Dokument. '
       + 'Bitte einen kürzeren Zeitraum wählen.',
     'err.unknownPermissionColumn': '„{0}“ ist kein Recht, das diese Anwendung kennt – '
