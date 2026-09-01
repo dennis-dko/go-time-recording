@@ -3403,6 +3403,7 @@ const TRANSLATIONS = {
     'err.passkeyUnverified': 'Der Anmeldeschlüssel konnte nicht geprüft werden.',
     'err.passkeyWrongSession': 'Diese Registrierung gehört zu einer anderen Anmeldung.',
     'err.passwordTooShort': 'Das Kennwort muss mindestens {0} Zeichen lang sein.',
+    'err.passwordTooLong': 'Das Kennwort darf höchstens {0} Byte lang sein. Umlaute und ß zählen doppelt, ein Emoji vierfach – eine lange Passphrase mit Umlauten kann die Grenze also früher erreichen, als sie aussieht.',
     'err.passwordUnchanged': 'Das neue Kennwort muss sich vom aktuellen unterscheiden.',
     'err.projectClosedForBooking': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
     'err.projectIsBeingTimed': 'Bei {0} Person(en) läuft gerade eine Stoppuhr auf dieses Projekt. Es kann gelöscht werden, sobald sie gestoppt haben.',
