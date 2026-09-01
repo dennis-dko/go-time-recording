@@ -62,52 +62,27 @@ func (h *WorkbookHandler) Export(c *gofr.Context) (any, error) {
 	return response.File{Content: book, ContentType: xlsxContentType}, nil
 }
 
-// timesheetFilter builds the filter from the same query parameters the list reads,
-// with the same scoping applied to the user.
+// timesheetFilter builds the repository filter from the scope the list reads.
 //
-// scopeUserID is the security-relevant line: a caller who may only read their own
-// entries is pinned to their own id whatever they asked for. The list endpoint calls
-// the same function, which is what keeps the export from ever seeing more than the
-// screen.
+// Through timesheetScopeOf rather than by parsing the query again, which is what
+// keeps the export from ever seeing more than the screen it was started from -
+// see the comment there for why that is a shared function and not two agreeing
+// ones.
 func (h *WorkbookHandler) timesheetFilter(
 	c *gofr.Context,
 	principal *service.Principal,
 ) (repository.TimesheetFilter, error) {
-	var empty repository.TimesheetFilter
-
-	requested, err := queryUint(c, "userId")
+	scope, err := timesheetScopeOf(c, h.authz, principal)
 	if err != nil {
-		return empty, toHTTPError(err)
-	}
-
-	userID, err := h.authz.scopeUserID(principal, requested)
-	if err != nil {
-		return empty, err
-	}
-
-	// The same three the list takes, or an export would refuse the very filter the
-	// screen it was started from is showing.
-	projectID, withoutProject, err := projectFilter(c)
-	if err != nil {
-		return empty, toHTTPError(err)
-	}
-
-	from, err := queryDate(c, "from")
-	if err != nil {
-		return empty, toHTTPError(err)
-	}
-
-	to, err := queryDate(c, "to")
-	if err != nil {
-		return empty, toHTTPError(err)
+		return repository.TimesheetFilter{}, err
 	}
 
 	return repository.TimesheetFilter{
-		UserID:         userID,
-		ProjectID:      projectID,
-		WithoutProject: withoutProject,
-		StartDate:      from,
-		EndDate:        to,
+		UserID:         scope.UserID,
+		ProjectID:      scope.ProjectID,
+		WithoutProject: scope.WithoutProject,
+		StartDate:      scope.From,
+		EndDate:        scope.To,
 	}, nil
 }
 
