@@ -53,10 +53,10 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "fmt.Sprintf(",
 		},
 		{
-			reference: "internal/infrastructure/config/datasource.go:113",
+			reference: "internal/infrastructure/config/datasource.go:121",
 			resolved:  "internal/infrastructure/config/datasource.go",
-			line:      113,
-			contains:  "ConfigLocation",
+			line:      121,
+			contains:  "configLocation",
 		},
 		{
 			reference: "restart_handler.go:431",

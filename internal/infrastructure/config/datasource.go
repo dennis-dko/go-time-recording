@@ -108,9 +108,17 @@ func (d Datasource) Validate() error {
 	}
 }
 
-// ConfigLocation is where GoFr looks for its .env files, and therefore where
+// configLocation is where GoFr looks for its .env files, and therefore where
 // DatabaseConfigured has to look too.
-const ConfigLocation = "./configs"
+//
+// Named exactly as GoFr names it, and unexported for the same reason it is a
+// constant at all: it mirrors an internal decision of a dependency, it is
+// resolved from the process working directory rather than from the binary, and
+// nothing outside this package has any business asking. It was ConfigLocation,
+// which was the tree's one instance of the stutter this project's own naming
+// rule forbids - config.ConfigLocation - and it had no caller to justify being
+// exported.
+const configLocation = "./configs"
 
 // DatabaseConfigured reports whether a database is configured anywhere GoFr
 // would read one from.
@@ -214,8 +222,8 @@ func valueOr(cfg Provider, key, fallback string) string {
 // a bug that is not there.
 func gofrConfig() Provider {
 	location := ""
-	if _, err := os.Stat(ConfigLocation); err == nil {
-		location = ConfigLocation
+	if _, err := os.Stat(configLocation); err == nil {
+		location = configLocation
 	}
 
 	return gofrconfig.NewEnvFile(location, logging.NewFileLogger(""))
