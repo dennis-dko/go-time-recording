@@ -452,6 +452,41 @@ func TestSomethingThatIsNotAWorkbookIsRefusedOutright(t *testing.T) {
 	}
 }
 
+// A workbook of the wrong kind is a different refusal from a file that is not a
+// workbook at all.
+//
+// The two exports leave the browser as .xlsx files that look identical in a file
+// manager, and picking the wrong one is the ordinary mistake here - the projects
+// sheet uploaded to the time entries importer. Answering "this is not a readable
+// .xlsx workbook" sends whoever did that looking for a corrupt file, when the
+// file is perfectly good and only needs uploading somewhere else. The reader
+// already knows which sheet it found and which it wanted; wrongWorkbook is how
+// that reaches the screen.
+func TestAWorkbookOfTheWrongKindSaysWhichKindItIs(t *testing.T) {
+	t.Parallel()
+
+	_, _, worker := startWithWorker(t)
+
+	book, err := spreadsheet.WriteProjects("", []spreadsheet.ProjectRow{
+		{Name: "Roof", Status: "active"},
+	})
+	if err != nil {
+		t.Fatalf("building the projects workbook: %v", err)
+	}
+
+	r := worker.upload("/timesheets/import", "file", "projects.xlsx", book,
+		map[string]string{"dryRun": "true"})
+
+	if r.Status != http.StatusBadRequest {
+		t.Fatalf("a projects workbook answered %d, want 400: %s", r.Status, r.Body)
+	}
+
+	if code := errorCode(t, r); code != "wrongWorkbook" {
+		t.Errorf("a projects workbook was refused as %q, want wrongWorkbook: %s",
+			code, r.Message())
+	}
+}
+
 // An export holds the caller's own entries and nobody else's, the same way the list
 // does - an export that saw more than the screen would be a way around the screen.
 //

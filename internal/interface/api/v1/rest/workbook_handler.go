@@ -9,7 +9,6 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
 )
 
@@ -174,31 +173,16 @@ func (h *WorkbookHandler) Import(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	var req ImportRequest
-	if err := c.Bind(&req); err != nil {
-		return nil, toHTTPError(apperror.Invalidf("the upload could not be read: %v", err).
-			WithCode("uploadUnreadable"))
-	}
-
-	if req.File.Size == 0 {
-		return nil, toHTTPError(apperror.Invalidf("no file was uploaded").
-			WithCode("noFileUploaded"))
-	}
-
-	file, err := req.File.Open()
+	sent, err := uploadedFile(c)
 	if err != nil {
-		return nil, toHTTPError(apperror.Invalidf("the upload could not be opened: %v", err).
-			WithCode("uploadUnreadable"))
+		return nil, err
 	}
 
-	defer func() { _ = file.Close() }()
+	defer sent.close()
 
-	rows, problems, err := spreadsheet.Read(file)
+	rows, problems, err := spreadsheet.Read(sent.file)
 	if err != nil {
-		// A file that is not a workbook at all, as opposed to one with bad rows in
-		// it: there is nothing to preview and nothing to fix row by row.
-		return nil, toHTTPError(apperror.Invalidf(
-			"this is not a readable .xlsx workbook: %v", err).WithCode("notAWorkbook"))
+		return nil, unreadableWorkbook(err)
 	}
 
 	// With enforcement off there is no caller to restrict, which is the same
@@ -212,7 +196,7 @@ func (h *WorkbookHandler) Import(c *gofr.Context) (any, error) {
 	}
 
 	out := ImportResponse{
-		DryRun:   req.DryRun,
+		DryRun:   sent.dryRun,
 		Rows:     make([]ImportRowResponse, 0, len(plan.Rows)),
 		Writable: plan.Writable,
 		Rejected: plan.Rejected,
@@ -234,7 +218,7 @@ func (h *WorkbookHandler) Import(c *gofr.Context) (any, error) {
 		out.Rows = append(out.Rows, item)
 	}
 
-	if req.DryRun {
+	if sent.dryRun {
 		return out, nil
 	}
 
