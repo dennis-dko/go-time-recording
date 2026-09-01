@@ -385,13 +385,39 @@ func (s *Sink) Capture() (restore func(), err error) {
 // something megabytes long is a runaway, and truncating beats holding it all.
 const maxLineBytes = 512 * 1024
 
-// drain reads lines, forwards them to the real console and keeps a copy.
-func (s *Sink) drain(from io.Reader, console io.Writer) {
-	scanner := bufio.NewScanner(from)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
+// truncationNote is appended to a line that was cut, so it reads as a line that
+// was cut rather than as a complete line ending oddly.
+const truncationNote = " …[line truncated]"
 
-	for scanner.Scan() {
-		line := scanner.Text()
+// drain reads lines, forwards them to the real console and keeps a copy.
+//
+// Not a bufio.Scanner, and that is the whole of this function's history. A
+// Scanner bounded at maxLineBytes does not truncate an over-long line: it stops,
+// with ErrTooLong, and the loop was `for scanner.Scan()` - so one enormous line
+// ended this goroutine. Nothing was captured or forwarded afterwards, which
+// includes the console, and this application's installer token is read from the
+// process log. Then the pipe that Capture put in front of os.Stdout filled with
+// output nobody was reading any more, and every write to stdout blocked - so the
+// process stopped in whatever it was doing when it next tried to log.
+//
+// Measured, not reasoned about: writing after the long line blocked, and zero
+// records were kept. TestAnOverLongLineDoesNotStopTheCapture holds it.
+//
+// bufio.Reader.ReadLine is the shape that survives it. It hands back a long line
+// in pieces rather than refusing it, so the reader never stops on the content it
+// is reading - which is the property that matters here, since this goroutine
+// ending is the failure.
+func (s *Sink) drain(from io.Reader, console io.Writer) {
+	reader := bufio.NewReaderSize(from, 64*1024)
+
+	for {
+		line, err := readLine(reader, maxLineBytes)
+
+		// The pipe closing is the intended way out, and the only one. A partial
+		// line before it is still a line somebody wrote.
+		if line == "" && err != nil {
+			return
+		}
 
 		record := parse(line)
 
@@ -427,7 +453,51 @@ func (s *Sink) drain(from io.Reader, console io.Writer) {
 		_, _ = io.WriteString(console, out+"\n")
 
 		s.Append(record)
+
+		if err != nil {
+			return
+		}
 	}
+}
+
+// readLine reads one line, cut to limit.
+//
+// The tail of an over-long line is read and dropped rather than left in the pipe,
+// because what is left in the pipe is what the next read would see - a runaway
+// line would otherwise arrive as a stream of nonsense lines instead of one.
+func readLine(reader *bufio.Reader, limit int) (string, error) {
+	var (
+		built     strings.Builder
+		truncated bool
+	)
+
+	for {
+		chunk, more, err := reader.ReadLine()
+
+		if room := limit - built.Len(); room > 0 {
+			if len(chunk) > room {
+				chunk, truncated = chunk[:room], true
+			}
+
+			built.Write(chunk)
+		} else if len(chunk) > 0 {
+			truncated = true
+		}
+
+		if err != nil {
+			return built.String(), err
+		}
+
+		if !more {
+			break
+		}
+	}
+
+	if truncated {
+		return built.String() + truncationNote, nil
+	}
+
+	return built.String(), nil
 }
 
 // entry is the shape GoFr encodes. Message is any: a string for an ordinary
