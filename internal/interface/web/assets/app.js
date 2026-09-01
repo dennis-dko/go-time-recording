@@ -8890,10 +8890,6 @@ async function waitForRestart(previousStartedAt, patience = RESTART_TIMEOUT_MS) 
   return false;
 }
 
-function wireRestart() {
-  wireRestartButton($('#restart-card-now'));
-
-}
 
 /**
  * Takes whoever pressed it to the card that performs the restart.
@@ -8909,7 +8905,17 @@ function openTheRestartCard() {
   if (card) card.scrollIntoView({ block: 'center' });
 }
 
-function wireRestartButton(button) {
+/**
+ * Wires the one button that restarts the application.
+ *
+ * One button, and that is the design rather than the current state: the banner
+ * says a restart is waiting and leads to the card, it does not perform one - see
+ * openTheRestartCard. This took a button as an argument because there were two,
+ * and kept taking one after the second was deliberately removed, which left a
+ * function whose parameter existed to describe a choice nobody has.
+ */
+function wireRestart() {
+  const button = $('#restart-card-now');
   if (!button) return;
 
   button.addEventListener('click', async () => {
