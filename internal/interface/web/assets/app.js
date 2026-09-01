@@ -3374,6 +3374,7 @@ const TRANSLATIONS = {
     'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
     'err.logoNotRaster': 'Das Logo muss ein PNG oder ein JPEG sein. SVG wird von manchen Browsern nicht als Tab-Symbol übernommen.',
     'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
+    'err.logoTooManyPixels': 'Das Logo darf höchstens {0} Megapixel haben. Eine kleine Datei kann trotzdem sehr viele Bildpunkte enthalten.',
     'err.missingPermission': 'Dafür fehlt die Berechtigung „{0}“.',
     'err.onlyOwnWorkingTimes': 'Sie können nur Ihre eigenen Arbeitszeiten ändern.',
     'err.onlyOwnEntriesRead': 'Sie können nur Ihre eigenen Zeiteinträge sehen.',
