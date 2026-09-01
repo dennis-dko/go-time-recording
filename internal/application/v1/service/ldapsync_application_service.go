@@ -398,11 +398,22 @@ func (s *LDAPSyncService) WithLimits(limits *LimitsProvider) *LDAPSyncService {
 	return s
 }
 
+// countTimesheets is how many entries a departure would destroy.
+//
+// Through CountByFilter, which exists for this and says so: "Reading every row to
+// count them is the cost this exists to avoid." It read them, and took len() of
+// the slice.
+//
+// The preview is what makes that worth avoiding rather than the run. It is the
+// screen somebody opens to decide, it happens before anything is deleted, and it
+// pays this once per candidate - so an installation where a few long-serving
+// people have left reads years of entries into memory to print a handful of
+// numbers, on a machine that may be a Raspberry Pi.
 func (s *LDAPSyncService) countTimesheets(ctx context.Context, userID uint) (int, error) {
-	entries, err := s.timesheets.GetByFilter(ctx, repository.TimesheetFilter{UserID: userID})
+	total, err := s.timesheets.CountByFilter(ctx, repository.TimesheetFilter{UserID: userID})
 	if err != nil {
 		return 0, err
 	}
 
-	return len(entries), nil
+	return int(total), nil
 }

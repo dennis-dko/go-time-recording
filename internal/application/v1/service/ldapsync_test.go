@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
 )
 
@@ -194,6 +196,89 @@ func TestTheSameAddressTwiceInTheDirectoryCreatesOneAccount(t *testing.T) {
 
 	if seen != 1 {
 		t.Errorf("%d accounts exist for one directory entry, want 1", seen)
+	}
+}
+
+// Counting somebody's entries does not read them.
+//
+// The preview shows an administrator how many time entries each departure would
+// destroy, and that number was produced by fetching every one of those entries
+// and taking len() of the slice. TimesheetRepository.CountByFilter exists for
+// exactly this and says so: "Reading every row to count them is the cost this
+// exists to avoid."
+//
+// It is the preview that makes it worth fixing rather than the sync. The preview
+// is the screen somebody opens to decide, it runs before anything is deleted, and
+// it pays this for every candidate - so an installation with a few long-serving
+// people who have left reads years of entries into memory to print a handful of
+// numbers.
+type countingTimesheets struct {
+	repository.TimesheetRepository
+
+	rowsRead int
+	counted  int
+}
+
+func (c *countingTimesheets) GetByFilter(
+	ctx context.Context,
+	filter repository.TimesheetFilter,
+) ([]*model.Timesheet, error) {
+	entries, err := c.TimesheetRepository.GetByFilter(ctx, filter)
+	c.rowsRead += len(entries)
+
+	return entries, err
+}
+
+func (c *countingTimesheets) CountByFilter(
+	ctx context.Context,
+	filter repository.TimesheetFilter,
+) (uint, error) {
+	c.counted++
+
+	return c.TimesheetRepository.CountByFilter(ctx, filter)
+}
+
+func TestThePreviewCountsEntriesWithoutReadingThem(t *testing.T) {
+	f := newFixture(t)
+
+	counting := &countingTimesheets{TimesheetRepository: f.timesheetRepo}
+	directory := &fakeDirectory{enabled: true}
+	purger := &recordingPurger{users: f.userRepo}
+
+	sync := service.NewLDAPSyncService(directory, f.userRepo, f.roleRepo,
+		counting, purger, 1, model.RoleUser)
+
+	leaver := externalUser(t, f, "leaver@example.com")
+
+	for day := 1; day <= 5; day++ {
+		if _, err := f.timesheetRepo.Save(context.Background(), &model.Timesheet{
+			UserID: leaver, Date: model.CalendarDay(time.Date(2026, 8, day, 0, 0, 0, 0, time.UTC)),
+			DurationHours: 2,
+		}); err != nil {
+			t.Fatalf("booking an entry: %v", err)
+		}
+	}
+
+	// Somebody is still there, or the run refuses before it counts anything.
+	directory.users = []service.ExternalUser{{ID: "kept", Email: "kept@example.com"}}
+
+	report, err := sync.Preview(context.Background())
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	if len(report.Candidates) != 1 || report.Candidates[0].Timesheets != 5 {
+		t.Fatalf("the preview reports %d candidate(s) with %v entries, want 1 with 5",
+			len(report.Candidates), report.Candidates)
+	}
+
+	if counting.rowsRead != 0 {
+		t.Errorf("the preview read %d entry row(s) to produce a count of 5; "+
+			"CountByFilter exists so it does not have to", counting.rowsRead)
+	}
+
+	if counting.counted == 0 {
+		t.Error("the preview did not use CountByFilter at all")
 	}
 }
 
