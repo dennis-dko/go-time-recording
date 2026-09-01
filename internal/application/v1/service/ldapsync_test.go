@@ -33,9 +33,17 @@ func (d *fakeDirectory) ListUsers(context.Context) ([]service.ExternalUser, erro
 type recordingPurger struct {
 	users  *memory.UserRepository
 	purged []uint
+
+	// failAfter refuses once this many accounts have gone, standing in for a
+	// database that becomes unreachable partway down the list.
+	failAfter int
 }
 
 func (p *recordingPurger) PurgeUser(ctx context.Context, userID uint) error {
+	if p.failAfter > 0 && len(p.purged) >= p.failAfter {
+		return errors.New("the database went away")
+	}
+
 	p.purged = append(p.purged, userID)
 
 	return p.users.Delete(ctx, userID)
@@ -91,6 +99,102 @@ func externalUser(t *testing.T, f *fixture, email string) uint {
 	}
 
 	return created.Result.ID
+}
+
+// A run that fails partway still says whom it had already deleted.
+//
+// This is the one operation in the application that removes people together with
+// the hours they recorded, and the record of it is a log line per account written
+// by the caller from report.Deleted. On the failure path the report was thrown
+// away - `return nil, err` - so a run that purged three accounts and then lost
+// the database logged "directory sync failed" and nothing else. The three are
+// gone, irreversibly, and the only place that named them was a metric counter.
+//
+// Whoever runs this then has an error, a user list that is short by an unknown
+// number, and no way to find out which without comparing against a backup.
+func TestAFailedSyncStillReportsWhatItAlreadyDeleted(t *testing.T) {
+	f := newSyncFixture(t, 1)
+
+	first := externalUser(t, f.fixture, "aaa@example.com")
+	externalUser(t, f.fixture, "bbb@example.com")
+
+	// Nobody is in the directory any more, so both are candidates - but the
+	// directory answers with somebody, or the run would refuse before deleting.
+	f.directory.users = []service.ExternalUser{{ID: "kept", Email: "kept@example.com"}}
+
+	// The first goes; the second is where the database is lost.
+	f.purger.failAfter = 1
+
+	report, err := f.sync.Sync(context.Background())
+	if err == nil {
+		t.Fatal("a purge that failed reported success")
+	}
+
+	if report == nil {
+		t.Fatal("a run that deleted an account before failing reported nothing " +
+			"about it; the account and its hours are gone and nothing names them")
+	}
+
+	if len(report.Deleted) != 1 {
+		t.Fatalf("the report names %d deletion(s), want the 1 that happened",
+			len(report.Deleted))
+	}
+
+	if report.Deleted[0].UserID != first {
+		t.Errorf("the report names account %d, want %d",
+			report.Deleted[0].UserID, first)
+	}
+}
+
+// The same person twice in one directory answer creates them once.
+//
+// A search that matches an entry in two organisational units, or a filter that
+// joins a group membership, returns duplicates - which is a shape of answer this
+// has to survive rather than a shape it can rule out. It did not: the "already
+// known" test is built once from the local accounts at the start of the run and
+// was never told about the accounts the run itself had just created, so the
+// second copy was treated as new, and saving it was refused as a duplicate
+// address. That error aborted the whole run.
+//
+// Aborting is the expensive part. It happens after some accounts have been
+// created and, on a run that also had deletions to make, before any of them - so
+// a directory with one duplicate in it quietly stops reconciling, and the reason
+// on the screen is "a user with that email already exists", which reads as a
+// problem with the address rather than with the answer.
+func TestTheSameAddressTwiceInTheDirectoryCreatesOneAccount(t *testing.T) {
+	f := newSyncFixture(t, 0.5)
+
+	f.directory.users = []service.ExternalUser{
+		{ID: "one", Name: "Nils", Email: "nils@example.com"},
+		{ID: "two", Name: "Nils", Email: "nils@example.com"},
+	}
+
+	report, err := f.sync.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("a directory answer with a repeated address failed the run: %v", err)
+	}
+
+	if len(report.Created) != 1 {
+		t.Errorf("the report names %d creation(s) for one person, want 1: %v",
+			len(report.Created), report.Created)
+	}
+
+	all, err := f.userRepo.GetAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seen := 0
+
+	for _, user := range all {
+		if user.Email == "nils@example.com" {
+			seen++
+		}
+	}
+
+	if seen != 1 {
+		t.Errorf("%d accounts exist for one directory entry, want 1", seen)
+	}
 }
 
 // A directory that answers with nothing is almost certainly broken, and must
