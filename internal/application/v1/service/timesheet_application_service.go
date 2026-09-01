@@ -460,6 +460,19 @@ func (s *TimesheetApplicationService) WithMetrics(recorder Recorder) *TimesheetA
 	return s
 }
 
+// startOfDay is midnight of the day t names, in t's own location.
+//
+// The other day truncation, and the distinction is the one that has already cost
+// this application eight hours on a balance. model.CalendarDay answers "which
+// stored day is this", and drops the zone to do it, because a stored date is
+// midnight UTC and two zones must not produce two rows for one day. This answers
+// "where does this day begin for whoever is asking", and keeps the zone because
+// that is the whole question: a range bound and a chart axis belong to the
+// reader's calendar, not to UTC.
+//
+// So: anything that is written down goes through model.CalendarDay, and anything
+// that bounds or labels a range for a reader goes through this. Neither is a
+// cheaper version of the other.
 func startOfDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
