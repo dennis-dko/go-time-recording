@@ -548,10 +548,7 @@ func page[T any](all []T, limit, offset uint) []T {
 		return all[:0]
 	}
 
-	end := offset + limit
-	if end > uint(len(all)) {
-		end = uint(len(all))
-	}
+	end := min(offset+limit, uint(len(all)))
 
 	return all[offset:end]
 }
