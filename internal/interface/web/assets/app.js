@@ -2746,6 +2746,42 @@ function formData(form) {
 }
 
 /**
+ * A form read for a correction, where a box somebody emptied is a change.
+ *
+ * formData drops an empty value. That is right for creating something and wrong
+ * for correcting it: the server tells "there is none any more" from "I said
+ * nothing about it" by whether the field arrived at all, and says so where it
+ * reads an end date - "an empty string is how a form field that has been cleared
+ * arrives". Dropped, it never arrives, and an emptied box saves as no change.
+ *
+ * The fields that may be emptied are named rather than inferred, because the
+ * other kind sits in the same forms. A start date, a day, a duration are facts
+ * the record must have; an empty one is somebody clearing a box rather than
+ * removing a fact, and sending it would be refused. Those keep being dropped.
+ *
+ * One function because two forms needed it and only one had it. The project form
+ * wrote its own object out by hand with a comment explaining exactly this, and
+ * the booking form went on using formData - so an emptied description saved as no
+ * change, and so did taking the project off an entry, which is how an entry stops
+ * being categorised at all.
+ *
+ * id is never sent: it is the form's own identity and travels in the path.
+ */
+function correctionFrom(form, emptiable) {
+  const out = {};
+
+  for (const [key, raw] of new FormData(form).entries()) {
+    if (key === 'id') continue;
+
+    const value = typeof raw === 'string' ? raw.trim() : raw;
+
+    if (value !== '' || emptiable.includes(key)) out[key] = value;
+  }
+
+  return out;
+}
+
+/**
  * Makes every date field read and accept the reader's own convention.
  *
  * <input type="date"> renders in the *browser's* UI language and ignores the
@@ -12261,23 +12297,16 @@ function wireForms() {
     const id = form.elements.id.value;
 
     if (id) {
-      // Written out rather than read with formData, which drops an empty value -
-      // and an emptied optional field is the whole point here. A description and
-      // an end date that have been cleared have to travel as empty, because the
-      // server tells "there is none any more" from "I said nothing about it" by
-      // whether the field arrived at all.
-      const changes = {
-        name: form.elements.name.value.trim(),
-        description: form.elements.description.value.trim(),
-        endDate: form.elements.endDate.value,
-      };
-
-      // The start is the exception: it is the one date a project must have, so an
-      // empty one is somebody clearing a field rather than removing a fact, and
-      // sending it would be refused. Left out, it stays what it was.
-      if (form.elements.startDate.value) {
-        changes.startDate = form.elements.startDate.value;
-      }
+      // Through correctionFrom rather than written out here. This was the object
+      // that knew an emptied optional field has to travel as empty, and it was
+      // the only one - the booking form beside it did not, so an emptied
+      // description there saved as no change. One reader for both now.
+      //
+      // The start date is not among the emptiable ones: it is the one date a
+      // project must have, so an empty one is somebody clearing a box rather than
+      // removing a fact, and sending it would be refused. Left out, it stays what
+      // it was.
+      const changes = correctionFrom(form, ['description', 'endDate']);
 
       mutate(() => api(`/projects/${id}`,
         { method: 'PUT', body: JSON.stringify(changes) }),
@@ -12298,15 +12327,25 @@ function wireForms() {
 
   $('#form-timesheet').addEventListener('submit', (e) => {
     e.preventDefault();
-    const { id, ...raw } = formData(e.target);
+    const form = e.target;
+    const id = form.elements.id.value;
+
+    // The same form books and corrects; the id decides which - and it decides
+    // how the form is read, too. Booking drops an empty box, correcting sends
+    // it: see correctionFrom. Number('') is 0, which is how the service is told
+    // to take a project off again; Number(undefined) is NaN, which reaches it as
+    // null and means "leave it alone".
+    const editing = Boolean(id);
+
+    const raw = editing
+      ? correctionFrom(form, ['description', 'projectId'])
+      : formData(form);
+
     const body = {
       ...raw,
       projectId: Number(raw.projectId),
       durationHours: Number(raw.durationHours),
     };
-
-    // The same form books and corrects; the id decides which.
-    const editing = Boolean(id);
     const path = editing ? `/timesheets/${id}` : '/timesheets';
     const method = editing ? 'PUT' : 'POST';
 
