@@ -6858,6 +6858,28 @@ function handBackTheScreen(message) {
 
   for (const form of $$('form')) form.reset();
 
+  // And the typed work that belongs to no form, which the line above cannot
+  // reach. The stopwatch's project and description sit beside the clock rather
+  // than in a form - starting a timer is a button, not a submission - and that is
+  // the whole reason the loose-draft machinery exists for them.
+  //
+  // So the store was emptied and the screen was not: signing out left the
+  // description standing, and the next person at that desk signed in and found
+  // it. Free text about what somebody was doing is exactly what must not be
+  // handed on, and it is the same failure the paragraph above describes for the
+  // forms - fixed there, and not here, because these came later and are
+  // deliberately not forms.
+  //
+  // Cleared by the same declaration that decides what is kept, data-keep, so the
+  // two cannot drift apart. A select with no empty option would be left showing
+  // nothing at all, which reads as broken rather than as cleared, so it goes back
+  // to its first entry instead.
+  for (const field of $$('[data-keep]')) {
+    field.value = '';
+
+    if (field.tagName === 'SELECT' && field.selectedIndex < 0) field.selectedIndex = 0;
+  }
+
   // And what this installation is waiting to restart into, which is the
   // administration of the installation and none of the next person's business.
   // It is a banner now rather than a card behind a permission-checked tab, so
