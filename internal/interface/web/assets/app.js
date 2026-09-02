@@ -7744,11 +7744,21 @@ async function todayInOneSentence() {
   }
 }
 
-/** The screen to carry on to from the greeting. */
+/**
+ * The screen to carry on to from the greeting.
+ *
+ * Checked with viewIsOffered rather than trusted, for the reason written there.
+ * Without it, "carry on where you were" led to a screen that no longer existed
+ * and left the page blank - and, for a tab the account had merely lost, did
+ * nothing at all, because viewTheReaderMayHave sent it straight back here.
+ *
+ * The first tab this reader does have is the honest answer to both: they were
+ * somewhere once, that somewhere is gone, and this is where they can go now.
+ */
 function onwardView() {
   const last = rememberedView();
 
-  return last && last !== 'welcome' ? last : firstVisibleView();
+  return last !== 'welcome' && viewIsOffered(last) ? last : firstVisibleView();
 }
 
 function wireWelcome() {
@@ -12039,15 +12049,34 @@ function openTheStartingView({ restoring = false } = {}) {
   document.documentElement.dataset.loaded = 'yes';
 }
 
-function startingView() {
-  const permitted = (name) => name === 'welcome'
+/**
+ * Whether this reader can actually be sent to that screen.
+ *
+ * A view name is never more than a string that was true once: the hash is
+ * whatever was typed or bookmarked, and a remembered screen may belong to a tab
+ * this account has since lost, or to one that stopped existing between releases -
+ * this application has removed a view before now.
+ *
+ * Its own function because two callers ask it and only one used to. startingView
+ * had this inline; onwardView, behind the greeting's Continue button, took the
+ * remembered name unchecked. A screen that no longer exists then went through to
+ * switchView, which hid every view and showed one that was not there: a blank
+ * page, no tab marked current, and no way out but the title or a reload.
+ *
+ * The greeting is permitted by name because it has no tab of its own. It asks for
+ * no right - it only ever says what this person already has.
+ */
+function viewIsOffered(name) {
+  return name === 'welcome'
     || $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === name);
+}
 
+function startingView() {
   const wanted = currentHashView();
-  if (permitted(wanted)) return wanted;
+  if (viewIsOffered(wanted)) return wanted;
 
   const last = rememberedView();
-  if (permitted(last)) return last;
+  if (viewIsOffered(last)) return last;
 
   return 'welcome';
 }
