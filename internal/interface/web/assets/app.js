@@ -6258,15 +6258,33 @@ function ldapPayload() {
 
 // ------------------------------------------------------------- mutations
 
-/** Wraps a mutating call so every failure surfaces as a toast, not a crash. */
+/**
+ * Wraps a mutating call so every failure surfaces as a toast, not a crash.
+ *
+ * Two failures, and they are not the same thing - which is the reason for the
+ * two blocks below rather than the one this used to have. The call can fail, and
+ * then nothing happened. Or the call can succeed and the reload behind it fail,
+ * and then everything happened and the screen simply has not caught up.
+ *
+ * Both used to come out as the same red toast, carrying whatever the *read* said,
+ * immediately after the green one saying the save had worked. refreshAll is the
+ * `after` most callers pass and it awaits a dozen loads with no handling of its
+ * own, so any one of them rejects it.
+ *
+ * What that costs is a retry. This application already reasons about that hazard
+ * where it decides not to abort a write mid-flight - "somebody would do it again,
+ * which for an import means writing every row twice" - and telling somebody that
+ * a save which worked did not invites exactly that. The two other callers of
+ * refreshAll had the distinction already, and the sentence for it.
+ */
 async function mutate(fn, successMessage, after) {
+  let result;
+
   try {
     // Handed to `after`, so a caller that needs what the call answered does not
     // have to make the call again or smuggle it out through a closure. Every
     // existing caller ignores it, which is what makes this safe to add.
-    const result = await fn();
-    if (successMessage) toast(successMessage, 'ok');
-    if (after) await after(result);
+    result = await fn();
   } catch (err) {
     // Silent while the application is restarting into a new version. Every
     // request fails for those few seconds, and each one would raise its own red
@@ -6275,6 +6293,27 @@ async function mutate(fn, successMessage, after) {
     if (duringARestart()) return;
 
     toast(err.message, 'error', refusalDetail(err.refusal));
+
+    return;
+  }
+
+  // Before the reload, because it is the answer to what was asked and the reload
+  // is not: a slow refresh would otherwise hold back the one word confirming the
+  // save landed.
+  if (successMessage) toast(successMessage, 'ok');
+
+  if (!after) return;
+
+  try {
+    await after(result);
+  } catch (err) {
+    if (duringARestart()) return;
+
+    // Named as what it is. The save is done and is not coming undone; what
+    // failed is the screen catching up, and the way out of that is to load the
+    // page again rather than to save a second time.
+    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`,
+      'error', refusalDetail(err.refusal));
   }
 }
 
