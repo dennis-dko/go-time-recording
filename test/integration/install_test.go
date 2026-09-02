@@ -226,22 +226,20 @@ func TestChoosingADatabaseHandsOverToTheApplication(t *testing.T) {
 	}
 
 	// And now the application, on the same port, in the same process.
-	deadline := time.Now().Add(harness.StartupTimeout)
+	//
+	// Through the shared wait rather than a loop of its own. This carried a copy
+	// of it, with the substring test the shared one has just stopped using - so
+	// the installer's own page satisfied it, and the sign-in below then met the
+	// port closing, which arrived as "GET /: EOF" on the MySQL job.
+	//
+	// That is the second race in this handover, and it was one bug in two places:
+	// fixing the helper and leaving the copy behind fixed half of it.
+	waitForTheApplication(t, c)
 
-	for time.Now().Before(deadline) {
-		if body := tryGet(c.app.BaseURL() + "/api/v1/branding"); strings.Contains(body, `"title"`) {
-			// Signing in proves the database was really provisioned rather than
-			// the port merely being answered.
-			client := (&app{App: c.app, t: t}).newClient()
-			client.signIn(adminEmail, adminPassword)
-
-			return
-		}
-
-		time.Sleep(250 * time.Millisecond)
-	}
-
-	t.Fatalf("the application never took over the port:\n%s", c.app.Log())
+	// Signing in proves the database was really provisioned rather than the port
+	// merely being answered.
+	client := (&app{App: c.app, t: t}).newClient()
+	client.signIn(adminEmail, adminPassword)
 }
 
 // An operator who configured the database in a compose file must not be shown
