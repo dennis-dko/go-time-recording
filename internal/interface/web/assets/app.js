@@ -2033,6 +2033,13 @@ function deleteButton({ label, path, message, after, ask, text }) {
 /** Fills a <select> with options, preserving the current selection if possible. */
 function fillSelect(select, items, { placeholder, labelKey = 'name', valueKey = 'id' } = {}) {
   if (!select) return;
+
+  // Marked by the thing that fills it, so signing out knows which lists hold an
+  // account's own data and which came with the markup. See forgetTheLastAccount:
+  // emptying every select there would take the log levels, the languages and the
+  // appearance with them, and nothing refills those.
+  select.dataset.filled = '';
+
   const previous = select.value;
   select.replaceChildren();
   if (placeholder) select.append(el('option', { value: '', text: placeholder }));
@@ -6810,6 +6817,23 @@ function forgetTheLastAccount() {
   // heading and a closing sentence with the six lines they explain gone from
   // between them.
   for (const body of $$('table[id] tbody')) body.replaceChildren();
+
+  // And the lists, which are not tables and were left standing. loadProjects
+  // fills four of them - the stopwatch's, the booking form's, the report form's
+  // and the entry filter's - and every loader here returns at its first line when
+  // the right is absent, so an account that may book time and may not read
+  // projects was shown the last person's project names. Those are private: a
+  // project belongs to exactly one person, which is why the record was hidden in
+  // the first place.
+  //
+  // Only the ones a loader filled, by the mark fillSelect leaves. The rule is the
+  // same one the tables above are chosen by, and for the same reason - the legend
+  // under Appearance was emptied once by a sweep that took everything, and stayed
+  // empty for the rest of the session.
+  for (const list of $$('select[data-filled]')) {
+    list.replaceChildren();
+    delete list.dataset.filled;
+  }
 
   // The selection bars belong to those rows and would otherwise stand over an
   // empty table offering to delete three things.
