@@ -11140,6 +11140,10 @@ const logView = {
   timer: null,
   polling: false,
   paused: false,
+
+  // Set when a poll was turned away, and read by the reschedule. See
+  // stopLogPolling for why clearing the timer is not enough on its own.
+  refused: false,
   levels: null,
   // A default that is useful rather than complete: DEBUG carries every SQL
   // statement the process runs, which buries everything else.
@@ -11236,6 +11240,12 @@ function schedulePoll({ immediate = false } = {}) {
   clearTimeout(logView.timer);
   logView.timer = null;
 
+  // Asked for deliberately - the screen was opened, the delay changed, the pause
+  // lifted - so whatever turned it away last is over and it may try again. A
+  // refusal that is still true simply happens again, once, instead of every few
+  // seconds.
+  logView.refused = false;
+
   if (immediate) void pollLog();
 
   if (logView.paused) {
@@ -11251,17 +11261,39 @@ function schedulePoll({ immediate = false } = {}) {
 
   logView.timer = setTimeout(() => {
     void pollLog().finally(() => {
+      // Not if that poll turned the viewer off itself. stopLogPolling clears
+      // logView.timer, and this callback *is* that timer - there is nothing left
+      // for it to clear, so without asking here the stop is undone by the line
+      // below it, one interval later, for as long as the tab stays open.
+      //
+      // A 401 hid this: the sign-in screen goes up and me is emptied, so
+      // logViewerActive answers false by itself. A 403 has no such side effect -
+      // the session is fine and only the permission is gone, and me.permissions
+      // is not refreshed while a session lasts.
+      if (logView.refused || !logViewerActive()) return;
+
       // Chained rather than an interval: a slow or hanging request must not
       // pile up behind itself.
-      if (logViewerActive()) schedulePoll();
+      schedulePoll();
     });
   }, seconds * 1000);
 }
 
-/** Stops polling. Called when the screen is left or the session ends. */
-function stopLogPolling() {
+/**
+ * Stops polling. Called when the screen is left or the session ends.
+ *
+ * `refused` says the poll stopped itself because the server turned it away, and
+ * is the difference between stopping and appearing to. Clearing the timer is
+ * enough when something outside the loop stops it - leaving the screen, the
+ * session ending - because then no timer is running. It is not enough when the
+ * poll that is running is the timer: there is nothing to clear, and the
+ * reschedule after it would start the whole thing again.
+ */
+function stopLogPolling({ refused = false } = {}) {
   clearTimeout(logView.timer);
   logView.timer = null;
+
+  if (refused) logView.refused = true;
 }
 
 /**
@@ -11334,7 +11366,7 @@ async function pollLog() {
       // expiry. Retrying would produce one failure per interval for as long as
       // the tab stays open. Signing in again restarts it, because switchView
       // does.
-      stopLogPolling();
+      stopLogPolling({ refused: true });
       setLogStatus(t('log.signedOut', 'Not signed in any more; the log stopped updating.'));
 
       return;
