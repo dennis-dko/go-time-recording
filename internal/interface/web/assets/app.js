@@ -11141,7 +11141,12 @@ function wirePasskeys() {
 
     try {
       await refreshAll();
-      switchView(startingView());
+
+      // The same arrival the password sign-in makes. Through openTheStartingView
+      // rather than switchView, so the page does not call itself loaded while it
+      // is still about to change screens - see the comment there.
+      openTheStartingView();
+
       await greetAfterSignIn();
     } catch (err) {
       toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
