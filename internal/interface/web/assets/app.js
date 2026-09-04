@@ -8016,7 +8016,26 @@ async function loadSetup() {
   // Open on the first thing still to do rather than always at step one, so
   // coming back does not mean clicking through what is already settled.
   setup.index = Math.max(0, setup.state.steps.findIndex((s) => !s.done));
-  renderSetup();
+
+  try {
+    renderSetup();
+  } catch {
+    // The policy stated above the fetch, applied to the line it was missing
+    // from: an installation is usable without the wizard, and this runs before
+    // every other loader, so a throw here empties the whole screen over a hint.
+    //
+    // What throws is a step id this page has no definition for. renderSetup
+    // guards that lookup in the step list - SETUP_STEPS[s.id]?.title() ?? s.id -
+    // and not in the detail pane three lines below it. A server one version
+    // ahead is what produces one, which normally cannot last, because
+    // settleAfterRestart reloads the tab when the build changed; it lasts when
+    // the new build arrived without this tab being told, which is a compose
+    // pull or a container rollout.
+    $('#setup-wizard').hidden = true;
+
+    return;
+  }
+
   $('#setup-wizard').hidden = false;
 }
 
