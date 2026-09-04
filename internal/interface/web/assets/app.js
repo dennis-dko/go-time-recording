@@ -9526,10 +9526,20 @@ function drawPieChart(container, slices, formatValue) {
   const centre = size / 2;
   const width = 640;
 
+  // One row of the key per slice, and the picture is whichever is taller. The pie
+  // is a fixed 260 and the key runs down the right beside it, so from the
+  // thirteenth project the key was simply outside the box - not clipped visibly,
+  // just absent, on a chart that otherwise looked finished. The key is what tells
+  // two projects sharing one of the eight hues apart, which is the reason
+  // chartColourFor gives for eight being enough.
+  const keyRow = 20;
+  const keyTop = 14;
+  const height = Math.max(size, keyTop + shown.length * keyRow + 6);
+
   const chart = svg('svg', {
-    viewBox: `0 0 ${width} ${size}`,
+    viewBox: `0 0 ${width} ${height}`,
     width: '100%',
-    height: size,
+    height,
     role: 'img',
   });
 
@@ -9568,7 +9578,7 @@ function drawPieChart(container, slices, formatValue) {
 
     // The key, beside the pie rather than on it: a label on a thin slice either
     // overlaps its neighbour or points at nothing.
-    const y = 14 + index * 20;
+    const y = keyTop + index * keyRow;
 
     chart.append(svg('rect', {
       x: size + 24, y: y - 10, width: 12, height: 12, rx: 3,
