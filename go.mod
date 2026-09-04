@@ -13,7 +13,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/xuri/excelize/v2 v2.11.0
 	gofr.dev v1.59.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/image v0.45.0
 	modernc.org/sqlite v1.57.0
 	rsc.io/qr v0.2.0
