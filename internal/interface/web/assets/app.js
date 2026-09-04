@@ -8124,7 +8124,19 @@ async function nextSetupStep() {
   const wasLast = setup.index >= setup.state.steps.length - 1;
   const current = setup.state.steps[setup.index];
 
-  setup.state = await api('/setup');
+  try {
+    setup.state = await api('/setup');
+  } catch (err) {
+    // Said rather than swallowed. advanceSetup hangs straight off the Next
+    // button, so a rejection here has nowhere to go: the wizard would sit on the
+    // same step with no message, and the obvious response is to press Next
+    // again. On the password step that is the worst place for it - the password
+    // has already been changed by then, so the second attempt fails on the old
+    // one too, and the screen still explains nothing.
+    setupError(err.message);
+
+    return;
+  }
 
   // The server is the judge of whether the step took. A submit that returned
   // without error but left the step outstanding - a blank title, a connection
@@ -8159,7 +8171,16 @@ async function finishSetup() {
 
   $('#setup-wizard').hidden = true;
   toast(t('setup.done', 'Setup complete.'), 'ok');
-  await refreshAll();
+
+  try {
+    await refreshAll();
+  } catch (err) {
+    // The same distinction mutate draws, and the same wording: setting up is
+    // done and is not coming undone, so this must not read as the wizard having
+    // failed. What failed is the screen catching up, and the way out is to load
+    // the page again rather than to run the wizard a second time.
+    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+  }
 }
 
 function wireSetup() {
