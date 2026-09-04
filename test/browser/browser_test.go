@@ -954,6 +954,33 @@ func (p *page) chooseLanguage(code string) {
 
 	p.run("switch the language to "+code, p.chooseOption("#language-picker", code))
 	p.atRest()
+
+	// Waited on the effect rather than on the requests. atRest says nothing is in
+	// flight, and applying a language is not a request - the choice is saved,
+	// refreshAll follows, and applyLanguage runs inside it. A case that read the
+	// screen as soon as the traffic stopped could read it before the words
+	// changed, and did: a form correcting an entry was still showing its German
+	// labels one line after the switch back to English, on a loaded runner and
+	// never here.
+	//
+	// documentElement.lang is what applyLanguage sets, so it is the same fact the
+	// words are drawn from.
+	deadline := time.Now().Add(waitPatience)
+
+	var applied string
+
+	for time.Now().Before(deadline) {
+		p.run("wait for the page to be in "+code, chromedp.Evaluate(
+			`document.documentElement.lang`, &applied))
+
+		if applied == code {
+			return
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	p.t.Fatalf("the page never came up in %q; it is in %q", code, applied)
 }
 
 // atRest waits until nothing is in flight and the loading strip has been put away.

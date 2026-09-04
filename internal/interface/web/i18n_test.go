@@ -253,8 +253,16 @@ func TestNoTranslationIsUnused(t *testing.T) {
 		var unused []string
 
 		for key := range dict {
-			// Either the markup names it, or code looks it up via t().
+			// Either the markup names it, or code looks it up via t(), or code hands
+			// it to swapTheLabel - which is a lookup with a second job: it declares
+			// the key on the element as well, so the next language change translates
+			// the message the screen is actually showing rather than the one the
+			// markup was written with.
 			if strings.Contains(html, `"`+key+`"`) || strings.Contains(js, `t('`+key+`',`) {
+				continue
+			}
+
+			if swappedLabelKeys(t)[key] {
 				continue
 			}
 
@@ -354,6 +362,28 @@ func TestNoTranslationIsUnused(t *testing.T) {
 
 // The fallbacks handed to t() are what shows when a key is absent, so they must
 // be the English text rather than another language's.
+// swappedLabelKeys returns the keys handed to swapTheLabel, which declares a key
+// on an element as well as translating it. Matched on the call rather than on
+// "some quoted word in the middle of a call", so a key that only appears as an
+// unrelated argument somewhere is still reported as unused.
+func swappedLabelKeys(t *testing.T) map[string]bool {
+	t.Helper()
+
+	js := asset(t, "/app.js")
+	keys := map[string]bool{}
+
+	for _, match := range regexp.MustCompile(`swapTheLabel\([^,]+,\s*'([^']+)'`).
+		FindAllStringSubmatch(js, -1) {
+		keys[match[1]] = true
+	}
+
+	if len(keys) == 0 {
+		t.Fatal("no swapTheLabel call found in app.js; this helper is reading nothing")
+	}
+
+	return keys
+}
+
 func TestCodeFallbacksAreEnglish(t *testing.T) {
 	js := asset(t, "/app.js")
 

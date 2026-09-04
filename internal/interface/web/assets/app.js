@@ -3926,9 +3926,22 @@ function applyLanguage(language) {
     node.placeholder = translated ?? node.dataset.i18nPlaceholderSource;
   }
 
+  // The English source kept and put back, as the three above do it. This one
+  // only ever assigned, and TRANSLATIONS.en is deliberately empty - so English is
+  // exactly the case where there is nothing to assign, and going to German and
+  // back left every one of these in German on an otherwise English page. Only
+  // the readers who cannot see the label beside the control were told, and one of
+  // the seven is the language picker itself.
   for (const node of $$('[data-i18n-aria]')) {
-    const translated = dict[node.dataset.i18nAria];
-    if (translated) node.setAttribute('aria-label', translated);
+    if (node.dataset.i18nAriaSource === undefined) {
+      node.dataset.i18nAriaSource = node.getAttribute('aria-label') ?? '';
+    }
+
+    const words = dict[node.dataset.i18nAria] ?? node.dataset.i18nAriaSource;
+
+    // Still only when there is something to say: an empty aria-label is worse
+    // than none, because it names the control as having no name.
+    if (words) node.setAttribute('aria-label', words);
   }
 
   // The tooltip, for an element whose meaning is a picture. A mark on its own
@@ -4458,8 +4471,8 @@ function editUser(user) {
 
   showUserCreationFields(false);
 
-  $('#user-form-title').textContent = t('user.edit', 'Edit user');
-  $('#user-submit').textContent = t('action.save', 'Save');
+  swapTheLabel($('#user-form-title'), 'user.edit', 'Edit user');
+  swapTheLabel($('#user-submit'), 'action.save', 'Save');
   $('#user-cancel').hidden = false;
 
   switchView('users');
@@ -4477,8 +4490,8 @@ function resetUserForm() {
 
   showUserCreationFields(true);
 
-  $('#user-form-title').textContent = t('user.create', 'Add user');
-  $('#user-submit').textContent = t('action.create', 'Create');
+  swapTheLabel($('#user-form-title'), 'user.create', 'Add user');
+  swapTheLabel($('#user-submit'), 'action.create', 'Create');
   $('#user-cancel').hidden = true;
 }
 
@@ -4693,9 +4706,25 @@ function editRole(role) {
   const save = $('#form-role button[type="submit"]');
   if (save) save.hidden = shipped;
 
-  $('#role-form-title').textContent = shipped
-    ? t('role.view', 'Role {0}').replace('{0}', roleTitle(role.name))
-    : t('role.edit', 'Edit role').replace('{0}', roleTitle(role.name));
+  // Drawn again on a language change rather than declared with a key, which is
+  // how the other form titles do it: this message carries the role's name, and
+  // applyLanguage would put the pattern back with its {0} showing. The key the
+  // markup gave the heading has to come off for the same reason - left on, it
+  // translates "Create role" over a form that has a role open.
+  //
+  // The English used to read "Edit role" while the German named the role, so the
+  // name reached one set of readers and not the other, on the one screen where a
+  // single form serves every role and the heading is what says which one is
+  // open. role.view beside it already named it in both.
+  const heading = $('#role-form-title');
+  delete heading.dataset.i18n;
+  delete heading.dataset.i18nSource;
+
+  redrawable('roleFormTitle', () => {
+    heading.textContent = shipped
+      ? t('role.view', 'Role {0}').replace('{0}', roleTitle(role.name))
+      : t('role.edit', 'Edit role {0}').replace('{0}', roleTitle(role.name));
+  });
 
   switchView('roles');
 
@@ -4726,7 +4755,11 @@ function resetRoleForm() {
   if (save) save.hidden = false;
 
   renderPermissionCheckboxes();
-  $('#role-form-title').textContent = t('role.create', 'Create role');
+
+  // The heading goes back to being the markup's, key and English source with it,
+  // and stops being drawn from a role that is no longer open.
+  stopRedrawing('roleFormTitle');
+  swapTheLabel($('#role-form-title'), 'role.create', 'Create role');
 }
 
 async function loadProjects() {
@@ -4858,8 +4891,8 @@ function editProject(project) {
   setDateField(form.elements.startDate, project.startDate ?? '');
   setDateField(form.elements.endDate, project.endDate ?? '');
 
-  $('#project-form-title').textContent = t('project.edit', 'Edit project');
-  $('#project-submit').textContent = t('action.save', 'Save');
+  swapTheLabel($('#project-form-title'), 'project.edit', 'Edit project');
+  swapTheLabel($('#project-submit'), 'action.save', 'Save');
   $('#project-cancel').hidden = false;
 
   switchView('projects');
@@ -4882,8 +4915,8 @@ function resetProjectForm() {
   setDateField(form.elements.endDate, '');
   fillToday(form.elements.startDate);
 
-  $('#project-form-title').textContent = t('project.create', 'Create project');
-  $('#project-submit').textContent = t('action.create', 'Create');
+  swapTheLabel($('#project-form-title'), 'project.create', 'Create project');
+  swapTheLabel($('#project-submit'), 'action.create', 'Create');
   $('#project-cancel').hidden = true;
 }
 
@@ -4930,13 +4963,44 @@ function editTimesheet(entry) {
   form.elements.durationHours.value = String(entry.durationHours);
   form.elements.description.value = entry.description ?? '';
 
-  $('#timesheet-form-title').textContent = t('ts.edit', 'Edit entry');
-  $('#timesheet-submit').textContent = t('action.save', 'Save');
+  swapTheLabel($('#timesheet-form-title'), 'ts.edit', 'Edit entry');
+  swapTheLabel($('#timesheet-submit'), 'action.save', 'Save');
   $('#timesheet-cancel').hidden = false;
 
   switchView('timesheets');
   form.scrollIntoView({ block: 'nearest' });
   form.elements.durationHours.focus();
+}
+
+/**
+ * Puts words on an element that says two different things, and says which.
+ *
+ * The key travels with the words. An element whose message depends on what the
+ * screen is doing - a form title that creates or corrects, its submit button, the
+ * label that names a database or a file - carries the data-i18n it was written
+ * with in the markup, and applyLanguage translates every one of those from its
+ * key. So changing the language put the declared message back over the shown one:
+ * a correction went back to reading "Book time" above a form still holding the
+ * entry it had opened, with a button offering to book it. The heading disagreed
+ * with the form, and the button disagreed with what pressing it would do.
+ *
+ * The English source travels too, and that half is easy to miss. applyLanguage
+ * keeps a copy of the source the first time it translates an element and puts
+ * that copy back when the dictionary has nothing for the key - and
+ * TRANSLATIONS.en is deliberately empty, so English is exactly the case that
+ * restores the copy. A copy taken while the old key was declared would come back
+ * as the old message the next time somebody read the page in English.
+ *
+ * Not for a message with a value in it: applyLanguage would put the pattern back
+ * with its {0} showing. Those are drawn again through redrawable instead.
+ */
+function swapTheLabel(node, key, english) {
+  if (!node) return;
+
+  node.dataset.i18n = key;
+  node.dataset.i18nSource = english;
+
+  setLeadingText(node, t(key, english));
 }
 
 /** Puts the form back to booking a new entry. */
@@ -4948,8 +5012,8 @@ function resetTimesheetForm() {
   form.elements.durationHours.value = '';
   form.elements.description.value = '';
 
-  $('#timesheet-form-title').textContent = t('ts.book', 'Book time');
-  $('#timesheet-submit').textContent = t('action.book', 'Book');
+  swapTheLabel($('#timesheet-form-title'), 'ts.book', 'Book time');
+  swapTheLabel($('#timesheet-submit'), 'action.book', 'Book');
   $('#timesheet-cancel').hidden = true;
 }
 
@@ -5655,12 +5719,10 @@ function syncDatasourceFields() {
   const nameLabel = $('#ds-name-label');
 
   if (server) {
-    nameLabel.dataset.i18n = 'admin.dbName';
-    setLeadingText(nameLabel, t('admin.dbName', 'Database / file name'));
+    swapTheLabel(nameLabel, 'admin.dbName', 'Database / file name');
   } else {
-    nameLabel.dataset.i18n = 'admin.dbFile';
-    setLeadingText(nameLabel,
-      t('admin.dbFile', 'Database file - created if it does not exist'));
+    swapTheLabel(nameLabel, 'admin.dbFile',
+      'Database file - created if it does not exist');
   }
 
   if (server && !form.elements.port.value) {
