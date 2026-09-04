@@ -575,20 +575,39 @@ let permissionPoll = null;
 function startPermissionPolling() {
   stopPermissionPolling();
 
-  permissionPoll = setInterval(() => {
-    if (document.hidden || !me.user) return;
+  permissionPoll = setInterval(askWhetherTheScreenIsStillTrue, PERMISSION_POLL_MS);
+}
 
-    // Failures are ignored on purpose. This is a background check nobody asked
-    // for, and a toast about it - on a screen somebody is reading, once a minute
-    // for as long as the network is unhappy - would be worse than the thing it
-    // is watching for.
-    api('/me').catch(() => {});
+/**
+ * The two background questions, asked together.
+ *
+ * They answer one worry from opposite sides: what this account may do, and
+ * whether the installation is open to it at all. Both are for the screen somebody
+ * is reading rather than working in, which is the case neither the revision
+ * header nor a refused click covers.
+ *
+ * One function because they are asked from two places - the minute beat, and the
+ * moment a hidden tab is looked at again - and written out twice is how the
+ * second place came to ask only the first of them. The interval is allowed to
+ * skip while the tab is hidden precisely because coming back covers the gap in
+ * one go, so a return that asked half the question left the interface standing
+ * through a maintenance switch for up to a minute.
+ *
+ * The guard belongs here rather than at each caller: visibilitychange fires on
+ * the way out as well as the way back.
+ */
+function askWhetherTheScreenIsStillTrue() {
+  if (document.hidden || !me.user) return;
 
-    // On the same beat and for the same reason: whether this screen is still
-    // true. The announcement stream notices maintenance within seconds, and this
-    // is what covers a browser that has no EventSource at all.
-    void checkWhetherStillWelcome();
-  }, PERMISSION_POLL_MS);
+  // Failures are ignored on purpose. This is a background check nobody asked
+  // for, and a toast about it - on a screen somebody is reading, once a minute
+  // for as long as the network is unhappy - would be worse than the thing it
+  // is watching for.
+  api('/me').catch(() => {});
+
+  // The announcement stream notices maintenance within seconds; this is what
+  // covers a browser that has no EventSource at all.
+  void checkWhetherStillWelcome();
 }
 
 /**
@@ -12861,13 +12880,12 @@ async function init() {
   wireTheme();
 
   // Coming back to a tab is the moment somebody would find out anyway, so it is
-  // the moment to ask - and it covers however long the tab was hidden in one
-  // request, which is why the interval below is allowed to skip while it is.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden || !me.user) return;
-
-    api('/me').catch(() => {});
-  });
+  // the moment to ask - and it covers however long the tab was hidden in one go,
+  // which is why the interval is allowed to skip while it is.
+  //
+  // The same pair of questions the beat asks, through the same function, so this
+  // one cannot go back to asking half of them.
+  document.addEventListener('visibilitychange', askWhetherTheScreenIsStillTrue);
 
   // Branding is public, so the sign-in screen already carries the instance's
   // own title and logo. A failure here must not block signing in.
