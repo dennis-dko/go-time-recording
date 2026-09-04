@@ -1039,10 +1039,12 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* A line's worth of air above, for the two places where the control below is a
-   different kind of thing from the one above it: a synchronisation that deletes
-   sitting under a Save that only stores a schedule, and the Save of the
-   appearance form sitting under the file picker it does not belong to. */
+/* A line's worth of air above, where the control below is a different kind of
+   thing from the one above it: a synchronisation that deletes sitting under a
+   Save that only stores a schedule, the Save of the appearance form sitting
+   under the file picker it does not belong to, and the reload under the notice
+   that this account's rights have moved - the one banner with a control of its
+   own, where without the air the button reads as the end of the sentence. */
 .row-apart { margin-top: 18px; }
 
 button.secondary {
