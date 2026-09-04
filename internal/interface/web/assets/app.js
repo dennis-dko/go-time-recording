@@ -796,7 +796,13 @@ function drawReleaseBanner(state) {
   const [before, after] = t('update.available',
     'Version {0} is available. This installation runs {1}.').split('{0}');
 
-  text.append(before ?? '');
+  // Both halves through fillIn, not only the one after the split. The freedom the
+  // comment above buys is where the *new* version falls; the running one has to
+  // be as free, and a sentence naming it first - ordinary word order in plenty of
+  // languages - put a literal {1} across the top of every screen. German happens
+  // to put them the other way round, so nothing showed it, and nothing would:
+  // the placeholder check compares which values a translation carries, not where.
+  text.append(fillIn(before ?? '', [state.latest, state.running]));
 
   const link = el('button', {
     type: 'button',
@@ -808,7 +814,6 @@ function drawReleaseBanner(state) {
   link.addEventListener('click', openTheVersionCard);
   text.append(link);
 
-  // The rest of the sentence still has {1} in it, which is the version running.
   text.append(fillIn(after ?? '', [state.latest, state.running]));
 
   banner.hidden = false;
