@@ -75,7 +75,22 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 
 			// The type first, and with its own change: the fields below depend on
 			// it, and picking one prefills the port.
+			//
+			// And marked as chosen, which is a separate thing from being typed into
+			// and is why this case used to lose its race. showRunningConnection puts
+			// the running connection's type back over whatever the form holds -
+			// deliberately, and outside the guard that protects the text fields,
+			// because the type decides which fields exist at all and a form counted
+			// as edited for any reason left the card describing a SQLite file under
+			// a line reading "connected via postgres".
+			//
+			// What stops it is somebody actually picking one, and isTrusted is how
+			// the application tells a person from a script - restoring a draft sets
+			// a value and dispatches a change exactly as these lines do. Nothing
+			// dispatched from here can be trusted, so this leaves the mark a real
+			// choice leaves rather than pretending to be one.
 			form.elements.dialect.value = 'postgres';
+			form.elements.dialect.dataset.chosen = 'yes';
 			form.elements.dialect.dispatchEvent(new Event('change', { bubbles: true }));
 
 			// A host nobody is listening on. Postgres rather than the file the
@@ -89,6 +104,28 @@ func TestAFailedConnectionSaysSoInGermanAndKeepsTheDetail(t *testing.T) {
 
 			return form.dataset.editing === 'yes';
 		})()`, &protected))
+
+	// The refill, forced rather than waited for.
+	//
+	// This is the race the case used to lose on a busy runner and win on a quiet
+	// one: choosing a language reloads every screen, and if that reload lands
+	// after the typing above it decides what is in these boxes. Running it here
+	// makes the outcome the same on every machine - and if the boxes cannot
+	// survive a reload, this case should say so rather than depend on which
+	// machine it is on.
+	p.run("reload the card underneath it", chromedp.Evaluate(
+		`loadAdmin()`, nil, awaitPromise))
+
+	var still string
+
+	p.run("what the type says now", chromedp.Evaluate(
+		`document.querySelector('#form-datasource').elements.dialect.value`, &still))
+
+	if still != "postgres" {
+		t.Fatalf("after a reload the type is %q rather than \"postgres\", so the "+
+			"connection about to be tested is the instance's own working one and "+
+			"the case would report \"Die Verbindung funktioniert.\"", still)
+	}
 
 	if !protected {
 		t.Fatal("the form was not marked as being edited, so a loader may still put " +
