@@ -9929,6 +9929,11 @@ function wireWorkbook() {
   $('#wb-file').addEventListener('change', () => {
     const chosen = Boolean($('#wb-file').files?.length);
 
+    // As resetWorkbookCard does, and says why: the preview it described is gone,
+    // so there is nothing to draw again. Choosing a different file makes that
+    // just as true as clearing the card does.
+    stopRedrawing('workbookPreview');
+
     $('#wb-preview').hidden = !chosen;
     $('#wb-clear').hidden = !chosen;
     $('#wb-import').hidden = true;
@@ -10474,6 +10479,13 @@ function buildSheetCard(spec) {
 
   file.addEventListener('change', () => {
     const chosen = Boolean(file.files?.length);
+
+    // The same line reset() carries, for the same reason: the preview described
+    // the file that was chosen before this one, so there is nothing left to draw
+    // again. Without it the draw stayed registered and the next language change
+    // put that verdict back on screen above a file nobody had checked - and a
+    // clean verdict brings the Import button with it.
+    stopRedrawing(`sheetPreview:${spec.key}`);
 
     check.hidden = !chosen;
     cancel.hidden = !chosen;
