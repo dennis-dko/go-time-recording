@@ -174,6 +174,98 @@ function progressDone() {
   }, PROGRESS_FADE_MS);
 }
 
+/**
+ * What a refusal means beyond its message.
+ *
+ * Lifted out of api() so the requests that cannot go through it share it. Three
+ * cannot: the download needs the response as a blob, and the two imports need the
+ * browser to set a multipart boundary only it knows. Each had written out the
+ * part it needed and stopped at the message, so all three missed the two answers
+ * that are about the installation rather than about the request - a session that
+ * has ended, and maintenance mode - and an upload, the longest-running thing here
+ * and so the likeliest to be the request that finds the session gone, showed a
+ * red toast on a screen that still looked signed in.
+ *
+ * The caller throws it. This builds it, and does what the status obliges on the
+ * way, which is why it is not simply a constructor.
+ */
+function refusalFrom(res, body) {
+  const err = new Error(errorMessage(body) || `${t('msg.error', 'Error')} ${res.status}`);
+
+  // A 503 from maintenance mode is not a failure of this request, it is the
+  // state of the installation. Showing the banner here means every screen
+  // reports it the same way rather than each one growing its own handling.
+  if (res.status === 503 && body?.error?.maintenance) {
+    const banner = $('#maintenance-banner');
+    if (banner) {
+      banner.textContent = err.message;
+      banner.hidden = false;
+    }
+
+    // And whoever may not be here while it lasts goes back to the sign-in
+    // screen, where the same sentence is waiting.
+    //
+    // Everything an ordinary account can reach is refused for as long as
+    // maintenance is on, so what they had was a signed-in screen where every
+    // card was an error and every click another one - the interface insisting
+    // they were working while nothing worked. Two clicks after an
+    // administrator flipped the switch, and no way to tell it was deliberate.
+    //
+    // Told to the server rather than only forgotten here: an account signed
+    // out by this should have to sign in again afterwards, and a session left
+    // standing would let the screen come back by itself the moment maintenance
+    // ended.
+    //
+    // Not for whoever may administer the installation - they are the ones who
+    // end it, and the request that brought this back was some other 503.
+    if (me.user && !can('settings:manage') && !endingTheSession) {
+      endingTheSession = true;
+
+      try {
+        void endTheSessionQuietly();
+        handBackTheScreen(err.message);
+      } finally {
+        endingTheSession = false;
+      }
+    }
+  }
+  // The status alongside the message, so a caller can tell "you are not
+  // signed in" from "that did not work" without parsing prose. The log
+  // viewer's poller needs exactly that distinction: on a 401 it has to stop
+  // rather than keep asking every few seconds forever.
+  err.status = res.status;
+
+  // The refusal itself, kept whole beside the sentence made from it. The
+  // sentence is what a person reads; the object holds what could not be turned
+  // into one - the words of whatever actually failed, and the reference that
+  // finds the matching log line. A caller that has somewhere to fold that away
+  // wants it, and every caller that does not can go on using err.message.
+  err.refusal = body?.error ?? null;
+
+  // A session that is no longer accepted takes the screen with it.
+  //
+  // Only where this page believed it had one: the first load asks before
+  // anybody has signed in and is answered exactly like this, and treating that
+  // as an ending would clear the drafts of a session that never started.
+  //
+  // Guarded against re-entry, because the ending itself makes requests fail -
+  // the pollers it stops are stopped by it, and each of their failures would
+  // otherwise arrive here and start the same ending again.
+  if (res.status === 401 && me.user && !endingTheSession) {
+    endingTheSession = true;
+
+    try {
+      handBackTheScreen(t('err.sessionExpired',
+        'The session has ended. Please sign in again.'));
+    } finally {
+      endingTheSession = false;
+    }
+  }
+
+  return err;
+}
+
+
 async function api(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = { 'Content-Type': 'application/json', ...(options.headers ?? {}) };
@@ -235,79 +327,7 @@ async function api(path, options = {}) {
   }
 
   if (!res.ok) {
-    const err = new Error(errorMessage(body) || `${t('msg.error', 'Error')} ${res.status}`);
-
-    // A 503 from maintenance mode is not a failure of this request, it is the
-    // state of the installation. Showing the banner here means every screen
-    // reports it the same way rather than each one growing its own handling.
-    if (res.status === 503 && body?.error?.maintenance) {
-      const banner = $('#maintenance-banner');
-      if (banner) {
-        banner.textContent = err.message;
-        banner.hidden = false;
-      }
-
-      // And whoever may not be here while it lasts goes back to the sign-in
-      // screen, where the same sentence is waiting.
-      //
-      // Everything an ordinary account can reach is refused for as long as
-      // maintenance is on, so what they had was a signed-in screen where every
-      // card was an error and every click another one - the interface insisting
-      // they were working while nothing worked. Two clicks after an
-      // administrator flipped the switch, and no way to tell it was deliberate.
-      //
-      // Told to the server rather than only forgotten here: an account signed
-      // out by this should have to sign in again afterwards, and a session left
-      // standing would let the screen come back by itself the moment maintenance
-      // ended.
-      //
-      // Not for whoever may administer the installation - they are the ones who
-      // end it, and the request that brought this back was some other 503.
-      if (me.user && !can('settings:manage') && !endingTheSession) {
-        endingTheSession = true;
-
-        try {
-          void endTheSessionQuietly();
-          handBackTheScreen(err.message);
-        } finally {
-          endingTheSession = false;
-        }
-      }
-    }
-    // The status alongside the message, so a caller can tell "you are not
-    // signed in" from "that did not work" without parsing prose. The log
-    // viewer's poller needs exactly that distinction: on a 401 it has to stop
-    // rather than keep asking every few seconds forever.
-    err.status = res.status;
-
-    // The refusal itself, kept whole beside the sentence made from it. The
-    // sentence is what a person reads; the object holds what could not be turned
-    // into one - the words of whatever actually failed, and the reference that
-    // finds the matching log line. A caller that has somewhere to fold that away
-    // wants it, and every caller that does not can go on using err.message.
-    err.refusal = body?.error ?? null;
-
-    // A session that is no longer accepted takes the screen with it.
-    //
-    // Only where this page believed it had one: the first load asks before
-    // anybody has signed in and is answered exactly like this, and treating that
-    // as an ending would clear the drafts of a session that never started.
-    //
-    // Guarded against re-entry, because the ending itself makes requests fail -
-    // the pollers it stops are stopped by it, and each of their failures would
-    // otherwise arrive here and start the same ending again.
-    if (res.status === 401 && me.user && !endingTheSession) {
-      endingTheSession = true;
-
-      try {
-        handBackTheScreen(t('err.sessionExpired',
-          'The session has ended. Please sign in again.'));
-      } finally {
-        endingTheSession = false;
-      }
-    }
-
-    throw err;
+    throw refusalFrom(res, body);
   }
 
   return body ? body.data : null;
@@ -9717,6 +9737,11 @@ async function exportWorkbook() {
 async function downloadFile(url, name, extension, request = {}) {
   const res = await fetch(url, { credentials: 'same-origin', ...request });
 
+  // Everything api() reads off an answer that is not its body. Only the body is
+  // this function's own business - it wants a blob, which is why it asks
+  // directly - and the rest means what it always means.
+  noticePermissionChange(res.headers.get('X-Permissions-Revision'));
+
   if (!res.ok) {
     let body = null;
     try {
@@ -9725,7 +9750,7 @@ async function downloadFile(url, name, extension, request = {}) {
       // An error page rather than JSON; the status carries the meaning.
     }
 
-    throw new Error(errorMessage(body) || `${t('msg.error', 'Error')} ${res.status}`);
+    throw refusalFrom(res, body);
   }
 
   const blob = await res.blob();
@@ -9802,6 +9827,8 @@ async function sendWorkbook(dryRun) {
     body,
   });
 
+  noticePermissionChange(res.headers.get('X-Permissions-Revision'));
+
   let payload = null;
   try {
     payload = await res.json();
@@ -9810,9 +9837,7 @@ async function sendWorkbook(dryRun) {
   }
 
   if (!res.ok) {
-    const err = new Error(errorMessage(payload) || `${t('msg.error', 'Error')} ${res.status}`);
-    err.status = res.status;
-    throw err;
+    throw refusalFrom(res, payload);
   }
 
   return payload?.data ?? null;
@@ -10385,6 +10410,8 @@ function buildSheetCard(spec) {
       body: form,
     });
 
+    noticePermissionChange(res.headers.get('X-Permissions-Revision'));
+
     let payload = null;
     try {
       payload = await res.json();
@@ -10393,11 +10420,7 @@ function buildSheetCard(spec) {
     }
 
     if (!res.ok) {
-      const failure = new Error(errorMessage(payload)
-        || `${t('msg.error', 'Error')} ${res.status}`);
-      failure.status = res.status;
-
-      throw failure;
+      throw refusalFrom(res, payload);
     }
 
     return payload?.data ?? null;
