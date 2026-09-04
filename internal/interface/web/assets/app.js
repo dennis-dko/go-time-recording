@@ -6858,6 +6858,32 @@ function forgetTheLastAccount() {
   // The selection bars belong to those rows and would otherwise stand over an
   // empty table offering to delete three things.
   for (const bar of $$('.bulk-bar')) bar.remove();
+
+  // And the entry list's own memory, with the line that counts it. "Showing 25 of
+  // 26 entries" is how much the last account recorded, and it is a div beside the
+  // list rather than a table, so the sweep above did not reach it: it stood over
+  // an emptied table until some loader replaced it, which for an account without
+  // timesheets:read:own never happens. How much somebody recorded is theirs, by
+  // the same reasoning that hides the project record.
+  //
+  // Through showTimesheetTally rather than by emptying the span here, so one place
+  // still knows how that line is drawn - and it takes the "load more" row down
+  // with it, which would otherwise offer to fetch the rest of somebody else's.
+  timesheetEntries = [];
+  timesheetTotal = 0;
+  showTimesheetTally();
+
+  // And where the calendar was left. It is worked out once and remembered, and
+  // the arrows write to it, so somebody who paged back to March and signed out
+  // left March for whoever signed in next.
+  //
+  // Not only untidy: the memo was made in the previous account's zone, and its
+  // own comment says why that is the whole reason the month is worked out late
+  // rather than early - "which month somebody is in is a question about their own
+  // zone, and the zone is not known until they are signed in". Held across a
+  // sign-out it is the same wrong answer that comment was written against,
+  // reached from the other side.
+  calendarMonth = null;
 }
 
 /**
@@ -6913,6 +6939,20 @@ function handBackTheScreen(message) {
   stopPermissionPolling();
   stopAnnouncements();
   stopReleaseWatch();
+
+  // And the stopwatch, which is the fifth of them. It is cleared in one place
+  // only - inside renderTimer, on a pass where nothing is running - so signing
+  // out with a clock going left setInterval firing once a second, painting one
+  // person's elapsed time onto a screen that had been handed back.
+  //
+  // What would have cleared it is the next account's loadTimer, and that returns
+  // at its first line for an account without timesheets:write:own. For those it
+  // was never cleared at all.
+  //
+  // Through renderTimer rather than clearing the interval here, so there is one
+  // place that knows how the clock is put away.
+  runningTimer = null;
+  renderTimer();
 
   // And the notice those two could have put up. It is about what the account
   // that is leaving may do, and it must not be waiting for whoever signs in at
