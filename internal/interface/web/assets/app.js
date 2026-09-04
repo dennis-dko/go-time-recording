@@ -608,6 +608,17 @@ function askWhetherTheScreenIsStillTrue() {
   // The announcement stream notices maintenance within seconds; this is what
   // covers a browser that has no EventSource at all.
   void checkWhetherStillWelcome();
+
+  // And whether there is a newer version, for the same reason the two above are
+  // asked here. The hourly watch says "A day left open should notice a release",
+  // and a day left open is usually a day spent hidden - where its interval skips
+  // by its own guard, and where browsers throttle timers heavily in any case.
+  //
+  // Asked of the watch rather than of the permission: startReleaseWatch already
+  // decides who is offered this news and returns without starting for everybody
+  // else, so a poll that is not running is the same answer without a second copy
+  // of the rule.
+  if (releasePoll) checkForRelease();
 }
 
 /**

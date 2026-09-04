@@ -72,3 +72,63 @@ func TestReturningToTheTabAsksWhetherTheInstallationIsStillOpen(t *testing.T) {
 		"together; the listener that covers a hidden tab asks only /me, so the " +
 		"gap it is meant to cover is covered by half")
 }
+
+// And it asks again whether there is a newer version.
+//
+// The hourly watch says what it is for: "A day left open should notice a
+// release." A day left open is usually a day spent hidden behind other tabs, and
+// the interval skips while it is - so the promise rests on the return, exactly as
+// the permission check's does. Browsers throttle timers in background tabs
+// heavily anyway, which makes the return the reliable moment rather than merely
+// the convenient one.
+//
+// Guarded on the watch running rather than on the permission, so an account that
+// is not offered the news does not make the request: startReleaseWatch already
+// decides who that is, and this asks the same question by asking whether it
+// started.
+func TestReturningToTheTabAsksWhetherThereIsANewerVersion(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	// The administrator, because the release watch runs only for whoever may act
+	// on it.
+	p.readyAdmin()
+
+	p.run("count what is asked", chromedp.Evaluate(`(() => {
+		const real = window.fetch;
+		window.__updateAsks = 0;
+
+		window.fetch = (input, init) => {
+			const url = typeof input === 'string' ? input : input.url;
+
+			if (url.includes('/api/v1/settings/update')) window.__updateAsks += 1;
+
+			return real(input, init);
+		};
+
+		return true;
+	})()`, nil))
+
+	p.run("come back to the tab", chromedp.Evaluate(
+		`document.dispatchEvent(new Event('visibilitychange'))`, nil))
+
+	deadline := time.Now().Add(waitPatience)
+
+	var asked int
+
+	for time.Now().Before(deadline) {
+		p.run("how many times", chromedp.Evaluate(`window.__updateAsks`, &asked))
+
+		if asked > 0 {
+			return
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	t.Error("coming back to the tab did not ask whether there is a newer version. " +
+		"The watch skips while the tab is hidden and the hourly beat is throttled " +
+		"there anyway, so the return is what the promise of noticing a release " +
+		"rests on")
+}
