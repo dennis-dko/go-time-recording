@@ -9344,6 +9344,29 @@ function projectBars(projects) {
 }
 
 /**
+ * The words a chart is announced by.
+ *
+ * role="img" is the right choice for a drawing - a screen reader working through
+ * forty <text> nodes one after another is not a chart, it is a list of numbers in
+ * drawing order - but it makes the drawing one opaque node, so the labels and
+ * figures inside it stop being readable. Without a name the one element on these
+ * screens that is entirely picture was announced as "image" and nothing else.
+ *
+ * Taken from the markup rather than written here. Every chart already has its
+ * words directly above it - a heading on the statistics screen, the caption under
+ * an evaluation - and they are already translated, so a sentence of its own would
+ * be a second thing to translate and a second thing to keep in step with the
+ * first. A container with nothing above it gets no name, which is no worse than
+ * what it had.
+ */
+function nameTheChart(container, chart) {
+  const naming = (container.closest('.chart-wrap') ?? container).previousElementSibling;
+  const words = naming?.textContent.trim();
+
+  if (words) chart.setAttribute('aria-label', words);
+}
+
+/**
  * Renders bars into a container.
  *
  * bars is [{label, value, title}]. The scale runs from zero to the largest value,
@@ -9370,6 +9393,8 @@ function drawBarChart(container, bars, formatValue) {
     height,
     role: 'img',
   });
+
+  nameTheChart(container, chart);
 
   const largest = Math.max(...bars.map((bar) => bar.value), 0);
 
@@ -9452,6 +9477,8 @@ function drawColumnChart(container, bars, formatValue) {
     height,
     role: 'img',
   });
+
+  nameTheChart(container, chart);
 
   const largest = Math.max(...bars.map((bar) => bar.value), 0);
 
@@ -9542,6 +9569,8 @@ function drawPieChart(container, slices, formatValue) {
     height,
     role: 'img',
   });
+
+  nameTheChart(container, chart);
 
   let angle = -Math.PI / 2;
 
