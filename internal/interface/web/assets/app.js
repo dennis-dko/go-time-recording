@@ -10494,8 +10494,9 @@ function buildSheetCard(spec) {
     summary.textContent = chosen ? t('wb.chosen', 'Check the file to see what it would do.') : '';
   });
 
-  // Keyed per card, so four spreadsheet cards keep four previews rather than
-  // overwriting each other's.
+  // Keyed per card, so the three cards this builds keep three previews rather
+  // than overwriting each other's. The timesheet card in the markup was never
+  // part of that: it has a key of its own.
   check.addEventListener('click', () => mutate(() => send(true), null,
     (result) => redrawable(`sheetPreview:${spec.key}`, () => preview(result))));
 
