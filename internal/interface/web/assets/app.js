@@ -6859,6 +6859,20 @@ function forgetTheLastAccount() {
   // empty table offering to delete three things.
   for (const bar of $$('.bulk-bar')) bar.remove();
 
+  // And the entry list's own memory, with the line that counts it. "Showing 25 of
+  // 26 entries" is how much the last account recorded, and it is a div beside the
+  // list rather than a table, so the sweep above did not reach it: it stood over
+  // an emptied table until some loader replaced it, which for an account without
+  // timesheets:read:own never happens. How much somebody recorded is theirs, by
+  // the same reasoning that hides the project record.
+  //
+  // Through showTimesheetTally rather than by emptying the span here, so one place
+  // still knows how that line is drawn - and it takes the "load more" row down
+  // with it, which would otherwise offer to fetch the rest of somebody else's.
+  timesheetEntries = [];
+  timesheetTotal = 0;
+  showTimesheetTally();
+
   // And where the calendar was left. It is worked out once and remembered, and
   // the arrows write to it, so somebody who paged back to March and signed out
   // left March for whoever signed in next.
