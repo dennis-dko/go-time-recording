@@ -6957,6 +6957,21 @@ function handBackTheScreen(message) {
   // seen would spend the one time it is offered on a session that stopped.
   putTheTourAway();
 
+  // And anything else painted over the whole page. There are three - the crop
+  // editor, the restart wait and the setup wizard - each fixed at inset 0 over
+  // everything, and each taken down by its own flow rather than on the way out.
+  // The wizard is the one that comes up by itself, and the worst to be stuck
+  // behind: its dismiss button asks the server to complete the setup, which a
+  // session that has ended cannot do, so the answer is an error inside the
+  // overlay and the sign-in screen stays out of reach until the page is loaded
+  // again.
+  //
+  // The restart overlay is deliberately left standing by settleAfterRestart,
+  // and this does not reach that case: a restarting server fails requests at the
+  // socket rather than answering 401, so nothing hands the screen back while it
+  // is up. If anything ever did, the session would be genuinely gone and putting
+  // the sign-in screen within reach is the right answer anyway.
+  for (const overlay of $$('.overlay')) overlay.hidden = true;
 
   // And the stopwatch, which is the fifth of them. It is cleared in one place
   // only - inside renderTimer, on a pass where nothing is running - so signing
