@@ -9344,9 +9344,34 @@ function projectBars(projects) {
 }
 
 /**
+ * The words a chart is announced by.
+ *
+ * role="img" is the right choice for a drawing - a screen reader working through
+ * forty <text> nodes one after another is not a chart, it is a list of numbers in
+ * drawing order - but it makes the drawing one opaque node, so the labels and
+ * figures inside it stop being readable. Without a name the one element on these
+ * screens that is entirely picture was announced as "image" and nothing else.
+ *
+ * Taken from the markup rather than written here. Every chart already has its
+ * words directly above it - a heading on the statistics screen, the caption under
+ * an evaluation - and they are already translated, so a sentence of its own would
+ * be a second thing to translate and a second thing to keep in step with the
+ * first. A container with nothing above it gets no name, which is no worse than
+ * what it had.
+ */
+function nameTheChart(container, chart) {
+  const naming = (container.closest('.chart-wrap') ?? container).previousElementSibling;
+  const words = naming?.textContent.trim();
+
+  if (words) chart.setAttribute('aria-label', words);
+}
+
+/**
  * Renders bars into a container.
  *
- * bars is [{label, value, title}]. The scale runs from zero to the largest value,
+ * bars is [{label, value, key, title}], where key is the identity the colour is
+ * taken from and title overrides the hover text. The scale runs from zero to the
+ * largest value,
  * because a bar chart that starts anywhere else exaggerates every difference on
  * it - and these are hours, where twice as long should look twice as long.
  */
@@ -9370,6 +9395,8 @@ function drawBarChart(container, bars, formatValue) {
     height,
     role: 'img',
   });
+
+  nameTheChart(container, chart);
 
   const largest = Math.max(...bars.map((bar) => bar.value), 0);
 
@@ -9453,6 +9480,8 @@ function drawColumnChart(container, bars, formatValue) {
     role: 'img',
   });
 
+  nameTheChart(container, chart);
+
   const largest = Math.max(...bars.map((bar) => bar.value), 0);
 
   // The floor, so a period with nothing on it is still a chart rather than an
@@ -9526,12 +9555,24 @@ function drawPieChart(container, slices, formatValue) {
   const centre = size / 2;
   const width = 640;
 
+  // One row of the key per slice, and the picture is whichever is taller. The pie
+  // is a fixed 260 and the key runs down the right beside it, so from the
+  // thirteenth project the key was simply outside the box - not clipped visibly,
+  // just absent, on a chart that otherwise looked finished. The key is what tells
+  // two projects sharing one of the eight hues apart, which is the reason
+  // chartColourFor gives for eight being enough.
+  const keyRow = 20;
+  const keyTop = 14;
+  const height = Math.max(size, keyTop + shown.length * keyRow + 6);
+
   const chart = svg('svg', {
-    viewBox: `0 0 ${width} ${size}`,
+    viewBox: `0 0 ${width} ${height}`,
     width: '100%',
-    height: size,
+    height,
     role: 'img',
   });
+
+  nameTheChart(container, chart);
 
   let angle = -Math.PI / 2;
 
@@ -9568,7 +9609,7 @@ function drawPieChart(container, slices, formatValue) {
 
     // The key, beside the pie rather than on it: a label on a thin slice either
     // overlaps its neighbour or points at nothing.
-    const y = 14 + index * 20;
+    const y = keyTop + index * keyRow;
 
     chart.append(svg('rect', {
       x: size + 24, y: y - 10, width: 12, height: 12, rx: 3,
@@ -9694,14 +9735,13 @@ async function loadStatistics() {
   $('#statistics-empty').hidden = (stats.totalHours ?? 0) > 0;
 }
 
-/**
- * The spreadsheet card: exporting what is on screen, and importing a file.
- *
- * The import is deliberately two steps. A file assembled by hand is wrong more
- * often than it is right, and the first thing somebody needs is to be shown what
- * their file would do - which rows would be written, which would not, and why -
- * before anything is.
- */
+// The spreadsheet card, from here to the end of this section: exporting what is on
+// screen, and importing a file.
+//
+// The import is deliberately two steps. A file assembled by hand is wrong more
+// often than it is right, and the first thing somebody needs is to be shown what
+// their file would do - which rows would be written, which would not, and why -
+// before anything is.
 
 /** The filters the entry list is showing, so the export matches the screen. */
 function timesheetFilterQuery() {
