@@ -9369,7 +9369,9 @@ function nameTheChart(container, chart) {
 /**
  * Renders bars into a container.
  *
- * bars is [{label, value, title}]. The scale runs from zero to the largest value,
+ * bars is [{label, value, key, title}], where key is the identity the colour is
+ * taken from and title overrides the hover text. The scale runs from zero to the
+ * largest value,
  * because a bar chart that starts anywhere else exaggerates every difference on
  * it - and these are hours, where twice as long should look twice as long.
  */
@@ -9733,14 +9735,13 @@ async function loadStatistics() {
   $('#statistics-empty').hidden = (stats.totalHours ?? 0) > 0;
 }
 
-/**
- * The spreadsheet card: exporting what is on screen, and importing a file.
- *
- * The import is deliberately two steps. A file assembled by hand is wrong more
- * often than it is right, and the first thing somebody needs is to be shown what
- * their file would do - which rows would be written, which would not, and why -
- * before anything is.
- */
+// The spreadsheet card, from here to the end of this section: exporting what is on
+// screen, and importing a file.
+//
+// The import is deliberately two steps. A file assembled by hand is wrong more
+// often than it is right, and the first thing somebody needs is to be shown what
+// their file would do - which rows would be written, which would not, and why -
+// before anything is.
 
 /** The filters the entry list is showing, so the export matches the screen. */
 function timesheetFilterQuery() {
