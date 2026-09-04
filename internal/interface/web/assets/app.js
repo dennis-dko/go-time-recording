@@ -6858,6 +6858,18 @@ function forgetTheLastAccount() {
   // The selection bars belong to those rows and would otherwise stand over an
   // empty table offering to delete three things.
   for (const bar of $$('.bulk-bar')) bar.remove();
+
+  // And where the calendar was left. It is worked out once and remembered, and
+  // the arrows write to it, so somebody who paged back to March and signed out
+  // left March for whoever signed in next.
+  //
+  // Not only untidy: the memo was made in the previous account's zone, and its
+  // own comment says why that is the whole reason the month is worked out late
+  // rather than early - "which month somebody is in is a question about their own
+  // zone, and the zone is not known until they are signed in". Held across a
+  // sign-out it is the same wrong answer that comment was written against,
+  // reached from the other side.
+  calendarMonth = null;
 }
 
 /**
