@@ -6940,6 +6940,39 @@ function handBackTheScreen(message) {
   stopAnnouncements();
   stopReleaseWatch();
 
+  // And the walk through, which is not a timer but outlives the session in the
+  // same way and costs more when it does. It seals the page on purpose - a
+  // blocker over the viewport and inert on every one of the body's children -
+  // and sealThePage(false) is reached from endTour alone. So a session ending
+  // underneath it left the sign-in screen dimmed and inert, with a bubble over
+  // it describing a step of the account that had gone.
+  //
+  // Reachable without anybody doing anything: a poll answered with 401 after a
+  // right is withdrawn, or maintenance mode turning on. The way out is the
+  // tour's own bubble, which is spared from the seal - and the tour is what an
+  // account meets on its first sign-in, so the person most likely to be in it is
+  // the one least likely to work that out.
+  //
+  // Put away rather than ended: this walk was interrupted, and recording it as
+  // seen would spend the one time it is offered on a session that stopped.
+  putTheTourAway();
+
+  // And anything else painted over the whole page. There are three - the crop
+  // editor, the restart wait and the setup wizard - each fixed at inset 0 over
+  // everything, and each taken down by its own flow rather than on the way out.
+  // The wizard is the one that comes up by itself, and the worst to be stuck
+  // behind: its dismiss button asks the server to complete the setup, which a
+  // session that has ended cannot do, so the answer is an error inside the
+  // overlay and the sign-in screen stays out of reach until the page is loaded
+  // again.
+  //
+  // The restart overlay is deliberately left standing by settleAfterRestart,
+  // and this does not reach that case: a restarting server fails requests at the
+  // socket rather than answering 401, so nothing hands the screen back while it
+  // is up. If anything ever did, the session would be genuinely gone and putting
+  // the sign-in screen within reach is the right answer anyway.
+  for (const overlay of $$('.overlay')) overlay.hidden = true;
+
   // And the stopwatch, which is the fifth of them. It is cleared in one place
   // only - inside renderTimer, on a pass where nothing is running - so signing
   // out with a clock going left setInterval firing once a second, painting one
@@ -7568,13 +7601,25 @@ function sealThePage(sealed) {
  * greeting them with it again on the next sign-in would override that.
  */
 async function endTour() {
+  putTheTourAway();
+
+  await recordTourSeen();
+}
+
+/**
+ * Takes the walk through off the screen and gives the page back.
+ *
+ * Separate from endTour because a walk can stop without being finished, and the
+ * two must not be written down the same way. endTour records it as seen, which
+ * is right for somebody who reached the end or decided to skip it; an
+ * interruption is neither, and the next sign-in should offer it again.
+ */
+function putTheTourAway() {
   tour.active = false;
   $('#tour-spotlight').hidden = true;
   $('#tour-bubble').hidden = true;
 
   sealThePage(false);
-
-  await recordTourSeen();
 }
 
 /** Notes that the introduction has been offered, so it is offered once. */
