@@ -4706,9 +4706,25 @@ function editRole(role) {
   const save = $('#form-role button[type="submit"]');
   if (save) save.hidden = shipped;
 
-  $('#role-form-title').textContent = shipped
-    ? t('role.view', 'Role {0}').replace('{0}', roleTitle(role.name))
-    : t('role.edit', 'Edit role').replace('{0}', roleTitle(role.name));
+  // Drawn again on a language change rather than declared with a key, which is
+  // how the other form titles do it: this message carries the role's name, and
+  // applyLanguage would put the pattern back with its {0} showing. The key the
+  // markup gave the heading has to come off for the same reason - left on, it
+  // translates "Create role" over a form that has a role open.
+  //
+  // The English used to read "Edit role" while the German named the role, so the
+  // name reached one set of readers and not the other, on the one screen where a
+  // single form serves every role and the heading is what says which one is
+  // open. role.view beside it already named it in both.
+  const heading = $('#role-form-title');
+  delete heading.dataset.i18n;
+  delete heading.dataset.i18nSource;
+
+  redrawable('roleFormTitle', () => {
+    heading.textContent = shipped
+      ? t('role.view', 'Role {0}').replace('{0}', roleTitle(role.name))
+      : t('role.edit', 'Edit role {0}').replace('{0}', roleTitle(role.name));
+  });
 
   switchView('roles');
 
@@ -4739,7 +4755,11 @@ function resetRoleForm() {
   if (save) save.hidden = false;
 
   renderPermissionCheckboxes();
-  $('#role-form-title').textContent = t('role.create', 'Create role');
+
+  // The heading goes back to being the markup's, key and English source with it,
+  // and stops being drawn from a role that is no longer open.
+  stopRedrawing('roleFormTitle');
+  swapTheLabel($('#role-form-title'), 'role.create', 'Create role');
 }
 
 async function loadProjects() {
