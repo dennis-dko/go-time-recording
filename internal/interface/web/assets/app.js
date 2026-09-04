@@ -6926,6 +6926,20 @@ function handBackTheScreen(message) {
   stopAnnouncements();
   stopReleaseWatch();
 
+  // And the stopwatch, which is the fifth of them. It is cleared in one place
+  // only - inside renderTimer, on a pass where nothing is running - so signing
+  // out with a clock going left setInterval firing once a second, painting one
+  // person's elapsed time onto a screen that had been handed back.
+  //
+  // What would have cleared it is the next account's loadTimer, and that returns
+  // at its first line for an account without timesheets:write:own. For those it
+  // was never cleared at all.
+  //
+  // Through renderTimer rather than clearing the interval here, so there is one
+  // place that knows how the clock is put away.
+  runningTimer = null;
+  renderTimer();
+
   // And the notice those two could have put up. It is about what the account
   // that is leaving may do, and it must not be waiting for whoever signs in at
   // the same desk next.
