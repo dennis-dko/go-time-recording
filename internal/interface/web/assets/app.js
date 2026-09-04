@@ -6970,6 +6970,20 @@ function forgetTheLastAccount() {
   timesheetTotal = 0;
   showTimesheetTally();
 
+  // And an enrolment somebody was half way through. The panel holds a shared
+  // secret, the otpauth URI that carries it together with the account's address,
+  // and a QR code encoding both - and the code says twice that none of them may
+  // hang about: renderTOTPState clears them because "the code encodes the secret,
+  // so it must not survive the enrolment it belongs to", and switchView calls it
+  // on the way out of Settings because an enrolment "has no business sitting on a
+  // screen somebody has walked away from".
+  //
+  // Signing out is the strongest form of walking away and was the one way out
+  // that did not call it. The next sign-in clears it through loadMe, so what was
+  // left was the window in between: the sign-in form, with somebody's second
+  // factor in the document behind it.
+  renderTOTPState();
+
   // And where the calendar was left. It is worked out once and remembered, and
   // the arrows write to it, so somebody who paged back to March and signed out
   // left March for whoever signed in next.
