@@ -3926,9 +3926,22 @@ function applyLanguage(language) {
     node.placeholder = translated ?? node.dataset.i18nPlaceholderSource;
   }
 
+  // The English source kept and put back, as the three above do it. This one
+  // only ever assigned, and TRANSLATIONS.en is deliberately empty - so English is
+  // exactly the case where there is nothing to assign, and going to German and
+  // back left every one of these in German on an otherwise English page. Only
+  // the readers who cannot see the label beside the control were told, and one of
+  // the seven is the language picker itself.
   for (const node of $$('[data-i18n-aria]')) {
-    const translated = dict[node.dataset.i18nAria];
-    if (translated) node.setAttribute('aria-label', translated);
+    if (node.dataset.i18nAriaSource === undefined) {
+      node.dataset.i18nAriaSource = node.getAttribute('aria-label') ?? '';
+    }
+
+    const words = dict[node.dataset.i18nAria] ?? node.dataset.i18nAriaSource;
+
+    // Still only when there is something to say: an empty aria-label is worse
+    // than none, because it names the control as having no name.
+    if (words) node.setAttribute('aria-label', words);
   }
 
   // The tooltip, for an element whose meaning is a picture. A mark on its own
