@@ -10230,6 +10230,28 @@ const PAINTED = [
 const CHART_SCALE = 2;
 
 /**
+ * What the picture may not exceed, in pixels and along a side.
+ *
+ * The first is the server's own bound, document.MaxChartPixels, kept here as the
+ * same number so this makes a picture the server will take rather than one it
+ * turns away - and a refusal about pixels says nothing to somebody who asked for
+ * a year of days. TestTheChartPictureBoundIsTheOneTheServerEnforces holds the two
+ * together.
+ *
+ * The reasoning above that bound is about width, which is the card's, and the
+ * height of a chart is its number of rows: drawBarChart gives each bar 26 pixels,
+ * so a year of days is 9,490 pixels tall before scaling. Measured, that comes out
+ * at 2528x18980 - 48 megapixels, three times what the server decodes - and the
+ * period has no maximum on either date, so it is an ordinary request.
+ *
+ * The second is the browser's, not the server's: a canvas stops being drawn past
+ * a certain side however small its area, and 16,384 is the figure that holds
+ * everywhere rather than the largest one Chrome allows.
+ */
+const MAX_PICTURE_PIXELS = 16 * 1024 * 1024;
+const MAX_PICTURE_SIDE = 16384;
+
+/**
  * The two shades a printed chart is fixed to, whatever the screen was set to.
  *
  * A chart goes onto white paper, and the theme somebody reads in is not a fact
@@ -10326,9 +10348,24 @@ async function chartAsPicture(container) {
     picture.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(drawing)}`;
   });
 
+  // Twice the size on screen, unless that would be more than can be drawn or more
+  // than the server will decode. Scaled down to fit rather than refused: the
+  // document places this at about 170mm whatever it was on screen, so what a long
+  // period costs is resolution nobody was going to see, and the alternative is a
+  // refusal the reader cannot act on.
+  //
+  // Floored rather than rounded, so the product cannot land a pixel above the
+  // bound it was computed from.
+  const scale = Math.min(
+    CHART_SCALE,
+    Math.sqrt(MAX_PICTURE_PIXELS / (width * height)),
+    MAX_PICTURE_SIDE / width,
+    MAX_PICTURE_SIDE / height,
+  );
+
   const canvas = document.createElement('canvas');
-  canvas.width = width * CHART_SCALE;
-  canvas.height = height * CHART_SCALE;
+  canvas.width = Math.max(1, Math.floor(width * scale));
+  canvas.height = Math.max(1, Math.floor(height * scale));
 
   const ink = canvas.getContext('2d');
 
