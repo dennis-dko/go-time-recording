@@ -10423,10 +10423,17 @@ function tableAsFigures(table) {
  * color-mix() already worked out - which is the same reason the charts are
  * copied that way.
  *
- * The names are the interface's own tokens. A document made from a dark screen
- * therefore comes out with the dark theme's type colours around a dark chart,
- * which is what "the chart exactly as displayed" means once it is more than the
- * picture.
+ * The names are the interface's own tokens, and only one of them is used: the
+ * page keeps its own ink and takes the accent. That is decided on the server -
+ * Palette.resolve, with TestThePageHasItsOwnInkWhateverTheScreenSent holding it -
+ * and the reason is that a theme is a fact about a screen at a moment rather than
+ * about a printed page. Replacing only the shades that could not be read gave two
+ * different documents from one installation, depending on how whoever exported it
+ * happened to be reading.
+ *
+ * So the other four travel and are not used. They stay in the payload because a
+ * field a client already sends is part of the contract, and because the decision
+ * about which of them a page takes belongs where the page is written.
  */
 function screenColours() {
   const settled = window.getComputedStyle(document.documentElement);
