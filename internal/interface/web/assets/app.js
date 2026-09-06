@@ -5416,6 +5416,12 @@ function fillSettingsForm() {
 
   const form = $('#form-working-times');
 
+  // The zone picker first: it is a different form on the same screen and guards
+  // itself, so leaving it behind this one meant typing a daily target stopped the
+  // zone card following the server - a second form frozen by a guard that was
+  // never about it.
+  fillMyTimezone();
+
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
   // replace whatever had been typed with the server's copy.
@@ -5423,7 +5429,6 @@ function fillSettingsForm() {
 
   form.elements.dailyTargetHours.value = me.user.dailyTargetHours || '';
   form.elements.maxDailyHours.value = me.user.maxDailyHours || '';
-  fillMyTimezone();
 }
 
 // --------------------------------------------------------------- API tokens
@@ -8509,6 +8514,18 @@ const OPERATIONAL_FIELDS = [
 function fillOperationalForm(data) {
   const form = $('#form-operational');
 
+  // What is in force first, because it is not this form's and must not wait for
+  // it. The same two halves the telemetry and datasource cards are split along:
+  // the boxes belong to whoever is at the keyboard, the line saying what the
+  // installation is actually running does not - and it is the set of figures
+  // somebody is weighing their own against while they type them.
+  const effective = data.effective ?? {};
+  $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
+    + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
+    + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
+    + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
+    + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
+
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
   // replace whatever had been typed with the server's copy.
@@ -8532,13 +8549,6 @@ function fillOperationalForm(data) {
     input.value = override ?? '';
     input.placeholder = String(data.defaults?.[field] ?? '');
   }
-
-  const effective = data.effective ?? {};
-  $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
-    + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
-    + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
-    + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
 }
 
 /** Reads the form, omitting empty fields so they keep following the file. */
