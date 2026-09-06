@@ -70,12 +70,12 @@
   5. **Logic read — one file per audit, on a rotation, recorded in the report.** Everything above is pattern matching, and a pattern cannot see a ticker that outlives what it reports on, an unbounded retry, a `ctx` that stops being checked halfway down a loop, or a write recorded as applied before the database took it. Only reading does. The three files that carry the most of that risk and are least visible to a scan are `internal/interface/api/v1/rest/events.go` (a connection held open for minutes, two tickers and a permission revision), `internal/infrastructure/selfupdate/selfupdate.go` (it downloads, verifies and replaces the running binary) and `internal/application/v1/service/ldapsync_application_service.go` (it deletes accounts and the hours recorded against them).
      * **`app.js` has a rotation of its own, because it cannot be read in one sitting.** 12,500 lines, and §2 forbids reading it whole — so it is read by section, in risk order, one or two per audit, and the report names which. The sections are the `// ---` banners the file already carries. Risk order, highest first: `transport` (every request: CSRF, the session ending, the permission revision), `mutations` (every write), `bootstrap` (start-up ordering), `sign-in`, `announcements` (the event stream client), `live log`, then the feature areas. **Where the reading has got to.** Every section below has been read end to end; the number is what it yielded.
 
-  * *Read, nothing found:* the crop editor, `administration`, `updating`, `restart`, `timezone`, `theme`.
-  * *Read, one each:* `mutations`, `passkeys`, the calendar, `two-factor`, `API tokens`, `metrics and tracing`, `maintenance`.
+  * *Read, nothing found:* the crop editor, `administration`, `updating`, `restart`, `timezone`, `theme`, `stopwatch`.
+  * *Read, one each:* `mutations`, `passkeys`, the calendar, `two-factor`, `API tokens`, `metrics and tracing`, `maintenance`, `operation & limits`, `revealing a password`.
   * *Read, two each:* `bootstrap`, `sign-in`, the setup wizard, the guided tour, the charts.
   * *Read, three each:* `transport`, `utils`, `i18n`, `export and import`, `an evaluation as a document`.
   * *Also read:* `announcements` (the event-stream client), `live log`, the loaders in `views`, the draft machinery, the table/bulk-delete/form helpers, the date fields.
-  * **Not read yet: `operation & limits`, `revealing a password`, `stopwatch`.** Those three are what "the rotation is finished" is still waiting on, and saying so is the point of keeping this list.
+  * **Every section has now been read once, and that is a smaller claim than it sounds.** It means one pair of eyes went through each of them against the invariants in this file - not that the file is correct. Three of the last five findings were in sections already marked read, reached by a scan derived from somewhere else, so a second pass over a "clean" section is not wasted effort. The rotation starts again at `transport`, and what has changed is that the shapes below are known to look for.
 
   **The shapes that keep coming back**, which are worth more than the list above, because each one predicted the next find:
 

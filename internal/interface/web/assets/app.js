@@ -7019,6 +7019,11 @@ function forgetTheLastAccount() {
   // a working credential rather than an enrolment nobody finished.
   forgetTheTokenValue();
 
+  // And any password left showing. The forms are reset on the way out, which
+  // takes the value and leaves the box a text field - so the next person types
+  // theirs into one that shows it.
+  hideEveryRevealedPassword();
+
   // And where the calendar was left. It is worked out once and remembered, and
   // the arrows write to it, so somebody who paged back to March and signed out
   // left March for whoever signed in next.
@@ -9442,6 +9447,32 @@ function labelPasswordToggle(button, revealed) {
   button.title = label;
   button.setAttribute('aria-pressed', String(revealed));
   button.classList.toggle('revealed', revealed);
+}
+
+/**
+ * Puts every revealed password back behind its dots.
+ *
+ * wirePasswordReveal says when that should happen - "when the form is submitted
+ * or the page is left" - and only the submit was wired. Nothing re-renders these
+ * inputs, so a field left showing stayed showing: through a screen change, and
+ * through a sign-out, which resets the form's value and does nothing to its type.
+ * The next person at that desk then typed their password into a box that showed
+ * it.
+ *
+ * Found by the wrapper rather than by a list, for the same reason the button is
+ * given by selector: the next password field added gets this without anybody
+ * remembering to ask.
+ */
+function hideEveryRevealedPassword() {
+  for (const field of $$('.password-field')) {
+    const input = field.querySelector('input[type="text"]');
+    if (!input) continue;
+
+    input.type = 'password';
+
+    const button = field.querySelector('button.password-toggle');
+    if (button) labelPasswordToggle(button, false);
+  }
 }
 
 /**
@@ -12454,6 +12485,12 @@ function switchView(name) {
   // running for as long as the tab is open.
   if (logViewerActive()) schedulePoll({ immediate: true });
   else stopLogPolling();
+
+  // A password somebody was reading goes back behind its dots. Not only on the
+  // account screen: these boxes are on the sign-in form, the account card and
+  // three of the administration cards, and leaving any of them is the end of
+  // looking at one.
+  hideEveryRevealedPassword();
 
   // Two things on the account screen do not survive leaving it, and both are
   // credentials. The enrolment panel holds a shared secret and the QR code that
