@@ -10471,10 +10471,22 @@ function periodOf(from, to) {
 async function exportEvaluation(button, name, build) {
   if (!button) return;
 
-  const wasSaying = button.textContent;
+  // What the button is, kept so it can be given back. The key comes off the
+  // element and the English from the copy applyLanguage made of it, falling back
+  // to what is on screen for a page that has only ever been English - which is
+  // exactly when the two are the same thing.
+  const key = button.dataset.i18n;
+  const english = button.dataset.i18nSource ?? button.textContent;
 
   button.disabled = true;
-  button.textContent = t('report.exporting', 'Preparing …');
+
+  // Declared while it says it, not written over the top of a key that says
+  // something else. applyLanguage copies an element's English source the first
+  // time it translates one, so a language change during an export copied
+  // "Preparing …" as the English of a button that exports - and put it back on an
+  // idle button every time the page was read in English for the rest of the
+  // session. Measured: it survived the export finishing and both switches.
+  swapTheLabel(button, 'report.exporting', 'Preparing …');
 
   try {
     await downloadDocument(await build(), name);
@@ -10482,7 +10494,9 @@ async function exportEvaluation(button, name, build) {
     toast(err.message, 'error');
   } finally {
     button.disabled = false;
-    button.textContent = wasSaying;
+
+    if (key) swapTheLabel(button, key, english);
+    else button.textContent = english;
   }
 }
 
