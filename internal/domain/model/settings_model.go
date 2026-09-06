@@ -132,12 +132,6 @@ type Branding struct {
 	Translations map[string]BrandingText
 }
 
-// TabName is what the browser tab is called.
-//
-// The one place that asks this question rather than reading either field, so
-// nothing has to remember which of the two wins. The tab title where there is
-// one, and the ordinary title otherwise - which is every installation that has
-// never opened this setting.
 // TitleIn is what this installation calls itself in one language.
 //
 // The footer of an exported document is the one place the server writes a word
@@ -157,6 +151,12 @@ func (b Branding) TitleIn(language string) string {
 	return strings.TrimSpace(b.Title)
 }
 
+// TabName is what the browser tab is called.
+//
+// The one place that asks this question rather than reading either field, so
+// nothing has to remember which of the two wins. The tab title where there is
+// one, and the ordinary title otherwise - which is every installation that has
+// never opened this setting.
 func (b Branding) TabName() string {
 	if tab := strings.TrimSpace(b.TabTitle); tab != "" {
 		return tab
