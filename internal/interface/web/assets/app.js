@@ -7630,9 +7630,11 @@ async function renderTourStep() {
   $('#tour-text').textContent = step.text();
 
   $('#tour-back').disabled = tour.index === 0;
-  $('#tour-next').textContent = tour.index === tour.steps.length - 1
-    ? t('tour.finish', 'Finish')
-    : t('tour.next', 'Next');
+  if (tour.index === tour.steps.length - 1) {
+    swapTheLabel($('#tour-next'), 'tour.finish', 'Finish');
+  } else {
+    swapTheLabel($('#tour-next'), 'tour.next', 'Next');
+  }
 
   // After the layout has settled from the view switch and the scroll, or the
   // rectangle measured would be the one from before it moved.
@@ -8297,15 +8299,16 @@ function renderSetup() {
   $('#setup-back').disabled = index === 0;
 
   const last = index === state.steps.length - 1;
-  $('#setup-next').textContent = last
-    ? t('setup.finish', 'Finish')
-    : t('setup.next', 'Next');
+  if (last) swapTheLabel($('#setup-next'), 'setup.finish', 'Finish');
+  else swapTheLabel($('#setup-next'), 'setup.next', 'Next');
 
   // A required step cannot be skipped; that is what "required" means here.
   $('#setup-skip').hidden = step.required && !step.done;
-  $('#setup-skip').textContent = definition.tab
-    ? t('setup.openSettings', 'Open Settings instead')
-    : t('setup.skip', 'Skip this step');
+  if (definition.tab) {
+    swapTheLabel($('#setup-skip'), 'setup.openSettings', 'Open Settings instead');
+  } else {
+    swapTheLabel($('#setup-skip'), 'setup.skip', 'Skip this step');
+  }
 }
 
 function setupError(message) {
@@ -11610,9 +11613,8 @@ function debounce(fn, ms) {
 }
 
 function renderPauseButton() {
-  $('#log-pause').textContent = logView.paused
-    ? t('log.resume', 'Resume')
-    : t('log.pause', 'Pause');
+  if (logView.paused) swapTheLabel($('#log-pause'), 'log.resume', 'Resume');
+  else swapTheLabel($('#log-pause'), 'log.pause', 'Pause');
 }
 
 /** The levels currently ticked. */
