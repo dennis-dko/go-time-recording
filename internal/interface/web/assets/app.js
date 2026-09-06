@@ -12033,6 +12033,14 @@ async function loadMaintenance() {
   if (form && !beingEdited(form)) {
     form.elements.enabled.checked = Boolean(state.enabled);
     form.elements.message.value = state.message ?? '';
+
+    // And as the defaults, which is how the form remembers what the server said
+    // rather than what the markup shipped. Two things read it: the question below
+    // asks only when this is being switched on, and a reset puts the card back to
+    // the installation's own state instead of to "in service", which is a lie on
+    // an installation that is out of it.
+    form.elements.enabled.defaultChecked = Boolean(state.enabled);
+    form.elements.message.defaultValue = state.message ?? '';
   }
 
   return Boolean(state.enabled);
@@ -12049,10 +12057,20 @@ function wireMaintenance() {
 
     const enabled = form.elements.enabled.checked;
 
+    // What the server last said, kept by the form itself. Asked of that rather
+    // than of the box, because "is out of service" and "is being put out of
+    // service" are different questions and only the second is worth a dialog.
+    const wasEnabled = form.elements.enabled.defaultChecked;
+
     // Asked about only when switching it on. Turning it off needs no
     // confirmation: that is the direction that ends an outage, and a dialog in
     // front of it is a dialog between somebody and fixing their installation.
-    if (enabled) {
+    //
+    // Nor when it is already on. An administrator changing the notice they are
+    // showing - "back at 14:00" - was asked whether to do the thing that had
+    // already been done, and cancelling then put the box somewhere it had never
+    // been: the card read "in service" over an installation that was out of it.
+    if (enabled && !wasEnabled) {
       const proceed = await confirmDialog({
         title: t('maint.title', 'Maintenance mode'),
         text: t('maint.confirm',
@@ -12061,9 +12079,9 @@ function wireMaintenance() {
       });
 
       if (!proceed) {
-        // Put back, because the checkbox has already been ticked by the click
-        // that opened this question.
-        form.elements.enabled.checked = false;
+        // Put back to what the server said, because the checkbox has already
+        // been ticked by the click that opened this question.
+        form.elements.enabled.checked = wasEnabled;
 
         return;
       }
