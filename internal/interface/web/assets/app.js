@@ -5416,6 +5416,12 @@ function fillSettingsForm() {
 
   const form = $('#form-working-times');
 
+  // The zone picker first: it is a different form on the same screen and guards
+  // itself, so leaving it behind this one meant typing a daily target stopped the
+  // zone card following the server - a second form frozen by a guard that was
+  // never about it.
+  fillMyTimezone();
+
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
   // replace whatever had been typed with the server's copy.
@@ -5423,7 +5429,6 @@ function fillSettingsForm() {
 
   form.elements.dailyTargetHours.value = me.user.dailyTargetHours || '';
   form.elements.maxDailyHours.value = me.user.maxDailyHours || '';
-  fillMyTimezone();
 }
 
 // --------------------------------------------------------------- API tokens
@@ -8509,6 +8514,18 @@ const OPERATIONAL_FIELDS = [
 function fillOperationalForm(data) {
   const form = $('#form-operational');
 
+  // What is in force first, because it is not this form's and must not wait for
+  // it. The same two halves the telemetry and datasource cards are split along:
+  // the boxes belong to whoever is at the keyboard, the line saying what the
+  // installation is actually running does not - and it is the set of figures
+  // somebody is weighing their own against while they type them.
+  const effective = data.effective ?? {};
+  $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
+    + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
+    + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
+    + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
+    + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
+
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
   // replace whatever had been typed with the server's copy.
@@ -8532,13 +8549,6 @@ function fillOperationalForm(data) {
     input.value = override ?? '';
     input.placeholder = String(data.defaults?.[field] ?? '');
   }
-
-  const effective = data.effective ?? {};
-  $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
-    + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
-    + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
-    + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
 }
 
 /** Reads the form, omitting empty fields so they keep following the file. */
@@ -11122,11 +11132,50 @@ function fillTelemetryForm(data) {
   const form = $('#form-telemetry');
   const configured = data.configured ?? {};
 
-  // Not over somebody who is part way through filling it in. This runs after
-  // every save on the screen and after a language is chosen, and it used to
-  // replace whatever had been typed with the server's copy.
+  // This card has two halves, and only one of them belongs to whoever is at the
+  // keyboard - the same split the datasource card above it draws, and for the
+  // same reason.
+  //
+  // The boxes are theirs. This runs after every save on the screen and after a
+  // language is chosen, and it used to replace whatever had been typed with the
+  // server's copy.
+  //
+  // What this process is serving is not theirs, and it was being skipped along
+  // with them: one touch of the form and the line went on describing the process
+  // that was running when the screen was opened - including the metrics address,
+  // which the comment over it calls the one thing here somebody wants to copy.
+  // An administrator who types in this form and then restarts from the card below
+  // came back to a description of the process that had gone.
+  if (!beingEdited(form)) fillTelemetryBoxes(form, configured);
+
+  const active = data.active ?? {};
+
+  $('#telemetry-active').textContent = describeActiveTelemetry(active);
+
+  // The log viewer's filters need this to know when they are asking for lines
+  // the process never wrote. Both cards are on this screen, so the answer is
+  // already here rather than worth a request of its own.
+  logView.runningLevel = active.logLevel ?? null;
+  warnAboutLevelsTheProcessDoesNotWrite();
+
+  // The placeholders are the third thing, and they belong to both halves: an
+  // empty field means "whatever applies", and what applies was something you had
+  // to work out from the line above. Saying it in the box that is asking is where
+  // somebody is looking when they wonder what leaving it empty will do - and the
+  // collector keeps the address the shipped tracing overlay uses, because an
+  // empty one has no current value to show.
+  //
+  // They describe the running process, so they follow it; they are written into
+  // the boxes, so they wait for the boxes to be free.
   if (beingEdited(form)) return;
 
+  form.elements.tracerRatio.placeholder = String(active.tracerRatio ?? '');
+
+  if (active.tracerUrl) form.elements.tracerUrl.placeholder = active.tracerUrl;
+}
+
+/** The stored settings, which are whoever is at the keyboard's to change. */
+function fillTelemetryBoxes(form, configured) {
   form.elements.logLevel.value = configured.logLevel ?? '';
   form.elements.metricsOff.value = configured.metricsOff ? TELEMETRY_OFF : '';
 
@@ -11139,25 +11188,6 @@ function fillTelemetryForm(data) {
 
   form.elements.tracerUrl.value = configured.tracerUrl ?? '';
   form.elements.tracerRatio.value = configured.tracerRatio ?? '';
-
-  const active = data.active ?? {};
-
-  // An empty field here means "whatever applies", and what applies was a thing
-  // you had to work out from the line below. The placeholder says it in the box
-  // that is asking, which is where somebody is looking when they wonder what
-  // leaving it empty will do. The collector keeps the address the shipped
-  // tracing overlay uses, because an empty one has no current value to show.
-  form.elements.tracerRatio.placeholder = String(active.tracerRatio ?? '');
-
-  if (active.tracerUrl) form.elements.tracerUrl.placeholder = active.tracerUrl;
-
-  $('#telemetry-active').textContent = describeActiveTelemetry(active);
-
-  // The log viewer's filters need this to know when they are asking for lines
-  // the process never wrote. Both cards are on this screen, so the answer is
-  // already here rather than worth a request of its own.
-  logView.runningLevel = active.logLevel ?? null;
-  warnAboutLevelsTheProcessDoesNotWrite();
 }
 
 /**
