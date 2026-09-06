@@ -5451,6 +5451,28 @@ async function loadTokens() {
   fillTable($('#table-tokens tbody'), rows, 6, t('token.empty', 'No tokens yet.'));
 }
 
+/**
+ * Takes a token's value off the screen.
+ *
+ * It exists once, in the answer that created it, and the card says so where the
+ * reader can see it: "Copy it now - this value is never shown again." What it did
+ * not say is how long "now" lasted, and the answer was until the page was loaded
+ * again: the value was written in one place and cleared in none, so it stayed
+ * through every screen and through a sign-out.
+ *
+ * That is a bearer credential carrying the whole of this account's role, working
+ * until somebody revokes it, left on the machine for whoever sits down next. The
+ * enrolment panel two cards above is cleared on both of those, and by comparison
+ * a second factor nobody finished is the smaller thing to leave behind.
+ */
+function forgetTheTokenValue() {
+  const panel = $('#token-secret');
+  if (!panel) return;
+
+  panel.hidden = true;
+  $('#token-secret-value').textContent = '';
+}
+
 function wireTokens() {
   $('#form-token').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -5461,8 +5483,11 @@ function wireTokens() {
     mutate(async () => {
       const created = await api('/me/tokens', { method: 'POST', body: JSON.stringify(body) });
 
-      // The secret exists only in this response, so it is shown until the
-      // user navigates away rather than in a toast that disappears.
+      // The secret exists only in this response, so it is shown on the card
+      // rather than in a toast that disappears - and taken off by
+      // forgetTheTokenValue when the screen is left or the session ends, which
+      // is what makes "until you navigate away" true rather than a description
+      // of what was meant.
       $('#token-secret-value').textContent = created.secret;
       $('#token-secret').hidden = false;
       e.target.reset();
@@ -6983,6 +7008,10 @@ function forgetTheLastAccount() {
   // left was the window in between: the sign-in form, with somebody's second
   // factor in the document behind it.
   renderTOTPState();
+
+  // And a token's value, for the same reason and with more at stake: this one is
+  // a working credential rather than an enrolment nobody finished.
+  forgetTheTokenValue();
 
   // And where the calendar was left. It is worked out once and remembered, and
   // the arrows write to it, so somebody who paged back to March and signed out
@@ -12376,12 +12405,15 @@ function switchView(name) {
   if (logViewerActive()) schedulePoll({ immediate: true });
   else stopLogPolling();
 
-  // An enrolment in progress does not survive leaving the screen. The panel holds a
-  // shared secret and the QR code that encodes it, and neither has any business
-  // sitting on a screen somebody has walked away from. Starting again is what the
-  // Enable button does anyway.
-  if (name !== 'settings' && $('#totp-setup') && !$('#totp-setup').hidden) {
-    renderTOTPState();
+  // Two things on the account screen do not survive leaving it, and both are
+  // credentials. The enrolment panel holds a shared secret and the QR code that
+  // encodes it; the token panel holds a value that carries the whole of this
+  // account's role. Neither has any business sitting on a screen somebody has
+  // walked away from, and starting again is what each card's own button does.
+  if (name !== 'settings') {
+    if ($('#totp-setup') && !$('#totp-setup').hidden) renderTOTPState();
+
+    forgetTheTokenValue();
   }
 }
 
