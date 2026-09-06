@@ -7630,9 +7630,11 @@ async function renderTourStep() {
   $('#tour-text').textContent = step.text();
 
   $('#tour-back').disabled = tour.index === 0;
-  $('#tour-next').textContent = tour.index === tour.steps.length - 1
-    ? t('tour.finish', 'Finish')
-    : t('tour.next', 'Next');
+  if (tour.index === tour.steps.length - 1) {
+    swapTheLabel($('#tour-next'), 'tour.finish', 'Finish');
+  } else {
+    swapTheLabel($('#tour-next'), 'tour.next', 'Next');
+  }
 
   // After the layout has settled from the view switch and the scroll, or the
   // rectangle measured would be the one from before it moved.
@@ -8297,15 +8299,16 @@ function renderSetup() {
   $('#setup-back').disabled = index === 0;
 
   const last = index === state.steps.length - 1;
-  $('#setup-next').textContent = last
-    ? t('setup.finish', 'Finish')
-    : t('setup.next', 'Next');
+  if (last) swapTheLabel($('#setup-next'), 'setup.finish', 'Finish');
+  else swapTheLabel($('#setup-next'), 'setup.next', 'Next');
 
   // A required step cannot be skipped; that is what "required" means here.
   $('#setup-skip').hidden = step.required && !step.done;
-  $('#setup-skip').textContent = definition.tab
-    ? t('setup.openSettings', 'Open Settings instead')
-    : t('setup.skip', 'Skip this step');
+  if (definition.tab) {
+    swapTheLabel($('#setup-skip'), 'setup.openSettings', 'Open Settings instead');
+  } else {
+    swapTheLabel($('#setup-skip'), 'setup.skip', 'Skip this step');
+  }
 }
 
 function setupError(message) {
@@ -10230,6 +10233,28 @@ const PAINTED = [
 const CHART_SCALE = 2;
 
 /**
+ * What the picture may not exceed, in pixels and along a side.
+ *
+ * The first is the server's own bound, document.MaxChartPixels, kept here as the
+ * same number so this makes a picture the server will take rather than one it
+ * turns away - and a refusal about pixels says nothing to somebody who asked for
+ * a year of days. TestTheChartPictureBoundIsTheOneTheServerEnforces holds the two
+ * together.
+ *
+ * The reasoning above that bound is about width, which is the card's, and the
+ * height of a chart is its number of rows: drawBarChart gives each bar 26 pixels,
+ * so a year of days is 9,490 pixels tall before scaling. Measured, that comes out
+ * at 2528x18980 - 48 megapixels, three times what the server decodes - and the
+ * period has no maximum on either date, so it is an ordinary request.
+ *
+ * The second is the browser's, not the server's: a canvas stops being drawn past
+ * a certain side however small its area, and 16,384 is the figure that holds
+ * everywhere rather than the largest one Chrome allows.
+ */
+const MAX_PICTURE_PIXELS = 16 * 1024 * 1024;
+const MAX_PICTURE_SIDE = 16384;
+
+/**
  * The two shades a printed chart is fixed to, whatever the screen was set to.
  *
  * A chart goes onto white paper, and the theme somebody reads in is not a fact
@@ -10326,9 +10351,24 @@ async function chartAsPicture(container) {
     picture.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(drawing)}`;
   });
 
+  // Twice the size on screen, unless that would be more than can be drawn or more
+  // than the server will decode. Scaled down to fit rather than refused: the
+  // document places this at about 170mm whatever it was on screen, so what a long
+  // period costs is resolution nobody was going to see, and the alternative is a
+  // refusal the reader cannot act on.
+  //
+  // Floored rather than rounded, so the product cannot land a pixel above the
+  // bound it was computed from.
+  const scale = Math.min(
+    CHART_SCALE,
+    Math.sqrt(MAX_PICTURE_PIXELS / (width * height)),
+    MAX_PICTURE_SIDE / width,
+    MAX_PICTURE_SIDE / height,
+  );
+
   const canvas = document.createElement('canvas');
-  canvas.width = width * CHART_SCALE;
-  canvas.height = height * CHART_SCALE;
+  canvas.width = Math.max(1, Math.floor(width * scale));
+  canvas.height = Math.max(1, Math.floor(height * scale));
 
   const ink = canvas.getContext('2d');
 
@@ -10386,10 +10426,17 @@ function tableAsFigures(table) {
  * color-mix() already worked out - which is the same reason the charts are
  * copied that way.
  *
- * The names are the interface's own tokens. A document made from a dark screen
- * therefore comes out with the dark theme's type colours around a dark chart,
- * which is what "the chart exactly as displayed" means once it is more than the
- * picture.
+ * The names are the interface's own tokens, and only one of them is used: the
+ * page keeps its own ink and takes the accent. That is decided on the server -
+ * Palette.resolve, with TestThePageHasItsOwnInkWhateverTheScreenSent holding it -
+ * and the reason is that a theme is a fact about a screen at a moment rather than
+ * about a printed page. Replacing only the shades that could not be read gave two
+ * different documents from one installation, depending on how whoever exported it
+ * happened to be reading.
+ *
+ * So the other four travel and are not used. They stay in the payload because a
+ * field a client already sends is part of the contract, and because the decision
+ * about which of them a page takes belongs where the page is written.
  */
 function screenColours() {
   const settled = window.getComputedStyle(document.documentElement);
@@ -10427,10 +10474,22 @@ function periodOf(from, to) {
 async function exportEvaluation(button, name, build) {
   if (!button) return;
 
-  const wasSaying = button.textContent;
+  // What the button is, kept so it can be given back. The key comes off the
+  // element and the English from the copy applyLanguage made of it, falling back
+  // to what is on screen for a page that has only ever been English - which is
+  // exactly when the two are the same thing.
+  const key = button.dataset.i18n;
+  const english = button.dataset.i18nSource ?? button.textContent;
 
   button.disabled = true;
-  button.textContent = t('report.exporting', 'Preparing …');
+
+  // Declared while it says it, not written over the top of a key that says
+  // something else. applyLanguage copies an element's English source the first
+  // time it translates one, so a language change during an export copied
+  // "Preparing …" as the English of a button that exports - and put it back on an
+  // idle button every time the page was read in English for the rest of the
+  // session. Measured: it survived the export finishing and both switches.
+  swapTheLabel(button, 'report.exporting', 'Preparing …');
 
   try {
     await downloadDocument(await build(), name);
@@ -10438,7 +10497,9 @@ async function exportEvaluation(button, name, build) {
     toast(err.message, 'error');
   } finally {
     button.disabled = false;
-    button.textContent = wasSaying;
+
+    if (key) swapTheLabel(button, key, english);
+    else button.textContent = english;
   }
 }
 
@@ -11552,9 +11613,8 @@ function debounce(fn, ms) {
 }
 
 function renderPauseButton() {
-  $('#log-pause').textContent = logView.paused
-    ? t('log.resume', 'Resume')
-    : t('log.pause', 'Pause');
+  if (logView.paused) swapTheLabel($('#log-pause'), 'log.resume', 'Resume');
+  else swapTheLabel($('#log-pause'), 'log.pause', 'Pause');
 }
 
 /** The levels currently ticked. */
