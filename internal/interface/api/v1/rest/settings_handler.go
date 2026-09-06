@@ -159,8 +159,15 @@ type OperationalResponse struct {
 }
 
 // OperationalLimits is model.Limits on the wire.
+//
+// Every field the form has a box for belongs here, and one did not: the idle
+// timeout was in model.Limits and in the markup and missing from this, which is
+// what the screen reads for both halves of what it tells the reader. So the
+// placeholder that says what leaving a field empty will do was empty on that one
+// field, and the line naming what is in force named the other five.
 type OperationalLimits struct {
 	SessionLifetimeHours   float64 `json:"sessionLifetimeHours"`
+	SessionIdleMinutes     float64 `json:"sessionIdleMinutes"`
 	MaxDailyHours          float64 `json:"maxDailyHours"`
 	RateLimit              int     `json:"rateLimit"`
 	RateLimitWindowSeconds int     `json:"rateLimitWindowSeconds"`
@@ -170,6 +177,7 @@ type OperationalLimits struct {
 func newOperationalLimits(l model.Limits) OperationalLimits {
 	return OperationalLimits{
 		SessionLifetimeHours:   l.SessionLifetimeHours,
+		SessionIdleMinutes:     l.SessionIdleMinutes,
 		MaxDailyHours:          l.MaxDailyHours,
 		RateLimit:              l.RateLimit,
 		RateLimitWindowSeconds: l.RateLimitWindowSeconds,

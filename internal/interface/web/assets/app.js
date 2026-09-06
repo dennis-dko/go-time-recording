@@ -3200,6 +3200,7 @@ const TRANSLATIONS = {
     'ops.reset.done': 'Alle Werte folgen wieder der Konfigurationsdatei',
     'ops.effective': 'Aktuell wirksam',
     'ops.sessionShort': 'Sitzung',
+    'ops.idleShort': 'Untätigkeit',
     'ops.maxShort': 'max./Tag',
     'ops.rateShort': 'Rate',
     'ops.ratioShort': 'Löschgrenze',
@@ -8522,6 +8523,7 @@ function fillOperationalForm(data) {
   const effective = data.effective ?? {};
   $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
     + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
+    + `${t('ops.idleShort', 'idle')} ${effective.sessionIdleMinutes} min, `
     + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
     + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
     + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
