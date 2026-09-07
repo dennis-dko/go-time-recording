@@ -190,6 +190,90 @@ func TestTheBuiltInAdministratorIsNotOfferedPasskeys(t *testing.T) {
 	}
 }
 
+// A passkey refused for the connection says the certificate is one of the reasons.
+//
+// passkeyProblem translates the DOMException name because the browser's own
+// message is in its own language, and the comment above it says which cases the
+// name tells apart: a dismissed prompt, a device that already holds one, "and a
+// page served over plain HTTP, which cannot work at all". That last one is no
+// longer the whole of it. Since Firefox 140 - the fix for CVE-2025-6433 - WebAuthn
+// is refused whenever a certificate error override is in place, and Firefox
+// reports that as SecurityError too.
+//
+// So the sentence named HTTPS and the address while the actual cause was a third
+// thing, on a deployment shape this repository ships itself: deploy/ terminates
+// TLS with a local CA, and a device that has not been given that CA gets exactly
+// this. Measured on the running instance rather than reasoned about - six
+// challenges issued, no credential ever returned, Firefox 155 on the phone.
+func TestAPasskeyRefusedForTheConnectionNamesTheCertificate(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	var said string
+
+	p.run("ask what a SecurityError is reported as", chromedp.Evaluate(
+		`passkeyProblem({ name: 'SecurityError' })`, &said))
+
+	if !strings.Contains(strings.ToLower(said), "certificate") {
+		t.Errorf("a passkey refused for the connection is reported as %q, which "+
+			"names HTTPS and the address but not the certificate - and an untrusted "+
+			"certificate is what produces this wherever TLS is terminated with a "+
+			"local CA", said)
+	}
+}
+
+// Chrome reports the same refusal under a different name, and it is not a
+// dismissed prompt.
+//
+// The sibling of the case above, and the reason to look for one: the rule that a
+// refused connection has to name the certificate was applied where Firefox puts
+// it and nowhere else. Chromium maps a certificate error to NotAllowedError -
+// read in authentication_credentials_container.cc rather than assumed - so the
+// same phone on the same instance in the other browser is told "the prompt was
+// dismissed, or it timed out. Nothing was changed", which is untrue about what
+// happened and points at the person rather than at the connection.
+//
+// The message is what tells them apart, although the comment above passkeyProblem
+// says the name is the part worth reading. That still holds for the wording, which
+// is the browser's own; this reads it only as a signal, and the signal is a fixed
+// string in Chromium's source rather than a sentence somebody phrased. If it is
+// ever reworded the case falls back to what it says today, which is why matching
+// loosely on "certificate" is safer here than matching Chromium's whole sentence.
+//
+// The second half of this case is the one that would otherwise go unnoticed: an
+// ordinary dismissed prompt must keep saying so. A check that widens until it
+// catches everything has only moved the untrue sentence somewhere else.
+func TestACertificateRefusalIsNotReportedAsADismissedPrompt(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	var refused, dismissed string
+
+	p.run("ask what Chrome's certificate refusal is reported as", chromedp.Evaluate(
+		`passkeyProblem({
+			name: 'NotAllowedError',
+			message: 'WebAuthn is not supported on sites with TLS certificate errors.',
+		})`, &refused))
+
+	p.run("ask what an ordinary dismissed prompt is reported as", chromedp.Evaluate(
+		`passkeyProblem({
+			name: 'NotAllowedError',
+			message: 'The operation either timed out or was not allowed.',
+		})`, &dismissed))
+
+	if !strings.Contains(strings.ToLower(refused), "certificate") {
+		t.Errorf("Chrome's certificate refusal is reported as %q, which names neither "+
+			"the certificate nor anything the reader can act on", refused)
+	}
+
+	if !strings.Contains(strings.ToLower(dismissed), "dismissed") {
+		t.Errorf("an ordinary dismissed prompt is reported as %q; telling the two "+
+			"apart must not cost the case that is genuinely about the prompt", dismissed)
+	}
+}
+
 // ------------------------------------------------------------------ helpers
 
 // createOrdinaryAccount adds an ordinary account through the API, since the point of
