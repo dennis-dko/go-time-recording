@@ -39,23 +39,29 @@ linters:
       # hardest to rediscover from the code - the domain vocabulary, the storage
       # interfaces, the domain rules, and the three DTO packages.
       #
+      # ST1020, ST1021 and ST1022 are on for the reason above rather than for
+      # tidiness. They are one rule applied to three kinds of declaration - a
+      # doc comment starts with the name of what it documents - and what makes
+      # that worth enforcing here is the mechanism: the check compares the
+      # comment's first word against the declaration the *toolchain* attached it
+      # to, so it fires when a comment has drifted onto the wrong thing. That is
+      # a fault reading the file cannot show and no test here caught.
+      #
+      # ST1003 is the one left off, and deliberately: it judges names rather
+      # than form, so a disagreement with it is a disagreement about taste and
+      # is more expensive to settle than the comment-shape checks. ST1016
+      # (consistent receiver names) is on - mechanical, no taste in it, and
+      # nothing in this tree to fix for it.
+      #
       # `checks` replaces the default list rather than adding to it, and
       # golangci-lint offers no way to read what that default is, so this is
       # written out. It is therefore wider than the default: the whole
-      # staticcheck set apart from the five below, QF included. Checked before
-      # committing to it - with everything on, this tree reports nothing beyond
-      # the ST1000 and ST1020 above, both now fixed.
-      #
-      # The five stay off because adopting them was a decision nobody has taken,
-      # not because they were tried and found wrong. ST1020 is the one worth
-      # revisiting; it earned its keep once already.
+      # staticcheck set apart from ST1003, QF included. Checked before
+      # committing to it - with everything on, this tree reported nothing beyond
+      # the ST1000s and the single ST1020, both now fixed.
       checks:
         - all
         - -ST1003
-        - -ST1016
-        - -ST1020
-        - -ST1021
-        - -ST1022
 
 formatters:
   enable:
