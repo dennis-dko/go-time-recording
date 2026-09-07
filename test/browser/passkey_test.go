@@ -190,6 +190,39 @@ func TestTheBuiltInAdministratorIsNotOfferedPasskeys(t *testing.T) {
 	}
 }
 
+// A passkey refused for the connection says the certificate is one of the reasons.
+//
+// passkeyProblem translates the DOMException name because the browser's own
+// message is in its own language, and the comment above it says which cases the
+// name tells apart: a dismissed prompt, a device that already holds one, "and a
+// page served over plain HTTP, which cannot work at all". That last one is no
+// longer the whole of it. Since Firefox 140 - the fix for CVE-2025-6433 - WebAuthn
+// is refused whenever a certificate error override is in place, and Firefox
+// reports that as SecurityError too.
+//
+// So the sentence named HTTPS and the address while the actual cause was a third
+// thing, on a deployment shape this repository ships itself: deploy/ terminates
+// TLS with a local CA, and a device that has not been given that CA gets exactly
+// this. Measured on the running instance rather than reasoned about - six
+// challenges issued, no credential ever returned, Firefox 155 on the phone.
+func TestAPasskeyRefusedForTheConnectionNamesTheCertificate(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	var said string
+
+	p.run("ask what a SecurityError is reported as", chromedp.Evaluate(
+		`passkeyProblem({ name: 'SecurityError' })`, &said))
+
+	if !strings.Contains(strings.ToLower(said), "certificate") {
+		t.Errorf("a passkey refused for the connection is reported as %q, which "+
+			"names HTTPS and the address but not the certificate - and an untrusted "+
+			"certificate is what produces this wherever TLS is terminated with a "+
+			"local CA", said)
+	}
+}
+
 // ------------------------------------------------------------------ helpers
 
 // createOrdinaryAccount adds an ordinary account through the API, since the point of

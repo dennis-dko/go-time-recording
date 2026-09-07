@@ -3298,7 +3298,7 @@ const TRANSLATIONS = {
     'passkey.err.notAllowed': 'Die Abfrage wurde abgebrochen oder lief ab. Es wurde nichts geändert.',
     'passkey.err.already': 'Dieses Gerät hat für dieses Konto schon einen Passkey.',
     'passkey.err.unsupported': 'Dieses Gerät kann keinen Passkey der Art erstellen, die diese Installation verlangt.',
-    'passkey.err.insecure': 'Ein Passkey braucht HTTPS, und die Adresse in der Leiste muss die sein, für die er angelegt wurde.',
+    'passkey.err.insecure': 'Ein Passkey braucht HTTPS, die Adresse, für die er angelegt wurde, und ein Zertifikat, dem dieses Gerät vertraut. Eine weggeklickte Zertifikatswarnung genügt nicht.',
     'passkey.err.aborted': 'Die Abfrage wurde geschlossen, bevor etwas geschehen ist.',
     'passkey.failed': 'Der Passkey wurde nicht akzeptiert.',
 
@@ -11422,7 +11422,14 @@ async function loadPasskeySupport() {
  * The name is the part worth reading. It is fixed by the specification, so it can be
  * translated where the message cannot, and it distinguishes the cases that need
  * different answers: a prompt somebody dismissed, a device that already holds a passkey
- * for this account, and a page served over plain HTTP, which cannot work at all.
+ * for this account, and a connection the browser refuses to do this over.
+ *
+ * That last one is wider than plain HTTP, which is what this used to say. Since Firefox
+ * 140 - the fix for CVE-2025-6433 - an accepted certificate warning makes the browser
+ * refuse as well, reported as SecurityError like the rest, and clicking past the warning
+ * is exactly what somebody does before trying. So the sentence names the certificate
+ * too: deploy/ terminates TLS with a local CA, so a device that has not been given that
+ * CA is the case here that actually happens rather than the theoretical one.
  *
  * Anything unrecognised keeps the browser's own sentence. It is in the wrong language,
  * and it is still better than "something went wrong".
@@ -11440,8 +11447,8 @@ function passkeyProblem(err) {
         'This device cannot make the kind of passkey this installation asks for.');
     case 'SecurityError':
       return t('passkey.err.insecure',
-        'A passkey needs HTTPS, and the address in the bar has to be the one it was '
-        + 'made for.');
+        'A passkey needs HTTPS, the address it was made for, and a certificate this '
+        + 'device trusts. Clicking past a certificate warning is not enough.');
     case 'AbortError':
       return t('passkey.err.aborted', 'The prompt closed before anything was done.');
     default:
