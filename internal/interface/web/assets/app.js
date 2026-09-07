@@ -3299,6 +3299,7 @@ const TRANSLATIONS = {
     'passkey.err.already': 'Dieses Gerät hat für dieses Konto schon einen Passkey.',
     'passkey.err.unsupported': 'Dieses Gerät kann keinen Passkey der Art erstellen, die diese Installation verlangt.',
     'passkey.err.insecure': 'Ein Passkey braucht HTTPS, die Adresse, für die er angelegt wurde, und ein Zertifikat, dem dieses Gerät vertraut. Eine weggeklickte Zertifikatswarnung genügt nicht.',
+    'passkey.err.certificate': 'Dieses Gerät vertraut dem Zertifikat dieser Seite nicht, deshalb ist hier kein Passkey möglich. Die Zertifizierungsstelle muss auf dem Gerät installiert werden.',
     'passkey.err.aborted': 'Die Abfrage wurde geschlossen, bevor etwas geschehen ist.',
     'passkey.failed': 'Der Passkey wurde nicht akzeptiert.',
 
@@ -11431,10 +11432,24 @@ async function loadPasskeySupport() {
  * too: deploy/ terminates TLS with a local CA, so a device that has not been given that
  * CA is the case here that actually happens rather than the theoretical one.
  *
+ * The one thing read before the name is that same refusal in Chromium, which answers it
+ * with NotAllowedError - the name it also uses for a prompt somebody dismissed, so the
+ * name cannot tell the two apart and only the message can. That is not a retreat from
+ * the paragraph above: the browser's wording is still never shown, it is read purely as
+ * a signal, and this signal is a constant in Chromium's own source rather than a
+ * sentence somebody phrased. Matched loosely on the one word, because a rewording should
+ * cost this improvement and not turn a dismissed prompt into a certificate that is fine.
+ *
  * Anything unrecognised keeps the browser's own sentence. It is in the wrong language,
  * and it is still better than "something went wrong".
  */
 function passkeyProblem(err) {
+  if (/certificate/i.test(err?.message ?? '')) {
+    return t('passkey.err.certificate',
+      'This device does not trust the certificate of this site, so no passkey can be '
+      + 'made here. Its certificate authority has to be installed on the device.');
+  }
+
   switch (err?.name) {
     case 'NotAllowedError':
       return t('passkey.err.notAllowed',

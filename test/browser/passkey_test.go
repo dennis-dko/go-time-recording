@@ -223,6 +223,57 @@ func TestAPasskeyRefusedForTheConnectionNamesTheCertificate(t *testing.T) {
 	}
 }
 
+// Chrome reports the same refusal under a different name, and it is not a
+// dismissed prompt.
+//
+// The sibling of the case above, and the reason to look for one: the rule that a
+// refused connection has to name the certificate was applied where Firefox puts
+// it and nowhere else. Chromium maps a certificate error to NotAllowedError -
+// read in authentication_credentials_container.cc rather than assumed - so the
+// same phone on the same instance in the other browser is told "the prompt was
+// dismissed, or it timed out. Nothing was changed", which is untrue about what
+// happened and points at the person rather than at the connection.
+//
+// The message is what tells them apart, although the comment above passkeyProblem
+// says the name is the part worth reading. That still holds for the wording, which
+// is the browser's own; this reads it only as a signal, and the signal is a fixed
+// string in Chromium's source rather than a sentence somebody phrased. If it is
+// ever reworded the case falls back to what it says today, which is why matching
+// loosely on "certificate" is safer here than matching Chromium's whole sentence.
+//
+// The second half of this case is the one that would otherwise go unnoticed: an
+// ordinary dismissed prompt must keep saying so. A check that widens until it
+// catches everything has only moved the untrue sentence somewhere else.
+func TestACertificateRefusalIsNotReportedAsADismissedPrompt(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	var refused, dismissed string
+
+	p.run("ask what Chrome's certificate refusal is reported as", chromedp.Evaluate(
+		`passkeyProblem({
+			name: 'NotAllowedError',
+			message: 'WebAuthn is not supported on sites with TLS certificate errors.',
+		})`, &refused))
+
+	p.run("ask what an ordinary dismissed prompt is reported as", chromedp.Evaluate(
+		`passkeyProblem({
+			name: 'NotAllowedError',
+			message: 'The operation either timed out or was not allowed.',
+		})`, &dismissed))
+
+	if !strings.Contains(strings.ToLower(refused), "certificate") {
+		t.Errorf("Chrome's certificate refusal is reported as %q, which names neither "+
+			"the certificate nor anything the reader can act on", refused)
+	}
+
+	if !strings.Contains(strings.ToLower(dismissed), "dismissed") {
+		t.Errorf("an ordinary dismissed prompt is reported as %q; telling the two "+
+			"apart must not cost the case that is genuinely about the prompt", dismissed)
+	}
+}
+
 // ------------------------------------------------------------------ helpers
 
 // createOrdinaryAccount adds an ordinary account through the API, since the point of
