@@ -228,6 +228,24 @@ func (h *PasskeyHandler) BeginLogin(c *gofr.Context) (any, error) {
 }
 
 // FinishLogin handles PUT /api/v1/auth/passkey/login, opening the session.
+//
+// It opens the session directly, and deliberately does not ask for a second
+// factor the way the password path does - SessionService.Login answers
+// ErrTOTPRequired and has the interface ask for a code, and there is no
+// equivalent here. That difference is a decision rather than the shorter of two
+// paths having been left unfinished, which is what it looks like when the two
+// are read side by side.
+//
+// The reason is that a passkey already is the second factor. Both ceremonies
+// require protocol.VerificationRequired: at registration, where the comment
+// gives the argument - without it "possession of an unlocked laptop would be
+// the whole factor" - and again in BeginLogin, which is the half that decides
+// this one. The device must therefore be held and unlocked before it will sign,
+// so possession and knowledge arrive together in one gesture. A code on top
+// would be a third factor, and the weakest of the three.
+//
+// TestAPasskeySignsInWithoutTheSecondFactor holds it, with the control that
+// matters: the password way into the same account must still ask for the code.
 func (h *PasskeyHandler) FinishLogin(c *gofr.Context) (any, error) {
 	var req struct {
 		Token      string         `json:"token"`

@@ -274,6 +274,92 @@ func TestACertificateRefusalIsNotReportedAsADismissedPrompt(t *testing.T) {
 	}
 }
 
+// A passkey signs somebody in on its own, even with two-factor switched on.
+//
+// Written down because it is a decision and looked like an omission: the sign-in
+// path for a passkey goes from FinishLogin straight to OpenSession and never
+// consults the second factor, while the password path returns totpRequired and
+// asks. Nothing in the tree said why, and somebody comparing the two paths would
+// find the shorter one and reasonably read it as a hole.
+//
+// It is not one, because the second factor is what a passkey already is. Both
+// ceremonies ask for protocol.VerificationRequired - at registration, where the
+// comment gives the reason ("Without it, possession of an unlocked laptop would
+// be the whole factor"), and again at BeginLogin, which is the half that matters
+// here: it means the device must be held *and* unlocked before it will sign, so
+// the possession and the knowledge arrive in one gesture. A code on top would be
+// a third factor, and the weakest of the three.
+//
+// The control below is what makes this a case rather than an assertion about
+// nothing: the password way into the same account must still ask for the code.
+// Without it this would pass just as happily against an installation where the
+// enrolment silently did nothing - which is the failure it exists to catch.
+func TestAPasskeySignsInWithoutTheSecondFactor(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.withAuthenticator(t)
+
+	p.readyAdmin()
+	p.createOrdinaryAccount(t, "greta@example.com", "greta-password-1")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("greta@example.com", "greta-password-1")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	// Two-factor on, and a passkey beside it - the combination somebody who takes
+	// security seriously actually ends up with.
+	p.enableTOTP(t)
+
+	p.run("open My account", chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#passkey-card", chromedp.ByID))
+
+	p.run("register a passkey",
+		chromedp.SendKeys(`#form-passkey input[name="name"]`, "Greta phone", chromedp.ByQuery),
+		p.click(`#form-passkey button[type="submit"]`),
+	)
+
+	p.waitForText("#table-passkeys tbody", "Greta phone")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	// The control: the password still has to be joined by a code.
+	p.signIn("greta@example.com", "greta-password-1")
+	p.run("the password way in asks for the code",
+		chromedp.WaitVisible("#login-totp-field", chromedp.ByID))
+
+	// A fresh sign-in screen, so the passkey is used against a form that is not
+	// half way through the other way in.
+	p.run("back to a clean sign-in screen",
+		chromedp.Navigate(p.app.BaseURL()),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	if !p.visible("#login-passkey") {
+		t.Fatal("the passkey button is not offered, so the rest of this case would prove nothing")
+	}
+
+	p.run("sign in with the passkey alone", p.click("#login-passkey"))
+	p.waitGone("#login-screen")
+
+	if p.visible("#login-totp-field") {
+		t.Error("the passkey sign-in asked for a code as well; the ceremony already " +
+			"required the device to be unlocked, so this would be a third factor")
+	}
+
+	var who string
+
+	p.run("read who is signed in",
+		chromedp.Evaluate(`document.querySelector('#who')?.textContent ?? ''`, &who))
+
+	if !strings.Contains(who, "greta@example.com") && !strings.Contains(who, "Erika") {
+		t.Errorf("expected to be signed in as Greta, the header says %q", who)
+	}
+}
+
 // ------------------------------------------------------------------ helpers
 
 // createOrdinaryAccount adds an ordinary account through the API, since the point of
