@@ -1,0 +1,381 @@
+{
+  // ===========================================================================
+  // Go-Time-Recording - VS Code workspace settings
+  //
+  // Written against what this repository actually is rather than against a
+  // generic Go setup: three build-tagged test suites, web assets served byte
+  // for byte, line endings pinned by .gitattributes, and a %TEMP% that
+  // real-time virus scanning intermittently locks. The reason for every
+  // non-obvious value is in the comment above it, because the obvious value is
+  // wrong here in several places and nothing else would say why.
+  //
+  // This file is committed. It was git-ignored until the editor and the CI gate
+  // were made to say the same thing, at which point keeping it local meant every
+  // clone got the rule enforced and none of them got it shown while editing.
+  // Nothing machine-specific belongs in here for that reason.
+  // ===========================================================================
+
+  // --------------------------------------------------------- language server
+  "go.useLanguageServer": true,
+  "go.toolsManagement.autoUpdate": true,
+
+  // "default" means gopls formats. This overrides the global user setting,
+  // which selects goimports - and that is not the harmless-looking preference
+  // it reads as: naming a specific tool makes the extension run that tool
+  // *instead of* gopls, which would bypass gopls.formatting.local below and
+  // with it the standard/third-party/this-module import grouping every file in
+  // this repository already uses.
+  "go.formatTool": "default",
+
+  // The integration, browser and firefox suites are behind build tags, so
+  // without them gopls does not parse test/integration, test/browser or
+  // test/firefox at all: every identifier in roughly fifteen hundred lines
+  // reads as undefined, and "go to definition" from internal/ never reaches
+  // the test that covers it. Same list as .golangci.yml and the CI lint step.
+  //
+  // Safe to switch all three on together: the only negated constraint in the
+  // tree is restart_other.go's !unix, which is a platform tag, so no file is
+  // hidden by doing this.
+  //
+  // Set as go.buildTags rather than as gopls.build.buildFlags on purpose - the
+  // extension forwards this value to gopls only while that setting is absent,
+  // so one value here reaches gopls, go build, go vet, the linter and the test
+  // runner alike. go.testTags is deliberately left unset; it falls back to
+  // this, which keeps the list in one place.
+  "go.buildTags": "integration,browser,firefox",
+
+  "gopls": {
+    // None of these is a Go package. bin/ additionally holds a built copy of
+    // cmd/configs, which would otherwise show up as a second set of results
+    // for every configuration search.
+    "build.directoryFilters": [
+      "-bin",
+      "-dist",
+      "-.gotmp",
+      "-deploy",
+      "-.github"
+    ],
+
+    // The import layout this repository already uses - standard library, then
+    // third party, then this module (see any handler in internal/interface).
+    // Without it goimports files a newly added internal import under third
+    // party, and the next save leaves it there: a formatting diff in a file
+    // the change never meant to touch, which section 2 rules out.
+    "formatting.local": "github.com/dennis-dko/go-time-recording",
+
+    // gofmt and goimports are the arbiters here (CLAUDE.md section 2). gofumpt
+    // is a stricter third opinion that would reformat code CI is happy with.
+    "formatting.gofumpt": false,
+
+    "ui.semanticTokens": true,
+    "ui.completion.usePlaceholders": true,
+    "ui.navigation.importShortcut": "Definition",
+
+    // This switch has three values, not two, and the difference matters:
+    // false disables every staticcheck analyser, true enables *all* of them,
+    // and leaving it out enables the subset gopls's maintainers picked for
+    // runtime cost and precision. True is deliberate here, so that the editor
+    // sees what .golangci.yml enforces - which is the whole set bar ST1003.
+    //
+    // The analyses map below is what keeps the two in step. Anything excluded
+    // in .golangci.yml is excluded here too, because a squiggle for something
+    // CI does not check is how people learn to stop reading squiggles.
+    "ui.diagnostic.staticcheck": true,
+
+    "ui.diagnostic.analyses": {
+      // A context that is cancelled by nothing. Section 5 requires ctx first
+      // *and respected*; this is the analyser that checks the second half.
+      "lostcancel": true,
+      "nilness": true,
+      "unusedwrite": true,
+      "unusedvariable": true,
+      "unusedparams": true,
+      // Reports a test helper that never runs - which is what a mistyped build
+      // tag looks like in a repository where three suites depend on them.
+      "tests": true,
+      // A response body never closed and a rows.Err never read both survive
+      // every unit test here.
+      "httpresponse": true,
+      "sqlrowserr": true,
+      "waitgroup": true,
+      "testinggoroutine": true,
+      // Off on purpose: shadowing err is idiomatic and common in this tree, so
+      // this reports hundreds of lines that are correct.
+      "shadow": false,
+      // Off on purpose: it asks for model struct fields to be reordered for a
+      // few bytes, against a JSON contract section 7 calls immutable once
+      // public.
+      "fieldalignment": false,
+
+      // The one staticcheck check .golangci.yml excludes, excluded here for
+      // the same reason and to keep the two saying the same thing. ST1003
+      // judges names rather than form, so an argument with it is an argument
+      // about taste - more expensive to settle than a comment's shape, and not
+      // something CI should decide on its own.
+      //
+      // Its siblings are on: ST1000 (a package needs a package comment) and
+      // ST1020, ST1021, ST1022 (a doc comment starts with the name of what it
+      // documents). Those three earned it - the check compares the comment's
+      // first word with the declaration the toolchain actually attached it to,
+      // which is how TabName's comment was found sitting on TitleIn.
+      "ST1003": false
+    },
+
+    "ui.codelenses": {
+      "generate": true,
+      "test": true,
+      "tidy": true,
+      "upgrade_dependency": true,
+      "run_govulncheck": true,
+      "vendor": false,
+      "regenerate_cgo": false
+    }
+  },
+
+  // ------------------------------------------------------------ inlay hints
+  // On for the ones that carry information the code does not: which parameter
+  // a bare true is, and what an inferred type actually resolved to. Composite
+  // literal types and function type parameters are off - they mostly restate
+  // the line they sit on.
+  "go.inlayHints.parameterNames": true,
+  "go.inlayHints.assignVariableTypes": true,
+  "go.inlayHints.rangeVariableTypes": true,
+  "go.inlayHints.constantValues": true,
+  "go.inlayHints.compositeLiteralFields": true,
+  "go.inlayHints.compositeLiteralTypes": false,
+  "go.inlayHints.functionTypeParameters": false,
+
+  // ------------------------------------------------------------------ lint
+  // The same tool and the same version CI uses (.golangci-lint-version pins
+  // v2.13.1), so a warning here is a warning there. The build tags are not
+  // repeated: .golangci.yml already sets integration, browser and firefox for
+  // a bare `golangci-lint run`.
+  //
+  //   --path-mode=abs   v2 reports paths relative to the module by default,
+  //                     which VS Code cannot map back to a file; absolute
+  //                     paths make the warnings clickable.
+  //   --fast-only       only the analyses that do not need a full type check,
+  //                     so saving stays quick. The full set is the "check:
+  //                     lint" task, which is what the gate actually runs.
+  "go.lintTool": "golangci-lint-v2",
+  "go.lintOnSave": "package",
+  "go.lintFlags": ["--path-mode=abs", "--fast-only"],
+
+  // Both are gopls's job already, and running them again on every save gives
+  // two diagnostics for one problem, from two tools, at two different moments.
+  "go.vetOnSave": "off",
+  "go.buildOnSave": "off",
+
+  // ------------------------------------------------------------------ tests
+  // Go writes each test binary into %TEMP%/go-build before running it, and
+  // real-time virus scanning on Windows intermittently locks those files -
+  // "Access is denied" on a package that compiles perfectly well. This is the
+  // same remedy `task test` applies, pointed at a directory of its own rather
+  // than at the Taskfile's bin/gotmp: that one is deleted by a `defer` at the
+  // end of every task run and by `task clean`, and a GOTMPDIR that has just
+  // been removed fails every test in the editor.
+  "go.testEnvVars": {
+    "GOTMPDIR": "${workspaceFolder}/.gotmp"
+  },
+
+  // -count=1 disables the test cache, and it is here because of a documented
+  // way this project's tests can lie. The web assets are compiled into the
+  // *application*, which test/harness builds at test time; they are not an
+  // input to the test package, so after changing only app.js Go sees an
+  // unchanged package and replays the previous result. Reverting a fix and
+  // re-running then reports the fixed outcome - a TDD counter-check passing
+  // against unfixed code, which is the one direction that matters.
+  //
+  // -v is carried over from the global user settings deliberately: VS Code
+  // replaces an array setting rather than merging it, so listing only -count=1
+  // here would quietly drop the verbose output that is set there.
+  "go.testFlags": ["-count=1", "-v"],
+
+  // The default 30s is shorter than a single integration case, each of which
+  // starts a real instance of the application, migrates a database and talks
+  // to it over HTTP. Ten minutes is long enough for one case in the debugger
+  // and still short enough to end a genuine hang.
+  "go.testTimeout": "10m",
+
+  "go.testExplorer.enable": true,
+  "go.testExplorer.showOutput": true,
+  "go.testExplorer.concatenateMessages": true,
+  "go.coverOnSingleTest": true,
+  // In the gutter rather than as a highlight over the line: the default paints
+  // a background colour across the code itself, which is unreadable over the
+  // long doc comments this codebase carries above almost everything.
+  //
+  // The whole object is given, not only "type" - VS Code replaces an object
+  // setting rather than merging it into its default, so a partial one would
+  // leave the gutter styles unset.
+  "go.coverageDecorator": {
+    "type": "gutter",
+    "coveredHighlightColor": "rgba(64,128,128,0.5)",
+    "uncoveredHighlightColor": "rgba(128,64,64,0.25)",
+    "coveredBorderColor": "rgba(64,128,128,0.5)",
+    "uncoveredBorderColor": "rgba(128,64,64,0.25)",
+    "coveredGutterStyle": "blockgreen",
+    "uncoveredGutterStyle": "slashyellow"
+  },
+  "go.coverageOptions": "showBothCoveredAndUncoveredCode",
+
+  // ------------------------------------------------------------ vulnerability
+  // govulncheck is mandatory before a PR (section 3). In Imports mode gopls
+  // reports an advisory against a dependency as a diagnostic while editing,
+  // which is where a published advisory is cheapest to notice.
+  "go.diagnostic.vulncheck": "Imports",
+
+  // ------------------------------------------------------------- debugging
+  // 64 bytes of a string is not enough to read a JWT, a DSN, a SQL statement
+  // or a translated error sentence, all of which are what one usually stops to
+  // look at here. maxArrayValues covers a page of time entries.
+  "go.delveConfig": {
+    "debugAdapter": "dlv-dap",
+    "showGlobalVariables": false,
+    "hideSystemGoroutines": true,
+    "dlvLoadConfig": {
+      "followPointers": true,
+      "maxVariableRecurse": 3,
+      "maxStringLen": 4096,
+      "maxArrayValues": 256,
+      "maxStructFields": -1
+    }
+  },
+
+  // ----------------------------------------------------------------- editor
+  "[go]": {
+    "editor.insertSpaces": false,
+    "editor.tabSize": 4,
+    "editor.defaultFormatter": "golang.go",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    },
+    // Measured on the tree rather than chosen: 99% of the non-test lines under
+    // internal/ and cmd/ are 88 columns or shorter and the longest is 120.
+    "editor.rulers": [100, 120],
+    "editor.suggest.snippetsPreventQuickSuggestions": false
+  },
+  "[go.mod]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.formatOnSave": true
+  },
+
+  // ------------------------------------------------ the embedded web assets
+  // Formatting is OFF for these on purpose, and it is the most load-bearing
+  // setting in this file.
+  //
+  // app.js is 12,500 lines and index.html and app.css are 85 KB and 78 KB;
+  // all three are embedded with go:embed and served byte for byte. Prettier is
+  // installed on this machine and there is no .prettierrc in the repository,
+  // so a single formatOnSave would reformat one of those files entirely to
+  // Prettier's defaults - a diff nobody can review, in a file whose bytes are
+  // the artefact. Formatting one deliberately is still possible with
+  // "Format Document" from the command palette.
+  "[javascript]": {
+    "editor.formatOnSave": false
+  },
+  "[html]": {
+    "editor.formatOnSave": false
+  },
+  "[css]": {
+    "editor.formatOnSave": false
+  },
+  "[json]": {
+    "editor.formatOnSave": false
+  },
+  "[jsonc]": {
+    "editor.formatOnSave": false
+  },
+  "[markdown]": {
+    "editor.formatOnSave": false,
+    // Two trailing spaces are a line break in Markdown, and CLAUDE.md and
+    // README.md are 73 KB and 103 KB of it.
+    "files.trimTrailingWhitespace": false
+  },
+  "[yaml]": {
+    "editor.formatOnSave": false,
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2
+  },
+
+  // ---------------------------------------------------------- line endings
+  // .gitattributes pins LF for the shell scripts, the LDIF, the compose and
+  // workflow YAML, the .env files, the embedded web assets and
+  // .golangci-lint-version - and section 1 explains what a stray carriage
+  // return costs in each: a script that fails as "bad interpreter: /bin/sh^M",
+  // an LDIF that imports as empty, LOG_LEVEL read as "INFO\r".
+  //
+  // VS Code's default on Windows is "auto", which writes CRLF into every new
+  // file. That does not show up in `git status` (git normalises on compare)
+  // but go:embed reads the working copy, so a build on this machine would bake
+  // in CRLF where the same commit built on the Linux runner bakes in LF. LF
+  // for everything is what .gitattributes already says.
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.trimFinalNewlines": true,
+
+  // ----------------------------------------------------- file associations
+  "files.associations": {
+    ".env": "properties",
+    ".dev.env": "properties",
+    ".prod.env": "properties",
+    ".staging.env": "properties",
+    ".local.env": "properties",
+    "*.env.example": "properties",
+    "*.env.binary.example": "properties",
+    ".golangci-lint-version": "plaintext",
+    "*.ldif": "plaintext",
+    "*.template": "plaintext",
+    "*.json.in": "json",
+    "Taskfile.yml": "yaml",
+    "compose*.yaml": "dockercompose",
+    "compose*.yml": "dockercompose"
+  },
+
+  // Taskfile.yml is 30 KB of task definitions; the schema turns a mistyped key
+  // into a squiggle rather than into a task that silently does not run.
+  "yaml.schemas": {
+    "https://taskfile.dev/schema.json": ["Taskfile.yml", "Taskfile.*.yml"]
+  },
+
+  // ---------------------------------------------------- search and watching
+  // bin/ is build output including a copy of cmd/configs, .gotmp is the test
+  // scratch space, and test/browser/*.png are the screenshots a visual case
+  // saves. Excluding them keeps a search over app.js from also matching its
+  // built copies.
+  "search.exclude": {
+    "**/bin": true,
+    "**/dist": true,
+    "**/.gotmp": true,
+    "**/go.sum": true,
+    "**/test/browser/*.png": true,
+    "**/node_modules": true
+  },
+  "files.watcherExclude": {
+    "**/bin/**": true,
+    "**/dist/**": true,
+    "**/.gotmp/**": true,
+    "**/.git/objects/**": true
+  },
+  // AUDIT_REPORT.md is git-ignored and is the audit scratchpad, so it is
+  // findable but does not crowd the search results for real code.
+  "search.useIgnoreFiles": false,
+
+  // ------------------------------------------------------------- terminal
+  // The extension puts GOPATH, GOROOT and the tool directory on PATH in every
+  // integrated terminal, so `dlv`, `gopls` and `golangci-lint` resolve without
+  // a shell profile having to know about them.
+  "go.terminal.activateEnvironment": true,
+
+  // ------------------------------------------------------------- explorer
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    "go.mod": "go.sum",
+    "Taskfile.yml": ".taskrc.yaml, .golangci.yml, .golangci-lint-version, .gitattributes",
+    "README.md": "CLAUDE.md, SECURITY.md, LICENSE, AUDIT_REPORT.md",
+    "*.go": "${capture}_test.go"
+  }
+}
