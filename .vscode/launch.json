@@ -1,0 +1,308 @@
+{
+  // ===========================================================================
+  // Go-Time-Recording - debug configurations
+  //
+  // Two things decide every configuration in this file, and both are easy to
+  // get wrong in a way that looks like a different bug:
+  //
+  //   cwd    GoFr resolves its configuration as ./configs relative to the
+  //          *process working directory*, not to the binary. Debugging from
+  //          the repository root therefore finds no configuration at all and
+  //          leaves container.SQL a typed nil - which cmd/main.go fails fast
+  //          on rather than serving 500s. Every launch below runs from
+  //          ${workspaceFolder}/cmd, where cmd/configs is.
+  //
+  //   tags   test/integration, test/browser and test/firefox are behind build
+  //          tags. A test-mode launch without the right one builds an empty
+  //          package and reports "no tests to run".
+  //
+  // APP_ENV is read from the environment at run time, not compiled in, so it
+  // belongs here rather than in a build flag.
+  // ===========================================================================
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // The everyday one. No containers, no compose, straight onto a local
+      // SQLite file next to cmd/ - the same thing `task dev DB=sqlite` does.
+      "name": "App: run on SQLite",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd",
+      "cwd": "${workspaceFolder}/cmd",
+      "console": "integratedTerminal",
+      // A datasource.json written by the Settings screen in an earlier session
+      // is applied *before* GoFr reads its configuration and overwrites every
+      // DB_ variable below, so without this the launch silently connects
+      // somewhere else. This is the same guard `task dev` carries.
+      "preLaunchTask": "dev: clear the administered datasource",
+      "env": {
+        "APP_ENV": "dev",
+        "DB_DIALECT": "sqlite",
+        "DB_NAME": "go-time-recording"
+      },
+      // main.version is "dev" unless the linker sets it; this makes the
+      // version the running instance reports match what is being debugged.
+      "buildFlags": ["-ldflags=-X=main.version=vscode-debug"]
+    },
+    {
+      // Against the PostgreSQL that `task env:up PROFILE=postgres` starts.
+      // Credentials are the throwaway ones the Taskfile uses for exactly that
+      // container; nothing here is a real secret.
+      "name": "App: run on PostgreSQL (needs task env:up PROFILE=postgres)",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd",
+      "cwd": "${workspaceFolder}/cmd",
+      "console": "integratedTerminal",
+      "preLaunchTask": "dev: clear the administered datasource",
+      "env": {
+        "APP_ENV": "dev",
+        "DB_DIALECT": "postgres",
+        "DB_NAME": "go-time-recording",
+        "DB_HOST": "localhost",
+        "DB_PORT": "55432",
+        "DB_USER": "gtr",
+        "DB_PASSWORD": "gtr-test-password",
+        "DB_SSL_MODE": "disable"
+      },
+      "buildFlags": ["-ldflags=-X=main.version=vscode-debug"]
+    },
+    {
+      // Whatever is actually configured - cmd/configs/.env, the stage overlay
+      // APP_ENV selects, and any datasource.json the Settings screen has
+      // written. Nothing is cleared and nothing is overridden, so this is the
+      // one to use when the question is "why is this instance behaving like
+      // that" rather than "let me run the application".
+      "name": "App: run as configured (nothing overridden)",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd",
+      "cwd": "${workspaceFolder}/cmd",
+      "console": "integratedTerminal"
+    },
+    {
+      // With no database configured the binary serves the installer on the
+      // same port and waits. DB_DIALECT is set to empty rather than left out
+      // because cmd/configs/.env already ships it empty, and the administered
+      // datasource.json is cleared first - either one present would produce
+      // the application instead, which is a confusing way to find out that the
+      // installer was not what started.
+      //
+      // The token it prints to the log is the sign-in: read it from the
+      // terminal this launches in.
+      "name": "App: serve the installer (no database)",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd",
+      "cwd": "${workspaceFolder}/cmd",
+      "console": "integratedTerminal",
+      "preLaunchTask": "dev: clear the administered datasource",
+      "env": {
+        "APP_ENV": "dev",
+        "DB_DIALECT": "",
+        "DB_NAME": ""
+      }
+    },
+
+    {
+      // Every test in the package the active editor belongs to. Build tags
+      // come from go.buildTags in settings.json, so this works unchanged in
+      // internal/ and in the three tagged suites.
+      "name": "Test: this file's package",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${fileDirname}",
+      "args": ["-test.v"],
+      "env": {
+        "GOTMPDIR": "${workspaceFolder}/.gotmp"
+      }
+    },
+    {
+      // One test by name, anywhere in the tree. The name is anchored, so
+      // TestFoo does not also drag in TestFooBar and its fixtures.
+      "name": "Test: one test in this file's package (by name)",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${fileDirname}",
+      "args": ["-test.run", "^${input:testName}$", "-test.v"],
+      "env": {
+        "GOTMPDIR": "${workspaceFolder}/.gotmp"
+      }
+    },
+    {
+      // The 76 structural cases that assert the interface against the code
+      // behind it - every route in the OpenAPI document real, every permission
+      // the markup names checked somewhere, every string translated. Section 3
+      // asks for these after any change to the interface, so they get their
+      // own entry rather than being reached through "this file's package".
+      "name": "Test: the web interface's structural suite (76 cases)",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/internal/interface/web",
+      "args": ["-test.v"],
+      "env": {
+        "GOTMPDIR": "${workspaceFolder}/.gotmp"
+      }
+    },
+
+    {
+      // One integration case, against SQLite. Each case starts a real instance
+      // of the application, so -test.parallel 1 is not a performance choice:
+      // it keeps the debugger looking at one instance rather than at whichever
+      // of several hit the breakpoint first.
+      //
+      // For PostgreSQL or MySQL, start the container with
+      // `task env:up PROFILE=postgres` and set GTR_TEST_DSN below to
+      // postgres://gtr:gtr-test-password@localhost:55432/go-time-recording?sslmode=disable
+      "name": "Test (integration): one case, on SQLite",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/test/integration",
+      "buildFlags": ["-tags=integration"],
+      "args": [
+        "-test.run",
+        "^${input:testName}$",
+        "-test.v",
+        "-test.parallel",
+        "1",
+        "-test.timeout",
+        "15m"
+      ],
+      "env": {
+        "GOTMPDIR": "${workspaceFolder}/.gotmp",
+        // Empty means SQLite, and the harness then gives the instance its own
+        // file rather than sharing one.
+        "GTR_TEST_DSN": ""
+      }
+    },
+    {
+      // One browser case, driven by Chrome, Chromium or Edge - chromedp finds
+      // whichever is installed. Set CHROME_PATH below if it lives somewhere
+      // unusual.
+      //
+      // The browser suite is load-sensitive; one at a time is what a debugging
+      // session wants anyway. Note that the assets are compiled into the
+      // application the harness builds rather than into this package, so a
+      // change to app.js alone would otherwise be replayed from the test cache
+      // - go.testFlags carries -count=1 for that, and it applies here too.
+      "name": "Test (browser): one case, in Chrome",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/test/browser",
+      "buildFlags": ["-tags=browser"],
+      "args": [
+        "-test.run",
+        "^${input:testName}$",
+        "-test.v",
+        "-test.parallel",
+        "1",
+        "-test.timeout",
+        "20m"
+      ],
+      "env": {
+        "GOTMPDIR": "${workspaceFolder}/.gotmp"
+        // "CHROME_PATH": "C:/Program Files/Google/Chrome/Application/chrome.exe"
+      }
+    },
+    {
+      // The same application in Gecko, over WebDriver BiDi. Set FIREFOX_PATH
+      // if Firefox is somewhere unusual; the suite skips itself where there is
+      // no Firefox at all, which in a debug launch looks like a case that ran
+      // and did nothing.
+      "name": "Test (firefox): one case, in Firefox",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/test/firefox",
+      "buildFlags": ["-tags=firefox"],
+      "args": [
+        "-test.run",
+        "^${input:testName}$",
+        "-test.v",
+        "-test.timeout",
+        "20m"
+      ],
+      "env": {
+        "GOTMPDIR": "${workspaceFolder}/.gotmp"
+        // "FIREFOX_PATH": "C:/Program Files/Mozilla Firefox/firefox.exe"
+      }
+    },
+    {
+      // Signing in against a real directory, and checking nobody is deleted
+      // for it. Needs `task env:up PROFILE=ldap` first.
+      //
+      // These cases live in test/integration and are selected by name, not in
+      // a package of their own - test/ldap holds only the LDIF the container
+      // is seeded from. The pattern is the one `task test:ldap` uses; leaving
+      // the prompt at its default runs all of them.
+      "name": "Test (ldap): against the seeded directory (needs task env:up PROFILE=ldap)",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}/test/integration",
+      "buildFlags": ["-tags=integration"],
+      "args": [
+        "-test.run",
+        "${input:ldapPattern}",
+        "-test.v",
+        "-test.parallel",
+        "1",
+        "-test.timeout",
+        "10m"
+      ],
+      "env": {
+        "GOTMPDIR": "${workspaceFolder}/.gotmp",
+        "GTR_TEST_LDAP": "localhost:5389"
+      }
+    },
+
+    {
+      // For an instance already running - one started by `task dev`, or the
+      // binary in bin/. Picks from the Go processes on this machine.
+      "name": "Attach: to a running instance",
+      "type": "go",
+      "request": "attach",
+      "mode": "local",
+      "processId": "${command:pickGoProcess}"
+    },
+    {
+      // For the application inside the staging container, or on the Raspberry
+      // Pi. Needs the target started under `dlv --headless --listen=:2345
+      // --api-version=2 --accept-multiclient`, and a binary built with
+      // `-gcflags=all=-N -l` so the optimiser has not moved the code out from
+      // under the line numbers.
+      "name": "Attach: to a remote dlv on :2345",
+      "type": "go",
+      "request": "attach",
+      "mode": "remote",
+      "host": "127.0.0.1",
+      "port": 2345,
+      "remotePath": "/app",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+
+  "inputs": [
+    {
+      "id": "testName",
+      "type": "promptString",
+      "description": "Test function name, without ^ or $ - they are added. Example: TestEveryTranslationCoversTheMarkup",
+      "default": "Test"
+    },
+    {
+      "id": "ldapPattern",
+      "type": "promptString",
+      "description": "Which directory cases to run (a -run pattern). The default is the set task test:ldap runs.",
+      "default": "Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed"
+    }
+  ]
+}

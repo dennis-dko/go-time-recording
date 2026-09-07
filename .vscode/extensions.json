@@ -1,0 +1,91 @@
+{
+  // ===========================================================================
+  // Go-Time-Recording - extension recommendations
+  //
+  // "unwantedRecommendations" does not uninstall anything. It stops VS Code
+  // suggesting these and marks them as not recommended for this workspace; the
+  // three superseded Go extensions listed there are worth actually removing,
+  // for the reason given against each.
+  // ===========================================================================
+  "recommendations": [
+    // The one that matters. gopls, dlv, the test explorer, the debug adapter.
+    "golang.go",
+
+    // The Taskfile is the entry point for developing, verifying and shipping
+    // here, and `task --summary <name>` is the authoritative explanation of
+    // why each step exists. This puts them in the command palette.
+    "task.vscode-task",
+
+    // Taskfile.yml is 30 KB, and deploy/ has five compose overlays whose
+    // interaction is checked in CI. A schema turns a mistyped key into a
+    // squiggle rather than into a task that silently does not run.
+    "redhat.vscode-yaml",
+
+    // The shipped artefact is a container image, verified on two
+    // architectures, and `task stage` runs it against real backing services.
+    "ms-azuretools.vscode-containers",
+    "ms-azuretools.vscode-docker",
+
+    // CI is the gate: no merge without a green run, and the release workflow
+    // refuses a tag whose commit has not passed. Editing those workflows with
+    // completion beats editing them by pushing.
+    "github.vscode-github-actions",
+
+    // The default shell on this machine, and the Taskfile shells out to it.
+    "ms-vscode.powershell",
+
+    // A branch is deleted once merged, so `git log` is where you find what the
+    // last audit branch was called. Blame and history inline make that a
+    // hover rather than a terminal round trip.
+    "eamodio.gitlens",
+
+    // Diagnostics at the end of the line they belong to. With gopls, the
+    // staticcheck suite and golangci-lint all reporting, the Problems panel is
+    // a second place to look; this is the first.
+    "usernamehw.errorlens",
+
+    // The API is the product's other half, and every state-changing request
+    // has to carry the double-submit CSRF token - the gtr_csrf cookie echoed
+    // back in X-CSRF-Token. A .http file next to the OpenAPI document is a
+    // faster way to try that than curl.
+    "humao.rest-client",
+
+    // With no database configured the binary serves an installer; with SQLite
+    // it writes a .db file next to the working directory. This opens one
+    // without a second tool.
+    "qwtel.sqlite-viewer"
+  ],
+
+  "unwantedRecommendations": [
+    // Superseded by the test explorer built into golang.go, which is what
+    // go.testExplorer.* in settings.json configures. This one last shipped in
+    // 2018, predates gopls entirely, and runs `go test` with none of the build
+    // tags the three suites here need.
+    "windmilleng.vscode-go-autotest",
+
+    // Same reason: a second test tree beside the built-in one, unaware of
+    // go.buildTags, go.testFlags and go.testEnvVars - so a run started from it
+    // sees no integration tests, uses the test cache the browser suite can be
+    // lied to by, and writes its build output into the scanned %TEMP% path.
+    "premparihar.gotestexplorer",
+
+    // gopls has served hover documentation since well before this extension
+    // stopped being updated; keeping it means two hover providers competing.
+    "msyrus.go-doc",
+
+    // It runs the file in the active editor with a fixed command line - for Go
+    // that is `go run <file>`. Every entry point here needs more than that:
+    // ./cmd rather than the file (a .syso beside it in the package is not
+    // picked up by naming the file), a working directory of cmd/ so GoFr finds
+    // ./configs, and APP_ENV in the environment. What it produces instead is a
+    // run that fails for a reason that has nothing to do with the code.
+    "formulahendry.code-runner",
+
+    // Not installed, and deliberately not recommended: the web assets are
+    // embedded with go:embed and served by the Go binary under a strict CSP
+    // (script-src 'self'). Opening index.html through a static server shows a
+    // page that cannot load its own configuration and does not enforce the
+    // policy the real one does - passing there means nothing.
+    "ritwickdey.liveserver"
+  ]
+}

@@ -1,5 +1,3 @@
-.vscode
-
 # Build output
 bin/
 coverage.out

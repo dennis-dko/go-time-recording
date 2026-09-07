@@ -1,0 +1,330 @@
+{
+  // ===========================================================================
+  // Go-Time-Recording - tasks
+  //
+  // These call `task` rather than the `go test` underneath it wherever one
+  // exists, because they are not interchangeable: the Taskfile sets GOTMPDIR
+  // out of the scanned %TEMP% path, and it carries the -parallel values CI
+  // runs the suites at. Without -parallel, `go test` uses GOMAXPROCS - 24 on
+  // this machine - and every integration case starts a real instance of the
+  // application, every browser case a headless Chrome as well. Two dozen at
+  // once does not fail cleanly; it fails at random, differently each run.
+  //
+  // The checks that live in ci.yml rather than in the Taskfile are here too,
+  // spelled the way CI spells them, so a green run locally means the same
+  // thing as a green run there.
+  // ===========================================================================
+  "version": "2.0.0",
+  "tasks": [
+    // ------------------------------------------------------------- the gates
+    {
+      // Section 3's definition of done, in order, stopping at the first red.
+      // The race detector is the slow one - about ten minutes - so it runs
+      // after the two that usually catch things first.
+      "label": "check: definition of done (lint, web structure, tidy, race)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "check: lint (golangci-lint, all build tags)",
+        "check: the web interface's structural suite",
+        "check: go mod tidy",
+        "check: race detector (in Docker)"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      // The build tags are not optional. Without them the integration, browser
+      // and firefox suites are invisible to the linter - roughly fifteen
+      // hundred lines that decide whether a release is trustworthy. The
+      // version is pinned in .golangci-lint-version so this and CI mean the
+      // same thing.
+      "label": "check: lint (golangci-lint, all build tags)",
+      "type": "shell",
+      "command": "golangci-lint run --build-tags \"browser integration firefox\" ./...",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // 76 structural cases: every route in the OpenAPI document real, every
+      // permission the markup names checked somewhere, every gated element
+      // reachable by some role, the form limits the ones the server enforces,
+      // no inline style, no inline script, every string translated. Run after
+      // touching anything in the interface, not only after touching a string.
+      "label": "check: the web interface's structural suite",
+      "type": "shell",
+      "command": "go test ./internal/interface/web/",
+      "options": { "env": { "GOTMPDIR": "${workspaceFolder}/.gotmp" } },
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // The race detector needs cgo, and this machine has CGO_ENABLED=0 with
+      // no gcc on PATH - so it does not run here at all, and this is the
+      // fallback that does. Three details, each found by the command failing
+      // without it: MSYS_NO_PATHCONV stops Git Bash rewriting -w /app into a
+      // Windows path, golang:1.27 matches go.mod rather than drifting with
+      // :latest, and -buildvcs=false is needed because the mounted .git
+      // belongs to another user inside the container. About ten minutes.
+      //
+      // Git Bash by full path, not "bash.exe": the bash on this machine's
+      // Windows PATH is C:\WINDOWS\system32\bash.exe, which is WSL. Both of
+      // the details above are MSYS ones - MSYS_NO_PATHCONV means nothing in
+      // WSL, and /c/Users/... is a Git Bash mount that WSL spells /mnt/c/... -
+      // so run there this fails on the mount path rather than on the code. WSL
+      // is no fallback for this anyway; its Ubuntu image here has no Go.
+      "label": "check: race detector (in Docker)",
+      "type": "shell",
+      // $(pwd) rather than the path spelled out: a task runs from the workspace
+      // folder, and Git Bash prints it in exactly the /c/Users/... form the
+      // daemon wants. ${workspaceFolder} would not do - VS Code substitutes it
+      // as c:\Users\..., which is the Windows spelling this whole line exists to
+      // avoid.
+      "command": "MSYS_NO_PATHCONV=1 docker run --rm -v \"$(pwd)\":/app -w /app -e GOFLAGS=-buildvcs=false golang:1.27 go test -race ./...",
+      "options": {
+        // Windows: Git Bash at its default install location. On Linux or macOS
+        // this line is the one thing to change - "/bin/bash" - and the command
+        // itself needs nothing, because MSYS_NO_PATHCONV is simply an unused
+        // variable there. Left as a note rather than as a platform override,
+        // because an override written on this machine could not be tested here.
+        "shell": { "executable": "C:/Program Files/Git/bin/bash.exe", "args": ["-c"] }
+      },
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "check: go mod tidy",
+      "type": "shell",
+      "command": "task tidy",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      // Pinned at v0.49.0, unlike govulncheck: what deadcode reports depends
+      // on the analysis, so a new release finding something new should arrive
+      // on a deliberate bump. The tag list is what stops it reporting the
+      // whole test harness as unreachable. The tolerance is zero - there is no
+      // baseline to keep.
+      //
+      // A zero from it is not proof there is no dead code: rapid type analysis
+      // marks every method on a type reachable as soon as that type is boxed
+      // into an interface anywhere, and nearly every model type here is
+      // marshalled.
+      "label": "check: dead code (zero tolerance)",
+      "type": "shell",
+      "command": "go run golang.org/x/tools/cmd/deadcode@v0.49.0 -test -tags \"integration,browser,firefox\" ./...",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "check: govulncheck",
+      "type": "shell",
+      "command": "go run golang.org/x/vuln/cmd/govulncheck@latest ./...",
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // Every documented overlay combination parses, and compose.yaml still
+      // refuses to start without DB_PASSWORD - without that second half the
+      // loop would pass just as happily on a file that had quietly grown a
+      // default. Nothing in the repository had ever parsed these, so a typo in
+      // an overlay used to be found by whoever was deploying, while deploying.
+      //
+      // .env.ci holds invented passwords and is git-ignored, which is why it
+      // is written here rather than committed.
+      "label": "check: deployment compose files",
+      "type": "shell",
+      "command": "cp .env.example .env.ci && printf 'DB_PASSWORD=ci-only-not-a-real-password\\nTLS_DOMAINS=time.example.com\\nTLS_EMAIL=ops@example.com\\nLDAP_ADMIN_PASSWORD=ci-only-not-a-real-password\\nLDAP_BIND_PASSWORD=ci-only-not-a-real-password\\n' >> .env.ci && for f in \"-f compose.yaml\" \"-f compose.yaml -f compose.tls.yaml\" \"-f compose.yaml -f compose.tracing.yaml\" \"-f compose.yaml -f compose.ldap.yaml\" \"-f compose.yaml -f compose.tls.yaml -f compose.tracing.yaml\" \"-f compose.yaml -f compose.tls.yaml -f compose.ldap.yaml -f compose.tracing.yaml\"; do echo \"compose $f\"; docker compose --env-file .env.ci $f config >/dev/null || exit 1; done; if docker compose -f compose.yaml config >/dev/null 2>&1; then echo 'compose.yaml started without DB_PASSWORD - the :? guard is gone' >&2; exit 1; fi; echo 'all overlays parse, and DB_PASSWORD is still required'",
+      // Git Bash by full path, for the same reason as the race task above: the
+      // bash on this machine's Windows PATH is WSL's.
+      "options": {
+        "cwd": "${workspaceFolder}/deploy",
+        // Windows: Git Bash at its default install location. On Linux or macOS
+        // this line is the one thing to change - "/bin/bash" - and the command
+        // itself needs nothing, because MSYS_NO_PATHCONV is simply an unused
+        // variable there. Left as a note rather than as a platform override,
+        // because an override written on this machine could not be tested here.
+        "shell": { "executable": "C:/Program Files/Git/bin/bash.exe", "args": ["-c"] }
+      },
+      "group": "test",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+
+    // ------------------------------------------------------------- the suites
+    {
+      "label": "test: unit",
+      "type": "shell",
+      "command": "task test",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // Handler, service and migration changes. Four at a time, which is what
+      // ci.yml runs and therefore what the gate actually measures.
+      "label": "test: integration (SQLite)",
+      "type": "shell",
+      "command": "task test:integration",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // A migration has to be proved on all three dialects, not only SQLite.
+      // Starts the container it needs rather than failing with "connection
+      // refused" and leaving you to work out which one was missing.
+      "label": "test: integration (PostgreSQL)",
+      "type": "shell",
+      "command": "task test:integration DB=postgres",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "test: integration (MySQL)",
+      "type": "shell",
+      "command": "task test:integration DB=mysql",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // UI changes. Two at a time; a failure that passes when re-run alone is
+      // usually load, but "passing alone" is not evidence of noise - read it
+      // before re-running it.
+      "label": "test: browser (Chrome)",
+      "type": "shell",
+      "command": "task test:browser",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // Gecko rather than Blink, and the difference is not theoretical: bulk
+      // deletion was invisible in Firefox for as long as it existed, while
+      // every Blink test passed throughout.
+      "label": "test: firefox (Gecko, WebDriver BiDi)",
+      "type": "shell",
+      "command": "task test:firefox",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "test: directory (a real LDAP)",
+      "type": "shell",
+      "command": "task test:ldap",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "test: traces (export to a real Jaeger)",
+      "type": "shell",
+      "command": "task test:traces",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "test: everything (task test:all)",
+      "type": "shell",
+      "command": "task test:all",
+      "group": "test",
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+
+    // ------------------------------------------------------- build and run
+    {
+      "label": "build: binary into bin/, with its configuration beside it",
+      "type": "shell",
+      "command": "task build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$go"],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // The foreground run, against PostgreSQL and the seeded directory.
+      // Ctrl-C stops it and leaves the containers up. Use the "App:" entries
+      // in launch.json instead when you want breakpoints.
+      "label": "run: task dev (PostgreSQL and the directory)",
+      "type": "shell",
+      "command": "task dev",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "run: task dev DB=sqlite (no containers at all)",
+      "type": "shell",
+      "command": "task dev DB=sqlite",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      // The shipped image against a real database, directory and collector.
+      "label": "run: task stage (the shipped image, against real services)",
+      "type": "shell",
+      "command": "task stage",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "env: start the backing services",
+      "type": "shell",
+      "command": "task env:up PROFILE=${input:composeProfile}",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    },
+    {
+      "label": "env: stop everything and delete its data",
+      "type": "shell",
+      "command": "task env:down",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    },
+    {
+      "label": "clean: artifacts and orphaned headless browsers",
+      "type": "shell",
+      "command": "task clean",
+      "problemMatcher": [],
+      "presentation": { "panel": "dedicated" }
+    },
+
+    // --------------------------------------------------------------- internal
+    {
+      // Used as the preLaunchTask of the debug configurations that set DB_
+      // variables themselves. A datasource.json written by the Settings screen
+      // in an earlier session is applied *before* GoFr reads its
+      // configuration and overwrites every one of them, so a launch meant for
+      // SQLite would silently connect to whatever was administered last.
+      // `task dev` carries the same guard, for the same reason.
+      //
+      // Written so a missing file is not an error: a preLaunchTask that exits
+      // non-zero cancels the launch.
+      "label": "dev: clear the administered datasource",
+      "type": "shell",
+      "command": "if (Test-Path 'cmd/configs/datasource.json') { Remove-Item -Force 'cmd/configs/datasource.json'; Write-Output 'cleared cmd/configs/datasource.json' } else { Write-Output 'no administered datasource to clear' }",
+      "options": {
+        "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
+      },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared", "close": true }
+    }
+  ],
+
+  "inputs": [
+    {
+      "id": "composeProfile",
+      "type": "pickString",
+      "description": "Which backing services to start",
+      "options": ["dev", "postgres", "mysql", "ldap", "traces", "all"],
+      "default": "dev"
+    }
+  ]
+}
