@@ -39,7 +39,7 @@ func TestEveryTranslatedAttributeKeepsItsEnglishSource(t *testing.T) {
 
 	// applyLanguage alone: the dataset keys appear nowhere else, and a match from
 	// some other function would not mean the language switch restores anything.
-	body := applyLanguageBody(t, js)
+	body := functionSource(t, js, "applyLanguage")
 
 	var missing []string
 
@@ -67,27 +67,4 @@ func TestEveryTranslatedAttributeKeepsItsEnglishSource(t *testing.T) {
 			"so a page switched to German and back keeps the German one - "+
 			"TRANSLATIONS.en is empty, which is the case that needs the source", kind)
 	}
-}
-
-// applyLanguageBody returns the source of applyLanguage, up to the next
-// declaration at the top level.
-func applyLanguageBody(t *testing.T, js string) string {
-	t.Helper()
-
-	const marker = "function applyLanguage("
-
-	at := strings.Index(js, marker)
-	if at < 0 {
-		t.Fatal("app.js no longer contains applyLanguage; this test is reading nothing")
-	}
-
-	rest := js[at+len(marker):]
-
-	end := regexp.MustCompile(`(?m)^(async function |function |const |// -----)`).
-		FindStringIndex(rest)
-	if end == nil {
-		return js[at:]
-	}
-
-	return js[at : at+len(marker)+end[0]]
 }

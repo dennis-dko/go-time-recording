@@ -1,7 +1,6 @@
 package web_test
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -30,7 +29,7 @@ import (
 // does not have. What is checkable is that the two failures have two sentences,
 // which is the whole of the fix.
 func TestASuccessfulWriteIsNotReportedAsAFailedOne(t *testing.T) {
-	body := mutateBody(t, asset(t, "/app.js"))
+	body := functionSource(t, asset(t, "/app.js"), "mutate")
 
 	if !strings.Contains(body, "msg.loadFailed") {
 		t.Error("mutate reports a failed reload with the same wording as a failed " +
@@ -54,25 +53,4 @@ func TestASuccessfulWriteIsNotReportedAsAFailedOne(t *testing.T) {
 		t.Error("mutate awaits the reload before announcing the save, so the " +
 			"confirmation waits on work that is not part of it")
 	}
-}
-
-// mutateBody returns the source of the mutate function.
-func mutateBody(t *testing.T, js string) string {
-	t.Helper()
-
-	start := regexp.MustCompile(`(?m)^async function mutate\(`).FindStringIndex(js)
-	if start == nil {
-		t.Fatal("app.js no longer declares mutate")
-	}
-
-	// To the next top-level declaration, which is where the function ends.
-	rest := js[start[1]:]
-
-	end := regexp.MustCompile(`(?m)^(async function |function |const |// -----)`).
-		FindStringIndex(rest)
-	if end == nil {
-		t.Fatal("could not find the end of mutate")
-	}
-
-	return js[start[0] : start[1]+end[0]]
 }
