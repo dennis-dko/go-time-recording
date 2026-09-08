@@ -223,6 +223,26 @@ body {
 
 .topbar-side-end { justify-content: flex-end; }
 
+/* The appearance, the language and the way out, in a box of their own so that
+   one rule folds all three away on a narrow screen.
+
+   The same gap as the bar around it, and nothing else, so that a wide screen
+   is exactly what it was. What it must not be given is the min-width: 0 the
+   rule below hands the bar's other boxes - which is worth saying here, because
+   adding this one to that list is the obvious tidying and it breaks the bar.
+   Measured at 1024px, where the right-hand column is 380 pixels and these
+   three come to 370: allowed to shrink, the group shrinks - to 237 - while a
+   select refuses to go below the width of its longest option, so the language
+   and the way out ended up 42 pixels past the edge of the window and the page
+   could be dragged sideways. Left with its automatic minimum it stops at the
+   370 it needs, and the column overflows the way it always has: leftwards,
+   into the room the title has. */
+.topbar-controls {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+}
+
 .topbar h1 { font-size: 18px; margin: 0; }
 
 /* The title is the way back to the greeting, so it has to look like something
@@ -2179,10 +2199,40 @@ a.tab:hover {
     padding: 10px 12px;
   }
 
-  /* The right-hand group wraps too. It holds an account, an appearance picker
-     whose longest option is "Automatic (by time of day)", a language and a way
-     out - which is wider than a telephone, and without this the sign-out button
-     hung over the edge of the screen. */
+  /* The appearance, the language and the way out, folded away with the points
+     and brought back with them.
+
+     They are what was left on the bar after the navigation was folded, and they
+     are the same problem: an appearance picker whose longest option reads
+     "Automatic (by time of day)", a language and a way out do not fit beside an
+     account's name on a telephone, so they wrapped into further lines of a bar
+     that is at the top of every screen and stays there. Measured on a 390px
+     screen before this: 229 pixels of a 760px window, near enough a third of
+     it, before a single line of anything anybody came to read.
+
+     Not the account's name, which stays. It is a line of text rather than a
+     control, and it answers a question - who this is signed in as - that
+     somebody should not have to press anything to ask. */
+  .topbar-controls { display: none; }
+
+  /* Unfolded, a line of its own and wrapping inside it. The three of them come
+     to more than the width of a telephone between them, so as the one
+     unshrinkable block the wide layout needs them to be, set beside a name,
+     they would hang over the edge of the screen. */
+  .topbar.nav-open .topbar-controls {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  /* And none of them wider than the bar itself. A select is as wide as its
+     longest option, which is a translated sentence: nothing here decides how
+     long that is in the next language. */
+  .topbar-controls > * { max-width: 100%; }
+
+  /* The right-hand group wraps, which is what gives the controls a line below
+     the name rather than a place beside it. */
   .topbar-side { flex-wrap: wrap; }
 
   /* Back to one wrapping row. Three columns on a telephone would be an empty
