@@ -53,7 +53,15 @@
     // With no database configured the binary serves an installer; with SQLite
     // it writes a .db file next to the working directory. This opens one
     // without a second tool.
-    "qwtel.sqlite-viewer"
+    "qwtel.sqlite-viewer",
+
+    // CLAUDE.md, README.md and deploy/OPERATIONS.md are where the reasoning
+    // for this repository lives, and .markdownlint.yaml is what keeps their
+    // one switched-off rule in one place. Without the extension that file only
+    // helps whoever happens to have it already; with it, the config is what the
+    // editor reads and node - which is not installed here - is not needed to
+    // see the same rules.
+    "davidanson.vscode-markdownlint"
   ],
 
   "unwantedRecommendations": [

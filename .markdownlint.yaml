@@ -1,0 +1,28 @@
+# markdownlint configuration for this repository.
+#
+# In a file rather than in .vscode/settings.json, because the extension's
+# markdownlint.config setting is deprecated as of 0.62.1: "Please use a
+# configuration file like .markdownlint.json/.markdownlint.yaml instead." YAML of
+# the two, so that the reasoning below survives - JSON has nowhere to put it, and
+# the reasoning is the part worth keeping.
+#
+# A file also reaches further than the editor: markdownlint-cli2 reads the same
+# one, so a later CI step or a hook applies exactly these rules rather than a
+# second copy that drifts from this one.
+
+# MD013 is line length, 80 columns by default, and it is the only rule switched
+# off here.
+#
+# Measured on this tree rather than assumed: it fires on 224 of CLAUDE.md's 286
+# lines, and 647 times across the repository's markdown - 287 of those in
+# README.md and 115 in deploy/OPERATIONS.md. The prose here is one paragraph per
+# bullet and is meant to be read wrapped rather than hard-wrapped, so those 224
+# are the document working as intended. CLAUDE.md is also the most-read file in
+# the repository, which makes 224 warnings on it the fastest way to teach
+# somebody that the Problems panel is not worth opening.
+MD013: false
+
+# Nothing else is pre-silenced, deliberately. markdownlint cannot be run on this
+# machine to settle the other rules - it needs node, which is not installed - so
+# whatever else it reports is a candidate to read rather than something to switch
+# off on a guess.
