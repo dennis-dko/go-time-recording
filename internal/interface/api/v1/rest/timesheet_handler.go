@@ -551,9 +551,6 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 	return resp, nil
 }
 
-// projectFilter reads the projectId query parameter, which asks one of three
-// questions.
-//
 // timesheetScope is what the entry listing and the entry export both filter on:
 // whose entries, which project, and between which dates - read from the query and
 // already narrowed to what the caller may see.
@@ -625,6 +622,9 @@ func timesheetScopeOf(
 	}, nil
 }
 
+// projectFilter reads the projectId query parameter, which asks one of three
+// questions.
+//
 // Absent or empty is every project. The literal "none" is the entries that were
 // never given one - a question a number cannot express, because zero already
 // means "any". Anything else is that project.

@@ -270,8 +270,6 @@ func (d *dateTime) parse(raw string) error {
 	return lastErr
 }
 
-// ptr returns a pointer to v, or nil when v is the zero value, matching how
-// the domain models express "absent".
 // problemReading says what a caller should return when a single-row read comes
 // back with an error, because the two it can come back with are not the same
 // failure: there is no such row, which is an answer and belongs to whoever
@@ -295,6 +293,8 @@ func problemReading(err error, entity, id string) error {
 	return nil
 }
 
+// ptr returns a pointer to the time in d, or nil when d holds none, matching
+// how the domain models express "absent".
 func ptr(d dateTime) *time.Time {
 	if !d.Valid {
 		return nil

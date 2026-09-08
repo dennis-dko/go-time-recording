@@ -273,7 +273,6 @@ func readWithHeading(r io.Reader, table Table) ([]string, [][]string, error) {
 	return raw[0], raw[1:], nil
 }
 
-// read returns the data rows of a workbook, the heading dropped.
 // readRows is what all three readers do: read the sheet, parse every row, and
 // keep the rows that failed beside the rows that did not - an import that stops
 // at the first bad line tells somebody with a hundred rows about one of them.
@@ -318,6 +317,7 @@ func readRows[T any](r io.Reader, table Table,
 	return rows, problems, nil
 }
 
+// read returns the data rows of a workbook, the heading dropped.
 func read(r io.Reader, table Table) ([][]string, error) {
 	raw, err := rowsOf(r, table)
 	if err != nil {

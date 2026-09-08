@@ -401,7 +401,6 @@ func validateTimesheet(date time.Time, hours float64, description *string) error
 	return nil
 }
 
-// dailyCap is the administered booking limit, or the one the environment set.
 // dailyLimitFor is how many hours this person may book on one day.
 //
 // The stricter of two numbers, and both are meant: the installation's ceiling is
@@ -436,6 +435,7 @@ func (s *TimesheetApplicationService) dailyLimitFor(
 	return instance, nil
 }
 
+// dailyCap is the administered booking limit, or the one the environment set.
 func (s *TimesheetApplicationService) dailyCap(ctx context.Context) float64 {
 	if s.limits == nil {
 		return s.maxDailyHours
