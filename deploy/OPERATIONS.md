@@ -233,7 +233,7 @@ purpose. Setting `DB_DIALECT` skips it, which is what Compose does.
 
 The image bakes in exactly one variable:
 
-```
+```ini
 DB_NAME=/data/go-time-recording
 ```
 
@@ -551,7 +551,7 @@ done by the container instead of by you.
 
 ## First start
 
-```
+```text
 no database configured
         │
         ▼
@@ -830,7 +830,7 @@ update from its own interface at all.
 `compose.update.yaml` adds a second container that does what the application
 cannot: pull an image and recreate a container from it.
 
-```
+```bash
 docker compose -f compose.yaml -f compose.update.yaml up -d
 ```
 

@@ -57,12 +57,12 @@
      * `announce.Announcement`, `rest.Restart`, `rest.RestartHandler` and `rest.RestartResponse` are name-prefix accidents, not stutters.
      * Three places call `Project.VisibleTo` directly instead of `RequireVisible`, and all three are right: `project_application_service.go:135` *filters* a list rather than refusing a request (and carries the `ViewerID != 0` guard itself), `workbook_application_service.go:305` has to answer with a row-level refusal rather than an `apperror` and deliberately reuses the "no such project" wording so existence is not revealed, and `timesheet_application_service.go:272` cannot reach the zero case at all because `requireUserAndProject` looks the account up first and a booking always belongs to a real one.
   3. **Manual Deep Dive:** Actively read files and search for:
-     - *Architecture:* run the dependency-direction grep from Section 5 and report the count, rather than reading three services and forming an impression. Zero is the current state, so a hit is a regression.
-     - *Business logic:* work through **What the domain guarantees** in Section 5, rule by rule, and say for each one where it is enforced and what would happen if a caller skipped it. This is the step that is easiest to skip and hardest to fake: layering and error wrapping can both be clean while a report totals somebody else's hours.
-     - *Errors:* Grep for `return err` / `fmt.Errorf` to enforce `apperror` usage and missing DE translations.
-     - *State:* Grep for package-level `var` and unprotected maps (race conditions).
-     - *Frontend:* Check JS/HTML for inline styles, `script-src` violations, and UI DOM quirks.
-     - *Duplicates:* Search for redundant business logic or duplicated UI controls.
+     * *Architecture:* run the dependency-direction grep from Section 5 and report the count, rather than reading three services and forming an impression. Zero is the current state, so a hit is a regression.
+     * *Business logic:* work through **What the domain guarantees** in Section 5, rule by rule, and say for each one where it is enforced and what would happen if a caller skipped it. This is the step that is easiest to skip and hardest to fake: layering and error wrapping can both be clean while a report totals somebody else's hours.
+     * *Errors:* Grep for `return err` / `fmt.Errorf` to enforce `apperror` usage and missing DE translations.
+     * *State:* Grep for package-level `var` and unprotected maps (race conditions).
+     * *Frontend:* Check JS/HTML for inline styles, `script-src` violations, and UI DOM quirks.
+     * *Duplicates:* Search for redundant business logic or duplicated UI controls.
   4. **When a fix lands, look for the sibling.** Three of the first six sections read in the `app.js`
      rotation yielded a defect, and all three were one shape: **a rule applied in one place and missing
      in the second place that needed it.** `mutate` wrapped a write and the reload behind it in one
@@ -91,7 +91,7 @@
      * **The ledger, and why a file is on it.** A file earns a slot when reading is the *only* way to check it: it is long enough that reading is an investment, and what can go wrong in it is invisible to the linter, the race detector and the repository's own checks. That second half is what keeps the list short — `sqldb/purge.go` is the most irreversible code here and is **not** on the ledger, because it is 78 lines with `TestEveryTableReferencingAnAccountIsPurgedWithIt` behind it, which is exactly the case a scan handles. Size alone earns nothing either; `memory.go` is 715 lines of in-memory repositories that a failing test would catch immediately.
 
        | File | Lines | What only reading catches |
-       |---|---|---|
+       | --- | --- | --- |
        | `persistence/migrations/migrations.go` | 1,555 | Runs against somebody's recorded hours, on three dialects, in an append-only chain where a middle migration may be looking at a name a later one renames. |
        | `cmd/main.go` | 1,018 | Start-up **ordering**, the second signal listener, the typed-nil `container.SQL`. A scan sees statements, not the order they must run in. |
        | `service/session_application_service.go` | 685 | Who is signed in and for how long. Lifetime, idle expiry and what a sign-out ends. |
@@ -122,7 +122,7 @@
   * *A bound reasoned about correctly and about the wrong dimension.* The chart picture: right about width, silent about height.
   * *A label written over an element that still declares another key.* Seven sites, now `swapTheLabel`, now checked.
 
-  Six pattern lenses have been run over the whole file and came back clean (block-hash duplication, unreferenced declarations, HTML injection sinks, `await` in a loop, listener accumulation, the `beingEdited` invariant); what they cannot see is wrong logic, which is the whole reason for reading. Six pattern lenses have already been run over the whole file and came back clean (block-hash duplication, unreferenced declarations, HTML injection sinks, `await` in a loop, listener accumulation, the `beingEdited` invariant); what they cannot see is wrong logic, which is the whole reason for reading.
+  Six pattern lenses have been run over the whole file and came back clean (block-hash duplication, unreferenced declarations, HTML injection sinks, `await` in a loop, listener accumulation, the `beingEdited` invariant); what they cannot see is wrong logic, which is the whole reason for reading.
      * **One per audit, in rotation, and the report names which one was read and which comes next** — otherwise every audit re-reads the first file and the tenth is never read at all. "Read the ledger" is not a plan; it is how a skim gets reported as a read. Ten files at one an audit is ten audits, which is the honest cost of this step and the reason it is one file rather than a sweep.
      * **Read against the invariants this file already states, not "carefully":** the domain rules in Section 5 first, then `context.Context` first and respected; every ticker and goroutine tied to a lifetime that ends; every error wrapped with `%w` and mapped to an `apperror` code that has a German sentence; a partial update able to say "leave it alone", "set it to this" *and* "clear it"; a state reported with a banner and news with a toast.
      * **It ends in one of two artifacts, never silence:** a failing test and a fix, or a line in the report naming the file, the invariants checked and the verdict. "No finding" is a claim that has to be written down to be worth anything.
@@ -178,9 +178,11 @@
   * **`.vscode/` is committed, and that is what makes the line above true for a clone rather than for one machine.** It was ignored until the editor was brought into step with the gate, at which point ignoring it meant every clone inherited the enforcement and none of them inherited the display. What is in there is the workspace's understanding of this repository: the build tags without which gopls does not parse the three tagged suites at all, a `GOTMPDIR` outside the `%TEMP%` path real-time scanning locks, formatting switched off for the embedded assets so a stray save cannot reformat 12,500 lines of `app.js`, and debug configurations that run from `cmd/` because GoFr resolves `./configs` from the working directory.
   * **Nothing machine-specific goes in there now that it travels.** The one absolute path it had — a home directory inside the race-detector's `docker run` — is `$(pwd)` instead, because a task runs from the workspace folder and Git Bash prints it in the `/c/Users/...` form the daemon wants; `${workspaceFolder}` is the wrong tool there, since VS Code substitutes it in the Windows spelling that line exists to avoid. What remains is the Git Bash executable, which is a Windows default rather than one person's choice, and it carries a comment saying what to change elsewhere.
 * **Race Detector:** `go test -race ./...` is mandatory, and it does not run on this machine: `CGO_ENABLED=0` with no gcc on the PATH, and the race detector needs cgo. **Fallback, as it actually works here:**
-  ```
+
+  ```bash
   MSYS_NO_PATHCONV=1 docker run --rm -v /c/Users/Dennis/Projects/go-time-recording:/app -w /app -e GOFLAGS=-buildvcs=false -e GOTOOLCHAIN=auto golang:1.27 go test -race ./...
   ```
+
   Four details, each of which was found by the command failing without them. `MSYS_NO_PATHCONV=1` stops Git Bash rewriting `-w /app` into a Windows path — without it the daemon is handed `C:/Program Files/Git/app` and refuses, which reads as a Docker problem rather than a shell one. `golang:1.27` rather than `golang:latest`, so the toolchain is the right minor. `GOFLAGS=-buildvcs=false` because the mounted `.git` belongs to another user inside the container. WSL is *not* a fallback here: the Ubuntu image on this machine has no Go installed. Around ten minutes for the whole tree, most of it the service and web packages.
   * **`GOTOOLCHAIN=auto` is the fourth, and it is what makes the third survive a patch bump.** A minor tag lags the patch releases - `golang:1.27` was still go1.27.0 on the day `go.mod` moved to 1.27.1 - and the official images set `GOTOOLCHAIN=local`, so the container does not fetch what the module asks for, it refuses: `go.mod requires go >= 1.27.1 (running go 1.27.0; GOTOOLCHAIN=local)`, and not one package is tested. `auto` lets it download the toolchain `go.mod` names, which lands in the mounted module cache and so is fetched once rather than per run. Pinning the patch in the tag instead would work today and be wrong again at the next bump; this way the command follows `go.mod` without anybody editing it.
 * `go mod tidy` & `govulncheck ./...` (Mandatory dependency checks).
