@@ -87,7 +87,7 @@ func (h *LDAPSyncHandler) Run(c *gofr.Context) (any, error) {
 	return newSyncReportResponse(report), nil
 }
 
-// requireAdministrator restricts the run to an account that administers this
+// requireSystemAdmin restricts the run to an account that administers this
 // installation and has no working day of its own.
 //
 // The built-in one, and anybody holding the admin role - see
