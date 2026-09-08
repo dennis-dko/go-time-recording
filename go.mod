@@ -1,6 +1,6 @@
 module github.com/dennis-dko/go-time-recording
 
-go 1.27.0
+go 1.27.1
 
 require (
 	codeberg.org/go-pdf/fpdf v0.12.0
