@@ -30,6 +30,10 @@ func TestTheReleaseBannerFillsInBothVersionsInAnyOrder(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
+	// Before anything is said about the banner: the watch the sign-in started
+	// is answering behind this case, and its answer takes the banner down.
+	p.settleReleaseWatch()
+
 	// A translation that names the running version first. Written into the table
 	// rather than into the file, because the fault is in the reading of it and any
 	// sentence with the two in this order shows it.
