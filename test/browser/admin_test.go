@@ -5191,6 +5191,10 @@ func TestTheReleaseNoticeCannotBeClickedAway(t *testing.T) {
 	p := open(t)
 	p.readyAdmin()
 
+	// Before anything is said about the banner: the watch the sign-in started
+	// is answering behind this case, and its answer takes the banner down.
+	p.settleReleaseWatch()
+
 	// Put up the way the watch puts it up, because no newer version exists to
 	// wait for here.
 	p.run("a newer version exists", chromedp.Evaluate(`

@@ -854,6 +854,40 @@ func (p *page) state() string {
 //
 // The patience is the same as everywhere else here: long enough that only a real
 // failure reaches it, and it costs nothing when the answer arrives at once.
+
+// settleReleaseWatch takes the release check out of the way before a case says
+// what the banner ought to show.
+//
+// Signing in starts the watch, and the watch fires checkForRelease straight away
+// - a round trip to the update feed. Whatever a case then puts on the banner is
+// taken down the moment that answer lands, because no newer version exists here
+// and showReleaseState hides the banner on "no". Which of the two arrives first
+// is a question about how fast the feed answers, so the case passed on this
+// machine, where it answers first, and failed on CI, where it answered second:
+// "#release-banner never became visible within 45s", 45 seconds spent waiting for
+// something the case had already put there and something else had removed.
+//
+// Three cases say what the banner should show and none of them settled this
+// first, which is the shape Section 2 of CLAUDE.md is about - one piece of
+// reasoning needed in three places and written down in none. So it is one
+// function, and it forces the order rather than hoping for it: let the check that
+// is already running finish, stop the watch so no later tick repeats it, and
+// silence the feed for the rest of the case so nothing can answer behind its
+// back. Pressing "check for updates" is unaffected - that goes to
+// /settings/update/check and never through here.
+func (p *page) settleReleaseWatch() {
+	p.t.Helper()
+
+	p.run("settle the release watch", chromedp.Evaluate(`
+		(async () => {
+			await checkForRelease();
+			stopReleaseWatch();
+			checkForRelease = async () => {};
+
+			return 1;
+		})()`, nil, awaitPromise))
+}
+
 func (p *page) waitShown(selector string) {
 	p.t.Helper()
 
