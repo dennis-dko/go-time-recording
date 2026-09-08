@@ -22,7 +22,30 @@
 # somebody that the Problems panel is not worth opening.
 MD013: false
 
-# Nothing else is pre-silenced, deliberately. markdownlint cannot be run on this
-# machine to settle the other rules - it needs node, which is not installed - so
-# whatever else it reports is a candidate to read rather than something to switch
-# off on a guess.
+# The rest of what it reported has now been read, which is what the sentence that
+# used to stand here asked for. Most of it was fixed rather than silenced: list
+# markers made consistent, the table separator spaced, the one fenced block given
+# blank lines and a language. Two rules are left off, and both for the same
+# reason - they measure a shape CLAUDE.md uses deliberately.
+
+# MD029 is the numbering of an ordered list, and here the numbers are names.
+#
+# Section 2's audit workflow is six numbered steps, and the document refers to
+# them by number - "step 4", "step 2 of the Agentic Auditing Workflow", and again
+# from the prompt cheatsheet in Section 8. The rule wants either all-ones or an
+# unbroken run, and reports the sixth step as "Expected: 1; Actual: 6" because the
+# deeply nested content under step 5 reads to it as the end of the list. Obeying
+# it means either renumbering every step to "1." - which breaks every reference in
+# the file - or flattening step 5, which is the longest and most load-bearing of
+# the six.
+MD029: false
+
+# MD007 is unordered-list indentation, and it measures depth where this file needs
+# alignment.
+#
+# The sub-points under a numbered step sit at five columns because that is where
+# the parent's text starts - two for the list, three for "5. ". Indent them to the
+# two the rule asks for and they stop belonging to the step at all. The rule
+# counts nesting levels and has no way to say "align with the ordered item above",
+# so what it reports here is the document being right.
+MD007: false

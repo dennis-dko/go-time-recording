@@ -142,8 +142,11 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 	return newOvertimeResponse(balance), nil
 }
 
-// their own month. The stored booking dates are calendar days already, so this
-// only decides the window, never which day an entry belongs to.
+// locationFor is the zone this person's dates are read in, so that a report
+// asking for "this month" covers their own month.
+//
+// The stored booking dates are calendar days already, so this only decides the
+// window, never which day an entry belongs to.
 func (h *MeHandler) locationFor(c *gofr.Context, user *model.User) *time.Location {
 	return user.TimezoneOf(h.timezone.resolve(c))
 }

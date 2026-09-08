@@ -131,9 +131,10 @@ func (s *LDAPSyncService) Sync(ctx context.Context) (*SyncReport, error) {
 	return s.run(ctx, false)
 }
 
-// across helpers would scatter the reasons a destructive run is refused.
+// run is the body Sync and DryRun share; dryRun decides whether the deletions
+// are carried out or only reported.
 //
-//nolint:cyclop // the guards are the point of this function; splitting them
+//nolint:cyclop // the guards are the point of this function; splitting them across helpers would scatter the reasons a destructive run is refused
 func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, error) {
 	if !s.directory.Enabled() {
 		return nil, apperror.Conflictf("no directory is configured").WithCode("noDirectory")

@@ -136,20 +136,24 @@ func (o Operational) InvalidOperationalFields() []string {
 
 // Bounds on what the Settings screen may set.
 const (
-	// A session shorter than this would sign people out while they work.
+	// MinSessionLifetimeHours is the floor: a session shorter than this would
+	// sign people out while they work.
 	MinSessionLifetimeHours = 0.25
 
-	// Longer than a fortnight and a forgotten open tab stops being a session
-	// and starts being a permanent credential.
+	// MaxSessionLifetimeHours is the ceiling: longer than a fortnight and a
+	// forgotten open tab stops being a session and starts being a permanent
+	// credential.
 	MaxSessionLifetimeHours = 24 * 14
 
-	// Shorter than this and somebody reading a long report is signed out while
-	// they read it - the timeout would be measuring how fast people click rather
-	// than whether they are there.
+	// MinSessionIdleMinutes is the floor for the idle timeout: shorter than this
+	// and somebody reading a long report is signed out while they read it - the
+	// timeout would be measuring how fast people click rather than whether they
+	// are there.
 	MinSessionIdleMinutes = 5
 
-	// Longer than a day and it is not an idle timeout any more; the lifetime is
-	// the bound that matters at that scale.
+	// MaxSessionIdleMinutes is the ceiling: longer than a day and it is not an
+	// idle timeout any more; the lifetime is the bound that matters at that
+	// scale.
 	MaxSessionIdleMinutes = 24 * 60
 
 	// HoursPerDay is the ceiling for a daily booking cap; more hours than a day
@@ -165,10 +169,11 @@ const (
 	// all three agree about what the API will take.
 	MinBookableHours = 0.01
 
-	// Below this the limiter would turn away ordinary use, including the
-	// administrator's own sign-in.
+	// MinRateLimit is the floor: below this the limiter would turn away ordinary
+	// use, including the administrator's own sign-in.
 	MinRateLimit = 5
 
-	// An hour-long window is already far past what rate limiting is for.
+	// MaxRateWindowSeconds is the ceiling: an hour-long window is already far
+	// past what rate limiting is for.
 	MaxRateWindowSeconds = 3600
 )
