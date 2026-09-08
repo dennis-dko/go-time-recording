@@ -259,7 +259,8 @@ const (
 	defaultTLSPort          = 443
 	defaultHTTPRedirectPort = 80
 
-	// A year is the value browsers expect before they will preload a host.
+	// defaultHSTSMaxAge is a year, which is what browsers expect before they will
+	// preload a host.
 	defaultHSTSMaxAge = 365 * 24 * time.Hour
 
 	// Generous enough for a script polling the API, tight enough that
@@ -267,8 +268,9 @@ const (
 	defaultRateLimit       = 30
 	defaultRateLimitWindow = time.Minute
 
-	// Half the directory-backed accounts disappearing in one run is far more
-	// likely to be a broken filter than a real mass departure.
+	// defaultSyncMaxDeleteRatio stops at half: that many directory-backed
+	// accounts disappearing in one run is far more likely to be a broken filter
+	// than a real mass departure.
 	defaultSyncMaxDeleteRatio = 0.5
 )
 

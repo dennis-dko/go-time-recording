@@ -14,7 +14,7 @@ import (
 // screen.
 const ScheduleFields = 5
 
-// The inclusive bounds of each field, in order.
+// scheduleBounds is the inclusive range of each field, in order.
 var scheduleBounds = [ScheduleFields][2]int{
 	{0, 59}, // minute
 	{0, 23}, // hour

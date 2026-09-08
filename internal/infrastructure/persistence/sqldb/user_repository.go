@@ -12,8 +12,8 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
 )
 
-// Users are always read with their role name joined in, so callers can display
-// a user without a second query.
+// userSelect reads a user with their role name joined in, so callers can
+// display one without a second query.
 const userSelect = `SELECT u.id, u.name, u.email, u.role_id, COALESCE(r.name, ''),
 	u.password_hash, u.must_change_password, u.is_system,
 	u.daily_target_hours, u.max_daily_hours,

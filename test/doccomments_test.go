@@ -44,6 +44,146 @@ func TestNoDocCommentOpensWithAnotherDeclarationsName(t *testing.T) {
 	}
 }
 
+// A doc comment opens with the name of what it documents.
+//
+// CLAUDE.md states this and calls it "not a style preference here, it is the only
+// thing standing between a reader and somebody else's description". Nothing
+// enforced it below the exported surface, and the tree had drifted: twenty-two
+// declarations opened with a sentence instead of a name, in a const block where
+// the members either side of them did it correctly.
+//
+// Three shapes are not violations and are recognised rather than listed. A
+// leading article - "A Sealer encrypts the values..." - is idiomatic Go and what
+// ST1021 already accepts. A spec declaring two names at once, like
+// `HeaderWidth, HeaderHeight = 440, 80`, is documented by one comment naming
+// both. And a comment introducing a group is a sentence about the group, not
+// about its first member; that is recognised by the member below it having no
+// comment of its own, which is what a group looks like and what a documented run
+// of constants does not.
+func TestADocCommentOpensWithTheNameItDocuments(t *testing.T) {
+	for _, dir := range []string{"internal", "cmd"} {
+		for _, path := range goFilesUnder(t, filepath.Join("..", dir)) {
+			checkDocOpenings(t, path)
+		}
+	}
+}
+
+// checkDocOpenings reports declarations whose doc comment does not open with
+// their own name.
+func checkDocOpenings(t *testing.T, path string) {
+	t.Helper()
+
+	fset := token.NewFileSet()
+
+	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("cannot parse %s: %v", path, err)
+	}
+
+	for _, documented := range namedDecls(file) {
+		if opensWith(documented.doc, documented.name) {
+			continue
+		}
+
+		t.Errorf("%s:%d: the doc comment on %s opens with %q rather than with its "+
+			"own name. `go doc` prints the two together, so a reader meets the "+
+			"sentence before they meet what it is about",
+			filepath.ToSlash(path), fset.Position(documented.pos).Line,
+			documented.name, firstWord(documented.doc))
+	}
+}
+
+// namedDecls returns the declarations whose comment is about one named thing:
+// every documented function and type, and the members of a const or var block
+// that carry their own comment and declare a single name.
+func namedDecls(file *ast.File) []documented {
+	var out []documented
+
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Doc != nil && !skipName(d.Name.Name) {
+				out = append(out, documented{d.Name.Name, d.Doc.Text(), d.Pos()})
+			}
+
+		case *ast.GenDecl:
+			// An unparenthesised declaration carries its comment on the block
+			// rather than on the spec, so `var x = 1` above a doc comment reaches
+			// this with s.Doc nil and d.Doc set. Missed once: the case passed over
+			// a deliberately broken comment on scheduleBounds and said nothing.
+			blockDoc := ""
+			if d.Doc != nil && len(d.Specs) == 1 {
+				blockDoc = d.Doc.Text()
+			}
+
+			for i, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					doc := blockDoc
+					if s.Doc != nil {
+						doc = s.Doc.Text()
+					}
+
+					if doc != "" && !skipName(s.Name.Name) {
+						out = append(out, documented{s.Name.Name, doc, s.Pos()})
+					}
+
+				case *ast.ValueSpec:
+					doc := blockDoc
+					if s.Doc != nil {
+						doc = s.Doc.Text()
+					}
+
+					if doc == "" || len(s.Names) != 1 || skipName(s.Names[0].Name) {
+						continue
+					}
+
+					if introducesGroup(d, i) {
+						continue
+					}
+
+					out = append(out, documented{s.Names[0].Name, doc, s.Pos()})
+				}
+			}
+		}
+	}
+
+	return out
+}
+
+// introducesGroup reports whether the comment on the spec at index belongs to
+// the run of declarations that follows rather than to that spec alone, which is
+// what an undocumented member immediately below it means.
+func introducesGroup(block *ast.GenDecl, index int) bool {
+	if index+1 >= len(block.Specs) {
+		return false
+	}
+
+	next, ok := block.Specs[index+1].(*ast.ValueSpec)
+
+	return ok && next.Doc == nil
+}
+
+// opensWith reports whether a doc comment starts with the name, allowing the
+// article Go's own convention allows in front of it.
+func opensWith(doc, name string) bool {
+	fields := strings.Fields(doc)
+	if len(fields) == 0 {
+		return true
+	}
+
+	if strings.TrimRight(fields[0], ".,:;") == name {
+		return true
+	}
+
+	switch fields[0] {
+	case "A", "An", "The":
+		return len(fields) > 1 && strings.TrimRight(fields[1], ".,:;") == name
+	}
+
+	return false
+}
+
 // checkDocComments reads one file and reports every doc comment that opens with
 // a name other than the one it is attached to.
 func checkDocComments(t *testing.T, path string) {

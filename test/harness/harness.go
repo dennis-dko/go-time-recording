@@ -688,7 +688,7 @@ func (a *App) waitUntilReady() error {
 		StartupTimeout, a.logs.String())
 }
 
-// Who answered on this instance's address.
+// answeredBy says who replied on this instance's address.
 type answeredBy int
 
 const (

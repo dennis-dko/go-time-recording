@@ -2,7 +2,7 @@ package spreadsheet
 
 import "strings"
 
-// Translations of what a workbook calls things.
+// translations is what a workbook calls things, in each language it is written in.
 //
 // Its own table rather than the interface's dictionary: the file is built on the
 // server, in Go, and the interface's dictionary is JavaScript inside app.js.
