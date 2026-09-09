@@ -885,8 +885,23 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
    * directly underneath it - so a notice that was still on screen made a tab
    * unclickable. Found by a browser test whose click on a tab did nothing at all.
    *
-   * The notices themselves take pointer events back, so the dismiss button still
-   * works. */
+   * Only the dismiss button takes pointer events back, which is the whole of
+   * what a notice needs: it covers what is beneath it without catching anything
+   * meant for it.
+   *
+   * The 74 pixels are the bar as it was when the bar was one row, and it has
+   * outgrown them - measured, 176 at 1280px, and a couple of hundred more again
+   * the moment somebody opens the burger on a telephone. The number stays
+   * anyway, and --topbar-height is the wrong fix even though the rest of this
+   * file uses it for exactly this reservation: a notice that followed the bar
+   * would sit halfway down a telephone while the menu is open and jump back up
+   * when it closes, and a message that moves while it is being read is worse
+   * than one that overlaps a line of the bar for four seconds.
+   *
+   * #standing-notices is the deliberate opposite and the other half of "a state
+   * gets a banner, news gets a toast": a state has to stay readable, so it sits
+   * under the bar, on --topbar-height, below the bar's z-index. This is news,
+   * it floats over the page, and it must not move while it is there. */
   pointer-events: none;
   display: flex;
   flex-direction: column;
