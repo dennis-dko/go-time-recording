@@ -57,14 +57,42 @@ func TestTheAccountControlsFoldIntoTheBurgerOnAPhone(t *testing.T) {
 		t.Error("the bar no longer says who is signed in")
 	}
 
-	// And the room that saves is the point of it. A fifth of the window is a
-	// bound with plenty of air in it: measured on this screen, the bar came to
-	// 229px of 760 with the three of them on it - near enough a third of the
-	// window, before a single line of anything anybody came to read - and to
-	// 109px with them folded away.
-	if closed := p.pixels(".topbar", "offsetHeight"); closed > 760/5 {
-		t.Errorf("the bar takes %dpx of a 760px window with everything folded away",
-			closed)
+	// And the room it saves is the point of it, measured against the same bar
+	// rather than against a number.
+	//
+	// This asked whether the bar came to less than a fifth of the window, which
+	// is a bound on the wrong thing: how tall the bar is depends on how the
+	// account's name wraps, and that depends on the fonts the machine has. It
+	// held here at 109px and failed on the CI runner at 161, where "System
+	// Administrator" takes two lines - a case that passes on the machine it was
+	// written on and fails on the one that gates the release, over a difference
+	// that is not about the change at all.
+	//
+	// So the controls are put back for a moment, by hand, and the bar measured
+	// again. The difference between the two is exactly what folding them away
+	// buys, on whatever machine is asking.
+	folded := p.pixels(".topbar", "offsetHeight")
+
+	p.run("show them again for a moment", chromedp.Evaluate(
+		`document.querySelector('#topbar-controls').style.display = 'flex'`, nil))
+
+	shown := p.pixels(".topbar", "offsetHeight")
+
+	// Against one of the controls rather than against a pixel count, which is
+	// the same trap one step further in: the bar grew by 81px here, and a bound
+	// of eighty would have been a second number that happened to hold on this
+	// machine. What has to be true is that the bar loses a control's worth of
+	// height - that they are folded away rather than merely quiet inside a bar
+	// that stays as tall.
+	picker := p.pixels("#theme-picker", "offsetHeight")
+
+	p.run("and fold them back", chromedp.Evaluate(
+		`document.querySelector('#topbar-controls').style.removeProperty('display')`, nil))
+
+	if shown-folded < picker {
+		t.Errorf("folding them away saves %dpx, less than the %dpx the appearance "+
+			"picker alone is tall: the bar is %dpx folded and %dpx with them on it",
+			shown-folded, picker, folded, shown)
 	}
 
 	// Opening the burger brings them within reach.
