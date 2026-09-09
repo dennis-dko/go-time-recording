@@ -7649,6 +7649,39 @@ function placeTour(node) {
   bubble.style.left = `${Math.max(window.scrollX + 12, Math.min(left, maxLeft))}px`;
 }
 
+/**
+ * Opens the bar's fold when the step points inside it, and puts it back when
+ * the step does not.
+ *
+ * On a screen too narrow to hold it the bar keeps its own things behind the
+ * burger: the navigation, and beside it the appearance picker, the language and
+ * the way out. An element in there has no box at all, and placeTour rings a
+ * box - so the step about the navigation ringed twelve pixels in the top left
+ * corner of a 390px screen while the bubble beside it explained what those
+ * twelve pixels were for.
+ *
+ * Only when the target has no box of its own. The rest of the bar - the title,
+ * the account - is on screen at every width, and unfolding the whole navigation
+ * to point at the title would answer a question nobody asked.
+ *
+ * And folded back for a step about anything else, because the open fold is a
+ * column of nine points: left standing it pushes the next fifteen steps down
+ * the screen, which is the tour holding the page open rather than walking
+ * through it.
+ */
+function showWhatTheStepPointsAt(node) {
+  const bar = $('.topbar');
+  if (!bar) return;
+
+  if (!bar.contains(node)) {
+    showNavigationMenu(false);
+
+    return;
+  }
+
+  if (node.getBoundingClientRect().height === 0) showNavigationMenu(true);
+}
+
 async function renderTourStep() {
   const step = tour.steps[tour.index];
 
@@ -7661,6 +7694,8 @@ async function renderTourStep() {
 
     return;
   }
+
+  showWhatTheStepPointsAt(node);
 
   node.scrollIntoView({ block: 'center', behavior: 'smooth' });
 
@@ -7772,6 +7807,10 @@ function putTheTourAway() {
   tour.active = false;
   $('#tour-spotlight').hidden = true;
   $('#tour-bubble').hidden = true;
+
+  // A fold the walk opened is a fold it puts back. Left open, the bar stays a
+  // column of nine points over whatever screen the walk finished on.
+  showNavigationMenu(false);
 
   sealThePage(false);
 }
@@ -12410,23 +12449,18 @@ function wireNavigationMenu() {
   const tabs = $('#tabs');
   if (!bar || !toggle || !tabs) return;
 
-  const show = (open) => {
-    bar.classList.toggle('nav-open', open);
-    toggle.setAttribute('aria-expanded', String(open));
-  };
-
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    show(!bar.classList.contains('nav-open'));
+    showNavigationMenu(!navigationMenuIsOpen());
   });
 
   // Choosing one is the point of opening it.
-  tabs.addEventListener('click', () => show(false));
+  tabs.addEventListener('click', () => showNavigationMenu(false));
 
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !bar.classList.contains('nav-open')) return;
+    if (e.key !== 'Escape' || !navigationMenuIsOpen()) return;
 
-    show(false);
+    showNavigationMenu(false);
 
     // Back to the control that opened it, so a keyboard is not left with the
     // focus on something that is no longer there.
@@ -12434,16 +12468,45 @@ function wireNavigationMenu() {
   });
 
   document.addEventListener('click', (e) => {
-    if (!bar.classList.contains('nav-open') || bar.contains(e.target)) return;
+    if (!navigationMenuIsOpen() || bar.contains(e.target)) return;
 
-    show(false);
+    // Not while the walk through is running. It seals the page and opens this
+    // fold itself, to point at something inside it - so the only press that can
+    // reach here is on the tour's own bubble, and closing the fold under the
+    // bubble describing it is not what pressing Next means.
+    if (tour.active) return;
+
+    showNavigationMenu(false);
   });
 
   // A window widened past the breakpoint has the points on screen again, and a
   // menu left open would be a second copy of them.
   window.addEventListener('resize', () => {
-    if (window.innerWidth > 900) show(false);
+    if (window.innerWidth > 900) showNavigationMenu(false);
   });
+}
+
+/**
+ * Opens or closes the fold, and says which it is.
+ *
+ * Out here rather than a closure inside the wiring because the walk through
+ * opens the same fold before pointing into it. Two places setting the class
+ * would be two places to remember that the control's aria-expanded says the
+ * same thing - and a burger that claims to be closed over an open menu is the
+ * half a screen reader is given.
+ */
+function showNavigationMenu(open) {
+  const bar = $('.topbar');
+  const toggle = $('#nav-toggle');
+  if (!bar || !toggle) return;
+
+  bar.classList.toggle('nav-open', open);
+  toggle.setAttribute('aria-expanded', String(open));
+}
+
+/** navigationMenuIsOpen answers whether the fold is open. */
+function navigationMenuIsOpen() {
+  return $('.topbar')?.classList.contains('nav-open') === true;
 }
 
 // --------------------------------------------------------------- bootstrap

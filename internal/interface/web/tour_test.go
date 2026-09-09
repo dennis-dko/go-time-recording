@@ -97,14 +97,12 @@ func TestTheTourCanBeRestarted(t *testing.T) {
 func TestSkippingTheTourCountsAsSeen(t *testing.T) {
 	js := asset(t, "/app.js")
 
-	end := strings.Index(js, "async function endTour()")
-	if end < 0 {
-		t.Fatal("could not find endTour in app.js")
+	if !strings.Contains(functionSource(t, js, "endTour"), "recordTourSeen") {
+		t.Error("ending the tour must record it as seen")
 	}
 
-	body := js[end : end+900]
-	if !strings.Contains(body, "/me/tour") {
-		t.Error("ending the tour must record it as seen")
+	if !strings.Contains(functionSource(t, js, "recordTourSeen"), "/me/tour") {
+		t.Error("recordTourSeen no longer tells the server the tour has been seen")
 	}
 
 	// The skip button and the finish button both have to go through it.

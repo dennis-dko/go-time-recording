@@ -110,10 +110,12 @@
          and the name simply sits in the middle of the bar on its own. -->
     <div class="topbar-row">
       <span class="topbar-side">
-        <!-- The way to the navigation on a screen too narrow to hold it.
-             Hidden above the breakpoint, where the points are simply there. -->
+        <!-- The way to what the bar folds away on a screen too narrow to hold
+             it: the navigation, and the appearance, language and sign-out
+             beside it. Hidden above the breakpoint, where all of it is simply
+             there. -->
         <button type="button" id="nav-toggle" class="nav-toggle" aria-expanded="false"
-                aria-controls="tabs" data-i18n-aria="nav.menu" aria-label="Menu">
+                aria-controls="tabs topbar-controls" data-i18n-aria="nav.menu" aria-label="Menu">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M4 7h16M4 12h16M4 17h16"/>
           </svg>
@@ -155,13 +157,32 @@
 
       <span class="topbar-side topbar-side-end">
         <div class="who" id="who"></div>
-        <select id="theme-picker" class="lang" data-i18n-aria="app.theme" aria-label="Appearance">
-          <option value="auto" data-i18n="theme.auto">Automatic (by time of day)</option>
-          <option value="light" data-i18n="theme.light">Light</option>
-          <option value="dark" data-i18n="theme.dark">Dark</option>
-        </select>
-        <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Language"></select>
-        <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
+        <!-- The appearance, the language and the way out, which fold away with
+             the navigation on a screen too narrow to hold them.
+
+             Three controls beside a name, and the longest of them reads
+             "Automatic (by time of day)": wider than a telephone on their own,
+             so they wrapped into further lines of a bar that is at the top of
+             every screen and stays there. Measured on a 390px screen before
+             this: 229px of a 760px window, on a screen whose navigation had
+             already been folded away for the same reason. They go behind the
+             same burger, which is what the burger is for.
+
+             A group rather than three siblings, for two reasons: one rule folds
+             all three, and the burger can name what it opens. Spaced like the
+             bar around it, so a wide screen looks exactly as it did.
+
+             The account's name stays outside it. That is the one thing on this
+             bar that answers a question without being pressed. -->
+        <div id="topbar-controls" class="topbar-controls">
+          <select id="theme-picker" class="lang" data-i18n-aria="app.theme" aria-label="Appearance">
+            <option value="auto" data-i18n="theme.auto">Automatic (by time of day)</option>
+            <option value="light" data-i18n="theme.light">Light</option>
+            <option value="dark" data-i18n="theme.dark">Dark</option>
+          </select>
+          <select id="language-picker" class="lang" data-i18n-aria="app.language" aria-label="Language"></select>
+          <button id="logout" class="secondary" hidden data-i18n="nav.logout">Sign out</button>
+        </div>
       </span>
     </div>
 
