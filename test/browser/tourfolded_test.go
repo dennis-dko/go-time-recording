@@ -79,8 +79,8 @@ type box struct {
 	Height float64 `json:"height"`
 }
 
-// tourRingReading is where the spotlight is, and what the step it belongs to is
-// about.
+// tourRingReading is where the spotlight and the bubble are, and what the step
+// they belong to is about.
 type tourRingReading struct {
 	Title   string  `json:"title"`
 	Target  string  `json:"target"`
@@ -89,9 +89,18 @@ type tourRingReading struct {
 	Ring    box     `json:"ring"`
 	Where   box     `json:"where"`
 	ScrollY float64 `json:"scrollY"`
+
+	// The bubble, the screen it has to fit on, and whether its words fit inside
+	// it. In the same reading as the ring, so the wait for the page to be at rest
+	// covers both: placeTour moves them in the same frame.
+	Bubble     box     `json:"bubble"`
+	ViewWidth  float64 `json:"viewWidth"`
+	ViewHeight float64 `json:"viewHeight"`
+	Crammed    bool    `json:"crammed"`
 }
 
-// tourRing answers where the spotlight is once the step has stopped moving.
+// tourRing answers where the spotlight and the bubble are once the step has
+// stopped moving.
 //
 // Two things move after a step is rendered, and both of them have caught this
 // case out. placeTour measures two animation frames later - the delay is what
@@ -126,7 +135,8 @@ func (p *page) tourRing() tourRingReading {
 	}
 }
 
-// readTourRing takes one reading of the spotlight and the step it belongs to.
+// readTourRing takes one reading of the spotlight, the bubble and the step they
+// belong to.
 func (p *page) readTourRing() tourRingReading {
 	p.t.Helper()
 
@@ -137,21 +147,31 @@ func (p *page) readTourRing() tourRingReading {
 		const target = document.querySelector(step.target);
 		const spot = document.querySelector('#tour-spotlight').getBoundingClientRect();
 		const seen = target ? target.getBoundingClientRect() : new DOMRect();
+		const bubble = document.querySelector('#tour-bubble');
+		const card = bubble.getBoundingClientRect();
 
-		// The room placeTour leaves around what it rings.
+		// The room placeTour leaves around what it rings - and across, the
+		// screen's edges, which the ring stops at, so what it has to be around is
+		// the part of the target on the screen.
 		const pad = 6;
 		const near = (a, b) => Math.abs(a - b) <= 2;
+		const screen = document.documentElement.clientWidth;
 
 		return {
 			title: document.querySelector('#tour-title').textContent,
 			target: step.target,
 			shown: seen.width > 0 && seen.height > 0,
-			around: near(spot.left + pad, seen.left) && near(spot.top + pad, seen.top)
-				&& near(spot.width - pad * 2, seen.width)
+			around: near(spot.left, Math.max(0, seen.left - pad))
+				&& near(spot.right, Math.min(screen, seen.right + pad))
+				&& near(spot.top + pad, seen.top)
 				&& near(spot.height - pad * 2, seen.height),
 			ring: { left: spot.left, top: spot.top, width: spot.width, height: spot.height },
 			where: { left: seen.left, top: seen.top, width: seen.width, height: seen.height },
 			scrollY: window.scrollY,
+			bubble: { left: card.left, top: card.top, width: card.width, height: card.height },
+			viewWidth: document.documentElement.clientWidth,
+			viewHeight: window.innerHeight,
+			crammed: bubble.scrollHeight > bubble.clientHeight + 1,
 		};
 	})())`, &reading)
 
