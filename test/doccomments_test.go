@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -369,4 +370,105 @@ func looksLikeAnotherName(word string, declared map[string]bool) bool {
 	}
 
 	return inner && lower
+}
+
+// A doc comment is not cut loose from what it documents.
+//
+// The two cases above read the comment the toolchain attached to a declaration.
+// A comment with a blank line, or a whole other declaration, between it and its
+// own is attached to nothing - so neither case sees it, and `go doc` and every
+// editor's hover print nothing for the declaration it was written for. Two were
+// sitting in the tree when this was added, found by a probe rather than by
+// reading: writeHeading's, which one blank line had cut loose, and waitShown's,
+// which settleReleaseWatch had been inserted underneath.
+//
+// The question is narrow on purpose: a top-level comment attached to nothing
+// whose first word is a name declared in the same file. A section banner opens
+// with dashes and so never matches. Test files are read too, unlike the two cases
+// above - an editor shows a test helper's comment exactly as it shows any other.
+func TestNoDocCommentIsCutLooseFromItsDeclaration(t *testing.T) {
+	for _, dir := range []string{"internal", "cmd", "test"} {
+		for _, path := range goFilesAndTestsUnder(t, filepath.Join("..", dir)) {
+			checkCutLoose(t, path)
+		}
+	}
+}
+
+// checkCutLoose reports top-level comments attached to no declaration that open
+// with the name of one declared in the same file.
+func checkCutLoose(t *testing.T, path string) {
+	t.Helper()
+
+	fset := token.NewFileSet()
+
+	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("cannot parse %s: %v", path, err)
+	}
+
+	declared := declaredNames(file)
+
+	for _, group := range file.Comments {
+		if group == file.Doc || group.Pos() < file.Package || insideADeclaration(file, group.Pos()) {
+			continue
+		}
+
+		if word := firstWord(group.Text()); declared[word] {
+			t.Errorf("%s:%d: a comment opening with %q is attached to nothing: a blank "+
+				"line or another declaration stands between it and %s, so `go doc` "+
+				"prints nothing for it", filepath.ToSlash(path),
+				fset.Position(group.Pos()).Line, word, word)
+		}
+	}
+}
+
+// insideADeclaration reports whether pos falls within a declaration or the doc
+// comment the toolchain attached to it.
+func insideADeclaration(file *ast.File, pos token.Pos) bool {
+	for _, decl := range file.Decls {
+		start := decl.Pos()
+
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Doc != nil {
+				start = d.Doc.Pos()
+			}
+		case *ast.GenDecl:
+			if d.Doc != nil {
+				start = d.Doc.Pos()
+			}
+		}
+
+		if pos >= start && pos <= decl.End() {
+			return true
+		}
+	}
+
+	return false
+}
+
+// goFilesAndTestsUnder returns every Go file below root, tests included - the
+// one difference from goFilesUnder, whose reason for leaving tests out is about
+// configuration keys and does not apply to a comment.
+func goFilesAndTestsUnder(t *testing.T, root string) []string {
+	t.Helper()
+
+	var out []string
+
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !entry.IsDir() && strings.HasSuffix(path, ".go") {
+			out = append(out, path)
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("cannot walk %s: %v", root, err)
+	}
+
+	return out
 }

@@ -347,7 +347,6 @@ func moment(written time.Time, language string) string {
 const germanLanguage = "de"
 
 // writeHeading writes the title and the period it covers.
-
 func writeHeading(pdf *fpdf.Fpdf, ink inks, doc Document) {
 	pdf.SetFont("go", "B", titleSize)
 	use(pdf, ink.accent)

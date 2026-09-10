@@ -844,17 +844,6 @@ func (p *page) state() string {
 	return out
 }
 
-// waitShown is waitGone's other half: it waits for something to appear.
-//
-// Written because its absence was being covered by a fixed sleep, and a fixed
-// sleep is a guess about how busy the machine is. TestTabsSwitchTheVisiblePanel
-// slept 150ms after clicking a tab and then asked whether the panel was up; on a
-// loaded runner three of its four tabs were not, and the suite reported a broken
-// application over a slow afternoon.
-//
-// The patience is the same as everywhere else here: long enough that only a real
-// failure reaches it, and it costs nothing when the answer arrives at once.
-
 // settleReleaseWatch takes the release check out of the way before a case says
 // what the banner ought to show.
 //
@@ -888,6 +877,16 @@ func (p *page) settleReleaseWatch() {
 		})()`, nil, awaitPromise))
 }
 
+// waitShown is waitGone's other half: it waits for something to appear.
+//
+// Written because its absence was being covered by a fixed sleep, and a fixed
+// sleep is a guess about how busy the machine is. TestTabsSwitchTheVisiblePanel
+// slept 150ms after clicking a tab and then asked whether the panel was up; on a
+// loaded runner three of its four tabs were not, and the suite reported a broken
+// application over a slow afternoon.
+//
+// The patience is the same as everywhere else here: long enough that only a real
+// failure reaches it, and it costs nothing when the answer arrives at once.
 func (p *page) waitShown(selector string) {
 	p.t.Helper()
 
