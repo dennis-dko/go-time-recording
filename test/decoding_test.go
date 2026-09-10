@@ -124,7 +124,7 @@ func walk(t *testing.T, root string, each func(path, body string)) {
 	}
 }
 
-func sortedKeys(m map[string]string) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
