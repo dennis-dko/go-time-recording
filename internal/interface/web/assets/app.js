@@ -3890,6 +3890,8 @@ const TRANSLATIONS = {
       + 'docker compose pull && docker compose up -d',
     'update.byImage': 'Es wird ein neues Abbild geladen, dieser Container daraus neu erzeugt und das ersetzte Abbild anschließend entfernt. Die Anwendung ist einige Sekunden weg und kommt als neue Fassung zurück – diese Seite wartet darauf.',
     'update.replacing': 'Ein neues Abbild wird geladen und dieser Container ersetzt …',
+    'update.imageNothingNewer': 'Die letzte Aktualisierung des Abbilds fand nichts Neueres als das laufende Abbild, daher wurde nichts geändert. Legt GTR_VERSION eine Version fest, folgt das Abbild dieser Einstellung und nicht dieser Karte.',
+    'update.imageFailed': 'Die letzte Aktualisierung des Abbilds hat nicht funktioniert, und es wurde nichts geändert.',
     'update.off': 'Die Suche nach neuen Versionen ist auf dieser Installation '
       + 'abgeschaltet (UPDATE_CHECK).',
     'update.confirm': 'Die neue Version herunterladen und installieren? '
@@ -8653,6 +8655,22 @@ async function loadOperational() {
  * So where installing would not last, the card says what to run instead rather
  * than offering a button that reverts itself.
  */
+/**
+ * Whether the image updater has answered that it replaced nothing.
+ *
+ * Asked of the version card's own state rather than of the announcement stream:
+ * the stream can still be carrying a cancellation from an earlier press, while
+ * an outcome on the card belongs to this one, because the request clears the
+ * last.
+ */
+async function theImageUpdateChangedNothing() {
+  try {
+    return Boolean((await api('/settings/update'))?.imageOutcome);
+  } catch {
+    return false;
+  }
+}
+
 async function loadUpdate() {
   const card = $('#update-card');
   if (!card) return;
@@ -8711,6 +8729,25 @@ function renderUpdate(state) {
     showRefusal(problem, {
       message: t('update.unreachable', 'Could not ask for the newest version'),
       detail: state.problem,
+    });
+  }
+
+  // What the last image update came to, where it left this container running.
+  // On the card, which is where whoever pressed the button looks; the banner
+  // every screen saw has already been taken down.
+  const image = $('#update-image');
+  image.hidden = !state.imageOutcome;
+
+  if (state.imageOutcome === 'none') {
+    image.textContent = t('update.imageNothingNewer',
+      'The last image update found nothing newer than the image this runs, so '
+      + 'nothing was changed. Where GTR_VERSION names a version, the image follows '
+      + 'that setting rather than this card.');
+  } else if (state.imageOutcome) {
+    showRefusal(image, {
+      message: t('update.imageFailed',
+        'The last image update did not work, and nothing was changed.'),
+      detail: state.imageProblem,
     });
   }
 
@@ -8818,11 +8855,18 @@ function renderUpdate(state) {
  * The screen is refreshed before the good news rather than after it: refreshAll
  * redraws every card from the process that has just come back, and a message
  * put up first is a message competing with that.
+ *
+ * givenUp is asked on every look, and ends the wait when the answer is that no
+ * restart is coming. An image update that found nothing newer, or failed,
+ * leaves this process running - and without it the screen sat under the
+ * overlay for the whole five minutes and then called the application slow. The
+ * card says what the answer was, so the card is what is redrawn; the banner
+ * every screen saw has already been taken down by the server.
  */
-async function settleAfterRestart(previous, done, patience) {
+async function settleAfterRestart(previous, done, patience, givenUp = async () => false) {
   const overlay = $('#restart-overlay');
 
-  if (await waitForRestart(previous, patience)) {
+  if (await waitForRestart(previous, patience, givenUp)) {
     // A different build came back, so everything in this tab is last version's.
     //
     // This was the one tab that did not reload. Every other open one did: the
@@ -8857,6 +8901,13 @@ async function settleAfterRestart(previous, done, patience) {
     overlay.hidden = true;
     await refreshAll();
     toast(done, 'ok');
+
+    return;
+  }
+
+  if (await givenUp()) {
+    overlay.hidden = true;
+    await loadUpdate();
 
     return;
   }
@@ -9048,7 +9099,8 @@ function wireUpdate() {
         'A new image is being pulled and this container replaced …');
 
       await settleAfterRestart(previous,
-        t('update.done', 'The new version is running.'), IMAGE_UPDATE_TIMEOUT_MS);
+        t('update.done', 'The new version is running.'), IMAGE_UPDATE_TIMEOUT_MS,
+        theImageUpdateChangedNothing);
 
       return;
     }
@@ -9350,12 +9402,18 @@ const IMAGE_UPDATE_TIMEOUT_MS = 5 * 60000;
  * Polling for "does it respond" is not enough: replacing the process image takes
  * milliseconds, and a poll that misses that gap would report success without
  * anything having happened. The start time changing is what proves it.
+ *
+ * givenUp ends the wait early, with the same answer as running out of patience;
+ * see settleAfterRestart.
  */
-async function waitForRestart(previousStartedAt, patience = RESTART_TIMEOUT_MS) {
+async function waitForRestart(previousStartedAt, patience = RESTART_TIMEOUT_MS,
+  givenUp = async () => false) {
   const deadline = Date.now() + patience;
 
   while (Date.now() < deadline) {
     await new Promise((resolve) => { setTimeout(resolve, 1000); });
+
+    if (await givenUp()) return false;
 
     try {
       const state = await api('/settings/restart');

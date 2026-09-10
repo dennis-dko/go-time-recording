@@ -146,3 +146,31 @@ func TestTheOutcomeIsReadableMoreThanOnce(t *testing.T) {
 		}
 	}
 }
+
+// Asking clears what the last update came to.
+//
+// The outcome stays readable until the next request, and the next request is
+// exactly when a reader starts waiting for a new one - so an outcome left over
+// from last time would be taken for this request's answer before the updater
+// had even looked. Clearing it was left to the updater, which takes a request
+// up to three seconds after it is written.
+func TestAskingClearsTheLastOutcome(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	updater := imageupdate.New(dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "result"),
+		[]byte(imageupdate.ResultNothing), 0o600); err != nil {
+		t.Fatalf("cannot write the last outcome: %v", err)
+	}
+
+	if err := updater.Ask(); err != nil {
+		t.Fatalf("asking for an update: %v", err)
+	}
+
+	if got, ok := updater.Result(); ok {
+		t.Errorf("the last update's outcome, %q, is still readable after a new request, "+
+			"so it would be taken for this one's", got)
+	}
+}
