@@ -13,7 +13,8 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
 )
 
-// UserService service interface
+// UserService administers accounts. Deleting one deletes the hours recorded
+// against it as well.
 type UserService interface {
 	CreateUser(ctx context.Context, cmd command.CreateUserCommand) (*command.CreateUserCommandResult, error)
 	GetUser(ctx context.Context, q query.GetUserQuery) (*query.GetUserQueryResult, error)

@@ -13,7 +13,9 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-// TimesheetService service interface
+// TimesheetService is what the time entry handler may do with bookings. The
+// rules about hours are applied behind it, not in the handler: the floor, the
+// daily cap, and that only an active project accepts a booking.
 type TimesheetService interface {
 	CreateTimesheet(ctx context.Context, cmd command.CreateTimesheetCommand) (*command.CreateTimesheetCommandResult, error)
 	GetTimesheet(ctx context.Context, q query.GetTimesheetQuery) (*query.GetTimesheetQueryResult, error)

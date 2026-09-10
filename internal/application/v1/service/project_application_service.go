@@ -13,7 +13,9 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-// ProjectService service interface
+// ProjectService is what the project handler may do with projects. A project
+// the caller may not see is not found rather than refused, and a list leaves it
+// out.
 type ProjectService interface {
 	CreateProject(ctx context.Context, cmd command.CreateProjectCommand) (*command.CreateProjectCommandResult, error)
 	GetProject(ctx context.Context, q query.GetProjectQuery) (*query.GetProjectQueryResult, error)
