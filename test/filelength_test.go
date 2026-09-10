@@ -28,8 +28,6 @@ var overBudget = map[string]string{
 		"its content; a second file would hold half of that order and neither half would show it",
 	"cmd/main.go": "start-up ordering is the subject and it reads top to bottom; splitting it is the one " +
 		"change that would hide the order, which is why the logic-read ledger reads it whole",
-	"internal/application/v1/service/sheet_workbook_service.go": "three subjects under three banners - " +
-		"projects, people, roles; a split along them nobody has made yet",
 	"test/browser/browser_test.go": "the page driver every case in the directory uses, followed by cases " +
 		"written before the one-subject-per-file convention; the cases are a split nobody has made yet",
 	"test/browser/branding_test.go": "the configured texts, the logo and the part of it chosen for each " +
