@@ -16,16 +16,11 @@ import (
 type WorkbookHandler struct {
 	workbook *service.WorkbookService
 	authz    *Authorizer
-	timezone InstanceTimezoneFunc
 }
 
 // NewWorkbookHandler creates the handler.
-func NewWorkbookHandler(
-	workbook *service.WorkbookService,
-	authz *Authorizer,
-	timezone InstanceTimezoneFunc,
-) *WorkbookHandler {
-	return &WorkbookHandler{workbook: workbook, authz: authz, timezone: timezone}
+func NewWorkbookHandler(workbook *service.WorkbookService, authz *Authorizer) *WorkbookHandler {
+	return &WorkbookHandler{workbook: workbook, authz: authz}
 }
 
 // xlsxContentType is what a browser needs to be told before it will hand the file

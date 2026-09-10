@@ -10,23 +10,17 @@ import (
 
 // ProjectDomainService encapsulates domain logic
 type ProjectDomainService struct {
-	projectRepository   repository.ProjectRepository
-	timesheetRepository repository.TimesheetRepository
+	projectRepository repository.ProjectRepository
 }
 
 // NewProjectDomainService creates new instance
-func NewProjectDomainService(
-	projectRepo repository.ProjectRepository,
-	timesheetRepo repository.TimesheetRepository,
-) *ProjectDomainService {
-	return &ProjectDomainService{
-		projectRepository:   projectRepo,
-		timesheetRepository: timesheetRepo,
-	}
+func NewProjectDomainService(projectRepo repository.ProjectRepository) *ProjectDomainService {
+	return &ProjectDomainService{projectRepository: projectRepo}
 }
 
-// ArchiveProject archives the project once it is completed and has no open
-// time entries left.
+// ArchiveProject archives the project once it is completed. Time booked against
+// it is no reason to refuse; the note in the body says why.
+//
 // viewerID is who is asking: archiving somebody else's private category would
 // take their own project away from them, and the request would also confirm that
 // it exists.

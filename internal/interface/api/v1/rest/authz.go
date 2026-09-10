@@ -16,8 +16,6 @@ import (
 // several rules depend on the resource: reading "my" time entries and reading
 // everyone's are different permissions on the same route.
 type Authorizer struct {
-	auth *service.AuthService
-
 	// open disables enforcement. It exists for running the instance without
 	// authentication at all, where there is no caller to check.
 	open bool
@@ -25,8 +23,8 @@ type Authorizer struct {
 
 // NewAuthorizer creates an authorizer. When enforce is false every request is
 // allowed and the caller is reported as anonymous.
-func NewAuthorizer(auth *service.AuthService, enforce bool) *Authorizer {
-	return &Authorizer{auth: auth, open: !enforce}
+func NewAuthorizer(enforce bool) *Authorizer {
+	return &Authorizer{open: !enforce}
 }
 
 // Enabled reports whether authorization is being enforced.

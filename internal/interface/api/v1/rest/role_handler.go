@@ -12,12 +12,11 @@ import (
 type RoleHandler struct {
 	roles service.RoleService
 	authz *Authorizer
-	auth  *service.AuthService
 }
 
 // NewRoleHandler creates a role handler.
-func NewRoleHandler(roles service.RoleService, authz *Authorizer, auth *service.AuthService) *RoleHandler {
-	return &RoleHandler{roles: roles, authz: authz, auth: auth}
+func NewRoleHandler(roles service.RoleService, authz *Authorizer) *RoleHandler {
+	return &RoleHandler{roles: roles, authz: authz}
 }
 
 // List handles GET /api/v1/roles

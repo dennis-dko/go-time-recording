@@ -13,19 +13,16 @@ import (
 type TimesheetDomainService struct {
 	timesheetRepository repository.TimesheetRepository
 	projectRepository   repository.ProjectRepository
-	userRepository      repository.UserRepository
 }
 
 // NewTimesheetDomainService creates new instance
 func NewTimesheetDomainService(
 	timesheetRepo repository.TimesheetRepository,
 	projectRepo repository.ProjectRepository,
-	userRepo repository.UserRepository,
 ) *TimesheetDomainService {
 	return &TimesheetDomainService{
 		timesheetRepository: timesheetRepo,
 		projectRepository:   projectRepo,
-		userRepository:      userRepo,
 	}
 }
 

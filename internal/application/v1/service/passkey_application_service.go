@@ -33,7 +33,6 @@ const challengeLifetime = 5 * time.Minute
 type PasskeyService struct {
 	passkeys repository.PasskeyRepository
 	users    repository.UserRepository
-	auth     *AuthService
 
 	// pending holds challenges between the two halves of a ceremony. In memory
 	// on purpose: a challenge is worthless after five minutes, and putting it
@@ -49,9 +48,8 @@ type PasskeyService struct {
 func NewPasskeyService(
 	passkeys repository.PasskeyRepository,
 	users repository.UserRepository,
-	auth *AuthService,
 ) *PasskeyService {
-	return &PasskeyService{passkeys: passkeys, users: users, auth: auth}
+	return &PasskeyService{passkeys: passkeys, users: users}
 }
 
 // RelyingParty is what the browser binds a credential to.

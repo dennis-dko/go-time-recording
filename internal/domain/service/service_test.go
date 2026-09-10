@@ -45,8 +45,8 @@ func newFixture(t *testing.T) *fixture {
 		projects:        projects,
 		timesheets:      timesheets,
 		userDomain:      service.NewUserDomainService(users, roles),
-		projectDomain:   service.NewProjectDomainService(projects, timesheets),
-		timesheetDomain: service.NewTimesheetDomainService(timesheets, projects, users),
+		projectDomain:   service.NewProjectDomainService(projects),
+		timesheetDomain: service.NewTimesheetDomainService(timesheets, projects),
 	}
 }
 
