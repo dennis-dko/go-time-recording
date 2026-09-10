@@ -122,7 +122,8 @@ type ProjectWorkbookService struct {
 	projects *ProjectApplicationService
 }
 
-// NewProjectWorkbookService creates new instance.
+// NewProjectWorkbookService is given the project service rather than a
+// repository, which is what holds an import to the rules the form is held to.
 func NewProjectWorkbookService(projects *ProjectApplicationService) *ProjectWorkbookService {
 	return &ProjectWorkbookService{projects: projects}
 }
@@ -452,7 +453,8 @@ type UserWorkbookService struct {
 	accounts *UserApplicationService
 }
 
-// NewUserWorkbookService creates new instance.
+// NewUserWorkbookService writes through the account service, so an imported
+// change passes the checks a correction on screen does.
 func NewUserWorkbookService(
 	users repository.UserRepository,
 	roles repository.RoleRepository,
@@ -647,7 +649,8 @@ type RoleWorkbookService struct {
 	admin *RoleApplicationService
 }
 
-// NewRoleWorkbookService creates new instance.
+// NewRoleWorkbookService writes through the role service, so an imported role
+// is held to the rules the role editor is.
 func NewRoleWorkbookService(
 	roles repository.RoleRepository,
 	admin *RoleApplicationService,

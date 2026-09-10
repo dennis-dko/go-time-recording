@@ -25,7 +25,8 @@ type APITokenService struct {
 	auth   *AuthService
 }
 
-// NewAPITokenService creates new instance.
+// NewAPITokenService needs the auth service because a token resolves to its
+// account's principal through the same code a session's does.
 func NewAPITokenService(
 	tokens repository.APITokenRepository,
 	users repository.UserRepository,

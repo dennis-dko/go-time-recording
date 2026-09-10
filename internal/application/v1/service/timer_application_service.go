@@ -23,7 +23,8 @@ type TimerService struct {
 	timesheets *TimesheetApplicationService
 }
 
-// NewTimerService creates new instance.
+// NewTimerService is given the timesheet service rather than its repository, so
+// a stopped clock is booked under every rule a typed entry is.
 func NewTimerService(
 	timers repository.TimerRepository,
 	timesheets *TimesheetApplicationService,

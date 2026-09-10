@@ -24,7 +24,9 @@ type UserService interface {
 	UpdateWorkingTimes(ctx context.Context, cmd command.UpdateWorkingTimesCommand) (*common.UserResult, error)
 }
 
-// UserApplicationService application service for users
+// UserApplicationService is the UserService the application runs with. An
+// account the directory owns keeps the name and the address the directory
+// gives it.
 type UserApplicationService struct {
 	userRepository repository.UserRepository
 	roleRepository repository.RoleRepository
@@ -43,7 +45,8 @@ type UserApplicationService struct {
 	purger UserPurger
 }
 
-// NewUserApplicationService creates new instance
+// NewUserApplicationService needs the time entries to say what deleting an
+// account would take with it, and the purger to take it all in one go.
 func NewUserApplicationService(
 	userRepo repository.UserRepository,
 	roleRepo repository.RoleRepository,

@@ -72,7 +72,9 @@ func (s *SessionService) WithMetrics(recorder Recorder) *SessionService {
 	return s
 }
 
-// NewSessionService creates new instance.
+// NewSessionService signs in for lifetime, the length the environment
+// configured. WithLimits lets the Settings screen override it, and
+// WithExternalAuth adds the directory as a second place to check a password.
 func NewSessionService(
 	users repository.UserRepository,
 	roles repository.RoleRepository,

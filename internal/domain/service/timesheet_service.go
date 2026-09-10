@@ -9,13 +9,16 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-// TimesheetDomainService encapsulates domain logic
+// TimesheetDomainService holds the rules about whose hours may be moved and
+// totalled: moving an entry to another project, and the two reports, each
+// deciding for itself what the caller may see.
 type TimesheetDomainService struct {
 	timesheetRepository repository.TimesheetRepository
 	projectRepository   repository.ProjectRepository
 }
 
-// NewTimesheetDomainService creates new instance
+// NewTimesheetDomainService needs the projects beside the entries, because
+// every rule it holds is decided by the project an entry is on.
 func NewTimesheetDomainService(
 	timesheetRepo repository.TimesheetRepository,
 	projectRepo repository.ProjectRepository,

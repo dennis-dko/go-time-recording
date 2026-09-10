@@ -44,7 +44,8 @@ type PasskeyService struct {
 	pending sync.Map
 }
 
-// NewPasskeyService creates new instance.
+// NewPasskeyService starts with no ceremony in flight. Challenges live in this
+// process's memory, so a restart abandons any that were half done; see pending.
 func NewPasskeyService(
 	passkeys repository.PasskeyRepository,
 	users repository.UserRepository,

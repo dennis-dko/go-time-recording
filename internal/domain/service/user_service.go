@@ -8,13 +8,15 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-// UserDomainService encapsulates domain logic
+// UserDomainService holds the one rule about moving an account between roles:
+// the built-in administrator keeps a role that can still administer.
 type UserDomainService struct {
 	userRepository repository.UserRepository
 	roleRepository repository.RoleRepository
 }
 
-// NewUserDomainService creates new instance
+// NewUserDomainService needs the roles to see what the one an account is moved
+// to may do.
 func NewUserDomainService(
 	userRepo repository.UserRepository,
 	roleRepo repository.RoleRepository,

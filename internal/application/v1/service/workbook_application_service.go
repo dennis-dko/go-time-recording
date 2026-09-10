@@ -37,7 +37,8 @@ type WorkbookService struct {
 	entries *TimesheetApplicationService
 }
 
-// NewWorkbookService creates new instance.
+// NewWorkbookService checks imported entries through the timesheet service, so
+// the importer keeps no rules of its own.
 func NewWorkbookService(
 	timesheets repository.TimesheetRepository,
 	users repository.UserRepository,

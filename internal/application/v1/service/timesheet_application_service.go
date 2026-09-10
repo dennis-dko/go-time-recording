@@ -24,7 +24,8 @@ type TimesheetService interface {
 	DeleteTimesheet(ctx context.Context, cmd command.DeleteTimesheetCommand) error
 }
 
-// TimesheetApplicationService application service for time entries
+// TimesheetApplicationService is the TimesheetService the application runs
+// with, and where the rules about hours are kept.
 type TimesheetApplicationService struct {
 	timesheetRepository repository.TimesheetRepository
 	userRepository      repository.UserRepository
@@ -39,7 +40,8 @@ type TimesheetApplicationService struct {
 	metrics
 }
 
-// NewTimesheetApplicationService creates new instance
+// NewTimesheetApplicationService takes maxDailyHours, the daily cap the
+// environment configured; WithLimits lets the Settings screen override it.
 func NewTimesheetApplicationService(
 	timesheetRepo repository.TimesheetRepository,
 	userRepo repository.UserRepository,

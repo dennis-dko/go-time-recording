@@ -39,7 +39,8 @@ type OvertimeService struct {
 	users      repository.UserRepository
 }
 
-// NewOvertimeService creates new instance.
+// NewOvertimeService needs the accounts as well as their hours, because the
+// target a balance is measured against is each account's own.
 func NewOvertimeService(
 	timesheets repository.TimesheetRepository,
 	users repository.UserRepository,

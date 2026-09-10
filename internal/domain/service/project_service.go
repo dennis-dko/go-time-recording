@@ -8,12 +8,14 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-// ProjectDomainService encapsulates domain logic
+// ProjectDomainService holds the project rule that is more than a field check:
+// archiving, which needs the project completed and the caller able to see it.
 type ProjectDomainService struct {
 	projectRepository repository.ProjectRepository
 }
 
-// NewProjectDomainService creates new instance
+// NewProjectDomainService works on the projects alone: nothing it decides
+// depends on the hours booked against one.
 func NewProjectDomainService(projectRepo repository.ProjectRepository) *ProjectDomainService {
 	return &ProjectDomainService{projectRepository: projectRepo}
 }
