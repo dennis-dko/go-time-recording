@@ -24,7 +24,7 @@ import (
 // for is the same disagreement seen from the other side.
 func TestEveryOperationalLimitTravelsBothWays(t *testing.T) {
 	js := asset(t, "/app.js")
-	source := readSource(t, filepath.Join("..", "api", "v1", "rest", "settings_handler.go"))
+	source := readSource(t, filepath.Join("..", "api", "v1", "rest", "settings_operational.go"))
 
 	list := regexp.MustCompile(`(?s)const OPERATIONAL_FIELDS = \[(.*?)\];`).
 		FindStringSubmatch(js)
@@ -42,7 +42,7 @@ func TestEveryOperationalLimitTravelsBothWays(t *testing.T) {
 	block := regexp.MustCompile(`(?s)type OperationalLimits struct \{(.*?)\n\}`).
 		FindStringSubmatch(source)
 	if block == nil {
-		t.Fatal("settings_handler.go no longer declares OperationalLimits")
+		t.Fatal("settings_operational.go no longer declares OperationalLimits")
 	}
 
 	onWire := map[string]bool{}
