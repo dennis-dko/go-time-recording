@@ -64,3 +64,19 @@ func TestSigningOutForgetsTheAppearance(t *testing.T) {
 		t.Errorf("the picker still offers %q as the current choice", after.Picker)
 	}
 }
+
+// The picker writes to localStorage and stamps the document; both have to
+// happen or the choice is lost on the next page load.
+func TestTheAppearancePickerChangesTheTheme(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	for _, want := range []string{"dark", "light"} {
+		p.run("choose "+want, chromedp.SetValue("#theme-picker", want, chromedp.ByID),
+			chromedp.Evaluate(
+				`document.querySelector('#theme-picker').dispatchEvent(new Event('change'))`, nil))
+
+		p.waitEvaluates("the theme", `document.documentElement.dataset.theme`, want)
+	}
+}

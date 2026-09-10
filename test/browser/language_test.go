@@ -623,3 +623,34 @@ func TestTheAppearanceCardKeepsEachLanguagesWordsAcrossAReload(t *testing.T) {
 		t.Errorf("the base name reads %q after a reload; %q was written", got, base)
 	}
 }
+
+// English is the source language and German is a dictionary over it. If the
+// dictionary is not applied, the page stays English - which looks fine and is
+// wrong.
+func TestSwitchingLanguageTranslatesThePage(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	// The starting language is whatever the browser asks for - that is the
+	// point of the auto-detection - so it is set explicitly rather than
+	// assumed. A German Windows made this test fail by being right.
+	p.run("start from English", chromedp.Evaluate(`applyLanguage('en')`, nil))
+	english := p.text(`label[data-i18n="login.email"]`)
+	if english == "" {
+		t.Fatal("the sign-in form should have a labelled email field")
+	}
+
+	p.run("switch to German", chromedp.Evaluate(`applyLanguage('de')`, nil))
+	german := p.waitChanged(`label[data-i18n="login.email"]`, english)
+	if german == english {
+		t.Errorf("the label did not change when switching language (still %q)", english)
+	}
+
+	// Back to English restores the markup's own text, which is what an
+	// untranslated key falls back to.
+	p.run("switch back to English", chromedp.Evaluate(`applyLanguage('en')`, nil))
+	if back := p.waitChanged(`label[data-i18n="login.email"]`, german); back != english {
+		t.Errorf("expected %q back, got %q", english, back)
+	}
+}

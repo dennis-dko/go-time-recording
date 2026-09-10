@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // The navigation has its own line, centred, and nothing lies on top of anything.
@@ -420,5 +421,60 @@ func TestTheSignInScreenIsUsableOnAShortWindow(t *testing.T) {
 	if out.ButtonBottom > out.Viewport {
 		t.Errorf("the submit button ends at %.0fpx in a %.0fpx window even after "+
 			"scrolling to the bottom", out.ButtonBottom, out.Viewport)
+	}
+}
+
+// Switching tabs has to switch what is on screen. A tab that highlights but
+// changes nothing is a broken application with a healthy API.
+//
+// The built-in administrator's own tabs, which are the four it has: it does not record
+// time, so the calendar, the entries and the projects are not on its screen at all.
+// Deliberately still the plain sign-in rather than readyWorker - what this checks is
+// that clicking a tab shows its panel, and it should stay the cheapest case in the
+// suite rather than growing a password change and a second account.
+func TestTabsSwitchTheVisiblePanel(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	p.signIn(harness.AdminEmail, harness.AdminPassword)
+	p.waitGone("#login-screen")
+
+	// Out of the way: it is an overlay, so nothing behind it can be clicked.
+	p.settleWizard()
+
+	// And so is the walk through, which was the actual fault here.
+	//
+	// It opens by itself on a first sign-in - startTour runs whenever the account
+	// has not seen it, and a fresh installation's built-in administrator has not.
+	// Its bubble is a modal, so the tab clicks below landed on it instead, and no
+	// amount of waiting afterwards helps: the click never reached the tab.
+	//
+	// Intermittent because it is a race rather than a rule. The tour opens after
+	// the /me it waits on, so whether it is up when the first tab is clicked
+	// depends on which arrives first - which is why this failed on two unrelated
+	// pull requests and passed on the two beside them.
+	p.settleWelcome()
+
+	// And the load has to be finished, not merely far enough along to have drawn
+	// the tabs. Signing in ends by choosing which screen to open on and putting
+	// the reader back where a reload took them from - both of which switch the
+	// view. A tab clicked before that lands, and is then switched away from, and
+	// the wait below spends forty-five seconds on a panel that was up for a
+	// moment. It reported the click as never having worked.
+	p.settled()
+
+	for _, view := range []struct{ tab, panel string }{
+		{`.tab[data-view="roles"]`, "#view-roles"},
+		{`.tab[data-view="admin"]`, "#view-admin"},
+		{`.tab[data-view="settings"]`, "#view-settings"},
+		{`.tab[data-view="users"]`, "#view-users"},
+	} {
+		p.run("switch to "+view.panel, chromedp.Click(view.tab, chromedp.ByQuery))
+
+		// Waited for rather than slept through. This is a click and a class
+		// change, so it is usually up within a frame - but "usually" is what a
+		// fixed 150ms was betting on, and on a loaded runner it lost.
+		p.waitShown(view.panel)
 	}
 }
