@@ -250,10 +250,9 @@ func traceRatio(raw string) float64 {
 }
 
 const (
-	defaultDialect            = "sqlite"
-	defaultAutoCloseAfterDays = 14
-	defaultMaxDailyHours      = 24
-	defaultSessionLifetime    = 12 * time.Hour
+	defaultDialect         = "sqlite"
+	defaultMaxDailyHours   = 24
+	defaultSessionLifetime = 12 * time.Hour
 
 	defaultTLSCacheDir      = "configs/certs"
 	defaultTLSPort          = 443
