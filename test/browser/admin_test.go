@@ -678,3 +678,54 @@ func TestAnAdministratorResetsAPasswordFromTheTable(t *testing.T) {
 			"replace it")
 	}
 }
+
+// Your own row says so, and says it before it says anything else.
+//
+// The built-in administrator's row already said "system account", and the row
+// somebody reads their own name in said nothing at all - which is the one fact
+// that matters to the person looking at the table, because it is the row whose
+// delete button is not there.
+func TestYourOwnRowIsMarkedAsYours(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.createOrdinaryAccount(t, "sven@example.com", "sven-password-1")
+
+	// Reloaded, because the account above was created through the API rather than
+	// through the form: the table is filled when the interface loads and refreshed
+	// by what the form does afterwards.
+	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
+	p.settleWelcome()
+
+	p.run("open the accounts", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#table-users", chromedp.ByID))
+
+	p.waitForText("#table-users tbody", "sven@example.com")
+
+	var own struct {
+		Label     string `json:"label"`
+		HasDelete bool   `json:"hasDelete"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const rows = [...document.querySelectorAll('#table-users tbody tr')];
+		const mine = rows.find(row => row.textContent.includes('admin@local'));
+		if (!mine) return { label: 'no row for the signed-in account', hasDelete: false };
+
+		return {
+			label: mine.querySelector('td.actions span.muted')?.textContent ?? '',
+			hasDelete: Boolean(mine.querySelector('td.actions button.danger')),
+		};
+	})())`, &own)
+
+	if own.Label != "Your account" {
+		t.Errorf("the signed-in account's row is marked %q, want \"Your account\"",
+			own.Label)
+	}
+
+	if own.HasDelete {
+		t.Error("the row for the account doing the looking offers a delete, which " +
+			"would end the session it was pressed from")
+	}
+}

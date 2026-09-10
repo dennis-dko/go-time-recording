@@ -30,9 +30,6 @@ var overBudget = map[string]string{
 		"change that would hide the order, which is why the logic-read ledger reads it whole",
 	"test/browser/browser_test.go": "the page driver every case in the directory uses, followed by cases " +
 		"written before the one-subject-per-file convention; the cases are a split nobody has made yet",
-	"test/browser/branding_test.go": "the configured texts, the logo and the part of it chosen for each " +
-		"place, the mark shown without one - and two cases that are not about branding at all; a split " +
-		"nobody has made yet",
 	"test/harness/harness.go": "one object shared by three suites - building the binary, giving an " +
 		"instance its database and port, knowing when it is ready; creating the database is the part " +
 		"that could stand alone",

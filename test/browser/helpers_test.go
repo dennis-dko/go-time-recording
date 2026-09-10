@@ -137,3 +137,43 @@ func (p *page) waitForNode(selector string) {
 
 	p.t.Fatalf("nothing ever matched %s", selector)
 }
+
+// submitAndAwaitReload sends the appearance form and waits for the page to come
+// back.
+//
+// A changed mark reloads: no engine takes a new tab icon from a link swapped in
+// afterwards, and a differently cropped logo is a different icon. The reload
+// takes the saved notice away with it, so waiting for that notice is waiting for
+// something that is being removed - which is a wait that sometimes sees it and
+// sometimes does not, depending on how quickly the request came back.
+//
+// The reload itself is what is waited for, by a mark left on the document that
+// is about to be replaced.
+func (p *page) submitAndAwaitReload(t *testing.T, submit chromedp.Action) {
+	t.Helper()
+
+	p.run("mark this document", chromedp.Evaluate(`window.__beforeReload = true`, nil))
+	p.run("save", submit)
+
+	deadline := time.Now().Add(waitPatience)
+
+	for {
+		var gone bool
+
+		p.run("wait for the reload", chromedp.Evaluate(
+			`window.__beforeReload === undefined`, &gone))
+
+		if gone {
+			break
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("the save never reloaded the page; the notice says %q",
+				p.text("#toast"))
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	p.run("wait for the screen", chromedp.WaitVisible("#form-branding", chromedp.ByID))
+}
