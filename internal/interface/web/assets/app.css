@@ -2135,11 +2135,20 @@ a.tab:hover {
 
 .perm-name { margin-right: 6px; }
 
+/*
+ * An identifier has nowhere to break - settings:write:own is one word as far as
+ * a line is concerned - and on a narrow screen with a wide monospace face it ran
+ * past the edge: 15px past a 320px telephone on the CI runner's fonts, which made
+ * the whole role editor wider than the screen and a telephone zoom it out.
+ * Breaking inside the identifier is the last resort; the row it sits in wraps
+ * first, further down.
+ */
 .perm-id {
   background: var(--bg);
   border-radius: 4px;
   color: var(--muted);
   font-size: 11px;
+  overflow-wrap: anywhere;
   padding: 1px 5px;
 }
 
@@ -2331,6 +2340,9 @@ input[readonly]:focus, textarea[readonly]:focus {
   justify-content: flex-start;
 }
 
+/* The identifier goes under the name when the two do not fit beside each other,
+   rather than out past the edge of the row. */
+.perm-switch { flex-wrap: wrap; }
 .perm-switch .perm-name { flex: 1; }
 
 /* A switch that cannot be moved says so by being still: no pointer, no hover,
