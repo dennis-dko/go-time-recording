@@ -190,13 +190,61 @@ func (p *page) stepProblems(r tourRingReading) []string {
 	// grows to match - so a bubble can be inside that screen and still be too
 	// small to read. Measured on the unfixed walk: the ring around the accounts
 	// table made the page 771 pixels wide on every telephone upright.
-	var wider float64
+	//
+	// Named by the element that sticks out furthest, because the number alone is
+	// no lead: this failed on the CI runner and not here, with fonts wider than
+	// this machine's, and "15px wider" says nothing about what to look at. An
+	// element inside something that clips or scrolls sideways does not widen the
+	// page, so it is not a candidate.
+	var wide struct {
+		By     float64 `json:"by"`
+		Widest string  `json:"widest"`
+	}
 
-	p.evalJSON(`JSON.stringify(document.documentElement.scrollWidth - document.documentElement.clientWidth)`, &wider)
+	p.evalJSON(`JSON.stringify((() => {
+		const screen = document.documentElement.clientWidth;
+		const by = document.documentElement.scrollWidth - screen;
+		if (by <= 0.5) return { by, widest: '' };
 
-	if wider > slack {
+		// Nothing clipped or scrolled sideways widens the page, and nothing fixed to
+		// the viewport either: that follows the viewport once something else has
+		// widened the page, which is how the tour's own blocker came out as the
+		// culprit on the first try. The three furthest out are named, outermost
+		// first where they end at the same place.
+		const excused = (node) => {
+			for (let at = node; at && at !== document.body; at = at.parentElement) {
+				const style = getComputedStyle(at);
+				if (style.position === 'fixed') return true;
+				if (at !== node && style.overflowX !== 'visible') return true;
+			}
+			return false;
+		};
+
+		const out = [];
+
+		for (const node of document.body.querySelectorAll('*')) {
+			const box = node.getBoundingClientRect();
+			if (box.width === 0 || box.height === 0 || box.right <= screen + 0.5 || excused(node)) continue;
+			out.push({ node, right: box.right });
+		}
+
+		if (!out.length) return { by, widest: 'nothing that is not fixed, clipped or scrolled' };
+
+		out.sort((a, b) => b.right - a.right);
+
+		const name = ({ node, right }) => {
+			const id = node.id ? '#' + node.id : '';
+			const classes = node.classList.length ? '.' + [...node.classList].join('.') : '';
+			const text = (node.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+			return node.tagName.toLowerCase() + id + classes + ' "' + text + '" ending at ' + Math.round(right);
+		};
+
+		return { by, widest: out.slice(0, 3).map(name).join('; ') };
+	})())`, &wide)
+
+	if wide.By > slack {
 		problems = append(problems, fmt.Sprintf("the page is %.0fpx wider than the screen while this step shows, "+
-			"so a telephone zooms it out", wider))
+			"so a telephone zooms it out; furthest out: %s", wide.By, wide.Widest))
 	}
 
 	return problems
