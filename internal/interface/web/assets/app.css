@@ -1958,16 +1958,40 @@ a.tab:hover {
   z-index: 40;
 }
 
+/*
+ * Never wider or taller than the screen it is on, less the room placeTour keeps
+ * at each edge. 340 pixels on its own was a bound that did not know about the
+ * screen: a 320-pixel telephone had the bubble overhanging it by 32, and an
+ * overhang is what makes a telephone zoom the whole page out to fit it.
+ *
+ * Two heights because dvh is the one that follows a telephone's address bar
+ * coming and going, and vh is where dvh is not understood. Scrolling inside the
+ * bubble is the last resort rather than the design.
+ */
 .tour-bubble {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 8px 30px rgb(0 0 0 / 28%);
-  max-width: 340px;
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  max-width: min(340px, calc(100vw - 24px));
+  overflow-y: auto;
   padding: 16px 18px;
   position: absolute;
   width: max-content;
   z-index: 41;
+}
+
+/*
+ * Wider on a short screen, where the width is to spare and the height is not.
+ * Measured in German, the longer of the two languages, on a telephone on its
+ * side at 568x320: at 340 pixels the tallest step needed 309 of the 296 there
+ * are, so its last line had to be scrolled to; at 440 the tallest needs 236.
+ * Tighter padding alone came one pixel short.
+ */
+@media (max-height: 480px) {
+  .tour-bubble { max-width: min(440px, calc(100vw - 24px)); }
 }
 
 .tour-bubble h3 { font-size: 15px; margin: 0 0 6px; }
@@ -2111,11 +2135,20 @@ a.tab:hover {
 
 .perm-name { margin-right: 6px; }
 
+/*
+ * An identifier has nowhere to break - settings:write:own is one word as far as
+ * a line is concerned - and on a narrow screen with a wide monospace face it ran
+ * past the edge: 15px past a 320px telephone on the CI runner's fonts, which made
+ * the whole role editor wider than the screen and a telephone zoom it out.
+ * Breaking inside the identifier is the last resort; the row it sits in wraps
+ * first, further down.
+ */
 .perm-id {
   background: var(--bg);
   border-radius: 4px;
   color: var(--muted);
   font-size: 11px;
+  overflow-wrap: anywhere;
   padding: 1px 5px;
 }
 
@@ -2307,6 +2340,9 @@ input[readonly]:focus, textarea[readonly]:focus {
   justify-content: flex-start;
 }
 
+/* The identifier goes under the name when the two do not fit beside each other,
+   rather than out past the edge of the row. */
+.perm-switch { flex-wrap: wrap; }
 .perm-switch .perm-name { flex: 1; }
 
 /* A switch that cannot be moved says so by being still: no pointer, no hover,

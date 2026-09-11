@@ -7625,30 +7625,51 @@ function placeTour(node) {
   const bubble = $('#tour-bubble');
 
   // Page coordinates, not viewport ones: both elements are absolutely
-  // positioned in the document, so they stay put while it scrolls.
-  const top = rect.top + window.scrollY - pad;
-  const left = rect.left + window.scrollX - pad;
+  // positioned in the document, so they stay put while it scrolls. The screen
+  // is the document's client area rather than the window, which also counts a
+  // scrollbar nothing can be read under.
+  const screenWidth = document.documentElement.clientWidth;
 
-  spotlight.style.top = `${top}px`;
-  spotlight.style.left = `${left}px`;
-  spotlight.style.width = `${rect.width + pad * 2}px`;
+  // Across, the ring stops at the screen's edges. A ring wider than the screen
+  // makes the page wider than the screen, and a telephone answers that by
+  // zooming the whole page out to fit: a table inside its own scroller measures
+  // its full width, so the step about the accounts table shrank a 320-pixel
+  // screen to four tenths of its size. The part of the target on the screen is
+  // the part anybody can see.
+  const ringLeft = Math.max(0, rect.left - pad);
+  const ringRight = Math.min(screenWidth, rect.right + pad);
+
+  spotlight.style.top = `${rect.top + window.scrollY - pad}px`;
+  spotlight.style.left = `${ringLeft + window.scrollX}px`;
+  spotlight.style.width = `${Math.max(0, ringRight - ringLeft)}px`;
   spotlight.style.height = `${rect.height + pad * 2}px`;
   spotlight.hidden = false;
 
   bubble.hidden = false;
 
-  // Below the target where there is room, above it otherwise, and never off
-  // the right edge on a narrow screen.
-  const bubbleRect = bubble.getBoundingClientRect();
-  const below = rect.bottom + 14;
-  const fitsBelow = below + bubbleRect.height < window.innerHeight;
+  // Wholly on the screen, in both dimensions. Below the target where there is
+  // room, above it where there is room there, and otherwise at the foot of the
+  // screen over the target, which the ring still marks - a card on a telephone
+  // on its side is taller than the screen, so there is room on neither side.
+  //
+  // This used to bound the right edge and nothing else, so "above" was never
+  // asked whether there was room above: on a short screen it put the bubble off
+  // the top, with the step's words and its buttons in it.
+  const margin = 12;
+  const gap = 14;
+  const { width, height } = bubble.getBoundingClientRect();
+  const lowest = window.innerHeight - margin - height;
 
-  bubble.style.top = fitsBelow
-    ? `${below + window.scrollY}px`
-    : `${rect.top + window.scrollY - bubbleRect.height - 14}px`;
+  let y = rect.bottom + gap;
+  if (y > lowest) {
+    const above = rect.top - gap - height;
+    y = above >= margin ? above : lowest;
+  }
 
-  const maxLeft = window.scrollX + window.innerWidth - bubbleRect.width - 12;
-  bubble.style.left = `${Math.max(window.scrollX + 12, Math.min(left, maxLeft))}px`;
+  const x = Math.min(rect.left - pad, screenWidth - margin - width);
+
+  bubble.style.top = `${Math.max(margin, Math.min(y, lowest)) + window.scrollY}px`;
+  bubble.style.left = `${Math.max(margin, x) + window.scrollX}px`;
 }
 
 /**

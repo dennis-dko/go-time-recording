@@ -183,12 +183,40 @@ func TestNothingIsWiderThanTheScreen(t *testing.T) {
 
 	p := open(t)
 	p.readyAdmin()
+
+	// Every screen the administrator is offered, in both languages. That is the
+	// claim above, and it is not what this case checked: it walked four screens as
+	// an ordinary account, so the role editor was never measured - and its
+	// permission ids ran 15px past a 320px screen on the CI runner's fonts, found
+	// only because the guided tour stops there. Read off the tabs rather than
+	// listed, so a screen added later is measured without anybody remembering to.
+	var views []string
+
+	p.evalJSON(`JSON.stringify([...document.querySelectorAll('.tab[data-view]')]
+		.map((tab) => tab.dataset.view))`, &views)
+
+	if len(views) < 6 {
+		t.Fatalf("the administrator is offered %d screens; the tabs are being read wrongly", len(views))
+	}
+
+	p.everyScreenFits(t, "the administrator", views)
+	p.chooseLanguage("de")
+	p.everyScreenFits(t, "the administrator, in German", views)
+
 	p.becomeWorker()
+	p.everyScreenFits(t, "an ordinary account", []string{"welcome", "timesheets", "calendar", "settings"})
+}
+
+// everyScreenFits opens each screen at every width from a desktop down to the
+// smallest telephone and reports the ones wider than the window, then goes back
+// to a desktop, where the language picker is not folded away.
+func (p *page) everyScreenFits(t *testing.T, who string, views []string) {
+	t.Helper()
 
 	for _, width := range []int64{1440, 1024, 820, 600, 480, 390, 360, 320} {
 		p.run("resize", chromedp.EmulateViewport(width, 900))
 
-		for _, view := range []string{"welcome", "timesheets", "calendar", "settings"} {
+		for _, view := range views {
 			p.run("open "+view, chromedp.Evaluate(
 				fmt.Sprintf("switchView(%q)", view), nil))
 
@@ -199,11 +227,13 @@ func TestNothingIsWiderThanTheScreen(t *testing.T) {
 				&over)
 
 			if over > 1 {
-				t.Errorf("at %dpx the %s screen is %.0fpx wider than the window",
-					width, view, over)
+				t.Errorf("as %s, at %dpx the %s screen is %.0fpx wider than the window",
+					who, width, view, over)
 			}
 		}
 	}
+
+	p.run("back to a desktop", chromedp.EmulateViewport(1280, 900))
 }
 
 // The navigation folds into one control on a screen too narrow to hold it.
