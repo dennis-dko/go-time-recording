@@ -13,13 +13,7 @@ import (
 
 // unreadOnPurpose is every package-level constant or variable nothing reads,
 // and why it is kept anyway. Keyed by package name and identifier.
-var unreadOnPurpose = map[string]string{
-	"imageupdate.ResultNothing": "the outcome updater.sh writes when the registry holds nothing newer, and " +
-		"nothing in the application reads an outcome yet: pressing Update on an installation already on " +
-		"its newest image announces a restart that never comes, and the hub hands that announcement to " +
-		"every screen that connects until the process does restart. Kept so the reader that fixes it " +
-		"compares against the name rather than a second spelling of it",
-}
+var unreadOnPurpose = map[string]string{}
 
 // TestEveryPackageLevelConstantAndVariableIsRead fails on a constant or a
 // variable in production code that nothing in the repository reads.

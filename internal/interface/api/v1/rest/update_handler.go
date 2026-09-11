@@ -2,7 +2,9 @@ package rest
 
 import (
 	"errors"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gofr.dev/pkg/gofr"
@@ -71,6 +73,12 @@ type UpdateHandler struct {
 	// and recreate this container from it. Nil, or reporting itself unavailable,
 	// on every deployment that has not added that overlay - which is the default.
 	images *imageupdate.Updater
+
+	// awaitingImage is set from the moment a request for an image is written
+	// until its answer has been read. The updater marks itself running only once
+	// it takes the request, up to three seconds later, and a press in that gap
+	// would otherwise be a second request and a second wait for the same answer.
+	awaitingImage atomic.Bool
 }
 
 // WithImageUpdater lets a container deployment update by the image rather than
@@ -203,6 +211,16 @@ type UpdateResponse struct {
 	// GitHub being unreachable is not this application being broken, and it must
 	// not colour the whole screen red.
 	Problem string `json:"problem,omitempty"`
+
+	// ImageOutcome is what the last image update came to where it left this
+	// container running: "none" when the registry had nothing newer, "failed"
+	// when the pull or the recreate did not work. Empty after one that worked,
+	// since the process that would have read that answer is the one it replaced,
+	// and empty while one is under way.
+	ImageOutcome string `json:"imageOutcome,omitempty"`
+
+	// ImageProblem is the updater's own words for a failure.
+	ImageProblem string `json:"imageProblem,omitempty"`
 }
 
 // State handles GET /api/v1/settings/update.
@@ -266,6 +284,10 @@ func (h *UpdateHandler) describe(c *gofr.Context) UpdateResponse {
 
 	if pending, ok := selfupdate.Installed(); ok {
 		out.Pending = pending
+	}
+
+	if byImage {
+		out.ImageOutcome, out.ImageProblem = h.lastImageOutcome()
 	}
 
 	if !h.enabled {
@@ -499,28 +521,43 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 
 // askForTheImage hands the job to the container that can do it.
 //
-// Nothing is downloaded here and nothing waits for the answer. The updater
-// pulls, recreates this container, and this process stops existing part way
-// through the reply - which is why the announcement goes out first, and why the
-// browser learns it worked by watching the version come back different rather
-// than by reading a response.
+// Nothing is downloaded here and the request does not wait for the answer. The
+// updater pulls, recreates this container, and this process stops existing part
+// way through the reply - which is why the announcement goes out first, and why
+// the browser learns it worked by watching the version come back different
+// rather than by reading a response. What does wait is awaitTheImage, for the
+// two answers that leave this process running.
 //
 // Announced as a restart rather than as an install, because that is what it
 // looks like from every screen: the application goes away and comes back. The
 // difference between the two - which is whether the new version survives the
 // next recreate - matters to the person who pressed the button and to nobody
 // else in the building.
+//
+// A press while an update is under way is answered before the hub is touched,
+// for the reason afterAFailedInstall gives: that update's restart is still
+// coming, and the press that got there second has nothing to take back. This
+// path used to announce an install, hear "busy" and take the restart back, while
+// the updater went on to replace the container underneath every screen that had
+// just been told to stop waiting.
 func (h *UpdateHandler) askForTheImage(c *gofr.Context, version string) (any, error) {
+	if h.images.Running() || !h.awaitingImage.CompareAndSwap(false, true) {
+		return nil, imageUpdateRunning()
+	}
+
 	h.hub.Publish(announce.Installing, version)
 
 	if err := h.images.Ask(); err != nil {
+		h.awaitingImage.Store(false)
+
+		// Started between the look above and this one, which leaves the same
+		// restart coming for the same reason.
+		if errors.Is(err, imageupdate.ErrBusy) {
+			return nil, imageUpdateRunning()
+		}
+
 		h.hub.Publish(announce.Cancelled, version)
 		h.hub.Forget()
-
-		if errors.Is(err, imageupdate.ErrBusy) {
-			return nil, toHTTPError(apperror.Conflictf(
-				"an update is already running").WithCode("updateInstalling"))
-		}
 
 		c.Logger.Errorf("could not ask for a new image: %v", err)
 
@@ -529,5 +566,111 @@ func (h *UpdateHandler) askForTheImage(c *gofr.Context, version string) (any, er
 
 	h.hub.Publish(announce.Restarting, version)
 
+	go h.awaitTheImage(c.Logger, version)
+
 	return h.describe(c), nil
+}
+
+// imageUpdateRunning is the answer to a press while an image update is under
+// way.
+func imageUpdateRunning() error {
+	return toHTTPError(apperror.Conflictf("an update is already running").
+		WithCode("updateInstalling"))
+}
+
+// How often awaitTheImage looks for the updater's answer, and for how long.
+//
+// The updater looks for requests every three seconds, so once a second is quick
+// enough to be the first to know, and cheap: a stat and a small read. Ten
+// minutes is twice what the pressing screen waits, which already allows for a
+// pull over a slow line; an updater silent for that long is one that never took
+// the request, and a restart announced for the rest of the day is what this
+// exists to prevent.
+const (
+	imageAnswerEvery  = time.Second
+	imageAnswerWithin = 10 * time.Minute
+)
+
+// warner is as much of a request's logger as awaitTheImage keeps once the
+// request has been answered.
+type warner interface {
+	Warnf(format string, args ...any)
+}
+
+// awaitTheImage waits for the updater's answer and takes the announced restart
+// back when the answer is that nothing was replaced.
+//
+// A successful update is a restart, and this process does not survive it to
+// read "ok" - the restart it announced is the one happening. The other two
+// answers leave it running: the registry had nothing newer, or the pull or the
+// recreate failed. Nothing read those, so the announcement stood, the hub handed
+// it to every screen that connected afterwards, and the error toasts a restart
+// suppresses stayed suppressed until the process restarted for some other
+// reason.
+//
+// A ticker rather than a sleep, and the goroutine it runs in ends at the answer
+// or at the deadline; it is one of the nine CLAUDE.md enumerates.
+func (h *UpdateHandler) awaitTheImage(logger warner, version string) {
+	defer h.awaitingImage.Store(false)
+
+	ticker := time.NewTicker(imageAnswerEvery)
+	defer ticker.Stop()
+
+	deadline := time.NewTimer(imageAnswerWithin)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if _, answered := h.images.Result(); !answered {
+				continue
+			}
+
+			outcome, problem := h.lastImageOutcome()
+
+			switch outcome {
+			case "":
+				// "ok", read by a process on its way out: the restart it
+				// announced is the one happening.
+				return
+			case "none":
+				logger.Warnf("the image update to %s changed nothing: the registry "+
+					"had nothing newer than the image running", version)
+			default:
+				logger.Warnf("the image update to %s failed and nothing was changed: %s",
+					version, problem)
+			}
+		case <-deadline.C:
+			logger.Warnf("the image updater gave no answer within %s; the restart "+
+				"announced for %s is taken back", imageAnswerWithin, version)
+		}
+
+		h.hub.Publish(announce.Cancelled, version)
+		h.hub.Forget()
+
+		return
+	}
+}
+
+// lastImageOutcome is what the last image update came to, in the two words the
+// card has sentences for, and the updater's own words where it failed.
+//
+// Nothing while one is running, and nothing when the last one worked: "ok" is
+// only ever read by the process that replaced the one that asked, whose own
+// version already says the update worked.
+func (h *UpdateHandler) lastImageOutcome() (string, string) {
+	if h.images.Running() {
+		return "", ""
+	}
+
+	result, ok := h.images.Result()
+	if !ok || result == imageupdate.ResultDone {
+		return "", ""
+	}
+
+	if result == imageupdate.ResultNothing {
+		return "none", ""
+	}
+
+	return "failed", strings.TrimSpace(strings.TrimPrefix(result, imageupdate.ResultFailed))
 }

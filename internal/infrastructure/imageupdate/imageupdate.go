@@ -51,6 +51,10 @@ const (
 
 	// ResultNothing: the registry had nothing newer than what is running.
 	ResultNothing = "none"
+
+	// ResultFailed: the pull or the recreate did not work. The updater's own
+	// words follow it.
+	ResultFailed = "failed:"
 )
 
 // ErrUnavailable is returned where no updater is part of this deployment.
@@ -120,7 +124,8 @@ func (u *Updater) Running() bool {
 // Result is what the last update came to, and whether there is one to read.
 //
 // Cleared by the next request rather than by reading, so a screen that asks
-// twice gets the same answer twice instead of the first reader taking it.
+// twice gets the same answer twice instead of the first reader taking it. Ask
+// clears it, and the updater clears it again when it takes the request.
 func (u *Updater) Result() (string, bool) {
 	if u.dir == "" {
 		return "", false
@@ -143,6 +148,14 @@ func (u *Updater) Ask() error {
 
 	if u.Running() {
 		return ErrBusy
+	}
+
+	// The last outcome goes before the request is placed rather than when the
+	// updater takes it, up to three seconds later: whoever waits for this
+	// request's answer starts reading now, and would read the previous one's.
+	err := os.Remove(filepath.Join(u.dir, resultFile))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("clearing the last update's outcome: %w", err)
 	}
 
 	// Written whole and moved into place. The updater polls for this file, and a

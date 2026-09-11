@@ -865,8 +865,15 @@ type two commands should leave this out, and loses nothing but the button.
 **What happens when you press it.** The application announces a restart to every
 open browser, writes the request and stops answering shortly afterwards - the
 updater has recreated it. The page waits for the version to come back, the way it
-waits out any restart. A failed pull or a failed recreate leaves the running
-container exactly as it was and the card says what went wrong.
+waits out any restart. Two answers leave the running container exactly as it was,
+and the application reads both: the registry had nothing newer, or the pull or the
+recreate failed. Either way the restart announcement is taken back on every screen,
+and the card says which it was - for a failure, in the updater's own words.
+
+**Nothing newer is what a pinned version finds.** The updater pulls the tag the
+compose file names. Where `GTR_VERSION` names a version that tag does not move, so
+every press finds the image already running: change `GTR_VERSION` and recreate by
+hand instead, or leave it unset to follow `latest`.
 
 **Nothing is written into place unverified.** The download is hashed while it is
 written and compared against the release's own `SHA256SUMS`, read from the same
