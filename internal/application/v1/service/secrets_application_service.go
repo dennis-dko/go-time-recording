@@ -21,7 +21,8 @@ type SecretsService struct {
 	secrets  *security.Sealer
 }
 
-// NewSecretsService creates new instance.
+// NewSecretsService is given the sealer built from the configured key, which is
+// the key its one question is about.
 func NewSecretsService(
 	settings repository.SettingsRepository,
 	secrets *security.Sealer,

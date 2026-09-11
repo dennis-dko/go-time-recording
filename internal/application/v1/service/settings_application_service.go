@@ -44,7 +44,9 @@ func (s *SettingsService) WithSecrets(secrets *security.Sealer) *SettingsService
 	return s
 }
 
-// NewSettingsService creates new instance.
+// NewSettingsService starts with a sealer that has no key, which stores the
+// directory's bind password as it is; WithSecrets attaches the configured one.
+// appName is the title shown until an administrator sets one.
 func NewSettingsService(
 	settings repository.SettingsRepository,
 	roles repository.RoleRepository,

@@ -19,12 +19,16 @@ type RoleService interface {
 	DeleteRole(ctx context.Context, id uint) error
 }
 
-// RoleApplicationService application service for roles.
+// RoleApplicationService is the RoleService the application runs with. A role
+// this application ships keeps its name, its rights and its description, and
+// cannot be deleted.
 type RoleApplicationService struct {
 	roles repository.RoleRepository
 }
 
-// NewRoleApplicationService creates new instance.
+// NewRoleApplicationService works on the roles alone. That the built-in
+// administrator keeps a role able to administer is enforced where an account
+// is moved, not here.
 func NewRoleApplicationService(roles repository.RoleRepository) *RoleApplicationService {
 	return &RoleApplicationService{roles: roles}
 }

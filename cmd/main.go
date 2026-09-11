@@ -492,7 +492,7 @@ func main() {
 
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
-	passkeys := appservice.NewPasskeyService(passkeyRepo, userRepo, auth)
+	passkeys := appservice.NewPasskeyService(passkeyRepo, userRepo)
 	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName).
 		WithSecrets(secrets)
 
@@ -566,8 +566,8 @@ func main() {
 	roleSheets := appservice.NewRoleWorkbookService(roleRepo, roles)
 
 	userDomain := domainservice.NewUserDomainService(userRepo, roleRepo)
-	projectDomain := domainservice.NewProjectDomainService(projectRepo, timesheetRepo)
-	timesheetDomain := domainservice.NewTimesheetDomainService(timesheetRepo, projectRepo, userRepo)
+	projectDomain := domainservice.NewProjectDomainService(projectRepo)
+	timesheetDomain := domainservice.NewTimesheetDomainService(timesheetRepo, projectRepo)
 
 	// The built-in administrator is created after the migrations have run, so
 	// there is always a way in even on a brand new database.
@@ -651,7 +651,7 @@ func main() {
 				"Set AUTH_ENABLED=true to enforce sign-in and role permissions")
 	}
 
-	authorizer := rest.NewAuthorizer(auth, cfg.AuthEnabled())
+	authorizer := rest.NewAuthorizer(cfg.AuthEnabled())
 
 	// Built here rather than inline, because both the middleware that reads it and
 	// the handler that clears it need the same instance - two would mean the
@@ -791,7 +791,7 @@ func main() {
 				func(ctx context.Context, userID uint) error {
 					return sessions.LogoutOthers(ctx, userID, "")
 				})),
-		Roles:      rest.NewRoleHandler(roles, authorizer, auth),
+		Roles:      rest.NewRoleHandler(roles, authorizer),
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),
 		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone),
@@ -808,7 +808,7 @@ func main() {
 			WithImageUpdater(imageupdate.New(os.Getenv("GTR_UPDATE_REQUESTS"))),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
-		Workbook:   rest.NewWorkbookHandler(workbook, authorizer, instanceTimezone),
+		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
 		Passkeys:   rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName),
 		Documents:  rest.NewDocumentHandler(authorizer, instanceName),

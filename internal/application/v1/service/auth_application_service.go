@@ -40,7 +40,9 @@ type AuthService struct {
 	roles repository.RoleRepository
 }
 
-// NewAuthService creates new instance.
+// NewAuthService keeps nothing between calls: every answer is read from the
+// accounts and roles as they stand, which is what refuses a withdrawn right on
+// the very next request.
 func NewAuthService(users repository.UserRepository, roles repository.RoleRepository) *AuthService {
 	return &AuthService{users: users, roles: roles}
 }

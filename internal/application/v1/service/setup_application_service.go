@@ -19,7 +19,9 @@ type SetupService struct {
 	users    repository.UserRepository
 }
 
-// NewSetupService creates new instance.
+// NewSetupService reads through the settings service rather than its
+// repository, so what the wizard reports is what the rest of the application
+// reads, defaults included.
 func NewSetupService(settings *SettingsService, users repository.UserRepository) *SetupService {
 	return &SetupService{settings: settings, users: users}
 }

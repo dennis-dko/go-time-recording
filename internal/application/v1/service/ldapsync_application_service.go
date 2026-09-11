@@ -92,7 +92,10 @@ type UserPurger interface {
 	PurgeUser(ctx context.Context, userID uint) error
 }
 
-// NewLDAPSyncService creates new instance.
+// NewLDAPSyncService takes two settings beside its repositories. maxDeleteRatio
+// is the share of the directory's accounts one run may remove, which WithLimits
+// lets the Settings screen move without a restart; defaultRole is the role an
+// account the directory brings in starts with, the ordinary one when empty.
 func NewLDAPSyncService(
 	directory DirectoryLister,
 	users repository.UserRepository,

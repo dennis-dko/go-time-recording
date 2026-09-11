@@ -13,7 +13,9 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-// TimesheetService service interface
+// TimesheetService is what the time entry handler may do with bookings. The
+// rules about hours are applied behind it, not in the handler: the floor, the
+// daily cap, and that only an active project accepts a booking.
 type TimesheetService interface {
 	CreateTimesheet(ctx context.Context, cmd command.CreateTimesheetCommand) (*command.CreateTimesheetCommandResult, error)
 	GetTimesheet(ctx context.Context, q query.GetTimesheetQuery) (*query.GetTimesheetQueryResult, error)
@@ -22,7 +24,8 @@ type TimesheetService interface {
 	DeleteTimesheet(ctx context.Context, cmd command.DeleteTimesheetCommand) error
 }
 
-// TimesheetApplicationService application service for time entries
+// TimesheetApplicationService is the TimesheetService the application runs
+// with, and where the rules about hours are kept.
 type TimesheetApplicationService struct {
 	timesheetRepository repository.TimesheetRepository
 	userRepository      repository.UserRepository
@@ -37,7 +40,8 @@ type TimesheetApplicationService struct {
 	metrics
 }
 
-// NewTimesheetApplicationService creates new instance
+// NewTimesheetApplicationService takes maxDailyHours, the daily cap the
+// environment configured; WithLimits lets the Settings screen override it.
 func NewTimesheetApplicationService(
 	timesheetRepo repository.TimesheetRepository,
 	userRepo repository.UserRepository,

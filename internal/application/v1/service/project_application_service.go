@@ -13,7 +13,9 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
-// ProjectService service interface
+// ProjectService is what the project handler may do with projects. A project
+// the caller may not see is not found rather than refused, and a list leaves it
+// out.
 type ProjectService interface {
 	CreateProject(ctx context.Context, cmd command.CreateProjectCommand) (*command.CreateProjectCommandResult, error)
 	GetProject(ctx context.Context, q query.GetProjectQuery) (*query.GetProjectQueryResult, error)
@@ -22,7 +24,9 @@ type ProjectService interface {
 	DeleteProject(ctx context.Context, cmd command.DeleteProjectCommand) error
 }
 
-// ProjectApplicationService application service for projects
+// ProjectApplicationService is the ProjectService the application runs with.
+// Visibility is checked on every call, and a project is not deleted while hours
+// are booked on it or a clock is running against it.
 type ProjectApplicationService struct {
 	projectRepository   repository.ProjectRepository
 	timesheetRepository repository.TimesheetRepository
@@ -32,7 +36,8 @@ type ProjectApplicationService struct {
 	timers repository.TimerRepository
 }
 
-// NewProjectApplicationService creates new instance
+// NewProjectApplicationService needs the time entries and the running clocks
+// as well as the projects, for the two refusals DeleteProject makes.
 func NewProjectApplicationService(
 	projectRepo repository.ProjectRepository,
 	timesheetRepo repository.TimesheetRepository,

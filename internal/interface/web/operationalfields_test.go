@@ -4,7 +4,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"testing"
+
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
 
 // Every limit the form can set is one the server describes.
@@ -24,7 +27,7 @@ import (
 // for is the same disagreement seen from the other side.
 func TestEveryOperationalLimitTravelsBothWays(t *testing.T) {
 	js := asset(t, "/app.js")
-	source := readSource(t, filepath.Join("..", "api", "v1", "rest", "settings_handler.go"))
+	source := readSource(t, filepath.Join("..", "api", "v1", "rest", "settings_operational.go"))
 
 	list := regexp.MustCompile(`(?s)const OPERATIONAL_FIELDS = \[(.*?)\];`).
 		FindStringSubmatch(js)
@@ -42,7 +45,7 @@ func TestEveryOperationalLimitTravelsBothWays(t *testing.T) {
 	block := regexp.MustCompile(`(?s)type OperationalLimits struct \{(.*?)\n\}`).
 		FindStringSubmatch(source)
 	if block == nil {
-		t.Fatal("settings_handler.go no longer declares OperationalLimits")
+		t.Fatal("settings_operational.go no longer declares OperationalLimits")
 	}
 
 	onWire := map[string]bool{}
@@ -97,4 +100,56 @@ func sorted(set map[string]bool) []string {
 	sort.Strings(out)
 
 	return out
+}
+
+// A field's maxlength is what the server enforces, and not only what the form
+// suggests.
+//
+// Every one of these was a number in the markup alone. The API took whatever it
+// was sent, which makes a maxlength a hint to whoever fills in the form and no
+// limit at all to whoever calls the endpoint - and the title and the banner are
+// read by everybody who opens the sign-in page, before there is a session.
+//
+// Both directions matter. A markup limit above the server's is a form that lets
+// somebody type a title, press Save and be told the title is invalid; one below
+// it is a limit nobody can reach, which is the kind of number that stays wrong
+// because nothing ever trips over it.
+func TestTheFormLimitsAreTheOnesTheServerEnforces(t *testing.T) {
+	html := asset(t, "/")
+
+	for field, limit := range map[string]int{
+		"title":       model.MaxTitleLength,
+		"tabTitle":    model.MaxTabTitleLength,
+		"banner":      model.MaxBannerLength,
+		"footerText":  model.MaxFooterTextLength,
+		"legalNotice": model.MaxLegalNoticeLength,
+		"companyName": model.MaxCompanyNameLength,
+		"message":     model.MaintenanceMessageLimit,
+
+		// The account form bounded the name and not the address beside it, and
+		// the server bounds both - so a long name was caught while typing and a
+		// long address only on pressing Save.
+		"email": model.MaxEmailLength,
+	} {
+		t.Run(field, func(t *testing.T) {
+			pattern := regexp.MustCompile(
+				`name="` + regexp.QuoteMeta(field) + `"[^>]*maxlength="(\d+)"`)
+
+			match := pattern.FindStringSubmatch(html)
+			if match == nil {
+				t.Fatalf("the %s field has no maxlength, so the form offers to type "+
+					"what the server will refuse", field)
+			}
+
+			written, err := strconv.Atoi(match[1])
+			if err != nil {
+				t.Fatalf("maxlength %q is not a number", match[1])
+			}
+
+			if written != limit {
+				t.Errorf("the form allows %d characters and the server allows %d",
+					written, limit)
+			}
+		})
+	}
 }

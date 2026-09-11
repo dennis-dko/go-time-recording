@@ -26,7 +26,8 @@ type StatisticsService struct {
 	projects   repository.ProjectRepository
 }
 
-// NewStatisticsService creates new instance.
+// NewStatisticsService reads hours and projects directly and totals only the
+// caller's own; the type says why this is not the project report.
 func NewStatisticsService(
 	timesheets repository.TimesheetRepository,
 	projects repository.ProjectRepository,

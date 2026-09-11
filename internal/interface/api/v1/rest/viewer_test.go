@@ -70,7 +70,7 @@ func TestTheViewerRuleHasOneImplementation(t *testing.T) {
 func TestAViewerWithoutAPrincipalIsNobody(t *testing.T) {
 	t.Parallel()
 
-	authz := NewAuthorizer(nil, true)
+	authz := NewAuthorizer(true)
 
 	if id := authz.viewerID(nil); id != 0 {
 		t.Errorf("a request with no principal was read as somebody: got %d", id)
@@ -86,7 +86,7 @@ func TestAViewerWithoutAPrincipalIsNobody(t *testing.T) {
 func TestWithoutEnforcementTheViewerIsNobody(t *testing.T) {
 	t.Parallel()
 
-	authz := NewAuthorizer(nil, false)
+	authz := NewAuthorizer(false)
 	principal := &service.Principal{User: &model.User{ID: 9}}
 
 	if id := authz.viewerID(principal); id != 0 {
@@ -98,7 +98,7 @@ func TestWithoutEnforcementTheViewerIsNobody(t *testing.T) {
 func TestTheViewerIsWhoeverIsAsking(t *testing.T) {
 	t.Parallel()
 
-	authz := NewAuthorizer(nil, true)
+	authz := NewAuthorizer(true)
 	principal := &service.Principal{User: &model.User{ID: 9}}
 
 	if id := authz.viewerID(principal); id != 9 {

@@ -65,21 +65,21 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "time.Sleep(",
 		},
 		{
-			reference: "project_application_service.go:135",
+			reference: "project_application_service.go:140",
 			resolved:  "internal/application/v1/service/project_application_service.go",
-			line:      135,
+			line:      140,
 			contains:  "VisibleTo(",
 		},
 		{
-			reference: "workbook_application_service.go:305",
+			reference: "workbook_application_service.go:306",
 			resolved:  "internal/application/v1/service/workbook_application_service.go",
-			line:      305,
+			line:      306,
 			contains:  "VisibleTo(",
 		},
 		{
-			reference: "timesheet_application_service.go:272",
+			reference: "timesheet_application_service.go:276",
 			resolved:  "internal/application/v1/service/timesheet_application_service.go",
-			line:      272,
+			line:      276,
 			contains:  "VisibleTo(",
 		},
 	}
