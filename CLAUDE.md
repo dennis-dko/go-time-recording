@@ -155,12 +155,13 @@
   6. **Stop & Ask:** Once the report is full, summarize findings and ask the user which exact file/issue to fix first using TDD.
 * **A finding is fixed; a decision is asked about; a candidate that is neither is written down and dropped.** Three outcomes, and mixing them up is expensive in both directions - fixing somebody's deliberate choice unasked, or asking permission to close a hole.
 
-  **It is a finding when somebody can be wrong because of it.** Six shapes, each drawn from something this repository actually had:
+  **It is a finding when somebody can be wrong because of it.** Seven shapes, each drawn from something this repository actually had:
   * *It can hand somebody another person's data or credentials* - a token's value left in the document after a sign-out, an unfinished second factor, project names in a dropdown, a count of the last account's entries.
   * *The screen disagrees with what pressing it will do* - a button reading "Book" on a form still holding an entry, a heading saying "create" while correcting, a label saying "Pause" on a paused viewer.
   * *The application says something untrue about itself* - a "currently in force" line frozen on a process that has restarted, a metrics address that has moved, a drawing announced as "image" and nothing else.
   * *Work is lost, or refused when it should succeed* - a cleared description saved as no change, a year of days refused because the picture was three times the bound.
   * *Something outlives the thing it belonged to* - a stopwatch still painting one person's time onto a handed-back screen, a sealed page after the session under it ended, an overlay over the sign-in form.
+  * *A test passes on a state the wiring cannot produce* - a case that cannot fail is a green light held over a path nobody is checking, and from the outside it is indistinguishable from coverage. This repository has had one: the browser case that "passed" against unfixed code because the test cache replayed the previous result. The scenario has to be able to tell the fix from the fault, and only damaging the code under it says which kind you have.
   * *A published security advisory in a dependency*, whether or not `govulncheck` calls it reachable.
 
   **It is a decision when the code is right and the taste is arguable** - spacing, wording that is already correct in both languages, a bound that is defensible but not what you would pick, a name you would have chosen differently, a test that could be stricter while its current assertion is honest. **Collect these and ask once**, at the end of the section rather than one at a time, and record what was left undone. Do not fix them unasked: a repository where an agent quietly restyles what it passes is one nobody can review.
