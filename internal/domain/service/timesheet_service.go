@@ -141,7 +141,8 @@ func (s *TimesheetDomainService) GenerateOwnTimeReport(
 	return total, nil
 }
 
-// GenerateProjectTimeReport totals the hours booked on a project, per user.
+// GenerateProjectTimeReport totals the hours booked on a project, per user,
+// within the given range. The range is inclusive on both ends.
 //
 // onlyUserID narrows it to one person; zero means everybody. Everybody is not
 // something a default role may ask for. The report used to total what every
@@ -153,7 +154,6 @@ func (s *TimesheetDomainService) GenerateOwnTimeReport(
 // viewerID is a different question, and both are needed: it decides whether the
 // project may be seen at all, which is what keeps somebody's private category
 // private.
-// within the given range. The range is inclusive on both ends.
 func (s *TimesheetDomainService) GenerateProjectTimeReport(
 	ctx context.Context,
 	projectID uint,
