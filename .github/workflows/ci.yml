@@ -158,8 +158,106 @@ jobs:
       # reproducibility - it would only mean asking an old client about a new
       # database. A finding that appears without a code change is the point here
       # rather than the hazard.
+      #
+      # An advisory with no fixed release is the one case this step could not
+      # express. GO-2026-6452 arrived that way: reachable, real - a 54 KB crafted
+      # workbook panics the parser - and excelize has published nothing to move
+      # to. Left alone it fails every pull request until upstream cuts a release,
+      # which is a red gate nobody can act on, and a gate like that is one people
+      # learn to skim. Suppressed silently it is worse.
+      #
+      # So the register below is the third answer, and it is held to three rules
+      # rather than one. An advisory it does not name fails the build, which is
+      # the ordinary job. An advisory it names that govulncheck no longer reports
+      # *also* fails, so an entry cannot outlive the reason it was written for.
+      # And each entry carries a date after which it fails on its own, because a
+      # note to look again is not a mechanism.
+      #
+      # Only symbol-level findings are compared. A finding with no function in its
+      # trace is a module this build requires and never calls - GO-2026-5932 is
+      # one today - and those have never failed this step and must not start.
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: |
+          set -uo pipefail
+
+          # <OSV id> <look again by> <why it cannot simply be fixed>
+          accepted=$(printf '%s\n' \
+            'GO-2026-6452 2026-10-19 excelize has no fixed release; the reachable panic is caught in spreadsheet.rowsOf')
+
+          if go run golang.org/x/vuln/cmd/govulncheck@latest -format json ./... > vulns.json; then
+            status=0
+          else
+            status=$?
+          fi
+
+          # Measured rather than assumed, and it is the reason the rest of this
+          # step exists: -format json exits 0 whether or not it found anything.
+          # The text format's 3 never appears here, so govulncheck's own exit code
+          # can never fail this build - the parsing below is the only thing that
+          # can, which is why it checks itself before it checks the report.
+          if [ "$status" -ne 0 ]; then
+            echo "govulncheck exited with $status, so this step checked nothing:" >&2
+            tail -n 40 vulns.json >&2
+            exit 1
+          fi
+
+          if ! grep -q '"progress"' vulns.json; then
+            echo "govulncheck produced no recognisable report, so this step proved nothing:" >&2
+            tail -n 40 vulns.json >&2
+            exit 1
+          fi
+
+          if ! jq -r 'select(.finding != null) | .finding.osv' vulns.json | sort -u > every.txt; then
+            echo "the report could not be read at all" >&2
+            exit 1
+          fi
+
+          # A report that carries findings none of which can be extracted means
+          # the filter has stopped matching govulncheck's output, and an empty
+          # result would otherwise read exactly like a clean scan.
+          if grep -q '"finding"' vulns.json && [ ! -s every.txt ]; then
+            echo "the report carries findings and none could be extracted, so the" >&2
+            echo "extraction has stopped matching govulncheck's output" >&2
+            exit 1
+          fi
+
+          if ! jq -r 'select(.finding != null) | .finding | select(.trace[0].function != null) | .osv' vulns.json | sort -u > reached.txt; then
+            echo "the reachable findings could not be read" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$accepted" | awk 'NF {print $1}' | sort -u > accepted.txt
+
+          echo "found:     $(tr '\n' ' ' < every.txt)"
+          echo "reachable: $(tr '\n' ' ' < reached.txt)"
+          echo "accepted:  $(tr '\n' ' ' < accepted.txt)"
+
+          comm -23 reached.txt accepted.txt > unaccepted.txt
+          if [ -s unaccepted.txt ]; then
+            echo "reachable vulnerabilities with no entry in the register above:" >&2
+            cat unaccepted.txt >&2
+            exit 1
+          fi
+
+          comm -13 reached.txt accepted.txt > stale.txt
+          if [ -s stale.txt ]; then
+            echo "these are accepted here and govulncheck no longer reports them," >&2
+            echo "so the entry has outlived its reason and should be removed:" >&2
+            cat stale.txt >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$accepted" | awk -v today="$(date -u +%Y-%m-%d)" '
+            NF && ($2 "") < (today "") {
+              print $1 " was to be looked at again by " $2 " and it is now " today
+              bad = 1
+            }
+            END { exit bad }
+          ' || {
+            echo "an accepted advisory is past its look-again date: check whether a" >&2
+            echo "fixed release exists now, then move the date or drop the entry" >&2
+            exit 1
+          }
 
   test:
     name: Test
