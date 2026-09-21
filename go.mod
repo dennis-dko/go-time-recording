@@ -8,14 +8,14 @@ require (
 	github.com/chromedp/chromedp v0.16.0
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/go-sql-driver/mysql v1.10.1
-	github.com/go-webauthn/webauthn v0.18.0
+	github.com/go-webauthn/webauthn v0.18.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.12.3
 	github.com/xuri/excelize/v2 v2.11.0
-	gofr.dev v1.60.1
-	golang.org/x/crypto v0.56.0
-	golang.org/x/image v0.45.0
-	modernc.org/sqlite v1.58.0
+	gofr.dev v1.61.0
+	golang.org/x/crypto v0.57.0
+	golang.org/x/image v0.46.0
+	modernc.org/sqlite v1.59.0
 	rsc.io/qr v0.2.0
 )
 
@@ -46,7 +46,7 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
-	github.com/go-webauthn/x v0.3.0 // indirect
+	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
