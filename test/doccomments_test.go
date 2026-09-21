@@ -5,7 +5,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"unicode"
@@ -445,6 +448,141 @@ func insideADeclaration(file *ast.File, pos token.Pos) bool {
 	}
 
 	return false
+}
+
+// A comment that writes a directory as though it were a package points the
+// reader at something that cannot be imported.
+//
+// `internal/domain`, `internal/infrastructure`, `internal/interface` and nine
+// more hold packages and declare none of their own, so a comment qualifying an
+// identifier with one of those words names nothing: the reader goes looking for
+// a package that is not there, and what they wanted is in one of the children.
+// It is the same fault as a comment opening with another declaration's name, one
+// level up, and nothing in this tree looked for it - `go doc` cannot, because the
+// comment is prose, and neither staticcheck nor golangci-lint reads inside one.
+//
+// This comment deliberately spells no example, and that is the case working
+// rather than a limitation of it: the first draft named three, and all three were
+// reported against this file. Rewording is the remedy the last paragraph asks of
+// anybody else, so it is the remedy here.
+//
+// Taken from a sibling repository's doccheck, where six were sitting in the tree
+// and one was load-bearing: the authority for why a blocking action may not be
+// abandoned pointed at a directory rather than at the interface that states it.
+// Two of the six were wrong in the identifier as well and sat directly above a
+// line calling the real one.
+//
+// This tree has none today, so the case is a regression guard and says so rather
+// than reporting anything. Only this narrow question is asked, and the reason is
+// worth keeping: a qualified name in a comment cannot be resolved without type
+// information, because Go spells packages and variables alike, so the wide
+// version of this scan reports a struct field on a local variable as confidently
+// as a real mistake. A directory holding no Go files can never be the left half
+// of anything. A local named after one of these directories would be a false
+// positive, and the remedy there is to reword the comment - the ambiguity is the
+// finding, not the checker being wrong.
+func TestNoDocCommentNamesADirectoryAsAPackage(t *testing.T) {
+	dirs := directoriesDeclaringNoPackage(t, "internal", "cmd")
+
+	// The whole case rests on this set being found. An empty one would pass over
+	// every file while reporting nothing, which is the failure a scan is most
+	// prone to and the least visible.
+	if len(dirs) < 5 {
+		t.Fatalf("only %d directories hold packages without declaring one; the layout "+
+			"cannot have changed that much, so this case has stopped finding them",
+			len(dirs))
+	}
+
+	names := make([]string, 0, len(dirs))
+	for name := range dirs {
+		names = append(names, regexp.QuoteMeta(name))
+	}
+
+	sort.Strings(names)
+
+	// The left half must not be preceded by a letter, a digit or a dot, so that
+	// a real package path (`internal/domain`) and a qualified name whose left
+	// half merely ends in one of these words are both passed over. The right half
+	// must be an exported identifier, which is what makes it a reference rather
+	// than a sentence: "the domain. Projects are" carries a space and does not
+	// match.
+	reference := regexp.MustCompile(`(^|[^\w.])(` + strings.Join(names, "|") + `)\.([A-Z]\w*)`)
+
+	for _, dir := range []string{"internal", "cmd", "test"} {
+		for _, path := range goFilesAndTestsUnder(t, filepath.Join("..", dir)) {
+			checkDirectoryReferences(t, path, reference, dirs)
+		}
+	}
+}
+
+// checkDirectoryReferences reports every comment in path that qualifies an
+// identifier with the name of a directory that declares no package.
+func checkDirectoryReferences(t *testing.T, path string, reference *regexp.Regexp, dirs map[string]string) {
+	t.Helper()
+
+	fset := token.NewFileSet()
+
+	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("cannot parse %s: %v", path, err)
+	}
+
+	for _, group := range file.Comments {
+		for _, match := range reference.FindAllStringSubmatch(group.Text(), -1) {
+			t.Errorf("%s:%d: a comment writes %s.%s, and %s is a directory that declares "+
+				"no package of its own (%s) - so that name cannot be imported and the "+
+				"reader has nothing to follow", filepath.ToSlash(path),
+				fset.Position(group.Pos()).Line, match[2], match[3], match[2], dirs[match[2]])
+		}
+	}
+}
+
+// directoriesDeclaringNoPackage returns the directories below the given roots
+// that hold no Go file of their own, keyed by their last segment, which is the
+// word a comment would wrongly use as a package name.
+func directoriesDeclaringNoPackage(t *testing.T, roots ...string) map[string]string {
+	t.Helper()
+
+	found := map[string]string{}
+
+	for _, root := range roots {
+		from := filepath.Join("..", root)
+
+		err := filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if !entry.IsDir() {
+				return nil
+			}
+
+			children, err := os.ReadDir(path)
+			if err != nil {
+				return err
+			}
+
+			for _, child := range children {
+				if !child.IsDir() && strings.HasSuffix(child.Name(), ".go") {
+					return nil
+				}
+			}
+
+			rel, err := filepath.Rel(filepath.Join("..", "."), path)
+			if err != nil {
+				return err
+			}
+
+			found[entry.Name()] = filepath.ToSlash(rel)
+
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("cannot walk %s: %v", from, err)
+		}
+	}
+
+	return found
 }
 
 // goFilesAndTestsUnder returns every Go file below root, tests included - the

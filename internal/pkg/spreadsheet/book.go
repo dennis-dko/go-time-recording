@@ -162,6 +162,15 @@ func writeRow(book *excelize.File, sheet string, number int, cells []Cell) error
 // ErrNoSheet is returned for a workbook with nothing this can read.
 var ErrNoSheet = errors.New("the workbook has no readable sheet")
 
+// ErrUnreadableWorkbook is a file whose parse did not finish because the parser
+// gave way on it, rather than one it read and rejected.
+//
+// Separate from ErrNoSheet because the two say different things about the file: a
+// workbook with no readable sheet was understood and holds the wrong thing, while
+// this one was never understood at all. Both reach the caller as notAWorkbook, so
+// the distinction is for whoever reads the log rather than for the screen.
+var ErrUnreadableWorkbook = errors.New("the workbook could not be parsed")
+
 // ErrWrongSheet is a workbook of the right shape and the wrong kind.
 //
 // Each tab has its own import, so handing the people importer a sheet of time
@@ -351,7 +360,33 @@ const maxUnzippedBytes = 128 << 20
 
 // rowsOf opens a workbook and returns every row of the sheet that belongs to this
 // table, heading included.
-func rowsOf(r io.Reader, table Table) ([][]string, error) {
+//
+// It holds the only recover() in this tree, and the exception is narrow on
+// purpose: this is the one place where bytes somebody uploaded decide what a
+// dependency does with an index, and the dependency has been wrong about that.
+// GO-2026-6452 - a cell naming a negative shared string panics excelize, on every
+// released version, with no fixed one to move to. It needs a workbook whose
+// shared strings are large enough to be spilled to a temporary file, because the
+// in-memory lookup does check; the crafted file that proves it is 54 KB, so the
+// upload bound is no protection at all.
+//
+// GoFr recovers a panic inside a handler, so the process survives either way.
+// What the guard buys is the difference between a logged stack trace and a person
+// being told their file cannot be read - unreadableWorkbook answers this with
+// notAWorkbook, which is what the file is.
+//
+// It is registered before the workbook is opened, so it also covers the open, and
+// runs after the deferred Close rather than instead of it. The returns are named
+// because a recovered panic has to set both: a guard that left rows nil and err
+// nil would turn a refused file into an empty import, which is worse than the
+// panic it replaced.
+func rowsOf(r io.Reader, table Table) (rows [][]string, err error) {
+	defer func() {
+		if re := recover(); re != nil {
+			rows, err = nil, fmt.Errorf("%w: %v", ErrUnreadableWorkbook, re)
+		}
+	}()
+
 	book, err := excelize.OpenReader(r, excelize.Options{UnzipSizeLimit: maxUnzippedBytes})
 	if err != nil {
 		return nil, fmt.Errorf("reading the workbook: %w", err)

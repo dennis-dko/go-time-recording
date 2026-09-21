@@ -11,14 +11,15 @@ import (
 
 // CLAUDE.md points at exact lines, and nothing kept them pointing there.
 //
-// Seven places in that file name a `file.go:N` and say what is at it - the one
-// permitted panic, the one SQL statement built with Sprintf, the one time.Sleep,
-// the three deliberate calls to VisibleTo instead of RequireVisible. They are the
+// Nine places in that file name a `file.go:N` and say what is at it - the one
+// permitted panic and the two Must... calls that are panics under another name,
+// the one SQL statement built with Sprintf, the one time.Sleep, and the three
+// deliberate calls to VisibleTo instead of RequireVisible. They are the
 // difference between "audit this rule and read the exception" and "audit this
 // rule and rediscover the exception", which is most of what makes an audit of
 // this repository cheap rather than expensive.
 //
-// Two of the seven had drifted by the time anybody looked: the Sprintf exception
+// Two of the original seven had drifted by the time anybody looked: the Sprintf exception
 // had moved 1308 -> 1337 as the migration chain grew, and the VisibleTo call
 // 259 -> 272. Neither is wrong in a way anything would report. An auditor
 // following either reference reads an unremarkable line, concludes the exception
@@ -45,6 +46,22 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			resolved:  "internal/interface/web/web.go",
 			line:      85,
 			contains:  "panic(",
+		},
+		// The two Must... sites beside it. They are panics the word `panic(`
+		// does not find, which is why the document names them and why they are
+		// watched here: the rule about them is a rule about where they sit, so a
+		// reference that has drifted off the declaration says nothing at all.
+		{
+			reference: "internal/application/v1/service/service.go:20",
+			resolved:  "internal/application/v1/service/service.go",
+			line:      20,
+			contains:  "regexp.MustCompile(",
+		},
+		{
+			reference: "internal/interface/api/v1/rest/security.go:141",
+			resolved:  "internal/interface/api/v1/rest/security.go",
+			line:      141,
+			contains:  "netip.MustParsePrefix(",
 		},
 		{
 			reference: "internal/infrastructure/persistence/migrations/migrations.go:1337",
