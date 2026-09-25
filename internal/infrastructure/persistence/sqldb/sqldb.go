@@ -218,10 +218,17 @@ type dateTime struct {
 
 // dateLayouts covers what the supported drivers actually emit: RFC3339 and
 // bare dates from SQLite, and space-separated timestamps from MySQL.
+//
+// SQLite's driver writes a time.Time as its String form, which names the zone
+// after the offset - and repeats the offset there when the zone has no name,
+// which is the second of those two. Only a date sent to the API with an offset
+// ever reached it that way, and nothing sends one there now; the rows written
+// before that still have to be read.
 var dateLayouts = []string{
 	time.RFC3339Nano,
 	time.RFC3339,
 	"2006-01-02 15:04:05.999999999 -0700 MST",
+	"2006-01-02 15:04:05.999999999 -0700 -0700",
 	"2006-01-02 15:04:05.999999-07:00",
 	"2006-01-02 15:04:05",
 	"2006-01-02",
