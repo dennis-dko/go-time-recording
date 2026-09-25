@@ -17,7 +17,9 @@ import (
 //
 // GO-2026-6452 (CVE-2026-59162), published 2026-09-16 and affecting every
 // released version including the v2.11.0 in go.mod: "parsing a spreadsheet cell
-// with a negative shared-string index causes a runtime panic". Read in the
+// with a negative shared-string index causes a runtime panic". The database has
+// listed v2.11.0 as the fix since 2026-09-24, and for this path it is not one -
+// see TestExcelizeStillPanicsOnASpilledNegativeSharedString. Read in the
 // dependency's own source rather than taken from the advisory, because the two
 // lookups differ and only one of them is the hole. cell.go's getValueFrom does
 // check - `if xlsxSI < 0 || xlsxSI >= len(d.SI)` - but it only reaches that check
@@ -100,6 +102,51 @@ func TestALargeWorkbookWithSaneSharedStringsStillReads(t *testing.T) {
 		t.Error("the large workbook produced neither a row nor a problem, so the " +
 			"reader never reached the shared-string lookup and this case proves " +
 			"nothing about the guard leaving valid files alone")
+	}
+}
+
+// The recover() in rowsOf still has its reason, and this is what says so.
+//
+// GO-2026-6452 was carried in ci.yml's advisory register. On 2026-09-24 the
+// database began listing v2.11.0 - the version go.mod requires - as fixed, and
+// the fix it points at added the lower bound to the in-memory lookup in cell.go
+// and left getFromStringItem in rows.go without one, so a spilled shared-string
+// table still panics. govulncheck therefore reports nothing, the register had to
+// drop the entry, and nothing else would notice the day excelize does fix it and
+// the guard becomes the kind of recover() CLAUDE.md forbids: one with no reason
+// left.
+//
+// So it asks excelize directly, with no guard of ours in the way, and fails once
+// excelize stops panicking. That is the moment to look again at the guard, at
+// the case above and at CLAUDE.md's paragraph about them.
+func TestExcelizeStillPanicsOnASpilledNegativeSharedString(t *testing.T) {
+	crafted := workbookWithNegativeSharedString(t)
+
+	panicked := func() (panicked bool) {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+
+		f, err := excelize.OpenReader(bytes.NewReader(crafted))
+		if err != nil {
+			t.Fatalf("the crafted workbook could not be opened at all, so this asks "+
+				"nothing about the lookup: %v", err)
+		}
+		defer func() { _ = f.Close() }()
+
+		// The rows are not the question; whether reading them panics is.
+		_, _ = f.GetRows(f.GetSheetName(0))
+
+		return false
+	}()
+
+	if !panicked {
+		t.Error("excelize no longer panics on a spilled negative shared-string index, " +
+			"so the recover() in rowsOf has lost the reason it was written for: look " +
+			"again at it, at TestAWorkbookPointingAtANegativeSharedStringIsRefused and " +
+			"at CLAUDE.md's paragraph about the one recover()")
 	}
 }
 

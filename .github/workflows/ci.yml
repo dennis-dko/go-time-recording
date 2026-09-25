@@ -161,10 +161,17 @@ jobs:
       #
       # An advisory with no fixed release is the one case this step could not
       # express. GO-2026-6452 arrived that way: reachable, real - a 54 KB crafted
-      # workbook panics the parser - and excelize has published nothing to move
+      # workbook panics the parser - and excelize had published nothing to move
       # to. Left alone it fails every pull request until upstream cuts a release,
       # which is a red gate nobody can act on, and a gate like that is one people
       # learn to skim. Suppressed silently it is worse.
+      #
+      # It was also the first entry to leave, and not because it was fixed. On
+      # 2026-09-24 the database began listing v2.11.0 as the fix; measured, that
+      # release still panics on the crafted workbook. The register can only hold
+      # what govulncheck reports, so what watches it now is a test beside the
+      # guard - TestExcelizeStillPanicsOnASpilledNegativeSharedString in
+      # internal/pkg/spreadsheet - which fails on the day excelize really fixes it.
       #
       # So the register below is the third answer, and it is held to three rules
       # rather than one. An advisory it does not name fails the build, which is
@@ -180,9 +187,9 @@ jobs:
         run: |
           set -uo pipefail
 
-          # <OSV id> <look again by> <why it cannot simply be fixed>
-          accepted=$(printf '%s\n' \
-            'GO-2026-6452 2026-10-19 excelize has no fixed release; the reachable panic is caught in spreadsheet.rowsOf')
+          # <OSV id> <look again by> <why it cannot simply be fixed>, one quoted
+          # argument each. Empty today.
+          accepted=$(printf '%s\n')
 
           if go run golang.org/x/vuln/cmd/govulncheck@latest -format json ./... > vulns.json; then
             status=0
