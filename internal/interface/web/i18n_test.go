@@ -553,6 +553,19 @@ func TestOneWordForAnHour(t *testing.T) {
 		t.Errorf("%s writes the hour unit as a bare \"h\" while unit.hours is %q, so "+
 			"one screen says one and one says the other: %s", key, unit, value)
 	}
+
+	// And the code, which the dictionary cannot see: a figure dropped into a
+	// template and followed by a literal "h" is the same disagreement, written
+	// where no translation reaches it. The line saying what is in force did
+	// exactly this - "max./Tag 10.5 h" beside every other "Std." on the screen.
+	inCode := regexp.MustCompile("\\$\\{[^{}`]*\\}\\s+h\\b")
+
+	for n, line := range strings.Split(withoutLineComments(asset(t, "/app.js")), "\n") {
+		if inCode.MatchString(line) {
+			t.Errorf("app.js:%d writes the hour unit as a bare \"h\" after a figure; "+
+				"fmtHours says it the way unit.hours does: %s", n+1, strings.TrimSpace(line))
+		}
+	}
 }
 
 // The installer's own refusals have their own translations.

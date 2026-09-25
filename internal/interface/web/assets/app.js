@@ -8605,11 +8605,11 @@ function fillOperationalForm(data) {
   // somebody is weighing their own against while they type them.
   const effective = data.effective ?? {};
   $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
-    + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
+    + `${t('ops.sessionShort', 'session')} ${fmtHours(effective.sessionLifetimeHours)}, `
     + `${t('ops.idleShort', 'idle')} ${effective.sessionIdleMinutes} min, `
-    + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
+    + `${t('ops.maxShort', 'max/day')} ${fmtHours(effective.maxDailyHours)}, `
     + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
+    + `${t('ops.ratioShort', 'delete limit')} ${fmtNumber(effective.ldapSyncMaxDeleteRatio)}`;
 
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to

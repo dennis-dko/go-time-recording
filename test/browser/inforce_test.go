@@ -100,3 +100,72 @@ func TestWhatIsInForceIsStillSaidWhileTheLimitsAreEdited(t *testing.T) {
 		"being edited. What is in force is not what was typed, and it is the "+
 		"figure the typing is being weighed against", after)
 }
+
+// What is in force is written the way every other figure on screen is.
+//
+// The line built its hours by appending a literal "h" to the raw number, so a
+// German reader saw "max./Tag 10.5 h" beside a timesheet saying "10,50 Std." -
+// the unit and the separator both, on the one screen where the figures are
+// being compared against what somebody is about to type.
+func TestWhatIsInForceIsWrittenTheWayTheReaderWritesNumbers(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.chooseLanguage("de")
+
+	p.run("open the card", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-operational", chromedp.ByID))
+
+	p.run("answer with fractions", chromedp.Evaluate(`(() => {
+		const real = window.fetch;
+
+		window.fetch = async (input, init) => {
+			const url = typeof input === 'string' ? input : input.url;
+			const method = (init && init.method ? init.method : 'GET').toUpperCase();
+
+			if (method === 'GET' && url.includes('/settings/operational')) {
+				return new Response(JSON.stringify({ data: {
+					configured: {},
+					defaults: {},
+					effective: {
+						sessionLifetimeHours: 24,
+						sessionIdleMinutes: 30,
+						maxDailyHours: 10.5,
+						rateLimit: 5,
+						rateLimitWindowSeconds: 60,
+						ldapSyncMaxDeleteRatio: 0.5,
+					},
+				} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+			}
+
+			return real(input, init);
+		};
+
+		return true;
+	})()`, nil))
+
+	p.run("ask again", chromedp.Evaluate(`loadOperational()`, nil, awaitPromise))
+
+	var line, unit string
+
+	p.run("read the line and the unit", chromedp.Evaluate(
+		`document.querySelector('#operational-effective').textContent.trim()`, &line),
+		chromedp.Evaluate(`t('unit.hours', 'h')`, &unit))
+
+	if unit == "h" {
+		t.Fatal("the German hour unit is \"h\" as well, so this case cannot tell the two apart")
+	}
+
+	for _, want := range []string{"24,00 " + unit, "10,50 " + unit, "0,50"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("the line reads %q, which does not contain %q", line, want)
+		}
+	}
+
+	for _, unwanted := range []string{" h,", "10.5", "0.5"} {
+		if strings.Contains(line, unwanted) {
+			t.Errorf("the line reads %q, which still contains %q", line, unwanted)
+		}
+	}
+}
