@@ -211,6 +211,15 @@ func (b base) exists(ctx context.Context, table string, id uint) (bool, error) {
 // dateTime adapts date/timestamp columns across drivers. Depending on the
 // dialect and driver a date arrives as a time.Time, a string, or a []byte, so
 // scanning straight into time.Time is not portable.
+//
+// A time.Time from a driver is returned in UTC. A stored day is midnight UTC,
+// and neither server dialect hands it back that way: lib/pq reads a TIMESTAMPTZ
+// in the PostgreSQL server's session zone, and GoFr opens MySQL with loc=Local,
+// the process's own. West of UTC both are the evening before, and a day is read
+// in the zone it carries - so every entry was shown, totalled and exported on
+// the day before it was booked. East of UTC nothing shows, which is how it went
+// unnoticed. A string from SQLite is left in the zone it was written with,
+// because that is the day as written - see dateLayouts for the rows that need it.
 type dateTime struct {
 	Time  time.Time
 	Valid bool
@@ -241,7 +250,7 @@ func (d *dateTime) Scan(src any) error {
 
 		return nil
 	case time.Time:
-		d.Time, d.Valid = v, true
+		d.Time, d.Valid = v.UTC(), true
 
 		return nil
 	case []byte:
