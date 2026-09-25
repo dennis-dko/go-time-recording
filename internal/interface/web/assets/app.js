@@ -3667,12 +3667,11 @@ const TRANSLATIONS = {
     'log.upTo': 'Bis Zeile',
     'login.email': 'E-Mail',
     'login.failed': 'E-Mail-Adresse oder Passwort ist nicht korrekt.',
-    'login.hint': 'Bitte mit E-Mail-Adresse und Passwort anmelden.',
     'login.password': 'Passwort',
     'login.submit': 'Anmelden',
-    'login.title': 'Anmelden',
     'login.totp': 'Code der Authenticator-App',
     'login.totpNeeded': 'Bitte den Code aus der Authenticator-App eingeben.',
+    'login.welcome': 'Willkommen bei {0}',
     'msg.booked': 'Zeit gebucht',
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.entrySaved': 'Eintrag gespeichert',
@@ -5557,13 +5556,25 @@ async function loadBranding() {
   return branding;
 }
 
+/**
+ * Writes the sign-in card's heading, which greets by the installation's name.
+ *
+ * A sentence with the name in it rather than a fixed word in the markup with the
+ * name after it, so a language can put the name where its grammar wants it.
+ */
+function drawWelcome(title) {
+  $('#login-welcome').textContent = fillIn(t('login.welcome', 'Welcome to {0}'), [title]);
+}
+
+const BUILT_IN_TITLE = 'Time Recording';
+
 function drawBranding(branding) {
 
   // Remembered on the device, so the next load has the instance's own name and
   // mark before it is painted rather than a second later. theme.js reads this;
   // see the note there for why a reload otherwise flickers back to a name nobody
   // chose.
-  const title = brandingIn(branding, 'title') || 'Time Recording';
+  const title = brandingIn(branding, 'title') || BUILT_IN_TITLE;
 
   // The tab may be named separately, because the room runs out there first: a
   // name that reads across the top of the screen is cut off after a couple of
@@ -5589,6 +5600,7 @@ function drawBranding(branding) {
   // Into the span rather than the button: the button also holds the mark, and
   // writing text onto the button would take the mark out with it.
   $('#app-title-text').textContent = title;
+  drawWelcome(title);
 
   // These two places show the installation's own logo and nothing else.
   //
@@ -13268,7 +13280,9 @@ async function init() {
   try {
     await loadBranding();
   } catch {
-    // Falls back to the built-in title.
+    // Falls back to the built-in title, which the header carries in its markup
+    // and the sign-in heading has to be told.
+    drawWelcome(BUILT_IN_TITLE);
   }
 
   // Applied before the first render so the sign-in screen already speaks the

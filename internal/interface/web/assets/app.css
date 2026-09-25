@@ -1147,7 +1147,7 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 /* Bounded to the card's width so a long notice does not stretch across a wide
  * screen into a single unreadable line. */
 #login-maintenance {
-  max-width: 420px;
+  max-width: 680px;
   width: 100%;
 }
 
@@ -1164,18 +1164,150 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .login-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 380px;
-  padding: 26px;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgb(16 24 40 / 14%);
+  max-width: 680px;
+  overflow: hidden;
   width: 100%;
 }
 
-.login-card h2 { font-size: 17px; margin: 0; }
+/* The installation's picture and name, with a stripe in the accent under them.
+ *
+ * One colour in both themes rather than a token: white words on it read in
+ * either, and it is the part of the screen that says "this installation"
+ * whichever theme the reader chose. */
+.login-band {
+  align-items: center;
+  background: #2b3440;
+  border-bottom: 5px solid var(--accent);
+  /* So the logo can be bounded by the band's width - see .login-card .brand-logo. */
+  container-type: inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  padding: 12px 28px 12px 12px;
+}
+
+/* The picture keeps the ground it had before the band existed - white in the
+ * light theme, the card's own dark in the dark one. A logo is drawn for one of
+ * those two, never for an anthracite band, and a dark wordmark straight on the
+ * band would simply disappear. */
+.login-emblem {
+  background: var(--surface);
+  border-radius: 8px;
+  display: flex;
+  flex: none;
+  max-width: 100%;
+  padding: 6px;
+}
+
+.login-band h2 {
+  color: #ffffff;
+  /* Beside the picture while ten ems of room are left, under it once they are
+   * not: a full-width logo on a telephone would otherwise squeeze the welcome
+   * into a column one word wide. */
+  flex: 1 1 10em;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.login-fields {
+  /* The one width the words beside the fields share, and what the error and
+   * the buttons are indented by so they line up under the fields. */
+  --login-words: 150px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 30px 40px 28px;
+}
+
+/* The words beside the field. A label wraps its field here, so the words are
+ * the label's own text and cannot be given a box of their own: the label is the
+ * grid, the text lands in the first column and the field in the second. */
+.login-fields > label {
+  align-items: center;
+  column-gap: 14px;
+  display: grid;
+  font-size: 14px;
+  grid-template-columns: var(--login-words) minmax(0, 1fr);
+  text-align: right;
+}
+
+/* text-align is inherited, and the words can only be right-aligned through the
+ * label - so the field would take it too and type from the right. */
+.login-fields > label > * { text-align: start; }
 
 .login-error { color: var(--danger); font-size: 13px; margin: 0; }
+
+.login-fields > .login-error,
+.login-actions { margin-left: calc(var(--login-words) + 14px); }
+
+/* The primary action at the right-hand end, under the end of the fields, and
+ * the passkey beside it. Reversed rather than written the other way round in the
+ * markup, so that the keyboard still reaches the submit button first. */
+.login-actions {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* The tick in a box of its own at the start of the button, with an empty third
+ * column the same width so the words stay centred on the button rather than on
+ * what is left of it. */
+.login-submit {
+  align-items: center;
+  column-gap: 10px;
+  display: grid;
+  grid-template-columns: 32px 1fr 32px;
+  min-width: 168px;
+  padding: 3px;
+}
+
+.login-submit::after { content: ""; }
+
+/* The button's two colours swapped, so it reads as part of the button in both
+ * themes: a white box with a blue tick on light, a dark box on dark. */
+.login-tick {
+  align-items: center;
+  background: var(--accent-text);
+  border-radius: 6px;
+  color: var(--accent);
+  display: flex;
+  height: 32px;
+  justify-content: center;
+  order: -1;
+}
+
+.login-tick svg {
+  fill: none;
+  height: 18px;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  width: 18px;
+}
+
+/* Narrow: the words go back above the fields and the buttons fill the row, the
+ * submit button on top. At the navigation's threshold, so the layout has one
+ * idea of "narrow" rather than two. */
+@media (max-width: 900px) {
+  .login-band { padding: 10px 16px 10px 10px; }
+  .login-band h2 { font-size: 21px; }
+  .login-fields { padding: 22px 18px 20px; }
+  /* stretch rather than the centring the grid needed, or the password field -
+   * a block, not a 100%-wide input - shrinks to its content in the middle. */
+  .login-fields > label { align-items: stretch; display: flex; text-align: start; }
+
+  .login-fields > .login-error,
+  .login-actions { margin-left: 0; }
+
+  .login-actions { flex-direction: column; }
+}
 
 .lang { width: auto; }
 
@@ -1539,8 +1671,8 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .crop-handle-se { bottom: -1px; cursor: nwse-resize; right: -1px; }
 .logo-use figcaption { font-size: 12px; }
 
-/* The sign-in card's width and the height the banner is allowed there, so what
- * is on screen here is what will be on screen there. */
+/* The room the sign-in band gives a logo, so what is on screen here is what
+ * will be on screen there. */
 .logo-preview-login { height: 96px; max-width: 328px; width: 328px; }
 
 /* Sixteen pixels square, which is what a browser tab gives it - and the point of
@@ -1667,37 +1799,36 @@ body:has(#login-screen:not([hidden])) .site-footer {
   z-index: 31;
 }
 
-/* The same image, given the room a sign-in screen has and a header bar does not.
- *
- * Full width of the card and up to 96px tall, so a horizontal wordmark reads as a
- * banner across the top of it and a square mark is simply a large square mark.
- * The header keeps 28px, because that is what fits beside the navigation.
+/* The same image in the sign-in band, at the header's bound of 328x96, so one
+ * picture is drawn at one size wherever it appears - and narrower where the band
+ * is, which on a telephone is less than 328px.
  *
  * contain rather than cover, deliberately. cover fills the box by cutting
- * whatever does not fit, and what does not fit in a 380x96 box is the top and
+ * whatever does not fit, and what does not fit in a 328x96 box is the top and
  * bottom of anything close to square - which for a logo means slicing the mark in
  * half. An administrator uploading their company's logo has not asked for it to
  * be cut, and a letterboxed logo reads as deliberate where a beheaded one reads
- * as broken. Anything wider than the card is scaled down to fit, so the width is
- * a bound rather than a target. */
-/* The card gives a logo the width of the card, so the placeholder standing in
-   for one is drawn at the height a logo gets rather than at the header's chip
-   size - a 78-pixel mark centred over a full-width card reads as an afterthought
-   beside the heading under it. */
-.login-mark {
-  align-self: center;
-  height: 96px;
-  margin-bottom: 4px;
-  width: 96px;
+ * as broken. Anything wider than the band is scaled down to fit, so the width is
+ * a bound rather than a target.
+ *
+ * The band's width less the emblem's padding, and not 100%: a percentage would
+ * be of the emblem, which is sized by this picture. Measured, that cycle drew a
+ * 600x120 wordmark at 328px inside an emblem 492px wide - the emblem sized for
+ * the picture as if the percentage were not there - and the empty white beside
+ * it pushed the welcome off the line. */
+.login-card .brand-logo {
+  height: auto;
+  max-height: 96px;
+  max-width: min(328px, calc(100cqw - 12px));
+  object-fit: contain;
 }
 
-.login-card .brand-logo {
-  align-self: stretch;
-  height: auto;
-  margin-bottom: 4px;
-  max-height: 96px;
-  max-width: 100%;
-  object-fit: contain;
+/* The placeholder standing in for a logo is drawn at the height a logo gets
+   rather than at the header's chip size, so the band is the same height with or
+   without one. */
+.login-mark {
+  height: 96px;
+  width: 96px;
 }
 
 /* The file picker is not a text field, so it must not stretch like one. */
