@@ -4471,8 +4471,8 @@ async function loadUsers() {
             'Managed in LDAP. The password lives there, and removing the entry there removes this account.')
           : '',
       }),
-      el('td', { class: 'num', text: u.dailyTargetHours ? u.dailyTargetHours.toFixed(1) : t('field.default', 'default') }),
-      el('td', { class: 'num', text: u.maxDailyHours ? u.maxDailyHours.toFixed(1) : t('field.default', 'default') }),
+      el('td', { class: 'num', text: u.dailyTargetHours ? fmtHours(u.dailyTargetHours) : t('field.default', 'default') }),
+      el('td', { class: 'num', text: u.maxDailyHours ? fmtHours(u.maxDailyHours) : t('field.default', 'default') }),
       actions,
     );
   });

@@ -172,3 +172,57 @@ func TestWhatIsInForceIsWrittenTheWayTheReaderWritesNumbers(t *testing.T) {
 		}
 	}
 }
+
+// A person's working times are written in the users table the way every other
+// hour figure is.
+//
+// The table put them through toFixed(1), which is the one form fmtNumber exists
+// to replace: a German administrator read "7.8" for a target of seven and three
+// quarter hours - the separator wrong and the figure rounded to one that was
+// never set.
+func TestTheUsersTableWritesWorkingTimesTheWayTheReaderWritesNumbers(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.chooseLanguage("de")
+
+	p.run("open Users", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#table-users", chromedp.ByID))
+
+	p.run("answer with one account whose day is not a whole number", chromedp.Evaluate(`
+		(async () => {
+			const server = api;
+			api = (path, options) => path === '/users'
+				? Promise.resolve({ items: [{
+					id: 4711, name: 'Sven', email: 'sven@example.com', role: 'user',
+					isSystem: false, isExternal: false,
+					dailyTargetHours: 7.75, maxDailyHours: 10.5,
+				}] })
+				: server(path, options);
+
+			await loadUsers();
+
+			return 1;
+		})()`, nil, awaitPromise))
+
+	p.waitForText("#table-users tbody", "sven@example.com")
+
+	var row, unit string
+
+	p.run("read the row and the unit", chromedp.Evaluate(
+		`document.querySelector('#table-users tbody tr').textContent`, &row),
+		chromedp.Evaluate(`t('unit.hours', 'h')`, &unit))
+
+	for _, want := range []string{"7,75 " + unit, "10,50 " + unit} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the row reads %q, which does not contain %q", row, want)
+		}
+	}
+
+	for _, unwanted := range []string{"7.8", "10.5"} {
+		if strings.Contains(row, unwanted) {
+			t.Errorf("the row reads %q, which still contains %q", row, unwanted)
+		}
+	}
+}

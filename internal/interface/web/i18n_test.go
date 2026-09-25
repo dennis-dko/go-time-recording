@@ -490,6 +490,14 @@ func TestFormattingFollowsTheLocaleAndWordsFollowTheLanguage(t *testing.T) {
 			"reader whose browser has a region loses it: %v", len(found), found)
 	}
 
+	// toFixed writes a dot whatever the locale, and fixes the places as well: it
+	// is the form fmtNumber and fmtShare exist to replace, and it kept coming back -
+	// the users table wrote a target of 7.75 hours as "7.8" to a German reader.
+	if found := regexp.MustCompile(`\.toFixed\(`).FindAllString(js, -1); len(found) > 0 {
+		t.Errorf("%d figure(s) are written with toFixed, which ignores the reader's "+
+			"locale; fmtNumber, fmtHours or fmtShare write them the reader's way", len(found))
+	}
+
 	// And the dictionary is not looked up by a locale, which would miss: the
 	// table is keyed on "de", and "de-AT" is not a key in it.
 	if strings.Contains(js, "TRANSLATIONS[activeLocale()]") {
