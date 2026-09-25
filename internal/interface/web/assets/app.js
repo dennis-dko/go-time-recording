@@ -5586,11 +5586,6 @@ function drawWelcome(title) {
 const BUILT_IN_TITLE = 'Time Recording';
 
 function drawBranding(branding) {
-
-  // Remembered on the device, so the next load has the instance's own name and
-  // mark before it is painted rather than a second later. theme.js reads this;
-  // see the note there for why a reload otherwise flickers back to a name nobody
-  // chose.
   const title = brandingIn(branding, 'title') || BUILT_IN_TITLE;
 
   // The tab may be named separately, because the room runs out there first: a
@@ -6306,9 +6301,6 @@ async function runConnectionTest(result, attempt) {
   try {
     const outcome = await attempt();
 
-    // A success is named here rather than by the server, which wrote it in
-    // English and had it shown in preference to this sentence.
-    //
     // A failure goes through the same renderer as any other refusal. Half of
     // them are a fixed complaint - a field left empty, a port that is not a
     // number - and those are said in the reader's language and name the fields

@@ -218,9 +218,6 @@ func (r *UserRepository) scanUser(s scanner) (*model.User, error) {
 
 // translateUserErr converts a driver-level unique violation into a conflict,
 // so a duplicate email surfaces as a client error rather than a 500.
-//
-// The dialects report this differently and none of the supported drivers
-// expose a shared typed error, so the check is on the message text.
 func translateUserErr(err error, email string) error {
 	if isUniqueViolation(err) {
 		return apperror.Conflictf("a user with email %q already exists", email).
