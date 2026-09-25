@@ -1808,6 +1808,21 @@ function fmtNumber(n) {
 }
 
 /**
+ * A share between none and all, written the way the reader writes a number and
+ * in full.
+ *
+ * Not fmtNumber: two fixed places turn a limit of 0.125 into 0,13, which is a
+ * setting nobody made. Fifteen significant digits are what a decimal typed into
+ * a configuration file survives as a double, so 0.1 comes back as 0,1 rather
+ * than as the binary fraction under it. Display only, like fmtNumber.
+ */
+function fmtShare(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return String(n ?? '');
+
+  return new Intl.NumberFormat(activeLocale(), { maximumSignificantDigits: 15 }).format(n);
+}
+
+/**
  * A number of hours, with the unit the reader uses for one.
  *
  * The unit was a literal "h" appended here, which is a word - a short one that
@@ -3252,6 +3267,8 @@ const TRANSLATIONS = {
     'restart.failed': 'Der Neustart konnte nicht gestartet werden',
     'restart.slow': 'Die Anwendung antwortet noch nicht. Möglicherweise startet sie noch — bitte die Seite gleich neu laden.',
     'restart.none': 'nichts',
+    'restart.on': 'an',
+    'restart.off': 'aus',
     'restart.dbPassword': 'Datenbank-Passwort',
 
     // Why a single row of an imported file cannot be written. The server sends a
@@ -4454,8 +4471,8 @@ async function loadUsers() {
             'Managed in LDAP. The password lives there, and removing the entry there removes this account.')
           : '',
       }),
-      el('td', { class: 'num', text: u.dailyTargetHours ? u.dailyTargetHours.toFixed(1) : t('field.default', 'default') }),
-      el('td', { class: 'num', text: u.maxDailyHours ? u.maxDailyHours.toFixed(1) : t('field.default', 'default') }),
+      el('td', { class: 'num', text: u.dailyTargetHours ? fmtHours(u.dailyTargetHours) : t('field.default', 'default') }),
+      el('td', { class: 'num', text: u.maxDailyHours ? fmtHours(u.maxDailyHours) : t('field.default', 'default') }),
       actions,
     );
   });
@@ -5272,10 +5289,35 @@ function todayISO() {
 }
 
 /**
+ * Every entry in a range, however many pages the answer takes.
+ *
+ * The listing answers a page - a hundred entries unless asked for more, newest
+ * first - so a caller that totals what one request brought back has totalled a
+ * page. The calendar did: a month of a hundred and one entries lost its first
+ * days, and its month total with them. Paged by the count the server reports
+ * rather than by a page size written down here as well.
+ */
+async function everyTimesheet(params) {
+  const entries = [];
+
+  for (;;) {
+    const query = new URLSearchParams(params);
+    query.set('offset', String(entries.length));
+
+    const answer = await api(`/timesheets?${query}`);
+    const page = answer?.items ?? [];
+
+    entries.push(...page);
+
+    if (page.length === 0 || entries.length >= (answer?.totalCount ?? 0)) return entries;
+  }
+}
+
+/**
  * Renders the month grid with the hours booked on each day.
  *
- * The whole month is fetched in one request and grouped client-side; asking
- * per day would be dozens of round trips for one screen.
+ * The whole month is fetched and grouped client-side; asking per day would be
+ * dozens of round trips for one screen.
  */
 async function loadCalendar() {
   if (!can('timesheets:read:own')) return;
@@ -5283,9 +5325,7 @@ async function loadCalendar() {
   const first = currentCalendarMonth();
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
 
-  const params = new URLSearchParams({ from: ISO_DAY(first), to: ISO_DAY(last) });
-
-  const entries = (await api(`/timesheets?${params}`))?.items ?? [];
+  const entries = await everyTimesheet({ from: ISO_DAY(first), to: ISO_DAY(last) });
 
   const byDay = new Map();
   for (const entry of entries) {
@@ -5569,11 +5609,6 @@ function drawWelcome(title) {
 const BUILT_IN_TITLE = 'Time Recording';
 
 function drawBranding(branding) {
-
-  // Remembered on the device, so the next load has the instance's own name and
-  // mark before it is painted rather than a second later. theme.js reads this;
-  // see the note there for why a reload otherwise flickers back to a name nobody
-  // chose.
   const title = brandingIn(branding, 'title') || BUILT_IN_TITLE;
 
   // The tab may be named separately, because the room runs out there first: a
@@ -6289,9 +6324,6 @@ async function runConnectionTest(result, attempt) {
   try {
     const outcome = await attempt();
 
-    // A success is named here rather than by the server, which wrote it in
-    // English and had it shown in preference to this sentence.
-    //
     // A failure goes through the same renderer as any other refusal. Half of
     // them are a fixed complaint - a field left empty, a port that is not a
     // number - and those are said in the reader's language and name the fields
@@ -8144,7 +8176,7 @@ async function todayInOneSentence() {
   }
 
   try {
-    const entries = (await api(`/timesheets?from=${today}&to=${today}`))?.items ?? [];
+    const entries = await everyTimesheet({ from: today, to: today });
     const hours = entries.reduce((sum, entry) => sum + entry.durationHours, 0);
 
     if (hours > 0) {
@@ -8605,11 +8637,11 @@ function fillOperationalForm(data) {
   // somebody is weighing their own against while they type them.
   const effective = data.effective ?? {};
   $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
-    + `${t('ops.sessionShort', 'session')} ${effective.sessionLifetimeHours} h, `
+    + `${t('ops.sessionShort', 'session')} ${fmtHours(effective.sessionLifetimeHours)}, `
     + `${t('ops.idleShort', 'idle')} ${effective.sessionIdleMinutes} min, `
-    + `${t('ops.maxShort', 'max/day')} ${effective.maxDailyHours} h, `
+    + `${t('ops.maxShort', 'max/day')} ${fmtHours(effective.maxDailyHours)}, `
     + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.ratioShort', 'delete limit')} ${effective.ldapSyncMaxDeleteRatio}`;
+    + `${t('ops.ratioShort', 'delete limit')} ${fmtShare(effective.ldapSyncMaxDeleteRatio)}`;
 
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
@@ -9209,9 +9241,21 @@ function pendingLabel(setting) {
   }
 }
 
-/** What an empty value reads as - "" would look like a rendering fault. */
-function pendingValue(value) {
-  return value === '' ? t('restart.none', 'none') : value;
+/**
+ * What a value reads as on the card.
+ *
+ * "" would look like a rendering fault. A switch arrives as "on" or "off" and a
+ * share the way the form takes it, which is the API's vocabulary rather than
+ * the reader's.
+ */
+function pendingValue(setting, value) {
+  if (value === '') return t('restart.none', 'none');
+
+  if (setting === 'metrics' && value === 'on') return t('restart.on', 'on');
+  if (setting === 'metrics' && value === 'off') return t('restart.off', 'off');
+  if (setting === 'tracerRatio' && Number.isFinite(Number(value))) return fmtShare(Number(value));
+
+  return value;
 }
 
 /**
@@ -9268,15 +9312,10 @@ async function loadRestart() {
     if (!change.running && !change.stored) return el('li', {}, label);
 
     return el('li', {}, label,
-      el('span', { class: 'from', text: `: ${pendingValue(change.running)} → ` }),
-      el('strong', { text: pendingValue(change.stored) }));
+      el('span', { class: 'from', text: `: ${pendingValue(change.setting, change.running)} → ` }),
+      el('strong', { text: pendingValue(change.setting, change.stored) }));
   }));
 
-  // Offered only where pressing it would actually work. Where it would not, the
-  // reason is shown instead of a button that fails on click.
-  //
-  // The hint promises a list of saved changes and the list follows it, so both go
-  // when there are none.
   const waiting = pending.length > 0;
 
   // The hint promises a list of saved changes and the list follows it, so both
@@ -9347,6 +9386,8 @@ async function loadRestart() {
     ? ''
     : t(`restart.unsupported.${state.reasonCode || 'other'}`, state.reason ?? '');
 
+  // Offered only where pressing it would actually work. Where it would not, the
+  // reason is shown instead of a button that fails on click.
   showRestartControls('#restart-card-mode', '#restart-card-now',
     '#restart-card-unsupported', description, refusal, state.supported, true);
 
@@ -11373,7 +11414,7 @@ function describeActiveTelemetry(active) {
     : t('tel.activeMetricsOff', 'not served');
 
   const traces = active.traceExporter
-    ? `${active.traceExporter} → ${active.tracerUrl} (${active.tracerRatio})`
+    ? `${active.traceExporter} → ${active.tracerUrl} (${fmtShare(active.tracerRatio)})`
     : t('tel.activeTracesOff', 'not exported');
 
   return `${t('tel.activeLog', 'Log level')}: ${active.logLevel} · `

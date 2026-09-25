@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -270,7 +269,7 @@ func TestWhatWasStoredIsAppliedByTheNextStart(t *testing.T) {
 
 	// Outside either instance's own directory, so the second one can still open it
 	// after the first has been torn down.
-	shared := filepath.Join(t.TempDir(), "shared")
+	shared := harness.SharedDatabase(t)
 
 	first := start(t, "DB_NAME="+shared)
 	admin := first.signInAsAdmin("a-much-better-password")
@@ -329,7 +328,7 @@ func TestAnAdministeredOffBeatsAnExporterInTheEnvironment(t *testing.T) {
 		t.Skip("this test shares a SQLite file between two instances")
 	}
 
-	shared := filepath.Join(t.TempDir(), "shared")
+	shared := harness.SharedDatabase(t)
 
 	first := start(t, "DB_NAME="+shared, "TRACE_EXPORTER=otlp", "TRACER_URL=collector:4317")
 	admin := first.signInAsAdmin("a-much-better-password")

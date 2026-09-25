@@ -111,15 +111,8 @@ func (s *TimesheetDomainService) GenerateOwnTimeReport(
 ) (float64, error) {
 	// A named project is still checked, because a project id is something the
 	// caller supplies and somebody else's project is not theirs to total.
-	if scope.ProjectID != 0 {
-		project, err := s.projectRepository.GetByID(ctx, scope.ProjectID)
-		if err != nil {
-			return 0, err
-		}
-
-		if err := RequireVisible(project, userID); err != nil {
-			return 0, err
-		}
+	if err := scope.RequireVisible(ctx, s.projectRepository, userID); err != nil {
+		return 0, err
 	}
 
 	timesheets, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{

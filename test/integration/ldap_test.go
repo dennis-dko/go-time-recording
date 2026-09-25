@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -440,7 +439,7 @@ func TestTheDirectoryScheduleIsAdministeredAndAppliedAtTheNextStart(t *testing.T
 		t.Skip("this test shares a SQLite file between two instances")
 	}
 
-	shared := filepath.Join(t.TempDir(), "shared")
+	shared := harness.SharedDatabase(t)
 
 	// No schedule in the environment, so anything that runs came from the
 	// setting rather than from the file.

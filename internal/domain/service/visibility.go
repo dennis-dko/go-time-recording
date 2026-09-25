@@ -15,9 +15,11 @@
 package service
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
@@ -41,4 +43,28 @@ func RequireVisible(project *model.Project, viewerID uint) error {
 	}
 
 	return apperror.NotFound("project", strconv.FormatUint(uint64(project.ID), 10))
+}
+
+// RequireVisible refuses a scope that names a project the viewer may not see.
+//
+// An evaluation of somebody's own time is filtered to their own entries, so a
+// foreign project in its scope totals nothing of anybody else's - and was let
+// through for that reason by the statistics while the report beside them refused
+// it. The rule is about the id rather than the total: it is something the caller
+// supplies, and both evaluations answer it the same way through this one check.
+//
+// A scope naming no project - every project, or none - passes.
+func (s ProjectScope) RequireVisible(
+	ctx context.Context, projects repository.ProjectRepository, viewerID uint,
+) error {
+	if s.ProjectID == 0 {
+		return nil
+	}
+
+	project, err := projects.GetByID(ctx, s.ProjectID)
+	if err != nil {
+		return err
+	}
+
+	return RequireVisible(project, viewerID)
 }

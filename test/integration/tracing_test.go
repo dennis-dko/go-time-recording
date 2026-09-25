@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -107,7 +106,7 @@ func TestTracingConfiguredFromTheScreenActuallyExportsSpans(t *testing.T) {
 		t.Skip("this test shares a SQLite file between two instances")
 	}
 
-	shared := filepath.Join(t.TempDir(), "shared")
+	shared := harness.SharedDatabase(t)
 
 	// A name of this test's own, so the trace read back cannot be one left in
 	// the collector by an earlier run or by the staging profile.
@@ -161,7 +160,7 @@ func TestSwitchingTracingOffStopsSpansReachingTheCollector(t *testing.T) {
 		t.Skip("this test shares a SQLite file between two instances")
 	}
 
-	shared := filepath.Join(t.TempDir(), "shared")
+	shared := harness.SharedDatabase(t)
 	service := fmt.Sprintf("gtr-off-%d", time.Now().UnixNano())
 
 	// This instance traces because its environment says so, the way a deployment

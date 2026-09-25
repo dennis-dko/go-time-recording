@@ -90,6 +90,10 @@ func (s *StatisticsService) Own(
 		return nil, apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted")
 	}
 
+	if err := scope.RequireVisible(ctx, s.projects, userID); err != nil {
+		return nil, err
+	}
+
 	entries, err := s.timesheets.GetByFilter(ctx, repository.TimesheetFilter{
 		UserID:    userID,
 		StartDate: &from,

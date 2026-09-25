@@ -490,6 +490,14 @@ func TestFormattingFollowsTheLocaleAndWordsFollowTheLanguage(t *testing.T) {
 			"reader whose browser has a region loses it: %v", len(found), found)
 	}
 
+	// toFixed writes a dot whatever the locale, and fixes the places as well: it
+	// is the form fmtNumber and fmtShare exist to replace, and it kept coming back -
+	// the users table wrote a target of 7.75 hours as "7.8" to a German reader.
+	if found := regexp.MustCompile(`\.toFixed\(`).FindAllString(js, -1); len(found) > 0 {
+		t.Errorf("%d figure(s) are written with toFixed, which ignores the reader's "+
+			"locale; fmtNumber, fmtHours or fmtShare write them the reader's way", len(found))
+	}
+
 	// And the dictionary is not looked up by a locale, which would miss: the
 	// table is keyed on "de", and "de-AT" is not a key in it.
 	if strings.Contains(js, "TRANSLATIONS[activeLocale()]") {
@@ -552,6 +560,19 @@ func TestOneWordForAnHour(t *testing.T) {
 
 		t.Errorf("%s writes the hour unit as a bare \"h\" while unit.hours is %q, so "+
 			"one screen says one and one says the other: %s", key, unit, value)
+	}
+
+	// And the code, which the dictionary cannot see: a figure dropped into a
+	// template and followed by a literal "h" is the same disagreement, written
+	// where no translation reaches it. The line saying what is in force did
+	// exactly this - "max./Tag 10.5 h" beside every other "Std." on the screen.
+	inCode := regexp.MustCompile("\\$\\{[^{}`]*\\}\\s+h\\b")
+
+	for n, line := range strings.Split(withoutLineComments(asset(t, "/app.js")), "\n") {
+		if inCode.MatchString(line) {
+			t.Errorf("app.js:%d writes the hour unit as a bare \"h\" after a figure; "+
+				"fmtHours says it the way unit.hours does: %s", n+1, strings.TrimSpace(line))
+		}
 	}
 }
 

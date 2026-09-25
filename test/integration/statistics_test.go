@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 )
@@ -181,5 +182,37 @@ func TestAnInvertedRangeIsRefused(t *testing.T) {
 	if got := worker.api(http.MethodGet,
 		"/me/statistics?from=2026-08-31&to=2026-08-01", nil).Status; got == http.StatusOK {
 		t.Error("a range ending before it starts was accepted")
+	}
+}
+
+// Somebody else's project is not found by either evaluation of your own time.
+//
+// Both are keyed on the caller and both take a project to narrow to, and a project
+// id is something the caller supplies. The report checked it and the statistics
+// did not, so the evaluation screen - which asks both with the same scope - got
+// "not found" for its total and a chart of zeros beside it for the same project.
+func TestSomebodyElsesProjectIsNotFoundByEitherEvaluation(t *testing.T) {
+	t.Parallel()
+
+	a, admin, wera := startWithWorker(t)
+
+	var hers projectResponse
+	wera.must(wera.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Wera's own", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &hers)
+
+	ilka := a.signInAsWorkingAdmin(admin, "Ilka", "ilka@example.com")
+
+	scope := fmt.Sprintf("?from=2026-08-01&to=2026-08-31&projectId=%d", hers.ID)
+
+	for _, path := range []string{"/me/statistics", "/reports"} {
+		if got := ilka.api(http.MethodGet, path+scope, nil).Status; got != http.StatusNotFound {
+			t.Errorf("%s narrowed to somebody else's project answered %d, want %d",
+				path, got, http.StatusNotFound)
+		}
+
+		// And the owner still gets an answer, so the refusal above is about whose
+		// project it is rather than about the scope.
+		wera.must(wera.api(http.MethodGet, path+scope, nil), http.StatusOK)
 	}
 }

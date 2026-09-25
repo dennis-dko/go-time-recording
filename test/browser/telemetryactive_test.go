@@ -111,3 +111,54 @@ func TestWhatIsRunningIsStillSaidWhileTheFormIsEdited(t *testing.T) {
 		"being edited. What the process is serving is not what was typed, and the "+
 		"card beside this one already draws that line", after)
 }
+
+// The share of traces this process records is written the way the reader
+// writes a number, and in full.
+//
+// It went on screen as the raw figure, so a German administrator read
+// "otlp → collector:4317 (0.125)" beside a card that writes every other
+// number with a comma.
+func TestWhatIsRunningWritesItsShareTheWayTheReaderWritesNumbers(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.chooseLanguage("de")
+
+	p.run("open the card", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-telemetry", chromedp.ByID))
+
+	p.run("a process that samples an eighth", chromedp.Evaluate(`(() => {
+		const real = window.fetch;
+
+		window.fetch = async (input, init) => {
+			const url = typeof input === 'string' ? input : input.url;
+			const method = (init && init.method ? init.method : 'GET').toUpperCase();
+
+			if (method === 'GET' && url.includes('/settings/telemetry')) {
+				return new Response(JSON.stringify({ data: {
+					configured: {},
+					active: {
+						logLevel: 'INFO',
+						metricsServed: false,
+						traceExporter: 'otlp',
+						tracerUrl: 'collector:4317',
+						tracerRatio: 0.125,
+					},
+				} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+			}
+
+			return real(input, init);
+		};
+
+		return true;
+	})()`, nil))
+
+	p.run("ask again", chromedp.Evaluate(`loadTelemetry()`, nil, awaitPromise))
+
+	said := p.text("#telemetry-active")
+
+	if strings.Contains(said, "0.125") || !strings.Contains(said, "(0,125)") {
+		t.Errorf("the line reads %q, which does not write the share as 0,125", said)
+	}
+}

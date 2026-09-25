@@ -68,6 +68,32 @@ func TestDateTimeScanAcceptsDriverVariants(t *testing.T) {
 	}
 }
 
+// A time with a fixed offset comes back the way SQLite's driver wrote it.
+//
+// The driver stores a time.Time as its String form, which for an offset with no
+// zone name repeats the offset where the name would be: "-0500 -0500". A date
+// sent to the API with an offset used to reach the database like that, and none
+// of the layouts above reads it - so the row made every list it fell into
+// answer 500. Nothing writes that form any more; rows already written still have
+// to be readable, as the day they were written on.
+func TestDateTimeScanReadsAFixedOffsetAsSQLiteWroteIt(t *testing.T) {
+	for _, src := range []string{
+		"2026-07-03 23:30:00 -0500 -0500",
+		"2026-07-03 01:00:00 +0530 +0530",
+	} {
+		var d dateTime
+		if err := d.Scan(src); err != nil {
+			t.Errorf("scan %q: %v", src, err)
+
+			continue
+		}
+
+		if y, m, day := d.Time.Date(); y != 2026 || m != time.July || day != 3 {
+			t.Errorf("%q read as %s, not the 3rd of July it was written on", src, d.Time)
+		}
+	}
+}
+
 func TestDateTimeScanNullIsNotValid(t *testing.T) {
 	var d dateTime
 	if err := d.Scan(nil); err != nil {

@@ -131,18 +131,14 @@ func TestLoadingReportsAbsenceRatherThanGuessing(t *testing.T) {
 	}
 }
 
-// DatabaseConfigured is the switch between installer and application, so what it
-// reads matters more than most things here.
-func TestDatabaseConfiguredFollowsTheEnvironment(t *testing.T) {
+// DatasourceFromEnvironment is the switch between installer and application, so
+// what it reads matters more than most things here.
+func TestDatasourceFromEnvironmentFollowsTheEnvironment(t *testing.T) {
 	// No configs/ directory here, so only the real environment can answer -
 	// which is what the test wants to vary.
 	t.Chdir(t.TempDir())
 
 	t.Setenv("DB_DIALECT", "")
-
-	if config.DatabaseConfigured() {
-		t.Error("no dialect anywhere should mean no database is configured")
-	}
 
 	if _, ok := config.DatasourceFromEnvironment(); ok {
 		t.Error("no dialect anywhere should yield no connection")
@@ -153,10 +149,6 @@ func TestDatabaseConfiguredFollowsTheEnvironment(t *testing.T) {
 	t.Setenv("DB_HOST", "db.example")
 	t.Setenv("DB_USER", "gtr")
 	t.Setenv("DB_PASSWORD", "secret")
-
-	if !config.DatabaseConfigured() {
-		t.Error("a dialect in the environment should mean a database is configured")
-	}
 
 	ds, ok := config.DatasourceFromEnvironment()
 	if !ok {
@@ -181,7 +173,7 @@ func TestABlankDialectIsNotAConfiguredDatabase(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("DB_DIALECT", "   ")
 
-	if config.DatabaseConfigured() {
+	if _, ok := config.DatasourceFromEnvironment(); ok {
 		t.Error("whitespace should not count as a configured dialect")
 	}
 }

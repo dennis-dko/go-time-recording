@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +144,51 @@ func TestTheRestartCardComesBeforeTheVersionCard(t *testing.T) {
 
 	if order != "restart first" {
 		t.Errorf("the cards are in the order %q", order)
+	}
+}
+
+// What is waiting for a restart is described in the reader's language.
+//
+// The server names the metrics endpoint's two states "on" and "off", and writes
+// a share the way the form takes it - both the API's vocabulary, and both staying
+// that way. The card put them on screen as they came, so a German administrator
+// read "Metrik-Endpunkt: on → off" and "1 → 0.35" in a card that was otherwise
+// German.
+func TestTheRestartCardSpeaksTheReadersLanguage(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.chooseLanguage("de")
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-telemetry", chromedp.ByID))
+
+	p.waitForFilled("#tel-tracing-hint")
+
+	// The harness serves metrics and exports no traces, so switching the one
+	// off and the other on are both changes only the next start can make.
+	p.run("stop serving metrics and sample a share of traces",
+		p.chooseOption(`#form-telemetry [name="metricsOff"]`, "off"),
+		p.chooseOption(`#form-telemetry [name="traceExporter"]`, "otlp"),
+		chromedp.SetValue(`#form-telemetry [name="tracerUrl"]`, "jaeger:4317", chromedp.ByQuery),
+		chromedp.SetValue(`#form-telemetry [name="tracerRatio"]`, "0.35", chromedp.ByQuery),
+		p.click(`#form-telemetry button[type="submit"]`))
+
+	p.waitShown("#restart-card-pending")
+
+	said := p.text("#restart-card-pending")
+
+	if strings.Contains(said, "on →") || strings.Contains(said, "→ off") {
+		t.Errorf("the card reads %q, with the API's words in a German sentence", said)
+	}
+
+	if !strings.Contains(said, "an → aus") {
+		t.Errorf("the card reads %q, which does not say the endpoint goes from an to aus", said)
+	}
+
+	if strings.Contains(said, "0.35") || !strings.Contains(said, "1 → 0,35") {
+		t.Errorf("the card reads %q, which does not write the share as 1 → 0,35", said)
 	}
 }
 
