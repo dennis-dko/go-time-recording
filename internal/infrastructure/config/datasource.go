@@ -109,7 +109,7 @@ func (d Datasource) Validate() error {
 }
 
 // configLocation is where GoFr looks for its .env files, and therefore where
-// DatabaseConfigured has to look too.
+// DatasourceFromEnvironment has to look too.
 //
 // Named exactly as GoFr names it, and unexported for the same reason it is a
 // constant at all: it mirrors an internal decision of a dependency, it is
@@ -119,23 +119,6 @@ func (d Datasource) Validate() error {
 // rule forbids - config.ConfigLocation - and it had no caller to justify being
 // exported.
 const configLocation = "./configs"
-
-// DatabaseConfigured reports whether a database is configured anywhere GoFr
-// would read one from.
-//
-// It answers the question that decides whether this binary serves its installer
-// or the application, so it has to see exactly what GoFr will: .env, then the
-// stage's own file, then real environment variables. GoFr's own reader is used
-// rather than a second implementation of that precedence, because the two
-// disagreeing would mean an installation that runs the installer and then
-// connects somewhere else - or the reverse, which is worse.
-//
-// The logger discards: this runs before the application has said anything, and
-// "Loaded config from file" twice in the first two lines invites the reader to
-// look for a bug that is not there.
-func DatabaseConfigured() bool {
-	return strings.TrimSpace(gofrConfig().Get("DB_DIALECT")) != ""
-}
 
 // DatasourceFromEnvironment reads the connection GoFr would assemble from its
 // configuration, password included.
@@ -147,7 +130,12 @@ func DatabaseConfigured() bool {
 // that into a sentence naming the host and the actual refusal.
 //
 // The second return value is false when no dialect is configured, which is the
-// case that sends the binary to its installer instead.
+// case that sends the binary to its installer instead. That makes this the
+// switch between installer and application, so it has to see exactly what GoFr
+// will: .env, then the stage's own file, then real environment variables. GoFr's
+// own reader is used rather than a second implementation of that precedence,
+// because the two disagreeing would mean an installation that runs the
+// installer and then connects somewhere else - or the reverse, which is worse.
 func DatasourceFromEnvironment() (Datasource, bool) {
 	cfg := gofrConfig()
 
