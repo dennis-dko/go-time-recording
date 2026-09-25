@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +144,43 @@ func TestTheRestartCardComesBeforeTheVersionCard(t *testing.T) {
 
 	if order != "restart first" {
 		t.Errorf("the cards are in the order %q", order)
+	}
+}
+
+// A switch waiting for a restart is described in the reader's language.
+//
+// The server names the metrics endpoint's two states "on" and "off", which is
+// the API's vocabulary and stays that way; the card put those words on screen
+// as they came, so a German administrator read "Metrik-Endpunkt: on → off" in
+// a sentence that was otherwise German.
+func TestTheRestartCardSaysOnAndOffInTheReadersLanguage(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.chooseLanguage("de")
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-telemetry", chromedp.ByID))
+
+	p.waitForFilled("#tel-tracing-hint")
+
+	// The harness serves metrics, so switching them off is a change only the
+	// next start can make.
+	p.run("stop serving metrics",
+		p.chooseOption(`#form-telemetry [name="metricsOff"]`, "off"),
+		p.click(`#form-telemetry button[type="submit"]`))
+
+	p.waitShown("#restart-card-pending")
+
+	said := p.text("#restart-card-pending")
+
+	if strings.Contains(said, "on →") || strings.Contains(said, "→ off") {
+		t.Errorf("the card reads %q, with the API's words in a German sentence", said)
+	}
+
+	if !strings.Contains(said, "an → aus") {
+		t.Errorf("the card reads %q, which does not say the endpoint goes from an to aus", said)
 	}
 }
 

@@ -3252,6 +3252,8 @@ const TRANSLATIONS = {
     'restart.failed': 'Der Neustart konnte nicht gestartet werden',
     'restart.slow': 'Die Anwendung antwortet noch nicht. Möglicherweise startet sie noch — bitte die Seite gleich neu laden.',
     'restart.none': 'nichts',
+    'restart.on': 'an',
+    'restart.off': 'aus',
     'restart.dbPassword': 'Datenbank-Passwort',
 
     // Why a single row of an imported file cannot be written. The server sends a
@@ -9209,9 +9211,19 @@ function pendingLabel(setting) {
   }
 }
 
-/** What an empty value reads as - "" would look like a rendering fault. */
-function pendingValue(value) {
-  return value === '' ? t('restart.none', 'none') : value;
+/**
+ * What a value reads as on the card.
+ *
+ * "" would look like a rendering fault. A switch arrives as "on" or "off",
+ * which is the API's vocabulary rather than the reader's.
+ */
+function pendingValue(setting, value) {
+  if (value === '') return t('restart.none', 'none');
+
+  if (setting === 'metrics' && value === 'on') return t('restart.on', 'on');
+  if (setting === 'metrics' && value === 'off') return t('restart.off', 'off');
+
+  return value;
 }
 
 /**
@@ -9268,8 +9280,8 @@ async function loadRestart() {
     if (!change.running && !change.stored) return el('li', {}, label);
 
     return el('li', {}, label,
-      el('span', { class: 'from', text: `: ${pendingValue(change.running)} → ` }),
-      el('strong', { text: pendingValue(change.stored) }));
+      el('span', { class: 'from', text: `: ${pendingValue(change.setting, change.running)} → ` }),
+      el('strong', { text: pendingValue(change.setting, change.stored) }));
   }));
 
   // Offered only where pressing it would actually work. Where it would not, the
