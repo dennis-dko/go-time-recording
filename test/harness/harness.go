@@ -819,10 +819,31 @@ func (a *App) stop() {
 	_ = a.cmd.Process.Kill()
 	_, _ = a.cmd.Process.Wait()
 
-	a.removeDir()
+	removeEventually(a.dir)
 }
 
-// removeDir deletes the instance's directory before testing.T gets to it.
+// SharedDatabase is a SQLite file that two instances started by one test can
+// both open - which is how a case proves that what one start stored is what the
+// next start applies.
+//
+// Its directory is removed the way an instance's own is, and for the same
+// reason. The cases that shared a file made it under a t.TempDir of their own,
+// which removeEventually never saw, so they failed on Windows exactly as the
+// instances' directories used to.
+func SharedDatabase(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	// Registered before any instance that opens it, so it runs after they have
+	// been stopped and before t.TempDir's own removal.
+	t.Cleanup(func() { removeEventually(dir) })
+
+	return filepath.Join(dir, "shared")
+}
+
+// removeEventually deletes a directory an instance used, before testing.T gets
+// to it.
 //
 // Windows releases a file handle some time after the process holding it dies, and
 // a SQLite database in write-ahead logging has three files rather than one. So
@@ -833,15 +854,15 @@ func (a *App) stop() {
 // Retried briefly rather than slept through, and the outcome is ignored: if it
 // still cannot be removed, t.TempDir will report it, which is the behaviour
 // without this.
-func (a *App) removeDir() {
-	if a.dir == "" {
+func removeEventually(dir string) {
+	if dir == "" {
 		return
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
 
 	for {
-		if err := os.RemoveAll(a.dir); err == nil {
+		if err := os.RemoveAll(dir); err == nil {
 			return
 		}
 
