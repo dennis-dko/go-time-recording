@@ -1300,35 +1300,38 @@ function faviconFingerprint(logo) {
 }
 
 /**
- * Keeps the reserved space under the sticky bar equal to the bar.
+ * Keeps a stylesheet property equal to the height of something that other parts
+ * of the page make room for.
  *
- * The stylesheet reserves scroll-padding-top so that anything scrolled to the top
- * of the window lands below the bar rather than behind it - a click, a keyboard
- * focus, an in-page anchor, scrollIntoView. That reservation was a number
- * somebody measured once.
+ * Two things are: the sticky bar, which the stylesheet reserves scroll-padding-top
+ * for so that anything scrolled to the top of the window lands below it rather
+ * than behind it - a click, a keyboard focus, an in-page anchor, scrollIntoView -
+ * and the footer, which the sign-in screen stops short of while the footer is
+ * raised above it. The first reservation was a number somebody measured once.
  *
- * The bar is a wrapping flex row. Its height depends on the width of the window
- * and on everything in it, so a narrow window turns one row into three, and the
+ * Both are wrapping rows. Their height depends on the width of the window and on
+ * everything in them, so a narrow window turns one row into three, and the
  * reservation silently stops covering it. What that looks like is a tab that does
  * not open: the click lands on the bar sitting over it.
  *
- * So it is measured, and re-measured whenever the bar changes shape.
+ * So it is measured, and re-measured whenever the element changes shape.
  */
-function trackTopbarHeight() {
-  const bar = document.querySelector('.topbar');
-  if (!bar) return;
+function trackHeight(selector, property) {
+  const element = document.querySelector(selector);
+  if (!element) return;
 
   const apply = () => {
-    const height = Math.ceil(bar.getBoundingClientRect().height);
-    if (height > 0) document.documentElement.style.setProperty('--topbar-height', `${height}px`);
+    const height = Math.ceil(element.getBoundingClientRect().height);
+    if (height > 0) document.documentElement.style.setProperty(property, `${height}px`);
   };
 
   apply();
 
   // Everything that changes it: the window's width, a logo arriving, a tab
-  // appearing when rights change, a language whose words are longer.
+  // appearing when rights change, a language whose words are longer, a footer
+  // text configured in the settings.
   if (typeof ResizeObserver === 'function') {
-    new ResizeObserver(apply).observe(bar);
+    new ResizeObserver(apply).observe(element);
 
     return;
   }
@@ -3664,12 +3667,11 @@ const TRANSLATIONS = {
     'log.upTo': 'Bis Zeile',
     'login.email': 'E-Mail',
     'login.failed': 'E-Mail-Adresse oder Passwort ist nicht korrekt.',
-    'login.hint': 'Bitte mit E-Mail-Adresse und Passwort anmelden.',
     'login.password': 'Passwort',
     'login.submit': 'Anmelden',
-    'login.title': 'Anmelden',
     'login.totp': 'Code der Authenticator-App',
     'login.totpNeeded': 'Bitte den Code aus der Authenticator-App eingeben.',
+    'login.welcome': 'Willkommen bei {0}',
     'msg.booked': 'Zeit gebucht',
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.entrySaved': 'Eintrag gespeichert',
@@ -5554,13 +5556,25 @@ async function loadBranding() {
   return branding;
 }
 
+/**
+ * Writes the sign-in card's heading, which greets by the installation's name.
+ *
+ * A sentence with the name in it rather than a fixed word in the markup with the
+ * name after it, so a language can put the name where its grammar wants it.
+ */
+function drawWelcome(title) {
+  $('#login-welcome').textContent = fillIn(t('login.welcome', 'Welcome to {0}'), [title]);
+}
+
+const BUILT_IN_TITLE = 'Time Recording';
+
 function drawBranding(branding) {
 
   // Remembered on the device, so the next load has the instance's own name and
   // mark before it is painted rather than a second later. theme.js reads this;
   // see the note there for why a reload otherwise flickers back to a name nobody
   // chose.
-  const title = brandingIn(branding, 'title') || 'Time Recording';
+  const title = brandingIn(branding, 'title') || BUILT_IN_TITLE;
 
   // The tab may be named separately, because the room runs out there first: a
   // name that reads across the top of the screen is cut off after a couple of
@@ -5586,6 +5600,7 @@ function drawBranding(branding) {
   // Into the span rather than the button: the button also holds the mark, and
   // writing text onto the button would take the mark out with it.
   $('#app-title-text').textContent = title;
+  drawWelcome(title);
 
   // These two places show the installation's own logo and nothing else.
   //
@@ -13265,7 +13280,9 @@ async function init() {
   try {
     await loadBranding();
   } catch {
-    // Falls back to the built-in title.
+    // Falls back to the built-in title, which the header carries in its markup
+    // and the sign-in heading has to be told.
+    drawWelcome(BUILT_IN_TITLE);
   }
 
   // Applied before the first render so the sign-in screen already speaks the
@@ -13300,7 +13317,8 @@ async function init() {
       showBrandingLanguage(e.target.value);
     });
     wireNavigationMenu();
-    trackTopbarHeight();
+    trackHeight('.topbar', '--topbar-height');
+    trackHeight('#site-footer', '--footer-height');
     wireTimer();
     wireStatistics();
     wireDocumentExports();

@@ -423,40 +423,55 @@
          storage, and a shared machine would hand the next person the last one's
          name - which is the same reason signing out resets it. -->
     <form method="post" id="form-login" data-no-draft class="login-card">
-      <!-- The same placeholder the header carries, for an installation that has
-           not uploaded a logo. The sign-in screen used to show nothing at all
-           there, which reads as a page that has not finished loading rather than
-           as an installation without a logo. Its letter is the initial of the
-           configured title in the language being read, so it follows the
-           language the browser was detected in like every other word here. -->
-      <svg id="login-mark" class="brand-mark login-mark" viewBox="0 0 32 32"
-           aria-hidden="true" focusable="false">
-        <rect x="3.6" y="3.6" width="24.8" height="24.8" rx="7.2"
-              class="brand-mark-ground"/>
-        <text id="login-initial" x="16" y="16.9" text-anchor="middle"
-              dominant-baseline="middle" class="brand-mark-letter"></text>
-      </svg>
-      <img id="login-logo" class="brand-logo" alt="" hidden>
-      <h2 data-i18n="login.title">Sign in</h2>
-      <p class="muted" id="login-hint" data-i18n="login.hint">Please sign in with your email address and password.</p>
-      <!-- autocomplete off on both, which is unusual and deliberate. The
-           browser offered the last account that signed in on this machine, so
-           a shared or handed-over device showed somebody else's address to
-           whoever opened the page next - a name is not a secret, but it is not
-           the sign-in screen's to volunteer either. A password manager still
-           fills this; what stops is the browser's own history. -->
-      <label data-i18n="login.email">Email<input type="email" name="email" autocomplete="off" required>
-      </label>
-      <label data-i18n="login.password">Password<input type="password" name="password" autocomplete="off" required>
-      </label>
-      <label id="login-totp-field" hidden data-i18n="login.totp">Code from your authenticator app<input type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
-      </label>
-      <button type="submit" data-i18n="login.submit">Sign in</button>
-      <!-- Hidden until the server says passkeys can work here: browsers only
-           expose WebAuthn over HTTPS or on localhost, and a button that cannot
-           work is worse than no button. -->
-      <button type="button" class="secondary" id="login-passkey" hidden data-i18n="passkey.signIn">Sign in with a passkey</button>
-      <p class="login-error" id="login-error" hidden></p>
+      <!-- The installation's picture and its name, in a band across the top.
+           The heading is drawn by the script because the name in it is the
+           configured title, in the language being read. -->
+      <div class="login-band">
+        <div class="login-emblem">
+          <!-- The same placeholder the header carries, for an installation that
+               has not uploaded a logo. The sign-in screen used to show nothing at
+               all there, which reads as a page that has not finished loading
+               rather than as an installation without a logo. Its letter is the
+               initial of the configured title in the language being read, so it
+               follows the language the browser was detected in like every other
+               word here. -->
+          <svg id="login-mark" class="brand-mark login-mark" viewBox="0 0 32 32"
+               aria-hidden="true" focusable="false">
+            <rect x="3.6" y="3.6" width="24.8" height="24.8" rx="7.2"
+                  class="brand-mark-ground"/>
+            <text id="login-initial" x="16" y="16.9" text-anchor="middle"
+                  dominant-baseline="middle" class="brand-mark-letter"></text>
+          </svg>
+          <img id="login-logo" class="brand-logo" alt="" hidden>
+        </div>
+        <h2 id="login-welcome"></h2>
+      </div>
+      <div class="login-fields">
+        <!-- autocomplete off on both, which is unusual and deliberate. The
+             browser offered the last account that signed in on this machine, so
+             a shared or handed-over device showed somebody else's address to
+             whoever opened the page next - a name is not a secret, but it is not
+             the sign-in screen's to volunteer either. A password manager still
+             fills this; what stops is the browser's own history. -->
+        <label data-i18n="login.email">Email<input type="email" name="email" autocomplete="off" required>
+        </label>
+        <label data-i18n="login.password">Password<input type="password" name="password" autocomplete="off" required>
+        </label>
+        <label id="login-totp-field" hidden data-i18n="login.totp">Code from your authenticator app<input type="text" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+        </label>
+        <p class="login-error" id="login-error" hidden></p>
+        <div class="login-actions">
+          <!-- The words first and the tick after them, although the tick is
+               drawn first: the translation is written over the leading text of
+               the button, and a leading element would have it write over the
+               tick instead. -->
+          <button type="submit" class="login-submit" data-i18n="login.submit">Sign in<span class="login-tick" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span></button>
+          <!-- Hidden until the server says passkeys can work here: browsers only
+               expose WebAuthn over HTTPS or on localhost, and a button that cannot
+               work is worse than no button. -->
+          <button type="button" class="secondary" id="login-passkey" hidden data-i18n="passkey.signIn">Sign in with a passkey</button>
+        </div>
+      </div>
     </form>
   </div>
 

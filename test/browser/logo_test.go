@@ -83,19 +83,34 @@ func TestTheConfiguredLogoIsOnTheSignInScreen(t *testing.T) {
 		Width   float64 `json:"width"`
 		Height  float64 `json:"height"`
 		Natural float64 `json:"natural"`
+		Emblem  float64 `json:"emblem"`
 	}
 
 	p.run("measure the banner", chromedp.Evaluate(
 		`(() => {
 			const el = document.querySelector('#login-logo');
 			const r = el.getBoundingClientRect();
+			const padding = parseFloat(getComputedStyle(el.parentElement).paddingLeft)
+				+ parseFloat(getComputedStyle(el.parentElement).paddingRight);
 			return { width: r.width, height: r.height,
-				natural: el.naturalWidth / el.naturalHeight };
+				natural: el.naturalWidth / el.naturalHeight,
+				emblem: el.parentElement.getBoundingClientRect().width - padding };
 		})()`, &box))
 
 	if box.Height <= 40 {
 		t.Errorf("the sign-in logo is %.0fpx tall, which is the header's size - it is "+
 			"meant to be a banner there", box.Height)
+	}
+
+	// And the box it sits in is its own size. That box is sized by the picture, so
+	// a width given to the picture as a share of the box is a cycle - and Chrome
+	// resolved it by sizing the box as if the bound were not there: 492px of white
+	// around a 328px wordmark, which pushed the welcome off the line beside it.
+	// The picture itself was the right size throughout, which is why this asks
+	// about the box.
+	if spare := box.Emblem - box.Width; spare > 1 {
+		t.Errorf("the sign-in logo is %.0fpx wide in a box with room for %.0fpx, so "+
+			"%.0fpx of the box is empty ground beside it", box.Width, box.Emblem, spare)
 	}
 
 	// Nothing is cut, asked as a property of the image rather than of the fixture:
