@@ -364,12 +364,12 @@ const maxUnzippedBytes = 128 << 20
 // It holds the only recover() in this tree, and the exception is narrow on
 // purpose: this is the one place where bytes somebody uploaded decide what a
 // dependency does with an index, and the dependency has been wrong about that.
-// GO-2026-6452 - a cell naming a negative shared string panics excelize, on every
-// released version: the database has listed v2.11.0 as the fix since 2026-09-24,
-// and measured, v2.11.0 still panics here. It needs a workbook whose
-// shared strings are large enough to be spilled to a temporary file, because the
-// in-memory lookup does check; the crafted file that proves it is 54 KB, so the
-// upload bound is no protection at all.
+// A cell naming a negative shared string panics excelize on every release so
+// far: GHSA-wcg2-648h-mhxq, fixed upstream after v2.11.0 and not released yet.
+// It needs a workbook whose shared strings are large enough to be spilled to a
+// temporary file, because the in-memory lookup does check - that one was
+// GO-2026-6452, fixed in v2.11.0. The crafted file that proves it is 54 KB, so
+// the upload bound is no protection at all.
 //
 // GoFr recovers a panic inside a handler, so the process survives either way.
 // What the guard buys is the difference between a logged stack trace and a person
