@@ -147,13 +147,14 @@ func TestTheRestartCardComesBeforeTheVersionCard(t *testing.T) {
 	}
 }
 
-// A switch waiting for a restart is described in the reader's language.
+// What is waiting for a restart is described in the reader's language.
 //
-// The server names the metrics endpoint's two states "on" and "off", which is
-// the API's vocabulary and stays that way; the card put those words on screen
-// as they came, so a German administrator read "Metrik-Endpunkt: on → off" in
-// a sentence that was otherwise German.
-func TestTheRestartCardSaysOnAndOffInTheReadersLanguage(t *testing.T) {
+// The server names the metrics endpoint's two states "on" and "off", and writes
+// a share the way the form takes it - both the API's vocabulary, and both staying
+// that way. The card put them on screen as they came, so a German administrator
+// read "Metrik-Endpunkt: on → off" and "1 → 0.35" in a card that was otherwise
+// German.
+func TestTheRestartCardSpeaksTheReadersLanguage(t *testing.T) {
 	t.Parallel()
 
 	p := open(t)
@@ -165,10 +166,13 @@ func TestTheRestartCardSaysOnAndOffInTheReadersLanguage(t *testing.T) {
 
 	p.waitForFilled("#tel-tracing-hint")
 
-	// The harness serves metrics, so switching them off is a change only the
-	// next start can make.
-	p.run("stop serving metrics",
+	// The harness serves metrics and exports no traces, so switching the one
+	// off and the other on are both changes only the next start can make.
+	p.run("stop serving metrics and sample a share of traces",
 		p.chooseOption(`#form-telemetry [name="metricsOff"]`, "off"),
+		p.chooseOption(`#form-telemetry [name="traceExporter"]`, "otlp"),
+		chromedp.SetValue(`#form-telemetry [name="tracerUrl"]`, "jaeger:4317", chromedp.ByQuery),
+		chromedp.SetValue(`#form-telemetry [name="tracerRatio"]`, "0.35", chromedp.ByQuery),
 		p.click(`#form-telemetry button[type="submit"]`))
 
 	p.waitShown("#restart-card-pending")
@@ -181,6 +185,10 @@ func TestTheRestartCardSaysOnAndOffInTheReadersLanguage(t *testing.T) {
 
 	if !strings.Contains(said, "an → aus") {
 		t.Errorf("the card reads %q, which does not say the endpoint goes from an to aus", said)
+	}
+
+	if strings.Contains(said, "0.35") || !strings.Contains(said, "1 → 0,35") {
+		t.Errorf("the card reads %q, which does not write the share as 1 → 0,35", said)
 	}
 }
 

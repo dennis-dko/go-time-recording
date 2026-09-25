@@ -1808,6 +1808,21 @@ function fmtNumber(n) {
 }
 
 /**
+ * A share between none and all, written the way the reader writes a number and
+ * in full.
+ *
+ * Not fmtNumber: two fixed places turn a limit of 0.125 into 0,13, which is a
+ * setting nobody made. Fifteen significant digits are what a decimal typed into
+ * a configuration file survives as a double, so 0.1 comes back as 0,1 rather
+ * than as the binary fraction under it. Display only, like fmtNumber.
+ */
+function fmtShare(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return String(n ?? '');
+
+  return new Intl.NumberFormat(activeLocale(), { maximumSignificantDigits: 15 }).format(n);
+}
+
+/**
  * A number of hours, with the unit the reader uses for one.
  *
  * The unit was a literal "h" appended here, which is a word - a short one that
@@ -8611,7 +8626,7 @@ function fillOperationalForm(data) {
     + `${t('ops.idleShort', 'idle')} ${effective.sessionIdleMinutes} min, `
     + `${t('ops.maxShort', 'max/day')} ${fmtHours(effective.maxDailyHours)}, `
     + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.ratioShort', 'delete limit')} ${fmtNumber(effective.ldapSyncMaxDeleteRatio)}`;
+    + `${t('ops.ratioShort', 'delete limit')} ${fmtShare(effective.ldapSyncMaxDeleteRatio)}`;
 
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
@@ -9214,14 +9229,16 @@ function pendingLabel(setting) {
 /**
  * What a value reads as on the card.
  *
- * "" would look like a rendering fault. A switch arrives as "on" or "off",
- * which is the API's vocabulary rather than the reader's.
+ * "" would look like a rendering fault. A switch arrives as "on" or "off" and a
+ * share the way the form takes it, which is the API's vocabulary rather than
+ * the reader's.
  */
 function pendingValue(setting, value) {
   if (value === '') return t('restart.none', 'none');
 
   if (setting === 'metrics' && value === 'on') return t('restart.on', 'on');
   if (setting === 'metrics' && value === 'off') return t('restart.off', 'off');
+  if (setting === 'tracerRatio' && Number.isFinite(Number(value))) return fmtShare(Number(value));
 
   return value;
 }
@@ -11385,7 +11402,7 @@ function describeActiveTelemetry(active) {
     : t('tel.activeMetricsOff', 'not served');
 
   const traces = active.traceExporter
-    ? `${active.traceExporter} → ${active.tracerUrl} (${active.tracerRatio})`
+    ? `${active.traceExporter} → ${active.tracerUrl} (${fmtShare(active.tracerRatio)})`
     : t('tel.activeTracesOff', 'not exported');
 
   return `${t('tel.activeLog', 'Log level')}: ${active.logLevel} · `

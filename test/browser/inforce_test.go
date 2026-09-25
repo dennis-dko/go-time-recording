@@ -107,6 +107,9 @@ func TestWhatIsInForceIsStillSaidWhileTheLimitsAreEdited(t *testing.T) {
 // German reader saw "max./Tag 10.5 h" beside a timesheet saying "10,50 Std." -
 // the unit and the separator both, on the one screen where the figures are
 // being compared against what somebody is about to type.
+//
+// The share is written in full rather than to the two places an hour gets:
+// 0.125 is a limit somebody can set, and "0,13" is one they did not.
 func TestWhatIsInForceIsWrittenTheWayTheReaderWritesNumbers(t *testing.T) {
 	t.Parallel()
 
@@ -134,7 +137,7 @@ func TestWhatIsInForceIsWrittenTheWayTheReaderWritesNumbers(t *testing.T) {
 						maxDailyHours: 10.5,
 						rateLimit: 5,
 						rateLimitWindowSeconds: 60,
-						ldapSyncMaxDeleteRatio: 0.5,
+						ldapSyncMaxDeleteRatio: 0.125,
 					},
 				} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 			}
@@ -157,13 +160,13 @@ func TestWhatIsInForceIsWrittenTheWayTheReaderWritesNumbers(t *testing.T) {
 		t.Fatal("the German hour unit is \"h\" as well, so this case cannot tell the two apart")
 	}
 
-	for _, want := range []string{"24,00 " + unit, "10,50 " + unit, "0,50"} {
+	for _, want := range []string{"24,00 " + unit, "10,50 " + unit, "Löschgrenze 0,125"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("the line reads %q, which does not contain %q", line, want)
 		}
 	}
 
-	for _, unwanted := range []string{" h,", "10.5", "0.5"} {
+	for _, unwanted := range []string{" h,", "10.5", "0.125", "0,13"} {
 		if strings.Contains(line, unwanted) {
 			t.Errorf("the line reads %q, which still contains %q", line, unwanted)
 		}
