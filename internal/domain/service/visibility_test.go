@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/service"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
@@ -109,5 +111,48 @@ func TestSomebodyElsesProjectIsNotFoundRatherThanForbidden(t *testing.T) {
 
 	if kind := apperror.KindOf(err); kind != apperror.KindNotFound {
 		t.Errorf("a private project's existence was revealed by the status: want a not-found, got %v", kind)
+	}
+}
+
+// A scope is checked against the project it names, and naming none passes.
+//
+// Both evaluations of somebody's own time take one, and one of them used to let
+// a foreign project through because the total could only ever be the caller's.
+func TestAScopeNamingSomebodyElsesProjectIsNotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	projects := memory.NewProjectRepository()
+
+	owner := uint(7)
+	project, err := projects.Save(ctx, &model.Project{
+		Name: "Hers", OwnerID: &owner, Status: model.ProjectStatusActive,
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		scope   service.ProjectScope
+		viewer  uint
+		refused bool
+	}{
+		{"every project", service.ProjectScope{}, 8, false},
+		{"no project", service.ProjectScope{Unassigned: true}, 8, false},
+		{"the owner's own", service.ProjectScope{ProjectID: project.ID}, 7, false},
+		{"no authentication", service.ProjectScope{ProjectID: project.ID}, 0, false},
+		{"somebody else's", service.ProjectScope{ProjectID: project.ID}, 8, true},
+		{"one that does not exist", service.ProjectScope{ProjectID: project.ID + 1}, 7, true},
+	} {
+		err := tc.scope.RequireVisible(ctx, projects, tc.viewer)
+
+		if !tc.refused && err != nil {
+			t.Errorf("%s: refused with %v", tc.name, err)
+		}
+
+		if tc.refused && apperror.KindOf(err) != apperror.KindNotFound {
+			t.Errorf("%s: answered %v, want a not-found", tc.name, err)
+		}
 	}
 }
