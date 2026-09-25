@@ -5289,10 +5289,35 @@ function todayISO() {
 }
 
 /**
+ * Every entry in a range, however many pages the answer takes.
+ *
+ * The listing answers a page - a hundred entries unless asked for more, newest
+ * first - so a caller that totals what one request brought back has totalled a
+ * page. The calendar did: a month of a hundred and one entries lost its first
+ * days, and its month total with them. Paged by the count the server reports
+ * rather than by a page size written down here as well.
+ */
+async function everyTimesheet(params) {
+  const entries = [];
+
+  for (;;) {
+    const query = new URLSearchParams(params);
+    query.set('offset', String(entries.length));
+
+    const answer = await api(`/timesheets?${query}`);
+    const page = answer?.items ?? [];
+
+    entries.push(...page);
+
+    if (page.length === 0 || entries.length >= (answer?.totalCount ?? 0)) return entries;
+  }
+}
+
+/**
  * Renders the month grid with the hours booked on each day.
  *
- * The whole month is fetched in one request and grouped client-side; asking
- * per day would be dozens of round trips for one screen.
+ * The whole month is fetched and grouped client-side; asking per day would be
+ * dozens of round trips for one screen.
  */
 async function loadCalendar() {
   if (!can('timesheets:read:own')) return;
@@ -5300,9 +5325,7 @@ async function loadCalendar() {
   const first = currentCalendarMonth();
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
 
-  const params = new URLSearchParams({ from: ISO_DAY(first), to: ISO_DAY(last) });
-
-  const entries = (await api(`/timesheets?${params}`))?.items ?? [];
+  const entries = await everyTimesheet({ from: ISO_DAY(first), to: ISO_DAY(last) });
 
   const byDay = new Map();
   for (const entry of entries) {
@@ -8153,7 +8176,7 @@ async function todayInOneSentence() {
   }
 
   try {
-    const entries = (await api(`/timesheets?from=${today}&to=${today}`))?.items ?? [];
+    const entries = await everyTimesheet({ from: today, to: today });
     const hours = entries.reduce((sum, entry) => sum + entry.durationHours, 0);
 
     if (hours > 0) {

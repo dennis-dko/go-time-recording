@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -118,4 +119,75 @@ func (p *page) waitForCalendarMonth(t *testing.T, changingFrom string) string {
 	t.Fatalf("the calendar heading never settled (last read %q)", shown)
 
 	return ""
+}
+
+// The calendar totals the whole month, however many entries it holds.
+//
+// The entry listing answers a page - a hundred entries unless asked for more -
+// and newest first. The calendar asked for the month without saying how many, so
+// somebody who books per task and reached a hundred and one entries saw the
+// first days of the month empty and a month total short by exactly those days.
+//
+// Booked through the API rather than stubbed: what is being checked is what the
+// real listing answers when nobody names a page size.
+func TestTheCalendarTotalsAWholeMonthOfEntries(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	var status string
+
+	p.run("book five hours on each of the first 21 days", chromedp.Evaluate(`
+		(async () => {
+			const csrf = document.cookie.split(';').map(c => c.trim())
+				.find(c => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+
+			const now = new Date();
+			const month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+
+			for (let day = 1; day <= 21; day += 1) {
+				for (let entry = 0; entry < 5; entry += 1) {
+					const booked = await fetch('/api/v1/timesheets', {
+						method: 'POST',
+						credentials: 'same-origin',
+						headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+						body: JSON.stringify({
+							date: month + '-' + String(day).padStart(2, '0'),
+							durationHours: 1,
+						}),
+					});
+
+					if (!booked.ok) return 'day ' + day + ': ' + booked.status;
+				}
+			}
+
+			return 'ok';
+		})()`, &status, awaitPromise))
+
+	if status != "ok" {
+		t.Fatalf("booking the month: %s", status)
+	}
+
+	p.run("go to the calendar",
+		chromedp.Click(`.tab[data-view="calendar"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#calendar-days", chromedp.ByID),
+		chromedp.Evaluate(`loadCalendar()`, nil, awaitPromise))
+
+	var summary, firstDay, wantTotal, wantDay string
+
+	p.run("read the month", chromedp.Evaluate(
+		`document.querySelector('#calendar-summary').textContent`, &summary),
+		chromedp.Evaluate(`document.querySelector('#calendar-days .cal-day:not(.outside)')`+
+			`.querySelector('.cal-hours')?.textContent ?? ''`, &firstDay),
+		chromedp.Evaluate(`fmtHours(105)`, &wantTotal),
+		chromedp.Evaluate(`fmtHours(5)`, &wantDay))
+
+	if !strings.Contains(summary, wantTotal) {
+		t.Errorf("the calendar says %q for a month of 105 booked hours", summary)
+	}
+
+	if firstDay != wantDay {
+		t.Errorf("the first of the month reads %q, want %q", firstDay, wantDay)
+	}
 }
