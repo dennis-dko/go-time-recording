@@ -94,6 +94,31 @@ func TestDateTimeScanReadsAFixedOffsetAsSQLiteWroteIt(t *testing.T) {
 	}
 }
 
+// A time a driver hands back comes out in UTC, whatever zone it was read in.
+//
+// A stored day is midnight UTC, and both server dialects return it in a zone
+// that is not the application's choice: lib/pq in the PostgreSQL server's
+// session zone, and GoFr's MySQL connection in the process's own (loc=Local).
+// West of UTC that is the evening before - and a day read in its own zone is
+// the evening's day, so every entry showed on the day before it was booked.
+func TestDateTimeScanReturnsADriversTimeInUTC(t *testing.T) {
+	newYork := time.FixedZone("EDT", -4*60*60)
+	stored := time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC)
+
+	var d dateTime
+	if err := d.Scan(stored.In(newYork)); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	if d.Time.Location() != time.UTC {
+		t.Errorf("came back in %s rather than UTC", d.Time.Location())
+	}
+
+	if y, m, day := d.Time.Date(); y != 2026 || m != time.July || day != 3 {
+		t.Errorf("the 3rd of July read as %s", d.Time.Format(time.DateOnly))
+	}
+}
+
 func TestDateTimeScanNullIsNotValid(t *testing.T) {
 	var d dateTime
 	if err := d.Scan(nil); err != nil {
