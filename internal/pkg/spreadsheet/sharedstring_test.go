@@ -15,11 +15,13 @@ import (
 // A cell may point at a shared string that does not exist, and one of the two
 // places excelize looks it up does not check for a negative index.
 //
-// GO-2026-6452 (CVE-2026-59162), published 2026-09-16 and affecting every
-// released version including the v2.11.0 in go.mod: "parsing a spreadsheet cell
-// with a negative shared-string index causes a runtime panic". The database has
-// listed v2.11.0 as the fix since 2026-09-24, and for this path it is not one -
-// see TestExcelizeStillPanicsOnASpilledNegativeSharedString. Read in the
+// Two advisories, one for each lookup, and only the second is this case's.
+// GO-2026-6452 (CVE-2026-59162, GHSA-fx5j-qcqg-grpf) is the in-memory one, fixed
+// in v2.11.0. The spilled one below is GHSA-wcg2-648h-mhxq, fixed upstream in
+// f98df08 on 2026-07-28 - after v2.11.0, in no release yet, and published in no
+// database - so the v2.11.0 in go.mod still panics on it. The two were read as one
+// until the database began listing v2.11.0 as the fix; see
+// TestExcelizeStillPanicsOnASpilledNegativeSharedString. Read in the
 // dependency's own source rather than taken from the advisory, because the two
 // lookups differ and only one of them is the hole. cell.go's getValueFrom does
 // check - `if xlsxSI < 0 || xlsxSI >= len(d.SI)` - but it only reaches that check
@@ -108,17 +110,19 @@ func TestALargeWorkbookWithSaneSharedStringsStillReads(t *testing.T) {
 // The recover() in rowsOf still has its reason, and this is what says so.
 //
 // GO-2026-6452 was carried in ci.yml's advisory register. On 2026-09-24 the
-// database began listing v2.11.0 - the version go.mod requires - as fixed, and
-// the fix it points at added the lower bound to the in-memory lookup in cell.go
-// and left getFromStringItem in rows.go without one, so a spilled shared-string
-// table still panics. govulncheck therefore reports nothing, the register had to
-// drop the entry, and nothing else would notice the day excelize does fix it and
-// the guard becomes the kind of recover() CLAUDE.md forbids: one with no reason
-// left.
+// database began listing v2.11.0 - the version go.mod requires - as fixed, which
+// is true of that advisory: it is the in-memory lookup in cell.go. A spilled
+// shared-string table goes through getFromStringItem in rows.go instead, a second
+// flaw - GHSA-wcg2-648h-mhxq, fixed upstream in f98df08 after v2.11.0 and in no
+// release or database yet - so it still panics. govulncheck therefore reports
+// nothing, the register had to drop the entry, and nothing else would notice the
+// day excelize ships that fix and the guard becomes the kind of recover()
+// CLAUDE.md forbids: one with no reason left.
 //
 // So it asks excelize directly, with no guard of ours in the way, and fails once
-// excelize stops panicking. That is the moment to look again at the guard, at
-// the case above and at CLAUDE.md's paragraph about them.
+// excelize stops panicking - which should be the first release carrying f98df08.
+// That is the moment to look again at the guard, at the case above and at
+// CLAUDE.md's paragraph about them.
 func TestExcelizeStillPanicsOnASpilledNegativeSharedString(t *testing.T) {
 	crafted := workbookWithNegativeSharedString(t)
 
