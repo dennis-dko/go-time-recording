@@ -1034,7 +1034,7 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
    They are the banners about the installation rather than about the screen they
    were caused on, and the administrator who most needs to keep seeing one is
    exactly the one who has scrolled down to carry on working. Under the bar and
-   not over it: --topbar-height is kept current by trackTopbarHeight, and the
+   not over it: --topbar-height is kept current by trackHeight, and the
    z-index is below the bar's so the bar wins where they meet.
 
    One box around both rather than each sticking on its own: two things stuck to
@@ -1120,7 +1120,11 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    * it. The gap collapses to nothing while the notice is hidden. */
   flex-direction: column;
   gap: 16px;
-  inset: 0;
+  /* Everything but the footer, which is raised above this screen while it is up
+   * (see .site-footer below). Stopping short of it rather than lying under it,
+   * because this screen scrolls: a footer laid over its bottom edge would put the
+   * last thing on it - the submit button, on a short window - underneath. */
+  inset: 0 0 var(--footer-height, 56px);
   justify-content: center;
   padding: 20px;
   position: fixed;
@@ -1642,6 +1646,25 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
     position: static;
     transform: none;
   }
+}
+
+/* Raised above the sign-in screen while that screen is up.
+ *
+ * The sign-in screen is a fixed, opaque cover over the whole page, and the
+ * footer is the last thing in the page - so the version and the link to the
+ * source were on every screen but the one everybody sees first, which is also
+ * the one where "which version is this" gets asked before anybody can sign in.
+ *
+ * :has rather than a class the script sets, because the screen ships in the
+ * markup already up: there is no moment at which the script could say so first.
+ * The sign-in screen stops at --footer-height, which the script keeps equal to
+ * this footer's height. */
+body:has(#login-screen:not([hidden])) .site-footer {
+  background: var(--bg);
+  inset: auto 0 0;
+  margin-top: 0;
+  position: fixed;
+  z-index: 31;
 }
 
 /* The same image, given the room a sign-in screen has and a header bar does not.

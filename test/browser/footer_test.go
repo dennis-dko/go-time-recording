@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 	"strings"
@@ -191,5 +192,65 @@ func TestTheFooterStaysAtTheBottomAtOneHeight(t *testing.T) {
 
 	if short.Height < 40 || short.Height > 80 {
 		t.Errorf("the footer is %.0fpx tall", short.Height)
+	}
+}
+
+// The footer is on the sign-in screen, where it used to be painted over.
+//
+// The sign-in screen is a fixed, opaque cover over the whole window, and the
+// footer is the last thing in the page beneath it - so the version and the link
+// to the source were on every screen except the one everybody sees first, and
+// the one where "which version is this" is asked before anybody can sign in to
+// find out.
+//
+// Asked of what is on top at each one's own centre rather than of visibility:
+// checkVisibility reports an element that is painted over as visible, which is
+// exactly how this stayed unnoticed.
+func TestTheSignInScreenShowsTheFooter(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.run("wait for the sign-in form", chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	// The version arrives with the branding, which is a request of its own.
+	p.waitEvaluates("the version in the footer",
+		`String(document.querySelector('#footer-version')?.textContent.trim() !== '')`, "true")
+
+	for _, selector := range []string{"#footer-source", "#footer-version"} {
+		var onTop bool
+
+		p.run("find what is on top of "+selector, chromedp.Evaluate(fmt.Sprintf(`(() => {
+			const el = document.querySelector(%q);
+			const r = el.getBoundingClientRect();
+			if (r.width === 0 || r.height === 0) return false;
+
+			const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+
+			return hit !== null && (hit === el || el.contains(hit));
+		})()`, selector), &onTop))
+
+		if !onTop {
+			t.Errorf("%s is covered on the sign-in screen, so nobody signing in can "+
+				"see or reach it", selector)
+		}
+	}
+
+	// And the sign-in screen stops where the footer starts. It scrolls on a short
+	// window so the submit button stays reachable; a footer laid over its bottom
+	// edge would put that button underneath it instead.
+	var edges struct {
+		Screen float64 `json:"screen"`
+		Footer float64 `json:"footer"`
+	}
+
+	p.evalJSON(`JSON.stringify({
+		screen: document.querySelector('#login-screen').getBoundingClientRect().bottom,
+		footer: document.querySelector('#site-footer').getBoundingClientRect().top,
+	})`, &edges)
+
+	if edges.Screen > edges.Footer+1 {
+		t.Errorf("the sign-in screen reaches %.0fpx and the footer starts at %.0fpx, "+
+			"so the bottom of the card can scroll behind the footer",
+			edges.Screen, edges.Footer)
 	}
 }
