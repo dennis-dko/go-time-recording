@@ -365,7 +365,8 @@ const maxUnzippedBytes = 128 << 20
 // purpose: this is the one place where bytes somebody uploaded decide what a
 // dependency does with an index, and the dependency has been wrong about that.
 // GO-2026-6452 - a cell naming a negative shared string panics excelize, on every
-// released version, with no fixed one to move to. It needs a workbook whose
+// released version: the database has listed v2.11.0 as the fix since 2026-09-24,
+// and measured, v2.11.0 still panics here. It needs a workbook whose
 // shared strings are large enough to be spilled to a temporary file, because the
 // in-memory lookup does check; the crafted file that proves it is 54 KB, so the
 // upload bound is no protection at all.
