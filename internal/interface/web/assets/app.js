@@ -9301,11 +9301,6 @@ async function loadRestart() {
       el('strong', { text: pendingValue(change.setting, change.stored) }));
   }));
 
-  // Offered only where pressing it would actually work. Where it would not, the
-  // reason is shown instead of a button that fails on click.
-  //
-  // The hint promises a list of saved changes and the list follows it, so both go
-  // when there are none.
   const waiting = pending.length > 0;
 
   // The hint promises a list of saved changes and the list follows it, so both
@@ -9376,6 +9371,8 @@ async function loadRestart() {
     ? ''
     : t(`restart.unsupported.${state.reasonCode || 'other'}`, state.reason ?? '');
 
+  // Offered only where pressing it would actually work. Where it would not, the
+  // reason is shown instead of a button that fails on click.
   showRestartControls('#restart-card-mode', '#restart-card-now',
     '#restart-card-unsupported', description, refusal, state.supported, true);
 
