@@ -71,7 +71,7 @@ func TestADateIsTheDayItNames(t *testing.T) {
 			continue
 		}
 
-		if !d.Time.Equal(want) || d.Location() != time.UTC {
+		if !d.Equal(want) || d.Location() != time.UTC {
 			t.Errorf("%s became %s, want %s", sent, d.Time, want)
 		}
 	}
