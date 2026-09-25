@@ -1,9 +1,11 @@
 package rest
 
 import (
+	"encoding/json"
 	"math"
 	"strconv"
 	"testing"
+	"time"
 )
 
 // An id too large to hold is refused rather than wrapped.
@@ -41,6 +43,36 @@ func TestAnIdTooLargeToHoldIsRefused(t *testing.T) {
 	for _, bad := range []string{"0", "", "-1", "x"} {
 		if _, err := parseUint(bad, "id"); err == nil {
 			t.Errorf("%q was accepted as an id", bad)
+		}
+	}
+}
+
+// A date is the day it names, whatever form it arrives in.
+//
+// A full timestamp carries a time of day and an offset, and both used to reach
+// the database: SQLite then wrote "2026-07-03 23:30:00 -0500 -0500", which it
+// could not read back, and PostgreSQL and MySQL stored the instant, which is the
+// 4th in UTC. The day is the one written, so every form becomes midnight UTC of
+// it - the one shape a stored date has.
+func TestADateIsTheDayItNames(t *testing.T) {
+	want := time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC)
+
+	for _, sent := range []string{
+		`"2026-07-03"`,
+		`"2026-07-03T01:00:00+02:00"`,
+		`"2026-07-03T23:30:00-05:00"`,
+		`"2026-07-03T12:00:00.5Z"`,
+	} {
+		var d Date
+
+		if err := json.Unmarshal([]byte(sent), &d); err != nil {
+			t.Errorf("%s was refused: %v", sent, err)
+
+			continue
+		}
+
+		if !d.Time.Equal(want) || d.Location() != time.UTC {
+			t.Errorf("%s became %s, want %s", sent, d.Time, want)
 		}
 	}
 }

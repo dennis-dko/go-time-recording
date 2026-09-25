@@ -9,6 +9,7 @@ import (
 
 	"gofr.dev/pkg/gofr"
 
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
 )
 
@@ -20,7 +21,16 @@ type Date struct {
 	time.Time
 }
 
-// UnmarshalJSON reads the three forms a date arrives in.
+// UnmarshalJSON reads the three forms a date arrives in, and keeps the day each
+// one names.
+//
+// A timestamp brings a time of day and an offset, and neither may reach the
+// database: a stored date is midnight UTC of a calendar day (model.CalendarDay).
+// Both used to be stored as sent. SQLite then wrote "2026-07-03 23:30:00 -0500
+// -0500", which it cannot read back, so one booking made its owner's entry list
+// answer 500; PostgreSQL and MySQL kept the instant, which put the same booking
+// on the 4th. The day is the one written - "2026-07-03T23:30:00-05:00" is the
+// 3rd - which is also how the spreadsheet importer reads the same form.
 //
 // A pointer receiver because it writes to the value, and this is the half of the
 // pair that has to be one. See MarshalJSON for why the other half is not.
@@ -42,7 +52,7 @@ func (d *Date) UnmarshalJSON(data []byte) error {
 	for _, layout := range []string{time.DateOnly, time.RFC3339, time.RFC3339Nano} {
 		t, err := time.Parse(layout, raw)
 		if err == nil {
-			d.Time = t
+			d.Time = model.CalendarDay(t)
 
 			return nil
 		}
