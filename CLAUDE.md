@@ -112,7 +112,7 @@
 
        | File | Lines | What only reading catches | Read: the commit, the date and the question |
        | --- | --- | --- | --- |
-       | `persistence/migrations/migrations.go` | ~1,550 | Runs against somebody's recorded hours, on three dialects, in an append-only chain where a middle migration may be looking at a name a later one renames. | never read; stands at `d88b72c` |
+       | `persistence/migrations/migrations.go` | ~1,550 | Runs against somebody's recorded hours, on three dialects, in an append-only chain where a middle migration may be looking at a name a later one renames. | 2026-09-26 at `d88b72c`: can a migration move a stored day? No. But the project split leaves a running clock on somebody else's project or a deleted one - measured, put to the maintainer rather than fixed, since every remedy touches the append-only chain. 0 of 2 |
        | `cmd/main.go` | ~1,000 | Start-up **ordering**, the second signal listener, the typed-nil `container.SQL`. A scan sees statements, not the order they must run in. | never read; stands at `1648bdd` |
        | `service/session_application_service.go` | ~680 | Who is signed in and for how long. Lifetime, idle expiry and what a sign-out ends. | never read; stands at `1b7d94b` |
        | `infrastructure/selfupdate/selfupdate.go` | ~670 | Downloads, verifies and replaces the running binary. | never read; stands at `fe4c7c3` |
