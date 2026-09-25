@@ -63,7 +63,7 @@ type App struct {
 	baseURL string
 	dir     string
 	cmd     *exec.Cmd
-	logs    *bytes.Buffer
+	logs    *processLog
 
 	// metricsPort is the one this instance was given. Its own listener, on its
 	// own port, outside the middleware chain - so a test that wants to read what
@@ -346,7 +346,7 @@ func startOnce(t *testing.T, withDatabase bool, env ...string) (*App, error) {
 
 	cmd.Env = append(cmd.Env, env...)
 
-	logs := &bytes.Buffer{}
+	logs := &processLog{}
 	cmd.Stdout = logs
 	cmd.Stderr = logs
 
@@ -806,9 +806,40 @@ func (a *App) startupFailure() error {
 	return nil
 }
 
-// logBuffer builds a buffer holding one line, for the tests of the above.
-func logBuffer(line string) *bytes.Buffer {
-	return bytes.NewBufferString(line)
+// processLog is what an instance has written, safe to read while it is still
+// writing.
+//
+// exec copies the process's output into it from a goroutine of its own, and the
+// cases read it while the instance runs - waiting for a line to appear, or
+// naming the log in a failure. A bare bytes.Buffer shared that way is a data
+// race, and the race detector reported it the first time a tagged suite was run
+// under it: the suites that drive the harness are never part of the untagged
+// race run.
+type processLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *processLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.buf.Write(p)
+}
+
+func (l *processLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.buf.String()
+}
+
+// logBuffer builds a log holding one line, for the tests of the above.
+func logBuffer(line string) *processLog {
+	l := &processLog{}
+	l.buf.WriteString(line)
+
+	return l
 }
 
 func (a *App) stop() {
