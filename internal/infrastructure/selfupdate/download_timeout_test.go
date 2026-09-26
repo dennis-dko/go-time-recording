@@ -68,7 +68,7 @@ func TestASlowDownloadIsNotCutOffLikeAStalledOne(t *testing.T) {
 	// client, and that is the whole of the defect.
 	source.Client = &http.Client{Timeout: lookupBudget}
 
-	self := filepath.Join(t.TempDir(), "program"+exeSuffix())
+	self := filepath.Join(installDir(t), "program"+exeSuffix())
 	if err := os.WriteFile(self, []byte("the version now running"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestADownloadThatStopsArrivingIsStillCutOff(t *testing.T) {
 
 	source := New(feed.URL, "")
 
-	self := filepath.Join(t.TempDir(), "program"+exeSuffix())
+	self := filepath.Join(installDir(t), "program"+exeSuffix())
 	if err := os.WriteFile(self, []byte("the version now running"), 0o755); err != nil {
 		t.Fatal(err)
 	}

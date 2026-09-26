@@ -235,7 +235,7 @@ func TestAnInstallReplacesTheFileItWasGiven(t *testing.T) {
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
 
-	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	self := filepath.Join(installDir(t), "go-time-recording"+exeSuffix())
 
 	if err := os.WriteFile(self, []byte("the old version"), 0o755); err != nil {
 		t.Fatal(err)
@@ -288,7 +288,7 @@ func TestAFailedInstallLeavesTheOldBinaryInPlace(t *testing.T) {
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(wrong[:]),
 		workingProgram(t, "the new version"))
 
-	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	self := filepath.Join(installDir(t), "go-time-recording"+exeSuffix())
 	old := []byte("the old version")
 
 	if err := os.WriteFile(self, old, 0o755); err != nil {
@@ -319,6 +319,32 @@ func exeSuffix() string {
 	}
 
 	return ""
+}
+
+// installDir is a directory to install into, removed only once Windows has let
+// go of what ran in it.
+//
+// An install runs the program it downloaded - the probe asks it for its version
+// - and Windows releases the file some time after that process has exited.
+// t.TempDir removed the directory a moment too early and failed a case that had
+// passed with "The directory is not empty", one package run in three on the
+// machine this is developed on. The test harness retries its instances'
+// directories for the same reason (removeEventually).
+func installDir(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	// Registered after t.TempDir's own removal, so it runs before it.
+	t.Cleanup(func() {
+		deadline := time.Now().Add(5 * time.Second)
+
+		for os.RemoveAll(dir) != nil && time.Now().Before(deadline) {
+			time.Sleep(50 * time.Millisecond)
+		}
+	})
+
+	return dir
 }
 
 // workingProgram is a file that runs and answers --version, which is what the
@@ -377,7 +403,7 @@ func TestADownloadThatCannotRunIsNotInstalled(t *testing.T) {
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), broken)
 
-	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	self := filepath.Join(installDir(t), "go-time-recording"+exeSuffix())
 	old := workingProgram(t, "the old version")
 
 	if err := os.WriteFile(self, old, 0o755); err != nil {
@@ -416,7 +442,7 @@ func TestARollbackPutsThePreviousVersionBack(t *testing.T) {
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
 
-	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	self := filepath.Join(installDir(t), "go-time-recording"+exeSuffix())
 	old := workingProgram(t, "the old version")
 
 	if err := os.WriteFile(self, old, 0o755); err != nil {
@@ -470,7 +496,7 @@ func TestAVersionAlreadyWaitingIsNotInstalledOverTheWayBack(t *testing.T) {
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
 
-	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	self := filepath.Join(installDir(t), "go-time-recording"+exeSuffix())
 	old := workingProgram(t, "the old version")
 
 	if err := os.WriteFile(self, old, 0o755); err != nil {
@@ -498,7 +524,7 @@ func TestAVersionAlreadyWaitingIsNotInstalledOverTheWayBack(t *testing.T) {
 // With nothing to go back to, a rollback says so rather than removing the
 // working binary.
 func TestARollbackWithNothingToGoBackToIsRefused(t *testing.T) {
-	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	self := filepath.Join(installDir(t), "go-time-recording"+exeSuffix())
 
 	if err := os.WriteFile(self, []byte("the only version"), 0o755); err != nil {
 		t.Fatal(err)
@@ -522,7 +548,7 @@ func TestARollbackWithNothingToGoBackToIsRefused(t *testing.T) {
 // binary somebody would have gone back to, in the same second it became the
 // thing they needed.
 func TestStartingTheNewVersionKeepsThePreviousOne(t *testing.T) {
-	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	self := filepath.Join(installDir(t), "go-time-recording"+exeSuffix())
 
 	for name, body := range map[string]string{
 		"":         "the new version",
@@ -790,7 +816,7 @@ func TestOnlyOneInstallRunsAtATime(t *testing.T) {
 		sums:    feed.URL + "/SHA256SUMS",
 	}
 
-	self := filepath.Join(t.TempDir(), "program")
+	self := filepath.Join(installDir(t), "program")
 
 	if err := os.WriteFile(self, []byte("the version now running"), 0o755); err != nil {
 		t.Fatalf("cannot lay down a program to replace: %v", err)
