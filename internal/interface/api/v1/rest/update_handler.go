@@ -440,6 +440,17 @@ func (h *UpdateHandler) afterAFailedInstall(err error, version string) error {
 			"an update is already being installed").WithCode("updateInstalling"))
 	}
 
+	// Already downloaded and waiting. Apply announced an install before asking,
+	// and what is true is what the first install said: the version is here and
+	// starts with the next restart - not cancelled, and not being installed.
+	if errors.Is(err, selfupdate.ErrAlreadyInstalled) {
+		h.hub.Publish(announce.Pending, version)
+
+		return toHTTPError(apperror.Conflictf(
+			"%s is already downloaded and starts with the next restart", version).
+			WithCode("updateAlreadyInstalled", version))
+	}
+
 	h.hub.Publish(announce.Cancelled, version)
 	h.hub.Forget()
 

@@ -120,6 +120,13 @@ type Source struct {
 // happening.
 var ErrInstalling = errors.New("an update is already being installed")
 
+// ErrAlreadyInstalled says the release is already in place and waits for the
+// restart that makes it the running version.
+//
+// Its own error for the same reason as ErrInstalling: nothing went wrong, and
+// the answer is a conflict rather than a failure.
+var ErrAlreadyInstalled = errors.New("this version is already in place and waits for a restart")
+
 // DefaultAPI is where the releases of this project live.
 const DefaultAPI = "https://api.github.com/repos/dennis-dko/go-time-recording/releases/latest"
 
@@ -365,6 +372,23 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 		return err
 	}
 
+	// Already in place: the file at this program's own path is the release, byte
+	// for byte, put there by an earlier install and waiting for the restart.
+	//
+	// Installing it again is not harmless. The swap moves this file aside as the
+	// way back and removes whatever was aside before - which is the version that
+	// was actually running, the one known to work - so a rollback afterwards
+	// would put back a version that had never been started. The screen stops
+	// offering the button once a version is waiting, but a POST is not a button:
+	// a second administrator with the card still open reaches this, and so does a
+	// second press before the restart.
+	//
+	// Asked of the file rather than of the pending note, because the note is
+	// written as best effort and the file is the fact.
+	if have, err := sumOf(self); err == nil && have == want {
+		return ErrAlreadyInstalled
+	}
+
 	// Beside the binary rather than in a temporary directory: the move at the end
 	// has to be a rename, and a rename across filesystems is not one. /tmp on its
 	// own mount is the ordinary case, not the exception.
@@ -503,6 +527,24 @@ func (s *Source) checksum(ctx context.Context, release Release) (string, error) 
 	}
 
 	return "", fmt.Errorf("the published checksums do not mention %s", wanted)
+}
+
+// sumOf is the SHA-256 of a file, in the form the published checksums use.
+func sumOf(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+
+	defer func() { _ = file.Close() }()
+
+	sum := sha256.New()
+
+	if _, err := io.Copy(sum, io.LimitReader(file, maxDownload+1)); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
 // download fetches the asset and writes it only if it hashes to want.

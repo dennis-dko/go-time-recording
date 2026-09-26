@@ -453,6 +453,48 @@ func TestARollbackPutsThePreviousVersionBack(t *testing.T) {
 	}
 }
 
+// A version already downloaded and waiting is not installed a second time.
+//
+// The swap moves the running binary aside as the way back, and removes whatever
+// was aside before. Installed twice before a restart, the second swap removed the
+// version that had actually been running - the one known to work - and put the
+// downloaded one, never started, in its place. The rollback then had nothing to
+// roll back to. The screen hides the button once a version is waiting, but a
+// POST is not a button: a second administrator with the card still open, or a
+// second press before the restart, reached this.
+func TestAVersionAlreadyWaitingIsNotInstalledOverTheWayBack(t *testing.T) {
+	const version = "v9.9.9"
+
+	newBinary := workingProgram(t, "the new version")
+	sum := sha256.Sum256(newBinary)
+
+	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
+
+	self := filepath.Join(t.TempDir(), "go-time-recording"+exeSuffix())
+	old := workingProgram(t, "the old version")
+
+	if err := os.WriteFile(self, old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := source.InstallOver(context.Background(), release, self); err != nil {
+		t.Fatalf("installing: %v", err)
+	}
+
+	if err := source.InstallOver(context.Background(), release, self); err == nil {
+		t.Error("the version already waiting for a restart was installed again")
+	}
+
+	kept, err := os.ReadFile(self + ".old")
+	if err != nil {
+		t.Fatalf("the way back is gone: %v", err)
+	}
+
+	if string(kept) != string(old) {
+		t.Error("the way back is no longer the version that was running")
+	}
+}
+
 // With nothing to go back to, a rollback says so rather than removing the
 // working binary.
 func TestARollbackWithNothingToGoBackToIsRefused(t *testing.T) {
