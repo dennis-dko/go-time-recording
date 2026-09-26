@@ -276,16 +276,28 @@ func (h *UserHandler) SetPassword(c *gofr.Context) (any, error) {
 	// After the password rather than before it. A failed reset that had already
 	// signed somebody out would be the worst of both: they still cannot get in
 	// with a new password, and they have lost the session they had.
-	//
-	// A failure to end them is not a failure of the reset. The password is
-	// changed, which is what was asked for, and reporting an error would say the
-	// opposite - so it is logged by whatever ends them and the answer stays what
-	// it is.
-	if h.sessions != nil {
-		_ = h.sessions.end(c.Context, id)
-	}
+	h.endSessionsOf(c, id)
 
 	return map[string]string{"status": "reset"}, nil
+}
+
+// endSessionsOf ends the open sessions of an account whose password has just
+// been reset.
+//
+// A failure to end them is not a failure of the reset. The password is
+// changed, which is what was asked for, and reporting an error would say the
+// opposite - so the answer stays what it is. But it is logged here: the reset
+// exists to lock somebody out, sessions that survive it are exactly what it was
+// meant to end, and nothing further along the path says so.
+func (h *UserHandler) endSessionsOf(c *gofr.Context, id uint) {
+	if h.sessions == nil {
+		return
+	}
+
+	if err := h.sessions.end(c.Context, id); err != nil {
+		c.Logger.Errorf("the password of account %d was reset, but its open sessions "+
+			"could not be ended and are still signed in: %v", id, err)
+	}
 }
 
 // UpdateWorkingTimes handles PUT /api/v1/users/{id}/working-times.
