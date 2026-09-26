@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -160,6 +161,15 @@ func TestCreateTimesheetRejectsInvalidInput(t *testing.T) {
 		"zero hours":    {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: 0},
 		"over 24 hours": {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: 25},
 		"missing date":  {UserID: f.userID, ProjectID: f.projectID, DurationHours: 4},
+
+		// Not a number at all. JSON cannot carry one, but the spreadsheet importer
+		// reads hours with ParseFloat, which takes "NaN" and "Inf" - and every
+		// comparison with NaN is false, so a floor and a ceiling written as "less
+		// than" and "greater than" both let it through. Stored, it turns every
+		// total it touches into NaN and switches the daily cap off for its day.
+		"not a number":      {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: math.NaN()},
+		"infinite hours":    {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: math.Inf(1)},
+		"negative infinity": {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: math.Inf(-1)},
 	}
 
 	for name, cmd := range cases {

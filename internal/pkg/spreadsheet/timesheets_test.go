@@ -305,6 +305,61 @@ func TestAnUnreadableRowIsNamedAndTheRestSurvive(t *testing.T) {
 	}
 }
 
+// Hours that are not a finite number are a row problem, said about the hours.
+//
+// ParseFloat takes "NaN" and "Inf", in any case, and returned them as hours. The
+// booking rules downstream refuse them now too, but only as "an invalid field",
+// and a person looking at their own file is owed the same sentence any other
+// cell that is not a number gets.
+func TestHoursThatAreNotAFiniteNumberAreNamed(t *testing.T) {
+	book := excelize.NewFile()
+	defer func() { _ = book.Close() }()
+
+	sheet := book.GetSheetList()[0]
+
+	for i, heading := range spreadsheet.Columns() {
+		name, _ := excelize.CoordinatesToCellName(i+1, 1)
+		if err := book.SetCellStr(sheet, name, heading); err != nil {
+			t.Fatalf("writing a heading: %v", err)
+		}
+	}
+
+	for column, value := range map[string]string{
+		"A2": "2026-08-03", "B2": "Ilka", "D2": "NaN",
+		"A3": "2026-08-04", "B3": "Ilka", "D3": "Inf",
+		"A4": "2026-08-05", "B4": "Ilka", "D4": "-infinity",
+		"A5": "2026-08-06", "B5": "Ilka", "D5": "4",
+	} {
+		if err := book.SetCellStr(sheet, column, value); err != nil {
+			t.Fatalf("writing %s: %v", column, err)
+		}
+	}
+
+	buffer, err := book.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+
+	rows, problems, err := spreadsheet.Read(bytes.NewReader(buffer.Bytes()))
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+
+	if len(rows) != 1 {
+		t.Errorf("%d row(s) came through, want only the one with a number of hours", len(rows))
+	}
+
+	if len(problems) != 3 {
+		t.Fatalf("%d problem(s) reported, want 3: %v", len(problems), problems)
+	}
+
+	for _, problem := range problems {
+		if !strings.Contains(problem.Reason, "hours") {
+			t.Errorf("row %d's complaint does not mention the hours: %q", problem.Number, problem.Reason)
+		}
+	}
+}
+
 // Something that is not a workbook at all is refused as a whole, which is different
 // from a workbook with bad rows in it.
 func TestSomethingThatIsNotAWorkbookIsRefused(t *testing.T) {

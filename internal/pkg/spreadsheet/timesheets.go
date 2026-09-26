@@ -13,6 +13,7 @@ package spreadsheet
 
 import (
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -184,8 +185,11 @@ func parseHours(raw string) (float64, error) {
 		return 0, problemf("hoursMissing", "the hours are missing")
 	}
 
+	// ParseFloat also takes "NaN" and "Inf", which are numbers to it and not to
+	// anybody filling in hours - and NaN slips past any bound written as a
+	// comparison, so it is refused here, as what it is.
 	hours, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
-	if err != nil {
+	if err != nil || math.IsNaN(hours) || math.IsInf(hours, 0) {
 		return 0, problemf("hoursNotANumber", "%q is not a number of hours", raw)
 	}
 
