@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/test/tempdir"
 )
 
 // stub writes a fake docker command that answers the way Docker does, and
@@ -35,7 +37,7 @@ import (
 func stub(t *testing.T, running, published string, failOn string) (dir, calls string) {
 	t.Helper()
 
-	dir = t.TempDir()
+	dir = tempdir.New(t)
 	calls = filepath.Join(dir, "calls")
 
 	script := `#!/bin/sh
@@ -128,7 +130,7 @@ func run(t *testing.T, stubDir, requests string) string {
 
 	// The project directory the script checks. Its own, so "the host has this
 	// path" is trivially arrangeable by telling the stub the same thing.
-	project := t.TempDir()
+	project := tempdir.New(t)
 	cmd.Dir = project
 
 	cmd.Env = append(os.Environ(),
@@ -232,7 +234,7 @@ func TestANewImageIsPulledTheContainerRecreatedAndTheOldImageRemoved(t *testing.
 	t.Parallel()
 
 	stubDir, calls := stub(t, "sha256:old", "sha256:new", "")
-	requests := t.TempDir()
+	requests := tempdir.New(t)
 
 	if err := os.WriteFile(filepath.Join(requests, "request"), nil, 0o600); err != nil {
 		t.Fatalf("cannot leave the request: %v", err)
@@ -282,7 +284,7 @@ func TestAnInstallationAlreadyOnTheNewestImageIsLeftAlone(t *testing.T) {
 	t.Parallel()
 
 	stubDir, calls := stub(t, "sha256:same", "sha256:same", "")
-	requests := t.TempDir()
+	requests := tempdir.New(t)
 
 	if err := os.WriteFile(filepath.Join(requests, "request"), nil, 0o600); err != nil {
 		t.Fatalf("cannot leave the request: %v", err)
@@ -304,7 +306,7 @@ func TestAFailedPullLeavesTheRunningContainerAlone(t *testing.T) {
 	t.Parallel()
 
 	stubDir, calls := stub(t, "sha256:old", "sha256:new", "compose pull")
-	requests := t.TempDir()
+	requests := tempdir.New(t)
 
 	if err := os.WriteFile(filepath.Join(requests, "request"), nil, 0o600); err != nil {
 		t.Fatalf("cannot leave the request: %v", err)
@@ -351,7 +353,7 @@ func TestAProjectAtADifferentPathOnEachSideIsRefused(t *testing.T) {
 	stubDir, calls := stub(t, "sha256:old", "sha256:new", "")
 	hostSeesADifferentPath(t, stubDir)
 
-	requests := t.TempDir()
+	requests := tempdir.New(t)
 
 	if err := os.WriteFile(filepath.Join(requests, "request"), nil, 0o600); err != nil {
 		t.Fatalf("cannot leave the request: %v", err)

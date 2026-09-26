@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dennis-dko/go-time-recording/test/tempdir"
 )
 
 // A slow connection is not a broken one, and the download must not treat it as
@@ -68,7 +70,7 @@ func TestASlowDownloadIsNotCutOffLikeAStalledOne(t *testing.T) {
 	// client, and that is the whole of the defect.
 	source.Client = &http.Client{Timeout: lookupBudget}
 
-	self := filepath.Join(installDir(t), "program"+exeSuffix())
+	self := filepath.Join(tempdir.New(t), "program"+exeSuffix())
 	if err := os.WriteFile(self, []byte("the version now running"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +126,7 @@ func TestADownloadThatStopsArrivingIsStillCutOff(t *testing.T) {
 
 	source := New(feed.URL, "")
 
-	self := filepath.Join(installDir(t), "program"+exeSuffix())
+	self := filepath.Join(tempdir.New(t), "program"+exeSuffix())
 	if err := os.WriteFile(self, []byte("the version now running"), 0o755); err != nil {
 		t.Fatal(err)
 	}
