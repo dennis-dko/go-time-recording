@@ -3,6 +3,9 @@
 package integration
 
 import (
+	"bytes"
+	"encoding/base64"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +36,41 @@ func TestAnInstanceThatCannotStartIsSeenToExit(t *testing.T) {
 	}
 
 	if !strings.Contains(log, "SECRET_KEY cannot be used") {
+		t.Errorf("the refusal did not say why:\n%s", log)
+	}
+}
+
+// A start refused by the application's own start-up step exits as a failure.
+//
+// The step that checks SECRET_KEY against what the installation's secrets were
+// written with runs inside GoFr's start hooks, and a hook that fails makes GoFr's
+// Run return rather than exit. Run was the last thing main did, so the process
+// ended with 0: the systemd unit OPERATIONS.md ships restarts on failure, and it
+// read a refused start as a clean stop - which, for a database that was only
+// briefly away, is an outage nothing brings back.
+func TestAStartTheApplicationRefusesExitsAsAFailure(t *testing.T) {
+	t.Parallel()
+
+	if os.Getenv(harness.DSNEnv) != "" {
+		t.Skip("this test shares a SQLite file between two instances")
+	}
+
+	shared := harness.SharedDatabase(t)
+	key := func(b byte) string {
+		return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{b}, 32))
+	}
+
+	// The first start records which key the secrets are written with.
+	start(t, "DB_NAME="+shared, "SECRET_KEY="+key('a'))
+
+	code, log := harness.StartExpectingExit(t, "DB_NAME="+shared, "SECRET_KEY="+key('b'))
+
+	if code == 0 {
+		t.Errorf("a start refused for the wrong key exited with 0, which a supervisor "+
+			"reads as a clean stop:\n%s", log)
+	}
+
+	if !strings.Contains(log, "SECRET_KEY is not the key") {
 		t.Errorf("the refusal did not say why:\n%s", log)
 	}
 }
