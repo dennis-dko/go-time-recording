@@ -32,7 +32,7 @@ func TestAPartOfTheLogoCanBeChosenForEachPlace(t *testing.T) {
 
 	p.storeBranding(t, wideLogo)
 
-	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.reload()
 	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-branding", chromedp.ByID))
 
@@ -180,7 +180,7 @@ func TestTheChosenPartCanBeAnyShape(t *testing.T) {
 
 	p.storeBranding(t, wideLogo)
 
-	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.reload()
 	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-branding", chromedp.ByID))
 

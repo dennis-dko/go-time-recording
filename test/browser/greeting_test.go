@@ -107,7 +107,7 @@ func TestTheGreetingShowsTheLastEntries(t *testing.T) {
 	p.bookAnHourOn(t, "Dachsanierung")
 	p.bookAnHourOn(t, "Serverumzug")
 
-	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.reload()
 	p.run("go to the greeting", p.click("#app-title"),
 		chromedp.WaitVisible("#welcome-title", chromedp.ByID))
 
