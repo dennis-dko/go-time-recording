@@ -192,6 +192,39 @@ func TestTheLogCapturesWhatTheFrameworkWrote(t *testing.T) {
 	}
 }
 
+// Somebody who is not signed in cannot fill the log with their own request.
+//
+// The framework logs every request with its full URI - a refused one as much as
+// an answered one, so the rate limit is no help - and the viewer kept whatever
+// arrived, up to half a megabyte a line and five thousand lines. A request with a
+// long query string was all it took to pin memory the process never gives back.
+//
+// Waited for rather than read at once: the request line is written after the
+// answer has gone, and a first version of this read the log too early, found
+// nothing, and would have passed whatever the viewer kept.
+func TestAnAnonymousRequestCannotFillTheLogWithItsURI(t *testing.T) {
+	t.Parallel()
+
+	a := start(t, "LOG_LEVEL=INFO")
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	a.newClient().api(http.MethodGet, "/branding?q="+strings.Repeat("x", 300*1024), nil)
+
+	for range 40 {
+		for _, record := range admin.logs(t, "?limit=500&search=xxxxxxxx").Records {
+			if len(record.Message) > 16*1024 {
+				t.Errorf("an anonymous request is kept in the log as %d bytes", len(record.Message))
+			}
+
+			return
+		}
+
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	t.Fatal("the request never appeared in the log, so this case measured nothing")
+}
+
 // The levels offered by the interface come from the server, so a filter cannot
 // name a level that never appears.
 func TestTheLogReportsTheLevelsItCanEmit(t *testing.T) {
