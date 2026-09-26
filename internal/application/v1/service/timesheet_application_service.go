@@ -377,7 +377,7 @@ const roundingSlack = 1e-9
 func validateTimesheet(date time.Time, hours float64, description *string) error {
 	var invalid []string
 
-	if date.IsZero() {
+	if !model.OnTheCalendar(date) {
 		invalid = append(invalid, "date")
 	}
 

@@ -161,6 +161,10 @@ func TestCreateTimesheetRejectsInvalidInput(t *testing.T) {
 		"zero hours":    {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: 0},
 		"over 24 hours": {UserID: f.userID, ProjectID: f.projectID, Date: day(15), DurationHours: 25},
 		"missing date":  {UserID: f.userID, ProjectID: f.projectID, DurationHours: 4},
+		"a day in the year 202": {
+			UserID: f.userID, ProjectID: f.projectID, DurationHours: 4,
+			Date: time.Date(202, time.August, 3, 0, 0, 0, 0, time.UTC),
+		},
 
 		// Not a number at all. JSON cannot carry one, but the spreadsheet importer
 		// reads hours with ParseFloat, which takes "NaN" and "Inf" - and every
