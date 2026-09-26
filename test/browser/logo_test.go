@@ -413,7 +413,7 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 
 	p.storeBranding(t, logo)
 
-	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.reload()
 
 	if src := p.attr("#brand-logo", "src"); !strings.HasPrefix(src, "data:image/") {
 		t.Errorf("the header shows %.40q after a logo was configured", src)
@@ -520,7 +520,7 @@ func TestSavingTheLogoKeepsThePlaceOnThePage(t *testing.T) {
 
 	p.storeBranding(t, wideLogo)
 
-	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.reload()
 	p.run("open Settings again", p.click(`.tab[data-view="admin"]`),
 		chromedp.WaitVisible("#form-branding", chromedp.ByID))
 

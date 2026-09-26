@@ -571,7 +571,7 @@ func main() {
 
 	// The built-in administrator is created after the migrations have run, so
 	// there is always a way in even on a brand new database.
-	app.OnStart(func(ctx *gofr.Context) error {
+	prepare := func(ctx *gofr.Context) error {
 		// Before anything reads a secret, and before the built-in administrator
 		// exists: a key that is not this installation's key has to stop the start
 		// rather than surface later as second factors that stopped working.
@@ -641,6 +641,20 @@ func main() {
 		}
 
 		return nil
+	}
+
+	// What stopped the start, if anything did. GoFr runs its start hooks inside
+	// Run, and a hook that fails makes Run log it and return rather than exit.
+	// Run is the last thing main does, so the process then ended with 0, and a
+	// supervisor that restarts on failure - the systemd unit OPERATIONS.md ships -
+	// read a refused start as a clean stop. For a database that was only briefly
+	// away, that is an outage nothing brings back.
+	var startFailure error
+
+	app.OnStart(func(ctx *gofr.Context) error {
+		startFailure = prepare(ctx)
+
+		return startFailure
 	})
 
 	if cfg.AuthEnabled() {
@@ -894,6 +908,13 @@ func main() {
 	}
 
 	app.Run()
+
+	// Said again past the pipe, as every other refusal here is: GoFr's own line
+	// went through the capture, and die is what guarantees the reason reaches the
+	// console before the process is gone.
+	if startFailure != nil {
+		die(restoreOutput, "the application did not start: %v", startFailure)
+	}
 }
 
 // registerBusinessMetrics declares the ones this application records itself.

@@ -63,7 +63,13 @@ type App struct {
 	baseURL string
 	dir     string
 	cmd     *exec.Cmd
-	logs    *bytes.Buffer
+	logs    *processLog
+
+	// exited closes when the process has ended, whoever ended it; exitErr is
+	// what Wait said. The only place anything waits on the process, so a stop
+	// and a look at whether it is still running cannot race each other.
+	exited  chan struct{}
+	exitErr error
 
 	// metricsPort is the one this instance was given. Its own listener, on its
 	// own port, outside the middleware chain - so a test that wants to read what
@@ -229,6 +235,30 @@ func Start(t *testing.T, env ...string) *App {
 	return start(t, true, env...)
 }
 
+// StartExpectingExit launches an instance that is expected to refuse to start,
+// and returns its exit code and everything it wrote.
+//
+// A start that is refused has two things to get right, and a case that only
+// reads the log checks one of them: the reason has to reach whoever is looking,
+// and the exit code has to say it failed - a supervisor restarting on failure
+// reads nothing else.
+func StartExpectingExit(t *testing.T, env ...string) (int, string) {
+	t.Helper()
+
+	a, err := startOnce(t, true, env...)
+	if err == nil {
+		t.Fatalf("the application started where it was expected to refuse:\n%s", a.Log())
+	}
+
+	select {
+	case <-a.exited:
+	case <-time.After(StartupTimeout):
+		t.Fatalf("the application neither started nor exited:\n%s", a.Log())
+	}
+
+	return a.cmd.ProcessState.ExitCode(), a.Log()
+}
+
 // StartUnconfigured launches an instance with no database configured at all, so
 // it serves its installer rather than the application.
 //
@@ -346,7 +376,7 @@ func startOnce(t *testing.T, withDatabase bool, env ...string) (*App, error) {
 
 	cmd.Env = append(cmd.Env, env...)
 
-	logs := &bytes.Buffer{}
+	logs := &processLog{}
 	cmd.Stdout = logs
 	cmd.Stderr = logs
 
@@ -369,7 +399,13 @@ func startOnce(t *testing.T, withDatabase bool, env ...string) (*App, error) {
 		dbDriver:    driver,
 		dbDSN:       driverDSN,
 		marker:      marker,
+		exited:      make(chan struct{}),
 	}
+
+	go func() {
+		a.exitErr = cmd.Wait()
+		close(a.exited)
+	}()
 
 	t.Cleanup(a.stop)
 
@@ -606,8 +642,11 @@ func (a *App) waitUntilReady() error {
 	var unclearSince time.Time
 
 	for time.Now().Before(deadline) {
-		if a.cmd.ProcessState != nil && a.cmd.ProcessState.Exited() {
-			return fmt.Errorf("the application exited during start-up:\n%s", a.logs.String())
+		select {
+		case <-a.exited:
+			return fmt.Errorf("the application exited during start-up (%v):\n%s",
+				a.exitErr, a.logs.String())
+		default:
 		}
 
 		// The application says this once and then carries on, listening to
@@ -806,9 +845,40 @@ func (a *App) startupFailure() error {
 	return nil
 }
 
-// logBuffer builds a buffer holding one line, for the tests of the above.
-func logBuffer(line string) *bytes.Buffer {
-	return bytes.NewBufferString(line)
+// processLog is what an instance has written, safe to read while it is still
+// writing.
+//
+// exec copies the process's output into it from a goroutine of its own, and the
+// cases read it while the instance runs - waiting for a line to appear, or
+// naming the log in a failure. A bare bytes.Buffer shared that way is a data
+// race, and the race detector reported it the first time a tagged suite was run
+// under it: the suites that drive the harness are never part of the untagged
+// race run.
+type processLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *processLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.buf.Write(p)
+}
+
+func (l *processLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.buf.String()
+}
+
+// logBuffer builds a log holding one line, for the tests of the above.
+func logBuffer(line string) *processLog {
+	l := &processLog{}
+	l.buf.WriteString(line)
+
+	return l
 }
 
 func (a *App) stop() {
@@ -816,8 +886,10 @@ func (a *App) stop() {
 		return
 	}
 
+	// Killing a process that has already gone fails, and there is nothing to do
+	// about that but wait for the goroutine that saw it go.
 	_ = a.cmd.Process.Kill()
-	_, _ = a.cmd.Process.Wait()
+	<-a.exited
 
 	removeEventually(a.dir)
 }

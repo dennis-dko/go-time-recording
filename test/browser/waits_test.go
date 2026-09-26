@@ -8,6 +8,23 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+// reload loads the page again and waits until the interface has opened the
+// screen it starts on.
+//
+// Visible is not ready. #who and #tabs are on screen before the start-up has
+// chosen its first view, and choosing it switches the view - openTheStartingView
+// says so, and takes the loaded mark back around the switch for exactly this. A
+// click on a tab or on the title in that window lands, works, and is switched
+// away from a moment later: TestTheGreetingShowsTheLastEntries clicked the title
+// there, was put back on the entries it had been reading before the reload, and
+// waited out its whole deadline for a greeting that had come and gone.
+func (p *page) reload() {
+	p.t.Helper()
+
+	p.run("reload", chromedp.Reload(),
+		chromedp.WaitVisible(`html[data-loaded="yes"]`, chromedp.ByQuery))
+}
+
 // settled waits until every screen has been filled from the server.
 //
 // Almost every case in this suite reads a screen, and every form and card in

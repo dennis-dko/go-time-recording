@@ -178,7 +178,7 @@ func TestFollowingTheInstanceZoneNamesTheInstanceZone(t *testing.T) {
 
 	// Reloaded, because who is signed in is read once: without this the page
 	// still holds the zone the installation had when it was opened.
-	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.reload()
 
 	p.run("open My account", p.click(`.tab[data-view="settings"]`),
 		chromedp.WaitVisible("#my-timezone", chromedp.ByID))

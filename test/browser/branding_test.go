@@ -44,7 +44,7 @@ func TestAConfiguredTextFillsInPlaceholdersAndMakesLinks(t *testing.T) {
 	p.setBrandingText(t, "footerText",
 		"© {year} Beispiel GmbH — [Impressum](https://example.com/impressum)")
 
-	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.reload()
 
 	footer := p.text("#footer-text")
 
@@ -90,7 +90,7 @@ func TestAConfiguredTextCannotSmuggleSomethingIn(t *testing.T) {
 	p.setBrandingText(t, "footerText",
 		`<img src=x onerror="window.__ran=1"> [go](javascript:window.__ran=1)`)
 
-	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#who", chromedp.ByID))
+	p.reload()
 
 	var ran bool
 
