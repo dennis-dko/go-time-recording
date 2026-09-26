@@ -321,6 +321,26 @@ func exeSuffix() string {
 	return ""
 }
 
+// Which file this program is gets decided in one place.
+//
+// Install, Rollback and Cleanup each asked os.Executable and resolved the answer
+// through symlinks; Installed asked and did not. The install writes its note
+// beside the resolved file, so wherever os.Executable answers with the link -
+// which the standard library says depends on the platform - the card never found
+// it, went on offering an update that was already waiting, and the next press
+// installed it over the way back. One function, read from the source, so a fifth
+// caller cannot quietly be a second opinion.
+func TestOneFunctionDecidesWhichFileThisProgramIs(t *testing.T) {
+	source, err := os.ReadFile("selfupdate.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := strings.Count(string(source), "os.Executable()"); n != 1 {
+		t.Errorf("os.Executable is asked %d times; ownPath is where it is asked", n)
+	}
+}
+
 // installDir is a directory to install into, removed only once Windows has let
 // go of what ran in it.
 //

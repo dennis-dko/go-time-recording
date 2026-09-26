@@ -324,18 +324,33 @@ func parseVersion(raw string) ([3]int, bool) {
 // available at all - so the caller decides what to do once the bytes are in
 // place, and the screen says which of the two it is.
 func (s *Source) Install(ctx context.Context, release Release) error {
-	self, err := os.Executable()
+	self, err := ownPath()
 	if err != nil {
 		return fmt.Errorf("cannot find this program's own file: %w", err)
 	}
 
-	// Resolved, so replacing a symlinked binary replaces the binary rather than
-	// the link to it.
+	return s.InstallOver(ctx, release, self)
+}
+
+// ownPath is the file this program runs from, with symlinks resolved.
+//
+// Resolved, so replacing a symlinked binary replaces the binary rather than the
+// link to it - and asked here and nowhere else, because everything that follows
+// an install has to agree on which file that was. Installed once asked for
+// itself and did not resolve: the note the install writes beside the binary was
+// looked for beside the link, and whether os.Executable answers with the link at
+// all depends on the platform.
+func ownPath() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+
 	if resolved, err := filepath.EvalSymlinks(self); err == nil {
 		self = resolved
 	}
 
-	return s.InstallOver(ctx, release, self)
+	return self, nil
 }
 
 // InstallOver is Install against a named file.
@@ -451,13 +466,9 @@ func runnable(ctx context.Context, path string) error {
 // application is not running to offer a button - so this is what a person reaches
 // for from a shell, and what the operations manual points at.
 func Rollback() error {
-	self, err := os.Executable()
+	self, err := ownPath()
 	if err != nil {
 		return err
-	}
-
-	if resolved, err := filepath.EvalSymlinks(self); err == nil {
-		self = resolved
 	}
 
 	return RollbackOver(self)
@@ -609,7 +620,7 @@ const maxDownload = 100 << 20
 // This is what lets the screen say "downloaded, restart to use it" rather than
 // offering the same update again to somebody who has already taken it.
 func Installed() (string, bool) {
-	self, err := os.Executable()
+	self, err := ownPath()
 	if err != nil {
 		return "", false
 	}
@@ -644,13 +655,9 @@ func markPending(self, version string) error {
 // Cleanup removes what a previous update left behind, once this process is the
 // new version. Called at start-up.
 func Cleanup() {
-	self, err := os.Executable()
+	self, err := ownPath()
 	if err != nil {
 		return
-	}
-
-	if resolved, err := filepath.EvalSymlinks(self); err == nil {
-		self = resolved
 	}
 
 	removeLeftovers(self)
