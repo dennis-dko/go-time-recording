@@ -150,7 +150,12 @@ func parseOptionalDate(raw string) (time.Time, bool) {
 
 	// A serial number: days since the workbook's epoch. Converted by the library
 	// so the epoch setting is honoured rather than assumed.
-	if serial, err := strconv.ParseFloat(raw, 64); err == nil {
+	//
+	// Only one a sheet can hold: 1 is the first of January 1900 and 2958465 the
+	// last day of 9999. The library converts anything it is handed, and "NaN"
+	// came back as a day in 5006 BC, reported as a date understood. Written so
+	// that NaN, which compares false against both bounds, cannot pass.
+	if serial, err := strconv.ParseFloat(raw, 64); err == nil && serial >= 1 && serial < lastSerial+1 {
 		if converted, convErr := excelize.ExcelDateToTime(serial, false); convErr == nil {
 			return theDayItFallsOn(converted), true
 		}
@@ -158,6 +163,10 @@ func parseOptionalDate(raw string) (time.Time, bool) {
 
 	return time.Time{}, false
 }
+
+// lastSerial is the serial number of the last day a sheet can hold, 31 December
+// 9999, on the 1900 epoch.
+const lastSerial = 2958465
 
 // theDayItFallsOn reduces what a cell yielded to the day it names.
 //

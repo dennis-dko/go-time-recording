@@ -461,3 +461,60 @@ func TestACellYieldsADayAndNothingElse(t *testing.T) {
 		}
 	}
 }
+
+// A number that is no day in any calendar a sheet can hold is not read as one.
+//
+// The date column takes Excel's serial number, and the serial was read with
+// ParseFloat and handed to the library as it came: "NaN" came back as the
+// fifteenth of August, 5006 BC, and "1e308" as a day in 4714 BC - each reported
+// as a date the importer understood. What a sheet can hold runs from the first
+// of January 1900 to the last day of 9999, and a cell outside that is the same
+// complaint as any other cell that is not a date.
+func TestADateSerialNoSheetCanHoldIsNamed(t *testing.T) {
+	book := excelize.NewFile()
+	defer func() { _ = book.Close() }()
+
+	sheet := book.GetSheetList()[0]
+
+	for i, heading := range spreadsheet.Columns() {
+		name, _ := excelize.CoordinatesToCellName(i+1, 1)
+		if err := book.SetCellStr(sheet, name, heading); err != nil {
+			t.Fatalf("writing a heading: %v", err)
+		}
+	}
+
+	for column, value := range map[string]string{
+		"A2": "NaN", "B2": "Ilka", "D2": "2",
+		"A3": "1e308", "B3": "Ilka", "D3": "2",
+		"A4": "-3", "B4": "Ilka", "D4": "2",
+		"A5": "46238", "B5": "Ilka", "D5": "2",
+	} {
+		if err := book.SetCellStr(sheet, column, value); err != nil {
+			t.Fatalf("writing %s: %v", column, err)
+		}
+	}
+
+	buffer, err := book.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("writing: %v", err)
+	}
+
+	rows, problems, err := spreadsheet.Read(bytes.NewReader(buffer.Bytes()))
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+
+	if len(rows) != 1 {
+		t.Errorf("%d row(s) came through, want only the one on a real day: %v", len(rows), rows)
+	}
+
+	if len(problems) != 3 {
+		t.Fatalf("%d problem(s) reported, want 3: %v", len(problems), problems)
+	}
+
+	for _, problem := range problems {
+		if !strings.Contains(problem.Reason, "date") {
+			t.Errorf("row %d's complaint does not mention the date: %q", problem.Number, problem.Reason)
+		}
+	}
+}
