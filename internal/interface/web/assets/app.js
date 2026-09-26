@@ -3504,6 +3504,7 @@ const TRANSLATIONS = {
       + 'abgleichen.',
     'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
       + 'warten Sie, bis sie abgeschlossen ist.',
+    'err.updateAlreadyInstalled': '{0} ist bereits heruntergeladen und startet mit dem nächsten Neustart.',
     'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
     'err.updateInContainer': 'Dies läuft in einem Container. Ein dort ausgetauschtes Programm wird beim nächsten Neuerzeugen des Containers überschrieben. Bitte das Abbild von Hand aktualisieren – oder deploy/compose.update.yaml zur Bereitstellung hinzufügen, dann geht es von hier aus.',
     'err.updateNotNewer': 'Diese Installation läuft bereits mit {0}.',

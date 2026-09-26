@@ -120,6 +120,13 @@ type Source struct {
 // happening.
 var ErrInstalling = errors.New("an update is already being installed")
 
+// ErrAlreadyInstalled says the release is already in place and waits for the
+// restart that makes it the running version.
+//
+// Its own error for the same reason as ErrInstalling: nothing went wrong, and
+// the answer is a conflict rather than a failure.
+var ErrAlreadyInstalled = errors.New("this version is already in place and waits for a restart")
+
 // DefaultAPI is where the releases of this project live.
 const DefaultAPI = "https://api.github.com/repos/dennis-dko/go-time-recording/releases/latest"
 
@@ -317,18 +324,33 @@ func parseVersion(raw string) ([3]int, bool) {
 // available at all - so the caller decides what to do once the bytes are in
 // place, and the screen says which of the two it is.
 func (s *Source) Install(ctx context.Context, release Release) error {
-	self, err := os.Executable()
+	self, err := ownPath()
 	if err != nil {
 		return fmt.Errorf("cannot find this program's own file: %w", err)
 	}
 
-	// Resolved, so replacing a symlinked binary replaces the binary rather than
-	// the link to it.
+	return s.InstallOver(ctx, release, self)
+}
+
+// ownPath is the file this program runs from, with symlinks resolved.
+//
+// Resolved, so replacing a symlinked binary replaces the binary rather than the
+// link to it - and asked here and nowhere else, because everything that follows
+// an install has to agree on which file that was. Installed once asked for
+// itself and did not resolve: the note the install writes beside the binary was
+// looked for beside the link, and whether os.Executable answers with the link at
+// all depends on the platform.
+func ownPath() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+
 	if resolved, err := filepath.EvalSymlinks(self); err == nil {
 		self = resolved
 	}
 
-	return s.InstallOver(ctx, release, self)
+	return self, nil
 }
 
 // InstallOver is Install against a named file.
@@ -363,6 +385,23 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 	want, err := s.checksum(ctx, release)
 	if err != nil {
 		return err
+	}
+
+	// Already in place: the file at this program's own path is the release, byte
+	// for byte, put there by an earlier install and waiting for the restart.
+	//
+	// Installing it again is not harmless. The swap moves this file aside as the
+	// way back and removes whatever was aside before - which is the version that
+	// was actually running, the one known to work - so a rollback afterwards
+	// would put back a version that had never been started. The screen stops
+	// offering the button once a version is waiting, but a POST is not a button:
+	// a second administrator with the card still open reaches this, and so does a
+	// second press before the restart.
+	//
+	// Asked of the file rather than of the pending note, because the note is
+	// written as best effort and the file is the fact.
+	if have, err := sumOf(self); err == nil && have == want {
+		return ErrAlreadyInstalled
 	}
 
 	// Beside the binary rather than in a temporary directory: the move at the end
@@ -427,13 +466,9 @@ func runnable(ctx context.Context, path string) error {
 // application is not running to offer a button - so this is what a person reaches
 // for from a shell, and what the operations manual points at.
 func Rollback() error {
-	self, err := os.Executable()
+	self, err := ownPath()
 	if err != nil {
 		return err
-	}
-
-	if resolved, err := filepath.EvalSymlinks(self); err == nil {
-		self = resolved
 	}
 
 	return RollbackOver(self)
@@ -505,6 +540,24 @@ func (s *Source) checksum(ctx context.Context, release Release) (string, error) 
 	return "", fmt.Errorf("the published checksums do not mention %s", wanted)
 }
 
+// sumOf is the SHA-256 of a file, in the form the published checksums use.
+func sumOf(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+
+	defer func() { _ = file.Close() }()
+
+	sum := sha256.New()
+
+	if _, err := io.Copy(sum, io.LimitReader(file, maxDownload+1)); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
 // download fetches the asset and writes it only if it hashes to want.
 func (s *Source) download(ctx context.Context, url, into, want string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -567,7 +620,7 @@ const maxDownload = 100 << 20
 // This is what lets the screen say "downloaded, restart to use it" rather than
 // offering the same update again to somebody who has already taken it.
 func Installed() (string, bool) {
-	self, err := os.Executable()
+	self, err := ownPath()
 	if err != nil {
 		return "", false
 	}
@@ -602,13 +655,9 @@ func markPending(self, version string) error {
 // Cleanup removes what a previous update left behind, once this process is the
 // new version. Called at start-up.
 func Cleanup() {
-	self, err := os.Executable()
+	self, err := ownPath()
 	if err != nil {
 		return
-	}
-
-	if resolved, err := filepath.EvalSymlinks(self); err == nil {
-		self = resolved
 	}
 
 	removeLeftovers(self)
