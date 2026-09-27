@@ -21,8 +21,10 @@ type TelemetryResponse struct {
 	// Active is what this process is serving and exporting right now.
 	Active ActiveTelemetry `json:"active"`
 
-	// RestartRequired is true on a save: GoFr binds the metrics port and builds
-	// the trace exporter at start-up, so nothing here can take effect sooner.
+	// RestartRequired is whether a restart would change anything, answered by
+	// the same rule as the restart card. GoFr binds the metrics port and builds
+	// the trace exporter at start-up, so nothing but the log level can take
+	// effect sooner.
 	RestartRequired bool `json:"restartRequired"`
 }
 
@@ -117,30 +119,19 @@ func (h *SettingsHandler) SaveTelemetry(c *gofr.Context) (any, error) {
 
 		// The log level is exempt now, so a save that changed only that needs
 		// nothing further. Everything else here is still built inside gofr.New().
-		RestartRequired: h.logLevel == nil || !onlyLogLevelChanged(stored, h.activeTelemetry),
+		RestartRequired: h.aSaveNeedsARestart(stored),
 	}, nil
 }
 
-// onlyLogLevelChanged reports whether a save left everything that needs a
-// restart exactly as the running process has it.
-func onlyLogLevelChanged(stored model.Telemetry, running appconfig.Telemetry) bool {
-	if stored.MetricsOff && running.MetricsServed() {
-		return false
-	}
-
-	if stored.TraceExporter != nil && *stored.TraceExporter != running.TraceExporter {
-		return false
-	}
-
-	if stored.TracerURL != nil && *stored.TracerURL != running.TracerURL {
-		return false
-	}
-
-	if stored.TracerRatio != nil && *stored.TracerRatio != running.TracerRatio {
-		return false
-	}
-
-	return true
+// aSaveNeedsARestart reports whether the settings just stored need a restart to
+// take effect.
+//
+// By the restart card's own rule rather than a comparison of its own. This had
+// one, and it had both mistakes the card was once corrected for: it compared the
+// metrics only in the direction of switching them off, and it read a setting
+// cleared back to the configuration file as no change.
+func (h *SettingsHandler) aSaveNeedsARestart(stored model.Telemetry) bool {
+	return len(telemetryPending(stored, h.fileTelemetry, h.activeTelemetry, h.logLevel != nil)) > 0
 }
 
 // active is what this process is doing now, with the log level read live where

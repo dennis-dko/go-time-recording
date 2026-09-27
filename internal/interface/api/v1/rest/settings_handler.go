@@ -60,6 +60,22 @@ type SettingsHandler struct {
 	// setting keeps needing a restart and the screen keeps saying so.
 	logLevel     func(string)
 	runningLevel func() string
+
+	// fileTelemetry is what the configuration file says, which is what the next
+	// start uses for every telemetry setting nobody has stored.
+	fileTelemetry appconfig.Telemetry
+}
+
+// WithFileTelemetry attaches what the configuration file says about telemetry.
+//
+// A method rather than a parameter beside activeTelemetry, because two values of
+// one type side by side are a transposition the compiler accepts and nothing
+// would notice: both are plausible telemetry, and swapped they answer "does a
+// restart change anything" about the wrong pair.
+func (h *SettingsHandler) WithFileTelemetry(fromFile appconfig.Telemetry) *SettingsHandler {
+	h.fileTelemetry = fromFile
+
+	return h
 }
 
 // WithLiveLogLevel lets a saved log level take effect without a restart.
