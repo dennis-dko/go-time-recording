@@ -1111,11 +1111,11 @@ func addPrivateProjects(d migration.Datasource, dialect string) error {
 
 // grantToAllRoles adds a permission to every role that does not have it yet.
 //
-// The check is done per role in Go rather than with a single INSERT ... SELECT
-// guarded by NOT EXISTS: referencing the target table inside an insert is not
-// portable across the supported engines. Skipping existing rows matters
-// because a freshly seeded admin role already holds every permission, and a
-// duplicate insert would abort the migration.
+// Per role in Go, although a single INSERT ... SELECT guarded by NOT EXISTS
+// works on all three engines - grantToAllRolesHolding is one, and runs in every
+// integration leg - because this migration has run everywhere as it is. Skipping
+// existing rows matters: a freshly seeded admin role already holds every
+// permission, and a duplicate insert would abort the migration.
 func grantToAllRoles(d migration.Datasource, dialect, permission string) error {
 	rows, err := d.SQL.Query("SELECT id FROM roles")
 	if err != nil {
