@@ -95,7 +95,8 @@ type UserPurger interface {
 // NewLDAPSyncService takes two settings beside its repositories. maxDeleteRatio
 // is the share of the directory's accounts one run may remove, which WithLimits
 // lets the Settings screen move without a restart; defaultRole is the role an
-// account the directory brings in starts with, the ordinary one when empty.
+// account the directory brings in starts with when the directory settings name
+// none that may be given - see roleForArrival - and the ordinary one when empty.
 func NewLDAPSyncService(
 	directory DirectoryLister,
 	users repository.UserRepository,
@@ -319,10 +320,10 @@ func (s *LDAPSyncService) createMissing(
 	report *SyncReport,
 	dryRun bool,
 ) error {
-	role, err := s.roles.GetByName(ctx, s.defaultRole)
-	if err != nil {
-		return err
-	}
+	// Resolved once per role the answer names rather than once per entry: every
+	// entry of one answer carries the same default role, read from the settings
+	// the client held when it listed them.
+	arrivals := map[string]*model.Role{}
 
 	for _, directoryUser := range directoryUsers {
 		email := normalizeEmail(directoryUser.Email)
@@ -357,6 +358,18 @@ func (s *LDAPSyncService) createMissing(
 			report.Created = append(report.Created, email)
 
 			continue
+		}
+
+		role, resolved := arrivals[directoryUser.Role]
+		if !resolved {
+			var err error
+
+			role, err = roleForArrival(ctx, s.roles, directoryUser.Role, s.defaultRole)
+			if err != nil {
+				return err
+			}
+
+			arrivals[directoryUser.Role] = role
 		}
 
 		name := directoryUser.Name

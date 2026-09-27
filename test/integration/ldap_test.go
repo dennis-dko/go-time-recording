@@ -186,6 +186,51 @@ func TestADirectoryAccountCanSignInAndIsCreatedLocally(t *testing.T) {
 	}
 }
 
+// A directory account starts with the role the directory settings name.
+//
+// The case above configures "user" and checks for "user", which is the one value
+// that cannot tell the setting from the everyday role both sign-in paths were
+// handed at start-up - and that is what they did, whatever the settings said, for
+// as long as the setting existed. A role of the installation's own is the value
+// that tells them apart, and it is saved on the running instance rather than
+// before it starts, so what is checked is that a saved setting reaches the next
+// arrival rather than the next start.
+func TestADirectoryAccountStartsWithTheConfiguredDefaultRole(t *testing.T) {
+	t.Parallel()
+
+	host, port := requireLDAP(t)
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	admin.must(admin.api(http.MethodPost, "/roles", map[string]any{
+		"name":        "contractor",
+		"description": "Keeps their own time",
+		"permissions": []string{"timesheets:read:own", "timesheets:write:own"},
+	}), http.StatusCreated)
+
+	settings := ldapSettings(host, port, ldapBaseDN)
+	settings["defaultRole"] = "contractor"
+
+	admin.must(admin.api(http.MethodPut, "/settings/ldap", settings), http.StatusOK)
+
+	alice := a.newClient()
+	alice.signIn("alice@example.com", "alice-password")
+
+	var me struct {
+		User struct {
+			Role string `json:"role"`
+		} `json:"user"`
+	}
+
+	alice.must(alice.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+
+	if me.User.Role != "contractor" {
+		t.Errorf("the account got the role %q, want the configured default %q",
+			me.User.Role, "contractor")
+	}
+}
+
 // The filter substitutes the login name into every %s, so the same person can
 // sign in by uid or by mail address.
 func TestADirectoryAccountCanSignInByUidOrByMail(t *testing.T) {

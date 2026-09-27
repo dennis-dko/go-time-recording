@@ -321,7 +321,7 @@ func setRoleName(d migration.Datasource, dialect, from, to string) error {
 //
 // Getting this wrong would not be visible until somebody signed in from the directory
 // for the first time after the upgrade: the name would match no role, and the account
-// would be refused at the one moment it is meant to be created.
+// would start as an ordinary user rather than as whatever the settings had chosen.
 func pointTheDirectoryAtTheRenamedRole(d migration.Datasource, dialect string) error {
 	var stored string
 

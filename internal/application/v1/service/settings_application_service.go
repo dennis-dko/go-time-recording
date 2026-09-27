@@ -418,9 +418,21 @@ func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig)
 		config.DefaultRole = model.RoleUser
 	}
 
-	// An unknown default role would leave provisioned accounts unusable.
-	if _, err := s.roles.GetByName(ctx, config.DefaultRole); err != nil {
+	// An unknown default role could be given to nobody: the accounts would start
+	// on the everyday role while the screen named another.
+	role, err := s.roles.GetByName(ctx, config.DefaultRole)
+	if err != nil {
 		return apperror.InvalidFields("defaultRole")
+	}
+
+	// Nor one that administers: every entry anybody writes to the directory would
+	// arrive holding the installation. roleForArrival would hand out the everyday
+	// role instead, and refusing here is what keeps the screen from saying one
+	// role while the accounts get another.
+	if roleAdministers(role) {
+		return apperror.Invalidf("%q administers this installation and cannot be the "+
+			"role every account from the directory starts with", role.Name).
+			WithCode("directoryRoleAdministers", role.Name)
 	}
 
 	if config.Enabled {
