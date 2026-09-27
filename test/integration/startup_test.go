@@ -5,7 +5,10 @@ package integration
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -72,5 +75,46 @@ func TestAStartTheApplicationRefusesExitsAsAFailure(t *testing.T) {
 
 	if !strings.Contains(log, "SECRET_KEY is not the key") {
 		t.Errorf("the refusal did not say why:\n%s", log)
+	}
+}
+
+// A start whose port is taken ends, and says which port.
+//
+// GoFr checks both ports it is about to claim - by dialling them - and answers one
+// that is in use with a Fatal. A Fatal goes through the captured output and is
+// gone before anything reads it, so a second copy started by mistake, or a stale
+// one still holding the port, exited 1 with a warning about SECRET_KEY as the only
+// line it ever wrote: a start that ends without saying why, on the ordinary way
+// to reach it. The log package's own description already said the application
+// checks a taken port before the framework is asked to; it checked the database
+// and nothing else.
+//
+// Held on every interface, the way the port would be held by another copy of
+// this application.
+func TestAStartOnATakenPortEndsAndNamesThePort(t *testing.T) {
+	for _, setting := range []string{"HTTP_PORT", "METRICS_PORT"} {
+		t.Run(setting, func(t *testing.T) {
+			t.Parallel()
+
+			taken, err := net.Listen("tcp", ":0")
+			if err != nil {
+				t.Fatalf("cannot hold a port for the case: %v", err)
+			}
+
+			t.Cleanup(func() { _ = taken.Close() })
+
+			port := strconv.Itoa(taken.Addr().(*net.TCPAddr).Port)
+
+			code, log := harness.StartExpectingExit(t, fmt.Sprintf("%s=%s", setting, port))
+
+			if code == 0 {
+				t.Errorf("a start that could not serve exited with 0, which a supervisor " +
+					"reads as a clean stop")
+			}
+
+			if !strings.Contains(log, port) {
+				t.Errorf("the refusal does not name port %s:\n%s", port, log)
+			}
+		})
 	}
 }
