@@ -119,7 +119,7 @@
        | `infrastructure/logsink/logsink.go` | ~620 | Three goroutines on the process's own output; a line that could not be written once silenced and then hung it. | never read; stands at `2d55bf9` |
        | `service/timesheet_application_service.go` | ~480 | The domain rules about hours - the daily cap, the floor, the two ids that decide whose hours are totalled. | never read; stands at `1b7d94b` |
        | `rest/restart_handler.go` | ~450 | The one permitted `time.Sleep`, inside the one detached goroutine, holding a response open. | never read; stands at `e6f0191` |
-       | `interface/installer/installer.go` | ~420 | Runs before there is a database, serves until an answer arrives, and hands out a session because answering it proves more than a password does. | never read; stands at `a877531` |
+       | `interface/installer/installer.go` | ~420 | Runs before there is a database, serves until an answer arrives, and hands out a session because answering it proves more than a password does. | 2026-09-27 at `a877531`: can the installer let somebody without the token choose the database or take a session, or go on accepting answers after one? The token guards both writes and nothing else is reachable without it. But a second answer was written over the saved connection while the first was handed over, so the next start opened a different database - fixed. 0 of 2 |
        | `service/ldapsync_application_service.go` | ~420 | Deletes accounts and the hours recorded against them. | never read; stands at `1b7d94b` |
        | `rest/events.go` | ~240 | A connection held open for minutes, two tickers and a permission revision. | never read; stands at `65786ea` |
 

@@ -1,6 +1,10 @@
 package installer
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -134,5 +138,55 @@ func TestTheInstallerFollowsTheBrowserLanguage(t *testing.T) {
 	// still renders something.
 	if !strings.Contains(markup, ">Set up Time Recording</h1>") {
 		t.Error("the English original is gone from the markup, so there is no fallback")
+	}
+}
+
+// Once a connection has been saved, a second answer is refused rather than
+// written.
+//
+// Two browser tabs answering at nearly the same moment - or a second answer in
+// the moment before the listener closes - each passed the token check and the
+// probe, each wrote the connection file and each was told it had worked, and only
+// then did the handover pick the first. The process went on with the first
+// connection and the file held the second, so the next start opened a different
+// database: every account, project and hour from the first start was simply not
+// there. The comment on the handover already said neither may be told it
+// succeeded and the file must not be written twice; this holds it to that.
+func TestASecondAnswerIsRefusedOnceAConnectionIsSaved(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "datasource.json")
+
+	s := &server{
+		cfg:  Config{Token: "the-token", DatasourceFile: file, Logf: t.Logf},
+		done: make(chan config.Datasource, 1),
+	}
+
+	answer := func(name string) int {
+		body := fmt.Sprintf(`{"dialect":"sqlite","name":%q}`, filepath.ToSlash(filepath.Join(dir, name)))
+		req := httptest.NewRequest(http.MethodPost, "/install/save", strings.NewReader(body))
+		req.Header.Set("X-Setup-Token", "the-token")
+
+		rec := httptest.NewRecorder()
+		s.save(rec, req)
+
+		return rec.Code
+	}
+
+	if got := answer("first"); got != http.StatusOK {
+		t.Fatalf("the first answer was refused with %d", got)
+	}
+
+	if got := answer("second"); got != http.StatusConflict {
+		t.Errorf("a second answer after the connection was saved got %d, want %d",
+			got, http.StatusConflict)
+	}
+
+	saved, ok := config.LoadDatasource(file)
+	if !ok || !strings.HasSuffix(filepath.ToSlash(saved.Name), "/first") {
+		t.Errorf("the file holds %q, not the connection that was handed over", saved.Name)
+	}
+
+	if handed := <-s.done; !strings.HasSuffix(filepath.ToSlash(handed.Name), "/first") {
+		t.Errorf("the connection handed over is %q", handed.Name)
 	}
 }
