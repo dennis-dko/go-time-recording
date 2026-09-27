@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // One enormous line must not take the log, and then the process, with it.
@@ -148,5 +149,40 @@ func TestAnOverLongLineIsCutAndSaysSo(t *testing.T) {
 	if second != "the next line" {
 		t.Errorf("the line after the long one read %q; the tail of the long one "+
 			"was left in the stream", second)
+	}
+}
+
+// What is kept for the viewer is bounded per line, far below what the console
+// is given.
+//
+// The ring holds DefaultCapacity lines of up to maxLineBytes each, which is
+// about two and a half gigabytes, and the lines are not all the application's
+// own: the framework logs every request with its full URI, rejected ones
+// included, so anybody who can reach the port could fill the ring with half a
+// megabyte a request. The console still receives the line as it was cut there;
+// the viewer keeps enough of it to read.
+func TestAKeptLineIsBoundedWhateverTheLineWas(t *testing.T) {
+	sink := New(3)
+
+	sink.Append(Record{Level: "INFO", Message: strings.Repeat("x", 300*1024)})
+
+	kept := sink.Query(Query{}).Records[0].Message
+
+	if len(kept) > maxKeptBytes+len(truncationNote) {
+		t.Errorf("kept %d bytes of one line; the bound is %d", len(kept), maxKeptBytes)
+	}
+
+	if !strings.HasSuffix(kept, truncationNote) {
+		t.Errorf("the kept line does not say it was cut: %.40q", kept[len(kept)-40:])
+	}
+
+	// Cut between characters, not inside one: a German line cut through an
+	// umlaut would reach the viewer with a replacement character in it. One
+	// ASCII byte first, so the two-byte umlauts straddle the bound rather than
+	// happening to end on it.
+	sink.Append(Record{Level: "INFO", Message: "a" + strings.Repeat("ä", maxKeptBytes)})
+
+	if umlauts := sink.Query(Query{}).Records[1].Message; !utf8.ValidString(umlauts) {
+		t.Error("the cut went through the middle of a character")
 	}
 }

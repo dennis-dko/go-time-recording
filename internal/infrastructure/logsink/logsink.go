@@ -44,6 +44,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Record is one captured log line.
@@ -182,7 +183,8 @@ func (s *Sink) keeps(r Record) bool {
 }
 
 // DefaultCapacity is about an hour of ordinary chatter, and a few minutes of a
-// tight error loop. Roughly a couple of megabytes at typical line lengths.
+// tight error loop. Roughly a couple of megabytes at typical line lengths, and
+// never more than about forty, because maxKeptBytes bounds each line.
 const DefaultCapacity = 5000
 
 // New creates a sink holding at most capacity records.
@@ -208,7 +210,20 @@ func (s *Sink) SetPassthroughRenderer(render func(Record) string) {
 }
 
 // Append stores a record, assigning it the next sequence number.
+//
+// A line longer than maxKeptBytes is kept cut, and cut into a string of its own:
+// a slice of the original would hold every byte of it in memory for as long as
+// the record stays in the ring, which is the thing the cut is for.
 func (s *Sink) Append(r Record) {
+	if len(r.Message) > maxKeptBytes {
+		cut := maxKeptBytes
+		for cut > 0 && !utf8.RuneStart(r.Message[cut]) {
+			cut--
+		}
+
+		r.Message = r.Message[:cut] + truncationNote
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -384,6 +399,20 @@ func (s *Sink) Capture() (restore func(), err error) {
 // maxLineBytes bounds one log line. A stack trace in a message can be long;
 // something megabytes long is a runaway, and truncating beats holding it all.
 const maxLineBytes = 512 * 1024
+
+// maxKeptBytes bounds one line as the viewer keeps it, which is far below what
+// the console is given.
+//
+// Bounding the lines by count alone let the ring hold DefaultCapacity lines of
+// maxLineBytes each - two and a half gigabytes - and the lines are not all this
+// application's own. The framework logs every request with its full URI, a
+// refused one as much as an answered one, so anybody who could reach the port
+// could pin half a megabyte of memory a request; measured, one anonymous
+// request with a long query string was kept at 307 KB. The longest line an
+// ordinary session keeps is under two hundred bytes, a collapsed query a few
+// hundred more, so eight kilobytes leaves every real line whole and caps the
+// ring at about forty megabytes.
+const maxKeptBytes = 8 * 1024
 
 // truncationNote is appended to a line that was cut, so it reads as a line that
 // was cut rather than as a complete line ending oddly.

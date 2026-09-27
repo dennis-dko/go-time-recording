@@ -98,3 +98,30 @@ func TestADayReadsAsItselfWestOfUTC(t *testing.T) {
 		}
 	}
 }
+
+// A day no calendar on this screen could show is refused as a mistyped date.
+//
+// "0202-08-03" is a few keystrokes from "2026-08-03" in a date field, and it was
+// accepted and stored on all three dialects - an entry in the year 202, where no
+// range anybody looks at will ever show it. The spreadsheet importer reads only
+// days a sheet can hold, 1900 to 9999, and bookings now keep to the same.
+func TestADayNoCalendarCouldShowIsRefused(t *testing.T) {
+	t.Parallel()
+
+	_, _, wera := startWithWorker(t)
+
+	for _, sent := range []string{"0202-08-03", "1899-12-31", "10000-01-01T00:00:00Z"} {
+		if got := wera.api(http.MethodPost, "/timesheets", map[string]any{
+			"date": sent, "durationHours": 1,
+		}).Status; got != http.StatusBadRequest {
+			t.Errorf("a booking on %s answered %d, want %d", sent, got, http.StatusBadRequest)
+		}
+
+		// A project's dates are days of the same calendar.
+		if got := wera.api(http.MethodPost, "/projects", map[string]any{
+			"name": "Somewhere in time", "startDate": sent,
+		}).Status; got != http.StatusBadRequest {
+			t.Errorf("a project starting %s answered %d, want %d", sent, got, http.StatusBadRequest)
+		}
+	}
+}

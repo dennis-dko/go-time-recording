@@ -275,9 +275,14 @@ const (
 
 // ratioOr reads a share between 0 and 1. Zero disables the check, which the
 // caller must opt into explicitly.
+//
+// Written as "inside the range" so NaN, which ParseFloat reads and which compares
+// false against both bounds, falls back too - see traceRatio for what it costs
+// once it reaches the settings screen. This one guards how much of the directory
+// one synchronisation may delete, and NaN would switch that guard off.
 func ratioOr(raw string, fallback float64) float64 {
 	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-	if err != nil || v < 0 || v > 1 {
+	if err != nil || !(v >= 0 && v <= 1) {
 		return fallback
 	}
 
@@ -379,9 +384,14 @@ func intOr(raw string, fallback int) int {
 	return v
 }
 
+// floatOr reads a positive figure, or falls back.
+//
+// Not NaN and not infinity, which ParseFloat both reads: either one as the daily
+// cap switches the cap off, and neither can be written into the settings
+// response that shows it.
 func floatOr(raw string, fallback float64) float64 {
 	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-	if err != nil || v <= 0 {
+	if err != nil || !(v > 0) || math.IsInf(v, 0) {
 		return fallback
 	}
 

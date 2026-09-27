@@ -317,11 +317,12 @@ func validateProject(
 		invalid = append(invalid, "description")
 	}
 
-	if startDate.IsZero() {
+	if !model.OnTheCalendar(startDate) {
 		invalid = append(invalid, "startDate")
 	}
 
-	if endDate != nil && !startDate.IsZero() && endDate.Before(startDate) {
+	if endDate != nil && (!model.OnTheCalendar(*endDate) ||
+		(!startDate.IsZero() && endDate.Before(startDate))) {
 		invalid = append(invalid, "endDate")
 	}
 

@@ -30,6 +30,8 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
+
+	"github.com/dennis-dko/go-time-recording/test/tempdir"
 )
 
 const (
@@ -891,7 +893,9 @@ func (a *App) stop() {
 	_ = a.cmd.Process.Kill()
 	<-a.exited
 
-	removeEventually(a.dir)
+	// Before testing.T gets to it: a SQLite database in write-ahead logging is
+	// three files, and Windows lets go of them some time after the process dies.
+	tempdir.Remove(a.dir)
 }
 
 // SharedDatabase is a SQLite file that two instances started by one test can
@@ -899,49 +903,10 @@ func (a *App) stop() {
 // next start applies.
 //
 // Its directory is removed the way an instance's own is, and for the same
-// reason. The cases that shared a file made it under a t.TempDir of their own,
-// which removeEventually never saw, so they failed on Windows exactly as the
-// instances' directories used to.
+// reason: the cases that shared a file made it under a t.TempDir of their own,
+// and failed on Windows exactly as the instances' directories used to.
 func SharedDatabase(t *testing.T) string {
 	t.Helper()
 
-	dir := t.TempDir()
-
-	// Registered before any instance that opens it, so it runs after they have
-	// been stopped and before t.TempDir's own removal.
-	t.Cleanup(func() { removeEventually(dir) })
-
-	return filepath.Join(dir, "shared")
-}
-
-// removeEventually deletes a directory an instance used, before testing.T gets
-// to it.
-//
-// Windows releases a file handle some time after the process holding it dies, and
-// a SQLite database in write-ahead logging has three files rather than one. So
-// t.TempDir's own cleanup regularly ran a moment too early and failed the test
-// with "The directory is not empty" - a failure about the operating system, on a
-// test that had already passed.
-//
-// Retried briefly rather than slept through, and the outcome is ignored: if it
-// still cannot be removed, t.TempDir will report it, which is the behaviour
-// without this.
-func removeEventually(dir string) {
-	if dir == "" {
-		return
-	}
-
-	deadline := time.Now().Add(5 * time.Second)
-
-	for {
-		if err := os.RemoveAll(dir); err == nil {
-			return
-		}
-
-		if time.Now().After(deadline) {
-			return
-		}
-
-		time.Sleep(50 * time.Millisecond)
-	}
+	return filepath.Join(tempdir.New(t), "shared")
 }

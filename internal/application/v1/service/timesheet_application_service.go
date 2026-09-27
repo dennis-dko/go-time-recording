@@ -377,7 +377,7 @@ const roundingSlack = 1e-9
 func validateTimesheet(date time.Time, hours float64, description *string) error {
 	var invalid []string
 
-	if date.IsZero() {
+	if !model.OnTheCalendar(date) {
 		invalid = append(invalid, "date")
 	}
 
@@ -388,7 +388,11 @@ func validateTimesheet(date time.Time, hours float64, description *string) error
 	// The floor is the one the OpenAPI document publishes rather than a bare
 	// "greater than zero", so the form, the document and this check agree. Below
 	// it a booking is not a short entry, it is a mistyped one.
-	if hours < model.MinBookableHours || hours > model.HoursPerDay {
+	//
+	// Written as "inside the range" rather than "below or above it", because
+	// every comparison with NaN is false: the other form let NaN through, and the
+	// spreadsheet importer reads hours with ParseFloat, which takes "NaN".
+	if !(hours >= model.MinBookableHours && hours <= model.HoursPerDay) {
 		invalid = append(invalid, "durationHours")
 	}
 
