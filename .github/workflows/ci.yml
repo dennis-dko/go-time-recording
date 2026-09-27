@@ -173,7 +173,7 @@ jobs:
       # no release or database yet. The register can only hold what govulncheck
       # reports, so what watches that one is a test beside the guard -
       # TestExcelizeStillPanicsOnASpilledNegativeSharedString in
-      # internal/pkg/spreadsheet - which fails once a release carries the fix.
+      # internal/support/spreadsheet - which fails once a release carries the fix.
       #
       # So the register below is the third answer, and it is held to three rules
       # rather than one. An advisory it does not name fails the build, which is

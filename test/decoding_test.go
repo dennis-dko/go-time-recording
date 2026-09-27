@@ -36,11 +36,11 @@ func TestEveryDecoderOfCompressedInputIsBounded(t *testing.T) {
 	// Read, bounded, and why - so the next person adding one has the shape of the
 	// answer rather than only the rule.
 	bounded := map[string]string{
-		"internal/pkg/spreadsheet/book.go": "excelize.Options{UnzipSizeLimit: maxUnzippedBytes}, 128 MB",
+		"internal/support/spreadsheet/book.go": "excelize.Options{UnzipSizeLimit: maxUnzippedBytes}, 128 MB",
 
-		"internal/pkg/imaging/imaging.go": "refuseTooManyPixels and PixelsIn, against MaxPixels (16 MP)",
+		"internal/support/imaging/imaging.go": "refuseTooManyPixels and PixelsIn, against MaxPixels (16 MP)",
 
-		"internal/pkg/document/document.go": "MaxChartPixels (16 MP), checked on the DecodeConfig already there",
+		"internal/support/document/document.go": "MaxChartPixels (16 MP), checked on the DecodeConfig already there",
 
 		"internal/interface/api/v1/rest/document_handler.go": "document.MaxChartPixels, so the refusal is coded and translated",
 	}

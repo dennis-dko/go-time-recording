@@ -1,4 +1,3 @@
-// Package v1 registers version 1 of the HTTP API.
 package v1
 
 import (
@@ -38,8 +37,9 @@ type Handlers struct {
 // project is built around.
 //
 // Authorization is likewise not attached here but inside each handler, because
-// several rules depend on the resource rather than the route: reading your own
-// time entries and reading everyone's share one path.
+// several rules depend on the resource rather than the route: a project is
+// visible only to the person it belongs to, and an entry can be changed only by
+// the account that recorded it - neither is known until the record is read.
 func RegisterRoutes(app *gofr.App, h Handlers) {
 	const base = "/api/v1"
 

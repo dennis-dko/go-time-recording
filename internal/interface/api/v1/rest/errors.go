@@ -1,5 +1,3 @@
-// Package rest adapts the application services to HTTP. It owns request
-// binding, DTO shaping and status codes; the layers below stay unaware of HTTP.
 package rest
 
 import (
@@ -9,7 +7,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // toHTTPError maps an application error onto the GoFr error types, which carry

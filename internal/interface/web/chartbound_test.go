@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/document"
+	"github.com/dennis-dko/go-time-recording/internal/support/document"
 )
 
 // The bound the page draws to is the bound the server decodes with.

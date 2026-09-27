@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // CSRFCookieName carries the token the browser must echo back. Unlike the

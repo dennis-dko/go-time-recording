@@ -7,7 +7,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/hosting"
+	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
 )
 
 // The binary to re-execute, resolved when the package is initialised rather

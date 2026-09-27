@@ -42,9 +42,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		contains string
 	}{
 		{
-			reference: "internal/interface/web/web.go:85",
+			reference: "internal/interface/web/web.go:82",
 			resolved:  "internal/interface/web/web.go",
-			line:      85,
+			line:      82,
 			contains:  "panic(",
 		},
 		// The two Must... sites beside it. They are panics the word `panic(`
@@ -52,9 +52,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		// watched here: the rule about them is a rule about where they sit, so a
 		// reference that has drifted off the declaration says nothing at all.
 		{
-			reference: "internal/application/v1/service/service.go:20",
+			reference: "internal/application/v1/service/service.go:17",
 			resolved:  "internal/application/v1/service/service.go",
-			line:      20,
+			line:      17,
 			contains:  "regexp.MustCompile(",
 		},
 		{
@@ -64,9 +64,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "netip.MustParsePrefix(",
 		},
 		{
-			reference: "internal/infrastructure/persistence/migrations/migrations.go:1337",
+			reference: "internal/infrastructure/persistence/migrations/migrations.go:1334",
 			resolved:  "internal/infrastructure/persistence/migrations/migrations.go",
-			line:      1337,
+			line:      1334,
 			contains:  "fmt.Sprintf(",
 		},
 		{
