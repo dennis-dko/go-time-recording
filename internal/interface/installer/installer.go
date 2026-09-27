@@ -183,9 +183,15 @@ type server struct {
 	cfg  Config
 	done chan appconfig.Datasource
 
-	// once guards the handover: two browser tabs submitting at the same moment
-	// must not both be told they succeeded, and must not write the file twice.
-	once sync.Once
+	// mu and saved decide the handover before the file is written, not after:
+	// two browser tabs submitting at the same moment must not both be told they
+	// succeeded, and must not write the file twice. Deciding it afterwards let
+	// each write and each be told, so the process went on with one connection
+	// while the file held the other and the next start opened a different
+	// database. A write that fails leaves saved false, so the answer can be
+	// corrected and sent again.
+	mu    sync.Mutex
+	saved bool
 }
 
 func (s *server) announce(addr net.Addr, generated bool) {
@@ -310,7 +316,22 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := appconfig.SaveDatasource(s.cfg.DatasourceFile, ds); err != nil {
+	s.mu.Lock()
+
+	if s.saved {
+		s.mu.Unlock()
+		writeError(w, http.StatusConflict,
+			apperror.Conflictf("a database has already been chosen and the "+
+				"application is starting with it").WithCode("alreadyConfigured"))
+
+		return
+	}
+
+	err := appconfig.SaveDatasource(s.cfg.DatasourceFile, ds)
+	s.saved = err == nil
+	s.mu.Unlock()
+
+	if err != nil {
 		writeError(w, http.StatusInternalServerError,
 			fmt.Errorf("cannot save the connection: %w", err))
 
@@ -327,7 +348,8 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	s.once.Do(func() { s.done <- ds })
+	// Cannot block: saved lets exactly one request this far, and done holds one.
+	s.done <- ds
 }
 
 // accept checks the method and the token and decodes the body.
