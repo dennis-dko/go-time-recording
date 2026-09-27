@@ -2,14 +2,16 @@ name: Release
 
 # Two ways in, and they mean different things.
 #
-# A merge to main releases the next patch version. The version is not written
-# down anywhere: this reads the newest tag and counts on, so there is no file to
-# forget to bump and no way for the tag and a constant to disagree. With no tags
-# at all it starts at v0.1.0.
+# A merge to main releases the next version. The version is not written down
+# anywhere: this reads the newest tag and counts on, so there is no file to
+# forget to bump and no way for the tag and a constant to disagree. The patch
+# counts to 99 and then hands on to the minor - after v0.2.99 comes v0.3.0 - and
+# the minor does the same to the major; build/nextversion holds that rule and
+# its test. With no tags at all it starts at v0.1.0.
 #
 # A tag pushed by hand (`task release VERSION=v1.2.3`) releases exactly that
 # version, and the next merge counts on from it - which is how a minor or major
-# bump is made.
+# bump is made before the patch has reached 99.
 #
 # Both paths wait for CI, and neither verifies for itself. CI already runs the
 # integration suite against SQLite, PostgreSQL and MySQL on every push to main,
@@ -111,6 +113,11 @@ jobs:
 
           echo "CI passed for $sha on main; releasing."
 
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Decide
         id: decide
         run: |
@@ -139,16 +146,9 @@ jobs:
           # late on an older line must not be read as the newest.
           latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
 
-          if [ -z "$latest" ]; then
-            # The first release has to start somewhere, and v0.1.0 says "this has
-            # been released and is not finished", which is true.
-            next="v0.1.0"
-          else
-            major="$(echo "$latest" | cut -d. -f1 | tr -d v)"
-            minor="$(echo "$latest" | cut -d. -f2)"
-            patch="$(echo "$latest" | cut -d. -f3)"
-            next="v${major}.${minor}.$((patch + 1))"
-          fi
+          # The rule, and the test that holds it, live in build/nextversion: an
+          # empty answer here becomes v0.1.0, and the patch hands on at 99.
+          next="$(go run ./build/nextversion "$latest")"
 
           echo "Newest tag is '${latest:-none}'; releasing $next."
           echo "version=$next" >> "$GITHUB_OUTPUT"

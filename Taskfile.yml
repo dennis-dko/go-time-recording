@@ -481,10 +481,11 @@ tasks:
   release:
     desc: 'Ship: tag a minor or major version by hand. Usage: task release VERSION=v1.2.0'
     summary: |
-      Only needed for a minor or major bump. A patch release happens on its own:
-      every merge to main reads the newest tag, counts the patch number on, and
-      publishes the image and the GitHub release - so there is nothing to run and
-      no version written down anywhere to forget.
+      Only needed for a minor or major bump before the patch reaches 99. A release
+      happens on its own: every merge to main reads the newest tag, counts the patch
+      number on - handing on to the minor after 99, see build/nextversion - and
+      publishes the image and the GitHub release, so there is nothing to run and no
+      version written down anywhere to forget.
 
       This tags the current commit with the version given and pushes it, which
       release.yml picks up and releases as exactly that version. The next merge

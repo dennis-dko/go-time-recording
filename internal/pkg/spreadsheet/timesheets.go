@@ -13,6 +13,7 @@ package spreadsheet
 
 import (
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -149,7 +150,12 @@ func parseOptionalDate(raw string) (time.Time, bool) {
 
 	// A serial number: days since the workbook's epoch. Converted by the library
 	// so the epoch setting is honoured rather than assumed.
-	if serial, err := strconv.ParseFloat(raw, 64); err == nil {
+	//
+	// Only one a sheet can hold: 1 is the first of January 1900 and 2958465 the
+	// last day of 9999. The library converts anything it is handed, and "NaN"
+	// came back as a day in 5006 BC, reported as a date understood. Written so
+	// that NaN, which compares false against both bounds, cannot pass.
+	if serial, err := strconv.ParseFloat(raw, 64); err == nil && serial >= 1 && serial < lastSerial+1 {
 		if converted, convErr := excelize.ExcelDateToTime(serial, false); convErr == nil {
 			return theDayItFallsOn(converted), true
 		}
@@ -157,6 +163,10 @@ func parseOptionalDate(raw string) (time.Time, bool) {
 
 	return time.Time{}, false
 }
+
+// lastSerial is the serial number of the last day a sheet can hold, 31 December
+// 9999, on the 1900 epoch.
+const lastSerial = 2958465
 
 // theDayItFallsOn reduces what a cell yielded to the day it names.
 //
@@ -184,8 +194,11 @@ func parseHours(raw string) (float64, error) {
 		return 0, problemf("hoursMissing", "the hours are missing")
 	}
 
+	// ParseFloat also takes "NaN" and "Inf", which are numbers to it and not to
+	// anybody filling in hours - and NaN slips past any bound written as a
+	// comparison, so it is refused here, as what it is.
 	hours, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
-	if err != nil {
+	if err != nil || math.IsNaN(hours) || math.IsInf(hours, 0) {
 		return 0, problemf("hoursNotANumber", "%q is not a number of hours", raw)
 	}
 
