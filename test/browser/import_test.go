@@ -11,7 +11,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
+	"github.com/dennis-dko/go-time-recording/internal/support/spreadsheet"
 )
 
 // The spreadsheet card: an export that downloads, and an import that shows what a

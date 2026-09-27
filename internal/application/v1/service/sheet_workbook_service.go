@@ -3,8 +3,8 @@ package service
 import (
 	"sort"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/spreadsheet"
 )
 
 // SheetRow is one row of a file as a preview shows it.

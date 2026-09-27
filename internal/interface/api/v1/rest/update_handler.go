@@ -13,8 +13,8 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/restart"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/hosting"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
 )
 
 // UpdateHandler reports whether a newer release exists, and installs it where

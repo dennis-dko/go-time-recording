@@ -7,7 +7,7 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // TimerRepository stores the one clock a user may have running.

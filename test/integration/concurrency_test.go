@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
+	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
 // Two people saving at the same moment must both be served.

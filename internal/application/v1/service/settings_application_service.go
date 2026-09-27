@@ -7,9 +7,9 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/imaging"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/imaging"
+	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
 // maxLogoBytes caps the inline logo. It is stored as a data URI in the

@@ -8,8 +8,8 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
 // Credentials of the built-in administrator created on first start. The

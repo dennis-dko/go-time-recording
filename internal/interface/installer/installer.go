@@ -48,7 +48,7 @@ import (
 	"time"
 
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 //go:embed assets/install.html

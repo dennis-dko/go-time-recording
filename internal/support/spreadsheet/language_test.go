@@ -8,7 +8,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
+	"github.com/dennis-dko/go-time-recording/internal/support/spreadsheet"
 )
 
 // A workbook exported in one language can be imported again.

@@ -12,7 +12,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/restart"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // RestartHandler reports what is waiting for a restart, and performs one.

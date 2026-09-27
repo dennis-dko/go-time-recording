@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
+	"github.com/dennis-dko/go-time-recording/internal/support/spreadsheet"
 )
 
 // A session that has ended takes the screen with it, uploads included.

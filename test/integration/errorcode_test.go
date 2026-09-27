@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // A refusal has to say which rule was broken, not only say so in English.

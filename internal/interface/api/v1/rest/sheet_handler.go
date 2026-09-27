@@ -10,8 +10,8 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/spreadsheet"
 )
 
 // SheetHandler serves the export and import of projects and people.

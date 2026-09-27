@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // SettingsRepository stores the instance settings as key/value pairs.

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // Dialect names as understood by GoFr's DB_DIALECT setting.

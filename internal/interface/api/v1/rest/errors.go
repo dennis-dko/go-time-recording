@@ -9,7 +9,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // toHTTPError maps an application error onto the GoFr error types, which carry

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
+	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
 func aKey(t *testing.T) string {

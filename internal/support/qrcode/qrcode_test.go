@@ -9,7 +9,7 @@ import (
 
 	"rsc.io/qr"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/qrcode"
+	"github.com/dennis-dko/go-time-recording/internal/support/qrcode"
 )
 
 // A QR code is only ever read by a machine, so the usual "does it look right" is

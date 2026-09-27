@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
+	"github.com/dennis-dko/go-time-recording/internal/support/spreadsheet"
 )
 
 // The rights a role holds survive the trip out and back.
