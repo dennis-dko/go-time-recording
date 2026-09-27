@@ -38,10 +38,10 @@ type UserApplicationService struct {
 	// purger removes an account together with everything referencing it.
 	//
 	// Deleting only the account row is not an option: the schema declares
-	// foreign keys, so a database that enforces them refuses it outright, and
-	// SQLite - where they are off unless asked for - accepts it and leaves the
-	// hours behind pointing at nobody. Same request, two different wrong
-	// answers, depending on a choice made in the installer.
+	// foreign keys, so PostgreSQL refuses it outright, and SQLite and MySQL -
+	// neither of which enforces them - accept it and leave the hours behind
+	// pointing at nobody. Same request, two different wrong answers, depending
+	// on a choice made in the installer.
 	purger UserPurger
 }
 

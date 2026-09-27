@@ -37,10 +37,10 @@ import (
 func (r *UserRepository) PurgeUser(ctx context.Context, userID uint) error {
 	return r.withTx(ctx, func(tx base) error {
 		// Every table with a foreign key to users has to appear here. One that is
-		// missing does not fail quietly: on PostgreSQL and MySQL it makes the
-		// final delete impossible, and on SQLite - where foreign keys are not
-		// enforced unless asked for - it leaves rows pointing at an account that
-		// no longer exists.
+		// missing does not fail quietly: on PostgreSQL it makes the final delete
+		// impossible, and on SQLite and MySQL - neither of which enforces the keys
+		// this schema declares - it leaves rows pointing at an account that no
+		// longer exists.
 		steps := []struct {
 			what  string
 			query string

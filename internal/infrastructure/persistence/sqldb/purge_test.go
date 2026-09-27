@@ -127,8 +127,8 @@ func TestPurgeUserRemovesEveryReference(t *testing.T) {
 
 	// A passkey, which the purge used to forget. Its table has a foreign key to
 	// users like the rest, so forgetting it does not fail quietly: on PostgreSQL
-	// and MySQL the final delete is refused and the account can never be removed,
-	// while on SQLite the credential outlives the person it belonged to.
+	// the final delete is refused and the account can never be removed, while on
+	// SQLite and MySQL the credential outlives the person it belonged to.
 	passkeys := sqldb.NewPasskeyRepository(db, sqldb.DialectSQLite)
 
 	if _, err := passkeys.Save(ctx, &model.Passkey{

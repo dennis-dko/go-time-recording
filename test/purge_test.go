@@ -15,11 +15,12 @@ import (
 // irreversible either way.
 //
 // A table missing from its list does not fail loudly, which is the whole reason
-// for this. On PostgreSQL and MySQL the final DELETE is refused while anything
-// still references the account - and by then the time entries are already gone,
+// for this. On PostgreSQL the final DELETE is refused while anything still
+// references the account - and by then the time entries are already gone,
 // inside a transaction that now rolls back, so the operation simply never
-// succeeds. On SQLite, where foreign keys are not enforced unless asked for, it
-// succeeds and leaves rows pointing at an account that no longer exists.
+// succeeds. On SQLite and MySQL, neither of which enforces the keys this schema
+// declares, it succeeds and leaves rows pointing at an account that no longer
+// exists.
 //
 // This has already happened once, with passkeys. CLAUDE.md records it, and
 // records the remedy as "add it to the list in the same commit" - which is a rule
@@ -62,9 +63,9 @@ func TestEveryTableReferencingAnAccountIsPurgedWithIt(t *testing.T) {
 
 	for _, one := range missing {
 		t.Errorf("%s points at an account and PurgeUser does not clear it; on "+
-			"PostgreSQL and MySQL that makes the erasure impossible after the hours "+
-			"are already deleted, and on SQLite it leaves rows behind pointing at "+
-			"nobody", one)
+			"PostgreSQL that makes the erasure impossible after the hours are "+
+			"already deleted, and on SQLite and MySQL it leaves rows behind "+
+			"pointing at nobody", one)
 	}
 }
 
