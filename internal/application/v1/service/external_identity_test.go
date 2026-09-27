@@ -138,6 +138,43 @@ func TestSyncStillMatchesAccountsWithoutAnIdentifier(t *testing.T) {
 	}
 }
 
+// A directory that answers without identifiers is matched on the address, even
+// for an account that already has one.
+//
+// Clearing the identifier attribute on the settings screen - whose placeholder
+// reads "entryUUID", so an empty box looks like the default - makes every entry
+// arrive with no identifier, and the setting says the synchronisation then
+// matches on the mail address. It did so only for accounts that had never had an
+// identifier. One that had was looked up by it alone, found nowhere, and marked
+// as departed with its hours, while its entry was in the answer under the same
+// address: with half the accounts older than identifiers, the ratio guard let
+// the other half go. An entry that carries no identifier cannot be a successor
+// who inherited the mailbox, because nothing says it is a different entry.
+func TestSyncMatchesOnTheAddressWhenTheDirectorySendsNoIdentifier(t *testing.T) {
+	f := newSyncFixture(t, 0.5)
+	identified := externalUserWithID(t, f.fixture, "identified@example.com", "uuid-1")
+	externalUser(t, f.fixture, "legacy@example.com")
+
+	f.directory.users = []service.ExternalUser{
+		{Email: "identified@example.com"},
+		{Email: "legacy@example.com"},
+	}
+
+	report, err := f.sync.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if len(report.Candidates) != 0 {
+		t.Errorf("both accounts are in the directory, but %+v was marked for deletion",
+			report.Candidates)
+	}
+
+	if _, err := f.userRepo.GetByID(context.Background(), identified); err != nil {
+		t.Errorf("the account the directory still holds was deleted: %v", err)
+	}
+}
+
 // ---------------------------------------------------------------- sign-in
 
 // stubSessions is enough of a session store for a sign-in to complete; the

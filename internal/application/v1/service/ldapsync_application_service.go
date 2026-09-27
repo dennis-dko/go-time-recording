@@ -267,20 +267,26 @@ func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, er
 // take the person's recorded hours with it. Only an account with no identifier
 // yet - one created before identifiers were recorded - falls back to the mail
 // address.
+//
+// So does an entry that arrives with no identifier, which is every entry once
+// the identifier attribute is cleared. An entry with an identifier of its own
+// under the account's address is a different entry, a successor who inherited
+// the mailbox; one with none says nothing of the kind, and reading its silence
+// as a departure deleted people the directory still held.
 func (s *LDAPSyncService) stillInDirectory(
 	user *model.User,
 	byID map[string]ExternalUser,
 	byEmail map[string]ExternalUser,
 ) bool {
 	if user.ExternalID != "" {
-		_, found := byID[user.ExternalID]
-
-		return found
+		if _, found := byID[user.ExternalID]; found {
+			return true
+		}
 	}
 
-	_, found := byEmail[normalizeEmail(user.Email)]
+	entry, found := byEmail[normalizeEmail(user.Email)]
 
-	return found
+	return found && (user.ExternalID == "" || entry.ID == "")
 }
 
 // exceedsRatio reports why the run is refused when it would remove more of the
