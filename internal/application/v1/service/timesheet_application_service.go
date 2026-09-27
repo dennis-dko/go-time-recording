@@ -325,13 +325,14 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 		return nil
 	}
 
+	// One day, from it to itself: a filter is a range of days, and where a day
+	// ends is decided once, by OverWholeDays, rather than here as well.
 	from := startOfDay(day)
-	to := from.AddDate(0, 0, 1).Add(-time.Nanosecond)
 
 	sameDay, filterErr := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{
 		UserID:    userID,
 		StartDate: &from,
-		EndDate:   &to,
+		EndDate:   &from,
 	})
 	if filterErr != nil {
 		return filterErr

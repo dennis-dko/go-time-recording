@@ -75,8 +75,9 @@ func (s *OvertimeService) Balance(
 		return nil, err
 	}
 
+	// A range of days, whose end the repository decides; see OverWholeDays.
 	start := startOfDay(from)
-	end := endOfDay(to)
+	end := startOfDay(to)
 
 	entries, err := s.timesheets.GetByFilter(ctx, repository.TimesheetFilter{
 		UserID:    userID,
@@ -130,8 +131,4 @@ func (s *OvertimeService) Balance(
 	}
 
 	return balance, nil
-}
-
-func endOfDay(t time.Time) time.Time {
-	return startOfDay(t).AddDate(0, 0, 1).Add(-time.Nanosecond)
 }
