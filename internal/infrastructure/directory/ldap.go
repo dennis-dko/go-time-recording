@@ -131,6 +131,7 @@ func (l *LDAP) Authenticate(
 		ID:    stableID(entry, config.IDAttribute),
 		Email: strings.ToLower(email),
 		Name:  entry.GetAttributeValue(config.NameAttribute),
+		Role:  config.DefaultRole,
 	}, true, nil
 }
 
@@ -192,6 +193,7 @@ func (l *LDAP) ListUsers(ctx context.Context) ([]appservice.ExternalUser, error)
 			ID:    stableID(entry, config.IDAttribute),
 			Email: strings.ToLower(email),
 			Name:  entry.GetAttributeValue(config.NameAttribute),
+			Role:  config.DefaultRole,
 		})
 	}
 

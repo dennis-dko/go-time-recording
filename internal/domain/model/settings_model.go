@@ -257,7 +257,10 @@ type LDAPConfig struct {
 	// which is binary and is stored hex-encoded.
 	IDAttribute string
 
-	// DefaultRole is given to accounts created on first successful sign-in.
+	// DefaultRole is the role an account the directory brings in starts with,
+	// whether it arrives by signing in or by a synchronisation. A role that
+	// administers the installation is refused when this is saved, and never
+	// handed out if it comes to administer afterwards.
 	DefaultRole string
 
 	// SyncSchedule is when the reconciliation runs on its own, as a five-field

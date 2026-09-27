@@ -2292,6 +2292,28 @@ function roleChoices() {
   });
 }
 
+/**
+ * The roles an account from the directory may start with.
+ *
+ * None that administers the installation: the server refuses to store one as
+ * the directory's default, because every entry anybody writes to the directory
+ * would arrive holding the installation, so offering it would be offering a
+ * refusal. Without the role list - which somebody holding settings:manage but
+ * not roles:read never loads - the ordinary role is the only one known not to
+ * administer, so it is the one choice.
+ */
+function directoryRoleChoices() {
+  const administering = ['settings:manage', 'roles:write'];
+
+  const allowed = cache.roles.length > 0
+    ? new Set(cache.roles
+      .filter((role) => !(role.permissions ?? []).some((right) => administering.includes(right)))
+      .map((role) => role.name))
+    : new Set([ORDINARY_ROLE]);
+
+  return roleChoices().filter((choice) => allowed.has(choice.name));
+}
+
 /** Reads a form into a plain object, dropping empty optional fields. */
 /**
  * Where a form's unfinished contents wait out a page load.
@@ -3463,6 +3485,7 @@ const TRANSLATIONS = {
     'err.cannotResetOwnPassword': 'Das eigene Passwort wird unter „Mein Konto“ geändert — dort wird nach dem aktuellen gefragt.',
     'err.cannotDeleteSelf': 'Das Konto, mit dem du angemeldet bist, kann nicht gelöscht werden.',
     'err.defaultRoleUndeletable': '„{0}“ ist eine mitgelieferte Rolle und kann nicht gelöscht werden.',
+    'err.directoryRoleAdministers': '„{0}“ verwaltet diese Installation und kann nicht die Rolle sein, mit der jedes Konto aus dem Verzeichnis beginnt.',
     'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
     'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden.',
     'update.available': 'Version {0} ist verfügbar. Diese Installation läuft mit {1}.',
@@ -5985,7 +6008,7 @@ async function loadAdmin() {
   // had been touched came back offering nothing to choose. fillSelect keeps a
   // selection that is still among the options, so a role chosen and not yet
   // saved survives this.
-  fillSelect(ldapForm.elements.defaultRole, roleChoices(),
+  fillSelect(ldapForm.elements.defaultRole, directoryRoleChoices(),
     { labelKey: 'label', valueKey: 'name' });
 
   // Not over a directory somebody is part way through configuring. A bind DN
