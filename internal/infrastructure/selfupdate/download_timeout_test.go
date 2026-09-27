@@ -42,7 +42,7 @@ import (
 // coming; the download gets a bound on the server answering at all, and is
 // otherwise held by the caller's context and by maxDownload.
 func TestASlowDownloadIsNotCutOffLikeAStalledOne(t *testing.T) {
-	binary := workingProgram(t, "the new version")
+	binary := workingProgram(t, "v9.9.9")
 	sum := sha256.Sum256(binary)
 
 	// Short, so the case runs in under a second while standing for the real
@@ -99,7 +99,7 @@ func TestASlowDownloadIsNotCutOffLikeAStalledOne(t *testing.T) {
 // context is what holds it - which is the honest answer, because a download whose
 // bytes have stopped is indistinguishable from a slow one except by waiting.
 func TestADownloadThatStopsArrivingIsStillCutOff(t *testing.T) {
-	binary := workingProgram(t, "the new version")
+	binary := workingProgram(t, "v9.9.9")
 	sum := sha256.Sum256(binary)
 
 	stalled := make(chan struct{})

@@ -232,7 +232,7 @@ func TestTheDownloadIsExecutable(t *testing.T) {
 func TestAnInstallReplacesTheFileItWasGiven(t *testing.T) {
 	const version = "v9.9.9"
 
-	newBinary := workingProgram(t, "the new version")
+	newBinary := workingProgram(t, "v9.9.9")
 	sum := sha256.Sum256(newBinary)
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
@@ -288,7 +288,7 @@ func TestAFailedInstallLeavesTheOldBinaryInPlace(t *testing.T) {
 	wrong := sha256.Sum256([]byte("not what is served"))
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(wrong[:]),
-		workingProgram(t, "the new version"))
+		workingProgram(t, "v9.9.9"))
 
 	self := filepath.Join(tempdir.New(t), "go-time-recording"+exeSuffix())
 	old := []byte("the old version")
@@ -343,8 +343,9 @@ func TestOneFunctionDecidesWhichFileThisProgramIs(t *testing.T) {
 	}
 }
 
-// workingProgram is a file that runs and answers --version, which is what the
-// install now requires of anything it is about to make the application.
+// workingProgram is a file that runs and answers --version with what it is
+// given, which is what the install requires of anything it is about to make the
+// application - and for a download, the answer has to be the release's version.
 //
 // A real program rather than a string of bytes: the check runs it, so a test
 // that handed it text would be testing the check's error path and calling it the
@@ -425,6 +426,54 @@ func TestADownloadThatCannotRunIsNotInstalled(t *testing.T) {
 	}
 }
 
+// A download that is another version than the release is not installed.
+//
+// The install asks the downloaded file what version it is, because that is the
+// smallest thing that needs it to load and reach main - and then checked only
+// that it answered something. A release whose asset reports another version, a
+// build whose version was never stamped and calls itself "dev", a mirror serving
+// an older file under this release's name with checksums to match: each was put
+// in place and announced as the release, and after the restart the application
+// ran a version other than the one it had said it was installing - and offered
+// that release again, only to refuse it as already waiting.
+func TestADownloadThatIsAnotherVersionIsNotInstalled(t *testing.T) {
+	const version = "v9.9.9"
+
+	other := workingProgram(t, "dev")
+	sum := sha256.Sum256(other)
+
+	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), other)
+
+	self := filepath.Join(tempdir.New(t), "go-time-recording"+exeSuffix())
+	old := workingProgram(t, "v1.0.0")
+
+	if err := os.WriteFile(self, old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := source.InstallOver(context.Background(), release, self)
+	if err == nil {
+		t.Fatal("a download that says it is another version was installed as " + version)
+	}
+
+	if !strings.Contains(err.Error(), "not installed") {
+		t.Errorf("the refusal reads %q, which does not say the update did not happen", err)
+	}
+
+	got, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatalf("the old binary is gone: %v", err)
+	}
+
+	if string(got) != string(old) {
+		t.Error("the running version was replaced by one that is not the release")
+	}
+
+	if _, err := os.Stat(self + ".pending"); err == nil {
+		t.Error("the note says a version is waiting that is not the one on disk")
+	}
+}
+
 // And when everything passed and the new version still will not serve, the old
 // one goes back.
 //
@@ -433,7 +482,7 @@ func TestADownloadThatCannotRunIsNotInstalled(t *testing.T) {
 func TestARollbackPutsThePreviousVersionBack(t *testing.T) {
 	const version = "v9.9.9"
 
-	newBinary := workingProgram(t, "the new version")
+	newBinary := workingProgram(t, "v9.9.9")
 	sum := sha256.Sum256(newBinary)
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
@@ -487,7 +536,7 @@ func TestARollbackPutsThePreviousVersionBack(t *testing.T) {
 func TestAVersionAlreadyWaitingIsNotInstalledOverTheWayBack(t *testing.T) {
 	const version = "v9.9.9"
 
-	newBinary := workingProgram(t, "the new version")
+	newBinary := workingProgram(t, "v9.9.9")
 	sum := sha256.Sum256(newBinary)
 
 	source, release, _ := stagedRelease(t, version, hex.EncodeToString(sum[:]), newBinary)
@@ -787,7 +836,7 @@ func TestOnlyOneInstallRunsAtATime(t *testing.T) {
 	// A real program: the install runs what it downloaded before putting it in
 	// place, so a string of bytes would be testing the check's failure path and
 	// calling it success.
-	binary := workingProgram(t, "the new version")
+	binary := workingProgram(t, "v9.9.9")
 	sum := sha256.Sum256(binary)
 
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
