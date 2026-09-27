@@ -1589,7 +1589,10 @@ published to GHCR as both that version and `:latest`, and a GitHub release is
 created with generated notes. The version is not written down anywhere:
 [`release.yml`](.github/workflows/release.yml) reads the newest tag and counts on,
 so there is no file to forget to bump and no way for a tag and a constant to
-disagree. With no tags at all it starts at `v0.1.0`.
+disagree. The patch counts to 99 and then hands on to the minor — after `v0.2.99`
+comes `v0.3.0` — and the minor does the same to the major
+([`build/nextversion`](build/nextversion/main.go) holds the rule). With no tags at
+all it starts at `v0.1.0`.
 
 The image is built into the runner's own daemon first, started there with nothing
 but `DB_DIALECT`, and asked for `/api/v1/branding` — the body rather than the
