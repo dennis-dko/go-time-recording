@@ -461,6 +461,34 @@ func TestTheDirectoryRolePickerIsNeverEmptyAndDefaultsToTheOrdinaryRole(t *testi
 	}
 }
 
+// The directory's role picker does not offer a role that administers.
+//
+// The server refuses to store one as the directory's default - every entry
+// anybody writes to the directory would arrive holding the installation - so a
+// picker offering the administrator and the combined role offered two refusals.
+// The ordinary role is still there, and so is anything else that does not hold
+// settings:manage or roles:write.
+func TestTheDirectoryRolePickerOffersNoRoleThatAdministers(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-ldap", chromedp.ByID))
+
+	for _, role := range []string{"admin", "user-admin"} {
+		if n := p.count(`#form-ldap select[name=defaultRole] option[value="` + role + `"]`); n != 0 {
+			t.Errorf("the picker offers %q, which the server refuses as the directory's "+
+				"default role", role)
+		}
+	}
+
+	if n := p.count(`#form-ldap select[name=defaultRole] option[value="user"]`); n != 1 {
+		t.Errorf("the ordinary role is offered %d time(s), want once", n)
+	}
+}
+
 // An account created here can be corrected here.
 //
 // A name typed with a typo, or somebody whose address changed, had one way out:

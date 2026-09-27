@@ -841,7 +841,8 @@ func main() {
 			}).WithMaintenance(maintenanceState).
 			WithAnnouncements(hub).
 			WithLiveLogLevel(applyLogLevel, logs.Level).
-			WithRunningConnection(ds),
+			WithRunningConnection(ds).
+			WithFileTelemetry(fileTelemetry),
 	})
 
 	// Expired sessions would otherwise accumulate forever.

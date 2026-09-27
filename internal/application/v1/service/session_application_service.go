@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +39,14 @@ type ExternalUser struct {
 
 	Email string
 	Name  string
+
+	// Role is the role an account this directory brings in starts with - the
+	// directory settings' default role, carried on each entry by the client
+	// that holds those settings. It travels with the entry because the settings
+	// change while the application runs, and both ways an account arrives, a
+	// first sign-in and a synchronisation, have to read what was saved rather
+	// than what was true at start-up. Empty means the service's own default.
+	Role string
 }
 
 // SessionService signs users in and out.
@@ -58,7 +65,8 @@ type SessionService struct {
 	// lifetime when absent, which is what the tests rely on.
 	limits *LimitsProvider
 
-	// defaultRole is given to accounts provisioned from the directory.
+	// defaultRole is given to an account provisioned from the directory when the
+	// directory settings name no role that may be given; see roleForArrival.
 	defaultRole string
 
 	metrics
@@ -327,7 +335,7 @@ func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *E
 		return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 	}
 
-	role, err := s.roles.GetByName(ctx, s.defaultRole)
+	role, err := roleForArrival(ctx, s.roles, directoryUser.Role, s.defaultRole)
 	if err != nil {
 		return nil, err
 	}
@@ -417,12 +425,7 @@ func (s *SessionService) reconcileExternal(
 }
 
 // administers reports whether the account holds rights over the installation
-// rather than over a working day.
-//
-// Both rights are asked about, because they are the same right one step apart:
-// settings:manage is the installation, and roles:write is the ability to tick
-// settings:manage on a role and assign it to yourself. Guarding one without the
-// other would leave the door beside the one that was locked.
+// rather than over a working day; roleAdministers says which rights those are.
 //
 // A role that cannot be read counts as no permissions, which is the reading
 // principalFor already takes of the same condition: an account pointing at a
@@ -434,8 +437,7 @@ func (s *SessionService) administers(ctx context.Context, user *model.User) (boo
 		return false, nil
 	}
 
-	return slices.Contains(role.Permissions, model.PermSettingsManage) ||
-		slices.Contains(role.Permissions, model.PermRoleWrite), nil
+	return roleAdministers(role), nil
 }
 
 // Resolve turns a session token from a cookie into its principal.
