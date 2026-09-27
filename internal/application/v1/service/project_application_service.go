@@ -278,7 +278,7 @@ func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd comma
 
 	// A clock running against it counts too, for the same reason and one more.
 	// running_timers.project_id is a foreign key with no ON DELETE behaviour: the
-	// delete is refused outright by PostgreSQL and MySQL, and accepted by SQLite,
+	// delete is refused outright by PostgreSQL, and accepted by SQLite and MySQL,
 	// which leaves somebody with a clock that can never be stopped. Refused here
 	// rather than left to the engine, so the answer is the same everywhere and says
 	// what to do about it.

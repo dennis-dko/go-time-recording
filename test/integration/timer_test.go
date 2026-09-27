@@ -313,10 +313,9 @@ func timesheetCount(t *testing.T, c *client) int {
 //
 // running_timers references both users(id) and projects(id) with no ON DELETE
 // behaviour declared, so a row left pointing at something that has gone is a
-// foreign key violation on PostgreSQL and MySQL - a 500 for an administrator
-// deleting an account - and on SQLite a clock nobody can ever stop. The same shape
+// foreign key violation on PostgreSQL - a 500 for an administrator deleting an
+// account - and on SQLite and MySQL a clock nobody can ever stop. The same shape
 // as timing against a project that never existed, reached from the other end.
-
 func TestDeletingAnAccountWithAClockRunning(t *testing.T) {
 	t.Parallel()
 
