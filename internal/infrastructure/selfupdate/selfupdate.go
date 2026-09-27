@@ -400,8 +400,11 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 	// restart - and the screen that could have put the old one back went with it.
 	//
 	// So the downloaded file is asked what version it is, which is the smallest
-	// thing that requires it to load, link and reach main.
-	if err := runnable(ctx, staged); err != nil {
+	// thing that requires it to load, link and reach main - and the answer has to
+	// be this release. A file that says it is some other version is not the
+	// release, whatever its checksum says, and installing it would announce one
+	// version and restart into another.
+	if err := runnable(ctx, staged, release.Version); err != nil {
 		_ = os.Remove(staged)
 
 		return err
@@ -414,8 +417,9 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 	return nil
 }
 
-// runnable reports whether the downloaded file can actually start here.
-func runnable(ctx context.Context, path string) error {
+// runnable reports whether the downloaded file can actually start here, and is
+// the version it was downloaded as.
+func runnable(ctx context.Context, path, version string) error {
 	// Short: this loads a binary and prints one line. Anything slower than this
 	// is not a program that is about to serve requests.
 	probe, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -427,9 +431,16 @@ func runnable(ctx context.Context, path string) error {
 			"(%v: %.200s); the update was not installed", err, out)
 	}
 
-	if strings.TrimSpace(string(out)) == "" {
+	answer := strings.TrimSpace(string(out))
+
+	if answer == "" {
 		return fmt.Errorf("the downloaded version answered nothing when asked what " +
 			"it is; the update was not installed")
+	}
+
+	if answer != version {
+		return fmt.Errorf("the downloaded file says it is %.40q rather than %s; "+
+			"the update was not installed", answer, version)
 	}
 
 	return nil

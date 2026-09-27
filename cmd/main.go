@@ -412,6 +412,15 @@ func main() {
 		die(restoreOutput, "cannot publish the build version: %v", err)
 	}
 
+	// Before gofr.New(), which exits on a port in use without the reason reaching
+	// the console; see PortInUse. A second copy started by mistake, or a stale one
+	// still holding the port, is the ordinary way here.
+	if err := appconfig.PortInUse(context.Background()); err != nil {
+		die(restoreOutput, "cannot start: %v.\n"+
+			"  Another process is listening there - perhaps a second copy of this\n"+
+			"  application. Stop it, or choose another port.", err)
+	}
+
 	app := gofr.New()
 
 	if telemetryErr != nil {
