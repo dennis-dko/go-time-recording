@@ -9,7 +9,7 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
+	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
 func aSealer(t *testing.T) *security.Sealer {

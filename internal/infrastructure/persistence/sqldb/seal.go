@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
+	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
 // SealStoredSecrets encrypts what was written before a key was configured.

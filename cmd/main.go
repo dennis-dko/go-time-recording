@@ -1,5 +1,3 @@
-// Command go-time-recording runs the time recording service: a GoFr HTTP API
-// plus the embedded web interface, in a single self-contained binary.
 package main
 
 import (
@@ -41,7 +39,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/security"
+	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
 // version is stamped at build time via -ldflags "-X main.version=...".

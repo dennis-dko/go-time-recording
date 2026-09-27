@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // SecurityHeaders sets the response headers that a browser needs in order to

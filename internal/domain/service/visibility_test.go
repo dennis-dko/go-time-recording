@@ -12,7 +12,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // definition finds a declaration of the visibility rule, whatever it is called.

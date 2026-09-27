@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 

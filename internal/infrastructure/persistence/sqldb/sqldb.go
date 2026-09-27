@@ -1,8 +1,3 @@
-// Package sqldb implements the domain repositories on top of a SQL database.
-//
-// One implementation serves every dialect GoFr supports rather than one
-// package per engine: the queries are identical apart from placeholder syntax
-// and how a generated id is read back, both of which are handled here.
 package sqldb
 
 import (
@@ -13,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // Dialect names as understood by GoFr's DB_DIALECT setting.

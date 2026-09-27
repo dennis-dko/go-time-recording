@@ -13,7 +13,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 const maxDailyHours = 10

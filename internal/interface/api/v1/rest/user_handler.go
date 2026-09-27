@@ -10,7 +10,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // UserHandler serves the user endpoints.

@@ -50,11 +50,11 @@ var taskTarget = regexp.MustCompile(`(?m)^  ([a-z][a-zA-Z0-9:._-]*):[ \t]*$`)
 // directory, and it is the whole of that decision.
 //
 // The distinction is what makes this checkable at all. The document asserts that
-// some paths exist and that others deliberately do not - there is no `adr/`, no
-// `doc.go` anywhere in the tree, and `path` is imported nowhere - and telling an
-// "exists" from a "deliberately does not" means reading the prose around it.
-// Every one of those absence claims is a directory or a package. Reading file
-// paths only makes that question disappear rather than answering it badly.
+// some paths exist and that others deliberately do not - there is no `adr/`, and
+// `path` is imported nowhere - and telling an "exists" from a "deliberately does
+// not" means reading the prose around it. Every one of those absence claims is a
+// directory or a package. Reading file paths only makes that question disappear
+// rather than answering it badly.
 var fileSuffix = []string{
 	".go", ".md", ".yml", ".yaml", ".json", ".js", ".css", ".html",
 	".env", ".example", ".sh", ".conf", ".template", ".ldif", ".in", ".txt",

@@ -10,8 +10,8 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/query"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/apperror"
-	"github.com/dennis-dko/go-time-recording/internal/pkg/spreadsheet"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/spreadsheet"
 )
 
 // ProjectWorkbookService moves projects in and out as a spreadsheet.
