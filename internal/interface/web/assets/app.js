@@ -3500,6 +3500,7 @@ const TRANSLATIONS = {
     'cal.today': 'Heute',
     'cal.weekdays': 'Mo,Di,Mi,Do,Fr,Sa,So',
     'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
+    'err.directoryAccountHasNoPasskey': 'Ein Konto aus dem Verzeichnis meldet sich mit dem Kennwort des Verzeichnisses an, damit das Verzeichnis es beenden kann.',
     'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',
     'err.adminUndeletable': 'Der eingebaute Administrator kann nicht gelöscht werden.',
     'err.archiveNeedsCompleted': 'Ein Projekt kann erst archiviert werden, wenn sein Status „{0}“ ist.',
@@ -11776,7 +11777,11 @@ async function loadPasskeys() {
   // Somebody who administers because they were given the role is not that account
   // and does not carry that guarantee, so withholding a phishing-resistant
   // sign-in from them would cost security rather than protect it.
-  card.hidden = !passkeysAvailable || !me.user || me.user.isSystem;
+  //
+  // Nor to an account the directory holds, and for the opposite reason: its
+  // sign-in has to go through the directory, which is the one place that can end
+  // it, and the server refuses to register a passkey that would go round it.
+  card.hidden = !passkeysAvailable || !me.user || me.user.isSystem || me.user.isExternal;
 
   if (card.hidden) return;
 

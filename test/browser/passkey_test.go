@@ -4,12 +4,15 @@ package browser
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
+
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // Passkeys are the one feature that cannot be tested by calling the API: the
@@ -449,4 +452,115 @@ func (p *page) waitForTextWithin(selector, want string, within time.Duration) {
 
 	p.t.Fatalf("%s never contained %q; it says:\n%s\n\napplication log:\n%s",
 		selector, want, p.text(selector), p.app.Log())
+}
+
+// markAsDirectoryAccount makes an account look like one the directory created,
+// through the database because nothing else does it: a directory account cannot
+// sign in with a local password, and standing a directory up for one flag would
+// be testing the directory rather than the rule.
+func (p *page) markAsDirectoryAccount(t *testing.T, email string) {
+	t.Helper()
+
+	db := p.app.DB(t)
+	if db == nil {
+		t.Fatal("this instance has no database")
+	}
+
+	query := "UPDATE users SET is_external = ?, external_id = ? WHERE email = ?"
+	if strings.Contains(os.Getenv(harness.DSNEnv), "postgres") {
+		query = "UPDATE users SET is_external = $1, external_id = $2 WHERE email = $3"
+	}
+
+	if _, err := db.Exec(query, true, "uid="+email, email); err != nil {
+		t.Fatalf("marking %s as the directory's: %v", email, err)
+	}
+}
+
+// An account the directory holds is not offered a passkey.
+//
+// The server refuses to register one - the directory decides whether such an
+// account may still sign in, and a passkey never asks it - so offering the card
+// would be offering a refusal. The session is opened while the account is still
+// local and the account is handed to the directory underneath it, which is the
+// one way to be signed in as a directory account without a directory.
+func TestADirectoryAccountIsNotOfferedPasskeys(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.withAuthenticator(t)
+
+	p.readyAdmin()
+	p.createOrdinaryAccount(t, "erika@example.com", "erika-password-1")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("erika@example.com", "erika-password-1")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	p.markAsDirectoryAccount(t, "erika@example.com")
+	p.reload()
+
+	p.run("open My account", chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#form-my-timezone", chromedp.ByID))
+
+	if p.visible("#passkey-card") {
+		t.Error("an account the directory holds is offered a passkey the server would refuse")
+	}
+}
+
+// A passkey opens no session for an account the directory has come to hold.
+//
+// Registered while the account was local, and the account handed to the
+// directory afterwards - the ordinary way an installation moves to one. Signing
+// in with the passkey would then skip the directory, which is the one place that
+// can end the account, for as long as the passkey exists.
+func TestAPasskeyOpensNoSessionForADirectoryAccount(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.withAuthenticator(t)
+
+	p.readyAdmin()
+	p.createOrdinaryAccount(t, "erika@example.com", "erika-password-1")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("erika@example.com", "erika-password-1")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	p.run("open My account", chromedp.Click(`.tab[data-view="settings"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#passkey-card", chromedp.ByID))
+
+	p.run("register a passkey",
+		chromedp.SendKeys(`#form-passkey input[name="name"]`, "Test device", chromedp.ByQuery),
+		p.click(`#form-passkey button[type="submit"]`),
+	)
+
+	p.waitForText("#table-passkeys tbody", "Test device")
+
+	p.markAsDirectoryAccount(t, "erika@example.com")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	// Either outcome ends the wait, so the unfixed application fails here at once
+	// rather than on a timeout: signed in, or turned away with a sentence.
+	p.run("sign in with the passkey", p.click("#login-passkey"),
+		chromedp.Poll(`(() => {
+			const screen = document.querySelector('#login-screen');
+			const error = document.querySelector('#login-error');
+			return (screen && screen.hidden) || (error && !error.hidden);
+		})()`, nil, chromedp.WithPollingTimeout(20*time.Second)))
+
+	if !p.visible("#login-screen") {
+		t.Fatal("the passkey opened a session for an account the directory holds")
+	}
+
+	if !p.visible("#login-error") {
+		t.Error("the refused sign-in says nothing")
+	}
 }
