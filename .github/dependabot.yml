@@ -46,18 +46,30 @@ updates:
       interval: weekly
       day: monday
 
-  # The images the deployment runs beside the application: the database, and the
-  # trace collector.
+  # The images the deployment runs beside the application: the database, the
+  # trace collector and the updater's Docker CLI.
   #
-  # compose.yaml is read; the overlays beside it are not, because Dependabot
-  # matches the standard compose filenames and compose.tracing.yaml is not one of
-  # them. So the Jaeger pin in that overlay stays a manual job - said here rather
-  # than left to be discovered by somebody wondering why it never moves.
-  - package-ecosystem: docker
+  # docker-compose rather than docker. The docker ecosystem reads Dockerfiles
+  # and Kubernetes YAML and nothing else, so this entry failed every week with
+  # "No Dockerfiles nor Kubernetes YAML found in /deploy" and no image here ever
+  # moved. The compose ecosystem matches its files by
+  # /(docker-)?compose(-[\w]+)?(?>\.[\w-]+)?\.ya?ml/i - read in dependabot-core's
+  # docker_compose/file_fetcher.rb - which takes in compose.yaml and every
+  # overlay beside it, compose.tracing.yaml included.
+  #
+  # Major versions are left alone. A new PostgreSQL major refuses to start on
+  # the previous major's data directory, so merging one would take down every
+  # installation at its next pull - and CI, which starts on an empty database,
+  # would pass it. The collector's and the CLI's majors change their
+  # configuration. Each is a deliberate step, not a weekly bump.
+  - package-ecosystem: docker-compose
     directory: /deploy
     schedule:
       interval: weekly
       day: monday
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # The actions every workflow is built from. These are the ones nobody thinks
   # about until one is deprecated and a release cannot be cut.
