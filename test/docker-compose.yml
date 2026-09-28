@@ -107,7 +107,7 @@ services:
     #
     # Same image and same version as deploy/compose.tracing.yaml, and a test
     # holds them level rather than a comment asking somebody to.
-    image: jaegertracing/all-in-one:1.62.0
+    image: jaegertracing/all-in-one:1.76.0
 
     environment:
       # The OTLP receiver is the entire reason this container is here. GoFr's
