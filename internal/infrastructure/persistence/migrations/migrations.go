@@ -692,8 +692,8 @@ func grantToAllRolesHolding(d migration.Datasource, dialect, holds, grant string
 // users:write - so the right guarded one of three doors. All three are closed now, and
 // the one that remains asks whose account it is.
 //
-// Nothing is lost by withdrawing it. The instance-wide default under Settings is what
-// a new account gets, and its owner changes it from there.
+// Nothing is lost by withdrawing it. A new account starts on the built-in target and
+// the installation's ceiling under Settings, and its owner changes either from there.
 func handWorkingTimesToTheirOwners(d migration.Datasource, dialect string) error {
 	if _, err := d.SQL.Exec(
 		sqldb.Rebind(dialect, "DELETE FROM role_permissions WHERE permission = ?"),

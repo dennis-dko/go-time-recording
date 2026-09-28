@@ -103,9 +103,9 @@ func (s *UserApplicationService) CreateUser(
 		RoleID:             role.ID,
 		PasswordHash:       hash,
 		MustChangePassword: mustChange,
-		// Zero, which the reader resolves to the instance default. A new account
-		// starts on what the installation is configured for; its owner changes it
-		// afterwards, and nobody else can.
+		// Zero, which the reader resolves to the default: the built-in target, and
+		// the installation's ceiling. Its owner changes either afterwards, and
+		// nobody else can.
 		DailyTargetHours: 0,
 		MaxDailyHours:    0,
 	})

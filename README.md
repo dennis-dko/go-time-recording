@@ -380,9 +380,9 @@ It used to book and read its own hours "like anybody who works here", and that w
 the wrong shape — an account nobody chose, quietly holding a working day nobody asked
 it to have.
 
-What it does own is the instance-wide default under *Settings*, which is what a new
-account starts on. Each person changes their own from there, and nobody changes
-anybody else's.
+What it does own is the installation's daily ceiling under *Settings*, which bounds
+every account's day. A new account's target is the built-in eight hours; each person
+changes their own from there, and nobody changes anybody else's.
 
 On upgrade, the working day is taken off the `admin` role and the combined role is
 created first, so an installation that had been using the built-in account for
