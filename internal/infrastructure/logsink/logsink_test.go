@@ -523,3 +523,36 @@ func TestTheFrameworksComplaintAboutAnAbsentEnvFileIsNotShown(t *testing.T) {
 		}
 	}
 }
+
+// A follow-on query that leaves lines out says how many.
+//
+// The newest are still the ones returned, for the reason above - but LastSeq
+// moves past the rest, and the next poll starts after them. So a client that
+// had asked for everything since a line it held, and received fewer than
+// matched, had a gap it was never told about: nothing had fallen out of the
+// ring, so Dropped said nothing either. A first look, from nothing, is not a
+// gap in anything the client has, and is not counted.
+func TestAFollowOnQueryCountsWhatItsLimitLeftOut(t *testing.T) {
+	s := New(20)
+
+	s.appendLine("INFO", "held")
+
+	since := s.Query(Query{}).LastSeq
+
+	for _, m := range []string{"a", "b", "c", "d", "e"} {
+		s.appendLine("INFO", m)
+	}
+
+	result := s.Query(Query{Since: since, Limit: 2})
+
+	equal(t, messages(result.Records), []string{"d", "e"})
+
+	if result.Skipped != 3 {
+		t.Errorf("the query left out three of the five new lines and says it skipped %d",
+			result.Skipped)
+	}
+
+	if first := s.Query(Query{Limit: 2}); first.Skipped != 0 {
+		t.Errorf("a first look from nothing reports %d skipped lines", first.Skipped)
+	}
+}
