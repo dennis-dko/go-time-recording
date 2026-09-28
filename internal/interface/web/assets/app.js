@@ -3228,7 +3228,7 @@ const TRANSLATIONS = {
     'setup.directory.text': 'Mit angebundenem LDAP oder Active Directory melden sich alle mit ihrem vorhandenen Konto an, und hier werden keine Passwörter gespeichert. Überspringen, um Konten lokal zu verwalten.',
 
     'ops.title': 'Betrieb und Grenzwerte',
-    'ops.hint': 'Leer lassen, um den Wert aus der Konfigurationsdatei zu behalten. Änderungen wirken innerhalb weniger Sekunden, ohne Neustart.',
+    'ops.hint': 'Leer lassen, um den Wert aus der Konfigurationsdatei zu behalten. Änderungen wirken innerhalb weniger Sekunden, ohne Neustart – außer der Sitzungsdauer, die ab der nächsten Anmeldung gilt.',
     'ops.sessionIdle': 'Abmelden nach Untätigkeit (Minuten, 0 = nie)',
     'ops.sessionLifetime': 'Sitzungsdauer (Stunden)',
     'ops.maxDailyHours': 'Maximale Stunden pro Tag (systemweit)',
