@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -265,6 +266,30 @@ func StartUnconfigured(t *testing.T, env ...string) *App {
 // Dir is the working directory of the instance, which is where its configs/ and
 // - for SQLite - its database file live.
 func (a *App) Dir() string { return a.dir }
+
+// Stop sends the instance the signal a service manager stops it with, and
+// returns its exit code once it has gone.
+//
+// A stop is a question with two answers to get right, like a refused start: the
+// process has to end, and its status has to say whether that was a failure -
+// a supervisor reads nothing else. Windows cannot deliver the signal to another
+// process at all, so there the case is skipped rather than faked with a kill.
+func (a *App) Stop(t *testing.T) int {
+	t.Helper()
+
+	if err := a.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Skipf("this platform cannot send the instance a stop signal: %v", err)
+	}
+
+	select {
+	case <-a.exited:
+	case <-time.After(StartupTimeout):
+		t.Fatalf("the application did not stop within %s of being asked:\n%s",
+			StartupTimeout, a.Log())
+	}
+
+	return a.cmd.ProcessState.ExitCode()
+}
 
 // start launches an instance, trying again if it lost a race for its port.
 //

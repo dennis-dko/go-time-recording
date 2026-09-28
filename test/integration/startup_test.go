@@ -118,3 +118,28 @@ func TestAStartOnATakenPortEndsAndNamesThePort(t *testing.T) {
 		})
 	}
 }
+
+// Stopping an installation that is still waiting for its installer is not a
+// failure.
+//
+// A container stopped, or a service taken down, before anybody chose a database
+// is the ordinary end of a process nobody has configured yet. The signal ended
+// the wait as its comment intends, and main then died on it - "cannot run the
+// installer: context canceled", exit status 1 - so a service manager recorded a
+// failed unit for a stop it had asked for itself, and the last line in the log
+// read as an error. The application answers the same signal with 0 once it is
+// running.
+func TestStoppingAWaitingInstallerIsNotAFailure(t *testing.T) {
+	t.Parallel()
+
+	a := harness.StartUnconfigured(t)
+
+	if code := a.Stop(t); code != 0 {
+		t.Errorf("stopping the installer ended with status %d, which a service manager "+
+			"reads as a failure", code)
+	}
+
+	if strings.Contains(a.Log(), "cannot run the installer") {
+		t.Errorf("a requested stop is logged as the installer failing:\n%s", a.Log())
+	}
+}

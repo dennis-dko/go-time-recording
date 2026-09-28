@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -303,6 +304,22 @@ func main() {
 
 	if !configured {
 		chosen, err := runInstaller()
+
+		// Stopped while it waited - a container stopped, a service taken down -
+		// is how a process nobody has configured yet ordinarily ends, and the
+		// application ends on the same signal with a success. Dying on it wrote
+		// "context canceled" as the last line and exited 1, which a service
+		// manager records as a failed unit for a stop it asked for itself. The
+		// installer has said why it stopped; the capture is let go so that line
+		// reaches the console before the process does.
+		if errors.Is(err, context.Canceled) {
+			if restoreOutput != nil {
+				restoreOutput()
+			}
+
+			os.Exit(0)
+		}
+
 		if err != nil {
 			die(restoreOutput, "cannot run the installer: %v", err)
 		}
