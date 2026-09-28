@@ -147,6 +147,19 @@ func (s *PasskeyService) BeginRegistration(
 			WithCode("adminHasNoPasskey")
 	}
 
+	// Nor an account the directory holds. Its password is the directory's, and
+	// so is the decision that it may still sign in: a password sign-in asks the
+	// directory every time, and removing or locking the entry there is how an
+	// organisation ends somebody's access. A passkey asks nobody, so it would
+	// keep opening sessions for a person the directory has let go - until a
+	// synchronisation deletes the account, and by default none runs.
+	if user.IsExternal {
+		return nil, "", apperror.Conflictf(
+			"an account from the directory signs in with the directory's password, " +
+				"so that the directory can end it").
+			WithCode("directoryAccountHasNoPasskey")
+	}
+
 	w, err := s.webAuthnFor(rp)
 	if err != nil {
 		return nil, "", err
@@ -325,10 +338,12 @@ func (s *PasskeyService) FinishLogin(
 		return nil, invalid
 	}
 
-	// A credential that outlived the reason it was trusted. The built-in
-	// administrator cannot register one, but a normal account that was later
-	// promoted could still be holding one from before.
-	if user.IsSystem {
+	// A credential that outlived the reason it was trusted. Neither the built-in
+	// administrator nor a directory account can register one, but an account
+	// could still be holding one from before it became either - a local account
+	// the directory later adopted is the ordinary case, and its passkey would
+	// otherwise go on skipping the directory.
+	if user.IsSystem || user.IsExternal {
 		return nil, invalid
 	}
 
