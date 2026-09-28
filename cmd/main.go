@@ -526,7 +526,11 @@ func main() {
 	// Resolved into cfg here, before anything reads it: a cron job is registered
 	// while the application starts and cannot be added to a scheduler that is
 	// already running - which is why changing it needs a restart - and the restart
-	// card compares what is stored against what cfg says this process is running.
+	// card compares what the next start would run against what cfg says this
+	// process is running - and for an empty stored schedule, the next start runs
+	// the file's, which is why it is kept before cfg is overwritten.
+	fileSchedule := cfg.LDAPSyncSchedule
+
 	if stored, err := settingsService.LDAP(context.Background()); err != nil {
 		// Not fatal, and not loud: on a first start the settings table has only
 		// just been created by the migrations, so there is nothing to read yet.
@@ -837,7 +841,8 @@ func main() {
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      setupHandler,
 		Logs:       rest.NewLogHandler(logs, authorizer),
-		Restart:    rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil, fileTelemetry),
+		Restart: rest.NewRestartHandler(settingsService, authorizer, cfg, ds, applyLogLevel != nil, fileTelemetry).
+			WithFileSchedule(fileSchedule),
 		Update: rest.NewUpdateHandler(authorizer,
 			selfupdate.New(cfg.UpdateFeed, cfg.UpdateToken), hub, version, cfg.UpdateCheck).
 			// Present only where the deployment added the overlay that runs it;

@@ -412,3 +412,24 @@ func TestTheRestartStateSaysWhichKindOfRestartItIs(t *testing.T) {
 			"sentence for", mode)
 	}
 }
+
+// A directory schedule that comes from the environment is not waiting for a
+// restart.
+//
+// Nothing stored means "follow the configuration file", and the settings answer
+// with the default, whose schedule is empty - so the card compared an empty
+// stored schedule with the one running and reported a restart as waiting, for
+// good: restarting runs the environment's schedule again and changes nothing.
+// Started the way such an installation is, with the schedule set and nothing
+// saved, which is what checks that main hands the handler the file's value.
+func TestAScheduleFromTheEnvironmentIsNotWaitingForARestart(t *testing.T) {
+	t.Parallel()
+
+	a := start(t, "LDAP_SYNC_SCHEDULE=0 3 * * *")
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	if _, _, found := restartState(t, admin).pendingFor("directorySchedule"); found {
+		t.Error("the directory schedule from the environment is reported as waiting for " +
+			"a restart that would run the same schedule again")
+	}
+}
