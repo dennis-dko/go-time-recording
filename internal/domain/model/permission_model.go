@@ -62,8 +62,9 @@ const (
 // PUT /users/{id} and through the spreadsheet import, both of which check only
 // users:write, so the right guarded one of three doors.
 //
-// What stays with the administrator is the instance-wide default under Settings,
-// which is what a new account gets until its owner decides otherwise.
+// What stays with the administrator is the installation's daily ceiling under
+// Settings. A new account's target is the built-in default until its owner decides
+// otherwise; there is no administered default for it.
 
 // There is no timesheets:read:all, and no timesheets:write:all.
 //
