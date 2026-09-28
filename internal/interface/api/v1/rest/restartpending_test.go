@@ -230,3 +230,42 @@ func TestTheShareAndCollectorAreWaitingAgainAsSoonAsAnythingExports(t *testing.T
 		t.Errorf("a collector moved to another host is not reported as waiting: %+v", moved)
 	}
 }
+
+// The directory schedule is waiting for a restart only when the next start
+// would run a different one.
+//
+// The card compared what is stored with what is running, and an empty stored
+// schedule is not "no schedule": main resolves it to the configuration file's,
+// the same way an unset telemetry field follows the file. So an installation
+// that sets LDAP_SYNC_SCHEDULE in its environment and has never saved one - the
+// settings then answer with the default, whose schedule is empty - was told a
+// restart was waiting, for good, and restarting changed nothing. And clearing a
+// stored schedule back to the file's said the next start would run none.
+func TestTheDirectoryScheduleWaitsOnlyForWhatTheNextStartWouldRun(t *testing.T) {
+	const nightly, early = "0 3 * * *", "0 5 * * *"
+
+	for name, c := range map[string]struct {
+		stored, fromFile, running string
+		waiting                   bool
+		becomes                   string
+	}{
+		"nothing stored, the file's running": {"", nightly, nightly, false, ""},
+		"stored, and running":                {early, nightly, early, false, ""},
+		"stored, and not yet running":        {early, nightly, nightly, true, early},
+		"cleared back to the file's":         {"", nightly, early, true, nightly},
+		"cleared, and the file gives none":   {"", "", early, true, ""},
+		"nothing anywhere":                   {"", "", "", false, ""},
+	} {
+		changes := schedulePending(c.stored, c.fromFile, c.running)
+
+		if got := len(changes) > 0; got != c.waiting {
+			t.Errorf("%s: waiting=%v, want %v (%+v)", name, got, c.waiting, changes)
+
+			continue
+		}
+
+		if c.waiting && changes[0].Stored != c.becomes {
+			t.Errorf("%s: the card says it becomes %q, want %q", name, changes[0].Stored, c.becomes)
+		}
+	}
+}
