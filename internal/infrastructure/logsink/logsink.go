@@ -234,6 +234,12 @@ type Result struct {
 	// asked for them, so the interface can say that lines are missing rather
 	// than quietly presenting a gap as continuity.
 	Dropped uint64
+
+	// Skipped reports how many records matched a follow-on query and were left
+	// out by its Limit. LastSeq moves past them all the same, so without this a
+	// burst between two polls was the gap Dropped exists to admit, only unsaid:
+	// the records were still in the ring and the client never asked again.
+	Skipped uint64
 }
 
 // Query returns the matching records, oldest first.
@@ -273,8 +279,13 @@ func (s *Sink) Query(q Query) Result {
 	}
 
 	// Trim from the front: when more matched than asked for, the newest are
-	// the ones worth having.
+	// the ones worth having. Counted when the client is following on from a
+	// line it holds, because then what is trimmed is a gap in what it shows.
 	if q.Limit > 0 && len(result.Records) > q.Limit {
+		if q.Since > 0 {
+			result.Skipped = uint64(len(result.Records) - q.Limit)
+		}
+
 		result.Records = result.Records[len(result.Records)-q.Limit:]
 	}
 
