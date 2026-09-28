@@ -52,7 +52,7 @@ services:
     # half was pinned inside a FROM in test/jaeger/Dockerfile, where no
     # comparison could reach it. Both sides are a plain image line now, and
     # test/compose_test.go fails when they disagree.
-    image: jaegertracing/all-in-one:1.62.0
+    image: jaegertracing/all-in-one:1.76.0
     restart: unless-stopped
 
     # Traces are kept in memory and are gone when this container stops, which
