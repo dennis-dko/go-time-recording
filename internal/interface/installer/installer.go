@@ -217,7 +217,6 @@ type stateResponse struct {
 	AppName    string         `json:"appName"`
 	Version    string         `json:"version"`
 	Datasource *prefillFields `json:"datasource,omitempty"`
-	Dialects   []string       `json:"dialects"`
 }
 
 // prefillFields is deliberately not appconfig.Datasource: that carries a
@@ -236,9 +235,8 @@ type prefillFields struct {
 // and the page needs it before a token has been typed.
 func (s *server) state(w http.ResponseWriter, _ *http.Request) {
 	response := stateResponse{
-		AppName:  s.cfg.AppName,
-		Version:  s.cfg.Version,
-		Dialects: []string{"sqlite", "postgres", "mysql"},
+		AppName: s.cfg.AppName,
+		Version: s.cfg.Version,
 	}
 
 	if p := s.cfg.Prefill; p.Dialect != "" || p.Name != "" || p.Host != "" {
