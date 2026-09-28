@@ -136,6 +136,8 @@ func Serve(ctx context.Context, cfg Config) (Result, error) {
 	case accepted = <-s.done:
 	case <-ctx.Done():
 		waitErr = ctx.Err()
+
+		cfg.Logf("stopped before a database was chosen; the next start serves the installer again")
 	}
 
 	// The application is about to bind the same port, so the listener has to be
