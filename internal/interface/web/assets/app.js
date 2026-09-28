@@ -3234,7 +3234,7 @@ const TRANSLATIONS = {
     'ops.maxDailyHours': 'Maximale Stunden pro Tag (systemweit)',
     'ops.rateLimit': 'Ratenbegrenzung (Anfragen)',
     'ops.rateWindow': 'Zeitfenster der Ratenbegrenzung (Sekunden)',
-    'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1)',
+    'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1, 0 = keine Grenze)',
     'ops.reset': 'Alle Werte auf die Konfigurationsdatei zurücksetzen',
     'ops.saved': 'Grenzwerte gespeichert',
     'ops.reset.done': 'Alle Werte folgen wieder der Konfigurationsdatei',
@@ -3244,6 +3244,7 @@ const TRANSLATIONS = {
     'ops.maxShort': 'max./Tag',
     'ops.rateShort': 'Rate',
     'ops.ratioShort': 'Löschgrenze',
+    'ops.off': 'aus',
 
     'tel.title': 'Protokoll, Metriken und Traces',
     'tel.logLevel': 'Protokollstufe',
@@ -8662,12 +8663,19 @@ function fillOperationalForm(data) {
   // installation is actually running does not - and it is the set of figures
   // somebody is weighing their own against while they type them.
   const effective = data.effective ?? {};
+
+  // A zero that switches a limit off is said to be off. Written as a figure it
+  // read as the strictest limit there is, and for the deletion limit that is the
+  // opposite of the truth: "delete limit 0" was a synchronisation allowed to
+  // remove every account the directory no longer lists, with their hours.
+  const offOr = (value, shown) => (value === 0 ? t('ops.off', 'off') : shown);
+
   $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
     + `${t('ops.sessionShort', 'session')} ${fmtHours(effective.sessionLifetimeHours)}, `
-    + `${t('ops.idleShort', 'idle')} ${effective.sessionIdleMinutes} min, `
+    + `${t('ops.idleShort', 'idle')} ${offOr(effective.sessionIdleMinutes, `${effective.sessionIdleMinutes} min`)}, `
     + `${t('ops.maxShort', 'max/day')} ${fmtHours(effective.maxDailyHours)}, `
     + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.ratioShort', 'delete limit')} ${fmtShare(effective.ldapSyncMaxDeleteRatio)}`;
+    + `${t('ops.ratioShort', 'delete limit')} ${offOr(effective.ldapSyncMaxDeleteRatio, fmtShare(effective.ldapSyncMaxDeleteRatio))}`;
 
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
