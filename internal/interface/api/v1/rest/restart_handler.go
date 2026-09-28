@@ -54,6 +54,10 @@ type RestartHandler struct {
 	// stored - the half of the comparison that used to be missing.
 	fromFile appconfig.Telemetry
 
+	// fileSchedule is the directory schedule the configuration file gives, which
+	// is what an empty stored schedule resolves to at the next start.
+	fileSchedule string
+
 	// startedAt identifies this process to the screen that asked it to restart.
 	//
 	// Waiting for the application to stop answering and then answer again does
@@ -81,6 +85,17 @@ func NewRestartHandler(
 		fromFile:     fromFile,
 		startedAt:    time.Now(),
 	}
+}
+
+// WithFileSchedule attaches the directory schedule the configuration file gives.
+//
+// A method rather than a parameter, because the constructor already takes the
+// running configuration and a second string beside it is a transposition the
+// compiler accepts.
+func (h *RestartHandler) WithFileSchedule(schedule string) *RestartHandler {
+	h.fileSchedule = schedule
+
+	return h
 }
 
 // PendingChange is one setting whose stored value is not the one in force.
@@ -178,12 +193,8 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 		return nil, err
 	}
 
-	if directory.SyncSchedule != h.active.LDAPSyncSchedule {
-		pending = append(pending, PendingChange{
-			Setting: "directorySchedule",
-			Running: h.active.LDAPSyncSchedule, Stored: directory.SyncSchedule,
-		})
-	}
+	pending = append(pending, schedulePending(directory.SyncSchedule, h.fileSchedule,
+		h.active.LDAPSyncSchedule)...)
 
 	// The database connection lives in a file rather than the settings table, and
 	// is compared whole.
@@ -215,6 +226,27 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 	}
 
 	return pending, nil
+}
+
+// schedulePending is whether a restart would change the directory schedule.
+//
+// telemetryPending's rule, for the one setting of the directory that waits for a
+// restart: what the next start runs is the stored schedule where there is one
+// and the configuration file's where there is not, because that is how main
+// resolves it. Comparing the stored value alone reported an installation whose
+// schedule comes from its environment as waiting for a restart for good, since
+// nothing stored reads as an empty schedule.
+func schedulePending(stored, fromFile, running string) []PendingChange {
+	next := stored
+	if next == "" {
+		next = fromFile
+	}
+
+	if next != running {
+		return []PendingChange{{Setting: "directorySchedule", Running: running, Stored: next}}
+	}
+
+	return nil
 }
 
 // telemetryPending is which telemetry settings a restart would change.
