@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -127,4 +128,54 @@ func waitForLines(p *page, complaint string) {
 
 	p.t.Fatalf("%s\n\nstatus: %q\n\napplication log:\n%s",
 		complaint, p.text("#log-status"), p.app.Log())
+}
+
+// Coming back from a pause says so when more lines arrived than one page holds.
+//
+// The viewer asks for five hundred lines after the last one it has. When more
+// matched, the answer kept the newest five hundred - the right ones to show in a
+// burst - and moved the cursor past all of them, so the ones before were never
+// shown and nothing said they were missing. The warning beside the output
+// exists to say exactly that about lines the buffer has discarded; these it had
+// not even discarded. A pause on a busy installation is the ordinary way to
+// arrive there, and seven hundred requests make the lines.
+func TestResumingAfterABurstSaysLinesWereSkipped(t *testing.T) {
+	t.Parallel()
+
+	p := openWith(t, "LOG_LEVEL=INFO")
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#log-card", chromedp.ByID))
+
+	waitForLines(p, "the log viewer never showed a line before pausing")
+
+	p.run("pause", p.click("#log-pause"))
+
+	var made int
+
+	p.run("make seven hundred lines", chromedp.Evaluate(`(async () => {
+		const answers = await Promise.all(Array.from({ length: 700 },
+			() => fetch('/api/v1/me', { credentials: 'same-origin' }).then((r) => r.status)));
+		return answers.filter((s) => s === 200).length;
+	})()`, &made, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+		return p.WithAwaitPromise(true)
+	}))
+
+	if made < 600 {
+		t.Fatalf("only %d of the requests were answered, so this case cannot tell a gap", made)
+	}
+
+	p.run("resume", p.click("#log-pause"))
+
+	var warned bool
+
+	_ = chromedp.Run(p.ctx, chromedp.Poll(
+		`!document.querySelector('#log-warning').hidden`, &warned,
+		chromedp.WithPollingTimeout(15*time.Second)))
+
+	if !warned {
+		t.Errorf("the viewer came back from the pause showing the newest lines and "+
+			"saying nothing about the ones before them; status: %q", p.text("#log-status"))
+	}
 }
