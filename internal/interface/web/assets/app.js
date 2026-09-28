@@ -3694,6 +3694,7 @@ const TRANSLATIONS = {
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
     'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
+    'log.skipped': 'Es kamen mehr Zeilen, als eine Seite fasst; {0} wurden übersprungen, um die neuesten zu zeigen.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
     'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
@@ -12072,6 +12073,15 @@ async function pollLog() {
     if (page.dropped > 0) {
       warning.textContent = t('log.dropped',
         'Older lines have been discarded from the buffer and cannot be recovered.');
+      warning.hidden = false;
+    } else if (page.skipped > 0) {
+      // More arrived than one page holds - after a pause, or on a busy
+      // installation - and the newest were shown. The ones before them were
+      // passed over, which is a gap this output would otherwise present as
+      // continuity.
+      warning.textContent = t('log.skipped',
+        'More lines arrived than one page holds, so {0} were passed over to show the newest.')
+        .replace('{0}', String(page.skipped));
       warning.hidden = false;
     }
 
