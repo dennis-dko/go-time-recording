@@ -332,6 +332,47 @@ func exeSuffix() string {
 // it, went on offering an update that was already waiting, and the next press
 // installed it over the way back. One function, read from the source, so a fifth
 // caller cannot quietly be a second opinion.
+// The file this program is in is the one it started from, even once an install
+// has moved it aside.
+//
+// An install renames the running binary to .old and puts the new one at its
+// path. os.Executable reads /proc/self/exe on Linux, and the kernel reports a
+// renamed file under its new name - measured in a Linux container, where a
+// program that renamed itself was told it was now app.old. So a process whose
+// restart had not happened yet - it failed, or nobody pressed it - asked again
+// which file it was and was handed the one just moved out of the way: the note
+// saying a version was waiting was looked for beside it and not found, the card
+// offered the same update again, and installing it put the download at .old and
+// the running version at .old.old, beyond the reach of a rollback.
+//
+// Windows reports the name the program was loaded under, so there this passes
+// either way; the Linux leg of CI is where it decides.
+func TestThisProgramIsTheFileItStartedFromAfterItIsMovedAside(t *testing.T) {
+	started, err := ownPath()
+	if err != nil {
+		t.Skipf("this platform cannot say which file the program is: %v", err)
+	}
+
+	moved := started + ".moved"
+
+	if err := os.Rename(started, moved); err != nil {
+		t.Skipf("cannot move the running test binary aside here: %v", err)
+	}
+
+	t.Cleanup(func() { _ = os.Rename(moved, started) })
+
+	now, err := ownPath()
+	if err != nil {
+		t.Fatalf("asked again, which file this program is could not be said: %v", err)
+	}
+
+	if now != started {
+		t.Errorf("after the running file was moved aside this program says it is %s, "+
+			"want %s - the path it was started from and where an install puts its "+
+			"successor", now, started)
+	}
+}
+
 func TestOneFunctionDecidesWhichFileThisProgramIs(t *testing.T) {
 	source, err := os.ReadFile("selfupdate.go")
 	if err != nil {

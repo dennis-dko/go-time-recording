@@ -317,6 +317,23 @@ func (s *Source) Install(ctx context.Context, release Release) error {
 // looked for beside the link, and whether os.Executable answers with the link at
 // all depends on the platform.
 func ownPath() (string, error) {
+	return executable, executableErr
+}
+
+// executable is ownPath's answer, settled once, as the program starts.
+//
+// Once, because the answer changes. os.Executable reads /proc/self/exe on Linux,
+// and the kernel reports a renamed file under its new name - and an install
+// renames the running binary aside, to .old. Asked again in the same process,
+// before a restart that failed or was never pressed, "which file is this" named
+// the one just moved out of the way: the waiting note was looked for beside it,
+// the card offered the same update again, and installing it put the download at
+// .old and the running version at .old.old, out of a rollback's reach. The
+// restart package settles its own path at start-up for the same reason.
+var executable, executableErr = resolveExecutable()
+
+// resolveExecutable is the one place os.Executable is asked.
+func resolveExecutable() (string, error) {
 	self, err := os.Executable()
 	if err != nil {
 		return "", err
