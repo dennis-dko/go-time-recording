@@ -1974,7 +1974,7 @@
           "settings"
         ],
         "summary": "Synchronise accounts with the directory",
-        "description": "Matches on the directory-side identifier rather than the mail address, so a renamed mailbox is not read as a departure. `aborted` carries the reason a guard stopped the run.",
+        "description": "Matches on the directory-side identifier rather than the mail address, so a renamed mailbox is not read as a departure. `aborted` carries the reason a guard stopped the run, and `abortCode` with `abortValues` the same reason for a client to put in its reader's language, as with any refusal.",
         "responses": {
           "200": {
             "description": "What the run did"

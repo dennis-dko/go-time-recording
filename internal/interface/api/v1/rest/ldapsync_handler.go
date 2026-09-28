@@ -41,7 +41,11 @@ type SyncReportResponse struct {
 	Created    []string                `json:"created"`
 
 	// Aborted carries the reason a guard stopped the run; empty when it ran.
-	Aborted string `json:"aborted,omitempty"`
+	// AbortCode and AbortValues are the same reason for the screen to translate,
+	// as it does the code and values of any refusal.
+	Aborted     string `json:"aborted,omitempty"`
+	AbortCode   string `json:"abortCode,omitempty"`
+	AbortValues []any  `json:"abortValues,omitempty"`
 }
 
 // Preview handles POST /api/v1/settings/ldap/sync/preview.
@@ -115,6 +119,8 @@ func newSyncReportResponse(r *service.SyncReport) SyncReportResponse {
 		LocalExternal:  r.LocalExternal,
 		DryRun:         r.DryRun,
 		Aborted:        r.Aborted,
+		AbortCode:      r.AbortCode,
+		AbortValues:    r.AbortValues,
 		Candidates:     candidates(r.Candidates),
 		Deleted:        candidates(r.Deleted),
 		Created:        r.Created,

@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -402,6 +403,8 @@ type SyncPreview struct {
 	LocalExternal  int    `json:"localExternal"`
 	DryRun         bool   `json:"dryRun"`
 	Aborted        string `json:"aborted"`
+	AbortCode      string `json:"abortCode"`
+	AbortValues    []any  `json:"abortValues"`
 
 	// Candidates are the accounts a real run would delete, with the number of
 	// time entries that would go with each.
@@ -422,6 +425,49 @@ func syncPreview(t *testing.T, admin *client) SyncPreview {
 		http.StatusCreated, http.StatusOK).Data(t, &preview)
 
 	return preview
+}
+
+// A run a guard refuses says why in a way the screen can translate.
+//
+// The reason was an English sentence the screen printed as it came, so a German
+// administrator read "Abgebrochen: would remove 1 of 3 directory accounts (33%),
+// above the 25% safety limit ..." - the one message on the synchronisation
+// screen that matters most, and the one left in the other language. It travels
+// as a code with its figures now, the way every refusal does, and the sentence
+// stays beside it for the log.
+func TestARefusedSynchronisationSaysWhyWithACode(t *testing.T) {
+	t.Parallel()
+
+	host, port := requireLDAP(t)
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	configureLDAP(t, admin, host, port, ldapBaseDN)
+
+	// Everybody the whole tree holds becomes a local account.
+	admin.must(admin.api(http.MethodPost, "/settings/ldap/sync", nil),
+		http.StatusCreated, http.StatusOK)
+
+	// Narrowed, the contractor is outside it - one of three - and a quarter is
+	// all a run may remove.
+	configureLDAP(t, admin, host, port, ldapPeopleDN)
+	admin.must(admin.api(http.MethodPut, "/settings/operational",
+		map[string]any{"ldapSyncMaxDeleteRatio": 0.25}), http.StatusOK)
+
+	preview := syncPreview(t, admin)
+
+	if preview.Aborted == "" {
+		t.Fatalf("the guard did not refuse the run, so this case measures nothing: %+v", preview)
+	}
+
+	if preview.AbortCode != "syncWouldRemoveTooMany" {
+		t.Errorf("the refusal carries the code %q, want syncWouldRemoveTooMany; "+
+			"the screen can only print %q as it came", preview.AbortCode, preview.Aborted)
+	}
+
+	if want := []any{1.0, 3.0, 33.0, 25.0}; fmt.Sprint(preview.AbortValues) != fmt.Sprint(want) {
+		t.Errorf("the refusal's figures are %v, want %v", preview.AbortValues, want)
+	}
 }
 
 // The one that matters most, and the reason the two code paths above have to

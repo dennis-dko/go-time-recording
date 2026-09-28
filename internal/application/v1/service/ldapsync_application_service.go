@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"math"
 	"sort"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -47,8 +47,13 @@ type SyncReport struct {
 	// installation did not.
 	Created []string
 
-	// Aborted explains why nothing was deleted, when a guard stopped the run.
-	Aborted string
+	// Aborted explains why nothing was deleted, when a guard stopped the run:
+	// the sentence, for a log. AbortCode and AbortValues say the same for a
+	// screen, which puts it in the reader's language as it does any refusal -
+	// the sentence alone reached a German administrator in English.
+	Aborted     string
+	AbortCode   string
+	AbortValues []any
 
 	// DryRun reports whether this was a preview.
 	DryRun bool
@@ -215,13 +220,15 @@ func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, er
 	// An empty directory answer is almost always a broken filter, a wrong
 	// base DN or an outage - not everybody leaving at once.
 	if len(directoryUsers) == 0 {
-		report.Aborted = "the directory returned no users at all; refusing to delete anyone"
+		report.abort(apperror.Conflictf(
+			"the directory returned no users at all; refusing to delete anyone").
+			WithCode("syncDirectoryAnsweredEmpty"))
 
 		return report, nil
 	}
 
-	if reason := s.exceedsRatio(ctx, report); reason != "" {
-		report.Aborted = reason
+	if reason := s.exceedsRatio(ctx, report); reason != nil {
+		report.abort(reason)
 
 		return report, nil
 	}
@@ -290,24 +297,33 @@ func (s *LDAPSyncService) stillInDirectory(
 	return found && (user.ExternalID == "" || entry.ID == "")
 }
 
+// abort records why a guard stopped the run, once for a log and once for a screen.
+func (r *SyncReport) abort(reason *apperror.Error) {
+	r.Aborted, r.AbortCode, r.AbortValues = reason.Error(), reason.Code, reason.Values
+}
+
 // exceedsRatio reports why the run is refused when it would remove more of the
-// directory-backed population than the configured share.
-func (s *LDAPSyncService) exceedsRatio(ctx context.Context, report *SyncReport) string {
+// directory-backed population than the configured share, or nil when it would not.
+func (s *LDAPSyncService) exceedsRatio(ctx context.Context, report *SyncReport) *apperror.Error {
 	ratioLimit := s.deleteRatio(ctx)
 	if ratioLimit <= 0 || report.LocalExternal == 0 || len(report.Candidates) == 0 {
-		return ""
+		return nil
 	}
 
 	ratio := float64(len(report.Candidates)) / float64(report.LocalExternal)
 	if ratio <= ratioLimit {
-		return ""
+		return nil
 	}
 
-	return fmt.Sprintf(
-		"would remove %d of %d directory accounts (%.0f%%), above the %.0f%% safety limit; "+
-			"check the directory filter and base DN, then raise LDAP_SYNC_MAX_DELETE_RATIO "+
-			"if this really is intended",
-		len(report.Candidates), report.LocalExternal, ratio*100, ratioLimit*100)
+	removing, of := len(report.Candidates), report.LocalExternal
+	share, limit := int(math.Round(ratio*100)), int(math.Round(ratioLimit*100))
+
+	return apperror.Conflictf(
+		"would remove %d of %d directory accounts (%d%%), above the %d%% safety limit; "+
+			"check the directory filter and base DN, then raise the deletion limit under "+
+			"Operation and limits, or LDAP_SYNC_MAX_DELETE_RATIO, if this really is intended",
+		removing, of, share, limit).
+		WithCode("syncWouldRemoveTooMany", removing, of, share, limit)
 }
 
 // createMissing adds accounts the directory holds and this installation does

@@ -360,7 +360,8 @@ function errorMessage(body) {
  * status. The connection test answers 200 with the reason inside it - a database
  * that cannot be reached is information about what somebody typed, not a fault -
  * and that put it outside this path, so it was shown as the English prose the
- * server wrote. Two renderings of one thing is one too many.
+ * server wrote. Two renderings of one thing is one too many. A synchronisation
+ * that a guard refuses answers 200 the same way, with its reason in the report.
  */
 function describeRefusal(err) {
   // Maintenance is the one refusal whose sentence may not be ours: an
@@ -3541,6 +3542,11 @@ const TRANSLATIONS = {
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
+    'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat überhaupt keine Benutzer geliefert; es wird niemand gelöscht.',
+    'err.syncWouldRemoveTooMany': 'Würde {0} von {1} Verzeichniskonten entfernen ({2} %), mehr als die '
+      + 'Sicherheitsgrenze von {3} %. Prüfen Sie Filter und Base-DN des Verzeichnisses und heben Sie die '
+      + 'Löschgrenze unter „Betrieb und Grenzwerte“ oder LDAP_SYNC_MAX_DELETE_RATIO an, wenn das wirklich '
+      + 'beabsichtigt ist.',
     'err.noSession': 'Keine Sitzung.',
     'err.noTimerRunning': 'Es läuft keine Stoppuhr.',
     'err.overDailyLimit': '{0} Std. würden am {2} zusammen {1} Std. ergeben und damit das Tagesmaximum von {3} Std. überschreiten.',
@@ -6424,7 +6430,11 @@ function wireDirectorySync() {
     result.hidden = false;
 
     if (report.aborted) {
-      status.textContent = `${t('sync.aborted', 'Aborted')}: ${report.aborted}`;
+      const reason = describeRefusal({
+        code: report.abortCode, message: report.aborted, values: report.abortValues,
+      });
+
+      status.textContent = `${t('sync.aborted', 'Aborted')}: ${reason}`;
       status.className = 'muted minus';
 
       return;
