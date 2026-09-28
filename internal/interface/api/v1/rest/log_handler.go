@@ -47,6 +47,10 @@ type LogResponse struct {
 	// the viewer says so rather than presenting a gap as continuity.
 	Dropped uint64 `json:"dropped"`
 
+	// Skipped is how many lines matched and were left out by the page limit,
+	// which on a follow-on poll is the same gap by another route.
+	Skipped uint64 `json:"skipped"`
+
 	// Levels is every level that can appear, so the interface offers exactly
 	// that set instead of a list copied by hand that drifts.
 	Levels []string `json:"levels"`
@@ -99,6 +103,7 @@ func (h *LogHandler) Logs(c *gofr.Context) (any, error) {
 
 	response.LastSeq = result.LastSeq
 	response.Dropped = result.Dropped
+	response.Skipped = result.Skipped
 
 	for _, record := range result.Records {
 		response.Records = append(response.Records, LogRecordResponse{
