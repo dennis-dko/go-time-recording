@@ -2,6 +2,7 @@ package rest
 
 import (
 	"net/http"
+	"strconv"
 
 	"gofr.dev/pkg/gofr"
 
@@ -355,14 +356,25 @@ func (a *Authorizer) reportScope(principal *service.Principal) uint {
 	return principal.User.ID
 }
 
-// requireOwnEntry checks an action against whose entry it is, where the right to
-// do it at all is a permission of its own.
+// requireOwnEntry answers an entry that is not the caller's exactly as the
+// repository answers an id nobody holds: not found.
 //
-// Separate from requireOwner, which additionally insists on timesheets:write:own.
-// Transferring is gated on timesheets:transfer, so a role holding that and not the
-// write right must still be able to transfer its own entries - and must not be able
-// to touch anybody else's.
-func (a *Authorizer) requireOwnEntry(principal *service.Principal, ownerID uint) error {
+// A refusal was a way to ask which ids are real. Walking the numbers told a
+// caller where the entries are and how many there are without ever being
+// allowed to read one, and it made no difference which method did the walking:
+// reading answered "not found" long before changing, deleting and transferring
+// did, so the same map was drawn with PUT, DELETE or a transfer instead, one
+// refused request at a time. "Not there" is true from where the caller stands,
+// and it is the answer a private project gives for the same reason.
+//
+// It asks only whose entry it is, never whether the caller may act at all -
+// each route has already required its own permission. That is why it is not
+// requireOwner, which insists on timesheets:write:own as well: transferring is
+// gated on timesheets:transfer, so a role holding that and not the write right
+// must still be able to transfer its own entries. requireOwner stays the check
+// for whose an entry would *become*, where the account named is the caller's
+// own choice and a refusal reveals nothing.
+func (a *Authorizer) requireOwnEntry(principal *service.Principal, id, ownerID uint) error {
 	if a.open {
 		return nil
 	}
@@ -371,8 +383,7 @@ func (a *Authorizer) requireOwnEntry(principal *service.Principal, ownerID uint)
 		return nil
 	}
 
-	return forbiddenError{msg: "you may only change your own time entries"}.
-		WithCode("onlyOwnEntriesWrite")
+	return toHTTPError(apperror.NotFound("timesheet", strconv.FormatUint(uint64(id), 10)))
 }
 
 // mustChangePassword blocks everything except the password change itself

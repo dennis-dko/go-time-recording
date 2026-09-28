@@ -241,6 +241,66 @@ func TestAnotherPersonsEntryIsIndistinguishableFromNoEntry(t *testing.T) {
 	}
 }
 
+// And changing, deleting or transferring it answers the same way.
+//
+// Reading was made indistinguishable first, and the other three methods on the
+// same id went on refusing with onlyOwnEntriesWrite - so the walk above drew
+// the same map with PUT, DELETE or a transfer instead, one refused request at a
+// time, and changed nothing on the way.
+func TestAnotherPersonsEntryAnswersEveryMethodAsNotThere(t *testing.T) {
+	t.Parallel()
+
+	a, admin, wera := startWithWorker(t)
+	otto := a.signInAsUser(admin, "Otto", "otto@example.com")
+
+	var hers timesheetResponse
+	wera.must(wera.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-07-03", "durationHours": 2,
+	}), http.StatusCreated, http.StatusOK).Data(t, &hers)
+
+	// A project of Otto's own, so a transfer gets past the checks on its body and
+	// reaches the entry - with no project named it stops at the body, for either id.
+	var his projectResponse
+	otto.must(otto.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Otto's work", "startDate": "2026-07-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &his)
+
+	for _, probe := range []struct {
+		method, suffix string
+		body           map[string]any
+	}{
+		{http.MethodPut, "", map[string]any{"durationHours": 3}},
+		{http.MethodDelete, "", nil},
+		{http.MethodPost, "/transfer", map[string]any{"projectId": his.ID}},
+	} {
+		foreign := otto.api(probe.method, path("/timesheets/", hers.ID)+probe.suffix, probe.body)
+		absent := otto.api(probe.method, path("/timesheets/", hers.ID+9000)+probe.suffix, probe.body)
+
+		if foreign.Status != absent.Status {
+			t.Errorf("%s%s on somebody else's entry answers %d, and on one nobody holds %d - "+
+				"the difference says the first one exists",
+				probe.method, probe.suffix, foreign.Status, absent.Status)
+
+			continue
+		}
+
+		if got, want := errorCode(t, foreign), errorCode(t, absent); got != want {
+			t.Errorf("%s%s on somebody else's entry is coded %q, and on one nobody holds %q",
+				probe.method, probe.suffix, got, want)
+		}
+	}
+
+	// And nothing was changed or removed on the way.
+	var still timesheetResponse
+	wera.must(wera.api(http.MethodGet, path("/timesheets/", hers.ID), nil),
+		http.StatusOK).Data(t, &still)
+
+	if still.DurationHours != 2 || still.ProjectID != nil {
+		t.Errorf("the entry now holds %v hours on project %v, want 2 hours on none",
+			still.DurationHours, still.ProjectID)
+	}
+}
+
 func TestAUserCannotAdministerUsersOrRoles(t *testing.T) {
 	t.Parallel()
 
