@@ -540,6 +540,16 @@ The account needs `CREATE TABLE`, `ALTER`, `INDEX` and the ordinary read and
 write rights *inside* that database — the grants above give it those. It never
 needs to create a database.
 
+**On MySQL, a migration that stops part-way has to be tidied by hand before the
+next start.** MySQL commits every schema statement on its own, so a migration
+that fails after its first statement - a missing right, a lost connection -
+keeps what it did and loses the record that it ran, and the next start stops on
+"already exists" or "Duplicate column". On a first start the database holds
+nothing yet: drop and recreate it and start again. On an upgrade it holds
+everybody's hours, so undo only what the failed migration added - the error
+names the table or column - and start again. PostgreSQL and SQLite roll a
+failed migration back and need nothing.
+
 **SQLite creates its own file**, so there is nothing to prepare. That is what
 `task dev` and the single binary use unless told otherwise.
 
