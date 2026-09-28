@@ -345,13 +345,14 @@ func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *E
 		name = email
 	}
 
+	// No working times, as a synchronisation creates the same account; see
+	// createMissing for what a pinned figure cost.
 	return s.users.Save(ctx, &model.User{
-		Name:             name,
-		Email:            email,
-		RoleID:           role.ID,
-		IsExternal:       true,
-		ExternalID:       directoryUser.ID,
-		DailyTargetHours: model.DefaultDailyTargetHours,
+		Name:       name,
+		Email:      email,
+		RoleID:     role.ID,
+		IsExternal: true,
+		ExternalID: directoryUser.ID,
 	})
 }
 

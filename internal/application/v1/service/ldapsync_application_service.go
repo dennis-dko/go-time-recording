@@ -377,12 +377,13 @@ func (s *LDAPSyncService) createMissing(
 			name = email
 		}
 
-		// No working times. Zero is how "follow the instance default" is stored, which
-		// is what an account created through the form gets - and this wrote a fixed
-		// eight instead, so a directory account kept that eight when an administrator
-		// later changed the installation's default while a form-created colleague
-		// followed it. The ceiling was already left at zero here, so the same account
-		// had one figure pinned and one following.
+		// No working times. Zero is how "follow the default" is stored, which is what
+		// an account created through the form gets - and this wrote a fixed eight
+		// instead. That is the same hours today, and not the same account: the list
+		// showed a figure where every other row showed "default", the owner's form
+		// held a value they had never chosen, and a change to the default would pass
+		// it by. The ceiling was already left at zero here, so the same account had
+		// one figure pinned and one following.
 		_, err := s.users.Save(ctx, &model.User{
 			Name:       name,
 			Email:      email,
