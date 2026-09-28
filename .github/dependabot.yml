@@ -62,14 +62,29 @@ updates:
   # installation at its next pull - and CI, which starts on an empty database,
   # would pass it. The collector's and the CLI's majors change their
   # configuration. Each is a deliberate step, not a weekly bump.
+  #
+  # /test beside /deploy, in one entry, grouped by dependency. The test
+  # environment runs the same backing services, and
+  # TestTheBackingServicesMatchWhatADeploymentRuns fails when the two pins
+  # disagree - so a bump to one directory alone was a red pull request by
+  # construction: the first one this entry opened, Jaeger in /deploy only, was
+  # exactly that. group-by: dependency-name makes one pull request per image
+  # across both directories, so the pair moves together.
   - package-ecosystem: docker-compose
-    directory: /deploy
+    directories:
+      - /deploy
+      - /test
     schedule:
       interval: weekly
       day: monday
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+    groups:
+      backing-services:
+        patterns:
+          - "*"
+        group-by: dependency-name
 
   # The actions every workflow is built from. These are the ones nobody thinks
   # about until one is deprecated and a release cannot be cut.
