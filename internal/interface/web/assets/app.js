@@ -3542,6 +3542,9 @@ const TRANSLATIONS = {
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
+    'err.syncDiffersFromPreview': 'Das Verzeichnis antwortet inzwischen anders als in der bestätigten '
+      + 'Vorschau: Dieser Lauf würde {0} Konto/Konten löschen, darum wurde nichts geändert. Bitte erneut '
+      + 'prüfen.',
     'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat überhaupt keine Benutzer geliefert; es wird niemand gelöscht.',
     'err.syncWouldRemoveTooMany': 'Würde {0} von {1} Verzeichniskonten entfernen ({2} %), mehr als die '
       + 'Sicherheitsgrenze von {3} %. Prüfen Sie Filter und Base-DN des Verzeichnisses und heben Sie die '
@@ -3645,6 +3648,7 @@ const TRANSLATIONS = {
     'field.code': 'Code',
     'field.companyName': 'Firma',
     'field.companyUrl': 'Firmen-Adresse',
+    'field.confirmed': 'Bestätigte Konten',
     'field.dailyTargetHours': 'Soll/Tag',
     'field.defaultRole': 'Standardrolle',
     'field.durationHours': 'Stunden',
@@ -6498,7 +6502,14 @@ function wireDirectorySync() {
         if (!proceed) return;
       }
 
-      show(await api('/settings/ldap/sync', { method: 'POST' }));
+      // Bound to what was just put in front of somebody, including nobody. The
+      // run asks the directory again, and without this it deleted whatever the
+      // second answer left out - accounts nobody had been shown, or, after a
+      // preview that asked nothing because it proposed nobody, up to the deletion
+      // limit. The server refuses a run whose candidates are not these.
+      const confirmed = preview.candidates.map((c) => c.userId).join(',');
+
+      show(await api(`/settings/ldap/sync?confirmed=${confirmed}`, { method: 'POST' }));
       await refreshAll();
     }, null, null);
   });

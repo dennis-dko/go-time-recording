@@ -1127,6 +1127,15 @@ Three guards stand between a misconfigured filter and a mass deletion:
 **Preview before you run.** The dry run reports the same candidates and, for each
 one, how many time entries would be destroyed.
 
+**A run started from the screen deletes what it asked about, or nothing.** The
+button previews, names the damage, and sends the accounts it named with the run.
+The run asks the directory again, and if that answer would delete anybody else -
+or anybody at all, after a preview that proposed nobody - it changes nothing and
+says so, with the accounts it would now take listed for another look. A scheduled
+run has nobody to ask and is held by the three guards above alone, and so is an
+API call that names no accounts (`POST /api/v1/settings/ldap/sync` without
+`?confirmed=`).
+
 Expired sessions are pruned at 03:00 daily. That schedule is not configurable.
 
 ## Special modes

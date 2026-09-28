@@ -1975,6 +1975,16 @@
         ],
         "summary": "Synchronise accounts with the directory",
         "description": "Matches on the directory-side identifier rather than the mail address, so a renamed mailbox is not read as a departure. `aborted` carries the reason a guard stopped the run, and `abortCode` with `abortValues` the same reason for a client to put in its reader's language, as with any refusal.",
+        "parameters": [
+          {
+            "name": "confirmed",
+            "in": "query",
+            "description": "The account ids a preview proposed and somebody confirmed, comma-separated; empty for a preview that proposed nobody. Given, the run deletes exactly these or changes nothing (`syncDiffersFromPreview`), because it asks the directory again and the answer may have moved. Absent, the run is unbound and held by the deletion limit alone, as a scheduled run is.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "What the run did"

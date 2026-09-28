@@ -1,9 +1,12 @@
 package rest
 
 import (
+	"strconv"
+
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // LDAPSyncHandler serves the directory synchronisation.
@@ -71,7 +74,18 @@ func (h *LDAPSyncHandler) Run(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	report, err := h.sync.Sync(c)
+	confirmed, bound, err := confirmedAccounts(c)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	var report *service.SyncReport
+
+	if bound {
+		report, err = h.sync.SyncAsConfirmed(c, confirmed)
+	} else {
+		report, err = h.sync.Sync(c)
+	}
 
 	// Logged before the error is answered, and from the report rather than
 	// instead of it. A run that removed accounts and then failed still removed
@@ -89,6 +103,40 @@ func (h *LDAPSyncHandler) Run(c *gofr.Context) (any, error) {
 	}
 
 	return newSyncReportResponse(report), nil
+}
+
+// confirmedAccounts reads the accounts a run was confirmed for, and whether it
+// was bound to any at all.
+//
+// The screen always sends them, and "?confirmed=" for a preview that proposed
+// nobody - which is a confirmation too: that the run deletes no one. Absent, the
+// run is unbound, which is what an API client written before this sends. GoFr's
+// Params keeps the two apart, nil for an absent key and one empty value for an
+// empty one, and says it does so on purpose. A value that is not an id is
+// refused rather than dropped, because dropping it would narrow what the caller
+// confirmed into something they did not.
+func confirmedAccounts(c *gofr.Context) ([]uint, bool, error) {
+	values := c.Params("confirmed")
+	if values == nil {
+		return nil, false, nil
+	}
+
+	ids := make([]uint, 0, len(values))
+
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+
+		id, err := strconv.ParseUint(value, 10, 0)
+		if err != nil || id == 0 {
+			return nil, false, apperror.InvalidFields("confirmed")
+		}
+
+		ids = append(ids, uint(id))
+	}
+
+	return ids, true, nil
 }
 
 // requireSystemAdmin restricts the run to an account that administers this

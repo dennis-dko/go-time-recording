@@ -128,7 +128,7 @@ func NewLDAPSyncService(
 
 // Preview reports what a synchronisation would change, without changing it.
 func (s *LDAPSyncService) Preview(ctx context.Context) (*SyncReport, error) {
-	return s.run(ctx, true)
+	return s.run(ctx, true, nil)
 }
 
 // Sync reconciles the local accounts with the directory.
@@ -137,14 +137,56 @@ func (s *LDAPSyncService) Preview(ctx context.Context) (*SyncReport, error) {
 // entries, private projects, tokens and sessions. Accounts the directory has
 // and this installation does not are created.
 func (s *LDAPSyncService) Sync(ctx context.Context) (*SyncReport, error) {
-	return s.run(ctx, false)
+	return s.run(ctx, false, nil)
 }
 
-// run is the body Sync and DryRun share; dryRun decides whether the deletions
-// are carried out or only reported.
+// SyncAsConfirmed is Sync bound to what somebody agreed to: it deletes exactly
+// the accounts named, or nothing at all.
+//
+// A confirmation is given against a preview, and the run asks the directory
+// again, so whatever the directory answers in between is what would be deleted.
+// Unbound, an answer that had moved took accounts nobody was shown, and a
+// preview proposing nobody asked nothing while the run was free to remove up to
+// the deletion limit. A run whose candidates are not the confirmed ones is
+// refused with them in the report, so the screen can show them and ask again,
+// and it creates nothing either: the answer is not the one that was looked at.
+//
+// Sync stays unbound for the scheduled run, which has nobody to ask and is held
+// by the deletion limit alone.
+func (s *LDAPSyncService) SyncAsConfirmed(ctx context.Context, confirmed []uint) (*SyncReport, error) {
+	agreed := make(map[uint]bool, len(confirmed))
+	for _, id := range confirmed {
+		agreed[id] = true
+	}
+
+	return s.run(ctx, false, func(report *SyncReport) *apperror.Error {
+		same := len(report.Candidates) == len(agreed)
+
+		for _, candidate := range report.Candidates {
+			same = same && agreed[candidate.UserID]
+		}
+
+		if same {
+			return nil
+		}
+
+		return apperror.Conflictf("the directory now answers differently from the preview "+
+			"that was confirmed: this run would delete %d account(s), so nothing was changed; "+
+			"preview again", len(report.Candidates)).
+			WithCode("syncDiffersFromPreview", len(report.Candidates))
+	})
+}
+
+// run is the body Sync, SyncAsConfirmed and Preview share; dryRun decides
+// whether the deletions are carried out or only reported, and approve, when
+// given, is a last guard that may refuse the run once its candidates are known.
 //
 //nolint:cyclop // the guards are the point of this function; splitting them across helpers would scatter the reasons a destructive run is refused
-func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, error) {
+func (s *LDAPSyncService) run(
+	ctx context.Context,
+	dryRun bool,
+	approve func(*SyncReport) *apperror.Error,
+) (*SyncReport, error) {
 	if !s.directory.Enabled() {
 		return nil, apperror.Conflictf("no directory is configured").WithCode("noDirectory")
 	}
@@ -231,6 +273,14 @@ func (s *LDAPSyncService) run(ctx context.Context, dryRun bool) (*SyncReport, er
 		report.abort(reason)
 
 		return report, nil
+	}
+
+	if approve != nil {
+		if reason := approve(report); reason != nil {
+			report.abort(reason)
+
+			return report, nil
+		}
 	}
 
 	// The report goes back with the error here too: createMissing may have
