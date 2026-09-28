@@ -64,8 +64,18 @@ func (f TimesheetFilter) OverWholeDays() TimesheetFilter {
 		f.StartDate = &start
 	}
 
+	// The end is the last whole second of the last day, and both halves of that
+	// are load-bearing. A whole second, because it is the one instant all three
+	// dialects store exactly: PostgreSQL keeps a timestamp to the microsecond and
+	// MySQL's DATETIME to the second, both round, and the last nanosecond rounded
+	// up to midnight of the next day - which is where every entry of that day is
+	// stored, so every range took in the day after it. And not the last day's
+	// midnight, because entries recorded before the stored date lost its zone
+	// carry the zone they were booked in, which west of UTC is hours later than
+	// midnight; those always fall on a whole minute, so the last second misses
+	// none of them.
 	if f.EndDate != nil {
-		end := model.CalendarDay(*f.EndDate).AddDate(0, 0, 1).Add(-time.Nanosecond)
+		end := model.CalendarDay(*f.EndDate).AddDate(0, 0, 1).Add(-time.Second)
 		f.EndDate = &end
 	}
 

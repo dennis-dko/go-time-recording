@@ -52,6 +52,56 @@ func TestADaySentWithATimeIsStoredAsTheDayItNames(t *testing.T) {
 	}
 }
 
+// A range of days ends on its last day, on every dialect.
+//
+// The end of a range was the last nanosecond of its last day. PostgreSQL keeps a
+// timestamp to the microsecond and MySQL's DATETIME to the second, both round,
+// and 23:59:59.999999999 became midnight of the next day - where every entry of
+// that day is stored. So on both server dialects a list from the first to the
+// third showed the fourth, the statistics for those days counted it, and the
+// daily limit refused a booking because of the hours booked for tomorrow. SQLite
+// compares to the nanosecond and this suite's SQLite leg passed throughout.
+func TestARangeOfDaysEndsOnItsLastDay(t *testing.T) {
+	t.Parallel()
+
+	a := start(t, "MAX_DAILY_HOURS=10")
+	admin := a.signInAsAdmin("a-much-better-password")
+	wera := a.signInAsUser(admin, "Wera", "wera@example.com")
+
+	for date, hours := range map[string]float64{"2026-07-03": 2, "2026-07-04": 8} {
+		wera.must(wera.api(http.MethodPost, "/timesheets", map[string]any{
+			"date": date, "durationHours": hours,
+		}), http.StatusCreated, http.StatusOK)
+	}
+
+	var listed struct {
+		Items []timesheetResponse `json:"items"`
+	}
+
+	wera.must(wera.api(http.MethodGet, "/timesheets?from=2026-07-01&to=2026-07-03", nil),
+		http.StatusOK).Data(t, &listed)
+
+	for _, entry := range listed.Items {
+		if entry.Date != "2026-07-03" {
+			t.Errorf("the list from the 1st to the 3rd of July holds an entry on %s", entry.Date)
+		}
+	}
+
+	if stats := ownStatistics(t, wera, "?from=2026-07-01&to=2026-07-03"); stats.TotalHours != 2 {
+		t.Errorf("the statistics from the 1st to the 3rd total %v hours, want the 2 "+
+			"booked on the 3rd", stats.TotalHours)
+	}
+
+	// Eight more on the 3rd make ten there, which is the limit and allowed - the
+	// eight already on the 4th are another day's.
+	if got := wera.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": "2026-07-03", "durationHours": 8,
+	}).Status; got != http.StatusCreated && got != http.StatusOK {
+		t.Errorf("booking up to the limit on the 3rd was refused with %d, because the "+
+			"4th's hours were counted as the 3rd's", got)
+	}
+}
+
 // A day reads as itself when the database answers in a zone west of UTC.
 //
 // A stored day is midnight UTC, and both server dialects hand it back in a zone
