@@ -35,8 +35,9 @@ import (
 // do. This is a guard for the seventh.
 //
 // A new migration that needs both is two migrations - the schema in one, the data
-// in the next - which is atomic on every engine, and is CLAUDE.md §7's
-// multi-phase rule applied to the engine rather than to the deployment.
+// in the next - which is CLAUDE.md §7's multi-phase rule applied to the engine
+// rather than to the deployment. It is atomic on every engine only if the schema
+// half is a single statement; the case below holds that.
 func TestNoNewMigrationMixesSchemaAndDataChanges(t *testing.T) {
 	// Applied long ago, on installations that exist. Fixed history, not a backlog.
 	alreadyMixed := []string{
@@ -96,6 +97,35 @@ var (
 type chain struct {
 	source map[string]string
 	calls  map[string][]string
+
+	// schema is how many string literals in each function name a schema
+	// change, which is how many schema statements it can run.
+	schema map[string]int
+}
+
+// schemaStatements is how many schema statements a migration and everything it
+// calls hold between them.
+func (c chain) schemaStatements(name string) int {
+	seen := map[string]bool{}
+
+	var walk func(string) int
+
+	walk = func(at string) int {
+		if seen[at] {
+			return 0
+		}
+
+		seen[at] = true
+		count := c.schema[at]
+
+		for _, next := range c.calls[at] {
+			count += walk(next)
+		}
+
+		return count
+	}
+
+	return walk(name)
 }
 
 // reach is a function's own source plus that of everything it calls, so a
@@ -145,7 +175,7 @@ func readChain(t *testing.T) chain {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 
-	out := chain{source: map[string]string{}, calls: map[string][]string{}}
+	out := chain{source: map[string]string{}, calls: map[string][]string{}, schema: map[string]int{}}
 
 	for _, decl := range parsed.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
@@ -160,6 +190,11 @@ func readChain(t *testing.T) chain {
 		seen := map[string]bool{}
 
 		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			if lit, isLit := node.(*ast.BasicLit); isLit && lit.Kind == token.STRING &&
+				changesSchema.MatchString(lit.Value) {
+				out.schema[fn.Name.Name]++
+			}
+
 			call, isCall := node.(*ast.CallExpr)
 			if !isCall {
 				return true
@@ -180,4 +215,71 @@ func readChain(t *testing.T) chain {
 	delete(out.source, "All")
 
 	return out
+}
+
+// A new migration runs at most one schema statement.
+//
+// The case above holds a narrower rule than MySQL does. MySQL commits every DDL
+// statement on its own, so a migration with two of them is not atomic either,
+// data or no data: measured against the test environment's MySQL 8.4, a
+// transaction that created a table and then failed on a second CREATE TABLE
+// rolled back and left the first table in place. GoFr records a migration in the
+// same transaction as its statements, so the record is gone and the table is
+// not, and the next start runs the migration again and stops on "already
+// exists" - an installation that cannot start until somebody cleans its database
+// by hand. PostgreSQL and SQLite roll DDL back, which is why nothing else shows
+// it.
+//
+// So a new migration carries one schema statement, and a second change is a
+// second migration. Counted as string literals in the syntax tree, not in the
+// text, so a comment naming a statement does not count; a helper the migration
+// calls is counted with it. A switch that gives each dialect its own statement
+// counts as several here although only one runs - build the one statement from
+// the dialect instead, as the column types already are.
+func TestNoNewMigrationRunsMoreThanOneSchemaStatement(t *testing.T) {
+	// Applied on installations that exist, and so left as they ran. The first two
+	// run one statement per dialect and only look like more.
+	alreadyMultiple := []string{
+		"widenTOTPSecret",
+		"makeProjectOptional",
+		"addExternalIdentity",
+		"addPrivateProjects",
+		"addRoleBasedAccess",
+		"addSessionsAndPreferences",
+		"createAPITokens",
+		"createPasskeys",
+		"rememberWhenAnEntryWasBookedAndCorrected",
+	}
+
+	chain := readChain(t)
+
+	entries := chain.calls["All"]
+	if len(entries) == 0 {
+		t.Fatal("no migrations found through All; this test is reading nothing")
+	}
+
+	var multiple []string
+
+	for _, name := range entries {
+		if chain.schemaStatements(name) > 1 {
+			multiple = append(multiple, name)
+		}
+	}
+
+	for _, name := range multiple {
+		if !slices.Contains(alreadyMultiple, name) {
+			t.Errorf("the migration %s runs %d schema statements. MySQL commits each "+
+				"one by itself, so a failure after the first leaves it applied with "+
+				"the migration unrecorded, and the next start fails on it. Make it "+
+				"one statement per migration", name, chain.schemaStatements(name))
+		}
+	}
+
+	for _, name := range alreadyMultiple {
+		if !slices.Contains(multiple, name) {
+			t.Errorf("%s is listed as running several schema statements and no "+
+				"longer does; if it was edited in place, that is the one thing an "+
+				"applied migration must never be", name)
+		}
+	}
 }
