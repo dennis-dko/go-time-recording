@@ -51,33 +51,39 @@ func (r *TimerRepository) Get(ctx context.Context, userID uint) (*model.RunningT
 
 // Start records a clock, replacing any the user already had.
 //
-// Delete-then-insert rather than a dialect-specific upsert, for the same reason
-// the settings repository does an update-then-insert: ON CONFLICT and ON DUPLICATE
-// KEY are spelled differently by each engine. Both statements go in one
-// transaction, so a connection lost between them cannot leave the user with no
-// clock at all when they asked for a new one.
+// One statement that replaces the row, in each engine's own words. It was a
+// delete followed by an insert, which is right one request at a time and wrong
+// for two at once: on PostgreSQL both deletes found nothing, both inserts reached
+// the primary key, and the second press answered 500 with a duplicate-key error
+// for asking for what the first one got. A start replaces the running clock, so
+// either order is a correct answer, and the database is left to pick one.
+//
+// Spelled as the settings repository spells its upsert, since no form is
+// portable: ON CONFLICT on SQLite and PostgreSQL, ON DUPLICATE KEY on MySQL.
 func (r *TimerRepository) Start(ctx context.Context, timer *model.RunningTimer) error {
-	return r.withTx(ctx, func(tx base) error {
-		if _, err := tx.exec(ctx,
-			"DELETE FROM running_timers WHERE user_id = ?", timer.UserID); err != nil {
-			return apperror.Internal(err)
-		}
+	query := `INSERT INTO running_timers (user_id, project_id, description, started_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT (user_id) DO UPDATE SET project_id = EXCLUDED.project_id,
+			description = EXCLUDED.description, started_at = EXCLUDED.started_at`
 
-		var projectID any
-		if timer.ProjectID != nil {
-			projectID = *timer.ProjectID
-		}
+	if r.dialect == DialectMySQL {
+		query = `INSERT INTO running_timers (user_id, project_id, description, started_at)
+			VALUES (?, ?, ?, ?)
+			ON DUPLICATE KEY UPDATE project_id = VALUES(project_id),
+				description = VALUES(description), started_at = VALUES(started_at)`
+	}
 
-		_, err := tx.exec(ctx,
-			"INSERT INTO running_timers (user_id, project_id, description, started_at) "+
-				"VALUES (?, ?, ?, ?)",
-			timer.UserID, projectID, timer.Description, timer.StartedAt)
-		if err != nil {
-			return apperror.Internal(err)
-		}
+	var projectID any
+	if timer.ProjectID != nil {
+		projectID = *timer.ProjectID
+	}
 
-		return nil
-	})
+	if _, err := r.exec(ctx, query,
+		timer.UserID, projectID, timer.Description, timer.StartedAt); err != nil {
+		return apperror.Internal(err)
+	}
+
+	return nil
 }
 
 // Clear removes it, whether it was booked or discarded.
