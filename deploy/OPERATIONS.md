@@ -889,6 +889,12 @@ hand instead, or leave it unset to follow `latest`.
 written and compared against the release's own `SHA256SUMS`, read from the same
 release. This is code that will be executed as the application on the next start.
 
+**A download that stops arriving is given up after thirty seconds of nothing.**
+A slow one is not: the bound is the silence between two reads, not the length of
+the whole. A mirror or proxy that sends its headers and then goes quiet ends the
+install with "the download stopped arriving" instead of holding it - and the
+banner announcing it - for as long as somebody keeps the tab open.
+
 **It does not restart by itself.** Replacing the file and replacing the process
 are separate acts with separate failure modes, and on Windows the second one does
 not exist - so the card says which case it is. On Linux the restart button below
