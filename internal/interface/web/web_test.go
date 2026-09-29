@@ -10,7 +10,8 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
 )
 
-// nextHandler stands in for the API routes behind the UI middleware.
+// nextMarker is what the stand-in for the API routes behind the UI middleware
+// answers with.
 const nextMarker = "API REACHED"
 
 func newServer() http.Handler {

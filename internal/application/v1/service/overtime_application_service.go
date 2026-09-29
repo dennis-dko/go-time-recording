@@ -110,12 +110,13 @@ func (s *OvertimeService) Balance(
 		Days:        make([]OvertimeDay, 0, len(bookedPerDay)),
 	}
 
+	// Settled, every figure that is a sum or a difference: see settled.
 	for day, booked := range bookedPerDay {
 		balance.Days = append(balance.Days, OvertimeDay{
 			Date:    day,
-			Booked:  booked,
+			Booked:  settled(booked),
 			Target:  target,
-			Balance: booked - target,
+			Balance: settled(booked - target),
 		})
 	}
 
@@ -129,6 +130,10 @@ func (s *OvertimeService) Balance(
 		balance.TotalTarget += day.Target
 		balance.TotalBalance += day.Balance
 	}
+
+	balance.TotalBooked = settled(balance.TotalBooked)
+	balance.TotalTarget = settled(balance.TotalTarget)
+	balance.TotalBalance = settled(balance.TotalBalance)
 
 	return balance, nil
 }

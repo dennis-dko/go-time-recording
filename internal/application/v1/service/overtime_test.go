@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -202,5 +203,41 @@ func TestOneDayBookedTwoWaysIsStillOneDay(t *testing.T) {
 	if balance.TotalBalance != 0 {
 		t.Errorf("eight hours against an eight hour target came out as %.1f",
 			balance.TotalBalance)
+	}
+}
+
+// A day that meets its target exactly has a balance of exactly nothing.
+//
+// Hours are doubles, and a day's bookings summed are not the decimal figures
+// somebody typed: 0.1 + 5.1 + 2.8 is eight hours on paper and a hair under here,
+// 0.56 + 6.98 + 0.46 a hair over. Taken away from the target, that hair was the
+// balance - and the screen, which decides the sign and the colour from the value,
+// showed a person who had worked exactly their day "-0.00" in red, or "+0.00" in
+// green. The daily cap already forgives the arithmetic; the balance did not.
+func TestADayThatMeetsItsTargetHasNoBalanceAtAll(t *testing.T) {
+	for _, bookings := range [][]float64{{0.1, 5.1, 2.8}, {0.56, 6.98, 0.46}} {
+		f := newFixture(t)
+
+		for _, hours := range bookings {
+			f.book(t, day(15), hours)
+		}
+
+		balance, err := overtimeFor(f).Balance(context.Background(), f.userID, day(1), day(28))
+		if err != nil {
+			t.Fatalf("balance: %v", err)
+		}
+
+		if len(balance.Days) != 1 {
+			t.Fatalf("expected one day, got %d", len(balance.Days))
+		}
+
+		for name, value := range map[string]float64{
+			"the day's balance": balance.Days[0].Balance,
+			"the total":         balance.TotalBalance,
+		} {
+			if value != 0 || math.Signbit(value) {
+				t.Errorf("%v booked against 8h: %s is %g, want exactly 0", bookings, name, value)
+			}
+		}
 	}
 }
