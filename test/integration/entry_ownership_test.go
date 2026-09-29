@@ -70,11 +70,13 @@ func TestTransferringSomebodyElsesEntryIsRefused(t *testing.T) {
 	answer := anna.api(http.MethodPost, path("/timesheets/", bertsEntry.ID)+"/transfer",
 		map[string]any{"projectId": shared.ID})
 
-	if answer.Status != http.StatusForbidden {
-		t.Errorf("transferring a colleague's entry answered %d, want 403", answer.Status)
+	// Not found rather than forbidden: a refusal would say the id is real, which
+	// TestAnotherPersonsEntryAnswersEveryMethodAsNotThere is about.
+	if answer.Status != http.StatusNotFound {
+		t.Errorf("transferring a colleague's entry answered %d, want 404", answer.Status)
 	}
 
-	// And the refusal carries none of it. A 403 that quotes the description would
+	// And the answer carries none of it. One that quotes the description would
 	// have leaked exactly what the check is there to protect.
 	if strings.Contains(string(answer.Body), "a private note") {
 		t.Errorf("the refusal repeats the entry's description: %.200q", answer.Body)
