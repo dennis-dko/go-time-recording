@@ -168,7 +168,7 @@ func shippedIcon(sub fs.FS) []byte {
 // Converted rather than passed through. What an installation uploads is a
 // wordmark made for a header - a few thousand pixels across, twice as wide as it
 // is tall - and handing that to a browser as a tab icon leaves every decision to
-// the browser, including whether to use it at all. See toIcon.
+// the browser, including whether to use it at all. See imaging.ToIcon.
 func serveIcon(
 	w http.ResponseWriter, r *http.Request,
 	branding BrandingFunc, shipped []byte, cache *icons,
