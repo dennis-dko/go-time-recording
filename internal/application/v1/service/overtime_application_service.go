@@ -54,9 +54,6 @@ func NewOvertimeService(
 // every calendar day would turn weekends, holidays and leave into a growing
 // deficit, which would make the figure meaningless without a holiday calendar
 // this application does not have.
-//
-// Entries that were rejected are excluded: they represent work that was not
-// accepted, so counting them would overstate the balance.
 func (s *OvertimeService) Balance(
 	ctx context.Context,
 	userID uint,
