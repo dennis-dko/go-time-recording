@@ -213,7 +213,7 @@ func (p *page) iconIsTheLogo(t *testing.T) bool {
 		})()`, &kind, awaitPromise))
 
 	// The type tells them apart now. A configured logo is converted into a square
-	// PNG before it is served - see toIcon for why - and the shipped mark is the
+	// PNG before it is served - see imaging.ToIcon for why - and the shipped mark is the
 	// SVG that ships with the application, so what comes back says which of the
 	// two the tab is being given.
 	return strings.Contains(kind, "image/png")
