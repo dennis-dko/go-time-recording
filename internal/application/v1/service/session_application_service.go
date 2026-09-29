@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -69,6 +70,11 @@ type SessionService struct {
 	// directory settings name no role that may be given; see roleForArrival.
 	defaultRole string
 
+	// spent is the time step of the last second-factor code each account had
+	// accepted; see spendTOTP.
+	spentMu sync.Mutex
+	spent   map[uint]int64
+
 	metrics
 }
 
@@ -97,7 +103,41 @@ func NewSessionService(
 		auth:        auth,
 		lifetime:    lifetime,
 		defaultRole: model.RoleUser,
+		spent:       map[uint]int64{},
 	}
+}
+
+// spendTOTP accepts a second-factor code for an account once, and never again.
+//
+// A code is good for its own thirty seconds and the step either side, and it
+// was good for all of them however often it was used: somebody who saw it typed
+// together with the password could sign in with it after its owner had. RFC
+// 6238 says a verifier must not accept the same code a second time once it has
+// accepted it (section 5.2). So the step each account last used is kept, and a
+// code has to be from a later one - a person who has just signed in waits at
+// most thirty seconds for the next.
+//
+// Kept in this process rather than in the database, which is the trade: no
+// schema change for a window of ninety seconds, and a restart inside that
+// window forgets it. The lock makes the check and the record one step, so two
+// sign-ins racing with the same code cannot both pass.
+func (s *SessionService) spendTOTP(user *model.User, code string) error {
+	step, ok := security.MatchTOTP(user.TOTPSecret, code)
+	if !ok {
+		return apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
+	}
+
+	s.spentMu.Lock()
+	defer s.spentMu.Unlock()
+
+	if step <= s.spent[user.ID] {
+		return apperror.Invalidf("this two-factor code has already been used").
+			WithCode("twoFactorCodeUsed")
+	}
+
+	s.spent[user.ID] = step
+
+	return nil
 }
 
 // WithLimits attaches the administered limits, so the session lifetime follows
@@ -165,10 +205,10 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 			return nil, ErrTOTPRequired
 		}
 
-		if !security.VerifyTOTP(user.TOTPSecret, totpCode) {
+		if err := s.spendTOTP(user, totpCode); err != nil {
 			s.count(ctx, MetricSignInFailures, "reason", SignInFailureTOTP)
 
-			return nil, apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
+			return nil, err
 		}
 	}
 
@@ -625,6 +665,13 @@ func (s *SessionService) BeginTOTPEnrolment(
 		return "", "", err
 	}
 
+	// A new secret starts a new count: the step spent under the old one says
+	// nothing about the codes of this one, and keeping it would refuse the first
+	// code of an enrolment made in the same half minute as switching off.
+	s.spentMu.Lock()
+	delete(s.spent, user.ID)
+	s.spentMu.Unlock()
+
 	return secret, security.TOTPURI(issuer, user.Email, secret), nil
 }
 
@@ -640,8 +687,8 @@ func (s *SessionService) ConfirmTOTP(ctx context.Context, userID uint, code stri
 		return apperror.Conflictf("start the two-factor setup first").WithCode("twoFactorNotStarted")
 	}
 
-	if !security.VerifyTOTP(user.TOTPSecret, code) {
-		return apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
+	if err := s.spendTOTP(user, code); err != nil {
+		return err
 	}
 
 	// The same secret, now in force.
@@ -660,8 +707,8 @@ func (s *SessionService) DisableTOTP(ctx context.Context, userID uint, code stri
 		return apperror.Conflictf("two-factor authentication is not enabled").WithCode("twoFactorNotOn")
 	}
 
-	if !security.VerifyTOTP(user.TOTPSecret, code) {
-		return apperror.Invalidf("the two-factor code is not valid").WithCode("twoFactorCodeInvalid")
+	if err := s.spendTOTP(user, code); err != nil {
+		return err
 	}
 
 	// Off, and the secret gone with it: a secret left behind would sign somebody

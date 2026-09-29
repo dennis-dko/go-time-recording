@@ -3580,6 +3580,7 @@ const TRANSLATIONS = {
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
+    'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warten Sie auf den nächsten.',
     'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
     'err.twoFactorNotStarted': 'Bitte zuerst die Zwei-Faktor-Einrichtung starten.',
     'err.twoFactorRequired': 'Ein Zwei-Faktor-Code ist erforderlich.',
