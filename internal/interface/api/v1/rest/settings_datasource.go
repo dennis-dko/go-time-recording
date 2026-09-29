@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"strings"
+
 	"gofr.dev/pkg/gofr"
 
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
@@ -103,10 +105,11 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 		SSLMode:  req.SSLMode,
 	}
 
-	// Keep the stored password when the client sends none back.
+	// Keep the stored password when the client sends none back - for its own
+	// server and user only; see keptPassword.
 	if ds.Password == "" {
 		if stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
-			ds.Password = stored.Password
+			ds.Password = keptPassword(ds, stored)
 		}
 	}
 
@@ -155,7 +158,7 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 	// An empty password means "use the stored one", the same as on save.
 	if ds.Password == "" {
 		if stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
-			ds.Password = stored.Password
+			ds.Password = keptPassword(ds, stored)
 		}
 	}
 
@@ -178,4 +181,34 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 	// because what went wrong is not a fixed set of sentences code could
 	// translate.
 	return map[string]any{"ok": true}, nil
+}
+
+// keptPassword is what an untouched password field stands for: the password of
+// the connection the form was filled from, and only while the form still names
+// that server and that user.
+//
+// The screen never receives a password, so leaving the field empty is how
+// somebody keeps one. Kept for whatever the form named, it was also how somebody
+// could collect it: change the host or the user, press "Test connection", and the
+// stored password went to wherever the form now pointed - in clear text to a
+// PostgreSQL server that asks for it that way, which lib/pq honours. A changed
+// server or user is sent no password it was not given, and saving one stores
+// none, so the next start does not carry it there either.
+func keptPassword(ds, from appconfig.Datasource) string {
+	if !sameAccount(ds, from) {
+		return ""
+	}
+
+	return from.Password
+}
+
+// sameAccount reports whether two connections sign in as the same user on the
+// same server, reading an empty port as the dialect's default the way the
+// connection itself does. The database name is not part of it: a password
+// belongs to a user on a server, whichever database they open there.
+func sameAccount(a, b appconfig.Datasource) bool {
+	return strings.EqualFold(a.Dialect, b.Dialect) &&
+		strings.EqualFold(strings.TrimSpace(a.Host), strings.TrimSpace(b.Host)) &&
+		appconfig.DefaultPortFor(a.Dialect, a.Port) == appconfig.DefaultPortFor(b.Dialect, b.Port) &&
+		a.User == b.User
 }
