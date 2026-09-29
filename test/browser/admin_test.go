@@ -150,11 +150,13 @@ func TestAnOrdinaryAccountCannotOpenTheAdministrationScreen(t *testing.T) {
 // The card is filled from the file the installer or the card itself writes. A
 // deployment that sets DB_* has no such file, so every field was blank - under a
 // first line reading "currently connected via sqlite". It looked unconfigured on
-// an installation that plainly was not.
+// an installation that plainly was not. It then showed the connection as
+// placeholders, which read as examples rather than as what is running, and it
+// shows it as values now, as it does a stored one.
 //
-// The reason it matters past appearances: that file wins over the environment.
-// Somebody filling in the blank form would silently override the deployment at
-// the next start.
+// The reason the note matters past appearances: the file wins over the
+// environment. Saving the card, changed or not, stores the connection as a
+// setting that overrides the deployment at the next start, and the note says so.
 //
 // The harness starts its instances from the environment, so this is that case.
 func TestTheDatabaseCardSaysWhereAConnectionWithoutASavedSettingComesFrom(t *testing.T) {
@@ -172,23 +174,24 @@ func TestTheDatabaseCardSaysWhereAConnectionWithoutASavedSettingComesFrom(t *tes
 	p.waitShown("#datasource-source")
 
 	// The database name, because this instance runs on SQLite: the server fields
-	// are put away for a file, and the file's name is the whole connection.
-	if got := p.attr(`#form-datasource [name="name"]`, "placeholder"); got == "" {
-		t.Error("the database field offers no placeholder, so the card still shows " +
-			"nothing of the connection its first line says is in force")
+	// are put away for a file, and the file's name is the whole connection. As a
+	// value, the one the process opened.
+	var value, running string
+
+	p.run("read the field and what is running", chromedp.Evaluate(
+		`document.querySelector('#form-datasource [name="name"]').value`, &value),
+		chromedp.Evaluate(`(async () => {
+			const r = await fetch('/api/v1/settings/datasource', { credentials: 'same-origin' });
+
+			return (await r.json())?.data?.running?.name ?? '';
+		})()`, &running, awaitPromise))
+
+	if running == "" {
+		t.Fatal("the server names no running database, so this case measures nothing")
 	}
 
-	// And it is a placeholder, not a value: leaving the field alone has to keep
-	// meaning "leave the connection alone", or the next save writes a file that
-	// overrides the environment.
-	var value string
-
-	p.run("read the stored value", chromedp.Evaluate(
-		`document.querySelector('#form-datasource [name="name"]').value`, &value))
-
-	if value != "" {
-		t.Errorf("the database field holds %q on an installation that has stored "+
-			"nothing; the running connection is being presented as saved", value)
+	if value != running {
+		t.Errorf("the database field holds %q while the process runs on %q", value, running)
 	}
 }
 
@@ -250,7 +253,7 @@ func TestTheConnectionCardNamesWhatIsRunningAndInventsNothing(t *testing.T) {
 			got, state.Active)
 	}
 
-	// And a reload keeps it, along with the placeholders it belongs to.
+	// And a reload keeps it, along with the values it belongs to.
 	p.run("reload", chromedp.Reload(), chromedp.WaitVisible("#tabs", chromedp.ByID))
 	p.waitGone("#login-screen")
 	p.settleWizard()
@@ -265,8 +268,8 @@ func TestTheConnectionCardNamesWhatIsRunningAndInventsNothing(t *testing.T) {
 			"connected via %q", got, state.Active)
 	}
 
-	if got := p.attr(`#form-datasource [name="name"]`, "placeholder"); got == "" {
-		t.Error("the placeholders are gone after a reload, so the card is blank " +
+	if got := p.value(`#form-datasource [name="name"]`); got == "" {
+		t.Error("the database field is empty after a reload, so the card is blank " +
 			"again under a line saying what it is connected to")
 	}
 

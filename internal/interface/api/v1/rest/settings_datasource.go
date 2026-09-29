@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"strings"
+
 	"gofr.dev/pkg/gofr"
 
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
@@ -38,6 +40,11 @@ type DatasourceResponse struct {
 	// the screen never receives one, and this is not the place to start.
 	Running DatasourceRequest `json:"running"`
 
+	// RunningHasPassword says the running connection has one, which HasPassword
+	// says of the stored connection: enough for the card to show a filled box,
+	// and never the password itself.
+	RunningHasPassword bool `json:"runningHasPassword"`
+
 	// RestartRequired is always true after a change: GoFr opens the database
 	// at start-up, and swapping it under running requests is not safe.
 	RestartRequired bool `json:"restartRequired"`
@@ -60,8 +67,9 @@ func (h *SettingsHandler) Datasource(c *gofr.Context) (any, error) {
 			Host:    h.running.Host,
 			Port:    h.running.Port,
 			User:    h.running.User,
-			SSLMode: h.running.SSLMode,
+			SSLMode: sslModeInForce(h.running.Dialect, h.running.SSLMode),
 		},
+		RunningHasPassword: h.running.Password != "",
 	}
 
 	if ok {
@@ -71,7 +79,7 @@ func (h *SettingsHandler) Datasource(c *gofr.Context) (any, error) {
 			Host:    stored.Host,
 			Port:    stored.Port,
 			User:    stored.User,
-			SSLMode: stored.SSLMode,
+			SSLMode: sslModeInForce(stored.Dialect, stored.SSLMode),
 		}
 		resp.HasPassword = stored.Password != ""
 	}
@@ -103,11 +111,10 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 		SSLMode:  req.SSLMode,
 	}
 
-	// Keep the stored password when the client sends none back.
+	// Keep the password in force when the client sends none back - for its own
+	// server and user only; see keptPassword.
 	if ds.Password == "" {
-		if stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
-			ds.Password = stored.Password
-		}
+		ds.Password = keptPassword(ds, h.connectionInForce())
 	}
 
 	if err := ds.Validate(); err != nil {
@@ -152,11 +159,9 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 		SSLMode:  req.SSLMode,
 	}
 
-	// An empty password means "use the stored one", the same as on save.
+	// An empty password means "use the one in force", the same as on save.
 	if ds.Password == "" {
-		if stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
-			ds.Password = stored.Password
-		}
+		ds.Password = keptPassword(ds, h.connectionInForce())
 	}
 
 	if err := appconfig.TestDatasource(c, ds); err != nil {
@@ -178,4 +183,59 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 	// because what went wrong is not a fixed set of sentences code could
 	// translate.
 	return map[string]any{"ok": true}, nil
+}
+
+// connectionInForce is the connection the card is filled from, and so the one an
+// untouched password box stands for: the stored one, or, where nothing is stored
+// - every installation configured through the environment - the one this process
+// opened. Kept from the stored one alone, saving the card unchanged on a compose
+// deployment wrote a connection with no password, which wins over the
+// environment at the next start and could then not sign in to its own database.
+func (h *SettingsHandler) connectionInForce() appconfig.Datasource {
+	if stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
+		return stored
+	}
+
+	return h.running
+}
+
+// sslModeInForce is the SSL mode a connection runs with, so the card can show it
+// as a value: a PostgreSQL connection naming none runs with "disable", because
+// that is what GoFr reads an absent DB_SSL_MODE as.
+func sslModeInForce(dialect, mode string) string {
+	if mode == "" && strings.EqualFold(dialect, "postgres") {
+		return "disable"
+	}
+
+	return mode
+}
+
+// keptPassword is what an untouched password field stands for: the password of
+// the connection the form was filled from, and only while the form still names
+// that server and that user.
+//
+// The screen never receives a password, so leaving the field empty is how
+// somebody keeps one. Kept for whatever the form named, it was also how somebody
+// could collect it: change the host or the user, press "Test connection", and the
+// stored password went to wherever the form now pointed - in clear text to a
+// PostgreSQL server that asks for it that way, which lib/pq honours. A changed
+// server or user is sent no password it was not given, and saving one stores
+// none, so the next start does not carry it there either.
+func keptPassword(ds, from appconfig.Datasource) string {
+	if !sameAccount(ds, from) {
+		return ""
+	}
+
+	return from.Password
+}
+
+// sameAccount reports whether two connections sign in as the same user on the
+// same server, reading an empty port as the dialect's default the way the
+// connection itself does. The database name is not part of it: a password
+// belongs to a user on a server, whichever database they open there.
+func sameAccount(a, b appconfig.Datasource) bool {
+	return strings.EqualFold(a.Dialect, b.Dialect) &&
+		strings.EqualFold(strings.TrimSpace(a.Host), strings.TrimSpace(b.Host)) &&
+		appconfig.DefaultPortFor(a.Dialect, a.Port) == appconfig.DefaultPortFor(b.Dialect, b.Port) &&
+		a.User == b.User
 }

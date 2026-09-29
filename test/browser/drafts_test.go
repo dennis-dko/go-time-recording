@@ -39,9 +39,22 @@ func TestWhatWasTypedIsStillThereAfterAReload(t *testing.T) {
 		"host": "db.example.invalid", "name": "gtr_live", "user": "gtr_admin",
 	}
 
+	// Emptied first, the way a person empties a box - with the input event that
+	// marks the form as being filled in, so a load arriving late leaves it alone:
+	// the card is filled with the connection in force, and what is being checked
+	// is that the typing survives, not what it was typed after.
 	for field, value := range typed {
-		p.run("type the "+field, chromedp.SendKeys(
-			`#form-datasource [name="`+field+`"]`, value, chromedp.ByQuery))
+		selector := `#form-datasource [name="` + field + `"]`
+
+		p.run("empty the "+field, chromedp.Evaluate(`(() => {
+			const box = document.querySelector('`+selector+`');
+
+			box.value = '';
+			box.dispatchEvent(new Event('input', { bubbles: true }));
+
+			return true;
+		})()`, nil))
+		p.run("type the "+field, chromedp.SendKeys(selector, value, chromedp.ByQuery))
 	}
 
 	const secret = "a-password-that-must-not-be-written-down"

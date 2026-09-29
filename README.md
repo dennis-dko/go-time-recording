@@ -1067,14 +1067,20 @@ button probes them before you commit. A connection saved there is written to
 database under running requests is not safe, so it is deliberately not done.
 
 On an installation configured through the environment — a compose deployment, or
-a container run with `DB_*` set — there is no such file, so the card has nothing
-of its own to fill the boxes with. It shows the running connection as
-**placeholders** instead, and says above them where it came from. That matters
-more than looking tidy: saving this form writes the file, and the file is layer 4
-above the environment, so filling in the boxes to make the screen look right
-would quietly take the deployment's own settings out of use at the next start.
-Typing over a placeholder is how the connection is changed; leaving a field alone
-leaves the connection alone.
+a container run with `DB_*` set — there is no such file, so the card is filled
+with the running connection instead, as values, and says above them where it came
+from. That note matters more than it looks: saving this form writes the file, and
+the file is layer 4 above the environment, so pressing *Save* — changed or not —
+takes the deployment's own settings out of use from the next start. Not pressing
+it leaves the connection alone.
+
+**The password is shown as a filled, masked box, and the page never holds it.**
+The server sends only whether there is one; the dots stand for it, and the eye
+beside them stays shut because there is nothing behind them to show. Saving or
+testing the card with the box untouched keeps the password in force — the stored
+one, or the environment's — and only for the same type, host, port and user: name
+another server or user and the box empties, because that password is not sent
+anywhere it was not given.
 
 *Settings → Logging, metrics and tracing* works the same way, and for the same
 kind of reason: GoFr reads the log level, binds the metrics port and builds the

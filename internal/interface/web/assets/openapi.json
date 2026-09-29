@@ -1313,6 +1313,7 @@
           "settings"
         ],
         "summary": "Save the database connection; applied on the next restart",
+        "description": "An empty password keeps the one in force, and only for the same type, host, port and user: a connection naming another server or user is sent no password it was not given.",
         "responses": {
           "200": {
             "description": "Saved"
@@ -1352,6 +1353,7 @@
           "settings"
         ],
         "summary": "Probe a database connection without saving or switching to it",
+        "description": "An empty password keeps the one in force, and only for the same type, host, port and user: a connection naming another server or user is sent no password it was not given.",
         "responses": {
           "201": {
             "description": "Result; the `ok` field tells success from failure"

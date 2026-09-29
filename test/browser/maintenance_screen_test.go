@@ -179,8 +179,8 @@ func asAdmin(t *testing.T, client *http.Client, base, method, path string, body 
 // touched it.
 //
 // The card says "currently connected via postgres" and then shows what that
-// connection is - as placeholders, because on an installation configured
-// through the environment those values are not the form's to save.
+// connection is, and on an installation configured through the environment it
+// says in a note that the connection is the environment's.
 //
 // All of that was skipped as one block whenever the form counted as being
 // filled in, which is right for the values somebody typed and wrong for
@@ -206,12 +206,12 @@ func TestTheConnectionCardKeepsSayingWhatIsRunningWhileBeingEdited(t *testing.T)
 			truncateText(p.text("#form-datasource"), 200))
 	}
 
-	before := p.placeholder(`#form-datasource [name="name"]`)
-
-	if before == "" {
-		t.Fatal("the database name is not offered as a placeholder, so the card " +
-			"shows nothing of the connection it just named")
+	if p.value(`#form-datasource [name="name"]`) == "" {
+		t.Fatal("the database name is not shown, so the card shows nothing of the " +
+			"connection it just named")
 	}
+
+	active := p.text("#datasource-active")
 
 	// Somebody starts typing. From here on the values are theirs.
 	//
@@ -236,9 +236,11 @@ func TestTheConnectionCardKeepsSayingWhatIsRunningWhileBeingEdited(t *testing.T)
 			"somebody touched the form")
 	}
 
-	if after := p.placeholder(`#form-datasource [name="name"]`); after != before {
-		t.Errorf("the card stopped showing the running connection: the database "+
-			"name offered %q before and %q after", before, after)
+	// Still naming the running connection, in the language now chosen: the
+	// line is the process's, not the form's, and says the same type.
+	if after := p.text("#datasource-active"); after == "" || after == active {
+		t.Errorf("the line naming the running connection read %q before the language "+
+			"was chosen and %q after, so it was not redrawn over the edited form", active, after)
 	}
 }
 
