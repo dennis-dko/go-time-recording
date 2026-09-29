@@ -39,3 +39,28 @@ func TestAFigureThatIsNotAFiniteNumberFallsBack(t *testing.T) {
 		}
 	}
 }
+
+// The daily cap the configuration file sets is no more than a day has, as the
+// same figure set on the settings screen is not.
+//
+// The screen refuses a cap above model.HoursPerDay, and the rule it keeps is the
+// domain's: a booking is at most the daily cap, and the cap at most the hours a
+// day holds. The file's reader took any positive figure, so MAX_DAILY_HOURS=30 -
+// somebody thinking of a shift pattern, or of a week - let a person record
+// thirty hours on one day, and the overtime balance counted all of them. A figure
+// outside the range falls back to the default, as the deletion limit's does.
+func TestTheDailyCapIsNoMoreThanADayHas(t *testing.T) {
+	defaults := config.Load(mapConfig{})
+
+	for _, raw := range []string{"24.5", "30", "48", "1e9"} {
+		if got := config.Load(mapConfig{"MAX_DAILY_HOURS": raw}).MaxDailyHours; got != defaults.MaxDailyHours {
+			t.Errorf("MAX_DAILY_HOURS=%q was read as %v, want the default %v", raw, got, defaults.MaxDailyHours)
+		}
+	}
+
+	for raw, want := range map[string]float64{"24": 24, "10": 10, "7.5": 7.5} {
+		if got := config.Load(mapConfig{"MAX_DAILY_HOURS": raw}).MaxDailyHours; got != want {
+			t.Errorf("MAX_DAILY_HOURS=%q was read as %v, want %v", raw, got, want)
+		}
+	}
+}
