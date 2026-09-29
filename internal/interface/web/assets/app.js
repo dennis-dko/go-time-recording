@@ -3250,7 +3250,7 @@ const TRANSLATIONS = {
     'tel.title': 'Protokoll, Metriken und Traces',
     'tel.logLevel': 'Protokollstufe',
     'tel.activeLog': 'Protokollstufe',
-    'tel.hint': 'Wird gespeichert und beim nächsten Start der Anwendung übernommen. Im laufenden Betrieb ist nichts davon umschaltbar: die Protokollstufe wird beim Start gelesen, der Metrik-Port beim Start gebunden und der Trace-Exporter beim Start gebaut. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
+    'tel.hint': 'Die Protokollstufe gilt sofort. Der Metrik-Port wird beim Start gebunden und der Trace-Exporter beim Start gebaut, darum werden diese hier gespeichert und beim nächsten Start übernommen; die Neustart-Karte zeigt, was wartet. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
     'tel.warn': 'Der Metrik-Port fragt nicht nach einer Anmeldung, ist nicht durch TLS geschützt und liefert neben den Metriken auch Go-Profiling-Endpunkte — wo er erreichbar ist, ist es auch ein Heap-Dump. Nur für die eigene Überwachung freigeben.',
     'tel.metrics': 'Metrik-Endpunkt',
     'tel.metricsOff': 'Nicht ausliefern',

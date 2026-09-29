@@ -138,7 +138,7 @@ what happened during the migrations — because it captures the process output
 rather than wrapping a logger. Two things worth knowing: only what the log level
 admits reaches it, so ticking `DEBUG` on an installation running at `WARN` shows
 nothing and is not a fault — the level is set under *Settings → Logging, metrics
-and tracing* and applies from the next start; and it is held in memory in a
+and tracing* and applies at once; and it is held in memory in a
 fixed-size ring, so it
 starts empty after a restart and is no substitute for collecting logs. The
 capture makes the console output JSON even on a terminal, which is what a log
