@@ -313,6 +313,12 @@ func (s *SessionService) resolveUser(ctx context.Context, email, password string
 // covers accounts created before identifiers were recorded, and adopting the
 // identifier on the way through means each account is matched by address at
 // most once.
+//
+// Only "there is no such account" moves on to the next lookup, and in the end to
+// creating one. A lookup that failed says nothing about who this is: read as
+// absence, a failed lookup by identifier after a renamed mailbox found nothing
+// under the new address either and created a second account for the same
+// person - an empty one, which they were then signed in to.
 func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *ExternalUser) (*model.User, error) {
 	email := normalizeEmail(directoryUser.Email)
 
@@ -321,11 +327,19 @@ func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *E
 		if err == nil {
 			return s.reconcileExternal(ctx, existing, directoryUser, email)
 		}
+
+		if apperror.KindOf(err) != apperror.KindNotFound {
+			return nil, err
+		}
 	}
 
 	existing, err := s.users.GetByEmail(ctx, email)
 	if err == nil {
 		return s.reconcileExternal(ctx, existing, directoryUser, email)
+	}
+
+	if apperror.KindOf(err) != apperror.KindNotFound {
+		return nil, err
 	}
 
 	// A directory entry must never bring the built-in administrator into
@@ -428,14 +442,25 @@ func (s *SessionService) reconcileExternal(
 // administers reports whether the account holds rights over the installation
 // rather than over a working day; roleAdministers says which rights those are.
 //
-// A role that cannot be read counts as no permissions, which is the reading
+// A role that is not there counts as no permissions, which is the reading
 // principalFor already takes of the same condition: an account pointing at a
 // deleted role is valid and powerless. Powerless is also nothing worth claiming,
 // so this neither refuses the migration nor gives anything away.
+//
+// A role that could not be read is not that, and it is an error. principalFor
+// may read it as no permissions, because there the reading takes rights away;
+// here it is the answer that lets the claim through. Read as "no rights", a
+// database failing this one query let the directory adopt a local administrator
+// and sign in with everything they hold - the guard opening exactly when
+// nothing could be checked.
 func (s *SessionService) administers(ctx context.Context, user *model.User) (bool, error) {
 	role, err := s.roles.GetByID(ctx, user.RoleID)
 	if err != nil {
-		return false, nil
+		if apperror.KindOf(err) == apperror.KindNotFound {
+			return false, nil
+		}
+
+		return false, err
 	}
 
 	return roleAdministers(role), nil

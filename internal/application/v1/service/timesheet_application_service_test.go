@@ -375,7 +375,7 @@ func TestADayBookedInPartsIsNotOverItsOwnLimit(t *testing.T) {
 	}
 
 	// Three parts of exactly eight hours, in the order that makes the sum
-	// overshoot. checkDailyLimit adds the booking being made first and the stored
+	// overshoot. checkDailyBudget adds the booking being made first and the stored
 	// ones after it, so 6.98 + 0.56 + 0.46 is what is actually computed - and that
 	// is 8.00000000000000177636.
 	for _, hours := range []float64{0.56, 0.46, 6.98} {

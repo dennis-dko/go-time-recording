@@ -227,6 +227,20 @@ func TestTheConnectionCardKeepsSayingWhatIsRunningWhileBeingEdited(t *testing.T)
 	p.chooseLanguage("de")
 	p.waitForText(`.tab[data-view="timesheets"]`, "Zeiteinträge")
 
+	// Waited for rather than read, and before anything else is asked. The labels
+	// change the moment the language does, but the card is reloaded after that,
+	// asynchronously - so reading straight after the labels read the card before
+	// the reload, which is the thing being tested. The line naming the running
+	// connection is drawn by that reload, over the edited form, in the language
+	// now chosen: once it reads German, the reload has happened, and the two
+	// checks below are about what it did rather than about a race it had not yet
+	// run. Read at once, this passed locally and failed on CI.
+	p.waitForText("#datasource-active", "Aktuell verbunden über")
+
+	if active == "" {
+		t.Fatal("the line naming the running connection was empty before the language was chosen")
+	}
+
 	if got := p.value(`#form-datasource [name="name"]`); !strings.Contains(got, "somewhere-else.db") {
 		t.Errorf("what was being typed was taken away: the name reads %q", got)
 	}
@@ -234,13 +248,6 @@ func TestTheConnectionCardKeepsSayingWhatIsRunningWhileBeingEdited(t *testing.T)
 	if !p.visible("#datasource-source") {
 		t.Error("the card stopped saying where its connection came from as soon as " +
 			"somebody touched the form")
-	}
-
-	// Still naming the running connection, in the language now chosen: the
-	// line is the process's, not the form's, and says the same type.
-	if after := p.text("#datasource-active"); after == "" || after == active {
-		t.Errorf("the line naming the running connection read %q before the language "+
-			"was chosen and %q after, so it was not redrawn over the edited form", active, after)
 	}
 }
 
