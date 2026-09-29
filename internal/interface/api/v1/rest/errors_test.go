@@ -145,3 +145,25 @@ func TestAFieldComplaintIsNotMadeGeneric(t *testing.T) {
 		t.Errorf("the field names did not survive: %v", out["param"])
 	}
 }
+
+// An internal failure that counted something keeps the count.
+//
+// The generic sentence replaces the driver's words, and the values went with
+// them: a directory synchronisation that stopped part-way coded how many
+// accounts it had already deleted, and the answer carried the code and dropped
+// the numbers - so the one thing the screen needed to say could not be said.
+func TestAnInternalFailureKeepsItsValues(t *testing.T) {
+	answer := newInternalError(apperror.Internal(errors.New("the database went away")).
+		WithCode("syncStoppedPartWay", 2, 1))
+
+	body := answer.Response()
+
+	if got := body["code"]; got != "syncStoppedPartWay" {
+		t.Errorf("the answer carries code %v, want syncStoppedPartWay", got)
+	}
+
+	values, ok := body["values"].([]any)
+	if !ok || len(values) != 2 || values[0] != 2 || values[1] != 1 {
+		t.Errorf("the answer carries values %v, want [2 1]", body["values"])
+	}
+}

@@ -97,8 +97,11 @@ func newInternalError(detail *apperror.Error) internalError {
 		original = detail.Err.Error()
 	}
 
+	// The values too, where the failure counted something the reader should
+	// know: a directory synchronisation that stopped part-way says how many
+	// accounts it had already deleted, which a generic sentence cannot.
 	return internalError{
-		reason:   reason{message: "the request could not be completed", code: code},
+		reason:   reason{message: "the request could not be completed", code: code, values: detail.Values},
 		ref:      newReference(),
 		original: original,
 	}

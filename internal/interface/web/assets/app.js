@@ -3543,6 +3543,8 @@ const TRANSLATIONS = {
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
+    'err.syncStoppedPartWay': 'Der Abgleich wurde abgebrochen, nachdem er {0} Konto/Konten '
+      + 'gelöscht und {1} angelegt hatte. Die Liste zeigt, was noch übrig ist.',
     'err.syncAlreadyRunning': 'Ein Verzeichnis-Abgleich läuft bereits; dieser wurde nicht gestartet.',
     'err.syncDiffersFromPreview': 'Das Verzeichnis antwortet inzwischen anders als in der bestätigten '
       + 'Vorschau: Dieser Lauf würde {0} Konto/Konten löschen, darum wurde nichts geändert. Bitte erneut '
@@ -6617,7 +6619,18 @@ function wireDirectorySync() {
       // limit. The server refuses a run whose candidates are not these.
       const confirmed = preview.candidates.map((c) => c.userId).join(',');
 
-      show(await api(`/settings/ldap/sync?confirmed=${confirmed}`, { method: 'POST' }));
+      try {
+        show(await api(`/settings/ldap/sync?confirmed=${confirmed}`, { method: 'POST' }));
+      } catch (err) {
+        // A run that stops part-way has still deleted what it reached, and the
+        // card went on showing the preview it started from - accounts that
+        // "would be deleted", some of them already gone. What is left is asked
+        // for again; the refusal itself says how far the run got. A preview that
+        // cannot be had either leaves the card as it was rather than hiding why.
+        await api('/settings/ldap/sync/preview', { method: 'POST' }).then(show, () => {});
+        throw err;
+      }
+
       await refreshAll();
     }, null, null);
   });
