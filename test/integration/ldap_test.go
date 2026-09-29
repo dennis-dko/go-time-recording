@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -402,6 +403,8 @@ type SyncPreview struct {
 	LocalExternal  int    `json:"localExternal"`
 	DryRun         bool   `json:"dryRun"`
 	Aborted        string `json:"aborted"`
+	AbortCode      string `json:"abortCode"`
+	AbortValues    []any  `json:"abortValues"`
 
 	// Candidates are the accounts a real run would delete, with the number of
 	// time entries that would go with each.
@@ -422,6 +425,114 @@ func syncPreview(t *testing.T, admin *client) SyncPreview {
 		http.StatusCreated, http.StatusOK).Data(t, &preview)
 
 	return preview
+}
+
+// A run a guard refuses says why in a way the screen can translate.
+//
+// The reason was an English sentence the screen printed as it came, so a German
+// administrator read "Abgebrochen: would remove 1 of 3 directory accounts (33%),
+// above the 25% safety limit ..." - the one message on the synchronisation
+// screen that matters most, and the one left in the other language. It travels
+// as a code with its figures now, the way every refusal does, and the sentence
+// stays beside it for the log.
+func TestARefusedSynchronisationSaysWhyWithACode(t *testing.T) {
+	t.Parallel()
+
+	host, port := requireLDAP(t)
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	configureLDAP(t, admin, host, port, ldapBaseDN)
+
+	// Everybody the whole tree holds becomes a local account.
+	admin.must(admin.api(http.MethodPost, "/settings/ldap/sync", nil),
+		http.StatusCreated, http.StatusOK)
+
+	// Narrowed, the contractor is outside it - one of three - and a quarter is
+	// all a run may remove.
+	configureLDAP(t, admin, host, port, ldapPeopleDN)
+	admin.must(admin.api(http.MethodPut, "/settings/operational",
+		map[string]any{"ldapSyncMaxDeleteRatio": 0.25}), http.StatusOK)
+
+	preview := syncPreview(t, admin)
+
+	if preview.Aborted == "" {
+		t.Fatalf("the guard did not refuse the run, so this case measures nothing: %+v", preview)
+	}
+
+	if preview.AbortCode != "syncWouldRemoveTooMany" {
+		t.Errorf("the refusal carries the code %q, want syncWouldRemoveTooMany; "+
+			"the screen can only print %q as it came", preview.AbortCode, preview.Aborted)
+	}
+
+	if want := []any{1.0, 3.0, 33.0, 25.0}; fmt.Sprint(preview.AbortValues) != fmt.Sprint(want) {
+		t.Errorf("the refusal's figures are %v, want %v", preview.AbortValues, want)
+	}
+}
+
+// A run somebody confirmed deletes what they confirmed, or nothing.
+//
+// The screen previews, states the damage - "{n} account(s) and {h} time entries
+// will be deleted irreversibly" - and on a yes starts a run, which asks the
+// directory again. Whatever it answers then is what gets deleted: a directory
+// that answered differently in between took accounts nobody was shown, and a
+// preview that proposed nobody asked nothing at all while the run was free to
+// remove up to the deletion limit. The confirmed ids travel with the run now,
+// and a run whose answer no longer matches them changes nothing.
+func TestAConfirmedSynchronisationDeletesOnlyWhatWasConfirmed(t *testing.T) {
+	t.Parallel()
+
+	host, port := requireLDAP(t)
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	configureLDAP(t, admin, host, port, ldapBaseDN)
+
+	admin.must(admin.api(http.MethodPost, "/settings/ldap/sync", nil),
+		http.StatusCreated, http.StatusOK)
+
+	// Narrowed after the preview somebody said yes to - which proposed nobody.
+	configureLDAP(t, admin, host, port, ldapPeopleDN)
+
+	var refused SyncPreview
+
+	admin.must(admin.api(http.MethodPost, "/settings/ldap/sync?confirmed=", nil),
+		http.StatusCreated, http.StatusOK).Data(t, &refused)
+
+	if refused.AbortCode != "syncDiffersFromPreview" {
+		t.Errorf("a run confirmed for nobody answered %+v, want it refused as differing "+
+			"from the preview", refused)
+	}
+
+	var accounts listOf[struct {
+		ID    uint   `json:"id"`
+		Email string `json:"email"`
+	}]
+
+	admin.must(admin.api(http.MethodGet, "/users", nil), http.StatusOK).Data(t, &accounts)
+
+	var dave uint
+
+	for _, account := range accounts.Items {
+		if account.Email == "dave@example.com" {
+			dave = account.ID
+		}
+	}
+
+	if dave == 0 {
+		t.Fatalf("the run deleted dave@example.com, whom nobody had confirmed; accounts: %+v",
+			accounts.Items)
+	}
+
+	// Confirmed for exactly him, it runs.
+	var ran SyncPreview
+
+	admin.must(admin.api(http.MethodPost, path("/settings/ldap/sync?confirmed=", dave), nil),
+		http.StatusCreated, http.StatusOK).Data(t, &ran)
+
+	if ran.Aborted != "" {
+		t.Errorf("a run confirmed for exactly the account it would delete was refused: %s", ran.Aborted)
+	}
 }
 
 // The one that matters most, and the reason the two code paths above have to

@@ -360,7 +360,8 @@ function errorMessage(body) {
  * status. The connection test answers 200 with the reason inside it - a database
  * that cannot be reached is information about what somebody typed, not a fault -
  * and that put it outside this path, so it was shown as the English prose the
- * server wrote. Two renderings of one thing is one too many.
+ * server wrote. Two renderings of one thing is one too many. A synchronisation
+ * that a guard refuses answers 200 the same way, with its reason in the report.
  */
 function describeRefusal(err) {
   // Maintenance is the one refusal whose sentence may not be ours: an
@@ -3234,7 +3235,7 @@ const TRANSLATIONS = {
     'ops.maxDailyHours': 'Maximale Stunden pro Tag (systemweit)',
     'ops.rateLimit': 'Ratenbegrenzung (Anfragen)',
     'ops.rateWindow': 'Zeitfenster der Ratenbegrenzung (Sekunden)',
-    'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1)',
+    'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1, 0 = keine Grenze)',
     'ops.reset': 'Alle Werte auf die Konfigurationsdatei zurücksetzen',
     'ops.saved': 'Grenzwerte gespeichert',
     'ops.reset.done': 'Alle Werte folgen wieder der Konfigurationsdatei',
@@ -3244,6 +3245,7 @@ const TRANSLATIONS = {
     'ops.maxShort': 'max./Tag',
     'ops.rateShort': 'Rate',
     'ops.ratioShort': 'Löschgrenze',
+    'ops.off': 'aus',
 
     'tel.title': 'Protokoll, Metriken und Traces',
     'tel.logLevel': 'Protokollstufe',
@@ -3540,6 +3542,14 @@ const TRANSLATIONS = {
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
+    'err.syncDiffersFromPreview': 'Das Verzeichnis antwortet inzwischen anders als in der bestätigten '
+      + 'Vorschau: Dieser Lauf würde {0} Konto/Konten löschen, darum wurde nichts geändert. Bitte erneut '
+      + 'prüfen.',
+    'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat überhaupt keine Benutzer geliefert; es wird niemand gelöscht.',
+    'err.syncWouldRemoveTooMany': 'Würde {0} von {1} Verzeichniskonten entfernen ({2} %), mehr als die '
+      + 'Sicherheitsgrenze von {3} %. Prüfen Sie Filter und Base-DN des Verzeichnisses und heben Sie die '
+      + 'Löschgrenze unter „Betrieb und Grenzwerte“ oder LDAP_SYNC_MAX_DELETE_RATIO an, wenn das wirklich '
+      + 'beabsichtigt ist.',
     'err.noSession': 'Keine Sitzung.',
     'err.noTimerRunning': 'Es läuft keine Stoppuhr.',
     'err.overDailyLimit': '{0} Std. würden am {2} zusammen {1} Std. ergeben und damit das Tagesmaximum von {3} Std. überschreiten.',
@@ -3638,6 +3648,7 @@ const TRANSLATIONS = {
     'field.code': 'Code',
     'field.companyName': 'Firma',
     'field.companyUrl': 'Firmen-Adresse',
+    'field.confirmed': 'Bestätigte Konten',
     'field.dailyTargetHours': 'Soll/Tag',
     'field.defaultRole': 'Standardrolle',
     'field.durationHours': 'Stunden',
@@ -6423,7 +6434,11 @@ function wireDirectorySync() {
     result.hidden = false;
 
     if (report.aborted) {
-      status.textContent = `${t('sync.aborted', 'Aborted')}: ${report.aborted}`;
+      const reason = describeRefusal({
+        code: report.abortCode, message: report.aborted, values: report.abortValues,
+      });
+
+      status.textContent = `${t('sync.aborted', 'Aborted')}: ${reason}`;
       status.className = 'muted minus';
 
       return;
@@ -6487,7 +6502,14 @@ function wireDirectorySync() {
         if (!proceed) return;
       }
 
-      show(await api('/settings/ldap/sync', { method: 'POST' }));
+      // Bound to what was just put in front of somebody, including nobody. The
+      // run asks the directory again, and without this it deleted whatever the
+      // second answer left out - accounts nobody had been shown, or, after a
+      // preview that asked nothing because it proposed nobody, up to the deletion
+      // limit. The server refuses a run whose candidates are not these.
+      const confirmed = preview.candidates.map((c) => c.userId).join(',');
+
+      show(await api(`/settings/ldap/sync?confirmed=${confirmed}`, { method: 'POST' }));
       await refreshAll();
     }, null, null);
   });
@@ -8662,12 +8684,19 @@ function fillOperationalForm(data) {
   // installation is actually running does not - and it is the set of figures
   // somebody is weighing their own against while they type them.
   const effective = data.effective ?? {};
+
+  // A zero that switches a limit off is said to be off. Written as a figure it
+  // read as the strictest limit there is, and for the deletion limit that is the
+  // opposite of the truth: "delete limit 0" was a synchronisation allowed to
+  // remove every account the directory no longer lists, with their hours.
+  const offOr = (value, shown) => (value === 0 ? t('ops.off', 'off') : shown);
+
   $('#operational-effective').textContent = `${t('ops.effective', 'Currently in force')}: `
     + `${t('ops.sessionShort', 'session')} ${fmtHours(effective.sessionLifetimeHours)}, `
-    + `${t('ops.idleShort', 'idle')} ${effective.sessionIdleMinutes} min, `
+    + `${t('ops.idleShort', 'idle')} ${offOr(effective.sessionIdleMinutes, `${effective.sessionIdleMinutes} min`)}, `
     + `${t('ops.maxShort', 'max/day')} ${fmtHours(effective.maxDailyHours)}, `
     + `${t('ops.rateShort', 'rate')} ${effective.rateLimit}/${effective.rateLimitWindowSeconds} s, `
-    + `${t('ops.ratioShort', 'delete limit')} ${fmtShare(effective.ldapSyncMaxDeleteRatio)}`;
+    + `${t('ops.ratioShort', 'delete limit')} ${offOr(effective.ldapSyncMaxDeleteRatio, fmtShare(effective.ldapSyncMaxDeleteRatio))}`;
 
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to

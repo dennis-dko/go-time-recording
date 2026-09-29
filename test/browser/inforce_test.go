@@ -226,3 +226,49 @@ func TestTheUsersTableWritesWorkingTimesTheWayTheReaderWritesNumbers(t *testing.
 		}
 	}
 }
+
+// A limit that is switched off is said to be off, not written as a zero.
+//
+// Zero switches two of these off: the idle timeout, which is off unless somebody
+// sets it, and the directory synchronisation's deletion limit. The line in force
+// wrote both as figures - "idle 0 min", "delete limit 0" - and a zero beside a
+// limit reads as the strictest one there is: signed out at once, nothing may be
+// deleted. For the deletion limit that is the opposite of the truth, on the one
+// operation that removes accounts together with their hours, and the field
+// itself said "(0–1)" and nothing about what the end of that range does. The
+// idle field beside it already said "0 = never".
+func TestALimitThatIsSwitchedOffIsSaidToBeOff(t *testing.T) {
+	t.Parallel()
+
+	p := openWith(t, "LDAP_SYNC_MAX_DELETE_RATIO=0")
+	p.readyAdmin()
+
+	p.run("open the card", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-operational", chromedp.ByID))
+	p.waitForText("#operational-effective", "delete limit")
+
+	var inForce, label, off string
+
+	p.run("read the line, the field and the word", chromedp.Evaluate(
+		`document.querySelector('#operational-effective').textContent.trim()`, &inForce),
+		chromedp.Evaluate(`document.querySelector('#form-operational [name=ldapSyncMaxDeleteRatio]')
+			.closest('label').textContent.trim()`, &label),
+		chromedp.Evaluate(`t('ops.off', 'off')`, &off))
+
+	for _, figure := range []string{"idle 0 min", "delete limit 0"} {
+		if strings.Contains(inForce, figure) {
+			t.Errorf("the line in force reads %q, which says %q for a limit that is "+
+				"switched off", inForce, figure)
+		}
+	}
+
+	for _, said := range []string{"idle " + off, "delete limit " + off} {
+		if !strings.Contains(inForce, said) {
+			t.Errorf("the line in force reads %q, which does not say %q", inForce, said)
+		}
+	}
+
+	if !strings.Contains(label, "0 =") {
+		t.Errorf("the deletion limit's field reads %q, which does not say what 0 does", label)
+	}
+}

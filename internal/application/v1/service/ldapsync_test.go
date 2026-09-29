@@ -375,6 +375,45 @@ func TestSyncDeletesAccountsMissingUpstream(t *testing.T) {
 	}
 }
 
+// A confirmed run deletes exactly what was confirmed, or nothing at all.
+//
+// Between the preview somebody said yes to and the run, the directory is asked
+// twice, and the second answer is the one that deletes. Here it has moved: two
+// accounts are missing where the preview found one.
+func TestAConfirmedSyncRefusesWhenTheDirectoryAnswersDifferently(t *testing.T) {
+	f := newSyncFixture(t, 0.9)
+	externalUser(t, f.fixture, "staying@example.com")
+	first := externalUser(t, f.fixture, "first@example.com")
+	second := externalUser(t, f.fixture, "second@example.com")
+
+	f.directory.users = []service.ExternalUser{{Email: "staying@example.com"}}
+
+	report, err := f.sync.SyncAsConfirmed(context.Background(), []uint{first})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if report.AbortCode != "syncDiffersFromPreview" || len(f.purger.purged) != 0 {
+		t.Fatalf("a run confirmed for one account and finding two answered %+v and purged %v",
+			report, f.purger.purged)
+	}
+
+	// The accounts it would now take are in the report, for another look.
+	if len(report.Candidates) != 2 {
+		t.Errorf("the refusal lists %d candidates, want the 2 it would now delete", len(report.Candidates))
+	}
+
+	// Confirmed for what it finds, it runs - in either order.
+	report, err = f.sync.SyncAsConfirmed(context.Background(), []uint{second, first})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if report.Aborted != "" || len(report.Deleted) != 2 {
+		t.Errorf("a run confirmed for exactly its candidates answered %+v", report)
+	}
+}
+
 // Local accounts were never in the directory, so its silence says nothing
 // about them. The built-in administrator is likewise never removed.
 func TestSyncLeavesLocalAndSystemAccountsAlone(t *testing.T) {
