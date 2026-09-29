@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"time"
 
@@ -372,8 +373,27 @@ func (s *TimesheetApplicationService) checkDailyBudget(
 // exceeding it: a millionth of a second, expressed in hours.
 //
 // Far above what adding doubles gets wrong, which is around 1e-15, and far below
-// anything a person books. See checkDailyLimit for the day this cost somebody.
+// anything a person books. See checkDailyBudget for the day this cost somebody.
 const roundingSlack = 1e-9
+
+// settled takes back out of a sum of hours what the addition put in, by rounding
+// it to roundingSlack.
+//
+// The daily cap forgives the arithmetic when it compares; a figure that is shown
+// has to be forgiven before it leaves. 0.1 + 5.1 + 2.8 is eight hours on paper
+// and a hair under here, so a day that met its target exactly had a balance of
+// -8.9e-16 - and a screen deciding the sign and the colour from the value showed
+// the person "-0.00" in red. Never a negative zero either, which prints the same.
+func settled(hours float64) float64 {
+	// Multiplied and divided by the exact 1e9 rather than by roundingSlack, which
+	// has no exact binary form: 8e9 / 1e9 is 8, and 8e9 * 1e-9 is not.
+	value := math.Round(hours*1e9) / 1e9
+	if value == 0 {
+		return 0
+	}
+
+	return value
+}
 
 func validateTimesheet(date time.Time, hours float64, description *string) error {
 	var invalid []string

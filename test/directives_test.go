@@ -94,9 +94,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "VisibleTo(",
 		},
 		{
-			reference: "timesheet_application_service.go:276",
+			reference: "timesheet_application_service.go:277",
 			resolved:  "internal/application/v1/service/timesheet_application_service.go",
-			line:      276,
+			line:      277,
 			contains:  "VisibleTo(",
 		},
 	}
