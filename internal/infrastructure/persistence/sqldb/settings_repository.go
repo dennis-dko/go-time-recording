@@ -52,9 +52,9 @@ func (r *SettingsRepository) Get(ctx context.Context, key string) (string, error
 // what somebody does when they are not sure the first press registered. On MySQL
 // that was a 500.
 //
-// The syntax differs by engine and there is no portable spelling, so this is the
-// one place in the repositories that branches on the dialect. SQLite and
-// PostgreSQL agree on the standard form.
+// The syntax differs by engine and there is no portable spelling, so this
+// branches on the dialect, as the running clock's start does for the same
+// reason. SQLite and PostgreSQL agree on the standard form.
 func (r *SettingsRepository) Set(ctx context.Context, key, value string) error {
 	query := `INSERT INTO settings (key_name, value, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT (key_name) DO UPDATE SET value = EXCLUDED.value,

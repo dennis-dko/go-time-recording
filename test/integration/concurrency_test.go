@@ -263,3 +263,62 @@ func TestASettingWrittenInPassingDoesNotRevertAnother(t *testing.T) {
 			http.StatusOK, http.StatusNoContent)
 	}
 }
+
+// Starting one's own clock twice at once is served both times, and leaves one clock.
+//
+// A start replaces whatever was running, so two at once - a double press, or a
+// second device - both asked for something that can be done: one of them wins
+// and the other is replaced. The replacement was a delete followed by an insert,
+// which on PostgreSQL lets both deletes find nothing and both inserts reach the
+// primary key: measured, 65 of 80 such starts answered 500 with "duplicate key
+// value violates unique constraint running_timers_pkey". SQLite queues its
+// writers and MySQL's delete locks the row, so both of those served every one -
+// which is why this is only red on the one dialect.
+func TestStartingTheSameClockTwiceAtOnceIsServedBothTimes(t *testing.T) {
+	t.Parallel()
+
+	a, _, worker := startWithWorker(t)
+
+	const rounds, each = 4, 16
+
+	var (
+		mu      sync.Mutex
+		refused []string
+	)
+
+	for round := 0; round < rounds; round++ {
+		var wg sync.WaitGroup
+
+		for attempt := 0; attempt < each; attempt++ {
+			wg.Add(1)
+
+			go func(attempt int) {
+				defer wg.Done()
+
+				r := worker.api(http.MethodPost, "/me/timer", map[string]any{
+					"description": fmt.Sprintf("round %d, start %d", round, attempt),
+				})
+
+				if r.Status == http.StatusCreated || r.Status == http.StatusOK {
+					return
+				}
+
+				mu.Lock()
+				refused = append(refused, fmt.Sprintf("round %d start %d: %d %.200s",
+					round, attempt, r.Status, r.Body))
+				mu.Unlock()
+			}(attempt)
+		}
+
+		wg.Wait()
+	}
+
+	if len(refused) > 0 {
+		t.Errorf("%d of %d concurrent starts were refused, first: %v\n\napplication log:\n%.2000s",
+			len(refused), rounds*each, refused[0], a.log())
+	}
+
+	if timer := runningTimer(t, worker); !timer.Running {
+		t.Error("no clock is running after all those starts")
+	}
+}
