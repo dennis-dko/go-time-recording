@@ -3543,6 +3543,7 @@ const TRANSLATIONS = {
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
+    'err.syncAlreadyRunning': 'Ein Verzeichnis-Abgleich läuft bereits; dieser wurde nicht gestartet.',
     'err.syncDiffersFromPreview': 'Das Verzeichnis antwortet inzwischen anders als in der bestätigten '
       + 'Vorschau: Dieser Lauf würde {0} Konto/Konten löschen, darum wurde nichts geändert. Bitte erneut '
       + 'prüfen.',

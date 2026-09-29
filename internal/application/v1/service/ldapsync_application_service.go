@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"sort"
+	"sync"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
@@ -80,6 +81,19 @@ type LDAPSyncService struct {
 	limits *LimitsProvider
 
 	defaultRole string
+
+	// running is held for the whole of a run that changes anything, and taken
+	// rather than waited on.
+	//
+	// The schedule and the button share this service, and two administrators can
+	// press the button at once. Two runs read the same directory and the same
+	// accounts, so they choose the same departures, and the second to reach one
+	// found it already purged, was refused with "user not found" and stopped
+	// part-way, having deleted whatever it reached first. Nothing was lost - each
+	// purge is its own transaction - but the run that stopped reported a failure
+	// about an account it never touched. A preview changes nothing and does not
+	// take it.
+	running sync.Mutex
 
 	metrics
 }
@@ -189,6 +203,15 @@ func (s *LDAPSyncService) run(
 ) (*SyncReport, error) {
 	if !s.directory.Enabled() {
 		return nil, apperror.Conflictf("no directory is configured").WithCode("noDirectory")
+	}
+
+	if !dryRun {
+		if !s.running.TryLock() {
+			return nil, apperror.Conflictf("a directory synchronisation is already running").
+				WithCode("syncAlreadyRunning")
+		}
+
+		defer s.running.Unlock()
 	}
 
 	directoryUsers, err := s.directory.ListUsers(ctx)
