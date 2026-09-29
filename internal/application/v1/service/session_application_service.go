@@ -313,6 +313,12 @@ func (s *SessionService) resolveUser(ctx context.Context, email, password string
 // covers accounts created before identifiers were recorded, and adopting the
 // identifier on the way through means each account is matched by address at
 // most once.
+//
+// Only "there is no such account" moves on to the next lookup, and in the end to
+// creating one. A lookup that failed says nothing about who this is: read as
+// absence, a failed lookup by identifier after a renamed mailbox found nothing
+// under the new address either and created a second account for the same
+// person - an empty one, which they were then signed in to.
 func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *ExternalUser) (*model.User, error) {
 	email := normalizeEmail(directoryUser.Email)
 
@@ -321,11 +327,19 @@ func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *E
 		if err == nil {
 			return s.reconcileExternal(ctx, existing, directoryUser, email)
 		}
+
+		if apperror.KindOf(err) != apperror.KindNotFound {
+			return nil, err
+		}
 	}
 
 	existing, err := s.users.GetByEmail(ctx, email)
 	if err == nil {
 		return s.reconcileExternal(ctx, existing, directoryUser, email)
+	}
+
+	if apperror.KindOf(err) != apperror.KindNotFound {
+		return nil, err
 	}
 
 	// A directory entry must never bring the built-in administrator into
