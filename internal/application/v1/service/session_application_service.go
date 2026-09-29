@@ -191,11 +191,11 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 // into use.
 //
 // That second condition is the whole of the safety here, and it is deliberately
-// the same one the documented password already turns on. While the built-in
-// administrator still has to change its password, that account is reachable by
-// anybody who has read the README - so a token that opens it as well grants
-// nothing new. The moment a real password is chosen, both doors close together:
-// this one refuses for ever afterwards, whoever still has a copy of the log.
+// the one the documented password already turns on: while that password opens
+// the account, and opens it alone, the account is reachable by anybody who has
+// read the README - so a token that opens it as well grants nothing new. The
+// moment a real password is chosen or a second factor enrolled, both doors close
+// together, and a reset to another password does not open this one again.
 func (s *SessionService) OpenFirstSession(ctx context.Context) (*LoginResult, error) {
 	user, err := s.users.GetByEmail(ctx, SystemUserEmail)
 	if err != nil {
@@ -203,7 +203,15 @@ func (s *SessionService) OpenFirstSession(ctx context.Context) (*LoginResult, er
 			WithCode("noBuiltInAdmin")
 	}
 
-	if !user.MustChangePassword {
+	// Asked of the password itself and of the second factor, not of the flag that
+	// says a password is still to be chosen: an administrator resetting the
+	// built-in password sets that flag again, and the token - which the log shows
+	// - then opened the account without the password just set and past the second
+	// factor its owner had enrolled.
+	opensAlone := user.MustChangePassword && !user.TOTPEnabled &&
+		security.VerifyPassword(user.PasswordHash, SystemUserPassword)
+
+	if !opensAlone {
 		return nil, apperror.Conflictf(
 			"this installation has already been taken into use; sign in with the " +
 				"password that was chosen for it").
