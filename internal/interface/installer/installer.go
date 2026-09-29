@@ -108,10 +108,22 @@ func Serve(ctx context.Context, cfg Config) (Result, error) {
 	// application still lands somewhere that explains itself.
 	mux.HandleFunc("/", s.page)
 
+	// Bounded in every phase, because this answers anybody, before there is an
+	// account to sign in with, for as long as nobody answers it. Without
+	// IdleTimeout and ReadTimeout net/http waits for ever between two requests on
+	// a kept-alive connection, and for ever on a small request body the handler
+	// left unread, which it reads away before sending the answer - measured, a
+	// save with a wrong token and a declared body that never came was not
+	// answered in 150 seconds, and with these bounds it is refused after 30. One
+	// request and then silence, or a body that never arrives, held a connection
+	// until the process ended, as often as a visitor liked. Nothing legitimate
+	// here is slow: the page is small and the largest body read is eight kilobytes.
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	listener, err := net.Listen("tcp", cfg.Addr)
