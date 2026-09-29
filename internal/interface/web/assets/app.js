@@ -3425,9 +3425,9 @@ const TRANSLATIONS = {
     'sync.confirmTitle': 'Abgleich ausführen?',
     'admin.activeConnection': 'Aktuell verbunden über',
     'admin.connectionFromEnvironment': 'Diese Verbindung kommt aus der Umgebung, '
-      + 'nicht aus einer gespeicherten Einstellung; die Felder unten zeigen sie '
-      + 'als Platzhalter. Wird dieses Formular gespeichert, gilt die gespeicherte '
-      + 'Verbindung beim nächsten Start vor der Umgebung.',
+      + 'nicht aus einer gespeicherten Einstellung. Wird dieses Formular gespeichert, '
+      + 'ob geändert oder nicht, wird sie zu einer eigenen Einstellung, die ab dem '
+      + 'nächsten Start vor der Umgebung gilt.',
     'admin.banner': 'Banner-Text (leer = ausgeblendet)',
     'admin.bindPassword': 'Bind-Passwort',
     'admin.branding': 'Erscheinungsbild',
@@ -3446,6 +3446,7 @@ const TRANSLATIONS = {
     'admin.footer': 'Fußzeile',
     'admin.idAttr': 'Eindeutiges ID-Attribut (entryUUID, Active Directory: objectGUID)',
     'admin.keepStored': 'unverändert lassen',
+    'admin.passwordForThisServer': 'das Passwort für diesen Server',
     'admin.ldap': 'LDAP-Anbindung',
     'admin.ldapEnabled': 'Aktiviert',
     'admin.ldapHint': 'Bei aktivierter Anbindung wird das Passwort gegen das Verzeichnis geprüft. Unbekannte Benutzer werden beim ersten erfolgreichen Login lokal angelegt.',
@@ -5746,16 +5747,19 @@ function drawBranding(branding) {
 }
 
 /**
- * Shows what this process is connected to, for a screen that has nothing stored.
+ * Says where the connection on a screen with nothing stored comes from.
  *
  * The connection can come from three places, and the screen only ever knew one
  * of them: the file the installer or this form writes. An installation
  * configured through the environment therefore saw an empty form under a line
  * saying "connected via postgres" - which reads as "not configured" and is not.
+ * The loader fills it with the running connection now, as values; this is the
+ * note that says they are the environment's.
  *
  * The reason that matters beyond looking wrong: the file wins over the
- * environment. Filling in this form on such an installation overrides the
- * deployment's own settings at the next start, and nothing said so.
+ * environment. Saving this form on such an installation, changed or not, stores
+ * the connection as a setting that overrides the deployment's own at the next
+ * start, and nothing said so.
  */
 function showRunningConnection(form, ds) {
   const note = $('#datasource-source');
@@ -5764,35 +5768,18 @@ function showRunningConnection(form, ds) {
   if (ds.stored) {
     if (note) note.hidden = true;
 
-    for (const field of ['name', 'host', 'port', 'user']) {
-      form.elements[field].placeholder = '';
-    }
-
     return;
   }
 
-  for (const field of ['name', 'host', 'port', 'user']) {
-    form.elements[field].placeholder = running[field] ?? '';
-  }
-
-  // The type is chosen, and this was the one field left blank on purpose.
+  // The type follows what is running even while the form counts as being
+  // edited, which the other fields do not.
   //
-  // The reasoning was that a select cannot hold a placeholder, so filling it
-  // would present a value this form has not stored as though it had. What that
-  // actually produced was worse than the thing it avoided: a dropdown showing
-  // nothing at all, above fields whose placeholders describe a connection of a
-  // type the card would not name - and, because nothing chosen was read as a
-  // server, a port box filled in with 3306 beside them. A real value in one box
-  // and placeholders in the rest.
-  //
-  // And it did not survive a reload. There is no empty option to go back to, so
-  // a browser restoring this form landed on the first one, and the card came up
-  // claiming SQLite on an installation running PostgreSQL.
-  //
-  // So it names what is running, like every other field here. The note above
-  // says where that came from, which is what stops it reading as something
-  // somebody saved.
-  // Unless somebody has chosen one themselves.
+  // It was once the one field left blank, on the reasoning that a select cannot
+  // hold a placeholder; that produced a dropdown showing nothing above fields
+  // describing a connection of a type the card would not name, and a reload
+  // landed it on the first option, claiming SQLite on an installation running
+  // PostgreSQL. So it names what is running, and the note says where that came
+  // from - unless somebody has chosen one themselves.
   //
   // Asked of the control rather than of the form. "Somebody is filling this in"
   // is the right question for the text fields - they hold what was typed and
@@ -5815,10 +5802,117 @@ function showRunningConnection(form, ds) {
   if (note) {
     note.textContent = t('admin.connectionFromEnvironment',
       'This connection comes from the environment, not from a saved setting. '
-      + 'The fields below show it as placeholders. Saving this form stores a '
-      + 'connection that takes precedence over the environment at the next start.');
+      + 'Saving this form, changed or not, stores it as a setting of its own, '
+      + 'which takes precedence over the environment from the next start.');
     note.hidden = false;
   }
+}
+
+/**
+ * What the password box holds while it stands for a password the server keeps.
+ *
+ * The card shows the connection in force, and a password box left empty beside
+ * it read as "no password". The page never receives the password itself: it
+ * would be one click on the eye away from whoever sits at the screen, and a way
+ * for an administrator, who by design reads nobody's hours, to open all of them
+ * in the database. So the box is filled with this instead, masked like any
+ * password, and it is never sent - datasourcePayload turns it back into the
+ * empty field the server reads as "keep the one in force", which it does for the
+ * same server and user only. Naming another one empties the box, and naming the
+ * same one again fills it back, so the box says what saving will do.
+ */
+const KEPT_PASSWORD = '\u2022'.repeat(8);
+
+/** The port a database type is reached on when none is given. */
+function defaultPortOf(dialect) {
+  if (dialect === 'postgres') return '5432';
+  if (dialect === 'mysql') return '3306';
+
+  return '';
+}
+
+/**
+ * Who the connection on the card signs in as, read the way the server compares
+ * it: an empty port is the type's default, a host is not case-sensitive, and the
+ * database name is no part of it - a password belongs to a user on a server.
+ */
+function datasourceAccount(values) {
+  const dialect = (values.dialect ?? '').toLowerCase();
+
+  return JSON.stringify([dialect, (values.host ?? '').trim().toLowerCase(),
+    (values.port ?? '').trim() || defaultPortOf(dialect), values.user ?? '']);
+}
+
+/**
+ * Fills the password box for the connection the card was filled from, or
+ * empties it when that connection has no password.
+ */
+function showKeptPassword(form, source, hasPassword) {
+  const box = form.elements.password;
+
+  if (hasPassword) box.dataset.keptFor = datasourceAccount(source);
+  else delete box.dataset.keptFor;
+
+  box.value = '';
+  followKeptPassword(form);
+}
+
+/**
+ * Keeps the password box in step with the account the card now names.
+ *
+ * While nobody has typed in it, it shows the kept password for the account it
+ * belongs to and nothing for any other; the eye beside it is shut, because there
+ * is nothing behind the dots to reveal. Once somebody types, the box is theirs.
+ */
+function followKeptPassword(form) {
+  const box = form.elements.password;
+  const typed = box.value !== '' && box.value !== KEPT_PASSWORD;
+  const eye = box.closest('.password-field')?.querySelector('button');
+
+  if (typed || box.dataset.keptFor === undefined) {
+    delete box.dataset.kept;
+    if (eye) eye.disabled = false;
+  } else {
+    const kept = box.dataset.keptFor === datasourceAccount(formData(form));
+
+    if (kept) box.dataset.kept = 'yes';
+    else delete box.dataset.kept;
+
+    // Not over a box somebody has just clicked into, which is empty on purpose.
+    if (document.activeElement !== box) box.value = kept ? KEPT_PASSWORD : '';
+    if (eye) eye.disabled = kept;
+  }
+
+  box.placeholder = box.dataset.keptFor !== undefined && !box.dataset.kept && !typed
+    ? t('admin.passwordForThisServer', 'the password for this server')
+    : t('admin.keepStored', 'leave unchanged');
+}
+
+/**
+ * The database card as a request: what saving and testing both send.
+ *
+ * One reader for both, because they had one each: the save put away the fields
+ * the chosen type does not have, and the test sent them as they stood. And the
+ * stand-in in the password box must never leave the page - an untouched box is
+ * an empty password, which the server reads as the one in force.
+ */
+function datasourcePayload(form) {
+  const body = formData(form);
+
+  if (form.elements.password.dataset.kept === 'yes' || body.password === KEPT_PASSWORD) {
+    delete body.password;
+  }
+
+  // A field that is not on screen for this dialect has nothing to say about the
+  // connection, and sending what is left in it would store an SSL mode against
+  // MySQL, or a host against a file on disk.
+  if (!datasourceIsServer()) {
+    for (const field of ['host', 'port', 'user', 'password']) body[field] = '';
+  }
+
+  if (body.dialect !== 'postgres') body.sslMode = '';
+
+  return body;
 }
 
 /**
@@ -5871,7 +5965,7 @@ function syncDatasourceFields() {
   }
 
   if (server && !form.elements.port.value) {
-    form.elements.port.value = form.elements.dialect.value === 'postgres' ? '5432' : '3306';
+    form.elements.port.value = defaultPortOf(form.elements.dialect.value);
   }
 }
 
@@ -5968,25 +6062,32 @@ async function loadAdmin() {
   // stayed open - no note saying where the connection came from, and no
   // placeholders saying what it was. A restored draft did it without anybody
   // touching anything, because restoring one marks the form as being filled in.
+  //
+  // Filled from the connection in force: the stored one, or - where nothing is
+  // stored, which is every installation configured through the environment, a
+  // compose deployment or a container run with DB_* set - the one this process
+  // opened. Those were shown as placeholders once, on the reasoning that they
+  // were not this form's to save; they read as examples rather than as what is
+  // running, and the note beside them says what saving them does instead.
+  const source = ds.stored ? ds : (ds.running ?? {});
+
   if (!beingEdited(dsForm)) {
     for (const field of ['dialect', 'name', 'host', 'port', 'user', 'sslMode']) {
-      dsForm.elements[field].value = ds[field] ?? '';
+      dsForm.elements[field].value = source[field] ?? '';
     }
   }
 
-  // Nothing stored, which is every installation configured through the
-  // environment - a compose deployment, or a container run with DB_* set. The
-  // form is filled from the file the installer or this screen writes, and there
-  // is none, so every field was blank on a screen whose first line said it was
-  // connected.
-  //
-  // Shown as placeholders rather than values, because they are not this form's
-  // to save: typing over a placeholder is how somebody changes the connection,
-  // and leaving it alone has to keep meaning "leave it alone".
   showRunningConnection(dsForm, ds);
 
   // After the values are in, or the port would be prefilled over a stored one.
   syncDatasourceFields();
+
+  // And the password after the port, since the port is part of whose it is.
+  if (!beingEdited(dsForm)) {
+    showKeptPassword(dsForm, source, ds.stored ? ds.hasPassword : ds.runningHasPassword);
+  } else {
+    followKeptPassword(dsForm);
+  }
 
   // What this process is connected to, whoever is typing what: it describes the
   // running application rather than the form.
@@ -6278,18 +6379,24 @@ function wireAdmin() {
     syncDatasourceFields();
   });
 
+  // The password box follows the account the card names; see followKeptPassword.
+  const dsForm = $('#form-datasource');
+
+  for (const name of ['host', 'port', 'user', 'password']) {
+    dsForm.elements[name].addEventListener('input', () => followKeptPassword(dsForm));
+  }
+
+  dsForm.elements.dialect.addEventListener('change', () => followKeptPassword(dsForm));
+
+  // Clicked into, it is empty for typing; left untouched, it is the kept one again.
+  dsForm.elements.password.addEventListener('focus', (e) => {
+    if (e.target.dataset.kept === 'yes') e.target.value = '';
+  });
+  dsForm.elements.password.addEventListener('blur', () => followKeptPassword(dsForm));
+
   $('#form-datasource').addEventListener('submit', (e) => {
     e.preventDefault();
-    const body = formData(e.target);
-
-    // A field that is not on screen for this dialect has nothing to say about the
-    // connection, and sending what is left in it would store an SSL mode against
-    // MySQL, or a host against a file on disk.
-    if (!datasourceIsServer()) {
-      for (const field of ['host', 'port', 'user', 'password']) body[field] = '';
-    }
-
-    if (body.dialect !== 'postgres') body.sslMode = '';
+    const body = datasourcePayload(e.target);
 
     saveForm(e.target,
       () => api('/settings/datasource', { method: 'PUT', body: JSON.stringify(body) }),
@@ -6321,7 +6428,7 @@ function wireAdmin() {
 
   $('#datasource-test').addEventListener('click', () => {
     runConnectionTest($('#datasource-test-result'), () => api('/settings/datasource/test',
-      { method: 'POST', body: JSON.stringify(formData($('#form-datasource'))) }));
+      { method: 'POST', body: JSON.stringify(datasourcePayload($('#form-datasource'))) }));
   });
 
   $('#ldap-test').addEventListener('click', () => {

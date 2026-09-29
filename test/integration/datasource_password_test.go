@@ -7,9 +7,15 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // A password left out of the form stands for the one belonging to the connection
@@ -54,6 +60,81 @@ func TestTheKeptPasswordGoesOnlyToItsOwnServer(t *testing.T) {
 
 	if got := caught(t, passwords); got == "the-stored-secret" {
 		t.Error("testing a connection for another user sent the stored password to it")
+	}
+}
+
+// A connection from the environment keeps its password when the card is saved
+// or tested as it stands.
+//
+// The card shows the connection in force as values, the environment's as much as
+// a stored one, and its password as a filled box the page never receives. So an
+// untouched box has to mean the password in force - which, with nothing stored,
+// is the one the environment gave. It meant only a stored one: saving the card
+// unchanged on a compose deployment wrote a connection with no password, which
+// takes precedence over the environment at the next start, and that start could
+// no longer sign in to its own database.
+//
+// Only a server has a password, so this runs where GTR_TEST_DSN names one - the
+// PostgreSQL and MySQL legs.
+func TestAnUntouchedPasswordKeepsTheOneTheEnvironmentGave(t *testing.T) {
+	t.Parallel()
+
+	dsn := os.Getenv(harness.DSNEnv)
+	if dsn == "" {
+		t.Skipf("%s names no database server, and SQLite has no password", harness.DSNEnv)
+	}
+
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("%s is not a URL: %v", harness.DSNEnv, err)
+	}
+
+	given, _ := parsed.User.Password()
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	var shown struct {
+		Stored             bool           `json:"stored"`
+		RunningHasPassword bool           `json:"runningHasPassword"`
+		Running            map[string]any `json:"running"`
+	}
+
+	admin.must(admin.api(http.MethodGet, "/settings/datasource", nil), http.StatusOK).Data(t, &shown)
+
+	if shown.Stored {
+		t.Fatal("the instance has a stored connection, so this case measures nothing")
+	}
+
+	if !shown.RunningHasPassword {
+		t.Error("the card is not told the running connection has a password, so it cannot show one")
+	}
+
+	// The card as it stands: the connection in force, the password box untouched.
+	untouched := shown.Running
+	untouched["password"] = ""
+
+	var probed struct {
+		OK bool `json:"ok"`
+	}
+
+	admin.must(admin.api(http.MethodPost, "/settings/datasource/test", untouched),
+		http.StatusOK, http.StatusCreated).Data(t, &probed)
+
+	if !probed.OK {
+		t.Error("testing the connection in force, untouched, did not sign in to it")
+	}
+
+	admin.must(admin.api(http.MethodPut, "/settings/datasource", untouched), http.StatusOK)
+
+	saved, ok := appconfig.LoadDatasource(filepath.Join(a.Dir(), "configs", "datasource.json"))
+	if !ok {
+		t.Fatal("saving the card stored nothing")
+	}
+
+	if saved.Password != given {
+		t.Errorf("the stored connection carries the password %q, want the one the environment gave, "+
+			"or the next start cannot sign in to its database", saved.Password)
 	}
 }
 
