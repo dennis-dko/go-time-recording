@@ -3549,7 +3549,7 @@ const TRANSLATIONS = {
     'err.syncDiffersFromPreview': 'Das Verzeichnis antwortet inzwischen anders als in der bestätigten '
       + 'Vorschau: Dieser Lauf würde {0} Konto/Konten löschen, darum wurde nichts geändert. Bitte erneut '
       + 'prüfen.',
-    'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat überhaupt keine Benutzer geliefert; es wird niemand gelöscht.',
+    'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat niemanden mit einer Mailadresse geliefert; es wird niemand gelöscht.',
     'err.syncWouldRemoveTooMany': 'Würde {0} von {1} Verzeichniskonten entfernen ({2} %), mehr als die '
       + 'Sicherheitsgrenze von {3} %. Prüfen Sie Filter und Base-DN des Verzeichnisses und heben Sie die '
       + 'Löschgrenze unter „Betrieb und Grenzwerte“ oder LDAP_SYNC_MAX_DELETE_RATIO an, wenn das wirklich '
@@ -3583,6 +3583,7 @@ const TRANSLATIONS = {
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
+    'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warten Sie auf den nächsten.',
     'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
     'err.twoFactorNotStarted': 'Bitte zuerst die Zwei-Faktor-Einrichtung starten.',
     'err.twoFactorRequired': 'Ein Zwei-Faktor-Code ist erforderlich.',

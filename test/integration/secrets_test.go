@@ -83,7 +83,9 @@ func TestASecondFactorIsNotReadableInTheDatabase(t *testing.T) {
 	// And the application can still read its own writing, which is the half that
 	// encryption breaks when it is done wrong: a second factor nobody can verify
 	// locks every enrolled account out.
-	again, err := security.CurrentTOTPCode(setup.Secret)
+	// The next step's code: the current one was spent confirming, and a code is
+	// accepted once only.
+	again, err := security.TOTPCodeAt(setup.Secret, time.Now().Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("generate a code: %v", err)
 	}

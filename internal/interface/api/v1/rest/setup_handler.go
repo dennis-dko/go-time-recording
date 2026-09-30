@@ -102,10 +102,10 @@ func (h *SetupHandler) Complete(c *gofr.Context) (any, error) {
 // against a value somebody supplies.
 //
 // And the installation must never have been taken into use, which the session
-// service decides by whether the built-in administrator still has to choose a
-// password. That is the same condition the documented initial password already
-// turns on, so this grants nothing that was not already reachable - and it stops
-// granting it at the same moment.
+// service decides by whether the documented initial password still opens the
+// built-in administrator, and opens it alone. That is the same condition the
+// documented password already turns on, so this grants nothing that was not
+// already reachable - and it stops granting it at the same moment.
 //
 // Not behind requireSystemAdmin, unlike everything else on this handler: there
 // is nobody signed in yet, which is the entire point.
