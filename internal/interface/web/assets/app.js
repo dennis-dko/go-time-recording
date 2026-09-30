@@ -1066,6 +1066,23 @@ function toast(message, kind = 'ok', detail = '') {
   }, linger);
 }
 
+/**
+ * Reports a failed request in the corner: the sentence, and folded away under it
+ * what could not be turned into one.
+ *
+ * toast takes that as its third argument, and most callers left it out - so an
+ * internal failure, whose sentence says the technical details are underneath,
+ * arrived with nothing underneath and without the reference that finds its log
+ * line. One function builds both halves, so a caller cannot pass the first and
+ * forget the second. lead names what failed, in front of the refusal's own
+ * sentence.
+ */
+function toastFailure(err, lead = '') {
+  const message = lead ? `${lead}: ${err.message}` : err.message;
+
+  toast(message, 'error', refusalDetail(err.refusal));
+}
+
 /** How many notices may be on screen, and how long each one stays. */
 const TOAST_LIMIT = 4;
 const TOAST_MIN_MS = 4000;
@@ -6495,7 +6512,7 @@ async function runConnectionTest(result, attempt) {
     result.className = 'muted minus';
     sayAtLeastSomething(result);
 
-    toast(err.message, 'error', refusalDetail(err.refusal));
+    toastFailure(err);
   }
 }
 
@@ -6702,7 +6719,7 @@ async function mutate(fn, successMessage, after) {
     // banner is the message; these would be noise piled on it.
     if (duringARestart()) return;
 
-    toast(err.message, 'error', refusalDetail(err.refusal));
+    toastFailure(err);
 
     return;
   }
@@ -6722,8 +6739,7 @@ async function mutate(fn, successMessage, after) {
     // Named as what it is. The save is done and is not coming undone; what
     // failed is the screen catching up, and the way out of that is to load the
     // page again rather than to save a second time.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`,
-      'error', refusalDetail(err.refusal));
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -6959,7 +6975,7 @@ async function deleteUser(user) {
     return;
   } catch (err) {
     if (err.status !== 409) {
-      toast(err.message, 'error');
+      toastFailure(err);
 
       return;
     }
@@ -7102,7 +7118,7 @@ async function submitLogin(e) {
     // Signed in, but something behind it would not load. Staying on the
     // application with an explanation beats being thrown back to a sign-in
     // screen that will accept the same password and do this again.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -8736,7 +8752,7 @@ async function finishSetup() {
     // done and is not coming undone, so this must not read as the wizard having
     // failed. What failed is the screen catching up, and the way out is to load
     // the page again rather than to run the wizard a second time.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -9282,7 +9298,7 @@ function wireUpdateCheck() {
       // Including "asked a moment ago", which is a sentence rather than a
       // failure: the answer on the card is current, and saying so is better than
       // a button that appears to do nothing.
-      toast(err.message, 'error');
+      toastFailure(err);
     } finally {
       button.disabled = false;
       button.textContent = wasSaying;
@@ -9324,7 +9340,7 @@ function wireUpdate() {
       state = await api('/settings/update', { method: 'POST' });
     } catch (err) {
       overlay.hidden = true;
-      toast(err.message, 'error');
+      toastFailure(err);
 
       return;
     }
@@ -9372,8 +9388,7 @@ function wireUpdate() {
       overlay.hidden = true;
       await loadUpdate();
 
-      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`,
-        'error');
+      toastFailure(err, t('restart.failed', 'The restart could not be started'));
 
       return;
     }
@@ -9729,7 +9744,7 @@ function wireRestart() {
       await api('/settings/restart', { method: 'POST' });
     } catch (err) {
       overlay.hidden = true;
-      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`, 'error');
+      toastFailure(err, t('restart.failed', 'The restart could not be started'));
 
       return;
     }
@@ -10917,7 +10932,7 @@ async function exportEvaluation(button, name, build) {
   try {
     await downloadDocument(await build(), name);
   } catch (err) {
-    toast(err.message, 'error');
+    toastFailure(err);
   } finally {
     button.disabled = false;
 
@@ -11990,7 +12005,7 @@ function wirePasskeys() {
 
       await greetAfterSignIn();
     } catch (err) {
-      toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+      toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
     }
   });
 }
@@ -13569,7 +13584,7 @@ async function init() {
 
     resetBookingDate();
   } catch (err) {
-    toast(`${t('msg.initFailed', 'Initialisation failed')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.initFailed', 'Initialisation failed'));
   }
 
   try {
