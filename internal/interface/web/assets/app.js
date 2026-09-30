@@ -13667,12 +13667,40 @@ async function init() {
     // finishes by throwing the page away, so the answer to the button somebody
     // pressed arrives here rather than there.
     saySoAfterTheReload();
-  } catch {
-    // No usable session: the sign-in screen is the whole interface until
-    // there is one. Unless somebody signed in while this was running, which
-    // showLogin decides - it is the same question wherever it is asked from.
-    showLogin();
+  } catch (err) {
+    afterAFailedFirstLoad(err);
   }
+}
+
+/**
+ * What a first load that failed leaves on screen.
+ *
+ * A session /me accepted is not undone by a loader that failed after it - a
+ * query the database refused, a connection that dropped part-way. Showing the
+ * sign-in form here put it over a session that was fine, said nothing about
+ * what had failed, and made signing in again open a second one. The reader
+ * keeps the screen they are signed into and is told what did not load, as a
+ * reload that fails after a save is.
+ *
+ * Not on a 401, which is the session itself refused: a first load that failed
+ * for want of one can land after somebody signed in underneath it, and that
+ * belongs to showLogin, which already answers exactly that.
+ */
+function afterAFailedFirstLoad(err) {
+  if (me.user && err?.status !== 401) {
+    restoreDrafts();
+    hideLogin();
+    openTheStartingView({ restoring: true });
+    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`,
+      'error', refusalDetail(err.refusal));
+
+    return;
+  }
+
+  // No usable session: the sign-in screen is the whole interface until there is
+  // one. Unless somebody signed in while this was running, which showLogin
+  // decides - it is the same question wherever it is asked from.
+  showLogin();
 }
 
 document.addEventListener('DOMContentLoaded', init);
