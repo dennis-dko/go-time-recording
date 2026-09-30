@@ -814,6 +814,150 @@ not in the database dump below:
 docker compose exec -T openldap slapcat -f /etc/ldap/slapd.conf | gzip > ldap-$(date +%F).ldif.gz
 ```
 
+## Signing in with Kerberos
+
+Where the people using this sign in to a Windows domain — or hold a Kerberos
+ticket some other way — their browser can present that ticket instead of a
+password. It is off until a keytab is given, and it needs the directory
+configured under *Settings*: a ticket says who somebody is, and the directory is
+where that name becomes an account. With a keytab and no directory nothing is
+offered.
+
+The sign-in screen asks whether a ticket sign-in is on offer and, where it is,
+tries one by itself. A browser that trusts this address answers with its ticket
+and is signed in without seeing the form; one that does not, or holds no ticket,
+is shown the form as always, with a button beside it to try again. After signing
+out the screen does not try by itself in that tab — otherwise signing out would
+sign straight back in.
+
+What a ticket reaches:
+
+- **The account a directory password sign-in reaches.** Its owner is looked up
+  with the directory's user filter, first by the name in the ticket — `jdoe`,
+  which the default filter finds as `uid` or `sAMAccountName` — and then as
+  `jdoe@EXAMPLE.COM`, which finds an Active Directory account by its
+  `userPrincipalName` once the filter asks for that attribute. An account here
+  with the same address becomes the directory's, as it does when its owner
+  signs in with the directory's password.
+- **Only tickets of the keytab's realm.** A trusted domain's KDC can issue a
+  ticket for this service too, sealed with the same key; its owner is somebody
+  else whose name the directory here may happen to hold, so it is refused.
+- **A second factor is still asked for.** The ticket stands in for the password
+  and for nothing else: an account with an authenticator code types it in, as
+  it would after a password.
+- **Never the built-in administrator, and never anybody who administers** — the
+  rule a directory sign-in keeps, for the same reason: the directory must not be
+  a way into the installation's own administration.
+
+### The service principal and the keytab
+
+A browser asks its KDC for a ticket to `HTTP/` and the name in the address bar,
+so the principal is named after the name people use — `HTTP/time.example.com`,
+never an IP address. Give that name an A record rather than a CNAME, or
+register the principal for the name the CNAME points at as well: Chrome and
+Edge resolve a CNAME before asking, unless the `DisableAuthNegotiateCnameLookup`
+policy says otherwise.
+
+In Active Directory the principal belongs to an account of its own — a user with
+a long random password that does not expire, and *This account supports
+Kerberos AES 256 bit encryption* ticked, or tickets arrive sealed with a key the
+keytab does not hold:
+
+```powershell
+setspn -S HTTP/time.example.com EXAMPLE\svc-timerecording
+ktpass /princ HTTP/time.example.com@EXAMPLE.COM /mapuser EXAMPLE\svc-timerecording `
+  /crypto AES256-SHA1 /ptype KRB5_NT_PRINCIPAL /pass * /out http.keytab
+```
+
+With MIT Kerberos or FreeIPA:
+
+```bash
+kadmin -q "addprinc -randkey HTTP/time.example.com"
+kadmin -q "ktadd -k http.keytab HTTP/time.example.com"
+```
+
+**The keytab is the service's key.** Whoever has it can pose as this service to
+every browser in the realm, so it is kept like a certificate's private key:
+readable by the account the application runs as and by nobody else, never in
+`.env`, never in an image. Resetting the service account's password changes the
+key, and the keytab has to be made again.
+
+### Handing it to the application
+
+It is read once, at start. A keytab that cannot be read — a wrong path, a
+permission, a file that is not a keytab — turns the sign-in off and says why,
+rather than stopping an installation whose passwords still work:
+
+```text
+could not read the Kerberos keytab: ...; signing in with a ticket is off
+```
+
+and one that can be read says so as well:
+
+```text
+signing in with a Kerberos ticket of realm EXAMPLE.COM is on
+```
+
+- **A · B, compose:** add [`compose.kerberos.yaml`](compose.kerberos.yaml) and
+  set `KERBEROS_KEYTAB_FILE` in `.env` to the keytab's path on the server. It is
+  mounted read-only, the container runs as uid 10001, and that user has to be
+  able to read it (`chown 10001 http.keytab && chmod 0400 http.keytab`). A path
+  that does not exist stops the start rather than mounting an empty directory
+  in its place.
+
+  ```bash
+  docker compose -f compose.yaml -f compose.kerberos.yaml up -d
+  ```
+
+- **C · single binary:** `KERBEROS_KEYTAB` in the environment file — the
+  keytab's path, readable by the service's user.
+- **D · bare container:** mount it and name it:
+  `-v /etc/go-time-recording/http.keytab:/run/secrets/http.keytab:ro -e KERBEROS_KEYTAB=/run/secrets/http.keytab`.
+
+`KERBEROS_SERVICE_PRINCIPAL` is only needed when the keytab holds keys for more
+than one service: it names the one to use, `HTTP/time.example.com`, with or
+without `@EXAMPLE.COM`.
+
+### The browsers
+
+A browser sends a ticket only to an address it has been told to trust, and that
+part is set up on the clients rather than here:
+
+- **Edge and Chrome on Windows** trust the *Local intranet* zone, or the
+  addresses the `AuthServerAllowlist` policy names (`*.example.com`). On
+  Windows a browser that does not trust the address may ask for a user name and
+  password in a dialog of its own instead; cancelling it leaves the sign-in
+  form.
+- **Chrome and Edge on macOS and Linux** need the `AuthServerAllowlist` policy.
+- **Firefox** needs `network.negotiate-auth.trusted-uris`, in `about:config` or
+  as `Authentication.SPNEGO` in its enterprise policies.
+
+Over HTTPS, like everything else here: the session a ticket opens is a cookie,
+and a cookie sent in the clear can be taken by whoever reads the traffic.
+
+### When a browser falls back to the form
+
+A refused ticket is invisible from the browser — the form simply appears — so
+the reason is written to the log as a warning, prefixed `Kerberos:`. The usual
+ones:
+
+- **The clocks.** A ticket is refused when this server's clock and the KDC's are
+  more than five minutes apart. Keep NTP running here.
+- **The key.** "integrity verification failed" or a key version the keytab does
+  not hold: the keytab is older than the service account's password, or the
+  ticket was issued for another principal — a CNAME, see above.
+- **NTLM rather than Kerberos.** "SPNEGO OID of MechToken is not of type KRB5":
+  a browser that could not get a ticket offered NTLM inside the same header,
+  which is refused - usually a machine outside the domain, or an address the
+  browser does not trust.
+- **Nobody by that name.** "the directory holds nobody named …": the ticket was
+  good and the user filter found neither form of the name.
+
+One case the log cannot help with: behind a proxy, a ticket that lists client
+addresses is compared with the address the request arrives from, which is the
+proxy's. Active Directory issues tickets without addresses, so this only
+concerns a KDC configured to add them.
+
 ## Updating from the interface
 
 *Settings* carries a **Version** card. It says what is running, what the newest

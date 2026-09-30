@@ -18,6 +18,10 @@ type AuthHandler struct {
 	issuer   string
 	timezone InstanceTimezoneFunc
 
+	// kerberos says whether a sign-in with a Kerberos ticket can succeed here;
+	// nil where none is set up. See WithKerberos.
+	kerberos func() bool
+
 	// maintenance is what the installation is doing, if anything. Nil on an
 	// installation that has no maintenance state to read, which is the same as
 	// not being out of service.

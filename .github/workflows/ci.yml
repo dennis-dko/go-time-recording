@@ -104,6 +104,7 @@ jobs:
           TLS_EMAIL=ops@example.com
           LDAP_ADMIN_PASSWORD=ci-only-not-a-real-password
           LDAP_BIND_PASSWORD=ci-only-not-a-real-password
+          KERBEROS_KEYTAB_FILE=/etc/go-time-recording/http.keytab
           ENV
 
           for files in \
@@ -111,8 +112,10 @@ jobs:
             "-f compose.yaml -f compose.tls.yaml" \
             "-f compose.yaml -f compose.tracing.yaml" \
             "-f compose.yaml -f compose.ldap.yaml" \
+            "-f compose.yaml -f compose.kerberos.yaml" \
             "-f compose.yaml -f compose.tls.yaml -f compose.tracing.yaml" \
-            "-f compose.yaml -f compose.tls.yaml -f compose.ldap.yaml -f compose.tracing.yaml"
+            "-f compose.yaml -f compose.tls.yaml -f compose.ldap.yaml -f compose.tracing.yaml" \
+            "-f compose.yaml -f compose.tls.yaml -f compose.ldap.yaml -f compose.tracing.yaml -f compose.kerberos.yaml"
           do
             echo "::group::compose $files"
             docker compose --env-file .env.ci $files config >/dev/null
@@ -124,6 +127,13 @@ jobs:
           # grown a default.
           if docker compose -f compose.yaml config >/dev/null 2>&1; then
             echo "compose.yaml started without DB_PASSWORD - the :? guard is gone" >&2
+            exit 1
+          fi
+
+          # The same for the keytab's path. The environment beats --env-file,
+          # so this empties the one value and keeps the rest.
+          if KERBEROS_KEYTAB_FILE= docker compose --env-file .env.ci -f compose.yaml -f compose.kerberos.yaml config >/dev/null 2>&1; then
+            echo "compose.kerberos.yaml started without KERBEROS_KEYTAB_FILE - the :? guard is gone" >&2
             exit 1
           fi
 

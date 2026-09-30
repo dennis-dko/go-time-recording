@@ -3,6 +3,7 @@ package kerberos
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -23,6 +24,14 @@ type Acceptor struct {
 	keytab   *keytab.Keytab
 	realm    string
 	settings []func(*service.Settings)
+	logger   Logger
+}
+
+// Logger is where a refused ticket says why: the part of GoFr's logger this
+// needs.
+type Logger interface {
+	Warnf(format string, args ...any)
+	Debugf(format string, args ...any)
 }
 
 // Load reads the keytab at path.
@@ -32,7 +41,12 @@ type Acceptor struct {
 // service. Its realm is the only one whose tickets are taken: a directory is
 // asked about jdoe, and jdoe of a realm this installation's directory does not
 // hold is somebody else.
-func Load(path, servicePrincipal string) (*Acceptor, error) {
+//
+// logger hears why a ticket was refused, and may be nil. A browser whose ticket
+// is refused falls back to the sign-in form as quietly as one that has none, so
+// without it a clock too far from the KDC's, a key the keytab does not hold or a
+// browser offering NTLM instead leaves no trace anywhere.
+func Load(path, servicePrincipal string, logger Logger) (*Acceptor, error) {
 	kt, err := keytab.Load(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading the keytab %s: %w", path, err)
@@ -53,7 +67,32 @@ func Load(path, servicePrincipal string) (*Acceptor, error) {
 		settings = append(settings, service.KeytabPrincipal(name))
 	}
 
-	return &Acceptor{keytab: kt, realm: realm, settings: settings}, nil
+	if logger != nil {
+		settings = append(settings, service.Logger(log.New(gokrb5Lines{logger}, "", 0)))
+	}
+
+	return &Acceptor{keytab: kt, realm: realm, settings: settings, logger: logger}, nil
+}
+
+// gokrb5Lines passes gokrb5's log on: a refusal as a warning, since it names the
+// reason, and an acceptance at debug, since it names the person - a line for
+// every sign-in is somebody's name in the log for every sign-in.
+//
+// Told apart by gokrb5's wording, which is all there is to tell them by. Were it
+// to change, acceptances would arrive as warnings: noisy, and never a refusal
+// gone missing.
+type gokrb5Lines struct{ logger Logger }
+
+func (g gokrb5Lines) Write(p []byte) (int, error) {
+	line := strings.TrimSpace(string(p))
+
+	if strings.HasSuffix(line, "SPNEGO authentication succeeded") {
+		g.logger.Debugf("Kerberos: %s", line)
+	} else {
+		g.logger.Warnf("Kerberos: %s", line)
+	}
+
+	return len(p), nil
 }
 
 // realmOf is the realm of the key servicePrincipal names, or of the only service
@@ -97,6 +136,12 @@ func (a *Acceptor) Handler(next func(w http.ResponseWriter, r *http.Request, who
 	accepted := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := goidentity.FromHTTPRequestContext(r)
 		if id == nil || !id.Authenticated() || !strings.EqualFold(id.Domain(), a.realm) {
+			// gokrb5 accepted this one, so the refusal is ours to explain.
+			if id != nil && a.logger != nil {
+				a.logger.Warnf("Kerberos: a ticket of realm %s was refused; only %s's are taken",
+					id.Domain(), a.realm)
+			}
+
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 
 			return

@@ -42,7 +42,11 @@ func (s *SessionService) KerberosLogin(ctx context.Context, name, realm, totpCod
 	if directoryUser == nil {
 		s.count(ctx, MetricSignInFailures, "reason", SignInFailureCredentials)
 
-		return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
+		// As vague to the caller as any refused sign-in; the message is for the
+		// log, where a ticket that verified and reached nobody is most often a
+		// user filter that does not match the name tickets carry.
+		return nil, apperror.Invalidf("the directory holds nobody named %s or %s@%s", name, name, realm).
+			WithCode("invalidCredentials")
 	}
 
 	user, err := s.provisionExternal(ctx, directoryUser)

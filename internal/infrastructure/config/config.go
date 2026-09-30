@@ -99,6 +99,15 @@ type Config struct {
 	HTTPPort    int
 	TLSStaging  bool
 
+	// KerberosKeytab is the keytab a sign-in with a browser's Kerberos ticket is
+	// checked with; empty means no such sign-in. A file on the server, like a
+	// certificate's key, because it is a secret of the same order.
+	KerberosKeytab string
+
+	// KerberosServicePrincipal names the key in it to use - HTTP/zeit.example.com
+	// - and is needed only when the keytab holds more than one service.
+	KerberosServicePrincipal string
+
 	// HSTSMaxAge tells browsers to refuse plain HTTP for this long. It is only
 	// sent over connections that already are HTTPS.
 	HSTSMaxAge time.Duration
@@ -322,6 +331,9 @@ func Load(p Provider) Config {
 		TLSPort:     intOr(p.GetOrDefault("TLS_PORT", ""), defaultTLSPort),
 		HTTPPort:    intOr(p.GetOrDefault("TLS_REDIRECT_PORT", ""), defaultHTTPRedirectPort),
 		TLSStaging:  boolOr(p.GetOrDefault("TLS_STAGING", "false"), false),
+
+		KerberosKeytab:           strings.TrimSpace(p.Get("KERBEROS_KEYTAB")),
+		KerberosServicePrincipal: strings.TrimSpace(p.Get("KERBEROS_SERVICE_PRINCIPAL")),
 
 		HSTSMaxAge:      durationOr(p.GetOrDefault("HSTS_MAX_AGE", ""), defaultHSTSMaxAge),
 		RateLimit:       intOr(p.GetOrDefault("RATE_LIMIT", ""), defaultRateLimit),

@@ -1,0 +1,32 @@
+# Overlay for signing in with the browser's Kerberos ticket.
+#
+#   docker compose -f compose.yaml -f compose.kerberos.yaml up -d
+#
+# It joins any of the other arrangements: it adds two environment variables and
+# one read-only file, and replaces nothing.
+#
+# The keytab holds this service's key - whoever has it can pose as this service
+# to every browser in the realm - so it stays a file on the server, mounted
+# read-only from KERBEROS_KEYTAB_FILE, and is never written into .env or into an
+# image. The container runs as uid 10001, which has to be able to read it.
+#
+# A ticket's owner is looked up in the directory configured under Settings, so
+# without one the sign-in is not offered. "Signing in with Kerberos" in
+# OPERATIONS.md says how to make the service principal and the keytab, and what
+# the browsers need.
+
+services:
+  app:
+    environment:
+      KERBEROS_KEYTAB: /run/secrets/http.keytab
+      # Empty lets the keytab decide, which is right while it holds one service.
+      KERBEROS_SERVICE_PRINCIPAL: ${KERBEROS_SERVICE_PRINCIPAL:-}
+    volumes:
+      - type: bind
+        source: ${KERBEROS_KEYTAB_FILE:?set KERBEROS_KEYTAB_FILE in .env to the keytab's path on this server}
+        target: /run/secrets/http.keytab
+        read_only: true
+        # A mistyped path stops the start. Created, it would be an empty
+        # directory where the keytab should be, and the sign-in quietly off.
+        bind:
+          create_host_path: false

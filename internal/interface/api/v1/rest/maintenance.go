@@ -160,6 +160,8 @@ func maintenanceExempt(r *http.Request) bool {
 		return true
 	case base + "/auth/passkey", base + "/auth/passkey/login":
 		return true
+	case base + "/auth/kerberos":
+		return true
 	case base + "/me", base + "/maintenance":
 		// /me so the interface knows who it is talking to and can decide what to
 		// show; /maintenance so it can read and clear the state.

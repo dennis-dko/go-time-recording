@@ -13,7 +13,7 @@ import (
 // limited drives count sign-in attempts through the limiter and reports how
 // many were refused.
 //
-// The path is /auth/login because that is one of the two the limiter guards at
+// The path is /auth/login because that is one of the few the limiter guards at
 // all; anything else is waved through and would prove nothing.
 func limited(t *testing.T, handler http.Handler, count int, remoteAddr string, forwarded func(int) string) int {
 	t.Helper()
@@ -134,5 +134,40 @@ func TestWithoutAForwardedHeaderTheConnectionIsTheClient(t *testing.T) {
 
 	if refused := limited(t, limiter, 10, "203.0.113.9:5555", nil); refused != 7 {
 		t.Errorf("want 7 of 10 refused, got %d", refused)
+	}
+}
+
+// The ticket sign-in is limited as the password one is, since a second factor is
+// guessed through either. Asking whether it is on offer is not: every sign-in
+// screen asks, and a budget spent on that is one a person no longer has.
+func TestATicketSignInIsLimitedAndAskingAboutOneIsNot(t *testing.T) {
+	t.Parallel()
+
+	limiter := rest.NewRateLimiter(3, time.Minute).Middleware()(passes())
+
+	refused := func(method string) int {
+		count := 0
+
+		for range 10 {
+			r := httptest.NewRequest(method, "/api/v1/auth/kerberos", nil)
+			r.RemoteAddr = "192.0.2.10:4000"
+
+			w := httptest.NewRecorder()
+			limiter.ServeHTTP(w, r)
+
+			if w.Code == http.StatusTooManyRequests {
+				count++
+			}
+		}
+
+		return count
+	}
+
+	if n := refused(http.MethodGet); n != 0 {
+		t.Errorf("asking whether a ticket sign-in is on offer was refused %d times in 10", n)
+	}
+
+	if n := refused(http.MethodPost); n != 7 {
+		t.Errorf("10 ticket sign-ins against a limit of 3 were refused %d times, want 7", n)
 	}
 }

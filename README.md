@@ -283,7 +283,7 @@ exactly those checksums.
 | API | REST under `/api/v1`, documented at `/api-docs` |
 | Web interface | Embedded via `go:embed`, vanilla JS with no build step |
 | Access control | RBAC with roles administered at run time; bcrypt password hashes |
-| Sign-in | Session cookies, optional passkeys and TOTP two-factor per user |
+| Sign-in | Session cookies, optional passkeys and TOTP two-factor per user, and a browser's Kerberos ticket where a keytab and a directory are configured |
 | Live log | The process log, filterable and searchable, for the built-in administrator |
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
@@ -688,6 +688,17 @@ Accounts are also created on first successful sign-in, so someone can start
 working without being provisioned first. Local-only accounts keep working
 alongside directory ones. Roles and permissions always stay local — the
 directory decides *who you are*, this application decides *what you may do*.
+
+### Signing in with a Kerberos ticket
+
+Where people sign in to a Windows domain, their browser can present its Kerberos
+ticket instead of a password. The operator places a keytab on the server and
+names it in `KERBEROS_KEYTAB`; the ticket's owner is then looked up in the
+directory configured here, and signed in to the same account the directory's
+password reaches — second factor included. The sign-in screen tries a ticket by
+itself and falls back to the form without one.
+[`deploy/OPERATIONS.md`](deploy/OPERATIONS.md) says how to make the keytab and
+what the browsers need.
 
 ### Synchronisation
 

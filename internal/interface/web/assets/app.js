@@ -3584,6 +3584,7 @@ const TRANSLATIONS = {
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
     'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warten Sie auf den nächsten.',
+    'err.kerberosOff': 'Die Anmeldung mit einem Kerberos-Ticket ist auf dieser Installation nicht eingerichtet.',
     'err.kerberosNeedsDirectory': 'Eine Kerberos-Anmeldung wird im Verzeichnis nachgeschlagen, und hier ist kein Verzeichnis eingerichtet.',
     'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
     'err.twoFactorNotStarted': 'Bitte zuerst die Zwei-Faktor-Einrichtung starten.',
