@@ -140,9 +140,10 @@
   * *Read, nothing found:* the crop editor, `administration`, `updating`, `restart`, `timezone`, `theme`, `stopwatch`.
   * *Read, one each:* `mutations`, `passkeys`, the calendar, `two-factor`, `API tokens`, `metrics and tracing`, `maintenance`, `operation & limits`, `revealing a password`.
   * *Read, two each:* `bootstrap`, `sign-in`, the setup wizard, the guided tour, the charts.
-  * *Read, three each:* `transport`, `utils`, `i18n`, `export and import`, `an evaluation as a document`.
+  * *Read, three each:* `utils`, `i18n`, `export and import`, `an evaluation as a document`.
+  * *Read, four:* `transport`.
   * *Also read:* `announcements` (the event-stream client), `live log`, the loaders in `views`, the draft machinery, the table/bulk-delete/form helpers, the date fields.
-  * **Every section has now been read once, and that is a smaller claim than it sounds.** It means one pair of eyes went through each of them against the invariants in this file - not that the file is correct. Three of the last five findings were in sections already marked read, reached by a scan derived from somewhere else, so a second pass over a "clean" section is not wasted effort. The rotation starts again at `transport`, and what has changed is that the shapes below are known to look for.
+  * **Every section has now been read once, and that is a smaller claim than it sounds.** It means one pair of eyes went through each of them against the invariants in this file - not that the file is correct. Three of the last five findings were in sections already marked read, reached by a scan derived from somewhere else, so a second pass over a "clean" section is not wasted effort. The rotation starts again at `transport`, and what has changed is that the shapes below are known to look for. **The second pass has read `transport`** (2026-09-30: does every way a request can fail reach the reader as a sentence in their language?), and it yielded one: a request that never arrived was handed on as the browser's own exception, "Failed to fetch" on a German screen, by `api()` and by the three requests that ask `fetch` directly - now `reach`, and a test that it is the only caller. Next is `mutations`.
 
   **The shapes that keep coming back**, which are worth more than the list above, because each one predicted the next find:
 

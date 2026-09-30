@@ -265,6 +265,33 @@ function refusalFrom(res, body) {
   return err;
 }
 
+/**
+ * fetch, with a request that never arrived put into words.
+ *
+ * fetch failing before there is an answer - the server stopped, the connection
+ * dropped - throws the browser's own exception, worded in its language and its
+ * own way: "Failed to fetch" in one, "NetworkError when attempting to fetch
+ * resource." in another. The sentence is ours; the browser's words go where a
+ * refusal's original words go, under it. Every request goes through here, api()
+ * and the three that cannot use it, so none of them can forget.
+ *
+ * An aborted request goes back as it came: whoever aborted it asked for it, and
+ * api() tells its own timeout from a caller's.
+ */
+async function reach(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (options?.signal?.aborted) throw err;
+
+    const unreachable = new Error(t('msg.unreachable',
+      'The server could not be reached. Check the connection and try again.'));
+    unreachable.refusal = { detail: err.message };
+    unreachable.cause = err;
+
+    throw unreachable;
+  }
+}
 
 async function api(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
@@ -291,7 +318,7 @@ async function api(path, options = {}) {
   let res;
 
   try {
-    res = await fetch(API + path, {
+    res = await reach(API + path, {
       ...options,
       headers,
       signal: giveUp ? giveUp.signal : options.signal,
@@ -3593,6 +3620,7 @@ const TRANSLATIONS = {
     'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
     'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
+    'msg.unreachable': 'Der Server war nicht erreichbar. Bitte die Verbindung prüfen und es erneut versuchen.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
     'err.chartNotAPicture': 'Das Diagramm konnte nicht gelesen werden. '
       + 'Bitte die Auswertung erneut anzeigen und dann exportieren.',
@@ -10397,7 +10425,7 @@ async function exportWorkbook() {
  * check, save - and the two callers below differ only in how they ask.
  */
 async function downloadFile(url, name, extension, request = {}) {
-  const res = await fetch(url, { credentials: 'same-origin', ...request });
+  const res = await reach(url, { credentials: 'same-origin', ...request });
 
   // Everything api() reads off an answer that is not its body. Only the body is
   // this function's own business - it wants a blob, which is why it asks
@@ -10482,7 +10510,7 @@ async function sendWorkbook(dryRun) {
 
   // No Content-Type of our own: the browser has to set it, because only it knows
   // the multipart boundary it generated.
-  const res = await fetch(`${API}/timesheets/import`, {
+  const res = await reach(`${API}/timesheets/import`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'X-CSRF-Token': readCookie('gtr_csrf') },
@@ -11127,7 +11155,7 @@ function buildSheetCard(spec) {
 
     // No Content-Type of our own: only the browser knows the multipart boundary
     // it generated.
-    const res = await fetch(`${API}${spec.path}/import`
+    const res = await reach(`${API}${spec.path}/import`
       + `?lang=${encodeURIComponent(activeLanguage())}`, {
       method: 'POST',
       credentials: 'same-origin',
