@@ -100,41 +100,7 @@ func (h *AuthHandler) Login(c *gofr.Context) (any, error) {
 		return nil, unauthorizedError{}
 	}
 
-	// Out of service, and not for somebody who could end it.
-	//
-	// After the credentials are checked rather than before, because "who is
-	// this" is the question being answered. It costs a session that is created
-	// and immediately ended, which is the price of not having a second way to
-	// resolve an account - one that would be a second answer to "is this
-	// password right", kept in step with the first by nothing.
-	//
-	// Ended rather than left to expire: an unused session is still a session,
-	// and one handed out during maintenance would let its holder back in the
-	// moment maintenance ended, without signing in.
-	if turnedAway, notice := h.refusedByMaintenance(c, result.Principal); turnedAway {
-		if err := h.sessions.Logout(c, result.Token); err != nil {
-			c.Logger.Errorf("could not end the session refused by maintenance: %v", err)
-		}
-
-		return nil, notice
-	}
-
-	request := requestOf(c)
-	setCookie(c, sessionCookie(request, result.Token, result.ExpiresAt))
-
-	// A token handed to an anonymous visitor must not follow them into a
-	// signed-in session: if someone else planted the one they arrived with,
-	// they would know the value protecting the new session.
-	if rotated := RotateCSRFToken(request); rotated != nil {
-		setCookie(c, rotated)
-	}
-
-	user := newUserResponseFromModel(result.Principal.User, h.timezone.resolve(c))
-
-	return LoginResponse{
-		User:        &user,
-		Permissions: permissionsOf(result.Principal),
-	}, nil
+	return completeSignIn(c, h.sessions, h.maintenance, result, h.timezone.resolve(c))
 }
 
 // Logout handles POST /api/v1/auth/logout.
@@ -338,32 +304,4 @@ func permissionsOf(principal *service.Principal) []string {
 	}
 
 	return principal.Permissions
-}
-
-// refusedByMaintenance reports whether this account is turned away because the
-// installation is out of service, and the refusal to send if it is.
-//
-// The same rule the middleware applies to every other request: the built-in
-// account and anybody holding settings:manage get in, because the only way out
-// of maintenance mode is through a screen they are the only ones who can reach.
-// Everybody else is told why, which is the part that was missing - sign-in was
-// exempt as a whole, so an ordinary account signed in successfully and then met
-// a wall of 503s on a screen that had already welcomed them.
-func (h *AuthHandler) refusedByMaintenance(
-	c *gofr.Context, principal *service.Principal,
-) (bool, error) {
-	if h.maintenance == nil || principal == nil || principal.User == nil {
-		return false, nil
-	}
-
-	state := h.maintenance.State(c)
-	if !state.Enabled {
-		return false, nil
-	}
-
-	if principal.User.IsSystem || principal.Can(model.PermSettingsManage) {
-		return false, nil
-	}
-
-	return true, maintenanceError{state: state}
 }

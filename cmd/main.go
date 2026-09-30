@@ -853,8 +853,9 @@ func main() {
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
-		Passkeys:   rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName),
-		Documents:  rest.NewDocumentHandler(authorizer, instanceName),
+		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
+			WithMaintenance(maintenanceState),
+		Documents: rest.NewDocumentHandler(authorizer, instanceName),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,
