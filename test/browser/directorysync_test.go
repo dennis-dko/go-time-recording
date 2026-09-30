@@ -5,6 +5,7 @@ package browser
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -81,5 +82,63 @@ func TestRunningTheSynchronisationSendsWhatWasConfirmed(t *testing.T) {
 	if !strings.HasSuffix(second, "?confirmed=") {
 		t.Errorf("a run after a preview proposing nobody was sent as %q, "+
 			"which does not bind it to deleting no one", second)
+	}
+}
+
+// A run that fails leaves the card showing what is left, not the preview it
+// started from.
+//
+// A run that stops part-way has still deleted what it reached, irreversibly.
+// The screen was answered with the error alone and kept the preview drawn - two
+// accounts that "would be deleted", one of them already gone, under a sentence
+// saying the run had failed. It asks again now, so the list is what is left,
+// and the refusal itself says how far the run got.
+func TestAFailedSynchronisationShowsWhatIsLeft(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open the card", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#sync-run", chromedp.ByID))
+
+	p.run("play a run that deletes one account and then fails", chromedp.Evaluate(`(() => {
+		const server = api;
+
+		window.remaining = [
+			{ userId: 42, name: 'Dave', email: 'dave@example.com', timesheets: 3 },
+			{ userId: 43, name: 'Erin', email: 'erin@example.com', timesheets: 5 },
+		];
+
+		api = (path, options) => {
+			if (path === '/settings/ldap/sync/preview') {
+				return Promise.resolve({
+					directoryUsers: 2, localExternal: 4, dryRun: true,
+					candidates: window.remaining, deleted: [], created: [],
+				});
+			}
+
+			if (path.startsWith('/settings/ldap/sync')) {
+				window.remaining = window.remaining.slice(1);
+
+				return Promise.reject(new Error('the run stopped part-way'));
+			}
+
+			return server(path, options);
+		};
+
+		return true;
+	})()`, nil))
+
+	p.run("run, and say yes", p.click("#sync-run"),
+		chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery),
+		p.click(`.confirm-actions button.danger`))
+	p.waitGone(".confirm-overlay")
+
+	p.run("the list settles", chromedp.Poll(`!document.querySelector('#table-sync tbody')
+		.textContent.includes('dave@example.com')`, nil, chromedp.WithPollingTimeout(10*time.Second)))
+
+	if listed := p.text("#table-sync tbody"); !strings.Contains(listed, "erin@example.com") {
+		t.Errorf("after the failed run the card lists %q, want the account that is left", listed)
 	}
 }

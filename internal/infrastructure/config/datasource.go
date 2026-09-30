@@ -263,8 +263,32 @@ func SaveDatasource(path string, ds Datasource) error {
 		return err
 	}
 
-	// 0600: the file holds a database password.
-	return os.WriteFile(path, raw, 0o600)
+	// Written whole beside the file and moved over it, never written in place.
+	// os.WriteFile empties a file before it writes, so a save that failed part way
+	// - a full disk - left the working connection cut off in the middle, and the
+	// next start served the installer as if nothing had been configured. A rename
+	// replaces the file whole or not at all. A name of its own for each save, so
+	// two at once cannot empty each other's copy before it is moved; CreateTemp
+	// makes it 0600, which the file needs because it holds a database password.
+	staged, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+
+	// Once the rename has happened the name is gone and this removes nothing.
+	defer func() { _ = os.Remove(staged.Name()) }()
+
+	if _, err := staged.Write(raw); err != nil {
+		_ = staged.Close()
+
+		return err
+	}
+
+	if err := staged.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(staged.Name(), path)
 }
 
 // TestDatasource opens the connection and runs a trivial query, so the

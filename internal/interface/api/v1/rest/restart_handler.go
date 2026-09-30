@@ -178,10 +178,10 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 	// sink rather than by the framework's logger, so by the time anything could
 	// read this it is already in force. See SettingsHandler.WithLiveLogLevel.
 	//
-	// Where the output is not captured there is no sink to apply it and the
-	// setting does still wait for a restart - but that installation has no log
-	// viewer either, and its operator is reading the console, where the framework
-	// is emitting everything.
+	// Where the output is not captured there is no sink to apply it, and the
+	// framework runs at the level it was started with - main widens it to DEBUG
+	// only for a sink to filter. So there a saved level does wait for a restart,
+	// and telemetryPending lists it, which is what liveLogLevel is for.
 
 	pending = append(pending, telemetryPending(telemetry, h.fromFile, running, h.liveLogLevel)...)
 
