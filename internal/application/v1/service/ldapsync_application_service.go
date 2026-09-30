@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"sort"
+	"sync"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
@@ -80,6 +81,19 @@ type LDAPSyncService struct {
 	limits *LimitsProvider
 
 	defaultRole string
+
+	// running is held for the whole of a run that changes anything, and taken
+	// rather than waited on.
+	//
+	// The schedule and the button share this service, and two administrators can
+	// press the button at once. Two runs read the same directory and the same
+	// accounts, so they choose the same departures, and the second to reach one
+	// found it already purged, was refused with "user not found" and stopped
+	// part-way, having deleted whatever it reached first. Nothing was lost - each
+	// purge is its own transaction - but the run that stopped reported a failure
+	// about an account it never touched. A preview changes nothing and does not
+	// take it.
+	running sync.Mutex
 
 	metrics
 }
@@ -191,6 +205,15 @@ func (s *LDAPSyncService) run(
 		return nil, apperror.Conflictf("no directory is configured").WithCode("noDirectory")
 	}
 
+	if !dryRun {
+		if !s.running.TryLock() {
+			return nil, apperror.Conflictf("a directory synchronisation is already running").
+				WithCode("syncAlreadyRunning")
+		}
+
+		defer s.running.Unlock()
+	}
+
 	directoryUsers, err := s.directory.ListUsers(ctx)
 	if err != nil {
 		// A failed read must never be treated as "the directory is empty".
@@ -286,7 +309,7 @@ func (s *LDAPSyncService) run(
 	// The report goes back with the error here too: createMissing may have
 	// written accounts before it failed, and what it wrote is in the report.
 	if err := s.createMissing(ctx, directoryUsers, knownIDs, knownEmails, report, dryRun); err != nil {
-		return report, err
+		return report, stoppedPartWay(report, err)
 	}
 
 	if dryRun {
@@ -303,7 +326,7 @@ func (s *LDAPSyncService) run(
 			// accounts and then lost the database saying "directory sync failed"
 			// and nothing else: three people's hours gone, and nothing naming
 			// them.
-			return report, err
+			return report, stoppedPartWay(report, err)
 		}
 
 		report.Deleted = append(report.Deleted, candidate)
@@ -316,6 +339,24 @@ func (s *LDAPSyncService) run(
 	}
 
 	return report, nil
+}
+
+// stoppedPartWay is the error a run ends with once it has changed something: the
+// cause, counted with how many accounts it had already deleted and created.
+//
+// The report names them and the caller logs it, but a screen that started the
+// run was answered with the error alone, and went on showing the preview - a
+// number of accounts that "would be deleted", some of them already gone, under a
+// sentence saying the run had failed. The counts travel with the error so the
+// screen can say what did happen, and the cause stays the original for the log.
+// A run that changed nothing ends with its cause as it was.
+func stoppedPartWay(report *SyncReport, cause error) error {
+	if len(report.Deleted) == 0 && len(report.Created) == 0 {
+		return cause
+	}
+
+	return apperror.Internal(cause).
+		WithCode("syncStoppedPartWay", len(report.Deleted), len(report.Created))
 }
 
 // stillInDirectory reports whether the directory still holds this account.
