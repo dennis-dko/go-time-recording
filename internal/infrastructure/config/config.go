@@ -333,7 +333,7 @@ func Load(p Provider) Config {
 		LDAPSyncSchedule: p.Get("LDAP_SYNC_SCHEDULE"),
 		LDAPSyncMaxDeleteRatio: ratioOr(p.GetOrDefault("LDAP_SYNC_MAX_DELETE_RATIO", ""),
 			defaultSyncMaxDeleteRatio),
-		MaxDailyHours: floatOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),
+		MaxDailyHours: dailyHoursOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),
 
 		Telemetry: Telemetry{
 			LogLevel:      logLevel(p.Get("LOG_LEVEL")),
@@ -378,14 +378,18 @@ func intOr(raw string, fallback int) int {
 	return v
 }
 
-// floatOr reads a positive figure, or falls back.
+// dailyHoursOr reads the daily cap, or falls back.
 //
-// Not NaN and not infinity, which ParseFloat both reads: either one as the daily
-// cap switches the cap off, and neither can be written into the settings
-// response that shows it.
-func floatOr(raw string, fallback float64) float64 {
+// Inside the range the settings screen accepts for the same figure: above zero
+// and no more than a day holds. A figure above model.HoursPerDay let a person
+// record more hours on one day than it has, and the overtime balance counted
+// them. Written as "inside the range" so NaN, which ParseFloat reads and which
+// compares false against every bound, falls back too - NaN or infinity as the
+// cap switches it off, and neither can be written into the settings response
+// that shows it.
+func dailyHoursOr(raw string, fallback float64) float64 {
 	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-	if err != nil || !(v > 0) || math.IsInf(v, 0) {
+	if err != nil || !(v > 0 && v <= model.HoursPerDay) {
 		return fallback
 	}
 
