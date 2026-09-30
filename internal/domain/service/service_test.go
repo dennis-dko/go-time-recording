@@ -12,10 +12,10 @@ import (
 )
 
 // These three operations are the ones with real refusals in them, and the
-// refusals are the point: archiving a project with open entries would strand
-// them, transferring an approved entry would rewrite a total somebody has
-// already reported, and moving the built-in administrator to a role without
-// administration rights would lock an installation out of its own user
+// refusals are the point: a project is archived only once it is completed, an
+// entry transferred onto a project that no longer accepts time would corrupt
+// that project's final figures, and moving the built-in administrator to a role
+// without administration rights would lock an installation out of its own user
 // management.
 //
 // Each is reachable through the API, so each is something a caller can try.

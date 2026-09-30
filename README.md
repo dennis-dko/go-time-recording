@@ -138,7 +138,7 @@ what happened during the migrations — because it captures the process output
 rather than wrapping a logger. Two things worth knowing: only what the log level
 admits reaches it, so ticking `DEBUG` on an installation running at `WARN` shows
 nothing and is not a fault — the level is set under *Settings → Logging, metrics
-and tracing* and applies from the next start; and it is held in memory in a
+and tracing* and applies at once; and it is held in memory in a
 fixed-size ring, so it
 starts empty after a restart and is no substitute for collecting logs. The
 capture makes the console output JSON even on a terminal, which is what a log
@@ -1001,7 +1001,7 @@ nothing sets the variable.
 | `UPDATE_TOKEN` | empty | identifies this installation to the feed. Almost never needed: checking takes no credentials. The limit is counted **per address**, so a dozen instances behind one office connection share sixty checks an hour, and running out answers `403` |
 | `LDAP_SYNC_SCHEDULE` | empty | cron for the directory reconciliation; empty means manual only. Administered under *Settings* as well, where what is saved wins from the next start |
 | `LDAP_SYNC_MAX_DELETE_RATIO` | `0.5` | refuse a run removing more than this share of directory accounts. **Administered under Settings**; not in `configs/.env` |
-| `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day. **Administered under Settings**; not in `configs/.env` |
+| `MAX_DAILY_HOURS` | `24` | instance-wide cap per person per day, at most `24`; anything else is read as the default. **Administered under Settings**; not in `configs/.env` |
 | `LOG_LEVEL` | `INFO` | `DEBUG`…`FATAL`; anything else is read as `INFO`. **Administered under Settings**; in `configs/.dev.env` only |
 | `TRACE_EXPORTER` | empty | `otlp` or `jaeger`; empty exports nothing |
 | `TRACER_URL` | – | the collector as `host:port`, **without** a scheme |
