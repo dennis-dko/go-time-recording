@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Both ways in arrive the same way.
+// Every way in arrives the same way.
 //
 // openTheStartingView takes the "loaded" mark back, chooses the first view, and
 // gives the mark again - and its comment says what that mark is for: it is what
@@ -18,13 +18,21 @@ import (
 //
 // The password sign-in was fixed to go through it. The passkey sign-in beside it
 // called switchView(startingView()) directly, so the mark said ready while the
-// interface was still about to change screens.
+// interface was still about to change screens. That was two copies of one
+// arrival, and the ticket sign-in would have been a third; all three go through
+// arriveAfterSignIn now, so what is checked is that the one arrival does it and
+// that every way in takes it.
 //
 // The hashchange handler calls switchView(startingView()) too and is right to:
 // that is navigation on a page which is already loaded and stays loaded, so there
 // is no mark to take back. Arriving is the case this is about.
-func TestBothSignInsOpenTheStartingViewTheSameWay(t *testing.T) {
+func TestEverySignInArrivesTheSameWay(t *testing.T) {
 	js := asset(t, "/app.js")
+
+	if !strings.Contains(enclosing(t, js, "async function arriveAfterSignIn("), "openTheStartingView(") {
+		t.Error("arriveAfterSignIn does not go through openTheStartingView, so the page calls " +
+			"itself loaded while it is still about to switch screens")
+	}
 
 	for _, arrival := range []struct {
 		what string
@@ -34,14 +42,12 @@ func TestBothSignInsOpenTheStartingViewTheSameWay(t *testing.T) {
 		// The click handler, not the line in loadPasskeySupport that shows or hides
 		// the same button - the first mention is not the one that signs anybody in.
 		{"the passkey sign-in", enclosing(t, js, "$('#login-passkey').addEventListener")},
+		{"the ticket sign-in", enclosing(t, js, "async function signInWithTicket(")},
 	} {
-		if strings.Contains(arrival.body, "openTheStartingView(") {
-			continue
+		if !strings.Contains(arrival.body, "arriveAfterSignIn(") {
+			t.Errorf("%s does not arrive through arriveAfterSignIn, so it arrives in a way "+
+				"of its own", arrival.what)
 		}
-
-		t.Errorf("%s does not go through openTheStartingView, so the page calls "+
-			"itself loaded while it is still about to switch screens. The other way "+
-			"in does", arrival.what)
 	}
 }
 

@@ -254,6 +254,10 @@ tasks:
       recorded against it. That cannot be checked against a fake, because a fake
       returns whatever the test told it to.
 
+      The sign-in with a Kerberos ticket belongs here too, in the integration
+      suite and in the browser: a ticket's owner is looked up in the directory,
+      so those cases skip without one - and a skip looks exactly like a pass.
+
       Starts the directory and leaves it running; test/README.md documents the
       seeded accounts, and phpLDAPadmin is on http://localhost:5080 for looking
       at one by hand. `task env:down` stops it.
@@ -265,7 +269,8 @@ tasks:
         vars: { PROFILE: ldap }
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
-      - go test -tags integration -count=1 -timeout 10m -run 'Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed' ./test/integration/
+      - go test -tags integration -count=1 -timeout 10m -run 'Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed|Kerberos' ./test/integration/
+      - go test -tags browser -count=1 -timeout 10m -parallel 2 -run 'Ticket' ./test/browser/
 
   test:traces:
     desc: 'Verify: export spans to a real Jaeger and read them back.'

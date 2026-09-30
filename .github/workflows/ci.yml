@@ -104,6 +104,7 @@ jobs:
           TLS_EMAIL=ops@example.com
           LDAP_ADMIN_PASSWORD=ci-only-not-a-real-password
           LDAP_BIND_PASSWORD=ci-only-not-a-real-password
+          KERBEROS_KEYTAB_FILE=/etc/go-time-recording/http.keytab
           ENV
 
           for files in \
@@ -111,8 +112,10 @@ jobs:
             "-f compose.yaml -f compose.tls.yaml" \
             "-f compose.yaml -f compose.tracing.yaml" \
             "-f compose.yaml -f compose.ldap.yaml" \
+            "-f compose.yaml -f compose.kerberos.yaml" \
             "-f compose.yaml -f compose.tls.yaml -f compose.tracing.yaml" \
-            "-f compose.yaml -f compose.tls.yaml -f compose.ldap.yaml -f compose.tracing.yaml"
+            "-f compose.yaml -f compose.tls.yaml -f compose.ldap.yaml -f compose.tracing.yaml" \
+            "-f compose.yaml -f compose.tls.yaml -f compose.ldap.yaml -f compose.tracing.yaml -f compose.kerberos.yaml"
           do
             echo "::group::compose $files"
             docker compose --env-file .env.ci $files config >/dev/null
@@ -124,6 +127,13 @@ jobs:
           # grown a default.
           if docker compose -f compose.yaml config >/dev/null 2>&1; then
             echo "compose.yaml started without DB_PASSWORD - the :? guard is gone" >&2
+            exit 1
+          fi
+
+          # The same for the keytab's path. The environment beats --env-file,
+          # so this empties the one value and keeps the rest.
+          if KERBEROS_KEYTAB_FILE= docker compose --env-file .env.ci -f compose.yaml -f compose.kerberos.yaml config >/dev/null 2>&1; then
+            echo "compose.kerberos.yaml started without KERBEROS_KEYTAB_FILE - the :? guard is gone" >&2
             exit 1
           fi
 
@@ -409,7 +419,7 @@ jobs:
         run: |
           set -euo pipefail
           go test -tags integration -count=1 -timeout 15m -v \
-            -run 'Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed|Tracing' \
+            -run 'Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed|Tracing|Kerberos' \
             ./test/integration/ | tee results.txt
 
           # The whole point of this job, asserted rather than assumed. Skipping is
@@ -424,6 +434,35 @@ jobs:
 
           if ! grep -q -- '--- PASS: TestDirectory\|--- PASS: TestTracing\|--- PASS: Test.*Synchronisation' results.txt; then
             echo "::error::no directory or tracing case ran; check the -run pattern"
+            exit 1
+          fi
+
+          if ! grep -q -- '--- PASS: TestAKerberos' results.txt; then
+            echo "::error::no Kerberos case ran; check the -run pattern"
+            exit 1
+          fi
+
+      # The sign-in with a Kerberos ticket, in a browser. It needs the directory as
+      # much as the cases above do - a ticket's owner is looked up there - and the
+      # browser job has none, so there they skip. Here they run, and a skip fails
+      # the job for the same reason as above. The runner's own Chrome, which
+      # chromedp finds by itself; the browser job explains why that one.
+      - name: Signing in with a ticket, in a browser
+        env:
+          GTR_TEST_LDAP: localhost:5389
+        run: |
+          set -euo pipefail
+          go test -tags browser -count=1 -timeout 10m -v -parallel 2 -run 'Ticket' \
+            ./test/browser/ | tee ticket-results.txt
+
+          if grep -q -- '--- SKIP' ticket-results.txt; then
+            echo "::error::a ticket case skipped; it needs the directory this job starts"
+            grep -- '--- SKIP' ticket-results.txt
+            exit 1
+          fi
+
+          if ! grep -q -- '--- PASS: TestATicket' ticket-results.txt; then
+            echo "::error::no ticket case ran; check the -run pattern"
             exit 1
           fi
 
