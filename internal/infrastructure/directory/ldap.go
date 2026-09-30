@@ -105,12 +105,12 @@ func (l *LDAP) Authenticate(
 		// used to do - and which created an account the synchronisation could
 		// not account for.
 		//
-		// The two are one decision: ListUsers skips an entry with no mail
-		// address, because it cannot be matched to a local account. So a login
-		// that invented one produced an account that signed in perfectly well,
-		// did not appear in the directory listing, and was therefore read by the
-		// next synchronisation as "this person left" - deleting it together with
-		// every hour recorded against it, silently.
+		// The listing is why. It keeps an entry without an address only by its
+		// identifier, so where the directory gives none, a login that invented an
+		// address produced an account that signed in perfectly well, could be
+		// found in the listing by neither key, and was therefore read by the next
+		// synchronisation as "this person left" - deleting it together with every
+		// hour recorded against it, silently.
 		//
 		// Refusing here is the lesser harm by a wide margin: somebody cannot sign
 		// in, which they will say so about, rather than losing their records
@@ -179,25 +179,39 @@ func (l *LDAP) ListUsers(ctx context.Context) ([]appservice.ExternalUser, error)
 		return nil, fmt.Errorf("listing directory users failed: %w", err)
 	}
 
-	users := make([]appservice.ExternalUser, 0, len(result.Entries))
+	return listed(result.Entries, config), nil
+}
 
-	for _, entry := range result.Entries {
-		email := entry.GetAttributeValue(config.EmailAttribute)
-		if email == "" {
-			// Without a mail address the entry cannot be matched to a local
-			// account, so it is skipped rather than guessed at.
+// listed turns the directory's answer into the entries the synchronisation
+// matches on.
+//
+// An entry is dropped only when it carries neither a mail address nor an
+// identifier. One without an address cannot become an account - there is
+// nothing to key it on, so the synchronisation creates nothing for it and a
+// sign-in is refused - but its identifier still says the person is there.
+// Dropping it as well turned an account whose entry had lost its mail
+// attribute, a mailbox removed or an attribute the bind account may no longer
+// read, into a departure, and the next run deleted it with every hour recorded
+// on it while its identifier was in the answer.
+func listed(entries []*ldap.Entry, config model.LDAPConfig) []appservice.ExternalUser {
+	users := make([]appservice.ExternalUser, 0, len(entries))
+
+	for _, entry := range entries {
+		user := appservice.ExternalUser{
+			ID:    stableID(entry, config.IDAttribute),
+			Email: strings.ToLower(entry.GetAttributeValue(config.EmailAttribute)),
+			Name:  entry.GetAttributeValue(config.NameAttribute),
+			Role:  config.DefaultRole,
+		}
+
+		if user.Email == "" && user.ID == "" {
 			continue
 		}
 
-		users = append(users, appservice.ExternalUser{
-			ID:    stableID(entry, config.IDAttribute),
-			Email: strings.ToLower(email),
-			Name:  entry.GetAttributeValue(config.NameAttribute),
-			Role:  config.DefaultRole,
-		})
+		users = append(users, user)
 	}
 
-	return users, nil
+	return users
 }
 
 // syncPageSize is the LDAP paging size used while listing users.

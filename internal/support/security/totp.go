@@ -51,20 +51,24 @@ func TOTPURI(issuer, account, secret string) string {
 	return "otpauth://totp/" + label + "?" + query.Encode()
 }
 
-// VerifyTOTP reports whether code is currently valid for secret.
+// MatchTOTP reports whether code is currently valid for secret, and which time
+// step it belongs to.
 //
 // The neighbouring time steps are accepted too, so a client whose clock is
-// slightly off still works.
-func VerifyTOTP(secret, code string) bool {
+// slightly off still works. The step is what a caller needs to accept a code
+// once only: RFC 6238 forbids accepting the same code a second time (section
+// 5.2), and a code is good for three steps, so without it one code opened
+// every sign-in for a minute and a half.
+func MatchTOTP(secret, code string) (step int64, ok bool) {
 	code = strings.TrimSpace(code)
 	if len(code) != totpDigits {
-		return false
+		return 0, false
 	}
 
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).
 		DecodeString(strings.ToUpper(strings.ReplaceAll(secret, " ", "")))
 	if err != nil {
-		return false
+		return 0, false
 	}
 
 	counter := time.Now().Unix() / int64(totpPeriod.Seconds())
@@ -75,27 +79,34 @@ func VerifyTOTP(secret, code string) bool {
 		// Constant time: a timing difference would leak how much of the code
 		// was correct, which is enough to guess it digit by digit.
 		if subtle.ConstantTimeCompare([]byte(expected), []byte(code)) == 1 {
-			return true
+			return counter + int64(offset), true
 		}
 	}
 
-	return false
+	return 0, false
 }
 
 // CurrentTOTPCode returns the code an authenticator app would be showing for
 // secret right now.
 //
-// The counterpart to VerifyTOTP, and the side an authenticator normally plays.
+// The counterpart to MatchTOTP, and the side an authenticator normally plays.
 // Exported so a test can sign in with two-factor enabled without reimplementing
 // RFC 6238, which would only prove that the copy agrees with itself.
 func CurrentTOTPCode(secret string) (string, error) {
+	return TOTPCodeAt(secret, time.Now())
+}
+
+// TOTPCodeAt returns the code an authenticator app would show for secret at the
+// given moment. A test that uses a second code soon after a first asks for the
+// next step's, which is accepted now and is not the one already spent.
+func TOTPCodeAt(secret string, at time.Time) (string, error) {
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).
 		DecodeString(strings.ToUpper(strings.ReplaceAll(secret, " ", "")))
 	if err != nil {
 		return "", err
 	}
 
-	return totpCode(key, time.Now().Unix()/int64(totpPeriod.Seconds())), nil
+	return totpCode(key, at.Unix()/int64(totpPeriod.Seconds())), nil
 }
 
 // totpCode implements the HOTP truncation of RFC 4226 for one counter value.

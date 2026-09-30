@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
@@ -253,8 +254,10 @@ func TestASettingWrittenInPassingDoesNotRevertAnother(t *testing.T) {
 				attempt, confirmed.Status, confirmed.Body)
 		}
 
-		// Turned off again so the next attempt starts from the same place.
-		off, err := security.CurrentTOTPCode(setup.Secret)
+		// Turned off again so the next attempt starts from the same place - with
+		// the next step's code, since the current one was spent confirming and a
+		// code is accepted once only.
+		off, err := security.TOTPCodeAt(setup.Secret, time.Now().Add(30*time.Second))
 		if err != nil {
 			t.Fatalf("attempt %d: %v", attempt, err)
 		}
