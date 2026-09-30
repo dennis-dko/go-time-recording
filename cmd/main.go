@@ -939,6 +939,30 @@ func main() {
 
 	app.Run()
 
+	// Run returns when GoFr's servers stop listening, which is the moment a stop
+	// begins rather than the moment it has finished waiting for the requests under
+	// way: net/http returns ListenAndServe as soon as Shutdown is called. GoFr
+	// stops the metrics server after the HTTP server has drained, so while metrics
+	// were on, that server held Run open until the wait was over. With them off -
+	// METRICS_PORT=0, or switched off under Settings - main ended while GoFr was
+	// still waiting, and a stop cut off every request being answered.
+	//
+	// Shutting down a second time waits for exactly what was missing. The server's
+	// Shutdown returns once every connection is idle, after its answer has gone,
+	// and every step after it is safe to repeat: the crontab stops once, the
+	// database closes once. Read in GoFr's own source rather than assumed. The
+	// HTTPS front end is stopped by a deferred call below this, so an answer on its
+	// way through it has left the backend first.
+	finishing, stopWaiting := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
+
+	if err := app.Shutdown(finishing); err != nil {
+		// Whatever GoFr's own pass found wrong it has reported; a second pass
+		// mostly meets things it already closed.
+		app.Logger().Debugf("waiting for the shutdown to finish: %v", err)
+	}
+
+	stopWaiting()
+
 	// Said again past the pipe, as every other refusal here is: GoFr's own line
 	// went through the capture, and die is what guarantees the reason reaches the
 	// console before the process is gone.

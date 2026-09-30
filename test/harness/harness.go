@@ -267,6 +267,11 @@ func StartUnconfigured(t *testing.T, env ...string) *App {
 // - for SQLite - its database file live.
 func (a *App) Dir() string { return a.dir }
 
+// Terminate sends the instance the signal a service manager stops it with and
+// returns at once, for a case with something to do while it stops. Windows
+// cannot deliver the signal, and says so in the error.
+func (a *App) Terminate() error { return a.cmd.Process.Signal(syscall.SIGTERM) }
+
 // Stop sends the instance the signal a service manager stops it with, and
 // returns its exit code once it has gone.
 //
