@@ -24,7 +24,7 @@
 // SetPassthroughRenderer exists for the development case that wants readable
 // lines back.
 //
-// # The one thing that can be lost
+// # What can be lost
 //
 // A Fatal writes and then calls os.Exit immediately. The bytes reach the
 // kernel's pipe buffer, but this package's reader may not be scheduled before
@@ -33,4 +33,12 @@
 // why the application pre-flights the failures it can predict - a taken port,
 // an unusable database - and reports those itself rather than letting the
 // framework exit on them.
+//
+// A restart has the same shape: restart.Now exits, or replaces the image, the
+// moment after the line saying why. Releasing the capture first is not the
+// remedy it looks like, because GoFr's logger keeps writing to the pipe it was
+// handed, so a restart that then failed would report its failure into a closed
+// pipe. Every other way the process ends lets the reader finish first: die and
+// a stopped installer release the capture before they exit, and an ordinary
+// stop returns through main, which releases it on the way out.
 package logsink
