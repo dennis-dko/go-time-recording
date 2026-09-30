@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -67,9 +68,16 @@ type Source struct {
 	//
 	// So this one is bounded by progress rather than by duration. A server that
 	// accepts the connection and never answers is cut off by
-	// ResponseHeaderTimeout; a body that stops arriving is cut off by the caller's
-	// context, which is the only thing that can tell it from a slow one; and the
-	// size is bounded by maxDownload regardless.
+	// ResponseHeaderTimeout; a body that stops arriving is cut off by a read
+	// deadline every read renews, see stallingConn; and the size is bounded by
+	// maxDownload regardless.
+	//
+	// The caller's context was once named as what ends a stalled body, and it
+	// ends nothing while somebody waits: it is the request's, GoFr gives a request
+	// no deadline unless REQUEST_TIMEOUT is set, and the browser never abandons a
+	// write. A server that sent its headers and then stopped held the install -
+	// and the banner announcing it to everybody - for as long as the tab stayed
+	// open.
 	//
 	// Nil falls back to Client, so a test that supplies only the one still works.
 	Downloader *http.Client
@@ -87,6 +95,9 @@ type Source struct {
 	// installing is held for the whole of an install, and taken rather than
 	// waited on. See InstallOver.
 	installing sync.Mutex
+
+	// stall overrides stallAfter, so a test need not wait out the real one.
+	stall time.Duration
 }
 
 // ErrInstalling says an install is already under way.
@@ -112,26 +123,73 @@ func New(api, token string) *Source {
 		api = DefaultAPI
 	}
 
-	return &Source{
+	s := &Source{
 		API:   api,
 		Token: strings.TrimSpace(token),
 
 		// Short, and no keep-alive worth speaking of: this is a courtesy lookup
 		// on an administration screen, not something the application needs.
 		Client: &http.Client{Timeout: lookupTimeout},
+	}
 
-		// No whole-exchange timeout. See the field.
-		Downloader: &http.Client{
-			Transport: &http.Transport{
-				// As http.DefaultTransport has them, because a deployment behind a
-				// proxy has to reach the asset host the same way it reaches the feed.
-				Proxy:                 http.ProxyFromEnvironment,
-				ForceAttemptHTTP2:     true,
-				TLSHandshakeTimeout:   lookupTimeout,
-				ResponseHeaderTimeout: lookupTimeout,
-			},
+	// No whole-exchange timeout. See the field.
+	s.Downloader = &http.Client{
+		Transport: &http.Transport{
+			// As http.DefaultTransport has them, because a deployment behind a
+			// proxy has to reach the asset host the same way it reaches the feed.
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			DialContext:           s.dialStalling,
+			TLSHandshakeTimeout:   lookupTimeout,
+			ResponseHeaderTimeout: lookupTimeout,
 		},
 	}
+
+	return s
+}
+
+// stallAfter is how long the download may go without a byte arriving: thirty
+// seconds, the patience http.DefaultTransport gives a connection to be
+// established at all. On a link that works, nothing arriving for that long is a
+// link that has stopped, however slow the download was going.
+const stallAfter = 30 * time.Second
+
+// patience is stallAfter, or a test's shorter override.
+func (s *Source) patience() time.Duration {
+	if s.stall > 0 {
+		return s.stall
+	}
+
+	return stallAfter
+}
+
+// dialStalling connects the way http.DefaultTransport does, with its connect
+// timeout, and hands back a connection that gives up once reads stop arriving.
+func (s *Source) dialStalling(ctx context.Context, network, address string) (net.Conn, error) {
+	conn, err := (&net.Dialer{Timeout: stallAfter}).DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+
+	return stallingConn{Conn: conn, after: s.patience()}, nil
+}
+
+// stallingConn gives every read a fresh deadline, so a connection that stops
+// delivering is cut off after that long with nothing, however long it has been
+// open - progress bounds it, not duration. It sits under TLS and HTTP/2 alike,
+// and on a connection left idle in the pool it closes it, which is what an idle
+// timeout would have done.
+type stallingConn struct {
+	net.Conn
+	after time.Duration
+}
+
+func (c stallingConn) Read(b []byte) (int, error) {
+	if err := c.SetReadDeadline(time.Now().Add(c.after)); err != nil {
+		return 0, err
+	}
+
+	return c.Conn.Read(b)
 }
 
 // lookupTimeout bounds the calls that fetch a small document, and the handshake
@@ -592,6 +650,11 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 	// that were checked are the bytes that landed.
 	if _, err := io.Copy(io.MultiWriter(file, sum), io.LimitReader(res.Body, maxDownload)); err != nil {
 		_ = file.Close()
+
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return fmt.Errorf("the download stopped arriving - nothing came for %s: %w",
+				s.patience(), err)
+		}
 
 		return fmt.Errorf("the download broke off: %w", err)
 	}
