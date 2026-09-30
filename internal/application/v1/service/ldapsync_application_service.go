@@ -227,12 +227,16 @@ func (s *LDAPSyncService) run(
 	byID := make(map[string]ExternalUser, len(directoryUsers))
 	byEmail := make(map[string]ExternalUser, len(directoryUsers))
 
+	// An entry without an address counts by its identifier alone; under the
+	// address index it would only stand for every other entry without one.
 	for _, u := range directoryUsers {
 		if u.ID != "" {
 			byID[u.ID] = u
 		}
 
-		byEmail[normalizeEmail(u.Email)] = u
+		if email := normalizeEmail(u.Email); email != "" {
+			byEmail[email] = u
+		}
 	}
 
 	localUsers, err := s.users.GetAll(ctx)
@@ -284,9 +288,15 @@ func (s *LDAPSyncService) run(
 
 	// An empty directory answer is almost always a broken filter, a wrong
 	// base DN or an outage - not everybody leaving at once.
-	if len(directoryUsers) == 0 {
+	//
+	// Asked of the entries with an address, because an answer in which nobody
+	// has one is the same thing: a mail attribute that names nothing. Those
+	// entries used to be dropped before they got here, so the answer arrived
+	// empty; listed by their identifiers now, they would otherwise let the run
+	// go on and condemn every account kept by its address alone.
+	if len(byEmail) == 0 {
 		report.abort(apperror.Conflictf(
-			"the directory returned no users at all; refusing to delete anyone").
+			"the directory returned nobody with a mail address; refusing to delete anyone").
 			WithCode("syncDirectoryAnsweredEmpty"))
 
 		return report, nil
