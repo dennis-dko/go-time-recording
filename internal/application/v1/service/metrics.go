@@ -8,13 +8,11 @@ import "context"
 // milliseconds while nobody has been able to book time since the directory
 // changed, and app_http_response looks the same either way.
 //
-// So these four measure the work rather than the plumbing, and each one is here
+// So these three measure the work rather than the plumbing, and each one is here
 // because somebody would act on it:
 //
 //   - hours booked, which is what the installation exists to record, and whose
 //     absence is the first sign that something upstream is broken;
-//   - what happens to an entry afterwards, because a queue of submitted entries
-//     nobody approves is invisible from any request count;
 //   - refused sign-ins, which is either a directory that has stopped answering
 //     or somebody working through a password list;
 //   - accounts the directory synchronisation creates and deletes, which is the
