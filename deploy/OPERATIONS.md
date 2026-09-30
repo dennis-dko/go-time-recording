@@ -924,10 +924,11 @@ A browser sends a ticket only to an address it has been told to trust, and that
 part is set up on the clients rather than here:
 
 - **Edge and Chrome on Windows** trust the *Local intranet* zone, or the
-  addresses the `AuthServerAllowlist` policy names (`*.example.com`). On
-  Windows a browser that does not trust the address may ask for a user name and
-  password in a dialog of its own instead; cancelling it leaves the sign-in
-  form.
+  addresses the `AuthServerAllowlist` policy names (`*.example.com`). A
+  browser there that does not trust the address asks for a user name and
+  password in a dialog of its own instead - measured with Chrome, as soon as
+  the sign-in screen tries the ticket. Cancelling it leaves the sign-in form,
+  and the screen does not try again by itself in that tab.
 - **Chrome and Edge on macOS and Linux** need the `AuthServerAllowlist` policy.
 - **Firefox** needs `network.negotiate-auth.trusted-uris`, in `about:config` or
   as `Authentication.SPNEGO` in its enterprise policies.

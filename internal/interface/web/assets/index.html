@@ -470,6 +470,13 @@
                expose WebAuthn over HTTPS or on localhost, and a button that cannot
                work is worse than no button. -->
           <button type="button" class="secondary" id="login-passkey" hidden data-i18n="passkey.signIn">Sign in with a passkey</button>
+          <!-- Hidden until the server says a ticket can succeed here: a keytab
+               was read and a directory is configured. The page tries one by
+               itself when it opens; this is the way to try again. -->
+          <button type="button" class="secondary" id="login-kerberos" hidden data-i18n="kerberos.signIn">Sign in with single sign-on</button>
+          <!-- Only while the form asks for the code after a ticket, which puts
+               the address and the password away. -->
+          <button type="button" class="secondary" id="login-kerberos-leave" hidden data-i18n="kerberos.usePassword">Use a password instead</button>
         </div>
       </div>
     </form>

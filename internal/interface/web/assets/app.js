@@ -3346,6 +3346,10 @@ const TRANSLATIONS = {
     'passkey.err.certificate': 'Dieses Gerät vertraut dem Zertifikat dieser Seite nicht, deshalb ist hier kein Passkey möglich. Die Zertifizierungsstelle muss auf dem Gerät installiert werden.',
     'passkey.err.aborted': 'Die Abfrage wurde geschlossen, bevor etwas geschehen ist.',
     'passkey.failed': 'Der Passkey wurde nicht akzeptiert.',
+    'kerberos.signIn': 'Mit Single Sign-on anmelden',
+    'kerberos.usePassword': 'Stattdessen mit Passwort anmelden',
+    'kerberos.failed': 'Die Anmeldung per Single Sign-on hat nicht geklappt: Der Browser hat kein Ticket vorgelegt, das diese Installation annimmt, oder das Verzeichnis kennt das Konto nicht.',
+    'kerberos.codeFailed': 'Die Anmeldung wurde nicht angenommen. Bitte den Code prüfen.',
 
     'tz.title': 'Zeitzone',
     'tz.hint': 'Bestimmt, auf welchen Kalendertag eine Buchung fällt — für alle, die unter „Mein Konto" keine eigene gesetzt haben.',
@@ -7042,7 +7046,7 @@ function hideLogin() {
   $('#login-screen').classList.remove('checking');
   $('#login-screen').hidden = true;
   $('#login-error').hidden = true;
-  $('#login-totp-field').hidden = true;
+  backToThePasswordForm();
   $('#form-login').reset();
 }
 
@@ -7050,6 +7054,15 @@ async function submitLogin(e) {
   e.preventDefault();
 
   const form = e.target;
+
+  // The second step of a ticket sign-in, which asks for the code and nothing
+  // else. See askForTheCodeAfterATicket.
+  if (form.dataset.via === 'ticket') {
+    await signInWithTicket({ totp: form.elements.totp.value.trim() });
+
+    return;
+  }
+
   const body = {
     email: form.elements.email.value.trim(),
     password: form.elements.password.value,
@@ -7088,6 +7101,19 @@ async function submitLogin(e) {
     return;
   }
 
+  await arriveAfterSignIn();
+}
+
+/**
+ * Takes a page that has just been signed into from the sign-in screen to the
+ * application: the same arrival whichever way somebody signed in.
+ *
+ * One function for the password, the passkey and the ticket. The passkey kept a
+ * copy of these lines that described itself as "the same arrival the password
+ * sign-in makes", and a third copy is how three ways in start arriving
+ * differently.
+ */
+async function arriveAfterSignIn() {
   hideLogin();
 
   try {
@@ -7095,7 +7121,9 @@ async function submitLogin(e) {
 
     // The same choice a page load makes, rather than always the first tab: signing
     // out and back in used to discard the screen somebody was working on, so the
-    // only way back to it was to reload the page afterwards.
+    // only way back to it was to reload the page afterwards. Through
+    // openTheStartingView rather than switchView, so the page does not call itself
+    // loaded while it is still about to change screens - see the comment there.
     openTheStartingView();
 
     // Here as well as on a page load, or the greeting would only ever appear to
@@ -7107,6 +7135,187 @@ async function submitLogin(e) {
     // screen that will accept the same password and do this again.
     toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
   }
+}
+
+/** Whether this installation offers a sign-in with the browser's Kerberos ticket. */
+let ticketsOffered = false;
+
+/**
+ * Where a tab remembers not to try a ticket by itself.
+ *
+ * Set by signing out, or reloading the sign-in screen would sign straight back
+ * in and signing out would be something this page could not do. Set as well by
+ * an attempt of its own that failed: on Windows a browser that does not trust
+ * this address may answer the challenge with a password dialog of its own, and
+ * one of those on every reload would be all the sign-in screen did. A ticket
+ * sign-in that works clears it. sessionStorage, so it is this tab's and ends
+ * with it.
+ */
+const TICKET_HELD_BACK_KEY = 'gtr.kerberos.heldBack';
+
+/** Whether the page may try the ticket before anybody asks it to. */
+function mayTryTheTicketUnasked() {
+  try {
+    return window.sessionStorage.getItem(TICKET_HELD_BACK_KEY) === null;
+  } catch {
+    // Without storage a sign-out could not be remembered past a reload, so the
+    // page would sign straight back in. The button still works.
+    return false;
+  }
+}
+
+function holdTheTicketBack() {
+  try {
+    window.sessionStorage.setItem(TICKET_HELD_BACK_KEY, '1');
+  } catch {
+    // Nothing to remember it in; mayTryTheTicketUnasked already says no.
+  }
+}
+
+function letTheTicketTryAgain() {
+  try {
+    window.sessionStorage.removeItem(TICKET_HELD_BACK_KEY);
+  } catch {
+    // Nothing was stored, so nothing is held back by it.
+  }
+}
+
+/**
+ * Asks the server whether to offer a sign-in with the browser's ticket.
+ *
+ * Offered only where one can succeed - a keytab was read and a directory is
+ * configured - so a browser is never sent the Negotiate challenge by an
+ * installation that could do nothing with the answer.
+ */
+async function loadTicketSupport() {
+  try {
+    ticketsOffered = Boolean((await api('/auth/kerberos'))?.available);
+  } catch {
+    ticketsOffered = false;
+  }
+
+  $('#login-kerberos').hidden = !ticketsOffered;
+}
+
+/**
+ * Signs in with the browser's Kerberos ticket.
+ *
+ * The browser does the work. The POST is answered with the Negotiate
+ * challenge, a browser that trusts this address and holds a ticket sends the
+ * same request again with it, and one that does not keeps the 401 - which
+ * cannot be told apart from here from a ticket the server refused, and does not
+ * need to be.
+ *
+ * quietly is the attempt the page makes by itself when it opens: a failure says
+ * nothing, because the form is the answer, and holds the ticket back for the
+ * rest of the tab. Asked for with the button, a failure is said.
+ */
+async function signInWithTicket({ quietly = false, totp = '' } = {}) {
+  let result;
+
+  try {
+    result = await api('/auth/kerberos', {
+      method: 'POST',
+      body: JSON.stringify(totp ? { totp } : {}),
+    });
+  } catch (err) {
+    if (quietly) {
+      holdTheTicketBack();
+
+      return;
+    }
+
+    let message = err.message;
+
+    if (err.status === 401) {
+      message = totp
+        ? t('kerberos.codeFailed', 'The sign-in was not accepted. Please check the code.')
+        : t('kerberos.failed', 'Single sign-on did not work: the browser presented no ticket this installation accepts, or the directory does not know the account.');
+    }
+
+    showLogin(message);
+
+    if (totp) {
+      const field = $('#form-login').elements.totp;
+      field.value = '';
+      field.focus();
+    }
+
+    return;
+  }
+
+  // The ticket was good and the account has a second factor: the ticket stands in
+  // for the password and for nothing else.
+  if (result?.totpRequired) {
+    askForTheCodeAfterATicket();
+
+    return;
+  }
+
+  letTheTicketTryAgain();
+  await arriveAfterSignIn();
+}
+
+/**
+ * Turns the sign-in form into the second step of a ticket sign-in: the code, and
+ * nowhere to type an address or a password.
+ *
+ * The same form rather than a second one, so the band, the language and the
+ * button stay where they are; what changes is where it is sent, which
+ * submitLogin reads off data-via. The address and the password are put away
+ * and stop being required - a hidden field that is still required cannot be
+ * submitted past, and the form would silently do nothing.
+ */
+function askForTheCodeAfterATicket() {
+  const form = $('#form-login');
+
+  form.dataset.via = 'ticket';
+
+  for (const name of ['email', 'password']) {
+    form.elements[name].required = false;
+    form.elements[name].closest('label').hidden = true;
+  }
+
+  $('#login-totp-field').hidden = false;
+  $('#login-kerberos').hidden = true;
+  $('#login-passkey').hidden = true;
+  $('#login-kerberos-leave').hidden = false;
+
+  const error = $('#login-error');
+  error.textContent = t('login.totpNeeded', 'Please enter the code from your authenticator app.');
+  error.hidden = false;
+
+  form.elements.totp.focus();
+}
+
+/**
+ * Puts the sign-in form back to asking for an address and a password.
+ *
+ * From the button, and from hideLogin, so a form left asking for a ticket's code
+ * is not what the next person to sign in on this page finds.
+ */
+function backToThePasswordForm() {
+  const form = $('#form-login');
+
+  delete form.dataset.via;
+
+  for (const name of ['email', 'password']) {
+    form.elements[name].required = true;
+    form.elements[name].closest('label').hidden = false;
+  }
+
+  form.elements.totp.value = '';
+  $('#login-totp-field').hidden = true;
+  $('#login-kerberos').hidden = !ticketsOffered;
+  $('#login-passkey').hidden = !passkeysAvailable;
+  $('#login-kerberos-leave').hidden = true;
+  $('#login-error').hidden = true;
+}
+
+/** The two buttons a ticket sign-in adds to the form. */
+function wireTicketSignIn() {
+  $('#login-kerberos').addEventListener('click', () => signInWithTicket());
+  $('#login-kerberos-leave').addEventListener('click', backToThePasswordForm);
 }
 
 /**
@@ -7283,6 +7492,12 @@ async function endTheSessionQuietly() {
 
 async function doLogout() {
   await endTheSessionQuietly();
+
+  // Somebody who signs out means it: a reload of the sign-in screen must not
+  // sign them straight back in with the ticket. Here rather than wherever a
+  // session ends, because a session the server ended is not a choice anybody
+  // made.
+  holdTheTicketBack();
 
   handBackTheScreen();
 }
@@ -11981,20 +12196,7 @@ function wirePasskeys() {
       return;
     }
 
-    hideLogin();
-
-    try {
-      await refreshAll();
-
-      // The same arrival the password sign-in makes. Through openTheStartingView
-      // rather than switchView, so the page does not call itself loaded while it
-      // is still about to change screens - see the comment there.
-      openTheStartingView();
-
-      await greetAfterSignIn();
-    } catch (err) {
-      toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
-    }
+    await arriveAfterSignIn();
   });
 }
 
@@ -13471,6 +13673,7 @@ async function init() {
   // the user must still be able to sign in rather than face a form whose
   // submit handler was never attached, which would silently reload the page.
   $('#form-login').addEventListener('submit', submitLogin);
+  wireTicketSignIn();
 
   // Here rather than with the rest of the wiring below, so the sign-in form has
   // its reveal before anything that could fail has been tried. It also registers
@@ -13523,8 +13726,10 @@ async function init() {
   applyLanguage(activeLanguage());
 
   // Before the sign-in screen is shown, so its passkey button appears with it
-  // rather than popping in afterwards.
+  // rather than popping in afterwards. The ticket's button likewise, and the
+  // answer decides whether a ticket is tried at all below.
   await loadPasskeySupport();
+  await loadTicketSupport();
   await loadMaintenance();
 
   try {
@@ -13600,6 +13805,13 @@ async function init() {
     // there is one. Unless somebody signed in while this was running, which
     // showLogin decides - it is the same question wherever it is asked from.
     showLogin();
+
+    // Then the ticket, where the installation offers one and this tab has not
+    // been told otherwise - after the form is up, so a browser without a ticket
+    // is simply left looking at it.
+    if (ticketsOffered && !handedToASession && mayTryTheTicketUnasked()) {
+      await signInWithTicket({ quietly: true });
+    }
   }
 }
 
