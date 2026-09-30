@@ -279,6 +279,24 @@ function refusalFrom(res, body) {
  * api() tells its own timeout from a caller's.
  */
 async function reach(url, options) {
+  // A write that is already on its way is not sent a second time.
+  //
+  // A double click, or Enter held down, submits a form twice before the first
+  // answer has come back - and a booking sent twice is the same hours recorded
+  // twice, an import sent twice every row written twice. Measured: two entries,
+  // created in the same second, from one form pressed twice. Asked here because
+  // every request passes through here, so no form has to remember it.
+  const key = writeKey(url, options);
+
+  if (key && writesInFlight.has(key)) {
+    const repeated = new Error(t('msg.alreadySending', 'This is already being sent.'));
+    repeated.repeated = true;
+
+    throw repeated;
+  }
+
+  if (key) writesInFlight.add(key);
+
   try {
     return await fetch(url, options);
   } catch (err) {
@@ -290,7 +308,31 @@ async function reach(url, options) {
     unreachable.cause = err;
 
     throw unreachable;
+  } finally {
+    if (key) writesInFlight.delete(key);
   }
+}
+
+/** The writes on their way now, by what they would change; see reach. */
+const writesInFlight = new Set();
+
+/**
+ * What a write would change - its method, its address and what it carries - or
+ * null for a read, which does no harm twice. A file stands for itself by name,
+ * size and time of change, which is what a second press of the same import sends.
+ */
+function writeKey(url, options) {
+  const method = (options?.method ?? 'GET').toUpperCase();
+  if (SAFE_METHODS.has(method)) return null;
+
+  const body = options?.body;
+  const carried = body instanceof FormData
+    ? [...body.entries()].map(([name, value]) => (value instanceof File
+      ? `${name}=${value.name}:${value.size}:${value.lastModified}`
+      : `${name}=${value}`)).join('&')
+    : String(body ?? '');
+
+  return `${method} ${url} ${carried}`;
 }
 
 async function api(path, options = {}) {
@@ -3621,6 +3663,7 @@ const TRANSLATIONS = {
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
     'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
     'msg.unreachable': 'Der Server war nicht erreichbar. Bitte die Verbindung prüfen und es erneut versuchen.',
+    'msg.alreadySending': 'Das wird bereits gesendet.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
     'err.chartNotAPicture': 'Das Diagramm konnte nicht gelesen werden. '
       + 'Bitte die Auswertung erneut anzeigen und dann exportieren.',
@@ -6724,6 +6767,10 @@ async function mutate(fn, successMessage, after) {
     // existing caller ignores it, which is what makes this safe to add.
     result = await fn();
   } catch (err) {
+    // A second press of a write still on its way: the first one is the answer,
+    // and it is still coming.
+    if (err.repeated) return;
+
     // Silent while the application is restarting into a new version. Every
     // request fails for those few seconds, and each one would raise its own red
     // toast on top of a banner that already says exactly what is happening. The
