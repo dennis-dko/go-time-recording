@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // fakeDirectory stands in for LDAP.
@@ -145,6 +147,47 @@ func TestAFailedSyncStillReportsWhatItAlreadyDeleted(t *testing.T) {
 	if report.Deleted[0].UserID != first {
 		t.Errorf("the report names account %d, want %d",
 			report.Deleted[0].UserID, first)
+	}
+}
+
+// A run that stopped part-way says how far it got in the error it ends with.
+//
+// The report above names what was deleted, and the caller logs it - but the
+// screen that pressed the button was answered with the error alone, and went on
+// showing the preview: two accounts that "would be deleted", one of which was
+// already gone, under a sentence saying the run had failed.
+func TestARunThatStopsPartWaySaysHowFarItGot(t *testing.T) {
+	f := newSyncFixture(t, 1)
+
+	externalUser(t, f.fixture, "aaa@example.com")
+	externalUser(t, f.fixture, "bbb@example.com")
+
+	// One arrival to create, and two departures of which the second fails.
+	f.directory.users = []service.ExternalUser{{ID: "kept", Email: "kept@example.com"}}
+	f.purger.failAfter = 1
+
+	_, err := f.sync.Sync(context.Background())
+
+	detail, ok := apperror.Detail(err)
+	if !ok || detail.Code != "syncStoppedPartWay" {
+		t.Fatalf("a run that deleted and created before failing ended with %v, want it "+
+			"coded syncStoppedPartWay", err)
+	}
+
+	if got := fmt.Sprint(detail.Values); got != "[1 1]" {
+		t.Errorf("the error counts %s deleted and created, want [1 1]", got)
+	}
+
+	if apperror.KindOf(err) != apperror.KindInternal {
+		t.Errorf("a run stopped by the database is reported as %v, want internal", apperror.KindOf(err))
+	}
+
+	// Before anything changed, the cause is the answer as it was.
+	f.directory.users = nil
+	f.directory.err = errors.New("the directory went away")
+
+	if _, err := f.sync.Sync(context.Background()); hasCode(err, "syncStoppedPartWay") {
+		t.Error("a run that changed nothing claims to have stopped part-way")
 	}
 }
 
