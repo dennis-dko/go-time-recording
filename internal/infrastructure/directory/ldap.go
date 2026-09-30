@@ -34,6 +34,8 @@ func New() *LDAP {
 
 var _ appservice.ExternalAuthenticator = (*LDAP)(nil)
 
+var _ appservice.ExternalDirectory = (*LDAP)(nil)
+
 // Configure replaces the connection settings. It is safe to call while the
 // application is serving, so saving the settings screen takes effect at once.
 func (l *LDAP) Configure(config model.LDAPConfig) {
@@ -99,6 +101,56 @@ func (l *LDAP) Authenticate(
 		return nil, false, err
 	}
 
+	user, err := signedIn(entry, config, login)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return user, true, nil
+}
+
+// Lookup finds somebody in the directory by the name they are known by, without
+// their password.
+//
+// For a sign-in whose identity something else has already proved - a Kerberos
+// ticket - and so never offered where a password is expected: nothing here checks
+// one. The search is a password sign-in's, so the same filter decides who the
+// directory holds, and an entry without an address is refused as it is there.
+func (l *LDAP) Lookup(ctx context.Context, login string) (*appservice.ExternalUser, bool, error) {
+	l.mu.RLock()
+	config := l.config
+	l.mu.RUnlock()
+
+	if !config.Enabled || config.Host == "" || login == "" {
+		return nil, false, nil
+	}
+
+	conn, err := dial(ctx, config)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = conn.Close() }()
+
+	entry, err := findUser(conn, config, login)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if entry == nil {
+		return nil, false, nil
+	}
+
+	user, err := signedIn(entry, config, login)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return user, true, nil
+}
+
+// signedIn is the account a sign-in by login reaches through entry, the same
+// whether a password or a ticket proved who it was.
+func signedIn(entry *ldap.Entry, config model.LDAPConfig, login string) (*appservice.ExternalUser, error) {
 	email := entry.GetAttributeValue(config.EmailAttribute)
 	if email == "" {
 		// Refused rather than filled in with the login name, which is what this
@@ -117,11 +169,12 @@ func (l *LDAP) Authenticate(
 		// months later with nobody able to explain it.
 		//
 		// The message names the entry and the attribute because only somebody
-		// who already proved the password can reach this line - the bind above
-		// is what fails for everybody else - so it tells the one person who can
-		// act on it exactly what to tell their administrator, and tells an
-		// attacker nothing they did not already have the credentials for.
-		return nil, false, fmt.Errorf(
+		// who has already proved who they are reaches this line - the password
+		// bound in Authenticate, or the ticket checked before Lookup - so it tells
+		// the one person who can act on it exactly what to tell their
+		// administrator, and tells an attacker nothing they did not already have
+		// the credentials for.
+		return nil, fmt.Errorf(
 			"the directory entry for %q has no %s attribute, so no account can be keyed on it; "+
 				"set the mail attribute under Settings to one this directory actually fills",
 			login, config.EmailAttribute)
@@ -132,7 +185,7 @@ func (l *LDAP) Authenticate(
 		Email: strings.ToLower(email),
 		Name:  entry.GetAttributeValue(config.NameAttribute),
 		Role:  config.DefaultRole,
-	}, true, nil
+	}, nil
 }
 
 // ListUsers returns the mail addresses of every account the directory holds

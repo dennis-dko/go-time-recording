@@ -198,21 +198,34 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 		return nil, err
 	}
 
-	if user.TOTPEnabled {
-		// Not a failure: the password was right and the client is being asked
-		// for the second factor it was always going to be asked for.
-		if totpCode == "" {
-			return nil, ErrTOTPRequired
-		}
-
-		if err := s.spendTOTP(user, totpCode); err != nil {
-			s.count(ctx, MetricSignInFailures, "reason", SignInFailureTOTP)
-
-			return nil, err
-		}
+	if err := s.secondFactor(ctx, user, totpCode); err != nil {
+		return nil, err
 	}
 
 	return s.OpenSession(ctx, user)
+}
+
+// secondFactor asks an account that holds one for its code, whatever proved the
+// rest - a password or a Kerberos ticket. One place, so the two sign-ins cannot
+// come to ask it differently.
+func (s *SessionService) secondFactor(ctx context.Context, user *model.User, code string) error {
+	if !user.TOTPEnabled {
+		return nil
+	}
+
+	// Not a failure: the rest was proved and the client is being asked for the
+	// second factor it was always going to be asked for.
+	if code == "" {
+		return ErrTOTPRequired
+	}
+
+	if err := s.spendTOTP(user, code); err != nil {
+		s.count(ctx, MetricSignInFailures, "reason", SignInFailureTOTP)
+
+		return err
+	}
+
+	return nil
 }
 
 // OpenFirstSession issues the session the installer earned, or refuses.
