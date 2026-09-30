@@ -4966,7 +4966,7 @@ async function loadProjects() {
       // A project needs no period, so the column stays quiet when there is none:
       // it is one person's way of organising their hours, not a plan.
       el('td', { class: p.startDate ? '' : 'empty', text: p.startDate ? period : '–' }),
-      el('td', { text: p.description ?? '–' }),
+      el('td', { text: p.description || '–' }),
       el('td', {}, statusBadge(p.status)),
       actions,
     );
@@ -5220,7 +5220,7 @@ async function loadTimesheets(more = false) {
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project'),
       }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description ?? '–' }),
+      el('td', { text: entry.description || '–' }),
       actions,
     );
   });
@@ -5445,7 +5445,7 @@ function showCalendarDay(iso, entries) {
     const row = el('tr', {},
       el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description ?? '–' }),
+      el('td', { text: entry.description || '–' }),
       timesheetActions(entry),
     );
 
