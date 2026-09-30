@@ -404,6 +404,8 @@ func (s *SessionService) reconcileExternal(
 	// Only when the directory is claiming an account rather than signing in to
 	// one it already owns: an administrator whose account is directory-backed
 	// already goes on as before, because nothing is being taken over.
+	changed := false
+
 	if !existing.IsExternal {
 		administers, err := s.administers(ctx, existing)
 		if err != nil {
@@ -413,9 +415,20 @@ func (s *SessionService) reconcileExternal(
 		if administers {
 			return nil, apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 		}
-	}
 
-	changed := false
+		// Taken over, not only matched: the account is the directory's from here
+		// on, and keeps nothing local that a directory account cannot have. Kept,
+		// an account an administrator created without a password went on
+		// demanding that its owner replace the documented initial password on
+		// every sign-in - a password they never had - while that password still
+		// opened it, because a local account is checked against its own hash
+		// whenever the directory refuses. And a synchronisation, which removes
+		// only directory accounts, would have let it outlive its owner leaving.
+		existing.IsExternal = true
+		existing.MustChangePassword = false
+		existing.PasswordHash = ""
+		changed = true
+	}
 
 	if directoryUser.ID != "" && existing.ExternalID != directoryUser.ID {
 		existing.ExternalID = directoryUser.ID
