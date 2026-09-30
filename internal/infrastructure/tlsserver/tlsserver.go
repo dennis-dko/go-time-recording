@@ -204,10 +204,18 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 		redirect = manager.HTTPHandler(redirect)
 	}
 
+	// The same idle bound as the HTTPS server above, which this one lacked, and a
+	// bound on reading a request at all, which a redirect can afford where the
+	// front end cannot: nothing here reads a body, and without ReadTimeout
+	// net/http reads a small unread one away before it answers, with no deadline,
+	// so a declared body that never arrived held the connection and its answer for
+	// ever. This port is open to anybody on purpose, for the HTTP-01 challenge.
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
 		Handler:           redirect,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Bound here rather than inside the goroutine, and this is the difference

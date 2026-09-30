@@ -460,9 +460,13 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 	// own mount is the ordinary case, not the exception.
 	staged := self + ".new"
 
-	if err := s.download(ctx, release.asset, staged, want); err != nil {
-		_ = os.Remove(staged)
+	// However this ends, a download that was not put in place does not stay beside
+	// the binary. Once the swap has succeeded the name is gone and this removes
+	// nothing; it runs before the lock is released, so it cannot take another
+	// install's download with it.
+	defer func() { _ = os.Remove(staged) }()
 
+	if err := s.download(ctx, release.asset, staged, want); err != nil {
 		return err
 	}
 
@@ -480,16 +484,10 @@ func (s *Source) InstallOver(ctx context.Context, release Release, self string) 
 	// release, whatever its checksum says, and installing it would announce one
 	// version and restart into another.
 	if err := runnable(ctx, staged, release.Version); err != nil {
-		_ = os.Remove(staged)
-
 		return err
 	}
 
-	if err := swap(self, staged, release.Version); err != nil {
-		return err
-	}
-
-	return nil
+	return swap(self, staged, release.Version)
 }
 
 // runnable reports whether the downloaded file can actually start here, and is
