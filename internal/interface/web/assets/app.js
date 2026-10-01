@@ -1066,6 +1066,23 @@ function toast(message, kind = 'ok', detail = '') {
   }, linger);
 }
 
+/**
+ * Reports a failed request in the corner: the sentence, and folded away under it
+ * what could not be turned into one.
+ *
+ * toast takes that as its third argument, and most callers left it out - so an
+ * internal failure, whose sentence says the technical details are underneath,
+ * arrived with nothing underneath and without the reference that finds its log
+ * line. One function builds both halves, so a caller cannot pass the first and
+ * forget the second. lead names what failed, in front of the refusal's own
+ * sentence.
+ */
+function toastFailure(err, lead = '') {
+  const message = lead ? `${lead}: ${err.message}` : err.message;
+
+  toast(message, 'error', refusalDetail(err.refusal));
+}
+
 /** How many notices may be on screen, and how long each one stays. */
 const TOAST_LIMIT = 4;
 const TOAST_MIN_MS = 4000;
@@ -3250,7 +3267,7 @@ const TRANSLATIONS = {
     'tel.title': 'Protokoll, Metriken und Traces',
     'tel.logLevel': 'Protokollstufe',
     'tel.activeLog': 'Protokollstufe',
-    'tel.hint': 'Wird gespeichert und beim nächsten Start der Anwendung übernommen. Im laufenden Betrieb ist nichts davon umschaltbar: die Protokollstufe wird beim Start gelesen, der Metrik-Port beim Start gebunden und der Trace-Exporter beim Start gebaut. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
+    'tel.hint': 'Die Protokollstufe gilt sofort. Der Metrik-Port wird beim Start gebunden und der Trace-Exporter beim Start gebaut, darum werden diese hier gespeichert und beim nächsten Start übernommen; die Neustart-Karte zeigt, was wartet. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
     'tel.warn': 'Der Metrik-Port fragt nicht nach einer Anmeldung, ist nicht durch TLS geschützt und liefert neben den Metriken auch Go-Profiling-Endpunkte — wo er erreichbar ist, ist es auch ein Heap-Dump. Nur für die eigene Überwachung freigeben.',
     'tel.metrics': 'Metrik-Endpunkt',
     'tel.metricsOff': 'Nicht ausliefern',
@@ -3549,7 +3566,7 @@ const TRANSLATIONS = {
     'err.syncDiffersFromPreview': 'Das Verzeichnis antwortet inzwischen anders als in der bestätigten '
       + 'Vorschau: Dieser Lauf würde {0} Konto/Konten löschen, darum wurde nichts geändert. Bitte erneut '
       + 'prüfen.',
-    'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat überhaupt keine Benutzer geliefert; es wird niemand gelöscht.',
+    'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat niemanden mit einer Mailadresse geliefert; es wird niemand gelöscht.',
     'err.syncWouldRemoveTooMany': 'Würde {0} von {1} Verzeichniskonten entfernen ({2} %), mehr als die '
       + 'Sicherheitsgrenze von {3} %. Prüfen Sie Filter und Base-DN des Verzeichnisses und heben Sie die '
       + 'Löschgrenze unter „Betrieb und Grenzwerte“ oder LDAP_SYNC_MAX_DELETE_RATIO an, wenn das wirklich '
@@ -3583,6 +3600,7 @@ const TRANSLATIONS = {
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
+    'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warten Sie auf den nächsten.',
     'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
     'err.twoFactorNotStarted': 'Bitte zuerst die Zwei-Faktor-Einrichtung starten.',
     'err.twoFactorRequired': 'Ein Zwei-Faktor-Code ist erforderlich.',
@@ -4966,7 +4984,7 @@ async function loadProjects() {
       // A project needs no period, so the column stays quiet when there is none:
       // it is one person's way of organising their hours, not a plan.
       el('td', { class: p.startDate ? '' : 'empty', text: p.startDate ? period : '–' }),
-      el('td', { text: p.description ?? '–' }),
+      el('td', { text: p.description || '–' }),
       el('td', {}, statusBadge(p.status)),
       actions,
     );
@@ -5220,7 +5238,7 @@ async function loadTimesheets(more = false) {
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project'),
       }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description ?? '–' }),
+      el('td', { text: entry.description || '–' }),
       actions,
     );
   });
@@ -5445,7 +5463,7 @@ function showCalendarDay(iso, entries) {
     const row = el('tr', {},
       el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description ?? '–' }),
+      el('td', { text: entry.description || '–' }),
       timesheetActions(entry),
     );
 
@@ -6495,7 +6513,7 @@ async function runConnectionTest(result, attempt) {
     result.className = 'muted minus';
     sayAtLeastSomething(result);
 
-    toast(err.message, 'error', refusalDetail(err.refusal));
+    toastFailure(err);
   }
 }
 
@@ -6702,7 +6720,7 @@ async function mutate(fn, successMessage, after) {
     // banner is the message; these would be noise piled on it.
     if (duringARestart()) return;
 
-    toast(err.message, 'error', refusalDetail(err.refusal));
+    toastFailure(err);
 
     return;
   }
@@ -6722,8 +6740,7 @@ async function mutate(fn, successMessage, after) {
     // Named as what it is. The save is done and is not coming undone; what
     // failed is the screen catching up, and the way out of that is to load the
     // page again rather than to save a second time.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`,
-      'error', refusalDetail(err.refusal));
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -6959,7 +6976,7 @@ async function deleteUser(user) {
     return;
   } catch (err) {
     if (err.status !== 409) {
-      toast(err.message, 'error');
+      toastFailure(err);
 
       return;
     }
@@ -7102,7 +7119,7 @@ async function submitLogin(e) {
     // Signed in, but something behind it would not load. Staying on the
     // application with an explanation beats being thrown back to a sign-in
     // screen that will accept the same password and do this again.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -8736,7 +8753,7 @@ async function finishSetup() {
     // done and is not coming undone, so this must not read as the wizard having
     // failed. What failed is the screen catching up, and the way out is to load
     // the page again rather than to run the wizard a second time.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -9282,7 +9299,7 @@ function wireUpdateCheck() {
       // Including "asked a moment ago", which is a sentence rather than a
       // failure: the answer on the card is current, and saying so is better than
       // a button that appears to do nothing.
-      toast(err.message, 'error');
+      toastFailure(err);
     } finally {
       button.disabled = false;
       button.textContent = wasSaying;
@@ -9324,7 +9341,7 @@ function wireUpdate() {
       state = await api('/settings/update', { method: 'POST' });
     } catch (err) {
       overlay.hidden = true;
-      toast(err.message, 'error');
+      toastFailure(err);
 
       return;
     }
@@ -9372,8 +9389,7 @@ function wireUpdate() {
       overlay.hidden = true;
       await loadUpdate();
 
-      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`,
-        'error');
+      toastFailure(err, t('restart.failed', 'The restart could not be started'));
 
       return;
     }
@@ -9729,7 +9745,7 @@ function wireRestart() {
       await api('/settings/restart', { method: 'POST' });
     } catch (err) {
       overlay.hidden = true;
-      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`, 'error');
+      toastFailure(err, t('restart.failed', 'The restart could not be started'));
 
       return;
     }
@@ -10917,7 +10933,7 @@ async function exportEvaluation(button, name, build) {
   try {
     await downloadDocument(await build(), name);
   } catch (err) {
-    toast(err.message, 'error');
+    toastFailure(err);
   } finally {
     button.disabled = false;
 
@@ -11990,7 +12006,7 @@ function wirePasskeys() {
 
       await greetAfterSignIn();
     } catch (err) {
-      toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+      toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
     }
   });
 }
@@ -13569,7 +13585,7 @@ async function init() {
 
     resetBookingDate();
   } catch (err) {
-    toast(`${t('msg.initFailed', 'Initialisation failed')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.initFailed', 'Initialisation failed'));
   }
 
   try {

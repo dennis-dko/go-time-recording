@@ -2,6 +2,7 @@ package logsink
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -450,7 +451,7 @@ func (s *Sink) drain(from io.Reader, console io.Writer) {
 		render := s.renderer
 		s.mu.RUnlock()
 
-		out := line
+		out := withoutValues(line)
 		if render != nil {
 			out = render(record)
 		}
@@ -612,6 +613,91 @@ func messageText(raw json.RawMessage) (text, traceID string) {
 		return fmt.Sprintf("%s %s %s", s.Type, micros(s.Duration), collapse(s.Query)), s.TraceID
 	default:
 		return strings.TrimSpace(string(raw)), s.TraceID
+	}
+}
+
+// withoutValues is a line as the framework wrote it, less the values of the
+// statement it logs.
+//
+// GoFr logs every SQL statement at DEBUG with its arguments, and this
+// application runs it at DEBUG always and applies the level on the way out - so
+// choosing DEBUG, which the Settings screen offers, sent every value every
+// statement carried to the console: a second factor's secret as it was
+// enrolled, the directory's bind password as it was saved, both in clear text
+// without SECRET_KEY, and everybody's hours and notes. The console is the
+// container's log or the journal, read by whoever runs the machine.
+//
+// Each value is replaced by its kind, so the line still says what ran and with
+// how many values of which sort, which is what a query log is for. Only a query
+// log is touched; every other line passes as the framework wrote it. Without
+// capture there is nothing here to do this, and the framework then runs at the
+// configured level rather than at DEBUG.
+func withoutValues(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "{") || !strings.Contains(trimmed, `"args"`) {
+		return line
+	}
+
+	var outer map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &outer); err != nil {
+		return line
+	}
+
+	var message map[string]json.RawMessage
+	if err := json.Unmarshal(outer["message"], &message); err != nil {
+		return line
+	}
+
+	var args []json.RawMessage
+	if _, isQuery := message["query"]; !isQuery || json.Unmarshal(message["args"], &args) != nil {
+		return line
+	}
+
+	kinds := make([]string, len(args))
+	for i, arg := range args {
+		kinds[i] = kindOf(arg)
+	}
+
+	message["args"] = plainJSON(kinds)
+	outer["message"] = plainJSON(message)
+
+	return string(plainJSON(outer))
+}
+
+// plainJSON encodes without escaping <, > and &, which json.Marshal does for the
+// sake of HTML: a statement comparing with < would otherwise reach the console
+// as an escape sequence. It cannot fail on what it is given here - strings and
+// raw JSON that has just been decoded.
+func plainJSON(v any) json.RawMessage {
+	var b bytes.Buffer
+
+	encoder := json.NewEncoder(&b)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(v)
+
+	return bytes.TrimRight(b.Bytes(), "\n")
+}
+
+// kindOf names what sort of JSON value a raw one is, without its content.
+func kindOf(raw json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return "<empty>"
+	}
+
+	switch trimmed[0] {
+	case '"':
+		return "<string>"
+	case 't', 'f':
+		return "<bool>"
+	case 'n':
+		return "<null>"
+	case '[':
+		return "<array>"
+	case '{':
+		return "<object>"
+	default:
+		return "<number>"
 	}
 }
 

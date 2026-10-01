@@ -501,7 +501,7 @@ func runnable(ctx context.Context, path, version string) error {
 	out, err := exec.CommandContext(probe, path, "--version").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("the downloaded version does not run on this machine "+
-			"(%v: %.200s); the update was not installed", err, out)
+			"(%w: %.200s); the update was not installed", err, out)
 	}
 
 	answer := strings.TrimSpace(string(out))

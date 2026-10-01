@@ -53,7 +53,9 @@ func TestAPasskeySignsInWithoutATwoFactorCodeEvenWhenTOTPIsOn(t *testing.T) {
 	p.signIn("hanna@example.com", "hanna-password-1")
 	p.run("wait for the code field", chromedp.WaitVisible("#login-totp-field", chromedp.ByID))
 
-	code, err := security.CurrentTOTPCode(secret)
+	// The next step's code: the current one was spent confirming the enrolment a
+	// moment ago, and a code is accepted once only.
+	code, err := security.TOTPCodeAt(secret, time.Now().Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("cannot compute a code: %v", err)
 	}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
@@ -82,7 +83,9 @@ func TestASecondFactorIsNotReadableInTheDatabase(t *testing.T) {
 	// And the application can still read its own writing, which is the half that
 	// encryption breaks when it is done wrong: a second factor nobody can verify
 	// locks every enrolled account out.
-	again, err := security.CurrentTOTPCode(setup.Secret)
+	// The next step's code: the current one was spent confirming, and a code is
+	// accepted once only.
+	again, err := security.TOTPCodeAt(setup.Secret, time.Now().Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("generate a code: %v", err)
 	}
@@ -115,5 +118,42 @@ func TestWithoutAKeyTheInstallationStillWorksAndSaysSo(t *testing.T) {
 	if !strings.Contains(a.log(), "SECRET_KEY is not set") {
 		t.Error("an installation storing second factors in the clear says nothing " +
 			"about it in the log")
+	}
+}
+
+// A log at DEBUG carries none of the values a statement wrote.
+//
+// GoFr logs every SQL statement at DEBUG together with its arguments, and DEBUG
+// is one choice on the Settings screen away. Without SECRET_KEY the second
+// factor is stored as it is, so the statement enrolling it carried the secret
+// itself - and the console, the container's log, carried it on to whoever
+// operates the machine. The statement is still logged; its values are not.
+func TestADebugLogCarriesNoSecretAStatementWrote(t *testing.T) {
+	t.Parallel()
+
+	a := start(t, "LOG_LEVEL=DEBUG")
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	setup := beginEnrolment(t, admin)
+	if setup.Secret == "" {
+		t.Fatal("the enrolment carries no secret")
+	}
+
+	// The statement storing it has to be in the log, or its absence proves nothing.
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(a.log(), "totp_secret") && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	logged := a.log()
+
+	if !strings.Contains(logged, "totp_secret") {
+		t.Fatal("no statement naming the secret's column was logged at DEBUG, so this case " +
+			"measures nothing")
+	}
+
+	if strings.Contains(logged, setup.Secret) {
+		t.Error("the log at DEBUG carries the second factor's secret, written out with the " +
+			"statement that stored it")
 	}
 }
