@@ -2035,11 +2035,19 @@
               "default": 300
             },
             "description": "How many lines at most; the newest are kept."
+          },
+          {
+            "name": "epoch",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The `epoch` of the answer `since` was taken from. Sequence numbers start again with the process, so a position counted by a process that has since been replaced is answered from the beginning of the running one, with `restarted` set."
           }
         ],
         "responses": {
           "200": {
-            "description": "Log lines, the levels that exist and how many were dropped"
+            "description": "Log lines, the levels that exist, how many were dropped or passed over, and the `epoch` to send back with `since`"
           }
         }
       }

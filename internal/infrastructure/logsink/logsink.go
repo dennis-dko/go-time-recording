@@ -3,6 +3,7 @@ package logsink
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,10 +16,11 @@ import (
 
 // Record is one captured log line.
 type Record struct {
-	// Seq is a monotonic identifier. It never repeats and never goes
-	// backwards, which is what lets a client ask for "everything after what I
-	// already have" without comparing timestamps - several lines routinely
-	// share a millisecond.
+	// Seq is a monotonic identifier. Within one process it never repeats and
+	// never goes backwards, which is what lets a client ask for "everything
+	// after what I already have" without comparing timestamps - several lines
+	// routinely share a millisecond. It starts again with the process, which is
+	// what Query.Epoch is for.
 	Seq uint64
 
 	Time    time.Time
@@ -60,6 +62,10 @@ type Sink struct {
 	// threshold is the least severe level that is kept and forwarded. Zero
 	// means everything, which is what an uncaptured or unconfigured sink does.
 	threshold int
+
+	// epoch names this sink among every one there has been, which is to say this
+	// process among its predecessors. See Query.Epoch.
+	epoch string
 }
 
 // severity ranks the levels GoFr emits. Anything not in here is unranked, and
@@ -159,8 +165,14 @@ func New(capacity int) *Sink {
 		capacity = DefaultCapacity
 	}
 
-	return &Sink{ring: make([]Record, capacity)}
+	// Random rather than the time it was made: two sinks made in the same tick of
+	// a coarse clock would answer to one name, which is the one thing a name here
+	// is for - measured on Windows, where two made in a row did.
+	return &Sink{ring: make([]Record, capacity), epoch: rand.Text()}
 }
+
+// Epoch names the sink a sequence number was counted by.
+func (s *Sink) Epoch() string { return s.epoch }
 
 // SetPassthroughRenderer changes what is written to the real console.
 //
@@ -220,6 +232,10 @@ type Query struct {
 	// Limit caps how many records come back, keeping the newest. Zero means no
 	// cap beyond the ring itself.
 	Limit int
+
+	// Epoch is the sink Since was counted by, as a previous Result named it.
+	// Empty means the client does not say.
+	Epoch string
 }
 
 // Result is a page of records plus where the log now ends.
@@ -241,6 +257,15 @@ type Result struct {
 	// burst between two polls was the gap Dropped exists to admit, only unsaid:
 	// the records were still in the ring and the client never asked again.
 	Skipped uint64
+
+	// Epoch names this sink, for the client to send back with Since.
+	Epoch string
+
+	// Restarted says the client was following another sink - a process that has
+	// since been replaced - and was answered from the beginning of this one.
+	// Dropped and Skipped then count from that beginning: a client that comes
+	// back late is following on into a log that may already have rolled over.
+	Restarted bool
 }
 
 // Query returns the matching records, oldest first.
@@ -248,7 +273,23 @@ func (s *Sink) Query(q Query) Result {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := Result{LastSeq: s.lastSeq}
+	result := Result{LastSeq: s.lastSeq, Epoch: s.epoch}
+
+	// A position another sink counted says nothing about this one's lines: the
+	// numbers start again with the process. Taken at its word, the first answer
+	// after a restart held nothing, moved the client on to where the new log
+	// ended, and the lines the process wrote while starting were never shown.
+	//
+	// Named by the client where it can, and also recognised by a number this
+	// sink has not reached - which catches a client that does not say, and
+	// cannot catch a position this sink has already passed, which is why the
+	// name exists.
+	following := q.Since > 0
+
+	if (q.Epoch != "" && q.Epoch != s.epoch) || q.Since > s.lastSeq {
+		q.Since = 0
+		result.Restarted = true
+	}
 
 	wanted := make(map[string]bool, len(q.Levels))
 	for _, level := range q.Levels {
@@ -258,8 +299,9 @@ func (s *Sink) Query(q Query) Result {
 	search := strings.ToLower(strings.TrimSpace(q.Search))
 
 	// A client that asked for everything after a record the ring has already
-	// discarded is missing lines. Say so.
-	if oldest := s.oldestSeqLocked(); q.Since > 0 && oldest > q.Since+1 {
+	// discarded is missing lines. Say so - and a client following on into a new
+	// process is owed every line of it, so there the count starts at none.
+	if oldest := s.oldestSeqLocked(); following && oldest > q.Since+1 {
 		result.Dropped = oldest - q.Since - 1
 	}
 
@@ -283,7 +325,7 @@ func (s *Sink) Query(q Query) Result {
 	// the ones worth having. Counted when the client is following on from a
 	// line it holds, because then what is trimmed is a gap in what it shows.
 	if q.Limit > 0 && len(result.Records) > q.Limit {
-		if q.Since > 0 {
+		if following {
 			result.Skipped = uint64(len(result.Records) - q.Limit)
 		}
 

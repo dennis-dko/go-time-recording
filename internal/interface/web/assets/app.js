@@ -3727,6 +3727,7 @@ const TRANSLATIONS = {
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
     'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
+    'log.restarted': 'Die Anwendung wurde neu gestartet. Es folgt das Protokoll des neuen Prozesses.',
     'log.skipped': 'Es kamen mehr Zeilen, als eine Seite fasst; {0} wurden übersprungen, um die neuesten zu zeigen.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
@@ -12023,6 +12024,13 @@ function wirePasskeys() {
  */
 const logView = {
   since: 0,
+
+  // Which process counted `since`, as its last answer named it, and sent back
+  // with it. The numbers start again with the process, so without this a viewer
+  // left open across a restart asked the new process for "everything after" a
+  // number only the old one had reached - and was shown none of what the new one
+  // wrote while it started.
+  epoch: '',
   timer: null,
   polling: false,
   paused: false,
@@ -12203,6 +12211,44 @@ function setLogStatus(text) {
   if (status) status.textContent = text;
 }
 
+/**
+ * What a page of the log has to admit about itself: where the output stops
+ * being one unbroken run of lines. Empty when it is one.
+ *
+ * The three are not alternatives, which is why this is not a chain of else. A
+ * viewer that was paused, or sat in a tab the browser put to sleep, comes back
+ * to a process started while it was away and follows on into a log that has
+ * been written for hours: it has begun again *and* its first lines have left
+ * the buffer *and* more are left than a page holds. Said one at a time, a
+ * restart was announced over a page that began three hundred lines in.
+ */
+function logGaps(page) {
+  const said = [];
+
+  if (page.restarted) {
+    // The lines above were another process's. The output is one column of
+    // lines and would otherwise run the old log into the new one as though
+    // nothing had happened between them.
+    said.push(t('log.restarted',
+      'The application has started again. What follows is the log of the new process.'));
+  }
+
+  if (page.dropped > 0) {
+    said.push(t('log.dropped',
+      'Older lines have been discarded from the buffer and cannot be recovered.'));
+  }
+
+  if (page.skipped > 0) {
+    // More arrived than one page holds - after a pause, or on a busy
+    // installation - and the newest were shown.
+    said.push(t('log.skipped',
+      'More lines arrived than one page holds, so {0} were passed over to show the newest.')
+      .replace('{0}', String(page.skipped)));
+  }
+
+  return said.join(' ');
+}
+
 async function pollLog() {
   if (!logViewerActive() || logView.polling) return;
 
@@ -12210,6 +12256,7 @@ async function pollLog() {
 
   try {
     const query = new URLSearchParams({ since: String(logView.since), limit: '500' });
+    if (logView.epoch) query.set('epoch', logView.epoch);
 
     const levels = selectedLogLevels();
     // Every level ticked is the same request as none, and sending none keeps
@@ -12232,22 +12279,15 @@ async function pollLog() {
     }
 
     logView.since = page.lastSeq ?? logView.since;
+    logView.epoch = page.epoch ?? logView.epoch;
 
     appendLogLines(page.records ?? []);
 
-    const warning = $('#log-warning');
-    if (page.dropped > 0) {
-      warning.textContent = t('log.dropped',
-        'Older lines have been discarded from the buffer and cannot be recovered.');
-      warning.hidden = false;
-    } else if (page.skipped > 0) {
-      // More arrived than one page holds - after a pause, or on a busy
-      // installation - and the newest were shown. The ones before them were
-      // passed over, which is a gap this output would otherwise present as
-      // continuity.
-      warning.textContent = t('log.skipped',
-        'More lines arrived than one page holds, so {0} were passed over to show the newest.')
-        .replace('{0}', String(page.skipped));
+    const gaps = logGaps(page);
+    if (gaps) {
+      const warning = $('#log-warning');
+
+      warning.textContent = gaps;
       warning.hidden = false;
     }
 
