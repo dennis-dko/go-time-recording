@@ -597,7 +597,8 @@ while it is sitting there.
 account cannot issue API tokens — but it *can* reach the whole *Settings*
 surface: the database connection, the directory bind, telemetry, the process log,
 the restart. `changeme123` is effectively full control of the installation, not a
-limited foothold.
+limited foothold. Every start says so in the log while it is still the password,
+as it says so for authentication switched off and for plain HTTP.
 
 The built-in administrator **records no time**. It sets up the installation and
 manages accounts and roles; it has no projects, no entries, no overtime balance
