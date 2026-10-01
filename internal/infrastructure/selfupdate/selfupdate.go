@@ -95,6 +95,10 @@ type Source struct {
 
 	// stall overrides stallAfter, so a test need not wait out the real one.
 	stall time.Duration
+
+	// limit overrides maxDownload, so a test need not serve a hundred megabytes
+	// to meet it.
+	limit int64
 }
 
 // ErrInstalling says an install is already under way.

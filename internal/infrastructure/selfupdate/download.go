@@ -62,6 +62,15 @@ func (c stallingConn) Read(b []byte) (int, error) {
 // and header phases of the one that does not.
 const lookupTimeout = 10 * time.Second
 
+// ceiling is maxDownload, or a test's smaller override.
+func (s *Source) ceiling() int64 {
+	if s.limit > 0 {
+		return s.limit
+	}
+
+	return maxDownload
+}
+
 // downloadClient is who fetches the binary.
 func (s *Source) downloadClient() *http.Client {
 	if s.Downloader != nil {
@@ -130,7 +139,11 @@ func sumOf(path string) (string, error) {
 	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
-// download fetches the asset and writes it only if it hashes to want.
+// download fetches the asset into a file and says whether it hashes to want.
+//
+// The file is written either way - hashed as it lands, so what was checked is
+// what is on disk - and one that is refused is the caller's to remove, which
+// InstallOver does on every way out.
 func (s *Source) download(ctx context.Context, url, into, want string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -148,6 +161,14 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 		return fmt.Errorf("the download answered %d", res.StatusCode)
 	}
 
+	// A length the server declares is believed where it is too large: there is
+	// nothing to learn from fetching a hundred megabytes that the header has
+	// not already said.
+	ceiling := s.ceiling()
+	if res.ContentLength > ceiling {
+		return outgrown(ceiling)
+	}
+
 	// 0o755 rather than 0o644: this is about to be the application.
 	file, err := os.OpenFile(into, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 	if err != nil {
@@ -158,7 +179,14 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 
 	// Hashed while it is written rather than read back afterwards, so the bytes
 	// that were checked are the bytes that landed.
-	if _, err := io.Copy(io.MultiWriter(file, sum), io.LimitReader(res.Body, maxDownload)); err != nil {
+	//
+	// One byte past the bound is asked for, so a body that was cut off here can
+	// be told from one that ended. Cut at the bound exactly, it was then hashed
+	// and refused as not matching its checksum - which is a sentence about a
+	// file that arrived wrong, said of one that arrived as published and was
+	// only too large.
+	written, err := io.Copy(io.MultiWriter(file, sum), io.LimitReader(res.Body, ceiling+1))
+	if err != nil {
 		_ = file.Close()
 
 		if errors.Is(err, os.ErrDeadlineExceeded) {
@@ -173,6 +201,10 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 		return err
 	}
 
+	if written > ceiling {
+		return outgrown(ceiling)
+	}
+
 	if got := hex.EncodeToString(sum.Sum(nil)); got != want {
 		return fmt.Errorf("the download does not match the published checksum "+
 			"(got %s, expected %s)", got[:16], want[:16])
@@ -183,10 +215,23 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 
 // maxDownload bounds what will be written to disk.
 //
-// The published binaries are 45 to 50 MB - measured on v0.2.46, where the four
-// assets run from 45.5 to 49.7 MB - so a hundred is a little over twice the
-// current size. That was written down as "around thirty megabytes" and is worth
-// keeping honest, because this bound is the one that turns into a failed update
-// rather than a refused request if the binary keeps growing: at the present rate
-// it is the number to revisit before it is the number that breaks.
+// The published binaries were 45.5 to 49.7 MB on v0.2.46 and are 49.5 to 54.0 MB
+// on v0.3.44, measured on the four assets of each - so the bound, 104.9 MB, is a
+// little under twice the largest, and they grew by about four megabytes in a
+// hundred releases. That was written down as "around thirty megabytes" and is
+// worth keeping honest, because this bound is compiled into the version that is
+// running: the day a release passes it, every installation already out there
+// refuses that release, and none of them can be given a larger bound except by
+// hand. It is the number to revisit long before it is the number that breaks.
 const maxDownload = 100 << 20
+
+// outgrown is the refusal of a release larger than this version downloads.
+//
+// Its own sentence, because what somebody has to do about it is not what they do
+// about a download that arrived wrong: nothing is the matter with the release or
+// the connection, and trying again will not help.
+func outgrown(ceiling int64) error {
+	return fmt.Errorf("the release's binary is larger than the %d MB this version "+
+		"downloads, so it cannot install it; replace the binary by hand, as the "+
+		"release describes", ceiling>>20)
+}
