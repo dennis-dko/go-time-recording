@@ -689,6 +689,13 @@ working without being provisioned first. Local-only accounts keep working
 alongside directory ones. Roles and permissions always stay local — the
 directory decides *who you are*, this application decides *what you may do*.
 
+An account created here under the same address — by an administrator, or by an
+import — is taken over the first time its owner signs in through the directory,
+hours and all. From then on it is a directory account: it keeps no local
+password, so it is no longer asked for a new one and the initial password no
+longer opens it, and a synchronisation treats it like any other. An account that
+administers this installation is never taken over.
+
 ### Synchronisation
 
 Under **Settings → Directory synchronisation** the whole directory is
