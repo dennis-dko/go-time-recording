@@ -265,6 +265,75 @@ function refusalFrom(res, body) {
   return err;
 }
 
+/**
+ * fetch, with a request that never arrived put into words.
+ *
+ * fetch failing before there is an answer - the server stopped, the connection
+ * dropped - throws the browser's own exception, worded in its language and its
+ * own way: "Failed to fetch" in one, "NetworkError when attempting to fetch
+ * resource." in another. The sentence is ours; the browser's words go where a
+ * refusal's original words go, under it. Every request goes through here, api()
+ * and the three that cannot use it, so none of them can forget.
+ *
+ * An aborted request goes back as it came: whoever aborted it asked for it, and
+ * api() tells its own timeout from a caller's.
+ */
+async function reach(url, options) {
+  // A write that is already on its way is not sent a second time.
+  //
+  // A double click, or Enter held down, submits a form twice before the first
+  // answer has come back - and a booking sent twice is the same hours recorded
+  // twice, an import sent twice every row written twice. Measured: two entries,
+  // created in the same second, from one form pressed twice. Asked here because
+  // every request passes through here, so no form has to remember it.
+  const key = writeKey(url, options);
+
+  if (key && writesInFlight.has(key)) {
+    const repeated = new Error(t('msg.alreadySending', 'This is already being sent.'));
+    repeated.repeated = true;
+
+    throw repeated;
+  }
+
+  if (key) writesInFlight.add(key);
+
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (options?.signal?.aborted) throw err;
+
+    const unreachable = new Error(t('msg.unreachable',
+      'The server could not be reached. Check the connection and try again.'));
+    unreachable.refusal = { detail: err.message };
+    unreachable.cause = err;
+
+    throw unreachable;
+  } finally {
+    if (key) writesInFlight.delete(key);
+  }
+}
+
+/** The writes on their way now, by what they would change; see reach. */
+const writesInFlight = new Set();
+
+/**
+ * What a write would change - its method, its address and what it carries - or
+ * null for a read, which does no harm twice. A file stands for itself by name,
+ * size and time of change, which is what a second press of the same import sends.
+ */
+function writeKey(url, options) {
+  const method = (options?.method ?? 'GET').toUpperCase();
+  if (SAFE_METHODS.has(method)) return null;
+
+  const body = options?.body;
+  const carried = body instanceof FormData
+    ? [...body.entries()].map(([name, value]) => (value instanceof File
+      ? `${name}=${value.name}:${value.size}:${value.lastModified}`
+      : `${name}=${value}`)).join('&')
+    : String(body ?? '');
+
+  return `${method} ${url} ${carried}`;
+}
 
 async function api(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
@@ -291,7 +360,7 @@ async function api(path, options = {}) {
   let res;
 
   try {
-    res = await fetch(API + path, {
+    res = await reach(API + path, {
       ...options,
       headers,
       signal: giveUp ? giveUp.signal : options.signal,
@@ -3611,6 +3680,8 @@ const TRANSLATIONS = {
     'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
     'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
+    'msg.unreachable': 'Der Server war nicht erreichbar. Bitte die Verbindung prüfen und es erneut versuchen.',
+    'msg.alreadySending': 'Das wird bereits gesendet.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
     'err.chartNotAPicture': 'Das Diagramm konnte nicht gelesen werden. '
       + 'Bitte die Auswertung erneut anzeigen und dann exportieren.',
@@ -6714,6 +6785,10 @@ async function mutate(fn, successMessage, after) {
     // existing caller ignores it, which is what makes this safe to add.
     result = await fn();
   } catch (err) {
+    // A second press of a write still on its way: the first one is the answer,
+    // and it is still coming.
+    if (err.repeated) return;
+
     // Silent while the application is restarting into a new version. Every
     // request fails for those few seconds, and each one would raise its own red
     // toast on top of a banner that already says exactly what is happening. The
@@ -10427,7 +10502,7 @@ async function exportWorkbook() {
  * check, save - and the two callers below differ only in how they ask.
  */
 async function downloadFile(url, name, extension, request = {}) {
-  const res = await fetch(url, { credentials: 'same-origin', ...request });
+  const res = await reach(url, { credentials: 'same-origin', ...request });
 
   // Everything api() reads off an answer that is not its body. Only the body is
   // this function's own business - it wants a blob, which is why it asks
@@ -10512,7 +10587,7 @@ async function sendWorkbook(dryRun) {
 
   // No Content-Type of our own: the browser has to set it, because only it knows
   // the multipart boundary it generated.
-  const res = await fetch(`${API}/timesheets/import`, {
+  const res = await reach(`${API}/timesheets/import`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'X-CSRF-Token': readCookie('gtr_csrf') },
@@ -11157,7 +11232,7 @@ function buildSheetCard(spec) {
 
     // No Content-Type of our own: only the browser knows the multipart boundary
     // it generated.
-    const res = await fetch(`${API}${spec.path}/import`
+    const res = await reach(`${API}${spec.path}/import`
       + `?lang=${encodeURIComponent(activeLanguage())}`, {
       method: 'POST',
       credentials: 'same-origin',
@@ -13622,12 +13697,39 @@ async function init() {
     // finishes by throwing the page away, so the answer to the button somebody
     // pressed arrives here rather than there.
     saySoAfterTheReload();
-  } catch {
-    // No usable session: the sign-in screen is the whole interface until
-    // there is one. Unless somebody signed in while this was running, which
-    // showLogin decides - it is the same question wherever it is asked from.
-    showLogin();
+  } catch (err) {
+    afterAFailedFirstLoad(err);
   }
+}
+
+/**
+ * What a first load that failed leaves on screen.
+ *
+ * A session /me accepted is not undone by a loader that failed after it - a
+ * query the database refused, a connection that dropped part-way. Showing the
+ * sign-in form here put it over a session that was fine, said nothing about
+ * what had failed, and made signing in again open a second one. The reader
+ * keeps the screen they are signed into and is told what did not load, as a
+ * reload that fails after a save is.
+ *
+ * Not on a 401, which is the session itself refused: a first load that failed
+ * for want of one can land after somebody signed in underneath it, and that
+ * belongs to showLogin, which already answers exactly that.
+ */
+function afterAFailedFirstLoad(err) {
+  if (me.user && err?.status !== 401) {
+    restoreDrafts();
+    hideLogin();
+    openTheStartingView({ restoring: true });
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
+
+    return;
+  }
+
+  // No usable session: the sign-in screen is the whole interface until there is
+  // one. Unless somebody signed in while this was running, which showLogin
+  // decides - it is the same question wherever it is asked from.
+  showLogin();
 }
 
 document.addEventListener('DOMContentLoaded', init);
