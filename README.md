@@ -959,14 +959,17 @@ enrolled two-factor account, which no screen administers - and it seeds the
 initial title, so naming the instance in the environment saves naming it twice.
 
 **At the next start** are administered too, but stored rather than applied,
-because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
+because GoFr reads them while it starts up: the `DB_*` connection,
 `LDAP_SYNC_SCHEDULE`, and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What
 is stored wins from the next start onwards, and a banner across the top of every
 screen lists what is still waiting, for whoever may do something about it.
 
-`LOG_LEVEL` is administered too and is likewise out of `configs/.env` now. The
-one file that still names it is `configs/.dev.env`, which is what "follow the
-configuration file" means for a development run that has no stored setting yet.
+`LOG_LEVEL` is administered too, is likewise out of `configs/.env` now, and is
+the one of these that does not wait: the level is applied to the lines on their
+way out of the process rather than by GoFr's logger, so a saved level holds from
+the next line. The one file that still names it is `configs/.dev.env`, which is
+what "follow the configuration file" means for a development run that has no
+stored setting yet.
 
 The **timezone and the LDAP connection appear in no file at all**. Both are
 administered entirely in the application — a second place to write them would
@@ -1083,15 +1086,19 @@ another server or user and the box empties, because that password is not sent
 anywhere it was not given.
 
 *Settings → Logging, metrics and tracing* works the same way, and for the same
-kind of reason: GoFr reads the log level, binds the metrics port and builds the
-trace exporter inside `gofr.New()`, so nothing administered afterwards could
-reach any of them. GoFr can change a running logger's level, but it does so by
-assigning to a field every request goroutine reads without synchronisation — a
-data race is not a reasonable price for saving a restart. What is
-saved there is stored in the database and read back out of it on the way into the
-next start, before GoFr reads its own configuration — which is what lets a stored
-value win over the file, including a stored *off*. A field left following the
-configuration file keeps coming from there.
+kind of reason: GoFr binds the metrics port and builds the trace exporter inside
+`gofr.New()`, so nothing administered afterwards could reach either of them.
+What is saved there is stored in the database and read back out of it on the way
+into the next start, before GoFr reads its own configuration — which is what
+lets a stored value win over the file, including a stored *off*. A field left
+following the configuration file keeps coming from there.
+
+The log level is on the same card and does not wait. GoFr is left writing
+everything, and the level is applied to each line on its way out of the process,
+which is where the log viewer reads it too — so saving a level changes what the
+very next line does. That was built when changing GoFr's own level under running
+requests was a data race; GoFr has made that field atomic since (v1.60.0), and
+the level is still applied on the way out.
 
 The screen shows what the running process is actually doing beside what is
 stored, because until the next restart those disagree, and it names the metrics

@@ -614,13 +614,20 @@ list of pending changes with the running value beside the stored one:
 | --- | --- | --- |
 | the database connection | never swapped under live requests | yes — dialect, host, port, name, user and SSL mode |
 | the database password | same | yes, as the name of the setting alone |
-| log level | the logger's level is read at start | yes |
 | metrics off | the port is bound at start | yes |
 | trace exporter, collector URL, sample ratio | the exporter is built at start | yes |
 | the directory sync schedule | a cron job is registered at start | yes |
 
-Applying immediately: the operational limits, the whole directory connection, the
-instance timezone, branding and the logo, maintenance mode, users and roles.
+Applying immediately: the log level, the operational limits, the whole directory
+connection, the instance timezone, branding and the logo, maintenance mode, users
+and roles.
+
+The log level is on the same card as the metrics and tracing settings and is the
+one of them that does not wait: it is applied to every line on its way out of the
+process, so it holds from the next line written. The exception is a process whose
+output could not be captured when it started - it says so once on its console,
+`could not capture the log for the viewer` - where the level is the logger's own
+again, is read at start, and is listed as pending like the others.
 
 The connection is compared whole. It used to be compared by dialect alone, on
 the grounds that a changed host is a change to the same connection — which

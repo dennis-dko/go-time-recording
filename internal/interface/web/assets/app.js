@@ -3233,7 +3233,7 @@ const TRANSLATIONS = {
     'tour.limits.title': 'Grenzwerte und Laufzeiten',
     'tour.limits.text': 'Wie lange eine Sitzung gilt, wie viele Anfragen jemand stellen darf und mit welchen Werten ein neues Konto startet.',
     'tour.telemetry.title': 'Metriken und Tracing',
-    'tour.telemetry.text': 'Log-Level, der Metrik-Endpunkt und wohin Traces exportiert werden. Alle drei werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
+    'tour.telemetry.text': 'Die Protokollstufe, der Metrik-Endpunkt und wohin Traces exportiert werden. Die Stufe gilt sofort; die beiden anderen werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
     'tour.log.title': 'Das Protokoll, ohne Shell',
     'tour.log.text': 'Was dieser Prozess schreibt, filterbar nach Stufe. Die erste Anlaufstelle, wenn etwas abgelehnt wurde und der Grund nicht auf dem Bildschirm stand.',
     'tour.theme.title': 'Darstellung und Sprache',
@@ -3731,10 +3731,10 @@ const TRANSLATIONS = {
     'log.skipped': 'Es kamen mehr Zeilen, als eine Seite fasst; {0} wurden übersprungen, um die neuesten zu zeigen.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
-    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
+    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – eine Stufe darunter anzuhaken zeigt deshalb nichts. Die Stufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt. Nur im Speicher gehalten: nach einem Neustart ist das bis dahin Erfasste verloren, und eine Protokollsammlung ersetzt das hier nicht.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
-    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Das Log-Level wird unter „Protokollierung, Metriken und Tracing“ geändert und gilt ab dem nächsten Start.',
+    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
     'log.paused': 'Angehalten.',
     'log.resume': 'Fortsetzen',
     'log.search': 'Suche',
@@ -7781,8 +7781,8 @@ const TOUR_STEPS = [
     permission: 'settings:manage',
     title: () => t('tour.telemetry.title', 'Metrics and tracing'),
     text: () => t('tour.telemetry.text',
-      'The log level, the metrics endpoint and where traces are exported to. All three are '
-      + 'read when the process starts, so they wait for the next one.'),
+      'The log level, the metrics endpoint and where traces are exported to. The level applies '
+      + 'at once; the other two are read when the process starts, so they wait for the next one.'),
   },
   {
     target: '#log-card',
@@ -12348,11 +12348,11 @@ const LOG_LEVELS_BY_DETAIL = ['DEBUG', 'INFO', 'NOTICE', 'WARN', 'ERROR', 'FATAL
  * at INFO look like a filter that is broken rather than one that is working
  * exactly as intended and has nothing to show.
  *
- * The level itself is on the logging card, and it applies at the next start,
- * because the framework changes a logger's level by writing a field every
- * request goroutine reads without synchronisation. So this is a sentence rather
- * than a button: what somebody has to do next is two screens and a restart away,
- * and being told that beats waiting for lines that are not coming.
+ * The level itself is set on the logging card, and that card is the one place
+ * that says when a saved level applies - this one went on saying "at the next
+ * start" after that had stopped being true, beside a card saying "at once".
+ * So this is a sentence rather than a button, and it stops at naming the card:
+ * being told where the level is beats waiting for lines that are not coming.
  */
 function warnAboutLevelsTheProcessDoesNotWrite() {
   const warning = $('#log-level-warning');
@@ -12372,7 +12372,7 @@ function warnAboutLevelsTheProcessDoesNotWrite() {
   warning.textContent = quieter.length
     ? t('log.levelTooQuiet',
       'This installation is writing {0} and above, so {1} will stay empty. '
-      + 'Change the log level under Logging, metrics and tracing; it applies at the next start.')
+      + 'The log level is set under "Logging, metrics and tracing" above.')
       .replace('{0}', logView.runningLevel)
       .replace('{1}', quieter.join(', '))
     : '';
