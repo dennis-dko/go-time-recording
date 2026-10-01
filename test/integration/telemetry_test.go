@@ -364,9 +364,8 @@ func TestAnAdministeredOffBeatsAnExporterInTheEnvironment(t *testing.T) {
 // a shell.
 //
 // It works because the level is applied by the log sink rather than by the
-// framework's logger, which decides from a field every request goroutine reads
-// without synchronisation. This drives the real binary, so what is asserted is
-// the whole seam: saved through the API, applied to the capture, visible in the
+// framework's logger. This drives the real binary, so what is asserted is the
+// whole seam: saved through the API, applied to the capture, visible in the
 // process output.
 func TestTheLogLevelAppliesWithoutARestart(t *testing.T) {
 	t.Parallel()

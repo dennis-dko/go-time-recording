@@ -76,18 +76,21 @@ var severity = map[string]int{
 
 // SetLevel decides what is written and kept from now on.
 //
-// This is what makes the log level administrable while the application runs,
-// and the reason it lives here rather than being handed to the framework: GoFr
-// has a ChangeLevel, and it is a bare assignment to a field every request
-// goroutine reads without synchronisation. A data race is not a reasonable
-// price for saving a restart, and the race detector would be right to say so.
+// This is what makes the log level administrable while the application runs.
+// It was built here rather than handed to the framework because GoFr's
+// ChangeLevel was a bare assignment to a field every request goroutine reads
+// without synchronisation, and a data race is not a reasonable price for
+// saving a restart. That was true up to v1.59.0. From v1.60.0 the field is
+// atomic - read in its logging/logger.go - so the race is no longer what
+// stands between the framework and the level.
 //
-// So the framework is left at its most verbose and the decision is made on the
-// way out, once, in the single goroutine that drains the pipe. What the console
-// receives is unchanged: the lines below the threshold never reach it. What it
-// costs is that the framework formats a line that is then dropped, which is a
-// few microseconds against a decision an administrator can now make while the
-// thing they are diagnosing is still happening.
+// The framework is left at its most verbose and the decision is made on the
+// way out, once, by whichever of the two goroutines drains the pipe the line
+// came down. What the console receives is unchanged: the lines below the
+// threshold never reach it. What it costs is that the framework formats a line
+// that is then dropped - measured on a fast desktop processor, under four
+// microseconds and fifteen allocations for the pipe and the parse alone, three
+// to six times a request at INFO, where every statement is such a line.
 //
 // An empty or unrecognised level means no filtering, which is the safe
 // direction: showing too much is a nuisance, and hiding a line somebody needed

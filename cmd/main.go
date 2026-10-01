@@ -375,13 +375,11 @@ func main() {
 	// The log level is the one telemetry setting that does not have to wait for a
 	// restart, and this is what buys that.
 	//
-	// The framework decides what to emit from a field it reads without
-	// synchronisation, so changing it while requests are in flight is a data
-	// race - which is why this does not use its ChangeLevel. Instead the
-	// framework is left at its most verbose and the level is applied on the way
-	// out, in the single goroutine draining the captured output. Raising or
-	// lowering it is then a store in one place with a mutex around it, and takes
-	// effect on the next line.
+	// The framework is left at its most verbose and the level is applied on the
+	// way out, where the captured output is drained. Raising or lowering it is
+	// then a store in one place with a mutex around it, and takes effect on the
+	// next line. Sink.SetLevel says why that was built rather than using the
+	// framework's ChangeLevel, and what has become of the reason.
 	//
 	// Only where the output is actually captured. Without capture there is
 	// nothing between the framework and the console to apply a level, so the

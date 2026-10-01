@@ -397,11 +397,9 @@ func TestTheLevelsOfferedAndTheLevelsEmittedAreTheSame(t *testing.T) {
 
 // The administered level decides what is written and kept, from the next line.
 //
-// This is what lets the log level be changed without a restart. The framework
-// decides what to emit from a field every request goroutine reads without
-// synchronisation, so changing that while requests are in flight is a data race;
-// instead the framework is left at its most verbose and the level is applied
-// here, in the one goroutine that drains the captured output.
+// This is what lets the log level be changed without a restart: the framework
+// is left at its most verbose and the level is applied here, where the captured
+// output is drained. SetLevel says why it was built that way.
 func TestTheLevelDecidesWhatIsKept(t *testing.T) {
 	s := New(100)
 	s.SetLevel("WARN")
