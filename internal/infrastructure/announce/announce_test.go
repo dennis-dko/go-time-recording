@@ -55,20 +55,46 @@ func TestConnectingAfterwardsStillHearsTheLastThing(t *testing.T) {
 	}
 }
 
-// And once it is over, it stops being told to newcomers.
-func TestWhatIsForgottenIsNotRepeated(t *testing.T) {
+// An update taken back is said to whoever is connected and kept for nobody.
+//
+// What a retraction takes back is the thing that was being remembered, so it
+// leaves nothing to hand to a screen that connects afterwards - and it leaves
+// nothing in one step. It was two once, Publish and then Forget, and between
+// them the hub remembered the retraction itself: a screen connecting in that
+// moment was told that an update it had never heard of had not been installed.
+func TestAnUpdateTakenBackIsRememberedForNobody(t *testing.T) {
 	hub := New()
 
-	hub.Publish(Cancelled, "v1.2.3")
-	hub.Forget()
+	watching, stop := hub.Subscribe()
+	defer stop()
 
-	stream, done := hub.Subscribe()
+	hub.Publish(Restarting, "v1.2.3")
+	hub.Publish(Cancelled, "v1.2.3")
+
+	for _, want := range []Kind{Restarting, Cancelled} {
+		select {
+		case got := <-watching:
+			if got.Kind != want {
+				t.Errorf("the connection that was open heard %q, want %q", got.Kind, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("the connection that was open never heard %q", want)
+		}
+	}
+
+	if last, standing := hub.Last(); standing {
+		t.Errorf("%q is still remembered once the update has been taken back", last.Kind)
+	}
+
+	// Subscribe writes what is remembered before it returns, so there is nothing
+	// to wait for: the stream either holds it by now or never will.
+	late, done := hub.Subscribe()
 	defer done()
 
 	select {
-	case got := <-stream:
-		t.Errorf("a fresh connection was handed %+v, which is over", got)
-	case <-time.After(200 * time.Millisecond):
+	case got := <-late:
+		t.Errorf("a connection made afterwards was handed %+v, which is over", got)
+	default:
 	}
 }
 

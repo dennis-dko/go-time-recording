@@ -75,7 +75,8 @@ type Hub struct {
 	// last is what was said most recently, handed to anybody who connects
 	// afterwards. A browser that opened its connection one second after the
 	// announcement would otherwise never hear it - and reconnecting is exactly
-	// what every browser does when the restart drops the connection.
+	// what every browser does when the restart drops the connection. Nothing
+	// once an update has been taken back, which Publish decides.
 	last *Announcement
 }
 
@@ -126,6 +127,13 @@ func (h *Hub) Subscribe() (<-chan Announcement, func()) {
 // Publish says something to everybody connected, and remembers it for whoever
 // connects next.
 //
+// A Cancelled is the one thing it does not remember: what that takes back is
+// what was being remembered, so it leaves nothing. Decided here, under the lock
+// the announcement goes out under, because it was the caller's second step once
+// - Publish, then Forget - and nothing made the two one. Between them the hub
+// held the retraction itself, and a screen connecting in that moment was told
+// that an update it had never heard of had not been installed.
+//
 // Never blocks. A browser whose buffer is full is one that has stopped reading -
 // a laptop that was shut, a connection that died without saying so - and holding
 // up an update for it would be holding up the update for everybody.
@@ -136,6 +144,9 @@ func (h *Hub) Publish(kind Kind, version string) {
 	defer h.mu.Unlock()
 
 	h.last = &announcement
+	if kind == Cancelled {
+		h.last = nil
+	}
 
 	for _, stream := range h.subscribers {
 		select {
@@ -145,7 +156,7 @@ func (h *Hub) Publish(kind Kind, version string) {
 	}
 }
 
-// Last is the most recent announcement, if there has been one.
+// Last is what a connection made now would be handed, if anything.
 func (h *Hub) Last() (Announcement, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -155,17 +166,6 @@ func (h *Hub) Last() (Announcement, bool) {
 	}
 
 	return *h.last, true
-}
-
-// Forget drops the remembered announcement.
-//
-// Called when an update finishes or is abandoned, so a browser connecting an
-// hour later is not handed a restart notice about something that is long over.
-func (h *Hub) Forget() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	h.last = nil
 }
 
 // Subscribers is how many connections are open. For tests and for the operations
