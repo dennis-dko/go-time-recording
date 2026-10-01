@@ -244,16 +244,26 @@ type prefillFields struct {
 	SSLMode string `json:"sslMode,omitempty"`
 }
 
-// state answers GET /install/state. Unauthenticated, and carries nothing worth
-// protecting: the application name and version are on the sign-in screen too,
-// and the page needs it before a token has been typed.
-func (s *server) state(w http.ResponseWriter, _ *http.Request) {
+// state answers GET /install/state.
+//
+// Without a token it says what labels the page: the application's name and
+// version, which are on the sign-in screen too and which the page needs before
+// a token has been typed. What the environment already supplied of the
+// connection is for whoever holds the token and for nobody else.
+//
+// It used to be one answer for everybody, described here as carrying nothing
+// worth protecting - and it carried the database's host, its port, its name and
+// the account that opens it, to anybody who could reach the port, for as long as
+// nobody had answered the installer. None of that is the password, and all of it
+// is what somebody needs to know to start trying one; this runs on the port the
+// application will have, before there is an account to sign in with.
+func (s *server) state(w http.ResponseWriter, r *http.Request) {
 	response := stateResponse{
 		AppName: s.cfg.AppName,
 		Version: s.cfg.Version,
 	}
 
-	if p := s.cfg.Prefill; p.Dialect != "" || p.Name != "" || p.Host != "" {
+	if p := s.cfg.Prefill; s.holdsTheToken(r) && (p.Dialect != "" || p.Name != "" || p.Host != "") {
 		response.Datasource = &prefillFields{
 			Dialect: p.Dialect,
 			Name:    p.Name,
@@ -333,6 +343,17 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	s.done <- ds
 }
 
+// holdsTheToken reports whether a request carries the setup token.
+//
+// Constant time, so a wrong token cannot be narrowed down by how long the
+// rejection took. One function for the two places that ask: what may be changed
+// and what may be read are the same question here.
+func (s *server) holdsTheToken(r *http.Request) bool {
+	given := strings.TrimSpace(r.Header.Get("X-Setup-Token"))
+
+	return subtle.ConstantTimeCompare([]byte(given), []byte(s.cfg.Token)) == 1
+}
+
 // accept checks the method and the token and decodes the body.
 func (s *server) accept(w http.ResponseWriter, r *http.Request) (appconfig.Datasource, bool) {
 	if r.Method != http.MethodPost {
@@ -342,10 +363,7 @@ func (s *server) accept(w http.ResponseWriter, r *http.Request) (appconfig.Datas
 		return appconfig.Datasource{}, false
 	}
 
-	// Constant time, so a wrong token cannot be narrowed down by how long the
-	// rejection took.
-	given := strings.TrimSpace(r.Header.Get("X-Setup-Token"))
-	if subtle.ConstantTimeCompare([]byte(given), []byte(s.cfg.Token)) != 1 {
+	if !s.holdsTheToken(r) {
 		// Coded, because it is the refusal somebody meets most: the token is a
 		// hex string copied out of a log, and copying it wrongly is easy.
 		writeError(w, http.StatusUnauthorized,
