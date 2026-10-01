@@ -275,6 +275,12 @@ in the interface is an explicit act, and it would be surprising for a stale
 variable to override it silently. It only ever supplies `DB_*`, and only the
 fields it actually holds.
 
+A value written so it cannot be used - a word where a number belongs, a
+duration without its unit, `yes` for a switch that takes `true` - falls back to
+its default, and the start says so in a warning beginning `configuration:`,
+naming the setting, what it held and what applies instead. That is the line to
+look for when a setting seems to have no effect.
+
 `APP_ENV` selects layer 2, and it has to come from the **real environment**: GoFr
 reads it before it opens any file, so setting `APP_ENV` inside `configs/.env`
 cannot select an overlay. With it unset, layer 2 falls back to
