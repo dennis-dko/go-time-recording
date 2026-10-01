@@ -1146,6 +1146,22 @@ run has nobody to ask and is held by the three guards above alone, and so is an
 API call that names no accounts (`POST /api/v1/settings/ldap/sync` without
 `?confirmed=`).
 
+**What a run removed is in the log, and nowhere else.** Each account is one line
+at WARN, whoever started the run and whichever way it ended:
+
+```
+directory sync removed "dave@example.com" with 12 time entries
+```
+
+The account and every row that named it are gone by then, so nothing in the
+database says there was ever such a person. A scheduled run leaves three more
+kinds of line, since it has no screen to show them on: one at WARN when a guard
+refused it, saying why; one at ERROR when it failed; and at INFO when it started
+and finished, and how many accounts it added. So on an installation that runs a
+schedule, keep the log level at WARN or below - above it a run removes accounts
+and says nothing - and collect the log, because the viewer under *Settings*
+holds only the most recent lines in memory.
+
 Expired sessions are pruned at 03:00 daily. That schedule is not configurable.
 
 ## Special modes
