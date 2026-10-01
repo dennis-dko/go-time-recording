@@ -78,15 +78,6 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const READ_TIMEOUT_MS = 60000;
 
 /**
- * Calls the API and unwraps GoFr's {data, error} envelope.
- *
- * State-changing calls echo the CSRF cookie back in a header. Another site can
- * make the browser send the session cookie, but it can neither read this cookie
- * nor set a custom header, so the echo is what proves the call came from here.
- *
- * @throws {Error} with the server-provided message on a non-2xx response.
- */
-/**
  * The loading strip, driven by how many requests are in flight.
  *
  * Counted rather than toggled: three requests starting together and finishing
@@ -335,6 +326,15 @@ function writeKey(url, options) {
   return `${method} ${url} ${carried}`;
 }
 
+/**
+ * Calls the API and unwraps GoFr's {data, error} envelope.
+ *
+ * State-changing calls echo the CSRF cookie back in a header. Another site can
+ * make the browser send the session cookie, but it can neither read this cookie
+ * nor set a custom header, so the echo is what proves the call came from here.
+ *
+ * @throws {Error} with the server-provided message on a non-2xx response.
+ */
 async function api(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = { 'Content-Type': 'application/json', ...(options.headers ?? {}) };
@@ -402,7 +402,6 @@ async function api(path, options = {}) {
   return body ? body.data : null;
 }
 
-/** Pulls a readable message out of GoFr's error shape. */
 /**
  * The message to show for a failed request, in the reader's language where the
  * server said which rule was broken.
@@ -1272,7 +1271,6 @@ function configuredLink(label, url) {
   });
 }
 
-/** Builds an element; text is assigned via textContent, never innerHTML. */
 /**
  * The attributes whose presence is the whole of their meaning.
  *
@@ -1287,6 +1285,7 @@ const BOOLEAN_ATTRIBUTES = new Set([
   'autofocus', 'open', 'novalidate',
 ]);
 
+/** Builds an element; text is assigned via textContent, never innerHTML. */
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -2212,16 +2211,6 @@ function fillSelect(select, items, { placeholder, labelKey = 'name', valueKey = 
 }
 
 /**
- * The English titles of the roles that ship.
- *
- * These are what an English reader sees, because English is what a t() fallback is for.
- * Without them the fallback would be the identifier itself, and "user-admin" is not a
- * thing to put in front of somebody deciding what a colleague may do.
- *
- * A role an installation named itself is not in here and falls back to the name it was
- * given, which is the only sensible answer for a word this application has never seen.
- */
-/**
  * What each right is called, in words.
  *
  * The identifiers are what the API takes and what a role's rights are stored as -
@@ -2311,6 +2300,16 @@ function permissionGroup(right) {
 // time and administers nothing.
 const ORDINARY_ROLE = 'user';
 
+/**
+ * The English titles of the roles that ship.
+ *
+ * These are what an English reader sees, because English is what a t() fallback is for.
+ * Without them the fallback would be the identifier itself, and "user-admin" is not a
+ * thing to put in front of somebody deciding what a colleague may do.
+ *
+ * A role an installation named itself is not in here and falls back to the name it was
+ * given, which is the only sensible answer for a word this application has never seen.
+ */
 const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
@@ -2401,7 +2400,6 @@ function directoryRoleChoices() {
   return roleChoices().filter((choice) => allowed.has(choice.name));
 }
 
-/** Reads a form into a plain object, dropping empty optional fields. */
 /**
  * Where a form's unfinished contents wait out a page load.
  *
@@ -2925,6 +2923,7 @@ function saveForm(form, fn, successMessage, after) {
   });
 }
 
+/** Reads a form into a plain object, dropping empty optional fields. */
 function formData(form) {
   const out = {};
   for (const [key, raw] of new FormData(form).entries()) {
@@ -5109,13 +5108,6 @@ function resetProjectForm() {
 }
 
 /**
- * Reloads everything that shows time entries.
- *
- * The list and the calendar render the same records from two requests, so a
- * change that refreshes only one of them leaves the other showing yesterday -
- * which is what booking an entry and switching to the calendar used to do.
- */
-/**
  * Whether this caller may change this entry's figures.
  *
  * Whose it is and whether they may write their own time, and nothing else. It used
@@ -5241,6 +5233,13 @@ function timesheetActions(entry) {
   return actions;
 }
 
+/**
+ * Reloads everything that shows time entries.
+ *
+ * The list and the calendar render the same records from two requests, so a
+ * change that refreshes only one of them leaves the other showing yesterday -
+ * which is what booking an entry and switching to the calendar used to do.
+ */
 async function reloadTimeViews() {
   await loadTimesheets();
   await loadCalendar();
@@ -7077,7 +7076,6 @@ async function deleteUser(user) {
 
 // ------------------------------------------------------------------ sign-in
 
-/** Shows the sign-in overlay and hides the application behind it. */
 /**
  * Whether the sign-in screen has been given up for a session.
  *
@@ -7088,6 +7086,7 @@ async function deleteUser(user) {
  */
 let handedToASession = false;
 
+/** Shows the sign-in overlay and hides the application behind it. */
 function showLogin(message) {
   // Never over a session this page has already been given to.
   //
@@ -7199,29 +7198,6 @@ async function submitLogin(e) {
 }
 
 /**
- * Drops everything on screen and in hand that belonged to whoever just left.
- *
- * Two things survived a sign-out, and the second is the one that matters.
- *
- * The address bar keeps the screen somebody was on - switchView writes it there
- * so a reload comes back to the same place and a link can be sent to somebody.
- * Nothing cleared it, and the starting view prefers the address bar over the
- * screen this account was last on, so signing in as somebody else landed on the
- * previous person's screen. Signing in as the *same* account hid it, because
- * both answers agreed.
- *
- * And the tables kept their rows. Every loader begins by checking a right and
- * returning if it is absent, which is correct for loading and wrong for what was
- * already loaded: an ordinary account signing in after an administrator found
- * loadUsers returning at once and the administrator's list of accounts still in
- * the document underneath a tab that is merely hidden. The API never answered
- * them anything - the rows were already there.
- *
- * So both are cleared here rather than at the next sign-in. Sign-out is the
- * moment this stops being anybody's data, and leaving it to the next arrival
- * means it sits on the sign-in screen in the meantime.
- */
-/**
  * Puts the screen back to how it looks for somebody who has never been here.
  *
  * Appearance is chosen per device, which is right while somebody is using it and
@@ -7254,6 +7230,29 @@ function forgetTheLastAppearance() {
 
 }
 
+/**
+ * Drops everything on screen and in hand that belonged to whoever just left.
+ *
+ * Two things survived a sign-out, and the second is the one that matters.
+ *
+ * The address bar keeps the screen somebody was on - switchView writes it there
+ * so a reload comes back to the same place and a link can be sent to somebody.
+ * Nothing cleared it, and the starting view prefers the address bar over the
+ * screen this account was last on, so signing in as somebody else landed on the
+ * previous person's screen. Signing in as the *same* account hid it, because
+ * both answers agreed.
+ *
+ * And the tables kept their rows. Every loader begins by checking a right and
+ * returning if it is absent, which is correct for loading and wrong for what was
+ * already loaded: an ordinary account signing in after an administrator found
+ * loadUsers returning at once and the administrator's list of accounts still in
+ * the document underneath a tab that is merely hidden. The API never answered
+ * them anything - the rows were already there.
+ *
+ * So both are cleared here rather than at the next sign-in. Sign-out is the
+ * moment this stops being anybody's data, and leaving it to the next arrival
+ * means it sits on the sign-in screen in the meantime.
+ */
 function forgetTheLastAccount() {
   // replaceState rather than assigning: assigning pushes a history entry, and
   // Back would then return to a screen belonging to the session that ended.
@@ -8995,17 +8994,6 @@ async function loadOperational() {
 // ----------------------------------------------------------------- updating
 
 /**
- * What version is running, whether a newer one exists, and what can be done
- * about it here.
- *
- * The card says something true on every deployment, which is the whole
- * difficulty: a single binary can fetch its successor and put it in its own
- * place, and a container cannot - a binary swapped inside one is undone by the
- * next recreate, which is the moment somebody is most certain the update took.
- * So where installing would not last, the card says what to run instead rather
- * than offering a button that reverts itself.
- */
-/**
  * Whether the image updater has answered that it replaced nothing.
  *
  * Asked of the version card's own state rather than of the announcement stream:
@@ -9021,6 +9009,17 @@ async function theImageUpdateChangedNothing() {
   }
 }
 
+/**
+ * What version is running, whether a newer one exists, and what can be done
+ * about it here.
+ *
+ * The card says something true on every deployment, which is the whole
+ * difficulty: a single binary can fetch its successor and put it in its own
+ * place, and a container cannot - a binary swapped inside one is undone by the
+ * next recreate, which is the moment somebody is most certain the update took.
+ * So where installing would not last, the card says what to run instead rather
+ * than offering a button that reverts itself.
+ */
 async function loadUpdate() {
   const card = $('#update-card');
   if (!card) return;
@@ -11865,7 +11864,6 @@ async function loadPasskeySupport() {
   $('#login-passkey').hidden = !passkeysAvailable;
 }
 
-/** Registers a new credential for the signed-in user. */
 /**
  * A refused passkey, in the reader's language.
  *
@@ -11926,6 +11924,7 @@ function passkeyProblem(err) {
   }
 }
 
+/** Registers a new credential for the signed-in user. */
 async function registerPasskey(name) {
   const started = await api('/me/passkeys/register', { method: 'POST' });
   const options = started.options.publicKey;
@@ -13130,21 +13129,6 @@ function rememberView(name) {
 }
 
 /**
- * The view to open: the one in the address bar when it is real and permitted, then
- * the one this person was last on, and otherwise the greeting.
- *
- * Checked against the tabs rather than trusted, because neither the hash nor the
- * remembered name is anything more than a string that was true once - the hash is
- * whatever was typed or bookmarked, and a remembered screen may belong to a tab
- * this account has since lost, or one that stopped existing between releases.
- *
- * The greeting has no tab of its own, so it is permitted by name: it asks for no
- * right, because it only ever says what this person already has. It is where a
- * first sign-in lands, and where anybody lands who has not been anywhere yet -
- * somebody who was working somewhere goes back to it instead, which is the point
- * of remembering.
- */
-/**
  * Opens the screen this session starts on, and only then calls the page loaded.
  *
  * refreshAll marks the page loaded once every screen has been filled from the
@@ -13195,6 +13179,21 @@ function viewIsOffered(name) {
     || $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === name);
 }
 
+/**
+ * The view to open: the one in the address bar when it is real and permitted, then
+ * the one this person was last on, and otherwise the greeting.
+ *
+ * Checked against the tabs rather than trusted, because neither the hash nor the
+ * remembered name is anything more than a string that was true once - the hash is
+ * whatever was typed or bookmarked, and a remembered screen may belong to a tab
+ * this account has since lost, or one that stopped existing between releases.
+ *
+ * The greeting has no tab of its own, so it is permitted by name: it asks for no
+ * right, because it only ever says what this person already has. It is where a
+ * first sign-in lands, and where anybody lands who has not been anywhere yet -
+ * somebody who was working somewhere goes back to it instead, which is the point
+ * of remembering.
+ */
 function startingView() {
   const wanted = currentHashView();
   if (viewIsOffered(wanted)) return wanted;
