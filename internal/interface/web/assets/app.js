@@ -2311,6 +2311,14 @@ function permissionGroup(right) {
 // time and administers nothing.
 const ORDINARY_ROLE = 'user';
 
+/**
+ * The shipped role that administers and has no working day, for the places that
+ * have to name it to somebody: whose the directory run is. Only ever shown, never
+ * compared - administersOnly asks for the shape, because an installation may have
+ * built a role of its own with it.
+ */
+const ADMINISTERING_ROLE = 'admin';
+
 const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
@@ -3297,6 +3305,7 @@ const TRANSLATIONS = {
     'tour.database.text': 'In welche Datenbank diese Installation schreibt. Die Verbindung wird vor dem Speichern getestet, und die Änderung gilt ab dem nächsten Start.',
     'tour.ldap.title': 'Anmelden gegen ein Verzeichnis',
     'tour.ldap.text': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Darunter läuft der Abgleich nach Zeitplan – und lässt sich vorher ansehen, bevor er von Hand ausgeführt wird.',
+    'tour.ldap.textElsewhere': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Der Abgleich löscht Konten und bleibt dem eingebauten Administrator oder der Rolle „{0}“ vorbehalten.',
     'tour.maintenance.title': 'Wartungsmodus',
     'tour.maintenance.text': 'Schließt die Installation mit einer Erklärung, die auch auf der Anmeldemaske steht – wer nicht hineinkommt, erfährt also warum, statt zu raten.',
     'tour.limits.title': 'Grenzwerte und Laufzeiten',
@@ -3511,6 +3520,7 @@ const TRANSLATIONS = {
     'confirm.deleteTitle': 'Endgültig löschen?',
     'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
     'sync.confirmTitle': 'Abgleich ausführen?',
+    'sync.elsewhere': 'Wird diesem Konto nicht angeboten. Ein Lauf löscht die Konten, die das Verzeichnis nicht mehr führt, samt der darauf erfassten Zeit; er gehört deshalb zu einem Konto, das administriert und selbst keine Zeit erfasst: dem eingebauten Administrator oder einem Konto mit der Rolle „{0}“. Mit einem solchen Konto lässt er sich ansehen, ausführen und planen.',
     'admin.activeConnection': 'Aktuell verbunden über',
     'admin.connectionFromEnvironment': 'Diese Verbindung kommt aus der Umgebung, '
       + 'nicht aus einer gespeicherten Einstellung. Wird dieses Formular gespeichert, '
@@ -6265,6 +6275,17 @@ async function loadAdmin() {
   // account it is.
   $('#sync-card').hidden = !administersOnly();
 
+  // And said, to the account it is taken from. Everybody who reaches this screen
+  // administers; the ones who also record time found one card fewer and nothing
+  // about why, on a screen the tour had told them carried it.
+  $('#sync-elsewhere').hidden = administersOnly();
+  $('#sync-elsewhere-text').textContent = t('sync.elsewhere',
+    'Not offered to this account. A run deletes the accounts the directory no longer holds, '
+    + 'together with the time recorded on them, so it belongs to an account that administers and '
+    + 'records no time of its own: the built-in administrator, or one holding the role "{0}". '
+    + 'Sign in with one of those to preview, run or schedule it.')
+    .replace('{0}', roleTitle(ADMINISTERING_ROLE));
+
   const schedule = $('#form-sync-schedule');
   if (schedule) {
     // Filled whether the card is on screen or not: the schedule travels with the
@@ -7827,9 +7848,18 @@ const TOUR_STEPS = [
     view: 'admin',
     permission: 'settings:manage',
     title: () => t('tour.ldap.title', 'Signing in against a directory'),
-    text: () => t('tour.ldap.text',
-      'Accounts can come from LDAP instead of being created here. Below it, the '
-      + 'reconciliation runs on a schedule, and can be previewed before it is run by hand.'),
+
+    // Two sentences, because the card under this one is not on every
+    // administrator's screen, and the tour is walked by the ones it is missing
+    // for: an account that only administers gets the setup wizard instead.
+    text: () => (administersOnly()
+      ? t('tour.ldap.text',
+        'Accounts can come from LDAP instead of being created here. Below it, the '
+        + 'reconciliation runs on a schedule, and can be previewed before it is run by hand.')
+      : t('tour.ldap.textElsewhere',
+        'Accounts can come from LDAP instead of being created here. Reconciling them deletes '
+        + 'accounts, and is left to the built-in administrator or the role "{0}".')
+        .replace('{0}', roleTitle(ADMINISTERING_ROLE))),
   },
   {
     target: '#form-maintenance',
