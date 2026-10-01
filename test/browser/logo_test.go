@@ -439,6 +439,15 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 
 	// The logo at the left end and the name in the middle, which is the way round
 	// they were swapped to. The account keeps the right.
+	//
+	// Measured on a window wide enough for the whole row, because that is where
+	// "in the middle" is exact. On a narrower one the right-hand side needs more
+	// than its half and the name gives way to the left rather than be drawn over
+	// - by 18 pixels at the suite's own 1,280 in the faces the CI runner has,
+	// which is how this case came to say so: it had measured there, and passed
+	// for as long as the name was allowed to lie under the account's.
+	p.run("a wide window", chromedp.EmulateViewport(1600, 900))
+
 	var placed struct {
 		TitleLeft float64 `json:"titleLeft"`
 		LogoLeft  float64 `json:"logoLeft"`
@@ -469,6 +478,8 @@ func TestTheLogoSlotsStayEmptyUntilALogoIsConfigured(t *testing.T) {
 		t.Errorf("the name sits at %.0f and the bar's middle is %.0f",
 			placed.Centre, placed.BarCentre)
 	}
+
+	p.run("back to the suite's window", chromedp.EmulateReset())
 
 	// The room the sign-in screen gives it, which is what it is given here now.
 	// It was 40px in the bar and 96 on the card - two sizes for one picture, and

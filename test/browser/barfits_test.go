@@ -131,6 +131,38 @@ func TestNothingOnTheBarIsDrawnOverAnythingElse(t *testing.T) {
 
 	measure("the placeholder mark")
 
+	// A title of one long word, which cannot be folded at a space. It has to
+	// give way inside the word rather than lie over what is beside it.
+	const oneWord = "Arbeitszeiterfassungsportal"
+
+	retitle := func() {
+		t.Helper()
+
+		p.run("a title of one long word", chromedp.Evaluate(fmt.Sprintf(
+			`document.querySelector('#app-title-text').textContent = %q`, oneWord), nil))
+	}
+
+	for _, language := range []string{"en", "de"} {
+		p.run("a desktop", chromedp.EmulateViewport(1600, 900))
+		p.chooseLanguage(language)
+		retitle()
+
+		for _, width := range widths {
+			p.run(fmt.Sprintf("%dpx", width), chromedp.EmulateViewport(width, 800))
+
+			bar := p.readBar()
+			where := fmt.Sprintf("a title of one long word, %s, %dpx", language, width)
+
+			for _, overlap := range bar.Overlaps {
+				t.Errorf("%s: %s", where, overlap)
+			}
+
+			if bar.PageWidth > bar.Screen+0.5 {
+				t.Errorf("%s: the page is %.0fpx wide on a %.0fpx screen", where, bar.PageWidth, bar.Screen)
+			}
+		}
+	}
+
 	// And with the widest thing the left end can hold: a logo five times as wide
 	// as it is high, which the bar shows at its full 328 pixels where it can.
 	p.run("a desktop", chromedp.EmulateViewport(1600, 900))

@@ -192,13 +192,21 @@ body {
    installation's own logo has the left end and the account the right.
 
    The outer two are equal shares, which is what puts the middle in the middle
-   rather than between two things of unequal weight - for as long as the right
-   one has room in its share. It holds a name and three controls, and on any
+   rather than between two things of unequal weight - for as long as each has
+   room in its share. The right one holds a name and three controls, and on any
    window narrower than about 1,300 pixels that is more than half of what the
-   title leaves. So its share is a floor rather than a size: never less than
-   what it holds at its narrowest. The title then moves left of the middle and
-   the logo gives way to it - see .brand-logo - which is the honest limit of a
-   bar with more on it than fits.
+   title leaves. So a share is a floor rather than a size: neither end is ever
+   narrower than what it holds at its narrowest. The title then moves left of
+   the middle, a logo gives way to it - see .brand-logo - and where both ends
+   are at their floors and there is still not room, the title is what gives:
+   it takes a second line, see .app-title. That is the honest limit of a bar
+   with more on it than fits, and none of it is one thing drawn over another.
+
+   How wide that is depends on the face the words are set in, which is not
+   ours to choose: the same bar that fitted at 901 pixels in one system's
+   interface font had the mark 43 pixels under the title in another's. So
+   nothing here is a width that was measured and written down. Each column is
+   told what it may not go below, and the arithmetic is the browser's.
 
    It was an equal share and nothing else, and both outer columns may shrink
    below what they hold (min-width: 0, below). So what the right one held hung
@@ -211,7 +219,7 @@ body {
   align-items: center;
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(0, 1fr) auto minmax(min-content, 1fr);
+  grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
 }
 
 .topbar-middle {
@@ -297,6 +305,27 @@ body {
 .app-title:focus-visible {
   background: var(--bg);
   border-color: var(--border);
+}
+
+/* On the wide bar the title is the one thing that may be squeezed, and it is
+   folded rather than covered or cut: the two ends keep what they hold - see
+   .topbar-row - and what is left over is the title's. In less than its own
+   width it takes a second line, at a space or a hyphen where it has one and
+   inside the word where it has not. Without that a title of one long word
+   cannot be narrower than itself, and lies over the account's name instead.
+
+   Not an ellipsis: nothing is the matter with a second line, and the title is
+   the installation's own name for itself. Kept to the wide layout, because on
+   a narrow screen the bar is one wrapping row already. */
+@media (min-width: 901px) {
+  .topbar h1 { min-width: 0; }
+
+  .app-title { max-width: 100%; }
+
+  #app-title-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
 
 .app-title:hover .app-mark,
@@ -1585,7 +1614,11 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    column it stands in. That column gives way when the right-hand side of the
    bar needs more than its share - see .topbar-row - and a logo that kept its
    width there would be drawn over the title in its turn: by 167 pixels at 901,
-   measured with the column fixed and this rule not yet written. */
+   measured with the right-hand column fixed and this rule not yet written.
+
+   The percentage is also what lets the column give way at all. A picture
+   bounded by one counts for nothing when its column's floor is worked out,
+   where the placeholder mark, which has a size of its own, counts in full. */
 .brand-logo {
   height: auto;
   max-height: 96px;
