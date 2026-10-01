@@ -4,6 +4,7 @@ package browser
 
 import (
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -169,5 +170,71 @@ func TestUnassigningAProjectActuallyUnassignsIt(t *testing.T) {
 			"entry on project %v. An emptied select is dropped by formData, so what "+
 			"is sent is Number(undefined) - NaN, then null - and null is not the 0 "+
 			"the service reads as \"remove the assignment\"", stored)
+	}
+}
+
+// A description that was cleared reads like one that was never given.
+//
+// The table writes a dash where an entry has no description, and it asked for a
+// missing one only: an emptied description is stored as the empty string, which
+// is a value, so the row that had just been cleared showed a blank cell beside
+// rows showing the dash - the thing the project table had already been corrected
+// for, where the same blank read as a column that had broken.
+func TestAClearedDescriptionReadsLikeNone(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	p.run("open the entries view", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID))
+
+	p.run("book one with a description",
+		chromedp.SendKeys(`#form-timesheet input[name="durationHours"]`, "1.25", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-timesheet input[name="description"]`, "first draft",
+			chromedp.ByQuery),
+		p.click(`#form-timesheet button[type="submit"]`),
+		chromedp.WaitVisible(`#table-timesheets tbody tr`, chromedp.ByQuery))
+
+	p.run("open it for correction",
+		p.click(`#table-timesheets tbody tr:first-child .actions button.link`),
+		chromedp.WaitVisible(`#timesheet-cancel`, chromedp.ByQuery))
+
+	p.run("clear it and save",
+		chromedp.Evaluate(`(() => {
+			const box = document.querySelector('#form-timesheet input[name="description"]');
+			box.value = '';
+			box.dispatchEvent(new Event('input', { bubbles: true }));
+			return true;
+		})()`, nil),
+		p.click(`#form-timesheet button[type="submit"]`),
+		chromedp.WaitNotPresent(`#timesheet-cancel:not([hidden])`, chromedp.ByQuery))
+
+	p.settled()
+
+	// The cell before the actions, rather than a column number: a selection
+	// column is put in front of the rows while entries can be picked.
+	read := func() string {
+		var cell string
+
+		p.run("read the description cell", chromedp.Evaluate(`document.querySelector(
+			'#table-timesheets tbody tr:first-child .actions')?.previousElementSibling?.textContent ?? ''`,
+			&cell))
+
+		return cell
+	}
+
+	// The table is drawn again after the save lands; until then it holds the
+	// row as it was booked.
+	cell := read()
+
+	for deadline := time.Now().Add(waitPatience); cell == "first draft" && time.Now().Before(deadline); {
+		time.Sleep(50 * time.Millisecond)
+
+		cell = read()
+	}
+
+	if cell != "–" {
+		t.Errorf("the cleared description reads %q, where an entry without one reads a dash", cell)
 	}
 }
