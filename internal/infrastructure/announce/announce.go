@@ -1,6 +1,7 @@
 package announce
 
 import (
+	"slices"
 	"sync"
 	"time"
 )
@@ -72,12 +73,15 @@ type Hub struct {
 	// handed out that would have to be waited for.
 	closed bool
 
-	// last is what was said most recently, handed to anybody who connects
-	// afterwards. A browser that opened its connection one second after the
-	// announcement would otherwise never hear it - and reconnecting is exactly
-	// what every browser does when the restart drops the connection. Nothing
-	// once an update has been taken back, which Publish decides.
-	last *Announcement
+	// standing is what has been said and is still worth saying, in the order it
+	// was said, handed to anybody who connects afterwards. A browser that opened
+	// its connection one second after the announcement would otherwise never
+	// hear it - and reconnecting is exactly what every browser does when the
+	// restart drops the connection.
+	//
+	// At most two: the last thing said about the update, and the last thing said
+	// about maintenance. Publish keeps them apart and says why.
+	standing []Announcement
 }
 
 // New creates an empty hub.
@@ -107,8 +111,10 @@ func (h *Hub) Subscribe() (<-chan Announcement, func()) {
 	// channel that carries one kind of message a few times a year.
 	stream := make(chan Announcement, 4)
 
-	if h.last != nil {
-		stream <- *h.last
+	// Never more than the buffer holds: one about the update, one about
+	// maintenance.
+	for _, said := range h.standing {
+		stream <- said
 	}
 
 	h.subscribers[id] = stream
@@ -127,12 +133,21 @@ func (h *Hub) Subscribe() (<-chan Announcement, func()) {
 // Publish says something to everybody connected, and remembers it for whoever
 // connects next.
 //
+// What it remembers is the last thing said about each of the two things this
+// channel carries, and not simply the last thing said. With one memory for
+// both, saving the maintenance card while an image was being pulled replaced
+// "the application is restarting" with a notice that carries nothing: a screen
+// that connected or reconnected in the minutes the pull still had to run was
+// neither warned nor reloaded when the new version answered, because a screen
+// reloads when the last update notice it heard was the restart.
+//
 // A Cancelled is the one thing it does not remember: what that takes back is
-// what was being remembered, so it leaves nothing. Decided here, under the lock
-// the announcement goes out under, because it was the caller's second step once
-// - Publish, then Forget - and nothing made the two one. Between them the hub
-// held the retraction itself, and a screen connecting in that moment was told
-// that an update it had never heard of had not been installed.
+// what was being remembered about the update, so it leaves nothing about it.
+// Decided here, under the lock the announcement goes out under, because it was
+// the caller's second step once - Publish, then Forget - and nothing made the
+// two one. Between them the hub held the retraction itself, and a screen
+// connecting in that moment was told that an update it had never heard of had
+// not been installed.
 //
 // Never blocks. A browser whose buffer is full is one that has stopped reading -
 // a laptop that was shut, a connection that died without saying so - and holding
@@ -143,9 +158,12 @@ func (h *Hub) Publish(kind Kind, version string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.last = &announcement
-	if kind == Cancelled {
-		h.last = nil
+	h.standing = slices.DeleteFunc(h.standing, func(said Announcement) bool {
+		return (said.Kind == Maintenance) == (kind == Maintenance)
+	})
+
+	if kind != Cancelled {
+		h.standing = append(h.standing, announcement)
 	}
 
 	for _, stream := range h.subscribers {
@@ -156,16 +174,19 @@ func (h *Hub) Publish(kind Kind, version string) {
 	}
 }
 
-// Last is what a connection made now would be handed, if anything.
+// Last is what a connection made now would be told about an update, if
+// anything.
 func (h *Hub) Last() (Announcement, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if h.last == nil {
-		return Announcement{}, false
+	for _, said := range h.standing {
+		if said.Kind != Maintenance {
+			return said, true
+		}
 	}
 
-	return *h.last, true
+	return Announcement{}, false
 }
 
 // Subscribers is how many connections are open. For tests and for the operations

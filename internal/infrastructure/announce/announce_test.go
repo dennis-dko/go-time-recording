@@ -1,6 +1,7 @@
 package announce
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -95,6 +96,64 @@ func TestAnUpdateTakenBackIsRememberedForNobody(t *testing.T) {
 	case got := <-late:
 		t.Errorf("a connection made afterwards was handed %+v, which is over", got)
 	default:
+	}
+}
+
+// What is said about maintenance does not displace what is said about an update.
+//
+// The hub remembered one thing, the last, whatever it was about. Saving the
+// maintenance card while an image was being pulled therefore replaced "the
+// application is restarting" with a notice that carries nothing, and a screen
+// that connected - or reconnected - in the minutes the pull still had to run
+// was neither warned of the restart nor reloaded once the new version answered:
+// a screen reloads when the last update notice it heard was the restart.
+func TestWhatIsSaidAboutOneThingDoesNotDisplaceTheOther(t *testing.T) {
+	for name, c := range map[string]struct {
+		said []Kind
+		want []Kind
+	}{
+		"an update, then maintenance": {
+			said: []Kind{Restarting, Maintenance},
+			want: []Kind{Restarting, Maintenance},
+		},
+		"maintenance, then an update": {
+			said: []Kind{Maintenance, Installing},
+			want: []Kind{Maintenance, Installing},
+		},
+		"maintenance saved a second time": {
+			said: []Kind{Maintenance, Restarting, Maintenance},
+			want: []Kind{Restarting, Maintenance},
+		},
+		"an update moving on": {
+			said: []Kind{Installing, Maintenance, Restarting},
+			want: []Kind{Maintenance, Restarting},
+		},
+		"an update taken back": {
+			said: []Kind{Installing, Maintenance, Cancelled},
+			want: []Kind{Maintenance},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hub := New()
+
+			for _, kind := range c.said {
+				hub.Publish(kind, "")
+			}
+
+			late, done := hub.Subscribe()
+			defer done()
+
+			// Subscribe writes what is remembered before it returns.
+			var heard []Kind
+
+			for range len(late) {
+				heard = append(heard, (<-late).Kind)
+			}
+
+			if !slices.Equal(heard, c.want) {
+				t.Errorf("a connection made afterwards heard %q, want %q", heard, c.want)
+			}
+		})
 	}
 }
 
