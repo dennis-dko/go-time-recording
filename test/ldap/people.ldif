@@ -9,7 +9,8 @@
 #   bob      the rename case - change his mail address and re-run the sync. He
 #            must survive, because matching is on entryUUID, not on mail. Before
 #            that fix he would have been deleted along with his recorded hours.
-#   carol    no mail address at all; must be skipped rather than guessed at
+#   carol    no mail address at all; no account is made for her rather than
+#            one guessed at, though her entryUUID still counts as present
 #   dave     outside the people subtree; must not appear when the base DN is
 #            narrowed to ou=people, which is how a wrong base DN is spotted
 #
@@ -58,7 +59,8 @@ mail: bob@example.com
 userPassword: bob-password
 
 # No mail attribute on purpose. The application cannot key an account on
-# nothing, so this entry is skipped - silently, but deliberately.
+# nothing, so none is made for this entry - silently, but deliberately. Its
+# entryUUID is still listed, so an account it already had would be kept.
 dn: uid=carol,ou=people,__SUFFIX__
 objectClass: inetOrgPerson
 uid: carol

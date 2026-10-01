@@ -36,7 +36,7 @@ func TestTOTPMatchesRFC6238Vectors(t *testing.T) {
 	}
 }
 
-func TestVerifyTOTPAcceptsCurrentCode(t *testing.T) {
+func TestMatchTOTPAcceptsCurrentCode(t *testing.T) {
 	secret, err := NewTOTPSecret()
 	if err != nil {
 		t.Fatalf("new secret: %v", err)
@@ -49,33 +49,33 @@ func TestVerifyTOTPAcceptsCurrentCode(t *testing.T) {
 
 	counter := time.Now().Unix() / int64(totpPeriod.Seconds())
 
-	if !VerifyTOTP(secret, totpCode(key, counter)) {
+	if _, ok := MatchTOTP(secret, totpCode(key, counter)); !ok {
 		t.Error("the current code must be accepted")
 	}
 
 	// One step either way covers a slightly wrong client clock.
-	if !VerifyTOTP(secret, totpCode(key, counter-1)) {
+	if _, ok := MatchTOTP(secret, totpCode(key, counter-1)); !ok {
 		t.Error("the previous code must still be accepted")
 	}
 
-	if VerifyTOTP(secret, totpCode(key, counter+5)) {
+	if _, ok := MatchTOTP(secret, totpCode(key, counter+5)); ok {
 		t.Error("a code five steps away must be rejected")
 	}
 }
 
-func TestVerifyTOTPRejectsMalformedInput(t *testing.T) {
+func TestMatchTOTPRejectsMalformedInput(t *testing.T) {
 	secret, err := NewTOTPSecret()
 	if err != nil {
 		t.Fatalf("new secret: %v", err)
 	}
 
 	for _, code := range []string{"", "12345", "1234567", "abcdef"} {
-		if VerifyTOTP(secret, code) {
+		if _, ok := MatchTOTP(secret, code); ok {
 			t.Errorf("%q must be rejected", code)
 		}
 	}
 
-	if VerifyTOTP("not-valid-base32!", "123456") {
+	if _, ok := MatchTOTP("not-valid-base32!", "123456"); ok {
 		t.Error("an undecodable secret must be rejected")
 	}
 }

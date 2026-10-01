@@ -142,6 +142,18 @@ func (s *AuthService) repairSystemUser(ctx context.Context, user *model.User) er
 	return err
 }
 
+// SystemUserOpensWithInitialPassword reports whether the built-in administrator
+// still signs in with the password the README documents - which, until somebody
+// changes it, lets anybody who can reach the installation sign in as it.
+func (s *AuthService) SystemUserOpensWithInitialPassword(ctx context.Context) (bool, error) {
+	user, err := s.users.GetByEmail(ctx, SystemUserEmail)
+	if err != nil {
+		return false, err
+	}
+
+	return security.VerifyPassword(user.PasswordHash, SystemUserPassword), nil
+}
+
 // ChangePassword sets a new password for the user, clearing the
 // must-change flag.
 func (s *AuthService) ChangePassword(ctx context.Context, userID uint, current, next string) error {
