@@ -13707,8 +13707,7 @@ function afterAFailedFirstLoad(err) {
     restoreDrafts();
     hideLogin();
     openTheStartingView({ restoring: true });
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`,
-      'error', refusalDetail(err.refusal));
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
 
     return;
   }
