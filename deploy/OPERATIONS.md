@@ -199,6 +199,11 @@ Two things to know before you switch `TLS_ENABLED=true` on a host.
 host does not. As written, the unit runs as `gtr` with `NoNewPrivileges=true`, so
 binding 443 and 80 fails with "permission denied".
 
+In the unit, and not with `setcap` on the binary. An update from the interface
+puts a new file in the binary's place, and a capability set on the old file does
+not come with it: the next start then fails to bind exactly as described below,
+on an installation that had been serving HTTPS until the update.
+
 **And that failure does not stop the process.** The service comes up,
 `systemctl status` says `active (running)`, and the installation serves
 **unencrypted** HTTP on `HTTP_PORT`. It is now loud about it — the bind happens
@@ -1192,7 +1197,7 @@ mistakes it for a configured installation.
 | The installer appears on an installation that was working | nothing is configured any more — a lost volume, or a working directory that changed | check where `configs/datasource.json` is expected to be, and do not answer the installer until you know |
 | The container is healthy but nobody can sign in | the healthcheck is satisfied by the installer | ask `/api/v1/branding` for a `version` field |
 | A setting was changed and nothing happened | it needs a restart | *Settings* lists what is pending. Two things used to be missing from that list — a same-dialect database change and the trace sample ratio — and both are compared now |
-| TLS was enabled and the site is still plain HTTP | the listener could not bind, and that does not stop the process | check the log for `serving HTTPS on :443`; on a host, grant `CAP_NET_BIND_SERVICE` |
+| TLS was enabled and the site is still plain HTTP | the listener could not bind, and that does not stop the process | check the log for `serving HTTPS on :443`; on a host, grant `CAP_NET_BIND_SERVICE` in the unit - a capability set on the binary with `setcap` is gone after the next update |
 | `docker compose … -f compose.tls.yaml` refuses to start | `TLS_DOMAINS` or `TLS_EMAIL` is unset | both use the error form and are required |
 | A setting was cleared back to "follow the configuration file" and still applies | the in-application restart inherited the exported variable | stop and start the process properly |
 | Saving the database connection appears to do nothing | it applies at the next start, on purpose | restart |
