@@ -406,7 +406,7 @@ func (s *Sink) Capture() (restore func(), err error) {
 	return func() {
 		os.Stdout, os.Stderr = originalOut, originalErr
 
-		// Closing the write ends ends the scanners, which ends the goroutines.
+		// Closing the write ends ends the readers, which ends the goroutines.
 		_ = outWrite.Close()
 		_ = errWrite.Close()
 
@@ -614,10 +614,14 @@ func parse(line string) Record {
 	return record
 }
 
-// structured is the union of the two message shapes GoFr logs as objects: the
-// request log from its HTTP middleware, and the query log from its SQL
+// structured is the union of the two object-shaped messages summarised here:
+// the request log from GoFr's HTTP middleware, and the query log from its SQL
 // datasource. Both are frequent enough that leaving them as raw JSON would make
 // a log viewer unreadable for the two things most worth reading.
+//
+// They are not the only objects it logs. A handler that failed is one, with its
+// trace inside; it keeps its JSON and still has the trace read out of it, which
+// is why TraceID is looked for whatever the shape.
 type structured struct {
 	// The request log.
 	Method       string `json:"method"`

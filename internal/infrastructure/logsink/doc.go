@@ -11,8 +11,16 @@
 // output.
 //
 // So Capture replaces os.Stdout and os.Stderr with pipes, reads the lines,
-// forwards each one to the real console unchanged, and keeps a copy. Nothing
-// downstream changes: a container still gets identical output on its stdout.
+// forwards them to the real console and keeps a copy. A container still gets
+// the framework's own lines on its stdout, in the framework's own format.
+//
+// Not every line and not every byte of one, and each exception is made in drain
+// because that is the one place the process's output can be edited before
+// anybody sees it: a line below the administered level is not written
+// (SetLevel), a statement is written without the values it ran with
+// (withoutValues), the framework's complaint about a .env this binary was never
+// meant to need is dropped (isAbsentEnvFile), and a line longer than
+// maxLineBytes is cut.
 //
 // # What this costs
 //
