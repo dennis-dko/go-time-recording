@@ -416,12 +416,16 @@ func connectionSummary(ds appconfig.Datasource) string {
 		return strings.TrimSpace(dialect + " " + ds.Name)
 	}
 
-	summary := fmt.Sprintf("%s %s:%s/%s",
-		dialect, ds.Host, appconfig.DefaultPortFor(ds.Dialect, ds.Port), ds.Name)
-
+	// user@host, as a connection URL writes it: the card is read in the reader's
+	// language, and a word joining the values - it was "as" - is English on a
+	// German screen. The notation needs no translating.
+	user := ""
 	if ds.User != "" {
-		summary += " as " + ds.User
+		user = ds.User + "@"
 	}
+
+	summary := fmt.Sprintf("%s %s%s:%s/%s",
+		dialect, user, ds.Host, appconfig.DefaultPortFor(ds.Dialect, ds.Port), ds.Name)
 
 	if ds.SSLMode != "" {
 		summary += " (" + ds.SSLMode + ")"
