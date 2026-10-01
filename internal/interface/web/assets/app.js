@@ -8104,13 +8104,27 @@ function wireTour() {
 
   // The highlight is drawn from a measured rectangle, so it has to be redrawn
   // when the layout changes underneath it.
-  for (const event of ['resize', 'scroll']) {
-    window.addEventListener(event, () => {
-      if (!tour.active) return;
+  const redraw = () => {
+    if (!tour.active) return;
 
-      const node = $(tour.steps[tour.index].target);
-      if (node) placeTour(node);
-    }, { passive: true });
+    const node = $(tour.steps[tour.index].target);
+    if (node) placeTour(node);
+  };
+
+  for (const event of ['resize', 'scroll']) {
+    window.addEventListener(event, redraw, { passive: true });
+  }
+
+  // And when the page itself changes under it, which neither of those reports.
+  // A step is drawn two frames after its screen is switched to, and the card it
+  // points at may fill in later than that - the log's lines, the telemetry
+  // settings - so the ring stood around the part of the card that had been
+  // there: 804 pixels of a form that had grown to 1,012. The page is watched
+  // rather than the target, because a card filling in above the target moves it
+  // without resizing it. The ring and the bubble are positioned absolutely, so
+  // moving them does not resize the page and this cannot set itself off.
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(redraw).observe(document.body);
   }
 
   $('#tour-restart').addEventListener('click', startTour);
