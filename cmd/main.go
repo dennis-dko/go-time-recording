@@ -276,9 +276,11 @@ func main() {
 		defer restoreOutput()
 	}
 
-	// What a previous update left behind, now that this process is the new
-	// version. On Windows the old binary cannot be deleted while it is running,
-	// so the swap renames it aside and this is the first moment it can go.
+	// The note a previous update left saying it was waiting for a restart, now
+	// that this process is the version it was waiting for. Not the binary that
+	// update moved aside: that stays as the way back until the next update
+	// removes it, and removeLeftovers says why starting is not the moment to let
+	// go of it.
 	selfupdate.Cleanup()
 
 	// An administered database connection is exported into the environment
