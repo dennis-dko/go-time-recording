@@ -2024,7 +2024,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Case-insensitive substring of the message."
+            "description": "Case-insensitive substring of the message. A whole trace - the `traceId` of a record, which is also the `X-Correlation-ID` of the response to that request - finds the lines that request wrote."
           },
           {
             "name": "limit",

@@ -226,7 +226,8 @@ type Query struct {
 	Levels []string
 
 	// Search keeps only records whose message contains this text, compared
-	// without regard to case.
+	// without regard to case - or whose trace is this text, the whole of it,
+	// which is how the lines of one request are found.
 	Search string
 
 	// Limit caps how many records come back, keeping the newest. Zero means no
@@ -314,7 +315,12 @@ func (s *Sink) Query(q Query) Result {
 			continue
 		}
 
-		if search != "" && !strings.Contains(strings.ToLower(r.Message), search) {
+		// The text of the line, or the whole of the trace it was written under.
+		// Not a part of one: a trace is thirty-two hexadecimal digits the line
+		// does not show, so somebody searching for 500 would be handed one line
+		// in about a hundred and forty that says 500 nowhere.
+		if search != "" && !strings.Contains(strings.ToLower(r.Message), search) &&
+			!strings.EqualFold(r.TraceID, search) {
 			continue
 		}
 
@@ -584,9 +590,12 @@ func parse(line string) Record {
 		TraceID: e.TraceID,
 	}
 
-	// The request and query logs carry the trace inside the message rather than
-	// beside it. Lifting it out is what makes searching for one request's lines
-	// possible at all.
+	// The request log carries its trace inside the message rather than beside
+	// it, and so does what the framework writes for a handler that failed. The
+	// readable line made of the message no longer says it, so it is kept here,
+	// which is where Query looks when somebody searches for a request by its
+	// trace. A statement has none to lift: the framework logs those without the
+	// request they ran for.
 	if record.TraceID == "" {
 		record.TraceID = traceID
 	}

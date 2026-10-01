@@ -83,7 +83,7 @@ const defaultLogPage = 300
 //	since   only lines newer than this sequence number
 //	epoch   the process that number was counted by, as the last answer named it
 //	levels  comma-separated, e.g. WARN,ERROR; absent means every level
-//	search  case-insensitive substring of the message
+//	search  case-insensitive substring of the message, or a request's whole trace
 //	limit   how many lines at most, newest kept
 //
 // The whole process log is readable here, which is why it is behind the

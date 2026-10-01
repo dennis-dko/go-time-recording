@@ -219,8 +219,8 @@ func TestARequestLogBecomesAReadableLine(t *testing.T) {
 		}
 	}
 
-	// Without lifting the trace out of the message, searching for one request's
-	// lines would be impossible.
+	// The readable line no longer says which request it was, so the trace has to
+	// survive beside it: it is what a search for one request is matched against.
 	if record.TraceID != "deadbeef" {
 		t.Errorf("TraceID = %q, want it lifted out of the message", record.TraceID)
 	}
