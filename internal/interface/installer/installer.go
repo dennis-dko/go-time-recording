@@ -244,9 +244,16 @@ type prefillFields struct {
 	SSLMode string `json:"sslMode,omitempty"`
 }
 
-// state answers GET /install/state. Unauthenticated, and carries nothing worth
-// protecting: the application name and version are on the sign-in screen too,
-// and the page needs it before a token has been typed.
+// state answers GET /install/state. Unauthenticated, because the page needs it
+// before a token has been typed.
+//
+// The application's name and version are on the sign-in screen too. The prefill
+// is another matter: it names the database's host, its port, its name and the
+// account that opens it to anybody who can reach the port - never the password,
+// but the topology somebody intended. That is known and both manuals say so,
+// with the advice not to leave an installer reachable; it is written here as
+// well because this said the answer carried nothing worth protecting, which is
+// what a reader checking the route would have taken away.
 func (s *server) state(w http.ResponseWriter, _ *http.Request) {
 	response := stateResponse{
 		AppName: s.cfg.AppName,
