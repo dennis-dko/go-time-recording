@@ -187,23 +187,31 @@ body {
   z-index: 5;
 }
 
-/* Three columns, so the installation's own logo sits in the middle of the bar -
-   on the same vertical line as the navigation below it.
-
-   Only the logo. The title keeps the left end and the account keeps the right,
-   which is where both have always been; what moved is the one thing on this bar
-   that belongs to whoever runs the installation.
+/* Three columns, so that what this application is called sits in the middle of
+   the bar - on the same vertical line as the navigation below it. The
+   installation's own logo has the left end and the account the right.
 
    The outer two are equal shares, which is what puts the middle in the middle
-   rather than between two things of unequal weight. Where the right outgrows its
-   share the logo drifts left, which is the honest limit of it - and an
-   installation with no logo has an empty middle column of automatic width, which
-   takes no room at all, so the bar looks exactly as it did before. */
+   rather than between two things of unequal weight - for as long as the right
+   one has room in its share. It holds a name and three controls, and on any
+   window narrower than about 1,300 pixels that is more than half of what the
+   title leaves. So its share is a floor rather than a size: never less than
+   what it holds at its narrowest. The title then moves left of the middle and
+   the logo gives way to it - see .brand-logo - which is the honest limit of a
+   bar with more on it than fits.
+
+   It was an equal share and nothing else, and both outer columns may shrink
+   below what they hold (min-width: 0, below). So what the right one held hung
+   out of it to the left, which is where the title is: the name was drawn over
+   the title, letter on letter, from 901 pixels to 1,280. Measured in German,
+   where at 1,100 the whole name lay inside the title's box and at 901 the
+   appearance picker covered 98 pixels of it. A telephone never showed it,
+   because below 900 the controls fold away; nothing had looked in between. */
 .topbar-row {
   align-items: center;
   display: grid;
   gap: 16px;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(min-content, 1fr);
 }
 
 .topbar-middle {
@@ -235,8 +243,9 @@ body {
    select refuses to go below the width of its longest option, so the language
    and the way out ended up 42 pixels past the edge of the window and the page
    could be dragged sideways. Left with its automatic minimum it stops at the
-   370 it needs, and the column overflows the way it always has: leftwards,
-   into the room the title has. */
+   370 it needs - and that minimum is also what the column's floor is worked
+   out from, see .topbar-row: without it the column would be allowed to be
+   narrower than these three again. */
 .topbar-controls {
   align-items: center;
   display: flex;
@@ -1572,10 +1581,15 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    it is the application, and the application is always there. */
 .brand-mark[hidden] { display: none; }
 
+/* As wide as the picture wants, up to 328 pixels, and never wider than the
+   column it stands in. That column gives way when the right-hand side of the
+   bar needs more than its share - see .topbar-row - and a logo that kept its
+   width there would be drawn over the title in its turn: by 167 pixels at 901,
+   measured with the column fixed and this rule not yet written. */
 .brand-logo {
   height: auto;
   max-height: 96px;
-  max-width: 328px;
+  max-width: min(328px, 100%);
   object-fit: contain;
 }
 

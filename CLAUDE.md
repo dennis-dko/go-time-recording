@@ -278,6 +278,7 @@
   * **`form.id`:** Fails if a child input is named `id`. Always use `getAttribute('id')`.
   * **`<select>`:** Has no default empty option; restoring a form defaults to the first entry unless handled. A hidden control that is still `required` cannot be submitted past and cannot be scrolled to, so the form silently does nothing — clear `required` when you hide a field.
   * **Date fields are two boxes.** `enhanceDateFields` keeps a visible text field in the reader's own convention beside the native `input[type=date]`, which stays the named element. Set one from code with `setDateField`; writing `.value` directly changes the box nobody looks at.
+* **A layout is measured between a telephone and a wide screen as well, because that is where most windows are.** Every layout case measured a telephone, where the bar folds, or 1,600 pixels, where everything fits. From 901 to 1,280 - a laptop - the bar's right-hand column needed more than its share and hung out over the title: the account's name was drawn on top of it, letter on letter, and in German the appearance picker as well. Nothing had looked there, and it was found in a picture taken for another reason. `TestNothingOnTheBarIsDrawnOverAnythingElse` walks the widths in between, in both languages, with a long name and with a wide logo. It asks every pair of the row's four parts - the mark, the title, the name, the controls - so a control added to that group is held without being named.
 
 ## 5. Backend, Architecture, Domain Rules & Concurrency
 
