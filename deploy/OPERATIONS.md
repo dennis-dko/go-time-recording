@@ -597,7 +597,8 @@ while it is sitting there.
 account cannot issue API tokens — but it *can* reach the whole *Settings*
 surface: the database connection, the directory bind, telemetry, the process log,
 the restart. `changeme123` is effectively full control of the installation, not a
-limited foothold.
+limited foothold. Every start says so in the log while it is still the password,
+as it says so for authentication switched off and for plain HTTP.
 
 The built-in administrator **records no time**. It sets up the installation and
 manages accounts and roles; it has no projects, no entries, no overtime balance
@@ -1119,7 +1120,10 @@ directory holds and this installation lacks, and it **deletes** directory-backed
 accounts the directory no longer holds — a purge, in one transaction: running
 timers, time entries, that person's projects, API tokens, passkeys, sessions,
 then the account. It is irreversible and it takes the recorded hours with it.
-Local accounts and the built-in administrator are never touched.
+Local accounts and the built-in administrator are never touched. An account
+created here stops being local the first time its owner signs in through the
+directory: it is taken over, keeps no local password, and from then on a run
+treats it like any other directory account.
 
 Three guards stand between a misconfigured filter and a mass deletion:
 
