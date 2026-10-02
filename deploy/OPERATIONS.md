@@ -628,8 +628,7 @@ the grounds that a changed host is a change to the same connection — which
 describes what the card *says* and answers the wrong question, because the
 connection is opened once while the application starts. Moving the database to
 another host is exactly as pending as moving it to another dialect, and it now
-reads as one line: `postgres db:5432/gtr as app` → `postgres db2:5432/gtr as
-app`. A default port and an omitted one are the same connection here as they
+reads as one line: `postgres app@db:5432/gtr` → `postgres app@db2:5432/gtr`. A default port and an omitted one are the same connection here as they
 are in fact, so spelling out `5432` is not reported as a change.
 
 A changed password appears as *Database password* with nothing beside it. The
@@ -642,13 +641,15 @@ saved* when the comparison finds nothing and *Applied on the next start* when it
 does — it used to promise a restart on every press, including on a form somebody
 had only opened to look at.
 
-**The in-application restart button replaces the process image, and passes the
-current environment on.** That matters in one case: a setting you cleared back to
-*follow the configuration file* is **not** restored by it, because the variable
-the previous process exported is inherited and still beats the file. The same
-goes for deleting `configs/datasource.json` — the inherited `DB_DIALECT` keeps
-the old connection instead of bringing the installer back. Those need a real stop
-and start.
+**The in-application restart button reads the configuration the way a stop and a
+start would.** Outside a container it replaces the process image, and what it
+hands the new process is the environment this one was *started* with — not the
+one it has by then, into which the configuration file's keys and the stored
+settings have been written. So an edited `configs/.env` is read, a setting you
+cleared back to *follow the configuration file* is restored, and deleting
+`configs/datasource.json` brings the installer back. It used to hand on the
+environment as it stood, and none of the three happened without a real stop and
+start.
 
 On Windows the button is not offered at all: there is no `execve`, so the nearest
 equivalent would leave a window with no application running. The card says so.
@@ -1200,7 +1201,6 @@ mistakes it for a configured installation.
 | A setting was changed and nothing happened | it needs a restart | *Settings* lists what is pending. Two things used to be missing from that list — a same-dialect database change and the trace sample ratio — and both are compared now |
 | TLS was enabled and the site is still plain HTTP | the listener could not bind, and that does not stop the process | check the log for `serving HTTPS on :443`; on a host, grant `CAP_NET_BIND_SERVICE` |
 | `docker compose … -f compose.tls.yaml` refuses to start | `TLS_DOMAINS` or `TLS_EMAIL` is unset | both use the error form and are required |
-| A setting was cleared back to "follow the configuration file" and still applies | the in-application restart inherited the exported variable | stop and start the process properly |
 | Saving the database connection appears to do nothing | it applies at the next start, on purpose | restart |
 | Every page load feels slow after an upgrade | assets are revalidated, not re-sent — check that your proxy is not stripping `ETag` or `If-None-Match` | |
 | A directory run refuses with a ratio message | more accounts would be deleted than the guard allows | check the base DN and the filter first. That message is almost always right |
