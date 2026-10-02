@@ -197,6 +197,13 @@
       + 'antwortet.',
     'msg.slow': 'Die Anwendung ist nach zwei Minuten nicht erreichbar. Bitte das Protokoll '
       + 'dieses Prozesses prüfen.',
+    'msg.takenOver': 'Diese Installation wurde inzwischen eingerichtet. Bitte die Seite neu '
+      + 'laden, um die Anwendung zu öffnen.',
+    // The application's own sentence for the same thing, word for word.
+    'msg.unreachable': 'Der Server war nicht erreichbar. Bitte die Verbindung prüfen und es '
+      + 'erneut versuchen.',
+    'password.reveal': 'Passwort anzeigen',
+    'password.hide': 'Passwort verbergen',
 
     // What a refusal is called. The server writes its reasons in English at the
     // point the rule is enforced, which is right for its log and wrong for the
@@ -210,6 +217,10 @@
       + 'dieses Prozesses.',
     'err.alreadyConfigured': 'Es wurde bereits eine Datenbank gewählt, und die Anwendung '
       + 'startet damit.',
+    // The sentence is this page's and what follows the colon is the driver's or
+    // the operating system's, which nobody can translate ahead of time.
+    'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden: {0}',
+    'err.cannotSaveConnection': 'Die Verbindung konnte nicht gespeichert werden: {0}',
 
     // By the label above the field, which is the only name a reader can act on.
     'field.name': 'Datenbankname',
@@ -324,15 +335,27 @@
       }
     }
 
-    return body.error || `Error ${status}`;
+    // A string only. The installer writes its reason as one; the application,
+    // once it has taken this address over, answers with an object there, and
+    // printing that put "[object Object]" on the screen.
+    return (typeof body.error === 'string' && body.error) || `Error ${status}`;
   }
 
   async function call(path) {
-    const res = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Setup-Token': $('token').value.trim() },
-      body: JSON.stringify(datasource()),
-    });
+    let res;
+
+    try {
+      res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Setup-Token': $('token').value.trim() },
+        body: JSON.stringify(datasource()),
+      });
+    } catch {
+      // The browser's own words for a request that never arrived are English
+      // whatever the page is - "Failed to fetch" - and name nothing to do.
+      throw new Error(t('msg.unreachable',
+        'The server could not be reached. Check the connection and try again.'));
+    }
 
     let body = {};
     try { body = await res.json(); } catch { /* a non-JSON error page */ }
@@ -340,6 +363,52 @@
     if (!res.ok) throw new Error(refusal(body, res.status));
 
     return body;
+  }
+
+  /**
+   * Who answers on this address now: the installer, the application that takes
+   * the port over once a database has been chosen, or nobody.
+   *
+   * A 200 does not tell the first two apart. Once the application has the port
+   * it serves the single-page app for every unknown path - this one included -
+   * so /install/state answers 200 with HTML, and a check on res.ok alone had
+   * the page waiting for an application that was already there. The content
+   * type is what separates them: the installer answers JSON, the application a
+   * document, or a refusal that is not a 200.
+   */
+  async function whoAnswers() {
+    try {
+      const res = await fetch('/install/state', { cache: 'no-store' });
+
+      return res.ok && (res.headers.get('content-type') || '').includes('json')
+        ? 'installer'
+        : 'application';
+    } catch {
+      return 'nobody';
+    }
+  }
+
+  /**
+   * Says why a press came to nothing.
+   *
+   * The refusal as it stands, unless the installer is no longer the one being
+   * asked. A page left open in a second tab, or on somebody else's screen, goes
+   * on looking like an installer after the first one has finished it; its
+   * buttons then reach the application, and whatever that answers is not about
+   * the form. What the reader needs is the state: this has been set up.
+   */
+  async function explain(err) {
+    if (await whoAnswers() !== 'application') {
+      say(err.message, 'bad');
+      busy(false);
+
+      return;
+    }
+
+    // The buttons stay off: there is nothing left for them to do here.
+    say(t('msg.takenOver',
+      'This installation has been set up in the meantime. Reload the page to open '
+      + 'the application.'), 'good');
   }
 
   function busy(on) {
@@ -390,8 +459,8 @@
     // first attempt to look at the password would send the form instead.
     toggle.type = 'button';
     toggle.className = 'password-toggle';
-    toggle.title = 'Show the password';
-    toggle.setAttribute('aria-label', 'Show the password');
+    toggle.title = t('password.reveal', 'Show the password');
+    toggle.setAttribute('aria-label', toggle.title);
     toggle.setAttribute('aria-pressed', 'false');
     toggle.append(svg);
 
@@ -399,7 +468,9 @@
       const revealed = input.type === 'password';
       input.type = revealed ? 'text' : 'password';
 
-      const label = revealed ? 'Hide the password' : 'Show the password';
+      const label = revealed
+        ? t('password.hide', 'Hide the password')
+        : t('password.reveal', 'Show the password');
       toggle.title = label;
       toggle.setAttribute('aria-label', label);
       toggle.setAttribute('aria-pressed', String(revealed));
@@ -419,10 +490,9 @@
     try {
       await call('/install/test');
       say(t('msg.works', 'The connection works.'), 'good');
-    } catch (err) {
-      say(err.message, 'bad');
-    } finally {
       busy(false);
+    } catch (err) {
+      await explain(err);
     }
   });
 
@@ -437,8 +507,7 @@
         'Saved. The application is starting — this page will reload when it answers.'), 'good');
       waitForTheApplication();
     } catch (err) {
-      say(err.message, 'bad');
-      busy(false);
+      await explain(err);
     }
   });
 
@@ -455,23 +524,21 @@
     const tick = setInterval(async () => {
       attempts += 1;
 
-      try {
-        const res = await fetch('/install/state', { cache: 'no-store' });
+      // Before the question, not after it: the limit used to stand behind the
+      // return below, so an installer that went on answering - the process had
+      // gone and come back as one - was waited on for as long as the tab stayed
+      // open, under a line saying the application was starting.
+      if (attempts > 120) {
+        clearInterval(tick);
+        say(t('msg.slow',
+          'The application has not come up after two minutes. Check this process\'s log.'), 'bad');
 
-        // The installer still answers, so it is still in charge.
-        //
-        // A 200 is not enough to conclude that. Once the application has taken
-        // the port it serves the single-page app for every unknown path - this
-        // one included - so /install/state answers 200 with HTML, and a check on
-        // res.ok alone waits here for ever. That is exactly what it did: the page
-        // never reloaded after the database was configured.
-        //
-        // The content type is what tells them apart: the installer answers JSON,
-        // the application answers a document.
-        if (res.ok && (res.headers.get('content-type') || '').includes('json')) return;
-      } catch {
-        // Nothing listening yet, or the handover is in progress.
+        return;
       }
+
+      // The installer still answers, so it is still in charge; nobody answers
+      // while the port changes hands.
+      if (await whoAnswers() !== 'application') return;
 
       try {
         const res = await fetch('/', { cache: 'no-store' });
@@ -482,12 +549,6 @@
         }
       } catch {
         // Still starting. Migrations on a cold server take a moment.
-      }
-
-      if (attempts > 120) {
-        clearInterval(tick);
-        say(t('msg.slow',
-          'The application has not come up after two minutes. Check this process\'s log.'), 'bad');
       }
     }, 1000);
   }

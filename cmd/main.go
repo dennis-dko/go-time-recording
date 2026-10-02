@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -22,6 +23,7 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
+	"gofr.dev/pkg/gofr/migration"
 	"modernc.org/sqlite"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
@@ -267,6 +269,10 @@ func main() {
 		logs.SetPassthroughRenderer(consoleLine)
 	}
 
+	// The real console, kept before the capture takes its place: the one place a
+	// line is sure to arrive however the process ends. See sayingWhy.
+	console := os.Stderr
+
 	restoreOutput, err := logs.Capture()
 	if err != nil {
 		// Not fatal: an application that refuses to start because it could not
@@ -459,7 +465,7 @@ func main() {
 
 	// Schema first: the binary provisions its own database on first start, so
 	// a deployment needs no separate migration step.
-	app.Migrate(migrations.All(cfg.Dialect))
+	app.Migrate(sayingWhy(migrations.All(cfg.Dialect), console))
 
 	if unavailable(db) {
 		// Without this the app starts happily and every request panics on a
@@ -956,6 +962,39 @@ func main() {
 	if startFailure != nil {
 		die(restoreOutput, "the application did not start: %v", startFailure)
 	}
+}
+
+// sayingWhy hands each migration to GoFr unchanged, except that one which fails
+// says so on the real console before GoFr ends the process.
+//
+// GoFr rolls a failed migration back and calls Fatal, and a Fatal goes through
+// the pipe the log viewer reads - the loss the logsink package describes - so the
+// reason could be gone before anything passed it on: measured, a start on a
+// database already holding a table of the same name exited 1 with an empty log
+// in one of its first two runs. A migration is this application's own, so it
+// says why itself, past the pipe, while GoFr still has the rollback to do.
+func sayingWhy(all map[int64]migration.Migrate, console io.Writer) map[int64]migration.Migrate {
+	said := make(map[int64]migration.Migrate, len(all))
+
+	for version, step := range all {
+		up := step.UP
+
+		step.UP = func(d migration.Datasource) error {
+			err := up(d)
+			if err != nil {
+				// Best effort, like every line to a console: there is nowhere
+				// further to report a console that will not take one.
+				_, _ = fmt.Fprintf(console, "cannot start: migration %d could not be applied: %v\n",
+					version, err)
+			}
+
+			return err
+		}
+
+		said[version] = step
+	}
+
+	return said
 }
 
 // registerBusinessMetrics declares the ones this application records itself.
