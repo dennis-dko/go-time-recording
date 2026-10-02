@@ -918,6 +918,37 @@ func (a *App) stop() {
 	tempdir.Remove(a.dir)
 }
 
+// EmptyDatabase opens a database nothing has migrated - on the server the suite is
+// pointed at, or in a SQLite file - and says which dialect it speaks.
+//
+// For a case that runs the migration chain itself, part of the way, so it can
+// put rows where an older version would have left them before running the rest.
+// An instance cannot do that: it migrates everything the moment it starts.
+func EmptyDatabase(t *testing.T) (dialect string, db *sql.DB) {
+	t.Helper()
+
+	dialect = "sqlite"
+	conn := "file:" + filepath.Join(tempdir.New(t), "empty.db")
+
+	if dsn := os.Getenv(DSNEnv); dsn != "" {
+		_, dialect, conn = serverEnv(t, dsn)
+	}
+
+	db, err := sql.Open(dialect, conn)
+	if err != nil {
+		t.Fatalf("cannot open an empty %s database: %v", dialect, err)
+	}
+
+	// Registered after the database's own removal, so it runs before it.
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := db.Ping(); err != nil {
+		t.Fatalf("cannot reach the empty %s database: %v", dialect, err)
+	}
+
+	return dialect, db
+}
+
 // SharedDatabase is a SQLite file that two instances started by one test can
 // both open - which is how a case proves that what one start stored is what the
 // next start applies.

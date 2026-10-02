@@ -1398,6 +1398,16 @@
         <p class="muted" id="ldap-test-result"></p>
       </form>
 
+      <!-- In place of the card below, for an account that administers and also
+           records time. The run is not theirs, and a card that is simply not
+           there cannot be told from a feature that has been removed - which is
+           the question this was written after. A sentence and nothing to
+           press: the server refuses this account the run. -->
+      <div class="card" id="sync-elsewhere" hidden>
+        <h2 data-i18n="sync.title">Directory synchronisation</h2>
+        <p class="muted" id="sync-elsewhere-text"></p>
+      </div>
+
       <div class="card" id="sync-card">
         <h2 data-i18n="sync.title">Directory synchronisation</h2>
         <p class="muted" data-i18n="sync.hint">Reconciles the users with the directory. LDAP is only ever read, never changed.</p>

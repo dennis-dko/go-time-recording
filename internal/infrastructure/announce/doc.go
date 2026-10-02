@@ -2,8 +2,9 @@
 //
 // Everything else this application says to a browser is an answer to a question
 // the browser asked. That is the right shape for almost all of it - and it is the
-// wrong shape for exactly one thing: the binary underneath is being replaced, and
-// the people using it have a minute's notice at most.
+// wrong shape for what happens to everybody at once: the binary underneath is
+// being replaced, and the people using it have a minute's notice at most, or the
+// installation is being taken out of service and they have none.
 //
 // A poll cannot carry that. The permission notice polls once a minute, which is
 // fine for what it is - the server enforces the change immediately whatever the
