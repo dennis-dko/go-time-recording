@@ -87,3 +87,35 @@ func TestAPublishedChecksumThatIsNotOneIsRefusedBeforeAnythingIsFetched(t *testi
 		})
 	}
 }
+
+// A download the last process did not live to finish does not stay beside the
+// binary.
+//
+// An install removes what it staged on every way out, and a process that is
+// stopped mid-download has no way out: the file stayed, executable and never
+// checked against anything, until the next install happened to write over it.
+// No download can be under way while the program is starting, so the start is
+// where it goes.
+func TestADownloadTheLastProcessDidNotFinishIsRemovedAtStart(t *testing.T) {
+	self := filepath.Join(tempdir.New(t), "go-time-recording"+exeSuffix())
+
+	for name, body := range map[string]string{
+		"":     "the version running",
+		".new": "half of a download",
+		".old": "the version before it",
+	} {
+		if err := os.WriteFile(self+name, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	removeLeftovers(self)
+
+	if _, err := os.Stat(self + ".new"); err == nil {
+		t.Error("an unfinished download is still beside the binary after a start")
+	}
+
+	if _, err := os.Stat(self + ".old"); err != nil {
+		t.Error("the start threw away the version to go back to")
+	}
+}

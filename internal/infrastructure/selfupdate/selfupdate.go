@@ -542,8 +542,9 @@ func markPending(self, version string) error {
 }
 
 // Cleanup clears the note a previous update left behind, once this process is
-// the version it was waiting for. Called at start-up. The previous binary is
-// not among what it removes - see removeLeftovers.
+// the version it was waiting for, and a download that was never finished.
+// Called at start-up. The previous binary is not among what it removes - see
+// removeLeftovers.
 func Cleanup() {
 	self, err := ownPath()
 	if err != nil {
