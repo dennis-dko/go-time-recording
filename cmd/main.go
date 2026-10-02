@@ -450,6 +450,12 @@ func main() {
 	}
 
 	cfg := appconfig.Load(app.Config)
+
+	// A setting written so it cannot be used falls back to its default. Said here,
+	// at start, where whoever set it will look for why it does not apply.
+	for _, unusable := range cfg.Unusable {
+		app.Logger().Warnf("configuration: %s", unusable)
+	}
 	app.Logger().Infof("go-time-recording %s starting (dialect=%s)", version, cfg.Dialect)
 
 	db := app.GetSQL()
