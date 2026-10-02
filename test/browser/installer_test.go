@@ -4,7 +4,6 @@ package browser
 
 import (
 	"context"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -32,11 +31,7 @@ func TestTheInstallerRefusesInTheReadersLanguage(t *testing.T) {
 
 	app := harness.StartUnconfigured(t)
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("lang", "de-DE"),
-		chromedp.NoSandbox,
-	)
+	opts := launch("de-DE")
 
 	// --lang is not enough on its own. It sets what Chrome asks servers for, and
 	// on a machine that has the locale it also moves navigator.languages - but the
@@ -57,10 +52,6 @@ func TestTheInstallerRefusesInTheReadersLanguage(t *testing.T) {
 
 		return err
 	})
-
-	if path := os.Getenv("CHROME_PATH"); path != "" {
-		opts = append(opts, chromedp.ExecPath(path))
-	}
 
 	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancelAlloc()
@@ -137,17 +128,7 @@ func TestAnsweringTheInstallerLeavesTheBrowserSignedIn(t *testing.T) {
 
 	app := harness.StartUnconfigured(t)
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("lang", "en-US"),
-		chromedp.NoSandbox,
-	)
-
-	if path := os.Getenv("CHROME_PATH"); path != "" {
-		opts = append(opts, chromedp.ExecPath(path))
-	}
-
-	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
+	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), launch("en-US")...)
 	defer cancelAlloc()
 
 	ctx, cancel := chromedp.NewContext(alloc)
