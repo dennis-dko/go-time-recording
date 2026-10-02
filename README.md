@@ -1142,16 +1142,16 @@ Outside a container it replaces the process image rather than exiting and hoping
 something starts it again. `execve` needs nothing outside the process, so there
 is no arrangement in which pressing it leaves the installation down — whereas
 exiting works under systemd with `Restart=` and turns the button into an off
-switch for a binary started by hand.
+switch for a binary started by hand. What it hands the new process is the
+environment this one was **started** with, not the one it has by then, so the
+restart reads what a stop and a start would read.
 
-**In a container it exits**, and the container manager starts a new one. That is
-the better of the two there, and not only because it is simpler: `execve` keeps
-the environment, and in a container the environment is most of the
-configuration. Everything the stored settings exported would be inherited by the
-replacement, so a setting cleared back to *follow the configuration file* came
-back as the value the previous process had exported — from a screen whose whole
-promise is that the next start uses what is stored. Exiting gives a container
-built from the image and the compose file again, with nothing carried over.
+**In a container it exits**, and the container manager starts it again. That was
+chosen while replacing the process still handed on the environment as it stood,
+which in a container is most of the configuration: a setting cleared back to
+*follow the configuration file* came back as the value the previous process had
+exported — from a screen whose whole promise is that the next start uses what is
+stored.
 
 What starts it is the restart policy, which this process cannot see. The
 deployment here sets `unless-stopped`, which restarts whatever the exit status;
@@ -1163,14 +1163,15 @@ actually waiting, which is the moment the limitation costs anything: a warning
 that is on screen every time you look is furniture, read once and looked past
 thereafter, including on the day it finally has something to say.
 
-`execve` passes the current environment on, and outside a container that has one
-consequence worth knowing before it surprises somebody: a setting cleared back to
-*follow the configuration file* is **not** restored by this button. The variable
-the previous process exported is inherited, and a real environment variable beats
-the file. The same goes for deleting `configs/datasource.json` — the inherited
-`DB_DIALECT` keeps the old connection rather than bringing the installer back.
-Both need a genuine stop and start, which is what the button already does in a
-container.
+A restart from the button reads the configuration the way a stop and a start
+would, in a container and outside one. Outside one it used not to: the process
+handed on its own environment, into which the configuration file's keys and the
+stored settings had been written by then, and a real environment variable beats
+the file. So an edited `configs/.env` was not read, a setting cleared back to
+*follow the configuration file* was not restored, deleting
+`configs/datasource.json` did not bring the installer back, and an installation
+that had stored no log level logged at `DEBUG` after its first restart. None of
+the four needs a genuine stop and start any more.
 
 Both of those were once things this banner could not tell you, and both are
 compared now: a database change that keeps the dialect — another host, port, user
