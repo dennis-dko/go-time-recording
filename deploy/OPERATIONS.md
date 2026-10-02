@@ -587,11 +587,12 @@ installer requires a token. It is generated and printed in the process log at
 start, with the URL to open. For an unattended install set `SETUP_TOKEN`
 yourself; then nothing is printed and a provisioning script can drive the page.
 
-Two things about an exposed installer: `GET /install/state` needs no token and
-discloses the instance name, the build version and whatever database prefill the
-environment supplied — dialect, name, host, port, user, SSL mode. No password
-leaks, but the intended topology does. Do not leave the port open to the world
-while it is sitting there.
+Two things about an exposed installer. `GET /install/state` needs no token and
+says the instance name and the build version; whatever database prefill the
+environment supplied — name, host, port, user, SSL mode — it adds only for a
+request that carries the token, and the password for nobody. And it stands there
+until somebody completes it, so do not leave the port open to the world while it
+is sitting there.
 
 **Change the initial password before anything else.** Until it is changed, that
 account cannot issue API tokens — but it *can* reach the whole *Settings*
