@@ -113,12 +113,34 @@ func (s *Source) checksum(ctx context.Context, release Release) (string, error) 
 
 		// sha256sum writes "hash  name" and marks a binary read with a leading
 		// asterisk on the name.
-		if strings.TrimPrefix(fields[1], "*") == wanted {
-			return strings.ToLower(fields[0]), nil
+		if strings.TrimPrefix(fields[1], "*") != wanted {
+			continue
 		}
+
+		// Refused here rather than found out by the comparison. Anything that is
+		// not a hash can only ever mismatch, and the binary would be fetched
+		// whole to learn that.
+		published := strings.ToLower(fields[0])
+		if !isSHA256(published) {
+			return "", fmt.Errorf("the published checksum for %s is not a SHA-256 "+
+				"hash, so the release cannot be verified", wanted)
+		}
+
+		return published, nil
 	}
 
 	return "", fmt.Errorf("the published checksums do not mention %s", wanted)
+}
+
+// isSHA256 reports whether sum is a hash as sha256sum writes one.
+func isSHA256(sum string) bool {
+	if len(sum) != hex.EncodedLen(sha256.Size) {
+		return false
+	}
+
+	_, err := hex.DecodeString(sum)
+
+	return err == nil
 }
 
 // sumOf is the SHA-256 of a file, in the form the published checksums use.
@@ -205,9 +227,13 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 		return outgrown(ceiling)
 	}
 
+	// Cut by the verb rather than by slicing: what is expected is whatever the
+	// caller was given, and a value shorter than the cut was a slice out of range
+	// - a panic where the refusal should be, on the path that takes the notice of
+	// an install back.
 	if got := hex.EncodeToString(sum.Sum(nil)); got != want {
 		return fmt.Errorf("the download does not match the published checksum "+
-			"(got %s, expected %s)", got[:16], want[:16])
+			"(got %.16s, expected %.16s)", got, want)
 	}
 
 	return nil
