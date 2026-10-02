@@ -202,6 +202,8 @@
     // The application's own sentence for the same thing, word for word.
     'msg.unreachable': 'Der Server war nicht erreichbar. Bitte die Verbindung prüfen und es '
       + 'erneut versuchen.',
+    'password.reveal': 'Passwort anzeigen',
+    'password.hide': 'Passwort verbergen',
 
     // What a refusal is called. The server writes its reasons in English at the
     // point the rule is enforced, which is right for its log and wrong for the
@@ -457,8 +459,8 @@
     // first attempt to look at the password would send the form instead.
     toggle.type = 'button';
     toggle.className = 'password-toggle';
-    toggle.title = 'Show the password';
-    toggle.setAttribute('aria-label', 'Show the password');
+    toggle.title = t('password.reveal', 'Show the password');
+    toggle.setAttribute('aria-label', toggle.title);
     toggle.setAttribute('aria-pressed', 'false');
     toggle.append(svg);
 
@@ -466,7 +468,9 @@
       const revealed = input.type === 'password';
       input.type = revealed ? 'text' : 'password';
 
-      const label = revealed ? 'Hide the password' : 'Show the password';
+      const label = revealed
+        ? t('password.hide', 'Hide the password')
+        : t('password.reveal', 'Show the password');
       toggle.title = label;
       toggle.setAttribute('aria-label', label);
       toggle.setAttribute('aria-pressed', String(revealed));

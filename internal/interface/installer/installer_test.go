@@ -178,6 +178,43 @@ func TestTheInstallerFollowsTheBrowserLanguage(t *testing.T) {
 	}
 }
 
+// The page says nothing its dictionary cannot say in German.
+//
+// Two shapes, because both had happened on this page: a lookup whose key the
+// dictionary does not hold, which renders the English and looks translated in
+// the source; and a label written straight from a literal - the password
+// button's name was "Show the password" on an otherwise German screen, for
+// everybody who reads a screen by its accessible names.
+func TestTheInstallerPageSaysNothingItCannotTranslate(t *testing.T) {
+	raw, err := assets.ReadFile("assets/install.html")
+	if err != nil {
+		t.Fatalf("reading the installer page: %v", err)
+	}
+
+	page := string(raw)
+
+	// A whole key, followed by its fallback. The two lookups built from a prefix
+	// - a refusal's code, a field's name - are held by the case that knows which
+	// codes and fields the server sends.
+	looked := regexp.MustCompile(`\bt\('([a-zA-Z.]+)',`).FindAllStringSubmatch(page, -1)
+	if len(looked) < 10 {
+		t.Fatalf("found %d lookups in the page; this case is reading nothing", len(looked))
+	}
+
+	for _, lookup := range looked {
+		if !strings.Contains(page, "'"+lookup[1]+"':") {
+			t.Errorf("the page looks up %q and its German dictionary has no such entry", lookup[1])
+		}
+	}
+
+	for _, bare := range regexp.MustCompile(
+		`(?:\.title\s*=|setAttribute\('aria-label',|\.textContent\s*=|\.placeholder\s*=)\s*'[^']+'`).
+		FindAllString(page, -1) {
+		t.Errorf("the page writes a label from a literal, in English whatever the reader "+
+			"asked for: %s", bare)
+	}
+}
+
 // Once a connection has been saved, a second answer is refused rather than
 // written.
 //
