@@ -628,8 +628,7 @@ the grounds that a changed host is a change to the same connection — which
 describes what the card *says* and answers the wrong question, because the
 connection is opened once while the application starts. Moving the database to
 another host is exactly as pending as moving it to another dialect, and it now
-reads as one line: `postgres db:5432/gtr as app` → `postgres db2:5432/gtr as
-app`. A default port and an omitted one are the same connection here as they
+reads as one line: `postgres app@db:5432/gtr` → `postgres app@db2:5432/gtr`. A default port and an omitted one are the same connection here as they
 are in fact, so spelling out `5432` is not reported as a change.
 
 A changed password appears as *Database password* with nothing beside it. The
