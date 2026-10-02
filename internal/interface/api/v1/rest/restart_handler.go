@@ -113,10 +113,10 @@ type PendingChange struct {
 type RestartResponse struct {
 	// Mode says what pressing the button does here, which is not one thing.
 	// Outside a container this process replaces itself and the installation is
-	// never not running; inside one it stops, and a new container is started by
-	// the restart policy - which this process cannot see, so the screen says
-	// which kind of restart is being offered rather than letting somebody find
-	// out afterwards.
+	// never not running; inside one it stops, and the restart policy starts the
+	// container again - which this process cannot see, so the screen says which
+	// kind of restart is being offered rather than letting somebody find out
+	// afterwards.
 	Mode string `json:"mode"`
 
 	// Supported is false where the process cannot restart itself at all, in which

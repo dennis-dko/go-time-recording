@@ -1154,9 +1154,11 @@ exported — from a screen whose whole promise is that the next start uses what 
 stored.
 
 What starts it is the restart policy, which this process cannot see. The
-deployment here sets `unless-stopped`, which restarts whatever the exit status;
-a container run without a policy stays down, which is why the sentence beside
-the button says so.
+deployment here sets `unless-stopped`, which restarts whatever the exit status,
+and so does `always`. A container run without a policy stays down, and so does
+one run under `on-failure`: the button ends the process without an error, which
+is the one exit that policy does not restart. The sentence beside the button
+names the policies.
 Windows has no `execve`, so the button is not offered there and the banner puts
 the reason where the button would have been. It appears when something is
 actually waiting, which is the moment the limitation costs anything: a warning
