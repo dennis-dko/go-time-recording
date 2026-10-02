@@ -2,10 +2,10 @@
 #
 # Without this overlay, a container deployment updates the way every container
 # deployment does: `docker compose pull && docker compose up -d`, typed by
-# somebody on the server. The application's own update button does something
-# different and smaller - it swaps the binary inside the running container, and
-# that lasts exactly until the container is recreated, because the image it was
-# made from still holds the old one.
+# somebody on the server. The application's own update button is not offered
+# there. What it does elsewhere - swapping the binary where it runs - would last
+# exactly until the container is recreated, because the image it was made from
+# still holds the old one, so the version card names the command instead.
 #
 # This makes the image the unit of update, and puts the button back in charge of
 # it: press it, and a new image is pulled, the application's container is
