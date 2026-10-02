@@ -1105,9 +1105,11 @@ Read its header before including it; most deployments should not.
 
 Editing the directory card, testing the connection and saving it need
 `settings:manage`, like every other setting. Running a synchronisation does
-not: **the preview, the button and the schedule field belong to the built-in
-administrator alone**, and the card is not shown to an account that would be
-refused it.
+not: **the preview, the button and the schedule field belong to an account that
+administers and has no working day of its own** - the built-in administrator, or
+somebody holding the `admin` role. An account that would be refused is not shown
+the card. It is shown a sentence in its place saying whose the run is, because a
+card that is simply missing reads as a feature that has been removed.
 
 The distinction is what a run does rather than what it reads. Configuring a
 directory is configuration; deleting every account the directory no longer holds
@@ -1117,9 +1119,10 @@ same side of that line — it is the same deletion performed later and unattende
 could be walked around by typing five numbers into the field between them.
 
 An installation whose administration has been handed to a `user-admin` account
-therefore keeps one thing behind the built-in login. That is deliberate: it is
-the account that exists before anybody has chosen anything, and the irreversible
-operation is the right thing to keep there.
+therefore keeps one thing out of that account's reach. That is deliberate: the
+irreversible operation stays with an account whose only job is the installation
+- the built-in one, which exists before anybody has chosen anything, or one that
+was given the `admin` role on purpose.
 
 A run reads the directory and never writes to it. It creates accounts the
 directory holds and this installation lacks, and it **deletes** directory-backed

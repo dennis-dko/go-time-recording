@@ -57,6 +57,46 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// browserStart is how long a browser may take to say where it is listening.
+//
+// chromedp gives it twenty seconds, of which a headless Chrome needs a fraction
+// - except the first time on a machine that has only just compiled everything
+// it is about to run. On the CI runner the first two cases of a run each waited
+// their twenty seconds and failed with "websocket url timeout reached", which
+// says the browser had not started and nothing whatever about the application:
+// the same commit had been green on its pull request an hour before, and the
+// release for it was skipped.
+//
+// A minute, and it is not the kind of longer timeout this suite refuses. It
+// waits on nothing the application does, so no case can pass by it being long.
+const browserStart = time.Minute
+
+// launch is what every browser in this suite is started with: no window, the
+// language the case reads in, and whatever the case adds.
+//
+// One list, because there were three and they had to agree about the things
+// that are not about any one case - the sandbox the CI containers cannot have,
+// the browser CHROME_PATH names, how long it may take to start. A fourth
+// launcher written beside them would have had to remember all three.
+func launch(language string, more ...chromedp.ExecAllocatorOption) []chromedp.ExecAllocatorOption {
+	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.Flag("headless", true),
+		chromedp.Flag("lang", language),
+
+		// The container images CI uses run as root, where Chrome refuses to
+		// start without this.
+		chromedp.NoSandbox,
+
+		chromedp.WSURLReadTimeout(browserStart),
+	)
+
+	if path := os.Getenv("CHROME_PATH"); path != "" {
+		opts = append(opts, chromedp.ExecPath(path))
+	}
+
+	return append(opts, more...)
+}
+
 // page is a browser pointed at a fresh instance.
 type page struct {
 	t   *testing.T
@@ -84,22 +124,19 @@ func openWith(t *testing.T, env ...string) *page {
 
 	app := harness.Start(t, env...)
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
+	// The language is pinned, because the interface writes figures and dates the
+	// way the reader's own browser writes them - so without this the suite
+	// asserts against whatever locale the machine running it happens to have.
+	// Five cases search the time table for "1.11" and found "1,11" on a German
+	// machine: the application was right and the suite was not portable, which
+	// is worse, because it trains whoever runs it locally to expect red.
+	//
+	// CI is en-US and was passing by luck rather than by decision. Stating it
+	// here makes that a decision, and the one case that is *about* following
+	// the browser compares against that browser's own Intl rather than against
+	// a format written down here, so it holds whatever this is set to.
+	opts := launch("en-US",
 		chromedp.Flag("disable-gpu", true),
-
-		// Pinned, because the interface writes figures and dates the way the
-		// reader's own browser writes them - so without this the suite asserts
-		// against whatever locale the machine running it happens to have. Five
-		// cases search the time table for "1.11" and found "1,11" on a German
-		// machine: the application was right and the suite was not portable, which
-		// is worse, because it trains whoever runs it locally to expect red.
-		//
-		// CI is en-US and was passing by luck rather than by decision. Stating it
-		// here makes that a decision, and the one case that is *about* following
-		// the browser compares against that browser's own Intl rather than against
-		// a format written down here, so it holds whatever this is set to.
-		chromedp.Flag("lang", "en-US"),
 
 		// A window somebody might actually use.
 		//
@@ -110,15 +147,7 @@ func openWith(t *testing.T, env ...string) *page {
 		// disagrees with the machine next to it. The one case that is about narrow
 		// screens sets its own size.
 		chromedp.WindowSize(1280, 900),
-
-		// The container images CI uses run as root, where Chrome refuses to
-		// start without this.
-		chromedp.NoSandbox,
 	)
-
-	if path := os.Getenv("CHROME_PATH"); path != "" {
-		opts = append(opts, chromedp.ExecPath(path))
-	}
 
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(cancelAlloc)

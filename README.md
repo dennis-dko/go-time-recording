@@ -355,9 +355,11 @@ screen and everything on it — the branding, the operational limits, the instan
 timezone, the database connection, the telemetry, the maintenance notice, the
 log and the restart. It is what the `user-admin` role holds that `user` does
 not, and it is why that role is handed out deliberately rather than assembled
-out of smaller rights. Two things stay outside it and belong to the built-in
-administrator alone: the setup wizard, and running or scheduling a directory
-synchronisation.
+out of smaller rights. Two things stay outside it and belong to an account that
+administers and has no working day of its own - the built-in administrator, or
+one holding the `admin` role: the setup wizard, and running or scheduling a
+directory synchronisation. On the *Settings* screen of a `user-admin` account the
+synchronisation card is replaced by a sentence saying so.
 
 ### The administrator does not work here
 

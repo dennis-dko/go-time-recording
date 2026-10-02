@@ -1,6 +1,7 @@
 package announce
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -55,20 +56,104 @@ func TestConnectingAfterwardsStillHearsTheLastThing(t *testing.T) {
 	}
 }
 
-// And once it is over, it stops being told to newcomers.
-func TestWhatIsForgottenIsNotRepeated(t *testing.T) {
+// An update taken back is said to whoever is connected and kept for nobody.
+//
+// What a retraction takes back is the thing that was being remembered, so it
+// leaves nothing to hand to a screen that connects afterwards - and it leaves
+// nothing in one step. It was two once, Publish and then Forget, and between
+// them the hub remembered the retraction itself: a screen connecting in that
+// moment was told that an update it had never heard of had not been installed.
+func TestAnUpdateTakenBackIsRememberedForNobody(t *testing.T) {
 	hub := New()
 
-	hub.Publish(Cancelled, "v1.2.3")
-	hub.Forget()
+	watching, stop := hub.Subscribe()
+	defer stop()
 
-	stream, done := hub.Subscribe()
+	hub.Publish(Restarting, "v1.2.3")
+	hub.Publish(Cancelled, "v1.2.3")
+
+	for _, want := range []Kind{Restarting, Cancelled} {
+		select {
+		case got := <-watching:
+			if got.Kind != want {
+				t.Errorf("the connection that was open heard %q, want %q", got.Kind, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("the connection that was open never heard %q", want)
+		}
+	}
+
+	if last, standing := hub.Last(); standing {
+		t.Errorf("%q is still remembered once the update has been taken back", last.Kind)
+	}
+
+	// Subscribe writes what is remembered before it returns, so there is nothing
+	// to wait for: the stream either holds it by now or never will.
+	late, done := hub.Subscribe()
 	defer done()
 
 	select {
-	case got := <-stream:
-		t.Errorf("a fresh connection was handed %+v, which is over", got)
-	case <-time.After(200 * time.Millisecond):
+	case got := <-late:
+		t.Errorf("a connection made afterwards was handed %+v, which is over", got)
+	default:
+	}
+}
+
+// What is said about maintenance does not displace what is said about an update.
+//
+// The hub remembered one thing, the last, whatever it was about. Saving the
+// maintenance card while an image was being pulled therefore replaced "the
+// application is restarting" with a notice that carries nothing, and a screen
+// that connected - or reconnected - in the minutes the pull still had to run
+// was neither warned of the restart nor reloaded once the new version answered:
+// a screen reloads when the last update notice it heard was the restart.
+func TestWhatIsSaidAboutOneThingDoesNotDisplaceTheOther(t *testing.T) {
+	for name, c := range map[string]struct {
+		said []Kind
+		want []Kind
+	}{
+		"an update, then maintenance": {
+			said: []Kind{Restarting, Maintenance},
+			want: []Kind{Restarting, Maintenance},
+		},
+		"maintenance, then an update": {
+			said: []Kind{Maintenance, Installing},
+			want: []Kind{Maintenance, Installing},
+		},
+		"maintenance saved a second time": {
+			said: []Kind{Maintenance, Restarting, Maintenance},
+			want: []Kind{Restarting, Maintenance},
+		},
+		"an update moving on": {
+			said: []Kind{Installing, Maintenance, Restarting},
+			want: []Kind{Maintenance, Restarting},
+		},
+		"an update taken back": {
+			said: []Kind{Installing, Maintenance, Cancelled},
+			want: []Kind{Maintenance},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hub := New()
+
+			for _, kind := range c.said {
+				hub.Publish(kind, "")
+			}
+
+			late, done := hub.Subscribe()
+			defer done()
+
+			// Subscribe writes what is remembered before it returns.
+			var heard []Kind
+
+			for range len(late) {
+				heard = append(heard, (<-late).Kind)
+			}
+
+			if !slices.Equal(heard, c.want) {
+				t.Errorf("a connection made afterwards heard %q, want %q", heard, c.want)
+			}
+		})
 	}
 }
 
