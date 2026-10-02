@@ -94,6 +94,43 @@ func TestTheWaitLoopDistinguishesTheApplicationFromTheInstaller(t *testing.T) {
 	}
 }
 
+// The wait for the application ends, whoever is answering.
+//
+// The two-minute limit stood behind the return an installer still answering
+// takes. So when the process went away after a save and came back as an
+// installer - the connection file lost with the container it was written in -
+// the page waited for as long as the tab stayed open, under a line saying the
+// application was starting. Read from the page rather than driven: two minutes
+// of waiting is what the case would otherwise be.
+func TestTheWaitForTheApplicationEndsWhoeverAnswers(t *testing.T) {
+	page, err := assets.ReadFile("assets/install.html")
+	if err != nil {
+		t.Fatalf("reading the installer page: %v", err)
+	}
+
+	markup := string(page)
+
+	start := strings.Index(markup, "function waitForTheApplication()")
+	if start < 0 {
+		t.Fatal("the installer no longer waits for the application at all")
+	}
+
+	loop := markup[start:]
+
+	limit := strings.Index(loop, "attempts > 120")
+	asks := strings.Index(loop, "await whoAnswers()")
+
+	if limit < 0 || asks < 0 {
+		t.Fatalf("the wait loop no longer has a limit (%d) or no longer asks who "+
+			"answers (%d); this case is reading nothing", limit, asks)
+	}
+
+	if limit > asks {
+		t.Error("the limit stands behind the question of who answers, so an installer " +
+			"that goes on answering is waited on for ever")
+	}
+}
+
 // The installer speaks the browser's language.
 //
 // It is the first screen anybody sees and it was English only, on a German
