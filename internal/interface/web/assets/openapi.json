@@ -547,7 +547,7 @@
           "timesheets"
         ],
         "summary": "Update an entry",
-        "description": "Changes an entry of your own. Somebody else’s answers 404, exactly as an id nobody holds does, so the answer does not say which ids are real - on every method, not only here. Naming somebody else in `userId`, which would hand the entry over, is refused, and there is no right that changes either. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours.",
+        "description": "Changes an entry of your own. Somebody else’s answers 404, exactly as an id nobody holds does, so the answer does not say which ids are real - on every method, not only here. Naming somebody else in `userId`, which would hand the entry over, is refused, and there is no right that changes either. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. A `projectId` of 0 takes the entry off its project, and an empty `description` empties it.",
         "responses": {
           "200": {
             "description": "Updated"
@@ -673,6 +673,7 @@
           "projects"
         ],
         "summary": "Update a project",
+        "description": "Changes a project of your own. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, and an empty `description` empties it.",
         "responses": {
           "200": {
             "description": "Updated"

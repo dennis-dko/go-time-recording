@@ -78,15 +78,6 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const READ_TIMEOUT_MS = 60000;
 
 /**
- * Calls the API and unwraps GoFr's {data, error} envelope.
- *
- * State-changing calls echo the CSRF cookie back in a header. Another site can
- * make the browser send the session cookie, but it can neither read this cookie
- * nor set a custom header, so the echo is what proves the call came from here.
- *
- * @throws {Error} with the server-provided message on a non-2xx response.
- */
-/**
  * The loading strip, driven by how many requests are in flight.
  *
  * Counted rather than toggled: three requests starting together and finishing
@@ -265,7 +256,85 @@ function refusalFrom(res, body) {
   return err;
 }
 
+/**
+ * fetch, with a request that never arrived put into words.
+ *
+ * fetch failing before there is an answer - the server stopped, the connection
+ * dropped - throws the browser's own exception, worded in its language and its
+ * own way: "Failed to fetch" in one, "NetworkError when attempting to fetch
+ * resource." in another. The sentence is ours; the browser's words go where a
+ * refusal's original words go, under it. Every request goes through here, api()
+ * and the three that cannot use it, so none of them can forget.
+ *
+ * An aborted request goes back as it came: whoever aborted it asked for it, and
+ * api() tells its own timeout from a caller's.
+ */
+async function reach(url, options) {
+  // A write that is already on its way is not sent a second time.
+  //
+  // A double click, or Enter held down, submits a form twice before the first
+  // answer has come back - and a booking sent twice is the same hours recorded
+  // twice, an import sent twice every row written twice. Measured: two entries,
+  // created in the same second, from one form pressed twice. Asked here because
+  // every request passes through here, so no form has to remember it.
+  const key = writeKey(url, options);
 
+  if (key && writesInFlight.has(key)) {
+    const repeated = new Error(t('msg.alreadySending', 'This is already being sent.'));
+    repeated.repeated = true;
+
+    throw repeated;
+  }
+
+  if (key) writesInFlight.add(key);
+
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (options?.signal?.aborted) throw err;
+
+    const unreachable = new Error(t('msg.unreachable',
+      'The server could not be reached. Check the connection and try again.'));
+    unreachable.refusal = { detail: err.message };
+    unreachable.cause = err;
+
+    throw unreachable;
+  } finally {
+    if (key) writesInFlight.delete(key);
+  }
+}
+
+/** The writes on their way now, by what they would change; see reach. */
+const writesInFlight = new Set();
+
+/**
+ * What a write would change - its method, its address and what it carries - or
+ * null for a read, which does no harm twice. A file stands for itself by name,
+ * size and time of change, which is what a second press of the same import sends.
+ */
+function writeKey(url, options) {
+  const method = (options?.method ?? 'GET').toUpperCase();
+  if (SAFE_METHODS.has(method)) return null;
+
+  const body = options?.body;
+  const carried = body instanceof FormData
+    ? [...body.entries()].map(([name, value]) => (value instanceof File
+      ? `${name}=${value.name}:${value.size}:${value.lastModified}`
+      : `${name}=${value}`)).join('&')
+    : String(body ?? '');
+
+  return `${method} ${url} ${carried}`;
+}
+
+/**
+ * Calls the API and unwraps GoFr's {data, error} envelope.
+ *
+ * State-changing calls echo the CSRF cookie back in a header. Another site can
+ * make the browser send the session cookie, but it can neither read this cookie
+ * nor set a custom header, so the echo is what proves the call came from here.
+ *
+ * @throws {Error} with the server-provided message on a non-2xx response.
+ */
 async function api(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = { 'Content-Type': 'application/json', ...(options.headers ?? {}) };
@@ -291,7 +360,7 @@ async function api(path, options = {}) {
   let res;
 
   try {
-    res = await fetch(API + path, {
+    res = await reach(API + path, {
       ...options,
       headers,
       signal: giveUp ? giveUp.signal : options.signal,
@@ -333,7 +402,6 @@ async function api(path, options = {}) {
   return body ? body.data : null;
 }
 
-/** Pulls a readable message out of GoFr's error shape. */
 /**
  * The message to show for a failed request, in the reader's language where the
  * server said which rule was broken.
@@ -1203,7 +1271,6 @@ function configuredLink(label, url) {
   });
 }
 
-/** Builds an element; text is assigned via textContent, never innerHTML. */
 /**
  * The attributes whose presence is the whole of their meaning.
  *
@@ -1218,6 +1285,7 @@ const BOOLEAN_ATTRIBUTES = new Set([
   'autofocus', 'open', 'novalidate',
 ]);
 
+/** Builds an element; text is assigned via textContent, never innerHTML. */
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -2143,16 +2211,6 @@ function fillSelect(select, items, { placeholder, labelKey = 'name', valueKey = 
 }
 
 /**
- * The English titles of the roles that ship.
- *
- * These are what an English reader sees, because English is what a t() fallback is for.
- * Without them the fallback would be the identifier itself, and "user-admin" is not a
- * thing to put in front of somebody deciding what a colleague may do.
- *
- * A role an installation named itself is not in here and falls back to the name it was
- * given, which is the only sensible answer for a word this application has never seen.
- */
-/**
  * What each right is called, in words.
  *
  * The identifiers are what the API takes and what a role's rights are stored as -
@@ -2242,6 +2300,24 @@ function permissionGroup(right) {
 // time and administers nothing.
 const ORDINARY_ROLE = 'user';
 
+/**
+ * The shipped role that administers and has no working day, for the places that
+ * have to name it to somebody: whose the directory run is. Only ever shown, never
+ * compared - administersOnly asks for the shape, because an installation may have
+ * built a role of its own with it.
+ */
+const ADMINISTERING_ROLE = 'admin';
+
+/**
+ * The English titles of the roles that ship.
+ *
+ * These are what an English reader sees, because English is what a t() fallback is for.
+ * Without them the fallback would be the identifier itself, and "user-admin" is not a
+ * thing to put in front of somebody deciding what a colleague may do.
+ *
+ * A role an installation named itself is not in here and falls back to the name it was
+ * given, which is the only sensible answer for a word this application has never seen.
+ */
 const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
@@ -2332,7 +2408,6 @@ function directoryRoleChoices() {
   return roleChoices().filter((choice) => allowed.has(choice.name));
 }
 
-/** Reads a form into a plain object, dropping empty optional fields. */
 /**
  * Where a form's unfinished contents wait out a page load.
  *
@@ -2856,6 +2931,7 @@ function saveForm(form, fn, successMessage, after) {
   });
 }
 
+/** Reads a form into a plain object, dropping empty optional fields. */
 function formData(form) {
   const out = {};
   for (const [key, raw] of new FormData(form).entries()) {
@@ -3228,6 +3304,7 @@ const TRANSLATIONS = {
     'tour.database.text': 'In welche Datenbank diese Installation schreibt. Die Verbindung wird vor dem Speichern getestet, und die Änderung gilt ab dem nächsten Start.',
     'tour.ldap.title': 'Anmelden gegen ein Verzeichnis',
     'tour.ldap.text': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Darunter läuft der Abgleich nach Zeitplan – und lässt sich vorher ansehen, bevor er von Hand ausgeführt wird.',
+    'tour.ldap.textElsewhere': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Der Abgleich löscht Konten und bleibt dem eingebauten Administrator oder der Rolle „{0}“ vorbehalten.',
     'tour.maintenance.title': 'Wartungsmodus',
     'tour.maintenance.text': 'Schließt die Installation mit einer Erklärung, die auch auf der Anmeldemaske steht – wer nicht hineinkommt, erfährt also warum, statt zu raten.',
     'tour.limits.title': 'Grenzwerte und Laufzeiten',
@@ -3442,6 +3519,7 @@ const TRANSLATIONS = {
     'confirm.deleteTitle': 'Endgültig löschen?',
     'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
     'sync.confirmTitle': 'Abgleich ausführen?',
+    'sync.elsewhere': 'Wird diesem Konto nicht angeboten. Ein Lauf löscht die Konten, die das Verzeichnis nicht mehr führt, samt der darauf erfassten Zeit; er gehört deshalb zu einem Konto, das administriert und selbst keine Zeit erfasst: dem eingebauten Administrator oder einem Konto mit der Rolle „{0}“. Mit einem solchen Konto lässt er sich ansehen, ausführen und planen.',
     'admin.activeConnection': 'Aktuell verbunden über',
     'admin.connectionFromEnvironment': 'Diese Verbindung kommt aus der Umgebung, '
       + 'nicht aus einer gespeicherten Einstellung. Wird dieses Formular gespeichert, '
@@ -3611,6 +3689,8 @@ const TRANSLATIONS = {
     'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
     'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
+    'msg.unreachable': 'Der Server war nicht erreichbar. Bitte die Verbindung prüfen und es erneut versuchen.',
+    'msg.alreadySending': 'Das wird bereits gesendet.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
     'err.chartNotAPicture': 'Das Diagramm konnte nicht gelesen werden. '
       + 'Bitte die Auswertung erneut anzeigen und dann exportieren.',
@@ -4984,7 +5064,7 @@ async function loadProjects() {
       // A project needs no period, so the column stays quiet when there is none:
       // it is one person's way of organising their hours, not a plan.
       el('td', { class: p.startDate ? '' : 'empty', text: p.startDate ? period : '–' }),
-      el('td', { text: p.description ?? '–' }),
+      el('td', { text: p.description || '–' }),
       el('td', {}, statusBadge(p.status)),
       actions,
     );
@@ -5037,13 +5117,6 @@ function resetProjectForm() {
   $('#project-cancel').hidden = true;
 }
 
-/**
- * Reloads everything that shows time entries.
- *
- * The list and the calendar render the same records from two requests, so a
- * change that refreshes only one of them leaves the other showing yesterday -
- * which is what booking an entry and switching to the calendar used to do.
- */
 /**
  * Whether this caller may change this entry's figures.
  *
@@ -5170,6 +5243,13 @@ function timesheetActions(entry) {
   return actions;
 }
 
+/**
+ * Reloads everything that shows time entries.
+ *
+ * The list and the calendar render the same records from two requests, so a
+ * change that refreshes only one of them leaves the other showing yesterday -
+ * which is what booking an entry and switching to the calendar used to do.
+ */
 async function reloadTimeViews() {
   await loadTimesheets();
   await loadCalendar();
@@ -5238,7 +5318,7 @@ async function loadTimesheets(more = false) {
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project'),
       }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description ?? '–' }),
+      el('td', { text: entry.description || '–' }),
       actions,
     );
   });
@@ -5463,7 +5543,7 @@ function showCalendarDay(iso, entries) {
     const row = el('tr', {},
       el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description ?? '–' }),
+      el('td', { text: entry.description || '–' }),
       timesheetActions(entry),
     );
 
@@ -6194,6 +6274,17 @@ async function loadAdmin() {
   // account it is.
   $('#sync-card').hidden = !administersOnly();
 
+  // And said, to the account it is taken from. Everybody who reaches this screen
+  // administers; the ones who also record time found one card fewer and nothing
+  // about why, on a screen the tour had told them carried it.
+  $('#sync-elsewhere').hidden = administersOnly();
+  $('#sync-elsewhere-text').textContent = t('sync.elsewhere',
+    'Not offered to this account. A run deletes the accounts the directory no longer holds, '
+    + 'together with the time recorded on them, so it belongs to an account that administers and '
+    + 'records no time of its own: the built-in administrator, or one holding the role "{0}". '
+    + 'Sign in with one of those to preview, run or schedule it.')
+    .replace('{0}', roleTitle(ADMINISTERING_ROLE));
+
   const schedule = $('#form-sync-schedule');
   if (schedule) {
     // Filled whether the card is on screen or not: the schedule travels with the
@@ -6714,6 +6805,10 @@ async function mutate(fn, successMessage, after) {
     // existing caller ignores it, which is what makes this safe to add.
     result = await fn();
   } catch (err) {
+    // A second press of a write still on its way: the first one is the answer,
+    // and it is still coming.
+    if (err.repeated) return;
+
     // Silent while the application is restarting into a new version. Every
     // request fails for those few seconds, and each one would raise its own red
     // toast on top of a banner that already says exactly what is happening. The
@@ -7002,7 +7097,6 @@ async function deleteUser(user) {
 
 // ------------------------------------------------------------------ sign-in
 
-/** Shows the sign-in overlay and hides the application behind it. */
 /**
  * Whether the sign-in screen has been given up for a session.
  *
@@ -7013,6 +7107,7 @@ async function deleteUser(user) {
  */
 let handedToASession = false;
 
+/** Shows the sign-in overlay and hides the application behind it. */
 function showLogin(message) {
   // Never over a session this page has already been given to.
   //
@@ -7124,29 +7219,6 @@ async function submitLogin(e) {
 }
 
 /**
- * Drops everything on screen and in hand that belonged to whoever just left.
- *
- * Two things survived a sign-out, and the second is the one that matters.
- *
- * The address bar keeps the screen somebody was on - switchView writes it there
- * so a reload comes back to the same place and a link can be sent to somebody.
- * Nothing cleared it, and the starting view prefers the address bar over the
- * screen this account was last on, so signing in as somebody else landed on the
- * previous person's screen. Signing in as the *same* account hid it, because
- * both answers agreed.
- *
- * And the tables kept their rows. Every loader begins by checking a right and
- * returning if it is absent, which is correct for loading and wrong for what was
- * already loaded: an ordinary account signing in after an administrator found
- * loadUsers returning at once and the administrator's list of accounts still in
- * the document underneath a tab that is merely hidden. The API never answered
- * them anything - the rows were already there.
- *
- * So both are cleared here rather than at the next sign-in. Sign-out is the
- * moment this stops being anybody's data, and leaving it to the next arrival
- * means it sits on the sign-in screen in the meantime.
- */
-/**
  * Puts the screen back to how it looks for somebody who has never been here.
  *
  * Appearance is chosen per device, which is right while somebody is using it and
@@ -7179,6 +7251,29 @@ function forgetTheLastAppearance() {
 
 }
 
+/**
+ * Drops everything on screen and in hand that belonged to whoever just left.
+ *
+ * Two things survived a sign-out, and the second is the one that matters.
+ *
+ * The address bar keeps the screen somebody was on - switchView writes it there
+ * so a reload comes back to the same place and a link can be sent to somebody.
+ * Nothing cleared it, and the starting view prefers the address bar over the
+ * screen this account was last on, so signing in as somebody else landed on the
+ * previous person's screen. Signing in as the *same* account hid it, because
+ * both answers agreed.
+ *
+ * And the tables kept their rows. Every loader begins by checking a right and
+ * returning if it is absent, which is correct for loading and wrong for what was
+ * already loaded: an ordinary account signing in after an administrator found
+ * loadUsers returning at once and the administrator's list of accounts still in
+ * the document underneath a tab that is merely hidden. The API never answered
+ * them anything - the rows were already there.
+ *
+ * So both are cleared here rather than at the next sign-in. Sign-out is the
+ * moment this stops being anybody's data, and leaving it to the next arrival
+ * means it sits on the sign-in screen in the meantime.
+ */
 function forgetTheLastAccount() {
   // replaceState rather than assigning: assigning pushes a history entry, and
   // Back would then return to a screen belonging to the session that ended.
@@ -7752,9 +7847,18 @@ const TOUR_STEPS = [
     view: 'admin',
     permission: 'settings:manage',
     title: () => t('tour.ldap.title', 'Signing in against a directory'),
-    text: () => t('tour.ldap.text',
-      'Accounts can come from LDAP instead of being created here. Below it, the '
-      + 'reconciliation runs on a schedule, and can be previewed before it is run by hand.'),
+
+    // Two sentences, because the card under this one is not on every
+    // administrator's screen, and the tour is walked by the ones it is missing
+    // for: an account that only administers gets the setup wizard instead.
+    text: () => (administersOnly()
+      ? t('tour.ldap.text',
+        'Accounts can come from LDAP instead of being created here. Below it, the '
+        + 'reconciliation runs on a schedule, and can be previewed before it is run by hand.')
+      : t('tour.ldap.textElsewhere',
+        'Accounts can come from LDAP instead of being created here. Reconciling them deletes '
+        + 'accounts, and is left to the built-in administrator or the role "{0}".')
+        .replace('{0}', roleTitle(ADMINISTERING_ROLE))),
   },
   {
     target: '#form-maintenance',
@@ -8104,13 +8208,27 @@ function wireTour() {
 
   // The highlight is drawn from a measured rectangle, so it has to be redrawn
   // when the layout changes underneath it.
-  for (const event of ['resize', 'scroll']) {
-    window.addEventListener(event, () => {
-      if (!tour.active) return;
+  const redraw = () => {
+    if (!tour.active) return;
 
-      const node = $(tour.steps[tour.index].target);
-      if (node) placeTour(node);
-    }, { passive: true });
+    const node = $(tour.steps[tour.index].target);
+    if (node) placeTour(node);
+  };
+
+  for (const event of ['resize', 'scroll']) {
+    window.addEventListener(event, redraw, { passive: true });
+  }
+
+  // And when the page itself changes under it, which neither of those reports.
+  // A step is drawn two frames after its screen is switched to, and the card it
+  // points at may fill in later than that - the log's lines, the telemetry
+  // settings - so the ring stood around the part of the card that had been
+  // there: 804 pixels of a form that had grown to 1,012. The page is watched
+  // rather than the target, because a card filling in above the target moves it
+  // without resizing it. The ring and the bubble are positioned absolutely, so
+  // moving them does not resize the page and this cannot set itself off.
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(redraw).observe(document.body);
   }
 
   $('#tour-restart').addEventListener('click', startTour);
@@ -8906,17 +9024,6 @@ async function loadOperational() {
 // ----------------------------------------------------------------- updating
 
 /**
- * What version is running, whether a newer one exists, and what can be done
- * about it here.
- *
- * The card says something true on every deployment, which is the whole
- * difficulty: a single binary can fetch its successor and put it in its own
- * place, and a container cannot - a binary swapped inside one is undone by the
- * next recreate, which is the moment somebody is most certain the update took.
- * So where installing would not last, the card says what to run instead rather
- * than offering a button that reverts itself.
- */
-/**
  * Whether the image updater has answered that it replaced nothing.
  *
  * Asked of the version card's own state rather than of the announcement stream:
@@ -8932,6 +9039,17 @@ async function theImageUpdateChangedNothing() {
   }
 }
 
+/**
+ * What version is running, whether a newer one exists, and what can be done
+ * about it here.
+ *
+ * The card says something true on every deployment, which is the whole
+ * difficulty: a single binary can fetch its successor and put it in its own
+ * place, and a container cannot - a binary swapped inside one is undone by the
+ * next recreate, which is the moment somebody is most certain the update took.
+ * So where installing would not last, the card says what to run instead rather
+ * than offering a button that reverts itself.
+ */
 async function loadUpdate() {
   const card = $('#update-card');
   if (!card) return;
@@ -10413,7 +10531,7 @@ async function exportWorkbook() {
  * check, save - and the two callers below differ only in how they ask.
  */
 async function downloadFile(url, name, extension, request = {}) {
-  const res = await fetch(url, { credentials: 'same-origin', ...request });
+  const res = await reach(url, { credentials: 'same-origin', ...request });
 
   // Everything api() reads off an answer that is not its body. Only the body is
   // this function's own business - it wants a blob, which is why it asks
@@ -10498,7 +10616,7 @@ async function sendWorkbook(dryRun) {
 
   // No Content-Type of our own: the browser has to set it, because only it knows
   // the multipart boundary it generated.
-  const res = await fetch(`${API}/timesheets/import`, {
+  const res = await reach(`${API}/timesheets/import`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'X-CSRF-Token': readCookie('gtr_csrf') },
@@ -11143,7 +11261,7 @@ function buildSheetCard(spec) {
 
     // No Content-Type of our own: only the browser knows the multipart boundary
     // it generated.
-    const res = await fetch(`${API}${spec.path}/import`
+    const res = await reach(`${API}${spec.path}/import`
       + `?lang=${encodeURIComponent(activeLanguage())}`, {
       method: 'POST',
       credentials: 'same-origin',
@@ -11776,7 +11894,6 @@ async function loadPasskeySupport() {
   $('#login-passkey').hidden = !passkeysAvailable;
 }
 
-/** Registers a new credential for the signed-in user. */
 /**
  * A refused passkey, in the reader's language.
  *
@@ -11837,6 +11954,7 @@ function passkeyProblem(err) {
   }
 }
 
+/** Registers a new credential for the signed-in user. */
 async function registerPasskey(name) {
   const started = await api('/me/passkeys/register', { method: 'POST' });
   const options = started.options.publicKey;
@@ -13041,21 +13159,6 @@ function rememberView(name) {
 }
 
 /**
- * The view to open: the one in the address bar when it is real and permitted, then
- * the one this person was last on, and otherwise the greeting.
- *
- * Checked against the tabs rather than trusted, because neither the hash nor the
- * remembered name is anything more than a string that was true once - the hash is
- * whatever was typed or bookmarked, and a remembered screen may belong to a tab
- * this account has since lost, or one that stopped existing between releases.
- *
- * The greeting has no tab of its own, so it is permitted by name: it asks for no
- * right, because it only ever says what this person already has. It is where a
- * first sign-in lands, and where anybody lands who has not been anywhere yet -
- * somebody who was working somewhere goes back to it instead, which is the point
- * of remembering.
- */
-/**
  * Opens the screen this session starts on, and only then calls the page loaded.
  *
  * refreshAll marks the page loaded once every screen has been filled from the
@@ -13106,6 +13209,21 @@ function viewIsOffered(name) {
     || $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === name);
 }
 
+/**
+ * The view to open: the one in the address bar when it is real and permitted, then
+ * the one this person was last on, and otherwise the greeting.
+ *
+ * Checked against the tabs rather than trusted, because neither the hash nor the
+ * remembered name is anything more than a string that was true once - the hash is
+ * whatever was typed or bookmarked, and a remembered screen may belong to a tab
+ * this account has since lost, or one that stopped existing between releases.
+ *
+ * The greeting has no tab of its own, so it is permitted by name: it asks for no
+ * right, because it only ever says what this person already has. It is where a
+ * first sign-in lands, and where anybody lands who has not been anywhere yet -
+ * somebody who was working somewhere goes back to it instead, which is the point
+ * of remembering.
+ */
 function startingView() {
   const wanted = currentHashView();
   if (viewIsOffered(wanted)) return wanted;
@@ -13608,12 +13726,39 @@ async function init() {
     // finishes by throwing the page away, so the answer to the button somebody
     // pressed arrives here rather than there.
     saySoAfterTheReload();
-  } catch {
-    // No usable session: the sign-in screen is the whole interface until
-    // there is one. Unless somebody signed in while this was running, which
-    // showLogin decides - it is the same question wherever it is asked from.
-    showLogin();
+  } catch (err) {
+    afterAFailedFirstLoad(err);
   }
+}
+
+/**
+ * What a first load that failed leaves on screen.
+ *
+ * A session /me accepted is not undone by a loader that failed after it - a
+ * query the database refused, a connection that dropped part-way. Showing the
+ * sign-in form here put it over a session that was fine, said nothing about
+ * what had failed, and made signing in again open a second one. The reader
+ * keeps the screen they are signed into and is told what did not load, as a
+ * reload that fails after a save is.
+ *
+ * Not on a 401, which is the session itself refused: a first load that failed
+ * for want of one can land after somebody signed in underneath it, and that
+ * belongs to showLogin, which already answers exactly that.
+ */
+function afterAFailedFirstLoad(err) {
+  if (me.user && err?.status !== 401) {
+    restoreDrafts();
+    hideLogin();
+    openTheStartingView({ restoring: true });
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
+
+    return;
+  }
+
+  // No usable session: the sign-in screen is the whole interface until there is
+  // one. Unless somebody signed in while this was running, which showLogin
+  // decides - it is the same question wherever it is asked from.
+  showLogin();
 }
 
 document.addEventListener('DOMContentLoaded', init);

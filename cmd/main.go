@@ -629,6 +629,17 @@ func main() {
 			ctx.Logger.Warnf(
 				"created the built-in administrator %q with the initial password %q - change it on first sign-in",
 				appservice.SystemUserEmail, appservice.SystemUserPassword)
+		} else if cfg.AuthEnabled() {
+			// On every start while it is true, as authentication switched off and
+			// plain HTTP are: the password is in the README, and the line above was
+			// written once, long before anybody reads the log of a restart. A read
+			// that fails here says nothing about the password, and a warning is no
+			// reason to stop a start.
+			if initial, err := auth.SystemUserOpensWithInitialPassword(ctx); err == nil && initial {
+				ctx.Logger.Warnf("the built-in administrator %q still opens with the documented initial "+
+					"password - anybody who can reach this installation can sign in as it; sign in and change it",
+					appservice.SystemUserEmail)
+			}
 		}
 
 		// Load the directory settings now that the database is up. A failure

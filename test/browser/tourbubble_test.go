@@ -71,6 +71,47 @@ func TestEveryTourStepIsWhollyOnScreen(t *testing.T) {
 	}
 }
 
+// The same for the steps the built-in administrator never sees.
+//
+// The walk above is the administrator's, and that is seventeen of the tour's
+// twenty-eight steps: an account that only administers has no time entries, no
+// calendar, no overtime and no report, so those steps are left out of its walk.
+// It is also the one account the tour does not start for - it arrives at the
+// setup wizard instead - so every step measured was one of an account that
+// rarely walks it, and the steps of the people it does start for were not
+// measured at all.
+//
+// The account with both jobs sees all twenty-eight. It is walked on the two
+// smallest screens, which are the worst case for each dimension, in both
+// languages.
+func TestEveryTourStepOfSomebodyWhoWorksHereIsWhollyOnScreen(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.createAccount(t, "bothe@example.com", "both-jobs-password-1", "user-admin")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("bothe@example.com", "both-jobs-password-1")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	smallest := []telephone{telephones[0], telephones[3]}
+
+	for _, screen := range smallest {
+		p.walkTheTourOn(t, screen, screen.name)
+	}
+
+	p.run("back to a desktop", chromedp.EmulateReset())
+	p.chooseLanguage("de")
+
+	for _, screen := range smallest {
+		p.walkTheTourOn(t, screen, screen.name+", in German")
+	}
+}
+
 // walkTheTourOn walks the whole tour on one screen and reports every step that
 // is not wholly readable on it.
 //
