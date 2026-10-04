@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -22,6 +23,7 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
+	"gofr.dev/pkg/gofr/migration"
 	"modernc.org/sqlite"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
@@ -131,6 +133,18 @@ func hostSuffix(ds appconfig.Datasource) string {
 	}
 
 	return fmt.Sprintf(", host %s, user %q", where, ds.User)
+}
+
+// misreadLine is the line a failure message adds when the driver would misread
+// the connection, or nothing. Where it does, that is usually why the connection
+// failed, and the driver's own words do not say so: for a space in the password
+// they name the half after it as a setting with no value.
+func misreadLine(misread error) string {
+	if misread == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("  %v\n", misread)
 }
 
 // sqliteBusyTimeout is how long a writer waits for another writer to finish
@@ -268,6 +282,10 @@ func main() {
 		logs.SetPassthroughRenderer(consoleLine)
 	}
 
+	// The real console, kept before the capture takes its place: the one place a
+	// line is sure to arrive however the process ends. See sayingWhy.
+	console := os.Stderr
+
 	restoreOutput, err := logs.Capture()
 	if err != nil {
 		// Not fatal: an application that refuses to start because it could not
@@ -277,9 +295,11 @@ func main() {
 		defer restoreOutput()
 	}
 
-	// What a previous update left behind, now that this process is the new
-	// version. On Windows the old binary cannot be deleted while it is running,
-	// so the swap renames it aside and this is the first moment it can go.
+	// The note a previous update left saying it was waiting for a restart, now
+	// that this process is the version it was waiting for. Not the binary that
+	// update moved aside: that stays as the way back until the next update
+	// removes it, and removeLeftovers says why starting is not the moment to let
+	// go of it.
 	selfupdate.Cleanup()
 
 	// An administered database connection is exported into the environment
@@ -329,17 +349,24 @@ func main() {
 		installerToken = chosen.Token
 	}
 
+	// Asked here and said once there is a logger, never refused: an installation
+	// running on a connection the driver misreads keeps its data where that
+	// connection took it, and refusing to start would cut it off from that data.
+	// The installer and the settings screen refuse to choose one.
+	misread := appconfig.Misreading(ds)
+
 	// Proven before GoFr touches it, with the same drivers GoFr will use. GoFr
 	// discovers an unreachable database part-way through its migrations and
 	// exits on a message about a table it could not create, which describes
 	// neither what is wrong nor where.
-	if err := appconfig.TestDatasource(context.Background(), ds); err != nil {
+	if err := appconfig.ProbeDatasource(context.Background(), ds); err != nil {
 		die(restoreOutput,
 			"cannot reach the configured database.\n"+
 				"  %v\n"+
+				"%s"+
 				"  dialect %q, name %q%s\n"+
 				"  Remove DB_DIALECT and %s to choose a connection interactively instead.",
-			err, ds.Dialect, ds.Name, hostSuffix(ds), appconfig.DatasourceFile)
+			err, misreadLine(misread), ds.Dialect, ds.Name, hostSuffix(ds), appconfig.DatasourceFile)
 	}
 
 	if err := appconfig.ApplyDatasource(ds); err != nil {
@@ -376,13 +403,11 @@ func main() {
 	// The log level is the one telemetry setting that does not have to wait for a
 	// restart, and this is what buys that.
 	//
-	// The framework decides what to emit from a field it reads without
-	// synchronisation, so changing it while requests are in flight is a data
-	// race - which is why this does not use its ChangeLevel. Instead the
-	// framework is left at its most verbose and the level is applied on the way
-	// out, in the single goroutine draining the captured output. Raising or
-	// lowering it is then a store in one place with a mutex around it, and takes
-	// effect on the next line.
+	// The framework is left at its most verbose and the level is applied on the
+	// way out, where the captured output is drained. Raising or lowering it is
+	// then a store in one place with a mutex around it, and takes effect on the
+	// next line. Sink.SetLevel says why that was built rather than using the
+	// framework's ChangeLevel, and what has become of the reason.
 	//
 	// Only where the output is actually captured. Without capture there is
 	// nothing between the framework and the console to apply a level, so the
@@ -451,6 +476,18 @@ func main() {
 	}
 
 	cfg := appconfig.Load(app.Config)
+
+	// A setting written so it cannot be used falls back to its default. Said here,
+	// at start, where whoever set it will look for why it does not apply.
+	for _, unusable := range cfg.Unusable {
+		app.Logger().Warnf("configuration: %s", unusable)
+	}
+
+	// After GoFr's own line naming the database it was given, which is the line
+	// this one corrects.
+	if misread != nil {
+		app.Logger().Warnf("database: %v", misread)
+	}
 	app.Logger().Infof("go-time-recording %s starting (dialect=%s)", version, cfg.Dialect)
 
 	db := app.GetSQL()
@@ -460,7 +497,7 @@ func main() {
 
 	// Schema first: the binary provisions its own database on first start, so
 	// a deployment needs no separate migration step.
-	app.Migrate(migrations.All(cfg.Dialect))
+	app.Migrate(sayingWhy(migrations.All(cfg.Dialect), console))
 
 	if unavailable(db) {
 		// Without this the app starts happily and every request panics on a
@@ -630,6 +667,17 @@ func main() {
 			ctx.Logger.Warnf(
 				"created the built-in administrator %q with the initial password %q - change it on first sign-in",
 				appservice.SystemUserEmail, appservice.SystemUserPassword)
+		} else if cfg.AuthEnabled() {
+			// On every start while it is true, as authentication switched off and
+			// plain HTTP are: the password is in the README, and the line above was
+			// written once, long before anybody reads the log of a restart. A read
+			// that fails here says nothing about the password, and a warning is no
+			// reason to stop a start.
+			if initial, err := auth.SystemUserOpensWithInitialPassword(ctx); err == nil && initial {
+				ctx.Logger.Warnf("the built-in administrator %q still opens with the documented initial "+
+					"password - anybody who can reach this installation can sign in as it; sign in and change it",
+					appservice.SystemUserEmail)
+			}
 		}
 
 		// Load the directory settings now that the database is up. A failure
@@ -718,12 +766,18 @@ func main() {
 	//
 	// A second listener for the same signals GoFr handles. signal.Notify supports
 	// that, and the alternative is reaching into how GoFr shuts down.
-	go func() {
-		stopping := make(chan os.Signal, 1)
-		signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
+	//
+	// It ends a scheduled directory run as well, for the same kind of reason: GoFr
+	// gives a job a context nothing cancels. See scheduledSync.
+	stopping, stopped := context.WithCancel(context.Background())
 
-		<-stopping
+	go func() {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+		<-signals
 		hub.Close()
+		stopped()
 	}()
 
 	// Outermost, because everything after it is written for traffic that arrived
@@ -911,37 +965,7 @@ func main() {
 	if cfg.LDAPSyncSchedule != "" {
 		app.Logger().Infof("directory reconciliation scheduled at %q", cfg.LDAPSyncSchedule)
 
-		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", func(ctx *gofr.Context) {
-			report, err := ldapSync.Sync(ctx)
-
-			// What it did, before whether it finished. A run that removed three
-			// accounts and then lost the database used to log "directory sync
-			// failed" and nothing else - three people's recorded hours gone, and
-			// no line naming them. The deletions are logged from the report
-			// whichever way the run ended.
-			if report != nil {
-				for _, removed := range report.Deleted {
-					ctx.Logger.Warnf("directory sync removed %q (%d time entries)",
-						removed.Email, removed.Timesheets)
-				}
-			}
-
-			if err != nil {
-				ctx.Logger.Errorf("directory sync failed: %v", err)
-
-				return
-			}
-
-			if report.Aborted != "" {
-				ctx.Logger.Warnf("directory sync refused: %s", report.Aborted)
-
-				return
-			}
-
-			if len(report.Created) > 0 {
-				ctx.Logger.Infof("directory sync added %d account(s)", len(report.Created))
-			}
-		})
+		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", scheduledSync(stopping, ldapSync))
 	}
 
 	// The nightly sweep that moved stale open entries to submitted is gone with the
@@ -963,12 +987,69 @@ func main() {
 
 	app.Run()
 
+	// Run returns when GoFr's servers stop listening, which is the moment a stop
+	// begins rather than the moment it has finished waiting for the requests under
+	// way: net/http returns ListenAndServe as soon as Shutdown is called. GoFr
+	// stops the metrics server after the HTTP server has drained, so while metrics
+	// were on, that server held Run open until the wait was over. With them off -
+	// METRICS_PORT=0, or switched off under Settings - main ended while GoFr was
+	// still waiting, and a stop cut off every request being answered.
+	//
+	// Shutting down a second time waits for exactly what was missing. The server's
+	// Shutdown returns once every connection is idle, after its answer has gone,
+	// and every step after it is safe to repeat: the crontab stops once, the
+	// database closes once. Read in GoFr's own source rather than assumed. The
+	// HTTPS front end is stopped by a deferred call below this, so an answer on its
+	// way through it has left the backend first.
+	finishing, stopWaiting := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
+
+	if err := app.Shutdown(finishing); err != nil {
+		// Whatever GoFr's own pass found wrong it has reported; a second pass
+		// mostly meets things it already closed.
+		app.Logger().Debugf("waiting for the shutdown to finish: %v", err)
+	}
+
+	stopWaiting()
+
 	// Said again past the pipe, as every other refusal here is: GoFr's own line
 	// went through the capture, and die is what guarantees the reason reaches the
 	// console before the process is gone.
 	if startFailure != nil {
 		die(restoreOutput, "the application did not start: %v", startFailure)
 	}
+}
+
+// sayingWhy hands each migration to GoFr unchanged, except that one which fails
+// says so on the real console before GoFr ends the process.
+//
+// GoFr rolls a failed migration back and calls Fatal, and a Fatal goes through
+// the pipe the log viewer reads - the loss the logsink package describes - so the
+// reason could be gone before anything passed it on: measured, a start on a
+// database already holding a table of the same name exited 1 with an empty log
+// in one of its first two runs. A migration is this application's own, so it
+// says why itself, past the pipe, while GoFr still has the rollback to do.
+func sayingWhy(all map[int64]migration.Migrate, console io.Writer) map[int64]migration.Migrate {
+	said := make(map[int64]migration.Migrate, len(all))
+
+	for version, step := range all {
+		up := step.UP
+
+		step.UP = func(d migration.Datasource) error {
+			err := up(d)
+			if err != nil {
+				// Best effort, like every line to a console: there is nowhere
+				// further to report a console that will not take one.
+				_, _ = fmt.Fprintf(console, "cannot start: migration %d could not be applied: %v\n",
+					version, err)
+			}
+
+			return err
+		}
+
+		said[version] = step
+	}
+
+	return said
 }
 
 // registerBusinessMetrics declares the ones this application records itself.

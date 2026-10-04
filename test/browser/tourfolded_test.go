@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -115,6 +116,16 @@ type tourRingReading struct {
 // position included - rather than for a guessed length of time. It gives up
 // after a few seconds so that a step which never settles is reported rather
 // than waited out.
+//
+// Identical is only evidence of rest when the page has drawn in between, and
+// the pause here is taken on this side of the wire: a reading that arrives
+// while the page is busy - a view that has just been switched to is laying
+// itself out - waits its turn, and the next one can run straight after it,
+// before a single frame. Two readings of a scroll that had not begun were then
+// taken for a page at rest. Measured on one that was: the walk was judged at a
+// scroll position of 5,119 with its target 5,026 pixels above the screen, and
+// 600 milliseconds later the page was still travelling. So every reading waits
+// for two frames inside the page first - see readTourRing.
 func (p *page) tourRing() tourRingReading {
 	p.t.Helper()
 
@@ -136,13 +147,24 @@ func (p *page) tourRing() tourRingReading {
 }
 
 // readTourRing takes one reading of the spotlight, the bubble and the step they
-// belong to.
+// belong to, once the page has drawn twice.
+//
+// Two frames, because that is what stands between a scroll and the bubble
+// following it: the page moves, the scroll is reported, and placeTour answers
+// it. A reading between those sees the screen where the scroll has put it and
+// the bubble where the last report left it - a few pixels off the bottom of a
+// screen it is, a frame later, wholly on.
 func (p *page) readTourRing() tourRingReading {
 	p.t.Helper()
 
-	var reading tourRingReading
+	var (
+		raw     string
+		reading tourRingReading
+	)
 
-	p.evalJSON(`JSON.stringify((() => {
+	p.run("read where the tour is", chromedp.Evaluate(`(async () => {
+		await new Promise((drawn) => requestAnimationFrame(() => requestAnimationFrame(drawn)));
+
 		const step = tour.steps[tour.index];
 		const target = document.querySelector(step.target);
 		const spot = document.querySelector('#tour-spotlight').getBoundingClientRect();
@@ -157,7 +179,7 @@ func (p *page) readTourRing() tourRingReading {
 		const near = (a, b) => Math.abs(a - b) <= 2;
 		const screen = document.documentElement.clientWidth;
 
-		return {
+		return JSON.stringify({
 			title: document.querySelector('#tour-title').textContent,
 			target: step.target,
 			shown: seen.width > 0 && seen.height > 0,
@@ -172,8 +194,12 @@ func (p *page) readTourRing() tourRingReading {
 			viewWidth: document.documentElement.clientWidth,
 			viewHeight: window.innerHeight,
 			crammed: bubble.scrollHeight > bubble.clientHeight + 1,
-		};
-	})())`, &reading)
+		});
+	})()`, &raw, awaitPromise))
+
+	if err := json.Unmarshal([]byte(raw), &reading); err != nil {
+		p.t.Fatalf("reading where the tour is: %v\n\n%.400s", err, raw)
+	}
 
 	return reading
 }

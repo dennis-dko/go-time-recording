@@ -110,6 +110,7 @@
           "auth"
         ],
         "summary": "Whether passkeys can be used on this connection",
+        "security": [],
         "description": "Browsers expose WebAuthn only on a secure context - HTTPS, or localhost - and reject an IP address as a relying party identifier. The interface asks before offering a button that could only fail with \"SecurityError: This is an invalid domain\".",
         "responses": {
           "200": {
@@ -124,6 +125,7 @@
           "auth"
         ],
         "summary": "Start a passwordless sign-in",
+        "security": [],
         "description": "Returns a challenge. No username is asked for: the browser offers whichever credentials it holds for this site, and the one that signs names its own owner.",
         "responses": {
           "200": {
@@ -136,6 +138,7 @@
           "auth"
         ],
         "summary": "Finish a passwordless sign-in",
+        "security": [],
         "description": "Verifies the signature and opens a session, exactly as a password sign-in does - same cookie, same lifetime, same CSRF rotation. Every failure answers alike.",
         "responses": {
           "201": {
@@ -203,6 +206,7 @@
           "auth"
         ],
         "summary": "Sign out and end the session",
+        "security": [],
         "responses": {
           "201": {
             "description": "Signed out"
@@ -600,7 +604,7 @@
           "timesheets"
         ],
         "summary": "Update an entry",
-        "description": "Changes an entry of your own. Somebody else’s answers 404, exactly as an id nobody holds does, so the answer does not say which ids are real - on every method, not only here. Naming somebody else in `userId`, which would hand the entry over, is refused, and there is no right that changes either. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours.",
+        "description": "Changes an entry of your own. Somebody else’s answers 404, exactly as an id nobody holds does, so the answer does not say which ids are real - on every method, not only here. Naming somebody else in `userId`, which would hand the entry over, is refused, and there is no right that changes either. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. A `projectId` of 0 takes the entry off its project, and an empty `description` empties it.",
         "responses": {
           "200": {
             "description": "Updated"
@@ -726,6 +730,7 @@
           "projects"
         ],
         "summary": "Update a project",
+        "description": "Changes a project of your own. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, and an empty `description` empties it.",
         "responses": {
           "200": {
             "description": "Updated"
@@ -1273,6 +1278,7 @@
           "setup"
         ],
         "summary": "Claim the session the installer earned",
+        "security": [],
         "description": "Answered before anybody is signed in, and only on a process that actually served an installer. The browser holding that installer’s setup token is given a session for the built-in administrator, so the first screen after the installation is the one asking for a password rather than one asking for the documented initial password. Refused once a password has been chosen, and refused entirely on an installation configured without the installer.",
         "parameters": [
           {
@@ -1939,6 +1945,7 @@
           "settings"
         ],
         "summary": "Whether the installation is in maintenance mode",
+        "security": [],
         "description": "Public, like the branding and for the same reason: somebody opening the page during maintenance should read the notice on the sign-in screen rather than watch requests fail silently.",
         "responses": {
           "200": {
@@ -2077,7 +2084,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Case-insensitive substring of the message."
+            "description": "Case-insensitive substring of the message. A whole trace - the `traceId` of a record, which is also the `X-Correlation-ID` of the response to that request - finds the lines that request wrote."
           },
           {
             "name": "limit",
@@ -2088,11 +2095,19 @@
               "default": 300
             },
             "description": "How many lines at most; the newest are kept."
+          },
+          {
+            "name": "epoch",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The `epoch` of the answer `since` was taken from. Sequence numbers start again with the process, so a position counted by a process that has since been replaced is answered from the beginning of the running one, with `restarted` set."
           }
         ],
         "responses": {
           "200": {
-            "description": "Log lines, the levels that exist and how many were dropped"
+            "description": "Log lines, the levels that exist, how many were dropped or passed over, and the `epoch` to send back with `since`"
           }
         }
       }

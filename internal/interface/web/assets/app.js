@@ -78,15 +78,6 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const READ_TIMEOUT_MS = 60000;
 
 /**
- * Calls the API and unwraps GoFr's {data, error} envelope.
- *
- * State-changing calls echo the CSRF cookie back in a header. Another site can
- * make the browser send the session cookie, but it can neither read this cookie
- * nor set a custom header, so the echo is what proves the call came from here.
- *
- * @throws {Error} with the server-provided message on a non-2xx response.
- */
-/**
  * The loading strip, driven by how many requests are in flight.
  *
  * Counted rather than toggled: three requests starting together and finishing
@@ -265,7 +256,85 @@ function refusalFrom(res, body) {
   return err;
 }
 
+/**
+ * fetch, with a request that never arrived put into words.
+ *
+ * fetch failing before there is an answer - the server stopped, the connection
+ * dropped - throws the browser's own exception, worded in its language and its
+ * own way: "Failed to fetch" in one, "NetworkError when attempting to fetch
+ * resource." in another. The sentence is ours; the browser's words go where a
+ * refusal's original words go, under it. Every request goes through here, api()
+ * and the three that cannot use it, so none of them can forget.
+ *
+ * An aborted request goes back as it came: whoever aborted it asked for it, and
+ * api() tells its own timeout from a caller's.
+ */
+async function reach(url, options) {
+  // A write that is already on its way is not sent a second time.
+  //
+  // A double click, or Enter held down, submits a form twice before the first
+  // answer has come back - and a booking sent twice is the same hours recorded
+  // twice, an import sent twice every row written twice. Measured: two entries,
+  // created in the same second, from one form pressed twice. Asked here because
+  // every request passes through here, so no form has to remember it.
+  const key = writeKey(url, options);
 
+  if (key && writesInFlight.has(key)) {
+    const repeated = new Error(t('msg.alreadySending', 'This is already being sent.'));
+    repeated.repeated = true;
+
+    throw repeated;
+  }
+
+  if (key) writesInFlight.add(key);
+
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (options?.signal?.aborted) throw err;
+
+    const unreachable = new Error(t('msg.unreachable',
+      'The server could not be reached. Check the connection and try again.'));
+    unreachable.refusal = { detail: err.message };
+    unreachable.cause = err;
+
+    throw unreachable;
+  } finally {
+    if (key) writesInFlight.delete(key);
+  }
+}
+
+/** The writes on their way now, by what they would change; see reach. */
+const writesInFlight = new Set();
+
+/**
+ * What a write would change - its method, its address and what it carries - or
+ * null for a read, which does no harm twice. A file stands for itself by name,
+ * size and time of change, which is what a second press of the same import sends.
+ */
+function writeKey(url, options) {
+  const method = (options?.method ?? 'GET').toUpperCase();
+  if (SAFE_METHODS.has(method)) return null;
+
+  const body = options?.body;
+  const carried = body instanceof FormData
+    ? [...body.entries()].map(([name, value]) => (value instanceof File
+      ? `${name}=${value.name}:${value.size}:${value.lastModified}`
+      : `${name}=${value}`)).join('&')
+    : String(body ?? '');
+
+  return `${method} ${url} ${carried}`;
+}
+
+/**
+ * Calls the API and unwraps GoFr's {data, error} envelope.
+ *
+ * State-changing calls echo the CSRF cookie back in a header. Another site can
+ * make the browser send the session cookie, but it can neither read this cookie
+ * nor set a custom header, so the echo is what proves the call came from here.
+ *
+ * @throws {Error} with the server-provided message on a non-2xx response.
+ */
 async function api(path, options = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = { 'Content-Type': 'application/json', ...(options.headers ?? {}) };
@@ -291,7 +360,7 @@ async function api(path, options = {}) {
   let res;
 
   try {
-    res = await fetch(API + path, {
+    res = await reach(API + path, {
       ...options,
       headers,
       signal: giveUp ? giveUp.signal : options.signal,
@@ -333,7 +402,6 @@ async function api(path, options = {}) {
   return body ? body.data : null;
 }
 
-/** Pulls a readable message out of GoFr's error shape. */
 /**
  * The message to show for a failed request, in the reader's language where the
  * server said which rule was broken.
@@ -389,7 +457,7 @@ function describeRefusal(err) {
 
   if (err.code) {
     const translated = t(`err.${err.code}`, err.message ?? '');
-    if (translated) return fillIn(translated, err.values);
+    if (translated) return fillIn(translated, refusalValues(err.code, err.values));
   }
 
   if (err.message) return err.message;
@@ -453,6 +521,39 @@ function showRefusal(target, err) {
 
   const detail = refusalDetail(err);
   if (detail) target.append(detailDisclosure(detail));
+}
+
+/**
+ * Which values of which refusal the screen writes in words of its own.
+ *
+ * fillIn writes a number the way the tables beside it do, and a string as it
+ * arrives. Two kinds of string arrive in a form nobody on this screen reads: a day
+ * in the order the wire uses, and a status as the word it is stored under. So a
+ * German refusal said "am 2026-10-04" beside a form showing 04.10.2026, and "ist
+ * completed" beside a badge saying "abgeschlossen" - a word the reader could look
+ * for and find nowhere.
+ *
+ * Named by code and position, because on the wire the values are plain strings
+ * and stay so: an API client reads them too. Which of them is a day or a status is
+ * known here, beside the sentences, and in the call that sends it.
+ * TestARefusalWritesItsValuesTheWayTheScreenDoes reads every such call and fails
+ * on one this does not name.
+ */
+const REFUSAL_VALUES = {
+  archiveNeedsCompleted: { 0: statusName },
+  notFound: { 0: entityName },
+  overDailyLimit: { 2: fmtDate },
+  projectClosedForBooking: { 1: statusName },
+};
+
+/** The values of one refusal, each written the way the rest of the screen writes it. */
+function refusalValues(code, values) {
+  const written = REFUSAL_VALUES[code];
+  if (!written || !Array.isArray(values)) return values;
+
+  return values.map((value, i) => (written[i] && typeof value === 'string'
+    ? written[i](value)
+    : value));
 }
 
 /**
@@ -903,6 +1004,10 @@ function startAnnouncements() {
   // click, or until the once-a-minute permission poll came round.
   announcements.addEventListener('error', () => { void checkWhetherStillWelcome(); });
 
+  // The first open is the connection this page asked for; every later one is the
+  // browser coming back after it dropped.
+  let opened = false;
+
   announcements.addEventListener('open', () => {
     // Back. If the last thing said was that a restart was coming, this is the
     // other side of it: the application is answering again, and it is a different
@@ -915,13 +1020,42 @@ function startAnnouncements() {
     if (announced === 'update.restarting') {
       announced = null;
       window.location.reload();
+
+      return;
     }
+
+    if (!opened) {
+      opened = true;
+
+      return;
+    }
+
+    // What still stands is replayed to every connection, right after this, so
+    // what was said before is taken down and the replay puts back what is still
+    // true. A retraction is not replayed - the hub forgets the update it takes
+    // back - so a page away when an installation was abandoned kept "a new
+    // version is being installed" up for good.
+    forgetTheUpdateNotice();
+
+    // And the restart is asked of the process rather than of what this page
+    // heard: an announcement lives in the memory of the process that made it, so
+    // a page asleep through an update, or offline the moment the restart was
+    // said, came back to the new version with nothing to tell it.
+    void theVersionChanged().then((changed) => {
+      if (changed) window.location.reload();
+    });
   });
 }
 
 function stopAnnouncements() {
   if (announcements) announcements.close();
   announcements = null;
+
+  forgetTheUpdateNotice();
+}
+
+/** Takes down what was said about an update, and forgets that it was said. */
+function forgetTheUpdateNotice() {
   announced = null;
 
   stopRedrawing('announcement');
@@ -1066,6 +1200,23 @@ function toast(message, kind = 'ok', detail = '') {
   }, linger);
 }
 
+/**
+ * Reports a failed request in the corner: the sentence, and folded away under it
+ * what could not be turned into one.
+ *
+ * toast takes that as its third argument, and most callers left it out - so an
+ * internal failure, whose sentence says the technical details are underneath,
+ * arrived with nothing underneath and without the reference that finds its log
+ * line. One function builds both halves, so a caller cannot pass the first and
+ * forget the second. lead names what failed, in front of the refusal's own
+ * sentence.
+ */
+function toastFailure(err, lead = '') {
+  const message = lead ? `${lead}: ${err.message}` : err.message;
+
+  toast(message, 'error', refusalDetail(err.refusal));
+}
+
 /** How many notices may be on screen, and how long each one stays. */
 const TOAST_LIMIT = 4;
 const TOAST_MIN_MS = 4000;
@@ -1186,7 +1337,6 @@ function configuredLink(label, url) {
   });
 }
 
-/** Builds an element; text is assigned via textContent, never innerHTML. */
 /**
  * The attributes whose presence is the whole of their meaning.
  *
@@ -1201,6 +1351,7 @@ const BOOLEAN_ATTRIBUTES = new Set([
   'autofocus', 'open', 'novalidate',
 ]);
 
+/** Builds an element; text is assigned via textContent, never innerHTML. */
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -1219,10 +1370,43 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/**
+ * Gives the focus back to a button that is turned off while its request runs.
+ *
+ * A focused button that becomes disabled loses the focus to the page, so
+ * somebody who pressed it from the keyboard was afterwards nowhere, and the next
+ * Tab began again at the top. Asked before the button is turned off; what it
+ * returns is called once the button is back, and leaves the focus alone if it
+ * has gone somewhere on purpose in the meantime.
+ */
+function holdFocus(button) {
+  const had = document.activeElement === button;
+
+  return () => {
+    if (had && (!document.activeElement || document.activeElement === document.body)) {
+      button.focus();
+    }
+  };
+}
+
+/** What a project's status is called, in the reader's language. */
+function statusName(status) {
+  return t(`status.${status}`, status);
+}
+
+/**
+ * What a kind of record is called, in the reader's language - the word a
+ * refusal names when what it looked for is not there. The server's own word is
+ * the English, so a language without the entry still says something true.
+ */
+function entityName(entity) {
+  return t(`entity.${entity}`, entity);
+}
+
 function statusBadge(status) {
   // The class keeps the raw status so the colour rules still match; only the
   // label is translated.
-  return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
+  return el('span', { class: `status status-${status}`, text: statusName(status) });
 }
 
 /**
@@ -2126,16 +2310,6 @@ function fillSelect(select, items, { placeholder, labelKey = 'name', valueKey = 
 }
 
 /**
- * The English titles of the roles that ship.
- *
- * These are what an English reader sees, because English is what a t() fallback is for.
- * Without them the fallback would be the identifier itself, and "user-admin" is not a
- * thing to put in front of somebody deciding what a colleague may do.
- *
- * A role an installation named itself is not in here and falls back to the name it was
- * given, which is the only sensible answer for a word this application has never seen.
- */
-/**
  * What each right is called, in words.
  *
  * The identifiers are what the API takes and what a role's rights are stored as -
@@ -2225,6 +2399,24 @@ function permissionGroup(right) {
 // time and administers nothing.
 const ORDINARY_ROLE = 'user';
 
+/**
+ * The shipped role that administers and has no working day, for the places that
+ * have to name it to somebody: whose the directory run is. Only ever shown, never
+ * compared - administersOnly asks for the shape, because an installation may have
+ * built a role of its own with it.
+ */
+const ADMINISTERING_ROLE = 'admin';
+
+/**
+ * The English titles of the roles that ship.
+ *
+ * These are what an English reader sees, because English is what a t() fallback is for.
+ * Without them the fallback would be the identifier itself, and "user-admin" is not a
+ * thing to put in front of somebody deciding what a colleague may do.
+ *
+ * A role an installation named itself is not in here and falls back to the name it was
+ * given, which is the only sensible answer for a word this application has never seen.
+ */
 const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
@@ -2315,7 +2507,6 @@ function directoryRoleChoices() {
   return roleChoices().filter((choice) => allowed.has(choice.name));
 }
 
-/** Reads a form into a plain object, dropping empty optional fields. */
 /**
  * Where a form's unfinished contents wait out a page load.
  *
@@ -2839,6 +3030,7 @@ function saveForm(form, fn, successMessage, after) {
   });
 }
 
+/** Reads a form into a plain object, dropping empty optional fields. */
 function formData(form) {
   const out = {};
   for (const [key, raw] of new FormData(form).entries()) {
@@ -3211,12 +3403,13 @@ const TRANSLATIONS = {
     'tour.database.text': 'In welche Datenbank diese Installation schreibt. Die Verbindung wird vor dem Speichern getestet, und die Änderung gilt ab dem nächsten Start.',
     'tour.ldap.title': 'Anmelden gegen ein Verzeichnis',
     'tour.ldap.text': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Darunter läuft der Abgleich nach Zeitplan – und lässt sich vorher ansehen, bevor er von Hand ausgeführt wird.',
+    'tour.ldap.textElsewhere': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Der Abgleich löscht Konten und bleibt dem eingebauten Administrator oder der Rolle „{0}“ vorbehalten.',
     'tour.maintenance.title': 'Wartungsmodus',
     'tour.maintenance.text': 'Schließt die Installation mit einer Erklärung, die auch auf der Anmeldemaske steht – wer nicht hineinkommt, erfährt also warum, statt zu raten.',
     'tour.limits.title': 'Grenzwerte und Laufzeiten',
     'tour.limits.text': 'Wie lange eine Sitzung gilt, wie viele Anfragen jemand stellen darf und mit welchen Werten ein neues Konto startet.',
     'tour.telemetry.title': 'Metriken und Tracing',
-    'tour.telemetry.text': 'Log-Level, der Metrik-Endpunkt und wohin Traces exportiert werden. Alle drei werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
+    'tour.telemetry.text': 'Die Protokollstufe, der Metrik-Endpunkt und wohin Traces exportiert werden. Die Stufe gilt sofort; die beiden anderen werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
     'tour.log.title': 'Das Protokoll, ohne Shell',
     'tour.log.text': 'Was dieser Prozess schreibt, filterbar nach Stufe. Die erste Anlaufstelle, wenn etwas abgelehnt wurde und der Grund nicht auf dem Bildschirm stand.',
     'tour.theme.title': 'Darstellung und Sprache',
@@ -3250,7 +3443,7 @@ const TRANSLATIONS = {
     'tel.title': 'Protokoll, Metriken und Traces',
     'tel.logLevel': 'Protokollstufe',
     'tel.activeLog': 'Protokollstufe',
-    'tel.hint': 'Wird gespeichert und beim nächsten Start der Anwendung übernommen. Im laufenden Betrieb ist nichts davon umschaltbar: die Protokollstufe wird beim Start gelesen, der Metrik-Port beim Start gebunden und der Trace-Exporter beim Start gebaut. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
+    'tel.hint': 'Die Protokollstufe gilt sofort. Der Metrik-Port wird beim Start gebunden und der Trace-Exporter beim Start gebaut, darum werden diese hier gespeichert und beim nächsten Start übernommen; die Neustart-Karte zeigt, was wartet. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
     'tel.warn': 'Der Metrik-Port fragt nicht nach einer Anmeldung, ist nicht durch TLS geschützt und liefert neben den Metriken auch Go-Profiling-Endpunkte — wo er erreichbar ist, ist es auch ein Heap-Dump. Nur für die eigene Überwachung freigeben.',
     'tel.metrics': 'Metrik-Endpunkt',
     'tel.metricsOff': 'Nicht ausliefern',
@@ -3279,9 +3472,10 @@ const TRANSLATIONS = {
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und Ihre Container-Verwaltung startet einen neuen aus dem '
-      + 'Abbild - was sie nur tut, wenn sie dazu angewiesen wurde. Die mit dieser '
-      + 'Anwendung ausgelieferte Bereitstellung ist es.',
+      + 'hält ihn an, und Ihre Container-Verwaltung startet ihn wieder - was sie nur '
+      + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
+      + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
+      + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
     'restart.modeProcess': 'Die Anwendung ersetzt sich selbst, läuft also durchgehend.',
     'restart.now': 'Jetzt neu starten',
     'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
@@ -3429,6 +3623,7 @@ const TRANSLATIONS = {
     'confirm.deleteTitle': 'Endgültig löschen?',
     'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
     'sync.confirmTitle': 'Abgleich ausführen?',
+    'sync.elsewhere': 'Wird diesem Konto nicht angeboten. Ein Lauf löscht die Konten, die das Verzeichnis nicht mehr führt, samt der darauf erfassten Zeit; er gehört deshalb zu einem Konto, das administriert und selbst keine Zeit erfasst: dem eingebauten Administrator oder einem Konto mit der Rolle „{0}“. Mit einem solchen Konto lässt er sich ansehen, ausführen und planen.',
     'admin.activeConnection': 'Aktuell verbunden über',
     'admin.connectionFromEnvironment': 'Diese Verbindung kommt aus der Umgebung, '
       + 'nicht aus einer gespeicherten Einstellung. Wird dieses Formular gespeichert, '
@@ -3478,6 +3673,14 @@ const TRANSLATIONS = {
     'detail.reference': 'Referenz: {0}',
     'err.unauthenticated': 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',
     'err.notFound': '{0} mit der Kennung {1} wurde nicht gefunden.',
+    // What a refusal for something that is not there names it - see entityName.
+    'entity.passkey': 'Passkey',
+    'entity.project': 'Projekt',
+    'entity.role': 'Rolle',
+    'entity.session': 'Sitzung',
+    'entity.timesheet': 'Zeiteintrag',
+    'entity.token': 'Token',
+    'entity.user': 'Konto',
     'err.invalidFields': 'Ungültige Felder',
     'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
     'err.updateCheckedRecently': 'Die Release-Quelle wurde gerade erst gefragt. '
@@ -3515,6 +3718,9 @@ const TRANSLATIONS = {
     'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
     'err.credentialUnreadable': 'Der Anmeldeschlüssel konnte nicht gelesen werden.',
     'err.datasourceInvalid': 'Die Datenbank-Verbindung ist unvollständig oder ungültig.',
+    'err.passwordSwallowsName': 'Ohne Passwort erfährt PostgreSQL den Namen der Datenbank „{0}“ nicht und öffnet stattdessen die, die wie das Konto heißt. Nötig ist das Passwort des Kontos – irgendein Wert, wenn der Server keines verlangt – oder, wenn die Daten dieser Installation schon dort liegen, der Name dieser Datenbank.',
+    'err.postgresMisread': 'PostgreSQL würde diese Verbindung nicht so erhalten, wie sie eingegeben ist: GoFr schreibt sie ohne Anführungszeichen, und ein Leerzeichen, ein Backslash oder ein Anführungszeichen am Anfang übersteht das weder im Benutzer noch im Passwort noch im Datenbanknamen.',
+    'err.mysqlMisread': 'MySQL würde diese Verbindung nicht so erhalten, wie sie eingegeben ist: GoFr schreibt sie ohne Maskierung, und ein Doppelpunkt im Benutzer, ein Fragezeichen oder Schrägstrich im Datenbanknamen oder eine IPv6-Adresse ohne eckige Klammern übersteht das nicht.',
     'err.dateFormat': 'Das Datum „{0}“ muss YYYY-MM-DD oder RFC 3339 sein.',
     'err.deletionNeedsConfirming': '„{0}“ hat {1} erfasste Zeiteinträge. Sie würden mit dem Konto gelöscht und sind nicht wiederherstellbar – zum Fortfahren bitte bestätigen.',
     'err.emailTaken': 'Es gibt bereits einen Benutzer mit der E-Mail-Adresse „{0}“.',
@@ -3600,6 +3806,8 @@ const TRANSLATIONS = {
     'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
     'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
     'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
+    'msg.unreachable': 'Der Server war nicht erreichbar. Bitte die Verbindung prüfen und es erneut versuchen.',
+    'msg.alreadySending': 'Das wird bereits gesendet.',
     'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
     'err.chartNotAPicture': 'Das Diagramm konnte nicht gelesen werden. '
       + 'Bitte die Auswertung erneut anzeigen und dann exportieren.',
@@ -3716,13 +3924,14 @@ const TRANSLATIONS = {
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
     'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
+    'log.restarted': 'Die Anwendung wurde neu gestartet. Es folgt das Protokoll des neuen Prozesses.',
     'log.skipped': 'Es kamen mehr Zeilen, als eine Seite fasst; {0} wurden übersprungen, um die neuesten zu zeigen.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
-    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
+    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – eine Stufe darunter anzuhaken zeigt deshalb nichts. Die Stufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt. Nur im Speicher gehalten: nach einem Neustart ist das bis dahin Erfasste verloren, und eine Protokollsammlung ersetzt das hier nicht.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
-    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Das Log-Level wird unter „Protokollierung, Metriken und Tracing“ geändert und gilt ab dem nächsten Start.',
+    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
     'log.paused': 'Angehalten.',
     'log.resume': 'Fortsetzen',
     'log.search': 'Suche',
@@ -3881,7 +4090,7 @@ const TRANSLATIONS = {
     'sync.directoryUsers': 'Im Verzeichnis',
     'sync.entries': 'Zeiteinträge',
     'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
-    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut.',
+    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut. Er läuft nach der Uhr des Servers, im ausgelieferten Container also in UTC, und nicht in der Zeitzone der Installation.',
     'sync.scheduleStored': 'Gespeichert',
     'sync.scheduleManual': 'Läuft nur, wenn der Knopf unten gedrückt wird.',
     'sync.scheduleShort': 'Verzeichnis-Zeitplan',
@@ -3952,6 +4161,7 @@ const TRANSLATIONS = {
     'update.willAskRestart': 'Der Download wird gegen die Prüfsumme des Releases geprüft. '
       + 'Danach muss die Anwendung von Hand neu gestartet werden — dieses System kann '
       + 'sich nicht selbst neu starten.',
+    'update.noBinary': 'Das Release enthält keinen Build für diese Plattform und kann daher nicht von hier aus installiert werden. Was es anbietet, steht auf der Release-Seite.',
     'update.inContainer': 'Dies läuft in einem Container. Ein ausgetauschtes Programm wäre '
       + 'beim nächsten Neuaufbau wieder weg — stattdessen das Abbild aktualisieren: '
       + 'docker compose pull && docker compose up -d',
@@ -4086,15 +4296,41 @@ function applyLanguage(language) {
  */
 const redraws = new Map();
 
-/** Draws a screen now, and again whenever the language changes. */
-function redrawable(key, draw) {
+/** The keys of the draws that belong to the installation; see forgetEveryRedraw. */
+const installationDraws = new Set();
+
+/**
+ * Draws a screen now, and again whenever the language changes.
+ *
+ * Forgotten when its account signs out, unless it is declared as the
+ * installation's - the name and mark the sign-in screen shows.
+ */
+function redrawable(key, draw, { installation = false } = {}) {
   redraws.set(key, draw);
+
+  if (installation) installationDraws.add(key);
+  else installationDraws.delete(key);
+
   draw();
 }
 
 /** Forgets a screen's last answer, for one that has been emptied. */
 function stopRedrawing(key) {
   redraws.delete(key);
+}
+
+/**
+ * Forgets every screen drawn for whoever just signed out.
+ *
+ * Each draw keeps the answer it was made from, and the sign-out applies the
+ * language to the screen it hands back - which redrew them all: the evaluation,
+ * the balance and the import verdicts went back into the tables just emptied,
+ * and stood there for whoever signed in next.
+ */
+function forgetEveryRedraw() {
+  for (const key of [...redraws.keys()]) {
+    if (!installationDraws.has(key)) redraws.delete(key);
+  }
 }
 
 function redrawAll() {
@@ -4369,7 +4605,12 @@ async function loadMe() {
   applyAccountTheme();
   applyPermissionVisibility();
 
-  renderTOTPState();
+  // Not over an enrolment under way. The account is not enrolled until its first
+  // code is confirmed, so drawn from it the card went back to "not enabled" -
+  // taking the QR code somebody was scanning and the field for its first code -
+  // on every reload, which a saved card or a change of language is. Leaving the
+  // screen and signing out close it, on purpose.
+  if ($('#totp-setup').hidden) renderTOTPState();
 }
 
 async function loadUsers() {
@@ -4973,7 +5214,7 @@ async function loadProjects() {
       // A project needs no period, so the column stays quiet when there is none:
       // it is one person's way of organising their hours, not a plan.
       el('td', { class: p.startDate ? '' : 'empty', text: p.startDate ? period : '–' }),
-      el('td', { text: p.description ?? '–' }),
+      el('td', { text: p.description || '–' }),
       el('td', {}, statusBadge(p.status)),
       actions,
     );
@@ -5026,13 +5267,6 @@ function resetProjectForm() {
   $('#project-cancel').hidden = true;
 }
 
-/**
- * Reloads everything that shows time entries.
- *
- * The list and the calendar render the same records from two requests, so a
- * change that refreshes only one of them leaves the other showing yesterday -
- * which is what booking an entry and switching to the calendar used to do.
- */
 /**
  * Whether this caller may change this entry's figures.
  *
@@ -5159,6 +5393,13 @@ function timesheetActions(entry) {
   return actions;
 }
 
+/**
+ * Reloads everything that shows time entries.
+ *
+ * The list and the calendar render the same records from two requests, so a
+ * change that refreshes only one of them leaves the other showing yesterday -
+ * which is what booking an entry and switching to the calendar used to do.
+ */
 async function reloadTimeViews() {
   await loadTimesheets();
   await loadCalendar();
@@ -5184,6 +5425,9 @@ let timesheetEntries = [];
 /** How many there are altogether, which is what says whether there are more. */
 let timesheetTotal = 0;
 
+/** How many loads of the entries have begun, so an answer can tell it was overtaken. */
+let timesheetLoads = 0;
+
 /**
  * Loads the entries, one page at a time.
  *
@@ -5191,6 +5435,11 @@ let timesheetTotal = 0;
  * changing the filter, booking, correcting, deleting - starts again from the
  * first page on purpose: the list has changed underneath, and an offset into a
  * list that has moved skips one entry and repeats another.
+ *
+ * Only the newest load's answer is kept. Each one emptied the list as it began
+ * and added its answer when it came back, so two at once - stepping through the
+ * filter with the arrow keys sends one per step - put two projects' entries under
+ * a filter naming one, and two presses of "more" the same page twice.
  */
 async function loadTimesheets(more = false) {
   if (!can('timesheets:read:own')) return;
@@ -5199,18 +5448,24 @@ async function loadTimesheets(more = false) {
   const projectId = $('#filter-ts-project').value;
   if (projectId) params.set('projectId', projectId);
 
-  if (!more) timesheetEntries = [];
+  const before = more ? timesheetEntries : [];
 
   params.set('limit', String(TIMESHEET_PAGE));
-  params.set('offset', String(timesheetEntries.length));
+  params.set('offset', String(before.length));
+
+  timesheetLoads += 1;
+  const asked = timesheetLoads;
 
   const answer = await api(`/timesheets?${params}`);
+
+  if (asked !== timesheetLoads) return;
+
   const page = answer?.items ?? [];
 
   // What the server says, not what arrived: those differ exactly when there is
   // another page, which is the whole question this screen has to answer.
   timesheetTotal = answer?.totalCount ?? page.length;
-  timesheetEntries = timesheetEntries.concat(page);
+  timesheetEntries = before.concat(page);
 
   const entries = timesheetEntries;
 
@@ -5227,7 +5482,7 @@ async function loadTimesheets(more = false) {
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project'),
       }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description ?? '–' }),
+      el('td', { text: entry.description || '–' }),
       actions,
     );
   });
@@ -5375,6 +5630,11 @@ async function loadCalendar() {
 
   const entries = await everyTimesheet({ from: ISO_DAY(first), to: ISO_DAY(last) });
 
+  // Not drawn if the arrows have moved on while it was on its way. Two quick
+  // presses ask for two months at once, and the fuller one answers later: drawn
+  // anyway, it put the month left behind under arrows already past it.
+  if (calendarMonth !== first) return;
+
   const byDay = new Map();
   for (const entry of entries) {
     if (!byDay.has(entry.date)) byDay.set(entry.date, []);
@@ -5452,7 +5712,7 @@ function showCalendarDay(iso, entries) {
     const row = el('tr', {},
       el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description ?? '–' }),
+      el('td', { text: entry.description || '–' }),
       timesheetActions(entry),
     );
 
@@ -5639,7 +5899,7 @@ async function loadBranding() {
   // again. Everything on this screen that a language change reaches goes the same
   // way; a title and a banner written in two languages would otherwise stay in
   // whichever one the page happened to load in.
-  redrawable('branding', () => drawBranding(branding));
+  redrawable('branding', () => drawBranding(branding), { installation: true });
 
   return branding;
 }
@@ -6183,6 +6443,17 @@ async function loadAdmin() {
   // account it is.
   $('#sync-card').hidden = !administersOnly();
 
+  // And said, to the account it is taken from. Everybody who reaches this screen
+  // administers; the ones who also record time found one card fewer and nothing
+  // about why, on a screen the tour had told them carried it.
+  $('#sync-elsewhere').hidden = administersOnly();
+  $('#sync-elsewhere-text').textContent = t('sync.elsewhere',
+    'Not offered to this account. A run deletes the accounts the directory no longer holds, '
+    + 'together with the time recorded on them, so it belongs to an account that administers and '
+    + 'records no time of its own: the built-in administrator, or one holding the role "{0}". '
+    + 'Sign in with one of those to preview, run or schedule it.')
+    .replace('{0}', roleTitle(ADMINISTERING_ROLE));
+
   const schedule = $('#form-sync-schedule');
   if (schedule) {
     // Filled whether the card is on screen or not: the schedule travels with the
@@ -6502,7 +6773,7 @@ async function runConnectionTest(result, attempt) {
     result.className = 'muted minus';
     sayAtLeastSomething(result);
 
-    toast(err.message, 'error', refusalDetail(err.refusal));
+    toastFailure(err);
   }
 }
 
@@ -6703,13 +6974,17 @@ async function mutate(fn, successMessage, after) {
     // existing caller ignores it, which is what makes this safe to add.
     result = await fn();
   } catch (err) {
+    // A second press of a write still on its way: the first one is the answer,
+    // and it is still coming.
+    if (err.repeated) return;
+
     // Silent while the application is restarting into a new version. Every
     // request fails for those few seconds, and each one would raise its own red
     // toast on top of a banner that already says exactly what is happening. The
     // banner is the message; these would be noise piled on it.
     if (duringARestart()) return;
 
-    toast(err.message, 'error', refusalDetail(err.refusal));
+    toastFailure(err);
 
     return;
   }
@@ -6729,8 +7004,7 @@ async function mutate(fn, successMessage, after) {
     // Named as what it is. The save is done and is not coming undone; what
     // failed is the screen catching up, and the way out of that is to load the
     // page again rather than to save a second time.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`,
-      'error', refusalDetail(err.refusal));
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -6966,7 +7240,7 @@ async function deleteUser(user) {
     return;
   } catch (err) {
     if (err.status !== 409) {
-      toast(err.message, 'error');
+      toastFailure(err);
 
       return;
     }
@@ -6992,7 +7266,6 @@ async function deleteUser(user) {
 
 // ------------------------------------------------------------------ sign-in
 
-/** Shows the sign-in overlay and hides the application behind it. */
 /**
  * Whether the sign-in screen has been given up for a session.
  *
@@ -7003,6 +7276,7 @@ async function deleteUser(user) {
  */
 let handedToASession = false;
 
+/** Shows the sign-in overlay and hides the application behind it. */
 function showLogin(message) {
   // Never over a session this page has already been given to.
   //
@@ -7133,7 +7407,7 @@ async function arriveAfterSignIn() {
     // Signed in, but something behind it would not load. Staying on the
     // application with an explanation beats being thrown back to a sign-in
     // screen that will accept the same password and do this again.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -7319,29 +7593,6 @@ function wireTicketSignIn() {
 }
 
 /**
- * Drops everything on screen and in hand that belonged to whoever just left.
- *
- * Two things survived a sign-out, and the second is the one that matters.
- *
- * The address bar keeps the screen somebody was on - switchView writes it there
- * so a reload comes back to the same place and a link can be sent to somebody.
- * Nothing cleared it, and the starting view prefers the address bar over the
- * screen this account was last on, so signing in as somebody else landed on the
- * previous person's screen. Signing in as the *same* account hid it, because
- * both answers agreed.
- *
- * And the tables kept their rows. Every loader begins by checking a right and
- * returning if it is absent, which is correct for loading and wrong for what was
- * already loaded: an ordinary account signing in after an administrator found
- * loadUsers returning at once and the administrator's list of accounts still in
- * the document underneath a tab that is merely hidden. The API never answered
- * them anything - the rows were already there.
- *
- * So both are cleared here rather than at the next sign-in. Sign-out is the
- * moment this stops being anybody's data, and leaving it to the next arrival
- * means it sits on the sign-in screen in the meantime.
- */
-/**
  * Puts the screen back to how it looks for somebody who has never been here.
  *
  * Appearance is chosen per device, which is right while somebody is using it and
@@ -7374,6 +7625,29 @@ function forgetTheLastAppearance() {
 
 }
 
+/**
+ * Drops everything on screen and in hand that belonged to whoever just left.
+ *
+ * Two things survived a sign-out, and the second is the one that matters.
+ *
+ * The address bar keeps the screen somebody was on - switchView writes it there
+ * so a reload comes back to the same place and a link can be sent to somebody.
+ * Nothing cleared it, and the starting view prefers the address bar over the
+ * screen this account was last on, so signing in as somebody else landed on the
+ * previous person's screen. Signing in as the *same* account hid it, because
+ * both answers agreed.
+ *
+ * And the tables kept their rows. Every loader begins by checking a right and
+ * returning if it is absent, which is correct for loading and wrong for what was
+ * already loaded: an ordinary account signing in after an administrator found
+ * loadUsers returning at once and the administrator's list of accounts still in
+ * the document underneath a tab that is merely hidden. The API never answered
+ * them anything - the rows were already there.
+ *
+ * So both are cleared here rather than at the next sign-in. Sign-out is the
+ * moment this stops being anybody's data, and leaving it to the next arrival
+ * means it sits on the sign-in screen in the meantime.
+ */
 function forgetTheLastAccount() {
   // replaceState rather than assigning: assigning pushes a history entry, and
   // Back would then return to a screen belonging to the session that ended.
@@ -7466,6 +7740,42 @@ function forgetTheLastAccount() {
   // sign-out it is the same wrong answer that comment was written against,
   // reached from the other side.
   calendarMonth = null;
+
+  // And the month it drew. The grid is not a table, so emptying the tables left
+  // its days and their projects, and an account that may not read entries never
+  // draws over them - loadCalendar returns first.
+  $('#calendar-days').replaceChildren();
+  $('#calendar-summary').textContent = '';
+  $('#calendar-day-card').hidden = true;
+
+  // And the greeting, which names whoever it greeted beside their day's hours
+  // and last entries, and is drawn again only when somebody arrives on it.
+  $('#welcome-title').textContent = '';
+  $('#welcome-today').textContent = '';
+  $('#welcome-recent-list').replaceChildren();
+  $('#welcome-recent').hidden = true;
+
+  // And each form's own reset, which resetting the form does not reach: a hidden
+  // field keeps its value through one, so a form left correcting a record kept
+  // the record's id under its "edit" heading - and an administrator filling it in
+  // to add somebody changed the account their predecessor had open. After the
+  // caches and the account are gone, because two of them draw from those.
+  resetUserForm();
+  resetRoleForm();
+  resetProjectForm();
+  resetTimesheetForm();
+
+  // And the imports this account had checked. The cards are not forms, so the
+  // reset of every form never reached the file, the verdict or the button that
+  // writes it.
+  forgetEveryImport();
+
+  // And what it evaluated, which nothing asks for again at the next sign-in.
+  forgetEveryEvaluation();
+
+  // Last, after the tables are emptied: the sign-out applies the language next,
+  // and every draw still registered would put its account's rows back.
+  forgetEveryRedraw();
 }
 
 /**
@@ -7705,7 +8015,13 @@ function wireTOTP() {
     const code = $('#totp-code').value.trim();
     mutate(() => api('/me/totp', { method: 'PUT', body: JSON.stringify({ code }) }),
       t('totp.enabled', 'Two-factor authentication enabled'),
-      async () => { $('#totp-code').value = ''; await refreshAll(); });
+      async () => {
+        $('#totp-code').value = '';
+        await refreshAll();
+
+        // Finished, so drawn from the account now - which the reload left alone.
+        renderTOTPState();
+      });
   });
 
   $('#totp-disable').addEventListener('click', () => {
@@ -7953,9 +8269,18 @@ const TOUR_STEPS = [
     view: 'admin',
     permission: 'settings:manage',
     title: () => t('tour.ldap.title', 'Signing in against a directory'),
-    text: () => t('tour.ldap.text',
-      'Accounts can come from LDAP instead of being created here. Below it, the '
-      + 'reconciliation runs on a schedule, and can be previewed before it is run by hand.'),
+
+    // Two sentences, because the card under this one is not on every
+    // administrator's screen, and the tour is walked by the ones it is missing
+    // for: an account that only administers gets the setup wizard instead.
+    text: () => (administersOnly()
+      ? t('tour.ldap.text',
+        'Accounts can come from LDAP instead of being created here. Below it, the '
+        + 'reconciliation runs on a schedule, and can be previewed before it is run by hand.')
+      : t('tour.ldap.textElsewhere',
+        'Accounts can come from LDAP instead of being created here. Reconciling them deletes '
+        + 'accounts, and is left to the built-in administrator or the role "{0}".')
+        .replace('{0}', roleTitle(ADMINISTERING_ROLE))),
   },
   {
     target: '#form-maintenance',
@@ -7981,8 +8306,8 @@ const TOUR_STEPS = [
     permission: 'settings:manage',
     title: () => t('tour.telemetry.title', 'Metrics and tracing'),
     text: () => t('tour.telemetry.text',
-      'The log level, the metrics endpoint and where traces are exported to. All three are '
-      + 'read when the process starts, so they wait for the next one.'),
+      'The log level, the metrics endpoint and where traces are exported to. The level applies '
+      + 'at once; the other two are read when the process starts, so they wait for the next one.'),
   },
   {
     target: '#log-card',
@@ -8305,13 +8630,27 @@ function wireTour() {
 
   // The highlight is drawn from a measured rectangle, so it has to be redrawn
   // when the layout changes underneath it.
-  for (const event of ['resize', 'scroll']) {
-    window.addEventListener(event, () => {
-      if (!tour.active) return;
+  const redraw = () => {
+    if (!tour.active) return;
 
-      const node = $(tour.steps[tour.index].target);
-      if (node) placeTour(node);
-    }, { passive: true });
+    const node = $(tour.steps[tour.index].target);
+    if (node) placeTour(node);
+  };
+
+  for (const event of ['resize', 'scroll']) {
+    window.addEventListener(event, redraw, { passive: true });
+  }
+
+  // And when the page itself changes under it, which neither of those reports.
+  // A step is drawn two frames after its screen is switched to, and the card it
+  // points at may fill in later than that - the log's lines, the telemetry
+  // settings - so the ring stood around the part of the card that had been
+  // there: 804 pixels of a form that had grown to 1,012. The page is watched
+  // rather than the target, because a card filling in above the target moves it
+  // without resizing it. The ring and the bubble are positioned absolutely, so
+  // moving them does not resize the page and this cannot set itself off.
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(redraw).observe(document.body);
   }
 
   $('#tour-restart').addEventListener('click', startTour);
@@ -8919,8 +9258,10 @@ async function nextSetupStep() {
   const after = setup.state.steps[setup.index];
 
   if (current.required && !after.done) {
-    setupError(t('setup.decideFirst', 'Please settle this step before continuing.'));
+    // Drawn first and said after: drawing a step begins by hiding the box, so
+    // said first, the wizard stayed put in silence.
     renderSetup();
+    setupError(t('setup.decideFirst', 'Please settle this step before continuing.'));
 
     return;
   }
@@ -8954,7 +9295,7 @@ async function finishSetup() {
     // done and is not coming undone, so this must not read as the wizard having
     // failed. What failed is the screen catching up, and the way out is to load
     // the page again rather than to run the wizard a second time.
-    toast(`${t('msg.loadFailed', 'Could not load everything')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
 }
 
@@ -9107,17 +9448,6 @@ async function loadOperational() {
 // ----------------------------------------------------------------- updating
 
 /**
- * What version is running, whether a newer one exists, and what can be done
- * about it here.
- *
- * The card says something true on every deployment, which is the whole
- * difficulty: a single binary can fetch its successor and put it in its own
- * place, and a container cannot - a binary swapped inside one is undone by the
- * next recreate, which is the moment somebody is most certain the update took.
- * So where installing would not last, the card says what to run instead rather
- * than offering a button that reverts itself.
- */
-/**
  * Whether the image updater has answered that it replaced nothing.
  *
  * Asked of the version card's own state rather than of the announcement stream:
@@ -9133,6 +9463,17 @@ async function theImageUpdateChangedNothing() {
   }
 }
 
+/**
+ * What version is running, whether a newer one exists, and what can be done
+ * about it here.
+ *
+ * The card says something true on every deployment, which is the whole
+ * difficulty: a single binary can fetch its successor and put it in its own
+ * place, and a container cannot - a binary swapped inside one is undone by the
+ * next recreate, which is the moment somebody is most certain the update took.
+ * So where installing would not last, the card says what to run instead rather
+ * than offering a button that reverts itself.
+ */
 async function loadUpdate() {
   const card = $('#update-card');
   if (!card) return;
@@ -9271,6 +9612,16 @@ function renderUpdate(state) {
       + 'checksum. Afterwards the application has to be restarted by hand — this '
       + 'platform cannot restart itself.');
 
+  // Before anything that describes the download: there is none on offer, and
+  // the card said there was beside a button that had gone.
+  if (state.why === 'noBinary') {
+    hint.textContent = t('update.noBinary',
+      'The release published no build for this platform, so it cannot be installed '
+      + 'from here. The release page says what it offers.');
+
+    return;
+  }
+
   // A container with an updater beside it takes the whole image, and what the
   // button does then is different enough to say plainly: it is not this
   // application replacing its own binary, it is something else replacing this
@@ -9327,8 +9678,17 @@ function renderUpdate(state) {
  */
 async function settleAfterRestart(previous, done, patience, givenUp = async () => false) {
   const overlay = $('#restart-overlay');
+  const cameBack = await waitForRestart(previous, patience, givenUp);
 
-  if (await waitForRestart(previous, patience, givenUp)) {
+  // The installer explains itself, and nothing on this page applies to it any
+  // more: the overlay stays up until the page it asked for replaces this one.
+  if (cameBack === 'installer') {
+    window.location.reload();
+
+    return;
+  }
+
+  if (cameBack) {
     // A different build came back, so everything in this tab is last version's.
     //
     // This was the one tab that did not reload. Every other open one did: the
@@ -9484,6 +9844,8 @@ function wireUpdateCheck() {
     // export had to learn.
     button.style.minWidth = `${button.offsetWidth}px`;
 
+    const giveBack = holdFocus(button);
+
     button.disabled = true;
     button.textContent = t('update.checking', 'Looking …');
 
@@ -9500,11 +9862,12 @@ function wireUpdateCheck() {
       // Including "asked a moment ago", which is a sentence rather than a
       // failure: the answer on the card is current, and saying so is better than
       // a button that appears to do nothing.
-      toast(err.message, 'error');
+      toastFailure(err);
     } finally {
       button.disabled = false;
       button.textContent = wasSaying;
       button.style.minWidth = '';
+      giveBack();
     }
   });
 }
@@ -9542,7 +9905,7 @@ function wireUpdate() {
       state = await api('/settings/update', { method: 'POST' });
     } catch (err) {
       overlay.hidden = true;
-      toast(err.message, 'error');
+      toastFailure(err);
 
       return;
     }
@@ -9590,8 +9953,7 @@ function wireUpdate() {
       overlay.hidden = true;
       await loadUpdate();
 
-      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`,
-        'error');
+      toastFailure(err, t('restart.failed', 'The restart could not be started'));
 
       return;
     }
@@ -9760,9 +10122,10 @@ async function loadRestart() {
   const description = state.mode === 'container'
     ? t('restart.modeContainer',
       'This installation runs in a container. The button stops it, and your '
-      + 'container manager starts a new one from the image - which it only does '
-      + 'if it was told to restart the container. The deployment shipped with '
-      + 'this application is.')
+      + 'container manager starts it again - which it only does under a restart '
+      + 'policy that also restarts a container that ended without an error: '
+      + 'always or unless-stopped, not on-failure. The deployment shipped with '
+      + 'this application sets one.')
     : t('restart.modeProcess',
       'The application replaces itself, so it is never not running.');
 
@@ -9874,6 +10237,8 @@ const IMAGE_UPDATE_TIMEOUT_MS = 5 * 60000;
  * milliseconds, and a poll that misses that gap would report success without
  * anything having happened. The start time changing is what proves it.
  *
+ * Answers 'installer' when that is what came back - see theInstallerAnswers.
+ *
  * givenUp ends the wait early, with the same answer as running out of patience;
  * see settleAfterRestart.
  */
@@ -9892,10 +10257,33 @@ async function waitForRestart(previousStartedAt, patience = RESTART_TIMEOUT_MS,
     } catch {
       // Expected while it is down: the connection is refused, or the session
       // has not been read back out of the database yet.
+      if (await theInstallerAnswers()) return 'installer';
     }
   }
 
   return false;
+}
+
+/**
+ * Whether the installer, rather than the application, answers on this address.
+ *
+ * What a restart comes back as when no connection is left: it reads the
+ * configuration afresh, so a connection file that was removed - which is how the
+ * manual brings the installer back - takes the installation to its installer.
+ * That answers every path with its page, so the wait read it as an application
+ * not up yet and said after a minute that it might still be starting, of
+ * something that had been answering all along. Told apart the way the
+ * installer's own page tells them apart: it answers /install/state with JSON,
+ * where the application answers with a document.
+ */
+async function theInstallerAnswers() {
+  try {
+    const res = await reach('/install/state', { cache: 'no-store' });
+
+    return res.ok && (res.headers.get('content-type') || '').includes('json');
+  } catch {
+    return false;
+  }
 }
 
 
@@ -9947,7 +10335,7 @@ function wireRestart() {
       await api('/settings/restart', { method: 'POST' });
     } catch (err) {
       overlay.hidden = true;
-      toast(`${t('restart.failed', 'The restart could not be started')}: ${err.message}`, 'error');
+      toastFailure(err, t('restart.failed', 'The restart could not be started'));
 
       return;
     }
@@ -10554,6 +10942,8 @@ async function loadStatistics() {
 
   const stats = await api(`/me/statistics?${params}`);
 
+  evaluatedPeriod.statistics = { from: stats.from, to: stats.to };
+
   $('#statistics-total').textContent =
     `${t('stats.total', 'Total')}: ${fmtHours(stats.totalHours ?? 0)}`;
 
@@ -10615,7 +11005,7 @@ async function exportWorkbook() {
  * check, save - and the two callers below differ only in how they ask.
  */
 async function downloadFile(url, name, extension, request = {}) {
-  const res = await fetch(url, { credentials: 'same-origin', ...request });
+  const res = await reach(url, { credentials: 'same-origin', ...request });
 
   // Everything api() reads off an answer that is not its body. Only the body is
   // this function's own business - it wants a blob, which is why it asks
@@ -10700,7 +11090,7 @@ async function sendWorkbook(dryRun) {
 
   // No Content-Type of our own: the browser has to set it, because only it knows
   // the multipart boundary it generated.
-  const res = await fetch(`${API}/timesheets/import`, {
+  const res = await reach(`${API}/timesheets/import`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'X-CSRF-Token': readCookie('gtr_csrf') },
@@ -10752,7 +11142,7 @@ function rowProblem(row) {
   const sentence = t(`row.${row.problemCode}`, '')
     || t(`err.${row.problemCode}`, row.problem);
 
-  return fillIn(sentence, row.problemValues);
+  return fillIn(sentence, refusalValues(row.problemCode, row.problemValues));
 }
 
 /** Shows what the file would do, row by row. */
@@ -10781,6 +11171,16 @@ function renderWorkbookPreview(result) {
   // The import button only where it would do something: offering it for a file
   // that would be refused is offering a failure.
   $('#wb-import').hidden = rejected > 0 || writable === 0;
+}
+
+/** The resets of the tables' import cards, which buildSheetCard builds. */
+const sheetCardResets = [];
+
+/** Puts every import card back to its resting state. */
+function forgetEveryImport() {
+  resetWorkbookCard();
+
+  for (const reset of sheetCardResets) reset();
 }
 
 /** Puts the card back to its resting state. */
@@ -11094,15 +11494,20 @@ function screenColours() {
 }
 
 /**
- * The period a document covers, worded as the two date fields have it.
+ * The period each evaluation on screen was worked out for, as its answer named it.
+ *
+ * Not the form's date boxes: they hold what the next evaluation will ask for. Read
+ * off them, a document was headed with whatever somebody had typed since - April
+ * over March's figures - and with nothing when the boxes were left empty and the
+ * server chose the period itself.
  */
-function periodOf(from, to) {
-  const start = from?.value ? fmtDate(from.value) : '';
-  const end = to?.value ? fmtDate(to.value) : '';
+const evaluatedPeriod = { report: null, overtime: null, statistics: null };
 
-  if (!start && !end) return '';
+/** The period a document covers, as an answer named it. */
+function periodOf(period) {
+  if (!period?.from || !period?.to) return '';
 
-  return `${start} – ${end}`;
+  return `${fmtDate(period.from)} – ${fmtDate(period.to)}`;
 }
 
 /**
@@ -11121,6 +11526,7 @@ async function exportEvaluation(button, name, build) {
   // exactly when the two are the same thing.
   const key = button.dataset.i18n;
   const english = button.dataset.i18nSource ?? button.textContent;
+  const giveBack = holdFocus(button);
 
   button.disabled = true;
 
@@ -11135,12 +11541,14 @@ async function exportEvaluation(button, name, build) {
   try {
     await downloadDocument(await build(), name);
   } catch (err) {
-    toast(err.message, 'error');
+    toastFailure(err);
   } finally {
     button.disabled = false;
 
     if (key) swapTheLabel(button, key, english);
     else button.textContent = english;
+
+    giveBack();
   }
 }
 
@@ -11151,7 +11559,7 @@ async function reportDocument() {
   return {
     title: t('report.title', 'Report'),
     colours: screenColours(),
-    subtitle: periodOf($('#form-report').elements.from, $('#form-report').elements.to),
+    subtitle: periodOf(evaluatedPeriod.report),
     sections: [{
       heading: t('report.result', 'Result'),
       caption: $('#report-chart-caption').textContent.trim(),
@@ -11167,7 +11575,7 @@ async function statisticsDocument() {
   return {
     title: t('stats.title', 'My hours'),
     colours: screenColours(),
-    subtitle: periodOf($('#statistics-from'), $('#statistics-to')),
+    subtitle: periodOf(evaluatedPeriod.statistics),
     sections: [
       {
         heading: t('stats.perDay', 'Hours per day'),
@@ -11187,12 +11595,10 @@ async function statisticsDocument() {
 
 /** The overtime screen: the day-by-day table and the balance. */
 async function overtimeDocument() {
-  const form = $('#form-overtime');
-
   return {
     title: t('nav.overtime', 'Overtime'),
     colours: screenColours(),
-    subtitle: periodOf(form.elements.from, form.elements.to),
+    subtitle: periodOf(evaluatedPeriod.overtime),
     sections: [{
       heading: t('ot.balance', 'Balance'),
       caption: $('#overtime-meta').textContent.trim(),
@@ -11345,7 +11751,7 @@ function buildSheetCard(spec) {
 
     // No Content-Type of our own: only the browser knows the multipart boundary
     // it generated.
-    const res = await fetch(`${API}${spec.path}/import`
+    const res = await reach(`${API}${spec.path}/import`
       + `?lang=${encodeURIComponent(activeLanguage())}`, {
       method: 'POST',
       credentials: 'same-origin',
@@ -11451,6 +11857,7 @@ function buildSheetCard(spec) {
     }));
 
   cancel.addEventListener('click', reset);
+  sheetCardResets.push(reset);
 
   return el('div', { class: 'card', 'data-perm': spec.read },
     el('h2', { 'data-i18n': 'wb.title', text: 'Spreadsheet' }),
@@ -11511,6 +11918,33 @@ function wireSheetCards() {
 // labelled "no project" on an otherwise German screen. The words are made at
 // drawing time now, which is also the only time they are needed.
 const reportChart = { kind: 'bars', scope: 'projects', projects: [], days: [] };
+
+/**
+ * Takes down every evaluation this account ran, and the pictures of its hours.
+ *
+ * An evaluation is computed when somebody asks for one, and nothing on the next
+ * sign-in asks again: the result cards stayed up with the last account's totals,
+ * its name, target and booked hours, and the charts of where its time went. The
+ * chart's shape is a preference rather than anybody's hours, and its buttons
+ * show it, so only the figures go.
+ */
+function forgetEveryEvaluation() {
+  for (const card of ['#report-result', '#overtime-result']) {
+    const node = $(card);
+    if (node) node.hidden = true;
+  }
+
+  for (const said of ['#report-total', '#report-chart-caption', '#overtime-total', '#overtime-meta',
+    '#statistics-total']) {
+    const node = $(said);
+    if (node) node.textContent = '';
+  }
+
+  for (const picture of ['#report-chart', '#chart-days', '#chart-projects']) $(picture)?.replaceChildren();
+
+  reportChart.projects = [];
+  reportChart.days = [];
+}
 
 /**
  * Fetches the breakdown for the period just evaluated and draws it.
@@ -11610,11 +12044,15 @@ let timerTick = null;
 /**
  * Renders the clock's state.
  *
- * The elapsed time is counted here from the start instant rather than polled,
- * because a request per second to be told the same thing is a request per second.
- * The server sends its own elapsed figure too, and that is what the entry will
- * record - so a browser with a wrong clock shows a slightly wrong number here and
- * still books the right one.
+ * The elapsed time is counted here rather than polled, because a request per
+ * second to be told the same thing is a request per second - and counted on the
+ * server's clock, which is the one the booking is measured on. The device's own
+ * can be minutes out: two minutes slow, its difference from the recorded start
+ * came out negative and the stopwatch read 00:00:00 for two minutes after Start.
+ * So the offset between the two is measured once, when the server's answer
+ * arrives - the start plus what it says it has measured is its own now - and
+ * the wall clock does the rest, which keeps counting through a laptop's sleep
+ * where a monotonic clock may not.
  */
 function renderTimer() {
   const card = $('#timer-card');
@@ -11640,9 +12078,10 @@ function renderTimer() {
   }
 
   const started = new Date(runningTimer.startedAt).getTime();
+  const offset = runningTimer.clockOffset ?? 0;
 
   const paint = () => {
-    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    const seconds = Math.max(0, Math.floor((Date.now() + offset - started) / 1000));
     const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
     const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
     const ss = String(seconds % 60).padStart(2, '0');
@@ -11659,7 +12098,15 @@ async function loadTimer() {
   if (!can('timesheets:write:own')) return;
 
   const state = await api('/me/timer');
-  runningTimer = state.running ? state : null;
+
+  runningTimer = state.running
+    ? {
+      ...state,
+      // How far the server's clock is ahead of this device's: see renderTimer.
+      clockOffset: new Date(state.startedAt).getTime() + (state.elapsedHours ?? 0) * 3600000
+        - Date.now(),
+    }
+    : null;
 
   // The project it was started with, so stopping books what was chosen - the
   // select is disabled while it runs, and this is what it shows.
@@ -11978,7 +12425,6 @@ async function loadPasskeySupport() {
   $('#login-passkey').hidden = !passkeysAvailable;
 }
 
-/** Registers a new credential for the signed-in user. */
 /**
  * A refused passkey, in the reader's language.
  *
@@ -12034,11 +12480,17 @@ function passkeyProblem(err) {
         + 'device trusts. Clicking past a certificate warning is not enough.');
     case 'AbortError':
       return t('passkey.err.aborted', 'The prompt closed before anything was done.');
-    default:
-      return err?.message || t('passkey.failed', 'The passkey was not accepted.');
+    default: {
+      // A name this does not know: still said in the reader's language, with the
+      // browser's own words - in the browser's language - kept as the detail.
+      const said = t('passkey.failed', 'The passkey was not accepted.');
+
+      return err?.message ? `${said} (${err.message})` : said;
+    }
   }
 }
 
+/** Registers a new credential for the signed-in user. */
 async function registerPasskey(name) {
   const started = await api('/me/passkeys/register', { method: 'POST' });
   const options = started.options.publicKey;
@@ -12212,6 +12664,13 @@ function wirePasskeys() {
  */
 const logView = {
   since: 0,
+
+  // Which process counted `since`, as its last answer named it, and sent back
+  // with it. The numbers start again with the process, so without this a viewer
+  // left open across a restart asked the new process for "everything after" a
+  // number only the old one had reached - and was shown none of what the new one
+  // wrote while it started.
+  epoch: '',
   timer: null,
   polling: false,
   paused: false,
@@ -12262,6 +12721,12 @@ function wireLogViewer() {
     logView.paused = !logView.paused;
     renderPauseButton();
     schedulePoll({ immediate: !logView.paused });
+  });
+
+  // Hidden is nobody looking - see logViewerActive.
+  document.addEventListener('visibilitychange', () => {
+    if (logViewerActive()) schedulePoll({ immediate: true });
+    else stopLogPolling();
   });
 
   $('#log-clear').addEventListener('click', () => {
@@ -12376,6 +12841,12 @@ function stopLogPolling({ refused = false } = {}) {
  * Only while its own screen is on top: an administrator who moved on to book
  * time has no use for a request every three seconds, and the endpoint is not
  * free - it reads a mutex-guarded buffer.
+ *
+ * And only while its tab is the one being looked at, as for the other two things
+ * that ask in the background. At INFO every poll is a line in the buffer it
+ * shows, so a log screen left in a hidden tab overnight wrote one every few
+ * seconds into five thousand, and by morning had pushed out the lines somebody
+ * would have come to read. Looking again asks for what was missed in one go.
  */
 function logViewerActive() {
   const card = $('#log-card');
@@ -12384,12 +12855,51 @@ function logViewerActive() {
   // The sign-in screen being up means there is no session to poll with. Without
   // this the poller keeps asking through a password change - which ends every
   // session - and paints the screen with authentication failures.
-  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden;
+  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden
+    && !document.hidden;
 }
 
 function setLogStatus(text) {
   const status = $('#log-status');
   if (status) status.textContent = text;
+}
+
+/**
+ * What a page of the log has to admit about itself: where the output stops
+ * being one unbroken run of lines. Empty when it is one.
+ *
+ * The three are not alternatives, which is why this is not a chain of else. A
+ * viewer that was paused, or sat in a tab the browser put to sleep, comes back
+ * to a process started while it was away and follows on into a log that has
+ * been written for hours: it has begun again *and* its first lines have left
+ * the buffer *and* more are left than a page holds. Said one at a time, a
+ * restart was announced over a page that began three hundred lines in.
+ */
+function logGaps(page) {
+  const said = [];
+
+  if (page.restarted) {
+    // The lines above were another process's. The output is one column of
+    // lines and would otherwise run the old log into the new one as though
+    // nothing had happened between them.
+    said.push(t('log.restarted',
+      'The application has started again. What follows is the log of the new process.'));
+  }
+
+  if (page.dropped > 0) {
+    said.push(t('log.dropped',
+      'Older lines have been discarded from the buffer and cannot be recovered.'));
+  }
+
+  if (page.skipped > 0) {
+    // More arrived than one page holds - after a pause, or on a busy
+    // installation - and the newest were shown.
+    said.push(t('log.skipped',
+      'More lines arrived than one page holds, so {0} were passed over to show the newest.')
+      .replace('{0}', String(page.skipped)));
+  }
+
+  return said.join(' ');
 }
 
 async function pollLog() {
@@ -12399,6 +12909,7 @@ async function pollLog() {
 
   try {
     const query = new URLSearchParams({ since: String(logView.since), limit: '500' });
+    if (logView.epoch) query.set('epoch', logView.epoch);
 
     const levels = selectedLogLevels();
     // Every level ticked is the same request as none, and sending none keeps
@@ -12421,22 +12932,15 @@ async function pollLog() {
     }
 
     logView.since = page.lastSeq ?? logView.since;
+    logView.epoch = page.epoch ?? logView.epoch;
 
     appendLogLines(page.records ?? []);
 
-    const warning = $('#log-warning');
-    if (page.dropped > 0) {
-      warning.textContent = t('log.dropped',
-        'Older lines have been discarded from the buffer and cannot be recovered.');
-      warning.hidden = false;
-    } else if (page.skipped > 0) {
-      // More arrived than one page holds - after a pause, or on a busy
-      // installation - and the newest were shown. The ones before them were
-      // passed over, which is a gap this output would otherwise present as
-      // continuity.
-      warning.textContent = t('log.skipped',
-        'More lines arrived than one page holds, so {0} were passed over to show the newest.')
-        .replace('{0}', String(page.skipped));
+    const gaps = logGaps(page);
+    if (gaps) {
+      const warning = $('#log-warning');
+
+      warning.textContent = gaps;
       warning.hidden = false;
     }
 
@@ -12497,11 +13001,11 @@ const LOG_LEVELS_BY_DETAIL = ['DEBUG', 'INFO', 'NOTICE', 'WARN', 'ERROR', 'FATAL
  * at INFO look like a filter that is broken rather than one that is working
  * exactly as intended and has nothing to show.
  *
- * The level itself is on the logging card, and it applies at the next start,
- * because the framework changes a logger's level by writing a field every
- * request goroutine reads without synchronisation. So this is a sentence rather
- * than a button: what somebody has to do next is two screens and a restart away,
- * and being told that beats waiting for lines that are not coming.
+ * The level itself is set on the logging card, and that card is the one place
+ * that says when a saved level applies - this one went on saying "at the next
+ * start" after that had stopped being true, beside a card saying "at once".
+ * So this is a sentence rather than a button, and it stops at naming the card:
+ * being told where the level is beats waiting for lines that are not coming.
  */
 function warnAboutLevelsTheProcessDoesNotWrite() {
   const warning = $('#log-level-warning');
@@ -12521,7 +13025,7 @@ function warnAboutLevelsTheProcessDoesNotWrite() {
   warning.textContent = quieter.length
     ? t('log.levelTooQuiet',
       'This installation is writing {0} and above, so {1} will stay empty. '
-      + 'Change the log level under Logging, metrics and tracing; it applies at the next start.')
+      + 'The log level is set under "Logging, metrics and tracing" above.')
       .replace('{0}', logView.runningLevel)
       .replace('{1}', quieter.join(', '))
     : '';
@@ -12586,16 +13090,34 @@ function atLogBottom(output) {
   return output.scrollHeight - output.scrollTop - output.clientHeight < 40;
 }
 
+/**
+ * When a log line was written: the time to the second, and the day as well
+ * whenever it was not today.
+ *
+ * In the account's own zone, like every other moment on this screen - see
+ * fmtMoment. It was the browser's, so on a device set to another zone the log
+ * and the token list beside it gave the same minute two different times.
+ *
+ * The day because the buffer outlives it. It holds the last five thousand
+ * lines, and on a quiet installation - or one logging at WARN, as the manual
+ * asks of one with a schedule - those reach back days, so "03:00:01 ERROR"
+ * could not be told from this morning's.
+ */
 function formatLogTime(iso) {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return '';
 
-  // The viewer's own zone, which is the one they are comparing against a
-  // clock on the wall while working out what happened when. The reader's
-  // language for the rest, like every other figure on screen - it decides
-  // nothing at all while hour12 is off, and leaving it to the browser was one
-  // more place for the two to disagree later.
-  return at.toLocaleTimeString(activeLocale(), { hour12: false });
+  const timeZone = me.user?.effectiveTimezone || undefined;
+  const dayOf = (moment) => new Intl.DateTimeFormat('en-CA', { timeZone }).format(moment);
+
+  return new Intl.DateTimeFormat(activeLocale(), {
+    ...(dayOf(at) === dayOf(new Date()) ? {} : { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone,
+  }).format(at);
 }
 
 // -------------------------------------------------------- maintenance mode
@@ -13230,21 +13752,6 @@ function rememberView(name) {
 }
 
 /**
- * The view to open: the one in the address bar when it is real and permitted, then
- * the one this person was last on, and otherwise the greeting.
- *
- * Checked against the tabs rather than trusted, because neither the hash nor the
- * remembered name is anything more than a string that was true once - the hash is
- * whatever was typed or bookmarked, and a remembered screen may belong to a tab
- * this account has since lost, or one that stopped existing between releases.
- *
- * The greeting has no tab of its own, so it is permitted by name: it asks for no
- * right, because it only ever says what this person already has. It is where a
- * first sign-in lands, and where anybody lands who has not been anywhere yet -
- * somebody who was working somewhere goes back to it instead, which is the point
- * of remembering.
- */
-/**
  * Opens the screen this session starts on, and only then calls the page loaded.
  *
  * refreshAll marks the page loaded once every screen has been filled from the
@@ -13295,6 +13802,21 @@ function viewIsOffered(name) {
     || $$('.tab').some((tab) => !tab.hidden && tab.dataset.view === name);
 }
 
+/**
+ * The view to open: the one in the address bar when it is real and permitted, then
+ * the one this person was last on, and otherwise the greeting.
+ *
+ * Checked against the tabs rather than trusted, because neither the hash nor the
+ * remembered name is anything more than a string that was true once - the hash is
+ * whatever was typed or bookmarked, and a remembered screen may belong to a tab
+ * this account has since lost, or one that stopped existing between releases.
+ *
+ * The greeting has no tab of its own, so it is permitted by name: it asks for no
+ * right, because it only ever says what this person already has. It is where a
+ * first sign-in lands, and where anybody lands who has not been anywhere yet -
+ * somebody who was working somewhere goes back to it instead, which is the point
+ * of remembering.
+ */
 function startingView() {
   const wanted = currentHashView();
   if (viewIsOffered(wanted)) return wanted;
@@ -13530,6 +14052,8 @@ function wireForms() {
   // One row, because the total covers the reader's own hours and nobody else's.
   // The column used to name the person, which is now always the same person.
   function renderReport(report) {
+    evaluatedPeriod.report = { from: report.from, to: report.to };
+
     const rows = (report.entries ?? []).map((entry) => el('tr', {},
       el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
       el('td', { class: 'num', text: fmtNumber(entry.hours) }),
@@ -13569,6 +14093,8 @@ function wireForms() {
   });
 
   function renderOvertime(balance) {
+    evaluatedPeriod.overtime = { from: balance.from, to: balance.to };
+
     const rows = (balance.days ?? []).map((d) => el('tr', {},
       el('td', { text: fmtDate(d.date) }),
       el('td', { class: 'num', text: fmtHours(d.booked) }),
@@ -13777,7 +14303,7 @@ async function init() {
 
     resetBookingDate();
   } catch (err) {
-    toast(`${t('msg.initFailed', 'Initialisation failed')}: ${err.message}`, 'error');
+    toastFailure(err, t('msg.initFailed', 'Initialisation failed'));
   }
 
   try {
@@ -13800,19 +14326,48 @@ async function init() {
     // finishes by throwing the page away, so the answer to the button somebody
     // pressed arrives here rather than there.
     saySoAfterTheReload();
-  } catch {
-    // No usable session: the sign-in screen is the whole interface until
-    // there is one. Unless somebody signed in while this was running, which
-    // showLogin decides - it is the same question wherever it is asked from.
-    showLogin();
+  } catch (err) {
+    afterAFailedFirstLoad(err);
 
     // Then the ticket, where the installation offers one and this tab has not
     // been told otherwise - after the form is up, so a browser without a ticket
-    // is simply left looking at it.
-    if (ticketsOffered && !handedToASession && mayTryTheTicketUnasked()) {
+    // is simply left looking at it. Only where the failure put the form up: a
+    // load that failed behind a session that was accepted keeps its screen.
+    if (!$('#login-screen').hidden && ticketsOffered && !handedToASession
+      && mayTryTheTicketUnasked()) {
       await signInWithTicket({ quietly: true });
     }
   }
+}
+
+/**
+ * What a first load that failed leaves on screen.
+ *
+ * A session /me accepted is not undone by a loader that failed after it - a
+ * query the database refused, a connection that dropped part-way. Showing the
+ * sign-in form here put it over a session that was fine, said nothing about
+ * what had failed, and made signing in again open a second one. The reader
+ * keeps the screen they are signed into and is told what did not load, as a
+ * reload that fails after a save is.
+ *
+ * Not on a 401, which is the session itself refused: a first load that failed
+ * for want of one can land after somebody signed in underneath it, and that
+ * belongs to showLogin, which already answers exactly that.
+ */
+function afterAFailedFirstLoad(err) {
+  if (me.user && err?.status !== 401) {
+    restoreDrafts();
+    hideLogin();
+    openTheStartingView({ restoring: true });
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
+
+    return;
+  }
+
+  // No usable session: the sign-in screen is the whole interface until there is
+  // one. Unless somebody signed in while this was running, which showLogin
+  // decides - it is the same question wherever it is asked from.
+  showLogin();
 }
 
 document.addEventListener('DOMContentLoaded', init);

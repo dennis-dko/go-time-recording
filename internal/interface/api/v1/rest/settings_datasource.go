@@ -45,8 +45,10 @@ type DatasourceResponse struct {
 	// and never the password itself.
 	RunningHasPassword bool `json:"runningHasPassword"`
 
-	// RestartRequired is always true after a change: GoFr opens the database
-	// at start-up, and swapping it under running requests is not safe.
+	// RestartRequired is whether the connection on disk is another one than this
+	// process opened, by the restart card's own rule - GoFr opens the database at
+	// start-up, and swapping it under running requests is not safe, so a changed
+	// one waits. See databasePending.
 	RestartRequired bool `json:"restartRequired"`
 }
 
@@ -82,6 +84,7 @@ func (h *SettingsHandler) Datasource(c *gofr.Context) (any, error) {
 			SSLMode: sslModeInForce(stored.Dialect, stored.SSLMode),
 		}
 		resp.HasPassword = stored.Password != ""
+		resp.RestartRequired = len(databasePending(h.running, stored)) > 0
 	}
 
 	return resp, nil
@@ -122,6 +125,12 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 	}
 
 	if err := appconfig.SaveDatasource(appconfig.DatasourceFile, ds); err != nil {
+		// A connection the driver would misread is refused by name. Only a file
+		// that cannot be written is the server's fault.
+		if detail, ours := apperror.Detail(err); ours && detail.Code != "" {
+			return nil, toHTTPError(err)
+		}
+
 		return nil, toHTTPError(apperror.Internal(err))
 	}
 
@@ -129,9 +138,14 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 	// showed it in preference to its own translated sentence - so the one screen
 	// that is otherwise entirely German answered a successful save in English.
 	// What to call this is the interface's business; what happened is this one's.
+	//
+	// Whether it waits for a restart is asked of what is now on disk, read back
+	// the way the restart card reads it, so the two cannot answer differently.
+	stored, _ := appconfig.LoadDatasource(appconfig.DatasourceFile)
+
 	return map[string]any{
 		"status":          "saved",
-		"restartRequired": true,
+		"restartRequired": len(databasePending(h.running, stored)) > 0,
 	}, nil
 }
 

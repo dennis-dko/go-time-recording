@@ -1325,7 +1325,7 @@
       <form method="post" id="form-telemetry" class="card form">
         <h2 data-i18n="tel.title">Logging, metrics and tracing</h2>
         <p class="muted" id="telemetry-active"></p>
-        <p class="muted" data-i18n="tel.hint">Saved here and applied the next time the application starts. None of it can be switched over while the application runs: the log level is read, the metrics port is bound and the trace exporter is built while it starts. A field left following the configuration file keeps its value from there.</p>
+        <p class="muted" data-i18n="tel.hint">The log level applies at once. The metrics port is bound and the trace exporter is built while the application starts, so those are saved here and applied the next time it starts; the restart card lists what is waiting. A field left following the configuration file keeps its value from there.</p>
         <p class="muted minus" data-i18n="tel.warn">The metrics port asks for no sign-in, is not covered by TLS, and serves Go's profiling endpoints beside the metrics — anywhere it is reachable, so is a heap dump. Expose it to your monitoring only.</p>
         <div class="grid">
           <label data-i18n="tel.logLevel">Log level
@@ -1405,6 +1405,16 @@
         <p class="muted" id="ldap-test-result"></p>
       </form>
 
+      <!-- In place of the card below, for an account that administers and also
+           records time. The run is not theirs, and a card that is simply not
+           there cannot be told from a feature that has been removed - which is
+           the question this was written after. A sentence and nothing to
+           press: the server refuses this account the run. -->
+      <div class="card" id="sync-elsewhere" hidden>
+        <h2 data-i18n="sync.title">Directory synchronisation</h2>
+        <p class="muted" id="sync-elsewhere-text"></p>
+      </div>
+
       <div class="card" id="sync-card">
         <h2 data-i18n="sync.title">Directory synchronisation</h2>
         <p class="muted" data-i18n="sync.hint">Reconciles the users with the directory. LDAP is only ever read, never changed.</p>
@@ -1416,7 +1426,7 @@
               <input type="text" name="syncSchedule" maxlength="120" placeholder="0 4 * * *" spellcheck="false">
             </label>
           </div>
-          <p class="muted" data-i18n="sync.scheduleHint">Empty by default, and worth leaving empty until a preview has been read: an automatic run deletes without anybody looking. Applied at the next start — the scheduler is built while the application starts.</p>
+          <p class="muted" data-i18n="sync.scheduleHint">Empty by default, and worth leaving empty until a preview has been read: an automatic run deletes without anybody looking. Applied at the next start — the scheduler is built while the application starts. It runs on the server's clock, which is UTC in the container this application ships, and not in the instance timezone.</p>
           <p class="muted" id="sync-schedule-active"></p>
           <button type="submit" data-i18n="action.save">Save</button>
         </form>
@@ -1449,7 +1459,7 @@
            what you scroll to when something already went wrong. -->
       <div class="card" id="log-card">
         <h2 data-i18n="log.title">Live log</h2>
-        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what the log level admits reaches here, so ticking a level below it shows nothing — the level is under "Logging, metrics and tracing" above, and takes effect at the next start. Held in memory only: the view is empty after a restart, and this is no substitute for collecting logs.</p>
+        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what the log level admits reaches here, so ticking a level below it shows nothing — the level is set under "Logging, metrics and tracing" above. Held in memory only: what was captured is gone after a restart, and this is no substitute for collecting logs.</p>
 
         <div class="log-controls">
           <div class="log-levels" id="log-levels" role="group" aria-label="Log levels"></div>

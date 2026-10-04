@@ -12,7 +12,7 @@ Built on [GoFr](https://gofr.dev), structured after [gogs](https://github.com/go
 ```bash
 task dev DB=sqlite   # build and start on a local file, nothing else needed
 # or directly:
-go run ./cmd/main.go
+go run ./cmd
 ```
 
 Then open <http://localhost:8000>. The web interface is served by the same
@@ -138,7 +138,7 @@ what happened during the migrations — because it captures the process output
 rather than wrapping a logger. Two things worth knowing: only what the log level
 admits reaches it, so ticking `DEBUG` on an installation running at `WARN` shows
 nothing and is not a fault — the level is set under *Settings → Logging, metrics
-and tracing* and applies from the next start; and it is held in memory in a
+and tracing* and applies at once; and it is held in memory in a
 fixed-size ring, so it
 starts empty after a restart and is no substitute for collecting logs. The
 capture makes the console output JSON even on a terminal, which is what a log
@@ -355,9 +355,11 @@ screen and everything on it — the branding, the operational limits, the instan
 timezone, the database connection, the telemetry, the maintenance notice, the
 log and the restart. It is what the `user-admin` role holds that `user` does
 not, and it is why that role is handed out deliberately rather than assembled
-out of smaller rights. Two things stay outside it and belong to the built-in
-administrator alone: the setup wizard, and running or scheduling a directory
-synchronisation.
+out of smaller rights. Two things stay outside it and belong to an account that
+administers and has no working day of its own - the built-in administrator, or
+one holding the `admin` role: the setup wizard, and running or scheduling a
+directory synchronisation. On the *Settings* screen of a `user-admin` account the
+synchronisation card is replaced by a sentence saying so.
 
 ### The administrator does not work here
 
@@ -689,6 +691,13 @@ working without being provisioned first. Local-only accounts keep working
 alongside directory ones. Roles and permissions always stay local — the
 directory decides *who you are*, this application decides *what you may do*.
 
+An account created here under the same address — by an administrator, or by an
+import — is taken over the first time its owner signs in through the directory,
+hours and all. From then on it is a directory account: it keeps no local
+password, so it is no longer asked for a new one and the initial password no
+longer opens it, and a synchronisation treats it like any other. An account that
+administers this installation is never taken over.
+
 ### Signing in with a Kerberos ticket
 
 Where people sign in to a Windows domain, their browser can present its Kerberos
@@ -724,7 +733,9 @@ could be walked around by typing five numbers into the field between them.
 
 Set the schedule under *Settings*, or `LDAP_SYNC_SCHEDULE` for a starting value
 in the environment; it is empty by default because a run destroys recorded work
-irreversibly, and an automatic one destroys it with nobody looking. Use
+irreversibly, and an automatic one destroys it with nobody looking. It runs on
+the server's clock - UTC in the shipped container, which sets no `TZ` - and not
+in the instance timezone, so `0 4 * * *` is four in the morning in Greenwich. Use
 **Preview** first, which reports exactly which accounts would go and how many
 time entries each one would take with it. The real run asks for confirmation
 naming those numbers.
@@ -872,12 +883,12 @@ sentence assembled on the server in English.
 Four layers; dependencies point inwards only.
 
 ```text
-cmd/main.go                     Wiring (DI), migrations, cron, TLS
+cmd/                            Wiring (DI), migrations, TLS, the scheduled jobs
 │
 ├── internal/interface/         Entry points
 │   ├── api/v1/rest/              HTTP handlers, DTOs, authorization, status codes
 │   ├── web/                      Embedded web interface and its middleware
-│   └── worker/                   Scheduled background jobs
+│   └── installer/                First-run screen, served until a database is chosen
 │
 ├── internal/application/v1/    Use cases (CQRS-flavoured)
 │   ├── command/ query/           Input and output per use case
@@ -889,14 +900,23 @@ cmd/main.go                     Wiring (DI), migrations, cron, TLS
 │   ├── repository/               Repository interfaces
 │   └── service/                  Rules spanning several entities
 │
-└── internal/infrastructure/    Technical concerns
-    ├── config/                   Application settings and the datasource file
-    ├── directory/                LDAP client
-    ├── tlsserver/                Let's Encrypt termination
-    └── persistence/
-        ├── sqldb/                Repositories, dialect-agnostic
-        ├── memory/               In-memory repositories for tests
-        └── migrations/           Schema definition
+├── internal/infrastructure/    Technical concerns
+│   ├── config/                   Application settings and the datasource file
+│   ├── directory/                LDAP client
+│   ├── tlsserver/                Let's Encrypt termination
+│   ├── announce/                 What every open browser is told at once
+│   ├── selfupdate/ imageupdate/  Replacing the binary, or asking for a new image
+│   ├── restart/                  Restarting from the Settings screen
+│   ├── logsink/                  The recent log lines the Settings screen shows
+│   └── persistence/
+│       ├── sqldb/                Repositories, dialect-agnostic
+│       ├── memory/               In-memory repositories for tests
+│       └── migrations/           Schema definition
+│
+└── internal/support/           Leaf helpers that know nothing of the domain
+    ├── apperror/                 The closed catalogue of refusals
+    ├── security/                 Passwords, tokens and sealed secrets
+    └── document/ spreadsheet/ imaging/ qrcode/ hosting/
 ```
 
 Decisions that would otherwise be surprising:
@@ -970,14 +990,17 @@ enrolled two-factor account, which no screen administers - and it seeds the
 initial title, so naming the instance in the environment saves naming it twice.
 
 **At the next start** are administered too, but stored rather than applied,
-because GoFr reads them while it starts up: the `DB_*` connection, `LOG_LEVEL`,
+because GoFr reads them while it starts up: the `DB_*` connection,
 `LDAP_SYNC_SCHEDULE`, and `TRACE_EXPORTER`, `TRACER_URL` and `TRACER_RATIO`. What
 is stored wins from the next start onwards, and a banner across the top of every
 screen lists what is still waiting, for whoever may do something about it.
 
-`LOG_LEVEL` is administered too and is likewise out of `configs/.env` now. The
-one file that still names it is `configs/.dev.env`, which is what "follow the
-configuration file" means for a development run that has no stored setting yet.
+`LOG_LEVEL` is administered too, is likewise out of `configs/.env` now, and is
+the one of these that does not wait: the level is applied to the lines on their
+way out of the process rather than by GoFr's logger, so a saved level holds from
+the next line. The one file that still names it is `configs/.dev.env`, which is
+what "follow the configuration file" means for a development run that has no
+stored setting yet.
 
 The **timezone and the LDAP connection appear in no file at all**. Both are
 administered entirely in the application — a second place to write them would
@@ -1077,6 +1100,15 @@ button probes them before you commit. A connection saved there is written to
 `configs/datasource.json` and applied on the next restart; switching a live
 database under running requests is not safe, so it is deliberately not done.
 
+PostgreSQL needs a password here even where the server asks for none - any value
+does then. The connection is written with the values as they are, and in that
+form an empty password takes the database's name for itself, so the server opens
+the database named after the account: measured, the tables went into `postgres`
+while the log named `DB_NAME`. The installer and *Settings* refuse such a
+connection, and one the driver would mangle in other ways, which
+[the operations manual](deploy/OPERATIONS.md) lists; an installation already
+running on one keeps its data where it is and is told so at every start.
+
 On an installation configured through the environment — a compose deployment, or
 a container run with `DB_*` set — there is no such file, so the card is filled
 with the running connection instead, as values, and says above them where it came
@@ -1094,15 +1126,19 @@ another server or user and the box empties, because that password is not sent
 anywhere it was not given.
 
 *Settings → Logging, metrics and tracing* works the same way, and for the same
-kind of reason: GoFr reads the log level, binds the metrics port and builds the
-trace exporter inside `gofr.New()`, so nothing administered afterwards could
-reach any of them. GoFr can change a running logger's level, but it does so by
-assigning to a field every request goroutine reads without synchronisation — a
-data race is not a reasonable price for saving a restart. What is
-saved there is stored in the database and read back out of it on the way into the
-next start, before GoFr reads its own configuration — which is what lets a stored
-value win over the file, including a stored *off*. A field left following the
-configuration file keeps coming from there.
+kind of reason: GoFr binds the metrics port and builds the trace exporter inside
+`gofr.New()`, so nothing administered afterwards could reach either of them.
+What is saved there is stored in the database and read back out of it on the way
+into the next start, before GoFr reads its own configuration — which is what
+lets a stored value win over the file, including a stored *off*. A field left
+following the configuration file keeps coming from there.
+
+The log level is on the same card and does not wait. GoFr is left writing
+everything, and the level is applied to each line on its way out of the process,
+which is where the log viewer reads it too — so saving a level changes what the
+very next line does. That was built when changing GoFr's own level under running
+requests was a data race; GoFr has made that field atomic since (v1.60.0), and
+the level is still applied on the way out.
 
 The screen shows what the running process is actually doing beside what is
 stored, because until the next restart those disagree, and it names the metrics
@@ -1144,35 +1180,38 @@ Outside a container it replaces the process image rather than exiting and hoping
 something starts it again. `execve` needs nothing outside the process, so there
 is no arrangement in which pressing it leaves the installation down — whereas
 exiting works under systemd with `Restart=` and turns the button into an off
-switch for a binary started by hand.
+switch for a binary started by hand. What it hands the new process is the
+environment this one was **started** with, not the one it has by then, so the
+restart reads what a stop and a start would read.
 
-**In a container it exits**, and the container manager starts a new one. That is
-the better of the two there, and not only because it is simpler: `execve` keeps
-the environment, and in a container the environment is most of the
-configuration. Everything the stored settings exported would be inherited by the
-replacement, so a setting cleared back to *follow the configuration file* came
-back as the value the previous process had exported — from a screen whose whole
-promise is that the next start uses what is stored. Exiting gives a container
-built from the image and the compose file again, with nothing carried over.
+**In a container it exits**, and the container manager starts it again. That was
+chosen while replacing the process still handed on the environment as it stood,
+which in a container is most of the configuration: a setting cleared back to
+*follow the configuration file* came back as the value the previous process had
+exported — from a screen whose whole promise is that the next start uses what is
+stored.
 
 What starts it is the restart policy, which this process cannot see. The
-deployment here sets `unless-stopped`, which restarts whatever the exit status;
-a container run without a policy stays down, which is why the sentence beside
-the button says so.
+deployment here sets `unless-stopped`, which restarts whatever the exit status,
+and so does `always`. A container run without a policy stays down, and so does
+one run under `on-failure`: the button ends the process without an error, which
+is the one exit that policy does not restart. The sentence beside the button
+names the policies.
 Windows has no `execve`, so the button is not offered there and the banner puts
 the reason where the button would have been. It appears when something is
 actually waiting, which is the moment the limitation costs anything: a warning
 that is on screen every time you look is furniture, read once and looked past
 thereafter, including on the day it finally has something to say.
 
-`execve` passes the current environment on, and outside a container that has one
-consequence worth knowing before it surprises somebody: a setting cleared back to
-*follow the configuration file* is **not** restored by this button. The variable
-the previous process exported is inherited, and a real environment variable beats
-the file. The same goes for deleting `configs/datasource.json` — the inherited
-`DB_DIALECT` keeps the old connection rather than bringing the installer back.
-Both need a genuine stop and start, which is what the button already does in a
-container.
+A restart from the button reads the configuration the way a stop and a start
+would, in a container and outside one. Outside one it used not to: the process
+handed on its own environment, into which the configuration file's keys and the
+stored settings had been written by then, and a real environment variable beats
+the file. So an edited `configs/.env` was not read, a setting cleared back to
+*follow the configuration file* was not restored, deleting
+`configs/datasource.json` did not bring the installer back, and an installation
+that had stored no log level logged at `DEBUG` after its first restart. None of
+the four needs a genuine stop and start any more.
 
 Both of those were once things this banner could not tell you, and both are
 compared now: a database change that keeps the dialect — another host, port, user
@@ -1269,7 +1308,7 @@ running instance.
 | `GET/POST/PUT/DELETE` | `/api/v1/timesheets`, `/timesheets/{id}` | Time entries |
 | `GET/POST/DELETE` | `/api/v1/me/timer` | Own stopwatch: read, start, discard |
 | `POST` | `/api/v1/me/timer/stop` | Stop it and book the measured time |
-| `GET` | `/api/v1/me/statistics` | Own hours per day, per project and per state |
+| `GET` | `/api/v1/me/statistics` | Own hours per day and per project |
 | `POST` | `/api/v1/timesheets/{id}/transfer` | Move to another project |
 | `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP, metrics and tracing |
 
@@ -1283,8 +1322,8 @@ tracing works here with no span code anywhere.
 
 What it cannot know is whether the application is doing its job. A deployment can
 serve every request in milliseconds while nobody has been able to book time since
-the directory changed. So four more are recorded here, each because somebody
-would act on it:
+the directory changed. So these are recorded here as well, each because
+somebody would act on it:
 
 | Metric | Says |
 | --- | --- |

@@ -70,15 +70,15 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "fmt.Sprintf(",
 		},
 		{
-			reference: "internal/infrastructure/config/datasource.go:121",
+			reference: "internal/infrastructure/config/datasource.go:122",
 			resolved:  "internal/infrastructure/config/datasource.go",
-			line:      121,
+			line:      122,
 			contains:  "configLocation",
 		},
 		{
-			reference: "restart_handler.go:463",
+			reference: "restart_handler.go:480",
 			resolved:  "internal/interface/api/v1/rest/restart_handler.go",
-			line:      463,
+			line:      480,
 			contains:  "time.Sleep(",
 		},
 		{

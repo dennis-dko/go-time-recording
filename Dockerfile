@@ -28,10 +28,12 @@ COPY . .
 
 # CGO_ENABLED=0 makes the binary static; the previous "-linkmode external
 # -extldflags -static" needed a C toolchain and is unnecessary without cgo.
+# ./cmd, the package rather than main.go: naming a file builds that file and no
+# other, so a second one in cmd/ would be left out of the image.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
     -trimpath \
     -ldflags "-s -w -X main.version=${VERSION}" \
-    -o /out/go-time-recording ./cmd/main.go
+    -o /out/go-time-recording ./cmd
 
 FROM alpine:3.24
 
