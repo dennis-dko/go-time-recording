@@ -7432,6 +7432,16 @@ function forgetTheLastAccount() {
   // reached from the other side.
   calendarMonth = null;
 
+  // And each form's own reset, which resetting the form does not reach: a hidden
+  // field keeps its value through one, so a form left correcting a record kept
+  // the record's id under its "edit" heading - and an administrator filling it in
+  // to add somebody changed the account their predecessor had open. After the
+  // caches and the account are gone, because two of them draw from those.
+  resetUserForm();
+  resetRoleForm();
+  resetProjectForm();
+  resetTimesheetForm();
+
   // And the imports this account had checked. The cards are not forms, so the
   // reset of every form never reached the file, the verdict or the button that
   // writes it.

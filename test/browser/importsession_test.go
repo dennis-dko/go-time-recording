@@ -153,3 +153,72 @@ func TestASignOutTakesTheLastEvaluationWithIt(t *testing.T) {
 		t.Errorf("after the sign-out %s", what)
 	}
 }
+
+// A form left correcting a record goes back to creating one when its account
+// signs out.
+//
+// The sign-out resets every form, and a reset leaves a hidden field's value
+// where it was - which is why each form's own reset clears its id by hand. Those
+// resets were not called on the way out, so a form somebody had been correcting
+// kept the record's id under its "edit" heading. Whoever signed in next and
+// filled it in to make something new changed the record the last person had
+// open: an administrator adding an account overwrote the one their predecessor
+// was correcting.
+func TestASignOutPutsEveryFormBackToCreating(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	// The administrator's own row offers no correction, so somebody else's first.
+	p.run("add somebody", p.click(`.tab[data-view="users"]`),
+		chromedp.WaitVisible("#form-user", chromedp.ByID),
+		chromedp.SendKeys(`#form-user input[name="name"]`, "Wilma", chromedp.ByQuery),
+		chromedp.SendKeys(`#form-user input[name="email"]`, "wilma@example.com", chromedp.ByQuery),
+		p.chooseOption(`#form-user select[name="role"]`, "user"),
+		chromedp.SendKeys(`#form-user input[name="password"]`, "wilma-password-1", chromedp.ByQuery),
+		p.click(`#form-user button[type="submit"]`))
+	p.waitForText("#table-users tbody", "wilma@example.com")
+
+	p.run("start correcting the account", p.click(`#table-users tbody button[data-action="edit"]`))
+
+	// A shipped role is opened to be looked at, through the same form and with
+	// its id in the same field.
+	p.run("open a role", p.click(`.tab[data-view="roles"]`),
+		chromedp.WaitVisible(`#table-roles tbody td.actions button`, chromedp.ByQuery),
+		p.click(`#table-roles tbody td.actions button`))
+
+	// Read from the forms rather than the screen: only one of the two tabs is
+	// showing.
+	var correcting bool
+
+	p.run("confirm both forms are correcting", chromedp.Evaluate(`[['user', 'Add user'], ['role', 'Create role']]
+		.every(([kind, creating]) => document.querySelector('#form-' + kind).elements.id.value
+			&& document.querySelector('#' + kind + '-form-title').textContent.trim() !== creating)`, &correcting))
+
+	if !correcting {
+		t.Fatal("this case starts from both forms correcting a record, and they are not")
+	}
+
+	p.run("sign out", p.click("#logout"), chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	var left []string
+
+	p.run("read what the next account would find", chromedp.Evaluate(`(() => {
+		const left = [];
+
+		for (const [kind, creating] of [['user', 'Add user'], ['role', 'Create role']]) {
+			const form = document.querySelector('#form-' + kind);
+			const heading = document.querySelector('#' + kind + '-form-title').textContent.trim();
+
+			if (form.elements.id.value) left.push('the ' + kind + ' form still holds the id ' + form.elements.id.value);
+			if (heading !== creating) left.push('the ' + kind + ' form is still headed ' + JSON.stringify(heading));
+		}
+
+		return left;
+	})()`, &left))
+
+	for _, what := range left {
+		t.Errorf("after the sign-out %s", what)
+	}
+}
