@@ -12263,8 +12263,13 @@ function passkeyProblem(err) {
         + 'device trusts. Clicking past a certificate warning is not enough.');
     case 'AbortError':
       return t('passkey.err.aborted', 'The prompt closed before anything was done.');
-    default:
-      return err?.message || t('passkey.failed', 'The passkey was not accepted.');
+    default: {
+      // A name this does not know: still said in the reader's language, with the
+      // browser's own words - in the browser's language - kept as the detail.
+      const said = t('passkey.failed', 'The passkey was not accepted.');
+
+      return err?.message ? `${said} (${err.message})` : said;
+    }
   }
 }
 
