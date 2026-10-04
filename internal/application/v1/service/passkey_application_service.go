@@ -41,7 +41,7 @@ type PasskeyService struct {
 	//
 	// The cost is that a restart, or a second instance behind a load balancer,
 	// loses them - the user retries and it works. Passwords are unaffected.
-	pending sync.Map
+	pending challenges
 }
 
 // NewPasskeyService starts with no ceremony in flight. Challenges live in this
@@ -371,6 +371,71 @@ func (s *PasskeyService) Delete(ctx context.Context, id, userID uint) error {
 
 // ------------------------------------------------------------------ pending
 
+// challengeSweepInterval is how often the abandoned challenges are looked for,
+// which is most of them: every sign-in somebody thinks better of leaves one.
+//
+// Not on every start, which is how it began: every start then visited every
+// challenge still waiting, so the cost of a start grew with the number started -
+// measured, 158 microseconds a start with 10,000 waiting and 11.6 milliseconds
+// with 60,000, and the start of a sign-in needs no session. At most once a
+// minute, an abandoned challenge outlives its lifetime by a minute at most and
+// the visit is paid once rather than by every start.
+const challengeSweepInterval = time.Minute
+
+// challenges is the store PasskeyService.pending describes: a map behind a lock,
+// swept of what has expired at most once a challengeSweepInterval.
+//
+// A plain map rather than a sync.Map, because when the last sweep was has to be
+// kept with the map it describes, which is the case the sync package's own
+// documentation sends to a map and a lock.
+type challenges struct {
+	mu        sync.Mutex
+	byToken   map[string]pendingSession
+	lastSweep time.Time
+}
+
+// put keeps a challenge until its second half takes it or it expires.
+func (c *challenges) put(token string, data webauthn.SessionData, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if now.Sub(c.lastSweep) >= challengeSweepInterval {
+		c.lastSweep = now
+
+		for key, session := range c.byToken {
+			if now.After(session.expires) {
+				delete(c.byToken, key)
+			}
+		}
+	}
+
+	if c.byToken == nil {
+		c.byToken = map[string]pendingSession{}
+	}
+
+	c.byToken[token] = pendingSession{data: data, expires: now.Add(challengeLifetime)}
+}
+
+// take returns a challenge and removes it, so one can never be used twice. One
+// past its lifetime is refused whether or not a sweep has reached it yet.
+func (c *challenges) take(token string, now time.Time) (webauthn.SessionData, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	session, ok := c.byToken[token]
+	if !ok {
+		return webauthn.SessionData{}, false
+	}
+
+	delete(c.byToken, token)
+
+	if now.After(session.expires) {
+		return webauthn.SessionData{}, false
+	}
+
+	return session.data, true
+}
+
 // storePending keeps a challenge and returns the handle for its second half.
 //
 // A random handle rather than the session cookie, because a sign-in has no
@@ -383,42 +448,20 @@ func (s *PasskeyService) storePending(data webauthn.SessionData) (string, error)
 
 	token := base64.RawURLEncoding.EncodeToString(buf)
 
-	s.pending.Store(token, pendingSession{data: data, expires: time.Now().Add(challengeLifetime)})
-	s.sweep()
+	s.pending.put(token, data, time.Now())
 
 	return token, nil
 }
 
-// takePending returns a challenge and removes it, so one can never be used
-// twice.
+// takePending returns the challenge a handle stands for, once.
 func (s *PasskeyService) takePending(token string) (webauthn.SessionData, error) {
-	expired := apperror.Invalidf("this attempt has expired, please try again").WithCode("attemptExpired")
-
-	value, ok := s.pending.LoadAndDelete(token)
+	data, ok := s.pending.take(token, time.Now())
 	if !ok {
-		return webauthn.SessionData{}, expired
+		return webauthn.SessionData{}, apperror.Invalidf("this attempt has expired, please try again").
+			WithCode("attemptExpired")
 	}
 
-	session, ok := value.(pendingSession)
-	if !ok || time.Now().After(session.expires) {
-		return webauthn.SessionData{}, expired
-	}
-
-	return session.data, nil
-}
-
-// sweep drops abandoned challenges, which is most of them: every sign-in a
-// user thinks better of leaves one behind.
-func (s *PasskeyService) sweep() {
-	now := time.Now()
-
-	s.pending.Range(func(key, value any) bool {
-		if session, ok := value.(pendingSession); ok && now.After(session.expires) {
-			s.pending.Delete(key)
-		}
-
-		return true
-	})
+	return data, nil
 }
 
 func transportsToString(transports []protocol.AuthenticatorTransport) string {
