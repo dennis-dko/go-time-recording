@@ -561,7 +561,7 @@ func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal,
 
 	session, err := s.sessions.Get(ctx, security.HashToken(token))
 	if err != nil {
-		return nil, apperror.Invalidf("no session").WithCode("noSession")
+		return nil, unreadSession(err)
 	}
 
 	now := time.Now()
@@ -586,10 +586,30 @@ func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal,
 
 	user, err := s.users.GetByID(ctx, session.UserID)
 	if err != nil {
-		return nil, apperror.Invalidf("no session").WithCode("noSession")
+		return nil, unreadSession(err)
 	}
 
 	return s.auth.principalFor(ctx, user)
+}
+
+// unreadSession is what Resolve answers when a record behind a session could not
+// be had: "no session" where it is not there, and the failure itself where it
+// could not be read.
+//
+// They were one answer, and the middleware clears the cookie of a session that
+// is gone - so a database that did not answer for a moment, which a restart of
+// its container is enough for, signed out everybody whose request arrived in
+// that moment.
+func unreadSession(err error) error {
+	if apperror.KindOf(err) == apperror.KindNotFound {
+		return apperror.Invalidf("no session").WithCode("noSession")
+	}
+
+	if _, ours := apperror.Detail(err); ours {
+		return err
+	}
+
+	return apperror.Internal(err)
 }
 
 // idleTimeout is how long a session may go unused, or zero for no limit.

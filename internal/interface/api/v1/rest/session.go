@@ -12,6 +12,7 @@ import (
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // SessionCookieName is the cookie carrying the session token.
@@ -20,6 +21,10 @@ const SessionCookieName = "gtr_session"
 // sessionContextKey types the context value so it cannot collide with a key
 // from another package.
 type sessionContextKey struct{}
+
+// unreadSessionKey carries why a session presented with a request could not be
+// checked, for Authorizer.Principal to answer with instead of "not signed in".
+type unreadSessionKey struct{}
 
 // SessionMiddleware resolves the session cookie and puts the principal on the
 // request context, where the Authorizer picks it up.
@@ -39,6 +44,16 @@ func SessionMiddleware(sessions *service.SessionService) func(http.Handler) http
 
 			principal, err := sessions.Resolve(r.Context(), cookie.Value)
 			if err != nil {
+				// A session that could not be read keeps its cookie, and the
+				// handlers are told so they say the caller could not be checked
+				// rather than that nobody is signed in: the session may be fine,
+				// and the database only slow to answer.
+				if apperror.KindOf(err) == apperror.KindInternal {
+					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), unreadSessionKey{}, err)))
+
+					return
+				}
+
 				// A stale cookie is cleared so the browser stops sending it.
 				http.SetCookie(w, expiredCookie(r))
 				next.ServeHTTP(w, r)
