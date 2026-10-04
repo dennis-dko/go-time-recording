@@ -119,7 +119,7 @@ func (p *page) drag(selector string, dx, dy float64) {
 // just chosen postgres.
 //
 // So the switch is not finished when the labels change; it is finished when
-// nothing is in flight any more.
+// that reload has drawn every screen again.
 func (p *page) chooseLanguage(code string) {
 	p.t.Helper()
 
@@ -145,6 +145,17 @@ func (p *page) chooseLanguage(code string) {
 			`document.documentElement.lang`, &applied))
 
 		if applied == code {
+			// And then on the end of the reload that applied it, which is a later
+			// moment. The language is applied as refreshAll's first loader answers,
+			// and the cards are drawn by the ones after it - in a chain where the
+			// counter atRest reads stands at zero between two links, because api()
+			// lowers it once the headers are in and before the body is read. A case
+			// that read the logging card's sentence as soon as the page said "de"
+			// read it in English, on a CI runner and never here. refreshAll takes
+			// data-loaded back before it applies the language, so once the
+			// language is in force, settled waits for that same pass to end.
+			p.settled()
+
 			return
 		}
 
