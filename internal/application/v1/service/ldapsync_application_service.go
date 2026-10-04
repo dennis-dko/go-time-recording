@@ -447,14 +447,34 @@ func (s *LDAPSyncService) exceedsRatio(ctx context.Context, report *SyncReport) 
 	}
 
 	removing, of := len(report.Candidates), report.LocalExternal
-	share, limit := int(math.Round(ratio*100)), int(math.Round(ratioLimit*100))
+	share, limit := refusedShare(ratio, ratioLimit)
 
 	return apperror.Conflictf(
-		"would remove %d of %d directory accounts (%d%%), above the %d%% safety limit; "+
+		"would remove %d of %d directory accounts (%v%%), above the %v%% safety limit; "+
 			"check the directory filter and base DN, then raise the deletion limit under "+
 			"Operation and limits, or LDAP_SYNC_MAX_DELETE_RATIO, if this really is intended",
 		removing, of, share, limit).
 		WithCode("syncWouldRemoveTooMany", removing, of, share, limit)
+}
+
+// refusedShare writes the share a run would remove and the limit it passes, as
+// percentages a refusal can put side by side.
+//
+// The limit as it was set, and the share as a whole number unless rounding would
+// make it no larger than the limit: both were rounded, so 126 of 250 accounts -
+// 50.4% - read "(50%), above the 50% safety limit", which is wrong on its face,
+// and a limit of 12.5% was shown as 13%. The share then gets a decimal at a time
+// until it shows the difference the guard measured.
+func refusedShare(ratio, ratioLimit float64) (float64, float64) {
+	limit := math.Round(ratioLimit*100*1000) / 1000
+
+	for scale := 1.0; scale <= 10000; scale *= 10 {
+		if share := math.Round(ratio*100*scale) / scale; share > limit {
+			return share, limit
+		}
+	}
+
+	return ratio * 100, limit
 }
 
 // createMissing adds accounts the directory holds and this installation does
