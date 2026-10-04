@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -22,6 +23,7 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
+	"gofr.dev/pkg/gofr/migration"
 	"modernc.org/sqlite"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
@@ -267,6 +269,10 @@ func main() {
 		logs.SetPassthroughRenderer(consoleLine)
 	}
 
+	// The real console, kept before the capture takes its place: the one place a
+	// line is sure to arrive however the process ends. See sayingWhy.
+	console := os.Stderr
+
 	restoreOutput, err := logs.Capture()
 	if err != nil {
 		// Not fatal: an application that refuses to start because it could not
@@ -276,9 +282,11 @@ func main() {
 		defer restoreOutput()
 	}
 
-	// What a previous update left behind, now that this process is the new
-	// version. On Windows the old binary cannot be deleted while it is running,
-	// so the swap renames it aside and this is the first moment it can go.
+	// The note a previous update left saying it was waiting for a restart, now
+	// that this process is the version it was waiting for. Not the binary that
+	// update moved aside: that stays as the way back until the next update
+	// removes it, and removeLeftovers says why starting is not the moment to let
+	// go of it.
 	selfupdate.Cleanup()
 
 	// An administered database connection is exported into the environment
@@ -448,6 +456,12 @@ func main() {
 	}
 
 	cfg := appconfig.Load(app.Config)
+
+	// A setting written so it cannot be used falls back to its default. Said here,
+	// at start, where whoever set it will look for why it does not apply.
+	for _, unusable := range cfg.Unusable {
+		app.Logger().Warnf("configuration: %s", unusable)
+	}
 	app.Logger().Infof("go-time-recording %s starting (dialect=%s)", version, cfg.Dialect)
 
 	db := app.GetSQL()
@@ -457,7 +471,7 @@ func main() {
 
 	// Schema first: the binary provisions its own database on first start, so
 	// a deployment needs no separate migration step.
-	app.Migrate(migrations.All(cfg.Dialect))
+	app.Migrate(sayingWhy(migrations.All(cfg.Dialect), console))
 
 	if unavailable(db) {
 		// Without this the app starts happily and every request panics on a
@@ -726,12 +740,18 @@ func main() {
 	//
 	// A second listener for the same signals GoFr handles. signal.Notify supports
 	// that, and the alternative is reaching into how GoFr shuts down.
-	go func() {
-		stopping := make(chan os.Signal, 1)
-		signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
+	//
+	// It ends a scheduled directory run as well, for the same kind of reason: GoFr
+	// gives a job a context nothing cancels. See scheduledSync.
+	stopping, stopped := context.WithCancel(context.Background())
 
-		<-stopping
+	go func() {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+		<-signals
 		hub.Close()
+		stopped()
 	}()
 
 	// Outermost, because everything after it is written for traffic that arrived
@@ -896,34 +916,7 @@ func main() {
 	if cfg.LDAPSyncSchedule != "" {
 		app.Logger().Infof("directory reconciliation scheduled at %q", cfg.LDAPSyncSchedule)
 
-		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", func(ctx *gofr.Context) {
-			report, err := ldapSync.Sync(ctx)
-
-			// What it did, before whether it finished. A run that removed three
-			// accounts and then lost the database used to log "directory sync
-			// failed" and nothing else - three people's recorded hours gone, and
-			// no line naming them. The deletions are logged from the report
-			// whichever way the run ended, in the report's own words.
-			for _, removed := range report.Removals() {
-				ctx.Logger.Warn(removed)
-			}
-
-			if err != nil {
-				ctx.Logger.Errorf("directory sync failed: %v", err)
-
-				return
-			}
-
-			if report.Aborted != "" {
-				ctx.Logger.Warnf("directory sync refused: %s", report.Aborted)
-
-				return
-			}
-
-			if len(report.Created) > 0 {
-				ctx.Logger.Infof("directory sync added %d account(s)", len(report.Created))
-			}
-		})
+		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", scheduledSync(stopping, ldapSync))
 	}
 
 	// The nightly sweep that moved stale open entries to submitted is gone with the
@@ -975,6 +968,39 @@ func main() {
 	if startFailure != nil {
 		die(restoreOutput, "the application did not start: %v", startFailure)
 	}
+}
+
+// sayingWhy hands each migration to GoFr unchanged, except that one which fails
+// says so on the real console before GoFr ends the process.
+//
+// GoFr rolls a failed migration back and calls Fatal, and a Fatal goes through
+// the pipe the log viewer reads - the loss the logsink package describes - so the
+// reason could be gone before anything passed it on: measured, a start on a
+// database already holding a table of the same name exited 1 with an empty log
+// in one of its first two runs. A migration is this application's own, so it
+// says why itself, past the pipe, while GoFr still has the rollback to do.
+func sayingWhy(all map[int64]migration.Migrate, console io.Writer) map[int64]migration.Migrate {
+	said := make(map[int64]migration.Migrate, len(all))
+
+	for version, step := range all {
+		up := step.UP
+
+		step.UP = func(d migration.Datasource) error {
+			err := up(d)
+			if err != nil {
+				// Best effort, like every line to a console: there is nowhere
+				// further to report a console that will not take one.
+				_, _ = fmt.Fprintf(console, "cannot start: migration %d could not be applied: %v\n",
+					version, err)
+			}
+
+			return err
+		}
+
+		said[version] = step
+	}
+
+	return said
 }
 
 // registerBusinessMetrics declares the ones this application records itself.

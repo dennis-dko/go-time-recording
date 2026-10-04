@@ -1419,7 +1419,7 @@
               <input type="text" name="syncSchedule" maxlength="120" placeholder="0 4 * * *" spellcheck="false">
             </label>
           </div>
-          <p class="muted" data-i18n="sync.scheduleHint">Empty by default, and worth leaving empty until a preview has been read: an automatic run deletes without anybody looking. Applied at the next start — the scheduler is built while the application starts.</p>
+          <p class="muted" data-i18n="sync.scheduleHint">Empty by default, and worth leaving empty until a preview has been read: an automatic run deletes without anybody looking. Applied at the next start — the scheduler is built while the application starts. It runs on the server's clock, which is UTC in the container this application ships, and not in the instance timezone.</p>
           <p class="muted" id="sync-schedule-active"></p>
           <button type="submit" data-i18n="action.save">Save</button>
         </form>

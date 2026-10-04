@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
@@ -62,5 +63,43 @@ func TestTheDailyCapIsNoMoreThanADayHas(t *testing.T) {
 		if got := config.Load(mapConfig{"MAX_DAILY_HOURS": raw}).MaxDailyHours; got != want {
 			t.Errorf("MAX_DAILY_HOURS=%q was read as %v, want %v", raw, got, want)
 		}
+	}
+}
+
+// A value that cannot be used is said, as well as replaced.
+//
+// The fallback is right - an installation has to start whatever its environment
+// holds - and the silence was not. TLS_ENABLED=yes is not a value ParseBool
+// reads, so TLS was off, and the start then told somebody who had switched it
+// on that "TLS_ENABLED is false". Every setting read here fell back the same
+// way, without a word.
+func TestAValueThatCannotBeUsedIsNamed(t *testing.T) {
+	cfg := config.Load(mapConfig{
+		"TLS_ENABLED":       "yes",
+		"SESSION_LIFETIME":  "12hours",
+		"RATE_LIMIT":        "-3",
+		"MAX_DAILY_HOURS":   "30",
+		"TLS_REDIRECT_PORT": "8080",
+		"SESSION_IDLE":      "0",
+	})
+
+	named := strings.Join(cfg.Unusable, "\n")
+
+	for _, key := range []string{"TLS_ENABLED", "SESSION_LIFETIME", "RATE_LIMIT", "MAX_DAILY_HOURS"} {
+		if !strings.Contains(named, key) {
+			t.Errorf("%s could not be used and nothing says so: %q", key, cfg.Unusable)
+		}
+	}
+
+	// A value that was used as given is not a problem, and neither is 0 where 0
+	// means something: an idle timeout of 0 is no idle timeout.
+	for _, key := range []string{"TLS_REDIRECT_PORT", "SESSION_IDLE"} {
+		if strings.Contains(named, key) {
+			t.Errorf("%s was used as given and is still reported: %q", key, cfg.Unusable)
+		}
+	}
+
+	if quiet := config.Load(mapConfig{}).Unusable; len(quiet) != 0 {
+		t.Errorf("an installation that sets nothing is told %q", quiet)
 	}
 }
