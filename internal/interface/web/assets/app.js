@@ -12484,31 +12484,37 @@ const LOG_LEVELS_BY_DETAIL = ['DEBUG', 'INFO', 'NOTICE', 'WARN', 'ERROR', 'FATAL
  * start" after that had stopped being true, beside a card saying "at once".
  * So this is a sentence rather than a button, and it stops at naming the card:
  * being told where the level is beats waiting for lines that are not coming.
+ *
+ * Drawn again on a change of language although the card reloads anyway: its
+ * answer is a request later, and until it arrived the sentence stood in the
+ * language just left.
  */
 function warnAboutLevelsTheProcessDoesNotWrite() {
-  const warning = $('#log-level-warning');
-  if (!warning) return;
+  redrawable('logLevelWarning', () => {
+    const warning = $('#log-level-warning');
+    if (!warning) return;
 
-  const running = LOG_LEVELS_BY_DETAIL.indexOf(logView.runningLevel ?? '');
-  if (running < 0) {
-    warning.hidden = true;
+    const running = LOG_LEVELS_BY_DETAIL.indexOf(logView.runningLevel ?? '');
+    if (running < 0) {
+      warning.hidden = true;
 
-    return;
-  }
+      return;
+    }
 
-  const quieter = selectedLogLevels()
-    .filter((level) => LOG_LEVELS_BY_DETAIL.indexOf(level) >= 0
-      && LOG_LEVELS_BY_DETAIL.indexOf(level) < running);
+    const quieter = selectedLogLevels()
+      .filter((level) => LOG_LEVELS_BY_DETAIL.indexOf(level) >= 0
+        && LOG_LEVELS_BY_DETAIL.indexOf(level) < running);
 
-  warning.textContent = quieter.length
-    ? t('log.levelTooQuiet',
-      'This installation is writing {0} and above, so {1} will stay empty. '
-      + 'The log level is set under "Logging, metrics and tracing" above.')
-      .replace('{0}', logView.runningLevel)
-      .replace('{1}', quieter.join(', '))
-    : '';
+    warning.textContent = quieter.length
+      ? t('log.levelTooQuiet',
+        'This installation is writing {0} and above, so {1} will stay empty. '
+        + 'The log level is set under "Logging, metrics and tracing" above.')
+        .replace('{0}', logView.runningLevel)
+        .replace('{1}', quieter.join(', '))
+      : '';
 
-  warning.hidden = !warning.textContent;
+    warning.hidden = !warning.textContent;
+  });
 }
 
 function appendLogLines(records) {
