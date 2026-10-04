@@ -173,8 +173,12 @@ type UpdateResponse struct {
 	//
 	// True in a container that has one, because then the image is what changes.
 	// See ByImage, and deploy/compose.update.yaml.
-	Installable bool   `json:"installable"`
-	Why         string `json:"why,omitempty"`
+	Installable bool `json:"installable"`
+
+	// Why names what keeps a newer version from being offered, so the card can
+	// say it instead of describing a button that is not there: inContainer, or
+	// noBinary for a release that published nothing for this platform.
+	Why string `json:"why,omitempty"`
 
 	// ByImage says this installation updates by pulling an image and recreating
 	// its container, rather than by swapping the binary inside it. True only
@@ -316,6 +320,12 @@ func (h *UpdateHandler) describe(c *gofr.Context) UpdateResponse {
 	// downloaded.
 	out.Available = out.Newer && release.HasBinary() && out.Installable &&
 		out.Pending != release.Version
+
+	// Newer, installable here, and nothing published for this platform: a
+	// platform the release does not build for, or checksums that never went up.
+	if out.Newer && out.Installable && !release.HasBinary() {
+		out.Why = "noBinary"
+	}
 
 	return out
 }
