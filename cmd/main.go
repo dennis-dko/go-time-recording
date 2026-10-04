@@ -375,13 +375,11 @@ func main() {
 	// The log level is the one telemetry setting that does not have to wait for a
 	// restart, and this is what buys that.
 	//
-	// The framework decides what to emit from a field it reads without
-	// synchronisation, so changing it while requests are in flight is a data
-	// race - which is why this does not use its ChangeLevel. Instead the
-	// framework is left at its most verbose and the level is applied on the way
-	// out, in the single goroutine draining the captured output. Raising or
-	// lowering it is then a store in one place with a mutex around it, and takes
-	// effect on the next line.
+	// The framework is left at its most verbose and the level is applied on the
+	// way out, where the captured output is drained. Raising or lowering it is
+	// then a store in one place with a mutex around it, and takes effect on the
+	// next line. Sink.SetLevel says why that was built rather than using the
+	// framework's ChangeLevel, and what has become of the reason.
 	//
 	// Only where the output is actually captured. Without capture there is
 	// nothing between the framework and the console to apply a level, so the
@@ -955,6 +953,30 @@ func main() {
 	}
 
 	app.Run()
+
+	// Run returns when GoFr's servers stop listening, which is the moment a stop
+	// begins rather than the moment it has finished waiting for the requests under
+	// way: net/http returns ListenAndServe as soon as Shutdown is called. GoFr
+	// stops the metrics server after the HTTP server has drained, so while metrics
+	// were on, that server held Run open until the wait was over. With them off -
+	// METRICS_PORT=0, or switched off under Settings - main ended while GoFr was
+	// still waiting, and a stop cut off every request being answered.
+	//
+	// Shutting down a second time waits for exactly what was missing. The server's
+	// Shutdown returns once every connection is idle, after its answer has gone,
+	// and every step after it is safe to repeat: the crontab stops once, the
+	// database closes once. Read in GoFr's own source rather than assumed. The
+	// HTTPS front end is stopped by a deferred call below this, so an answer on its
+	// way through it has left the backend first.
+	finishing, stopWaiting := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
+
+	if err := app.Shutdown(finishing); err != nil {
+		// Whatever GoFr's own pass found wrong it has reported; a second pass
+		// mostly meets things it already closed.
+		app.Logger().Debugf("waiting for the shutdown to finish: %v", err)
+	}
+
+	stopWaiting()
 
 	// Said again past the pipe, as every other refusal here is: GoFr's own line
 	// went through the capture, and die is what guarantees the reason reaches the
