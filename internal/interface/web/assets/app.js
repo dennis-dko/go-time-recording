@@ -11566,11 +11566,15 @@ let timerTick = null;
 /**
  * Renders the clock's state.
  *
- * The elapsed time is counted here from the start instant rather than polled,
- * because a request per second to be told the same thing is a request per second.
- * The server sends its own elapsed figure too, and that is what the entry will
- * record - so a browser with a wrong clock shows a slightly wrong number here and
- * still books the right one.
+ * The elapsed time is counted here rather than polled, because a request per
+ * second to be told the same thing is a request per second - and counted on the
+ * server's clock, which is the one the booking is measured on. The device's own
+ * can be minutes out: two minutes slow, its difference from the recorded start
+ * came out negative and the stopwatch read 00:00:00 for two minutes after Start.
+ * So the offset between the two is measured once, when the server's answer
+ * arrives - the start plus what it says it has measured is its own now - and
+ * the wall clock does the rest, which keeps counting through a laptop's sleep
+ * where a monotonic clock may not.
  */
 function renderTimer() {
   const card = $('#timer-card');
@@ -11596,9 +11600,10 @@ function renderTimer() {
   }
 
   const started = new Date(runningTimer.startedAt).getTime();
+  const offset = runningTimer.clockOffset ?? 0;
 
   const paint = () => {
-    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    const seconds = Math.max(0, Math.floor((Date.now() + offset - started) / 1000));
     const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
     const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
     const ss = String(seconds % 60).padStart(2, '0');
@@ -11615,7 +11620,15 @@ async function loadTimer() {
   if (!can('timesheets:write:own')) return;
 
   const state = await api('/me/timer');
-  runningTimer = state.running ? state : null;
+
+  runningTimer = state.running
+    ? {
+      ...state,
+      // How far the server's clock is ahead of this device's: see renderTimer.
+      clockOffset: new Date(state.startedAt).getTime() + (state.elapsedHours ?? 0) * 3600000
+        - Date.now(),
+    }
+    : null;
 
   // The project it was started with, so stopping books what was chosen - the
   // select is disabled while it runs, and this is what it shows.
