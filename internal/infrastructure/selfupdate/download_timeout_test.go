@@ -41,13 +41,16 @@ import (
 // timeout, because a JSON document that has not arrived in ten seconds is not
 // coming; the download gets a bound on the server answering at all, and is
 // otherwise held by the caller's context and by maxDownload.
+//
+// Said here without a clock. The lookup client refuses the binary outright, so a
+// download that went through it fails whatever the machine's speed. The case used
+// to shrink that client's budget to a quarter of a second instead - and the same
+// client fetches the checksum, by design, so on a machine running the whole suite
+// a localhost call outlived the quarter second and the case failed, once in three
+// full runs, with the download never reached.
 func TestASlowDownloadIsNotCutOffLikeAStalledOne(t *testing.T) {
 	binary := workingProgram(t, "v9.9.9")
 	sum := sha256.Sum256(binary)
-
-	// Short, so the case runs in under a second while standing for the real
-	// arithmetic: a body that takes longer to arrive than the lookup's budget.
-	const lookupBudget = 250 * time.Millisecond
 
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "SHA256SUMS") {
@@ -57,18 +60,18 @@ func TestASlowDownloadIsNotCutOffLikeAStalledOne(t *testing.T) {
 		}
 
 		// Steadily, in six pieces, never stalling - a connection that is simply
-		// not fast. The whole body takes about twice the lookup budget.
-		writeSlowly(w, binary, 6, lookupBudget/3)
+		// not fast.
+		writeSlowly(w, binary, 6, 80*time.Millisecond)
 	}))
 
 	defer feed.Close()
 
 	source := New(feed.URL, "")
 
-	// The lookup client as production has it, only with its budget shrunk to
-	// something a test can wait for. Before the fix this was also the download's
-	// client, and that is the whole of the defect.
-	source.Client = &http.Client{Timeout: lookupBudget}
+	// The lookup client as production has it, made to refuse the binary. Before
+	// the fix this was also the download's client, and that is the whole of the
+	// defect.
+	source.Client.Transport = refusingAsset{name: assetName("v9.9.9")}
 
 	self := filepath.Join(tempdir.New(t), "program"+exeSuffix())
 	if err := os.WriteFile(self, []byte("the version now running"), 0o755); err != nil {
@@ -77,7 +80,7 @@ func TestASlowDownloadIsNotCutOffLikeAStalledOne(t *testing.T) {
 
 	err := source.InstallOver(t.Context(), releaseOn(feed.URL), self)
 	if err != nil {
-		t.Fatalf("a download slower than the lookup budget was refused: %v", err)
+		t.Fatalf("a slow download was refused: %v", err)
 	}
 
 	installed, readErr := os.ReadFile(self)
@@ -177,6 +180,18 @@ func TestTheReleaseLookupStillGivesUp(t *testing.T) {
 }
 
 // writeSlowly sends body in pieces, pausing between them.
+// refusingAsset passes every request on but the one for the release's binary,
+// which it refuses: a lookup client that cannot carry the download.
+type refusingAsset struct{ name string }
+
+func (r refusingAsset) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(req.URL.Path, r.name) {
+		return nil, errors.New("the lookup client was asked for the binary")
+	}
+
+	return http.DefaultTransport.RoundTrip(req)
+}
+
 func writeSlowly(w http.ResponseWriter, body []byte, pieces int, pause time.Duration) {
 	w.Header().Set("Content-Length", fmt.Sprint(len(body)))
 
