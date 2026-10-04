@@ -4519,7 +4519,12 @@ async function loadMe() {
   applyAccountTheme();
   applyPermissionVisibility();
 
-  renderTOTPState();
+  // Not over an enrolment under way. The account is not enrolled until its first
+  // code is confirmed, so drawn from it the card went back to "not enabled" -
+  // taking the QR code somebody was scanning and the field for its first code -
+  // on every reload, which a saved card or a change of language is. Leaving the
+  // screen and signing out close it, on purpose.
+  if ($('#totp-setup').hidden) renderTOTPState();
 }
 
 async function loadUsers() {
@@ -7658,7 +7663,13 @@ function wireTOTP() {
     const code = $('#totp-code').value.trim();
     mutate(() => api('/me/totp', { method: 'PUT', body: JSON.stringify({ code }) }),
       t('totp.enabled', 'Two-factor authentication enabled'),
-      async () => { $('#totp-code').value = ''; await refreshAll(); });
+      async () => {
+        $('#totp-code').value = '';
+        await refreshAll();
+
+        // Finished, so drawn from the account now - which the reload left alone.
+        renderTOTPState();
+      });
   });
 
   $('#totp-disable').addEventListener('click', () => {
