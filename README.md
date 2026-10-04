@@ -12,7 +12,7 @@ Built on [GoFr](https://gofr.dev), structured after [gogs](https://github.com/go
 ```bash
 task dev DB=sqlite   # build and start on a local file, nothing else needed
 # or directly:
-go run ./cmd/main.go
+go run ./cmd
 ```
 
 Then open <http://localhost:8000>. The web interface is served by the same
