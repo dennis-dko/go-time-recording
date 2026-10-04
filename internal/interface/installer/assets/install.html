@@ -70,7 +70,7 @@
       padding: 9px 16px;
     }
     button.secondary { background: transparent; border-color: var(--border); color: var(--text); }
-    button:disabled { cursor: not-allowed; opacity: .55; }
+    button[aria-disabled="true"] { cursor: not-allowed; opacity: .55; }
     .note { border-left: 3px solid var(--border); font-size: 13px; margin: 14px 0 0; padding: 2px 0 2px 12px; }
     .note.bad { border-color: var(--danger); color: var(--danger); }
     .note.good { border-color: var(--ok); color: var(--ok); }
@@ -141,7 +141,12 @@
       <button type="submit" id="save" data-i18n="action.save">Save and start</button>
     </div>
 
-    <p class="note" id="note" hidden></p>
+    <!-- A live region that is always there, so what appears in it is read out:
+         one that is itself hidden and shown with the text in the same moment is
+         read by some screen readers and skipped by others. -->
+    <div role="status" aria-live="polite">
+      <p class="note" id="note" hidden></p>
+    </div>
   </form>
 
   <p class="muted" id="footer"></p>
@@ -411,9 +416,22 @@
       + 'the application.'), 'good');
   }
 
+  /**
+   * Whether a press is being answered, which turns the next one away.
+   *
+   * Said with aria-disabled and kept here rather than with disabled. A focused
+   * button that becomes disabled loses the focus to the page, so somebody who
+   * pressed "Test connection" from the keyboard started again at the top of the
+   * page with the next Tab, and a screen reader had nothing left to read from.
+   */
+  let working = false;
+
   function busy(on) {
-    $('test').disabled = on;
-    $('save').disabled = on;
+    working = on;
+
+    for (const button of [$('test'), $('save')]) {
+      button.setAttribute('aria-disabled', String(on));
+    }
   }
 
   // Every password field gets a button that reveals what was typed. Found by
@@ -484,6 +502,8 @@
   $('dialect').addEventListener('change', syncFields);
 
   $('test').addEventListener('click', async () => {
+    if (working) return;
+
     busy(true);
     say(t('msg.testing', 'Testing…'));
 
@@ -498,6 +518,9 @@
 
   $('form').addEventListener('submit', async (event) => {
     event.preventDefault();
+
+    if (working) return;
+
     busy(true);
     say(t('msg.saving', 'Saving…'));
 
