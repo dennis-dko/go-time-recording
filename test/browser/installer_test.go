@@ -4,12 +4,10 @@ package browser
 
 import (
 	"context"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	cdppage "github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 
 	"github.com/dennis-dko/go-time-recording/test/harness"
@@ -31,65 +29,22 @@ func TestTheInstallerRefusesInTheReadersLanguage(t *testing.T) {
 
 	app := harness.StartUnconfigured(t)
 
-	opts := launch("de-DE")
-
-	// --lang is not enough on its own. It sets what Chrome asks servers for, and
-	// on a machine that has the locale it also moves navigator.languages - but the
-	// container CI runs has no German locale data, so the flag was accepted and
-	// the page still saw an English browser. It passed here and failed there,
-	// which is the least useful way for a test to be wrong.
-	//
-	// So the one thing this page reads is stated outright, before its own script
-	// runs. That is also closer to what is being checked: not whether Chrome can
-	// be talked into German, but whether the page does the right thing when the
-	// browser asks for it.
-	speakGerman := chromedp.ActionFunc(func(ctx context.Context) error {
-		_, err := cdppage.AddScriptToEvaluateOnNewDocument(
-			`Object.defineProperty(navigator, 'languages',
-				{ get: () => ['de-DE', 'de'], configurable: true });
-			 Object.defineProperty(navigator, 'language',
-				{ get: () => 'de-DE', configurable: true });`).Do(ctx)
-
-		return err
-	})
-
-	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
-	defer cancelAlloc()
-
-	ctx, cancel := chromedp.NewContext(alloc)
-	defer cancel()
-
-	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
-	defer cancelTimeout()
+	ctx, done := installerInGerman(t, app)
+	defer done()
 
 	var wrongToken, emptyName string
 
 	if err := chromedp.Run(ctx,
-		speakGerman,
-		chromedp.Navigate(app.BaseURL()),
-		chromedp.WaitVisible("#heading", chromedp.ByID),
-
 		// A wrong token first: the refusal somebody meets most.
 		chromedp.SendKeys("#token", "not-the-token", chromedp.ByID),
-		chromedp.Click("#test", chromedp.ByID),
-		chromedp.Sleep(1500*time.Millisecond),
-		chromedp.Text("#note", &wrongToken, chromedp.ByID),
+		whatTheInstallerSays("#test", &wrongToken),
 
 		// Then the real token, read out of the process's own log, and an empty
 		// database name - which is the field refusal.
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			m := regexp.MustCompile(`setup token: ([0-9a-f]+)`).FindStringSubmatch(app.Log())
-			if m == nil {
-				t.Fatalf("no setup token in the log: %.400s", app.Log())
-			}
-
-			return chromedp.Evaluate(
-				`document.querySelector('#token').value = '`+m[1]+`';`+
-					`document.querySelector('#name').value = ''`, nil).Do(ctx)
-		}),
-		chromedp.Click("#test", chromedp.ByID),
-		chromedp.Sleep(2500*time.Millisecond),
-		chromedp.Text("#note", &emptyName, chromedp.ByID),
+		chromedp.Evaluate(
+			`document.querySelector('#token').value = '`+setupToken(t, app)+`';`+
+				`document.querySelector('#name').value = ''`, nil),
+		whatTheInstallerSays("#test", &emptyName),
 	); err != nil {
 		t.Fatalf("driving the installer: %v", err)
 	}
@@ -144,18 +99,11 @@ func TestAnsweringTheInstallerLeavesTheBrowserSignedIn(t *testing.T) {
 		chromedp.WaitVisible("#heading", chromedp.ByID),
 
 		// The token out of the process's own log, which is what an operator does.
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			m := regexp.MustCompile(`setup token: ([0-9a-f]+)`).FindStringSubmatch(app.Log())
-			if m == nil {
-				t.Fatalf("no setup token in the log: %.400s", app.Log())
-			}
-
-			return chromedp.Evaluate(
-				`document.querySelector('#token').value = '`+m[1]+`';`+
-					`document.querySelector('#dialect').value = 'sqlite';`+
-					`document.querySelector('#dialect').dispatchEvent(new Event('change'));`+
-					`document.querySelector('#name').value = 'chosen'`, nil).Do(ctx)
-		}),
+		chromedp.Evaluate(
+			`document.querySelector('#token').value = '`+setupToken(t, app)+`';`+
+				`document.querySelector('#dialect').value = 'sqlite';`+
+				`document.querySelector('#dialect').dispatchEvent(new Event('change'));`+
+				`document.querySelector('#name').value = 'chosen'`, nil),
 
 		chromedp.Click("#save", chromedp.ByID),
 
