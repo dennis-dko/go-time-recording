@@ -1102,6 +1102,13 @@ environment — a second place to write it would only disagree with the first. O
 two variables exist here: `LDAP_SYNC_SCHEDULE` (empty, so no scheduled run) and
 `LDAP_SYNC_MAX_DELETE_RATIO` (`0.5`).
 
+A schedule runs on the server's clock, not in the instance timezone the
+*Settings* screen administers. The shipped container sets no `TZ`, so there it is
+UTC: `0 4 * * *` typed in Los Angeles for four in the morning runs at eight the
+evening before. Set `TZ` on the container to move the clock, or write the
+schedule in UTC. The nightly removal of expired sessions, at three, runs on the
+same clock.
+
 There is no directory service in `compose.yaml`, because this application is a
 directory client: you point it at the one you already run.
 `compose.ldap.yaml` runs an OpenLDAP beside it for the two installations where

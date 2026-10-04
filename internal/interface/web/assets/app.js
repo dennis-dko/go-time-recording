@@ -3973,7 +3973,7 @@ const TRANSLATIONS = {
     'sync.directoryUsers': 'Im Verzeichnis',
     'sync.entries': 'Zeiteinträge',
     'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
-    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut.',
+    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut. Er läuft nach der Uhr des Servers, im ausgelieferten Container also in UTC, und nicht in der Zeitzone der Installation.',
     'sync.scheduleStored': 'Gespeichert',
     'sync.scheduleManual': 'Läuft nur, wenn der Knopf unten gedrückt wird.',
     'sync.scheduleShort': 'Verzeichnis-Zeitplan',

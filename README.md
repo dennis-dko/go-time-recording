@@ -722,7 +722,9 @@ could be walked around by typing five numbers into the field between them.
 
 Set the schedule under *Settings*, or `LDAP_SYNC_SCHEDULE` for a starting value
 in the environment; it is empty by default because a run destroys recorded work
-irreversibly, and an automatic one destroys it with nobody looking. Use
+irreversibly, and an automatic one destroys it with nobody looking. It runs on
+the server's clock - UTC in the shipped container, which sets no `TZ` - and not
+in the instance timezone, so `0 4 * * *` is four in the morning in Greenwich. Use
 **Preview** first, which reports exactly which accounts would go and how many
 time entries each one would take with it. The real run asks for confirmation
 naming those numbers.
