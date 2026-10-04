@@ -1304,6 +1304,25 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/**
+ * Gives the focus back to a button that is turned off while its request runs.
+ *
+ * A focused button that becomes disabled loses the focus to the page, so
+ * somebody who pressed it from the keyboard was afterwards nowhere, and the next
+ * Tab began again at the top. Asked before the button is turned off; what it
+ * returns is called once the button is back, and leaves the focus alone if it
+ * has gone somewhere on purpose in the meantime.
+ */
+function holdFocus(button) {
+  const had = document.activeElement === button;
+
+  return () => {
+    if (had && (!document.activeElement || document.activeElement === document.body)) {
+      button.focus();
+    }
+  };
+}
+
 function statusBadge(status) {
   // The class keeps the raw status so the colour rules still match; only the
   // label is translated.
@@ -9402,6 +9421,8 @@ function wireUpdateCheck() {
     // export had to learn.
     button.style.minWidth = `${button.offsetWidth}px`;
 
+    const giveBack = holdFocus(button);
+
     button.disabled = true;
     button.textContent = t('update.checking', 'Looking …');
 
@@ -9423,6 +9444,7 @@ function wireUpdateCheck() {
       button.disabled = false;
       button.textContent = wasSaying;
       button.style.minWidth = '';
+      giveBack();
     }
   });
 }
@@ -11038,6 +11060,7 @@ async function exportEvaluation(button, name, build) {
   // exactly when the two are the same thing.
   const key = button.dataset.i18n;
   const english = button.dataset.i18nSource ?? button.textContent;
+  const giveBack = holdFocus(button);
 
   button.disabled = true;
 
@@ -11058,6 +11081,8 @@ async function exportEvaluation(button, name, build) {
 
     if (key) swapTheLabel(button, key, english);
     else button.textContent = english;
+
+    giveBack();
   }
 }
 
