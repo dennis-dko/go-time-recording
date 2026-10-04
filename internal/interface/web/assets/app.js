@@ -7432,6 +7432,20 @@ function forgetTheLastAccount() {
   // reached from the other side.
   calendarMonth = null;
 
+  // And the month it drew. The grid is not a table, so emptying the tables left
+  // its days and their projects, and an account that may not read entries never
+  // draws over them - loadCalendar returns first.
+  $('#calendar-days').replaceChildren();
+  $('#calendar-summary').textContent = '';
+  $('#calendar-day-card').hidden = true;
+
+  // And the greeting, which names whoever it greeted beside their day's hours
+  // and last entries, and is drawn again only when somebody arrives on it.
+  $('#welcome-title').textContent = '';
+  $('#welcome-today').textContent = '';
+  $('#welcome-recent-list').replaceChildren();
+  $('#welcome-recent').hidden = true;
+
   // And each form's own reset, which resetting the form does not reach: a hidden
   // field keeps its value through one, so a form left correcting a record kept
   // the record's id under its "edit" heading - and an administrator filling it in

@@ -222,3 +222,57 @@ func TestASignOutPutsEveryFormBackToCreating(t *testing.T) {
 		t.Errorf("after the sign-out %s", what)
 	}
 }
+
+// The month and the greeting an account was shown go with it as well.
+//
+// The calendar grid is not a table, so emptying the tables left the last
+// account's days in it, each with its projects and hours, under the month's
+// total - and a next account with no time of its own never draws over it,
+// because the calendar returns before drawing for anybody who may not read
+// entries. The greeting names whoever it greeted beside their day's hours and
+// last entries, and is drawn again only when somebody arrives on it. The
+// sign-out's own comment already counts rows left under a tab that is merely
+// hidden as rows handed to the next person.
+func TestASignOutTakesTheCalendarAndTheGreetingWithIt(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+	p.bookAnHourOn(t, "A project of somebody else's")
+
+	// Booked behind the screen's back, so the screen is asked to catch up.
+	p.run("look at the month", chromedp.Evaluate(`void refreshAll()`, nil),
+		p.click(`.tab[data-view="calendar"]`),
+		chromedp.WaitVisible("#calendar-days", chromedp.ByID))
+	p.waitForText("#calendar-days", "A project of somebody else's")
+
+	p.run("open the day", p.click(`#calendar-days .cal-projects`))
+	p.waitShown("#calendar-day-card")
+
+	p.run("be greeted", p.click("#app-title"))
+	p.waitForFilled("#welcome-title")
+
+	p.run("sign out", p.click("#logout"), chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	var left []string
+
+	p.run("read what the next account would find", chromedp.Evaluate(`(() => {
+		const left = [];
+
+		for (const holder of ['#calendar-days', '#welcome-recent-list']) {
+			if (document.querySelector(holder).childElementCount) left.push(holder + ' still holds what it drew');
+		}
+
+		for (const said of ['#calendar-summary', '#welcome-title', '#welcome-today']) {
+			if (document.querySelector(said).textContent.trim()) left.push(said + ' says ' + document.querySelector(said).textContent);
+		}
+
+		if (!document.querySelector('#calendar-day-card').hidden) left.push('the day card is open');
+
+		return left;
+	})()`, &left))
+
+	for _, what := range left {
+		t.Errorf("after the sign-out %s", what)
+	}
+}
