@@ -5784,6 +5784,11 @@ function fillSettingsForm() {
 async function loadTokens() {
   const tokens = (await api('/me/tokens'))?.items ?? [];
 
+  // A value on the card whose token is no longer listed - revoked here or in
+  // another tab - opens nothing, and the card went on saying "copy it now".
+  const shown = $('#token-secret')?.dataset.token;
+  if (shown && !tokens.some((token) => String(token.id) === shown)) forgetTheTokenValue();
+
   const rows = tokens.map((token) => el('tr', { class: token.expired ? 'empty' : '' },
     el('td', { text: token.name }),
     el('td', {}, el('code', { text: `${token.prefix}…` })),
@@ -5823,6 +5828,7 @@ function forgetTheTokenValue() {
   if (!panel) return;
 
   panel.hidden = true;
+  delete panel.dataset.token;
   $('#token-secret-value').textContent = '';
 }
 
@@ -5842,6 +5848,7 @@ function wireTokens() {
       // is what makes "until you navigate away" true rather than a description
       // of what was meant.
       $('#token-secret-value').textContent = created.secret;
+      $('#token-secret').dataset.token = String(created.id);
       $('#token-secret').hidden = false;
       e.target.reset();
       await loadTokens();

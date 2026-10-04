@@ -95,3 +95,33 @@ func TestATokenValueDoesNotOutliveTheScreen(t *testing.T) {
 			afterValue, afterShown)
 	}
 }
+
+// A token's value leaves the card when that token is revoked.
+//
+// The value is shown once, beside "Copy it now - this value is never shown
+// again", and it stayed there after the token it belonged to was revoked from
+// the list below: a card inviting somebody to copy a credential that no longer
+// opens anything. A token made by mistake and revoked at once is exactly that
+// sequence.
+func TestARevokedTokensValueLeavesTheCard(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	p.run("make a token", p.click(`.tab[data-view="settings"]`),
+		chromedp.WaitVisible("#form-token", chromedp.ByID),
+		chromedp.SendKeys(`#form-token input[name="name"]`, "Mistake", chromedp.ByQuery),
+		p.click(`#form-token button[type="submit"]`),
+		chromedp.WaitVisible("#token-secret", chromedp.ByID))
+	p.waitForText("#table-tokens tbody", "Mistake")
+
+	p.run("revoke it", p.click(`#table-tokens tbody button.danger`))
+	p.waitShown(".confirm-card")
+	p.run("confirm", p.click(".confirm-card button.confirm-proceed"))
+	p.waitForText("#table-tokens tbody", "No tokens yet")
+
+	if p.visible("#token-secret") || p.text("#token-secret-value") != "" {
+		t.Errorf("the revoked token's value is still on the card (shown=%v)", p.visible("#token-secret"))
+	}
+}
