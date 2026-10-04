@@ -413,6 +413,11 @@ type SyncPreview struct {
 		Timesheets int    `json:"timesheets"`
 	} `json:"candidates"`
 
+	// Deleted are the accounts a run removed; empty for a preview.
+	Deleted []struct {
+		Email string `json:"email"`
+	} `json:"deleted"`
+
 	Created []string `json:"created"`
 }
 

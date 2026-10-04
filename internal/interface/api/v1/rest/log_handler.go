@@ -51,6 +51,15 @@ type LogResponse struct {
 	// which on a follow-on poll is the same gap by another route.
 	Skipped uint64 `json:"skipped"`
 
+	// Epoch names the process these sequence numbers were counted by. The client
+	// sends it back with since, so a position counted by a process that has since
+	// been replaced is recognised rather than taken for one of this process's own.
+	Epoch string `json:"epoch"`
+
+	// Restarted says that is what happened: the answer starts at the beginning
+	// of this process's log, whatever since said.
+	Restarted bool `json:"restarted"`
+
 	// Levels is every level that can appear, so the interface offers exactly
 	// that set instead of a list copied by hand that drifts.
 	Levels []string `json:"levels"`
@@ -72,8 +81,9 @@ const defaultLogPage = 300
 // Query parameters:
 //
 //	since   only lines newer than this sequence number
+//	epoch   the process that number was counted by, as the last answer named it
 //	levels  comma-separated, e.g. WARN,ERROR; absent means every level
-//	search  case-insensitive substring of the message
+//	search  case-insensitive substring of the message, or a request's whole trace
 //	limit   how many lines at most, newest kept
 //
 // The whole process log is readable here, which is why it is behind the
@@ -96,12 +106,15 @@ func (h *LogHandler) Logs(c *gofr.Context) (any, error) {
 
 	result := h.sink.Query(logsink.Query{
 		Since:  uintParam(c, "since"),
+		Epoch:  strings.TrimSpace(c.Param("epoch")),
 		Levels: splitLevels(c.Param("levels")),
 		Search: c.Param("search"),
 		Limit:  pageLimit(c.Param("limit")),
 	})
 
 	response.LastSeq = result.LastSeq
+	response.Epoch = result.Epoch
+	response.Restarted = result.Restarted
 	response.Dropped = result.Dropped
 	response.Skipped = result.Skipped
 
