@@ -244,9 +244,16 @@ type prefillFields struct {
 	SSLMode string `json:"sslMode,omitempty"`
 }
 
-// state answers GET /install/state. Unauthenticated, and carries nothing worth
-// protecting: the application name and version are on the sign-in screen too,
-// and the page needs it before a token has been typed.
+// state answers GET /install/state. Unauthenticated, because the page needs it
+// before a token has been typed.
+//
+// The application's name and version are on the sign-in screen too. The prefill
+// is another matter: it names the database's host, its port, its name and the
+// account that opens it to anybody who can reach the port - never the password,
+// but the topology somebody intended. That is known and both manuals say so,
+// with the advice not to leave an installer reachable; it is written here as
+// well because this said the answer carried nothing worth protecting, which is
+// what a reader checking the route would have taken away.
 func (s *server) state(w http.ResponseWriter, _ *http.Request) {
 	response := stateResponse{
 		AppName: s.cfg.AppName,
@@ -274,12 +281,29 @@ func (s *server) test(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := appconfig.TestDatasource(r.Context(), ds); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeError(w, http.StatusBadRequest, probeFailure(err))
 
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// probeFailure is a connection that could not be opened, named so the page can
+// say that much in the reader's language, with what the driver said kept as the
+// thing the sentence carries.
+//
+// What a probe answers with is prose nobody can anticipate - "connection
+// refused", "password authentication failed" - and it is the commonest thing to
+// go wrong on this screen. Passed on bare, it was the one refusal a German
+// reader met in English from its first word. A refusal this application made
+// itself is left as it is: it already names its rule or its fields.
+func probeFailure(err error) error {
+	if detail, ours := apperror.Detail(err); ours && (detail.Code != "" || len(detail.Fields) > 0) {
+		return err
+	}
+
+	return apperror.Invalidf("%s", err.Error()).WithCode("probeFailed", err.Error())
 }
 
 func (s *server) save(w http.ResponseWriter, r *http.Request) {
@@ -292,7 +316,7 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	// work would leave the process unable to start and unable to serve the
 	// screen that could fix it - the one state this design must not reach.
 	if err := appconfig.TestDatasource(r.Context(), ds); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+		writeError(w, http.StatusBadRequest, probeFailure(err))
 
 		return
 	}
@@ -313,8 +337,12 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	if err != nil {
+		// Named for the page as well: a configuration directory this process may
+		// not write to is how a first start in a container goes wrong, and the
+		// operating system's words for it are all the detail there is.
 		writeError(w, http.StatusInternalServerError,
-			fmt.Errorf("cannot save the connection: %w", err))
+			apperror.Internal(fmt.Errorf("cannot save the connection: %w", err)).
+				WithCode("cannotSaveConnection", err.Error()))
 
 		return
 	}

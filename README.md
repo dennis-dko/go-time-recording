@@ -12,7 +12,7 @@ Built on [GoFr](https://gofr.dev), structured after [gogs](https://github.com/go
 ```bash
 task dev DB=sqlite   # build and start on a local file, nothing else needed
 # or directly:
-go run ./cmd/main.go
+go run ./cmd
 ```
 
 Then open <http://localhost:8000>. The web interface is served by the same
@@ -722,7 +722,9 @@ could be walked around by typing five numbers into the field between them.
 
 Set the schedule under *Settings*, or `LDAP_SYNC_SCHEDULE` for a starting value
 in the environment; it is empty by default because a run destroys recorded work
-irreversibly, and an automatic one destroys it with nobody looking. Use
+irreversibly, and an automatic one destroys it with nobody looking. It runs on
+the server's clock - UTC in the shipped container, which sets no `TZ` - and not
+in the instance timezone, so `0 4 * * *` is four in the morning in Greenwich. Use
 **Preview** first, which reports exactly which accounts would go and how many
 time entries each one would take with it. The real run asks for confirmation
 naming those numbers.
@@ -870,12 +872,12 @@ sentence assembled on the server in English.
 Four layers; dependencies point inwards only.
 
 ```text
-cmd/main.go                     Wiring (DI), migrations, cron, TLS
+cmd/                            Wiring (DI), migrations, TLS, the scheduled jobs
 │
 ├── internal/interface/         Entry points
 │   ├── api/v1/rest/              HTTP handlers, DTOs, authorization, status codes
 │   ├── web/                      Embedded web interface and its middleware
-│   └── worker/                   Scheduled background jobs
+│   └── installer/                First-run screen, served until a database is chosen
 │
 ├── internal/application/v1/    Use cases (CQRS-flavoured)
 │   ├── command/ query/           Input and output per use case
@@ -887,14 +889,23 @@ cmd/main.go                     Wiring (DI), migrations, cron, TLS
 │   ├── repository/               Repository interfaces
 │   └── service/                  Rules spanning several entities
 │
-└── internal/infrastructure/    Technical concerns
-    ├── config/                   Application settings and the datasource file
-    ├── directory/                LDAP client
-    ├── tlsserver/                Let's Encrypt termination
-    └── persistence/
-        ├── sqldb/                Repositories, dialect-agnostic
-        ├── memory/               In-memory repositories for tests
-        └── migrations/           Schema definition
+├── internal/infrastructure/    Technical concerns
+│   ├── config/                   Application settings and the datasource file
+│   ├── directory/                LDAP client
+│   ├── tlsserver/                Let's Encrypt termination
+│   ├── announce/                 What every open browser is told at once
+│   ├── selfupdate/ imageupdate/  Replacing the binary, or asking for a new image
+│   ├── restart/                  Restarting from the Settings screen
+│   ├── logsink/                  The recent log lines the Settings screen shows
+│   └── persistence/
+│       ├── sqldb/                Repositories, dialect-agnostic
+│       ├── memory/               In-memory repositories for tests
+│       └── migrations/           Schema definition
+│
+└── internal/support/           Leaf helpers that know nothing of the domain
+    ├── apperror/                 The closed catalogue of refusals
+    ├── security/                 Passwords, tokens and sealed secrets
+    └── document/ spreadsheet/ imaging/ qrcode/ hosting/
 ```
 
 Decisions that would otherwise be surprising:
@@ -1277,7 +1288,7 @@ running instance.
 | `GET/POST/PUT/DELETE` | `/api/v1/timesheets`, `/timesheets/{id}` | Time entries |
 | `GET/POST/DELETE` | `/api/v1/me/timer` | Own stopwatch: read, start, discard |
 | `POST` | `/api/v1/me/timer/stop` | Stop it and book the measured time |
-| `GET` | `/api/v1/me/statistics` | Own hours per day, per project and per state |
+| `GET` | `/api/v1/me/statistics` | Own hours per day and per project |
 | `POST` | `/api/v1/timesheets/{id}/transfer` | Move to another project |
 | `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP, metrics and tracing |
 
@@ -1291,8 +1302,8 @@ tracing works here with no span code anywhere.
 
 What it cannot know is whether the application is doing its job. A deployment can
 serve every request in milliseconds while nobody has been able to book time since
-the directory changed. So four more are recorded here, each because somebody
-would act on it:
+the directory changed. So these are recorded here as well, each because
+somebody would act on it:
 
 | Metric | Says |
 | --- | --- |

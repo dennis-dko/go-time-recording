@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -340,6 +341,18 @@ func (s *Sink) Query(q Query) Result {
 
 		result.Records = result.Records[len(result.Records)-q.Limit:]
 	}
+
+	// In the order the lines were written, which is not the order they reached
+	// the ring. GoFr writes ERROR and FATAL to standard error and the rest to
+	// standard output, two pipes read by two goroutines, and a line is numbered
+	// when its goroutine gets to the lock: measured, an error and the request
+	// line written straight after it came back the other way round about two
+	// times in five. Equal times, and the lines that carry no time of their own,
+	// keep the order they arrived in. A client follows on from LastSeq, not from
+	// the last record it was handed, so nothing is fetched twice for it.
+	slices.SortStableFunc(result.Records, func(a, b Record) int {
+		return a.Time.Compare(b.Time)
+	})
 
 	return result
 }

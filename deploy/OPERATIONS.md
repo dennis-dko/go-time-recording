@@ -280,6 +280,12 @@ in the interface is an explicit act, and it would be surprising for a stale
 variable to override it silently. It only ever supplies `DB_*`, and only the
 fields it actually holds.
 
+A value written so it cannot be used - a word where a number belongs, a
+duration without its unit, `yes` for a switch that takes `true` - falls back to
+its default, and the start says so in a warning beginning `configuration:`,
+naming the setting, what it held and what applies instead. That is the line to
+look for when a setting seems to have no effect.
+
 `APP_ENV` selects layer 2, and it has to come from the **real environment**: GoFr
 reads it before it opens any file, so setting `APP_ENV` inside `configs/.env`
 cannot select an overlay. With it unset, layer 2 falls back to
@@ -1103,6 +1109,13 @@ environment — a second place to write it would only disagree with the first. O
 two variables exist here: `LDAP_SYNC_SCHEDULE` (empty, so no scheduled run) and
 `LDAP_SYNC_MAX_DELETE_RATIO` (`0.5`).
 
+A schedule runs on the server's clock, not in the instance timezone the
+*Settings* screen administers. The shipped container sets no `TZ`, so there it is
+UTC: `0 4 * * *` typed in Los Angeles for four in the morning runs at eight the
+evening before. Set `TZ` on the container to move the clock, or write the
+schedule in UTC. The nightly removal of expired sessions, at three, runs on the
+same clock.
+
 There is no directory service in `compose.yaml`, because this application is a
 directory client: you point it at the one you already run.
 `compose.ldap.yaml` runs an OpenLDAP beside it for the two installations where
@@ -1179,7 +1192,13 @@ schedule, keep the log level at WARN or below - above it a run removes accounts
 and says nothing - and collect the log, because the viewer under *Settings*
 holds only the most recent lines in memory.
 
-Expired sessions are pruned at 03:00 daily. That schedule is not configurable.
+A stop ends a scheduled run where it stands, at its next call to the database,
+rather than letting it run on until the shutdown's deadline and closing the
+database under it - so the lines for whom it had removed are written before the
+process goes. What it had not reached yet, the next run does.
+
+Expired sessions are pruned at 03:00 daily, on the server's clock like the
+directory's schedule. That schedule is not configurable.
 
 ## Special modes
 
