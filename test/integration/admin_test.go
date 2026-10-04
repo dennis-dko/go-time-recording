@@ -65,6 +65,8 @@ type logPage struct {
 	} `json:"records"`
 	LastSeq   uint64   `json:"lastSeq"`
 	Dropped   uint64   `json:"dropped"`
+	Epoch     string   `json:"epoch"`
+	Restarted bool     `json:"restarted"`
 	Levels    []string `json:"levels"`
 	Available bool     `json:"available"`
 }

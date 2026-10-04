@@ -298,7 +298,7 @@ So the shipped `configs/.env` sets only what no screen can administer:
 | `TLS_*`, `HSTS_MAX_AGE` | same, and a wrong value makes the instance unreachable rather than merely wrong |
 | `DB_DIALECT`, `DB_NAME` | this is what decides whether there is a database to store a setting in |
 | `UI_ENABLED`, `AUTH_ENABLED` | either one switched off removes the screen that would switch it back |
-| `SHUTDOWN_GRACE_PERIOD` | read by the framework at start |
+| `SHUTDOWN_GRACE_PERIOD` | read at start - by the framework, and by the application's own wait for the requests under way when it stops |
 | `APP_NAME` | see below — it is not the instance title |
 
 Six values used to sit there **as well as** in Settings — the log level, the
@@ -620,13 +620,20 @@ list of pending changes with the running value beside the stored one:
 | --- | --- | --- |
 | the database connection | never swapped under live requests | yes — dialect, host, port, name, user and SSL mode |
 | the database password | same | yes, as the name of the setting alone |
-| log level | the logger's level is read at start | yes |
 | metrics off | the port is bound at start | yes |
 | trace exporter, collector URL, sample ratio | the exporter is built at start | yes |
 | the directory sync schedule | a cron job is registered at start | yes |
 
-Applying immediately: the operational limits, the whole directory connection, the
-instance timezone, branding and the logo, maintenance mode, users and roles.
+Applying immediately: the log level, the operational limits, the whole directory
+connection, the instance timezone, branding and the logo, maintenance mode, users
+and roles.
+
+The log level is on the same card as the metrics and tracing settings and is the
+one of them that does not wait: it is applied to every line on its way out of the
+process, so it holds from the next line written. The exception is a process whose
+output could not be captured when it started - it says so once on its console,
+`could not capture the log for the viewer` - where the level is the logger's own
+again, is read at start, and is listed as pending like the others.
 
 The connection is compared whole. It used to be compared by dialect alone, on
 the grounds that a changed host is a change to the same connection — which
@@ -1154,6 +1161,22 @@ says so, with the accounts it would now take listed for another look. A schedule
 run has nobody to ask and is held by the three guards above alone, and so is an
 API call that names no accounts (`POST /api/v1/settings/ldap/sync` without
 `?confirmed=`).
+
+**What a run removed is in the log, and nowhere else.** Each account is one line
+at WARN, whoever started the run and whichever way it ended:
+
+```
+directory sync removed "dave@example.com" with 12 time entries
+```
+
+The account and every row that named it are gone by then, so nothing in the
+database says there was ever such a person. A scheduled run leaves three more
+kinds of line, since it has no screen to show them on: one at WARN when a guard
+refused it, saying why; one at ERROR when it failed; and at INFO when it started
+and finished, and how many accounts it added. So on an installation that runs a
+schedule, keep the log level at WARN or below - above it a run removes accounts
+and says nothing - and collect the log, because the viewer under *Settings*
+holds only the most recent lines in memory.
 
 Expired sessions are pruned at 03:00 daily. That schedule is not configurable.
 
