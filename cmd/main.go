@@ -909,12 +909,9 @@ func main() {
 			// accounts and then lost the database used to log "directory sync
 			// failed" and nothing else - three people's recorded hours gone, and
 			// no line naming them. The deletions are logged from the report
-			// whichever way the run ended.
-			if report != nil {
-				for _, removed := range report.Deleted {
-					ctx.Logger.Warnf("directory sync removed %q (%d time entries)",
-						removed.Email, removed.Timesheets)
-				}
+			// whichever way the run ended, in the report's own words.
+			for _, removed := range report.Removals() {
+				ctx.Logger.Warn(removed)
 			}
 
 			if err != nil {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -58,6 +59,35 @@ type SyncReport struct {
 
 	// DryRun reports whether this was a preview.
 	DryRun bool
+}
+
+// Removals are the lines a caller writes for what a run deleted: one for each
+// account, naming it and how much went with it.
+//
+// Worded here because a caller's log is the only record of a deletion that
+// cannot be undone, and there are two callers. Each made the sentence for
+// itself - "(3 time entries)" from the schedule, "and its 3 time entry/entries"
+// from the button - for the same event, in the one place somebody searches to
+// find out what a run did. Empty for a run that never had a report, so a
+// caller that logs first and reads the error afterwards need not ask.
+func (r *SyncReport) Removals() []string {
+	if r == nil {
+		return nil
+	}
+
+	lines := make([]string, 0, len(r.Deleted))
+
+	for _, removed := range r.Deleted {
+		entries := "time entries"
+		if removed.Timesheets == 1 {
+			entries = "time entry"
+		}
+
+		lines = append(lines, fmt.Sprintf("directory sync removed %q with %d %s",
+			removed.Email, removed.Timesheets, entries))
+	}
+
+	return lines
 }
 
 // LDAPSyncService reconciles the local accounts with the directory.
