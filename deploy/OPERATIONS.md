@@ -1185,7 +1185,13 @@ schedule, keep the log level at WARN or below - above it a run removes accounts
 and says nothing - and collect the log, because the viewer under *Settings*
 holds only the most recent lines in memory.
 
-Expired sessions are pruned at 03:00 daily. That schedule is not configurable.
+A stop ends a scheduled run where it stands, at its next call to the database,
+rather than letting it run on until the shutdown's deadline and closing the
+database under it - so the lines for whom it had removed are written before the
+process goes. What it had not reached yet, the next run does.
+
+Expired sessions are pruned at 03:00 daily, on the server's clock like the
+directory's schedule. That schedule is not configurable.
 
 ## Special modes
 

@@ -732,12 +732,18 @@ func main() {
 	//
 	// A second listener for the same signals GoFr handles. signal.Notify supports
 	// that, and the alternative is reaching into how GoFr shuts down.
-	go func() {
-		stopping := make(chan os.Signal, 1)
-		signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
+	//
+	// It ends a scheduled directory run as well, for the same kind of reason: GoFr
+	// gives a job a context nothing cancels. See scheduledSync.
+	stopping, stopped := context.WithCancel(context.Background())
 
-		<-stopping
+	go func() {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+		<-signals
 		hub.Close()
+		stopped()
 	}()
 
 	// Outermost, because everything after it is written for traffic that arrived
@@ -902,34 +908,7 @@ func main() {
 	if cfg.LDAPSyncSchedule != "" {
 		app.Logger().Infof("directory reconciliation scheduled at %q", cfg.LDAPSyncSchedule)
 
-		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", func(ctx *gofr.Context) {
-			report, err := ldapSync.Sync(ctx)
-
-			// What it did, before whether it finished. A run that removed three
-			// accounts and then lost the database used to log "directory sync
-			// failed" and nothing else - three people's recorded hours gone, and
-			// no line naming them. The deletions are logged from the report
-			// whichever way the run ended, in the report's own words.
-			for _, removed := range report.Removals() {
-				ctx.Logger.Warn(removed)
-			}
-
-			if err != nil {
-				ctx.Logger.Errorf("directory sync failed: %v", err)
-
-				return
-			}
-
-			if report.Aborted != "" {
-				ctx.Logger.Warnf("directory sync refused: %s", report.Aborted)
-
-				return
-			}
-
-			if len(report.Created) > 0 {
-				ctx.Logger.Infof("directory sync added %d account(s)", len(report.Created))
-			}
-		})
+		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", scheduledSync(stopping, ldapSync))
 	}
 
 	// The nightly sweep that moved stale open entries to submitted is gone with the
