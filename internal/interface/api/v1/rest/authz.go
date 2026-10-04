@@ -78,10 +78,10 @@ func (a *Authorizer) Principal(c *gofr.Context) (*service.Principal, error) {
 
 	principal, ok := principalFromContext(c.Request.Context())
 	if !ok || principal.User == nil {
-		// Not "not signed in" when the session presented could not be read: that
-		// answer sends the screen to the sign-in form, over a session that may be
-		// perfectly good.
-		if err, unread := c.Request.Context().Value(unreadSessionKey{}).(error); unread {
+		// Not "not signed in" when what was presented could not be checked: that
+		// answer sends the screen to the sign-in form over a session that may be
+		// perfectly good, and tells a script its token is invalid.
+		if err, unchecked := c.Request.Context().Value(uncheckedCallerKey{}).(error); unchecked {
 			return nil, toHTTPError(err)
 		}
 

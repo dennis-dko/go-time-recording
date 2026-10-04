@@ -22,9 +22,10 @@ const SessionCookieName = "gtr_session"
 // from another package.
 type sessionContextKey struct{}
 
-// unreadSessionKey carries why a session presented with a request could not be
-// checked, for Authorizer.Principal to answer with instead of "not signed in".
-type unreadSessionKey struct{}
+// uncheckedCallerKey carries why the session or token presented with a request
+// could not be checked, for Authorizer.Principal to answer with instead of "not
+// signed in".
+type uncheckedCallerKey struct{}
 
 // SessionMiddleware resolves the session cookie and puts the principal on the
 // request context, where the Authorizer picks it up.
@@ -49,7 +50,7 @@ func SessionMiddleware(sessions *service.SessionService) func(http.Handler) http
 				// rather than that nobody is signed in: the session may be fine,
 				// and the database only slow to answer.
 				if apperror.KindOf(err) == apperror.KindInternal {
-					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), unreadSessionKey{}, err)))
+					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), uncheckedCallerKey{}, err)))
 
 					return
 				}

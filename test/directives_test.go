@@ -52,9 +52,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		// watched here: the rule about them is a rule about where they sit, so a
 		// reference that has drifted off the declaration says nothing at all.
 		{
-			reference: "internal/application/v1/service/service.go:17",
+			reference: "internal/application/v1/service/service.go:19",
 			resolved:  "internal/application/v1/service/service.go",
-			line:      17,
+			line:      19,
 			contains:  "regexp.MustCompile(",
 		},
 		{

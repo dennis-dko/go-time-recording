@@ -125,7 +125,7 @@ func (s *APITokenService) Resolve(ctx context.Context, secret string) (*Principa
 
 	token, err := s.tokens.GetByHash(ctx, security.HashToken(secret))
 	if err != nil {
-		return nil, invalid
+		return nil, missingOr(err, invalid)
 	}
 
 	if token.Expired(time.Now()) {
@@ -134,7 +134,7 @@ func (s *APITokenService) Resolve(ctx context.Context, secret string) (*Principa
 
 	user, err := s.users.GetByID(ctx, token.UserID)
 	if err != nil {
-		return nil, invalid
+		return nil, missingOr(err, invalid)
 	}
 
 	// An account still on its initial password must not be usable through a

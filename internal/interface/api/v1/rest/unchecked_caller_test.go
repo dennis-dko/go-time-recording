@@ -99,3 +99,72 @@ func TestASessionThatCannotBeReadIsNeitherClearedNorCalledSignedOut(t *testing.T
 		})
 	}
 }
+
+// tokenStoreAnswering answers every lookup of a token with one error.
+type tokenStoreAnswering struct {
+	err error
+}
+
+func (s tokenStoreAnswering) GetByHash(context.Context, string) (*model.APIToken, error) {
+	return nil, s.err
+}
+
+func (tokenStoreAnswering) Save(_ context.Context, token *model.APIToken) (*model.APIToken, error) {
+	return token, nil
+}
+
+func (tokenStoreAnswering) ListForUser(context.Context, uint) ([]*model.APIToken, error) {
+	return nil, nil
+}
+
+func (tokenStoreAnswering) Delete(context.Context, uint, uint) error { return nil }
+
+func (tokenStoreAnswering) TouchLastUsed(context.Context, uint) error { return nil }
+
+// A token that could not be looked up is answered as that failure, not as a
+// token that is invalid - which sends whoever runs the script to replace a token
+// that works.
+func TestATokenThatCannotBeLookedUpIsNotCalledInvalid(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		lookup     error
+		wantStatus int
+	}{
+		{"unreadable", apperror.Internal(errors.New("the database went away")), http.StatusInternalServerError},
+		{"unknown", apperror.NotFound("token", "a-hash"), http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			users := memory.NewUserRepository()
+			roles := memory.NewRoleRepository(users)
+			tokens := service.NewAPITokenService(tokenStoreAnswering{err: tc.lookup}, users,
+				service.NewAuthService(users, roles))
+
+			status := 0
+
+			handler := APITokenMiddleware(tokens)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				_, err := NewAuthorizer(true).Principal(&gofr.Context{
+					Context: r.Context(),
+					Request: gofrHTTP.NewRequest(r),
+				})
+
+				var coded interface{ StatusCode() int }
+				if errors.As(err, &coded) {
+					status = coded.StatusCode()
+				}
+			}))
+
+			r := httptest.NewRequest(http.MethodGet, "/api/v1/timesheets", nil)
+			r.Header.Set(APITokenHeader, service.APITokenPrefix+"something")
+
+			handler.ServeHTTP(httptest.NewRecorder(), r)
+
+			if status != tc.wantStatus {
+				t.Errorf("a handler asking for the caller was answered %d, want %d", status, tc.wantStatus)
+			}
+		})
+	}
+}
