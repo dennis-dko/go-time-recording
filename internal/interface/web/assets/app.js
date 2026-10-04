@@ -5525,6 +5525,11 @@ async function loadCalendar() {
 
   const entries = await everyTimesheet({ from: ISO_DAY(first), to: ISO_DAY(last) });
 
+  // Not drawn if the arrows have moved on while it was on its way. Two quick
+  // presses ask for two months at once, and the fuller one answers later: drawn
+  // anyway, it put the month left behind under arrows already past it.
+  if (calendarMonth !== first) return;
+
   const byDay = new Map();
   for (const entry of entries) {
     if (!byDay.has(entry.date)) byDay.set(entry.date, []);
