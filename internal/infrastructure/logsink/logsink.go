@@ -274,9 +274,16 @@ type Result struct {
 }
 
 // Query returns the matching records, oldest first.
+//
+// The lock is held for a copy of what is newer than Since, and the matching is
+// done once it is let go. The goroutines draining the process's output store each
+// line under it, and a writer waiting on a read lock holds back every reader
+// behind it as well - so while Query held it for its whole scan both stopped, the
+// pipe filled, and every write to standard output blocked. Measured, a search
+// over a ring of eight-kilobyte lines, which anybody who can reach the port can
+// fill, held it for 114 ms a poll.
 func (s *Sink) Query(q Query) Result {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	result := Result{LastSeq: s.lastSeq, Epoch: s.epoch}
 
@@ -296,13 +303,6 @@ func (s *Sink) Query(q Query) Result {
 		result.Restarted = true
 	}
 
-	wanted := make(map[string]bool, len(q.Levels))
-	for _, level := range q.Levels {
-		wanted[strings.ToUpper(strings.TrimSpace(level))] = true
-	}
-
-	search := strings.ToLower(strings.TrimSpace(q.Search))
-
 	// A client that asked for everything after a record the ring has already
 	// discarded is missing lines. Say so - and a client following on into a new
 	// process is owed every line of it, so there the count starts at none.
@@ -310,11 +310,18 @@ func (s *Sink) Query(q Query) Result {
 		result.Dropped = oldest - q.Since - 1
 	}
 
-	for _, r := range s.orderedLocked() {
-		if r.Seq <= q.Since {
-			continue
-		}
+	held := s.heldAfterLocked(q.Since)
 
+	s.mu.RUnlock()
+
+	wanted := make(map[string]bool, len(q.Levels))
+	for _, level := range q.Levels {
+		wanted[strings.ToUpper(strings.TrimSpace(level))] = true
+	}
+
+	search := strings.ToLower(strings.TrimSpace(q.Search))
+
+	for _, r := range held {
 		if len(wanted) > 0 && !wanted[r.Level] {
 			continue
 		}
@@ -357,15 +364,24 @@ func (s *Sink) Query(q Query) Result {
 	return result
 }
 
-// orderedLocked returns the held records oldest first.
-func (s *Sink) orderedLocked() []Record {
-	if !s.filled {
-		return s.ring[:s.next]
+// heldAfterLocked copies the held records newer than since, oldest first. A copy
+// and never a slice of the ring, because Query reads it after letting the lock
+// go, while Append goes on writing into the ring.
+func (s *Sink) heldAfterLocked(since uint64) []Record {
+	parts := [][]Record{s.ring[:s.next]}
+	if s.filled {
+		parts = [][]Record{s.ring[s.next:], s.ring[:s.next]}
 	}
 
-	out := make([]Record, 0, len(s.ring))
-	out = append(out, s.ring[s.next:]...)
-	out = append(out, s.ring[:s.next]...)
+	var out []Record
+
+	for _, part := range parts {
+		for _, r := range part {
+			if r.Seq > since {
+				out = append(out, r)
+			}
+		}
+	}
 
 	return out
 }
