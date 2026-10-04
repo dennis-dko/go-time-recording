@@ -596,7 +596,15 @@ func TestTheInstallerTranslatesItsOwnRefusals(t *testing.T) {
 		t.Fatalf("reading the installer page: %v", err)
 	}
 
-	codes := regexp.MustCompile(`WithCode\("([^"]+)"`).FindAllSubmatch(source, -1)
+	// And the refusals of the connection checks it calls, which reach its page
+	// the same way. Reading only installer.go missed them: the misreadings were
+	// added there, and nothing asked the page for a sentence.
+	checks, err := os.ReadFile(filepath.Join("..", "..", "infrastructure", "config", "datasource.go"))
+	if err != nil {
+		t.Fatalf("reading the connection checks: %v", err)
+	}
+
+	codes := regexp.MustCompile(`WithCode\("([^"]+)"`).FindAllSubmatch(append(source, checks...), -1)
 	if len(codes) == 0 {
 		t.Fatal("the installer sends no coded refusals; this test is reading nothing")
 	}
