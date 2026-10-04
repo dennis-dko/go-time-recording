@@ -130,6 +130,9 @@
         "responses": {
           "200": {
             "description": "Challenge"
+          },
+          "429": {
+            "description": "Too many attempts"
           }
         }
       },
