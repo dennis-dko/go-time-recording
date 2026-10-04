@@ -9,8 +9,8 @@ package restart
 // reason at all.
 //
 // That is the failure this whole package exists to avoid, so the button is not
-// offered here and the screen says why. The deployment target is a Linux
-// container; this is the developer's machine.
+// offered here and the screen says why. A release is built for Windows too, so
+// this is an installation's answer and not only a developer's.
 
 // Supported reports whether this process can replace itself.
 func Supported() bool { return false }

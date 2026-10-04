@@ -3,6 +3,7 @@ package rest
 import (
 	"strings"
 	"testing"
+	"unicode"
 
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 )
@@ -98,5 +99,24 @@ func TestAFileIsDescribedByItsName(t *testing.T) {
 
 	if summary != "sqlite gtr" {
 		t.Errorf("a file connection reads as %q", summary)
+	}
+}
+
+// The summary is shown on a screen in the reader's language and is made of the
+// connection's own values, so a word joining them is English on a German card -
+// "as", once. Nothing but punctuation may be left once the values are taken out.
+func TestTheConnectionSummaryIsMadeOfTheConnectionAlone(t *testing.T) {
+	ds := appconfig.Datasource{
+		Dialect: "postgres", Host: "db.internal", Port: "5433", Name: "hours", User: "keeper",
+		SSLMode: "require",
+	}
+
+	rest := connectionSummary(ds)
+	for _, value := range []string{ds.Dialect, ds.Host, ds.Port, ds.Name, ds.User, ds.SSLMode} {
+		rest = strings.Replace(rest, value, "", 1)
+	}
+
+	if strings.IndexFunc(rest, unicode.IsLetter) >= 0 {
+		t.Errorf("the summary %q carries words of its own: %q", connectionSummary(ds), strings.TrimSpace(rest))
 	}
 }

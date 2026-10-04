@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strconv"
@@ -106,6 +107,15 @@ type Config struct {
 	// RateLimit bounds sign-in and API-token requests per client per window.
 	RateLimit       int
 	RateLimitWindow time.Duration
+
+	// Unusable names every value that was set and could not be used as written,
+	// with the default used instead, for main to say at start.
+	Unusable []string
+
+	// ShutdownGrace is how long a stop waits for the requests under way. GoFr
+	// bounds its own shutdown with the same key; main waits as long again,
+	// because GoFr's Run returns before that shutdown has finished waiting.
+	ShutdownGrace time.Duration
 
 	// TrustedProxies are the addresses whose X-Forwarded-For the rate limiter
 	// may believe, as CIDR ranges or single addresses.
@@ -261,6 +271,10 @@ const (
 	defaultRateLimit       = 30
 	defaultRateLimitWindow = time.Minute
 
+	// defaultShutdownGrace is GoFr's own default for SHUTDOWN_GRACE_PERIOD, so an
+	// unset key means the same wait to both.
+	defaultShutdownGrace = 30 * time.Second
+
 	// defaultSyncMaxDeleteRatio stops at half: that many directory-backed
 	// accounts disappearing in one run is far more likely to be a broken filter
 	// than a real mass departure.
@@ -299,41 +313,43 @@ func splitList(raw string) []string {
 // Load reads the application settings, applying defaults that let the binary
 // run with no configuration at all.
 func Load(p Provider) Config {
-	return Config{
+	v := &values{p: p}
+
+	cfg := Config{
 		Dialect:     strings.ToLower(p.GetOrDefault("DB_DIALECT", defaultDialect)),
 		AppName:     p.GetOrDefault("APP_NAME", "Time Recording"),
-		UIEnabled:   boolOr(p.GetOrDefault("UI_ENABLED", "true"), true),
-		UpdateCheck: boolOr(p.GetOrDefault("UPDATE_CHECK", "true"), true),
+		UIEnabled:   v.boolean("UI_ENABLED", true),
+		UpdateCheck: v.boolean("UPDATE_CHECK", true),
 		UpdateFeed:  p.Get("UPDATE_FEED"),
 		UpdateToken: p.Get("UPDATE_TOKEN"),
 		SecretKey:   p.Get("SECRET_KEY"),
 		// Defaults to on: an instance that quietly serves everyone full
 		// administrative rights should be a deliberate choice, not an oversight.
-		AuthRequired:    boolOr(p.GetOrDefault("AUTH_ENABLED", "true"), true),
-		SessionLifetime: durationOr(p.GetOrDefault("SESSION_LIFETIME", ""), defaultSessionLifetime),
-		SessionIdle:     durationOr(p.GetOrDefault("SESSION_IDLE", ""), 0),
+		AuthRequired:    v.boolean("AUTH_ENABLED", true),
+		SessionLifetime: v.duration("SESSION_LIFETIME", defaultSessionLifetime),
+		SessionIdle:     v.duration("SESSION_IDLE", 0),
 
-		TLSEnabled:  boolOr(p.GetOrDefault("TLS_ENABLED", "false"), false),
+		TLSEnabled:  v.boolean("TLS_ENABLED", false),
 		TLSDomains:  splitList(p.Get("TLS_DOMAINS")),
 		TLSCertFile: p.Get("TLS_CERT_FILE"),
 		TLSKeyFile:  p.Get("TLS_KEY_FILE"),
 		TLSEmail:    p.Get("TLS_EMAIL"),
 		TLSCacheDir: p.GetOrDefault("TLS_CACHE_DIR", defaultTLSCacheDir),
-		TLSPort:     intOr(p.GetOrDefault("TLS_PORT", ""), defaultTLSPort),
-		HTTPPort:    intOr(p.GetOrDefault("TLS_REDIRECT_PORT", ""), defaultHTTPRedirectPort),
-		TLSStaging:  boolOr(p.GetOrDefault("TLS_STAGING", "false"), false),
+		TLSPort:     v.whole("TLS_PORT", defaultTLSPort),
+		HTTPPort:    v.whole("TLS_REDIRECT_PORT", defaultHTTPRedirectPort),
+		TLSStaging:  v.boolean("TLS_STAGING", false),
 
-		HSTSMaxAge:      durationOr(p.GetOrDefault("HSTS_MAX_AGE", ""), defaultHSTSMaxAge),
-		RateLimit:       intOr(p.GetOrDefault("RATE_LIMIT", ""), defaultRateLimit),
-		RateLimitWindow: durationOr(p.GetOrDefault("RATE_LIMIT_WINDOW", ""), defaultRateLimitWindow),
+		HSTSMaxAge:      v.duration("HSTS_MAX_AGE", defaultHSTSMaxAge),
+		RateLimit:       v.whole("RATE_LIMIT", defaultRateLimit),
+		RateLimitWindow: v.duration("RATE_LIMIT_WINDOW", defaultRateLimitWindow),
+		ShutdownGrace:   v.duration("SHUTDOWN_GRACE_PERIOD", defaultShutdownGrace),
 		TrustedProxies:  splitList(p.Get("TRUSTED_PROXIES")),
 
 		// Empty by default: a scheduled run deletes people and their hours,
 		// which must be a deliberate choice.
-		LDAPSyncSchedule: p.Get("LDAP_SYNC_SCHEDULE"),
-		LDAPSyncMaxDeleteRatio: ratioOr(p.GetOrDefault("LDAP_SYNC_MAX_DELETE_RATIO", ""),
-			defaultSyncMaxDeleteRatio),
-		MaxDailyHours: dailyHoursOr(p.GetOrDefault("MAX_DAILY_HOURS", ""), defaultMaxDailyHours),
+		LDAPSyncSchedule:       p.Get("LDAP_SYNC_SCHEDULE"),
+		LDAPSyncMaxDeleteRatio: v.share("LDAP_SYNC_MAX_DELETE_RATIO", defaultSyncMaxDeleteRatio),
+		MaxDailyHours:          v.dailyHours("MAX_DAILY_HOURS", defaultMaxDailyHours),
 
 		Telemetry: Telemetry{
 			LogLevel:      logLevel(p.Get("LOG_LEVEL")),
@@ -344,6 +360,97 @@ func Load(p Provider) Config {
 			TracerRatio: traceRatio(p.GetOrDefault("TRACER_RATIO", "1")),
 		},
 	}
+
+	cfg.Unusable = v.unusable
+
+	return cfg
+}
+
+// values reads the settings Load takes from the provider, and keeps a note of
+// every one that was set and could not be used as written.
+//
+// The defaults stay: an installation has to start whatever its environment
+// holds. What changed is that the substitution is said. A value quietly
+// replaced is a setting somebody chose that does not apply, and nothing told
+// them - TLS_ENABLED=yes is not a value ParseBool reads, so TLS was off, and the
+// start then said "TLS_ENABLED is false" to whoever had switched it on.
+//
+// The telemetry values below are not read through this: they mirror how GoFr
+// reads its own settings, and saying what GoFr does with them is GoFr's.
+type values struct {
+	p        Provider
+	unusable []string
+}
+
+// set is what key holds, trimmed; empty when it is not set at all.
+func (v *values) set(key string) string { return strings.TrimSpace(v.p.Get(key)) }
+
+// note records that key held raw and that used applies instead.
+func (v *values) note(key, raw string, used any) {
+	v.unusable = append(v.unusable,
+		fmt.Sprintf("%s is %q, which cannot be used here; %v applies instead", key, raw, used))
+}
+
+func (v *values) boolean(key string, fallback bool) bool {
+	raw := v.set(key)
+	if raw == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		v.note(key, raw, fallback)
+
+		return fallback
+	}
+
+	return parsed
+}
+
+func (v *values) whole(key string, fallback int) int {
+	raw := v.set(key)
+	used := intOr(raw, fallback)
+
+	if parsed, err := strconv.Atoi(raw); raw != "" && (err != nil || parsed != used) {
+		v.note(key, raw, used)
+	}
+
+	return used
+}
+
+func (v *values) duration(key string, fallback time.Duration) time.Duration {
+	raw := v.set(key)
+	used := durationOr(raw, fallback)
+
+	if parsed, err := time.ParseDuration(raw); raw != "" && (err != nil || parsed != used) {
+		v.note(key, raw, used)
+	}
+
+	return used
+}
+
+// share and dailyHours compare what was written with what is used, which also
+// catches NaN: it is never equal to anything, the default included.
+func (v *values) share(key string, fallback float64) float64 {
+	raw := v.set(key)
+	used := ratioOr(raw, fallback)
+
+	if parsed, err := strconv.ParseFloat(raw, 64); raw != "" && (err != nil || parsed != used) {
+		v.note(key, raw, used)
+	}
+
+	return used
+}
+
+func (v *values) dailyHours(key string, fallback float64) float64 {
+	raw := v.set(key)
+	used := dailyHoursOr(raw, fallback)
+
+	if parsed, err := strconv.ParseFloat(raw, 64); raw != "" && (err != nil || parsed != used) {
+		v.note(key, raw, used)
+	}
+
+	return used
 }
 
 // AuthEnabled reports whether sign-in and role checks are enforced.
@@ -354,15 +461,6 @@ func (c Config) AuthEnabled() bool {
 func durationOr(raw string, fallback time.Duration) time.Duration {
 	v, err := time.ParseDuration(strings.TrimSpace(raw))
 	if err != nil || v <= 0 {
-		return fallback
-	}
-
-	return v
-}
-
-func boolOr(raw string, fallback bool) bool {
-	v, err := strconv.ParseBool(strings.TrimSpace(raw))
-	if err != nil {
 		return fallback
 	}
 

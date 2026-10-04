@@ -3,6 +3,7 @@ package logsink
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,10 +16,11 @@ import (
 
 // Record is one captured log line.
 type Record struct {
-	// Seq is a monotonic identifier. It never repeats and never goes
-	// backwards, which is what lets a client ask for "everything after what I
-	// already have" without comparing timestamps - several lines routinely
-	// share a millisecond.
+	// Seq is a monotonic identifier. Within one process it never repeats and
+	// never goes backwards, which is what lets a client ask for "everything
+	// after what I already have" without comparing timestamps - several lines
+	// routinely share a millisecond. It starts again with the process, which is
+	// what Query.Epoch is for.
 	Seq uint64
 
 	Time    time.Time
@@ -60,6 +62,10 @@ type Sink struct {
 	// threshold is the least severe level that is kept and forwarded. Zero
 	// means everything, which is what an uncaptured or unconfigured sink does.
 	threshold int
+
+	// epoch names this sink among every one there has been, which is to say this
+	// process among its predecessors. See Query.Epoch.
+	epoch string
 }
 
 // severity ranks the levels GoFr emits. Anything not in here is unranked, and
@@ -70,18 +76,21 @@ var severity = map[string]int{
 
 // SetLevel decides what is written and kept from now on.
 //
-// This is what makes the log level administrable while the application runs,
-// and the reason it lives here rather than being handed to the framework: GoFr
-// has a ChangeLevel, and it is a bare assignment to a field every request
-// goroutine reads without synchronisation. A data race is not a reasonable
-// price for saving a restart, and the race detector would be right to say so.
+// This is what makes the log level administrable while the application runs.
+// It was built here rather than handed to the framework because GoFr's
+// ChangeLevel was a bare assignment to a field every request goroutine reads
+// without synchronisation, and a data race is not a reasonable price for
+// saving a restart. That was true up to v1.59.0. From v1.60.0 the field is
+// atomic - read in its logging/logger.go - so the race is no longer what
+// stands between the framework and the level.
 //
-// So the framework is left at its most verbose and the decision is made on the
-// way out, once, in the single goroutine that drains the pipe. What the console
-// receives is unchanged: the lines below the threshold never reach it. What it
-// costs is that the framework formats a line that is then dropped, which is a
-// few microseconds against a decision an administrator can now make while the
-// thing they are diagnosing is still happening.
+// The framework is left at its most verbose and the decision is made on the
+// way out, once, by whichever of the two goroutines drains the pipe the line
+// came down. What the console receives is unchanged: the lines below the
+// threshold never reach it. What it costs is that the framework formats a line
+// that is then dropped - measured on a fast desktop processor, under four
+// microseconds and fifteen allocations for the pipe and the parse alone, three
+// to six times a request at INFO, where every statement is such a line.
 //
 // An empty or unrecognised level means no filtering, which is the safe
 // direction: showing too much is a nuisance, and hiding a line somebody needed
@@ -159,8 +168,14 @@ func New(capacity int) *Sink {
 		capacity = DefaultCapacity
 	}
 
-	return &Sink{ring: make([]Record, capacity)}
+	// Random rather than the time it was made: two sinks made in the same tick of
+	// a coarse clock would answer to one name, which is the one thing a name here
+	// is for - measured on Windows, where two made in a row did.
+	return &Sink{ring: make([]Record, capacity), epoch: rand.Text()}
 }
+
+// Epoch names the sink a sequence number was counted by.
+func (s *Sink) Epoch() string { return s.epoch }
 
 // SetPassthroughRenderer changes what is written to the real console.
 //
@@ -214,12 +229,17 @@ type Query struct {
 	Levels []string
 
 	// Search keeps only records whose message contains this text, compared
-	// without regard to case.
+	// without regard to case - or whose trace is this text, the whole of it,
+	// which is how the lines of one request are found.
 	Search string
 
 	// Limit caps how many records come back, keeping the newest. Zero means no
 	// cap beyond the ring itself.
 	Limit int
+
+	// Epoch is the sink Since was counted by, as a previous Result named it.
+	// Empty means the client does not say.
+	Epoch string
 }
 
 // Result is a page of records plus where the log now ends.
@@ -241,6 +261,15 @@ type Result struct {
 	// burst between two polls was the gap Dropped exists to admit, only unsaid:
 	// the records were still in the ring and the client never asked again.
 	Skipped uint64
+
+	// Epoch names this sink, for the client to send back with Since.
+	Epoch string
+
+	// Restarted says the client was following another sink - a process that has
+	// since been replaced - and was answered from the beginning of this one.
+	// Dropped and Skipped then count from that beginning: a client that comes
+	// back late is following on into a log that may already have rolled over.
+	Restarted bool
 }
 
 // Query returns the matching records, oldest first.
@@ -248,7 +277,23 @@ func (s *Sink) Query(q Query) Result {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := Result{LastSeq: s.lastSeq}
+	result := Result{LastSeq: s.lastSeq, Epoch: s.epoch}
+
+	// A position another sink counted says nothing about this one's lines: the
+	// numbers start again with the process. Taken at its word, the first answer
+	// after a restart held nothing, moved the client on to where the new log
+	// ended, and the lines the process wrote while starting were never shown.
+	//
+	// Named by the client where it can, and also recognised by a number this
+	// sink has not reached - which catches a client that does not say, and
+	// cannot catch a position this sink has already passed, which is why the
+	// name exists.
+	following := q.Since > 0
+
+	if (q.Epoch != "" && q.Epoch != s.epoch) || q.Since > s.lastSeq {
+		q.Since = 0
+		result.Restarted = true
+	}
 
 	wanted := make(map[string]bool, len(q.Levels))
 	for _, level := range q.Levels {
@@ -258,8 +303,9 @@ func (s *Sink) Query(q Query) Result {
 	search := strings.ToLower(strings.TrimSpace(q.Search))
 
 	// A client that asked for everything after a record the ring has already
-	// discarded is missing lines. Say so.
-	if oldest := s.oldestSeqLocked(); q.Since > 0 && oldest > q.Since+1 {
+	// discarded is missing lines. Say so - and a client following on into a new
+	// process is owed every line of it, so there the count starts at none.
+	if oldest := s.oldestSeqLocked(); following && oldest > q.Since+1 {
 		result.Dropped = oldest - q.Since - 1
 	}
 
@@ -272,7 +318,12 @@ func (s *Sink) Query(q Query) Result {
 			continue
 		}
 
-		if search != "" && !strings.Contains(strings.ToLower(r.Message), search) {
+		// The text of the line, or the whole of the trace it was written under.
+		// Not a part of one: a trace is thirty-two hexadecimal digits the line
+		// does not show, so somebody searching for 500 would be handed one line
+		// in about a hundred and forty that says 500 nowhere.
+		if search != "" && !strings.Contains(strings.ToLower(r.Message), search) &&
+			!strings.EqualFold(r.TraceID, search) {
 			continue
 		}
 
@@ -283,7 +334,7 @@ func (s *Sink) Query(q Query) Result {
 	// the ones worth having. Counted when the client is following on from a
 	// line it holds, because then what is trimmed is a gap in what it shows.
 	if q.Limit > 0 && len(result.Records) > q.Limit {
-		if q.Since > 0 {
+		if following {
 			result.Skipped = uint64(len(result.Records) - q.Limit)
 		}
 
@@ -355,7 +406,7 @@ func (s *Sink) Capture() (restore func(), err error) {
 	return func() {
 		os.Stdout, os.Stderr = originalOut, originalErr
 
-		// Closing the write ends ends the scanners, which ends the goroutines.
+		// Closing the write ends ends the readers, which ends the goroutines.
 		_ = outWrite.Close()
 		_ = errWrite.Close()
 
@@ -542,9 +593,12 @@ func parse(line string) Record {
 		TraceID: e.TraceID,
 	}
 
-	// The request and query logs carry the trace inside the message rather than
-	// beside it. Lifting it out is what makes searching for one request's lines
-	// possible at all.
+	// The request log carries its trace inside the message rather than beside
+	// it, and so does what the framework writes for a handler that failed. The
+	// readable line made of the message no longer says it, so it is kept here,
+	// which is where Query looks when somebody searches for a request by its
+	// trace. A statement has none to lift: the framework logs those without the
+	// request they ran for.
 	if record.TraceID == "" {
 		record.TraceID = traceID
 	}
@@ -560,10 +614,14 @@ func parse(line string) Record {
 	return record
 }
 
-// structured is the union of the two message shapes GoFr logs as objects: the
-// request log from its HTTP middleware, and the query log from its SQL
+// structured is the union of the two object-shaped messages summarised here:
+// the request log from GoFr's HTTP middleware, and the query log from its SQL
 // datasource. Both are frequent enough that leaving them as raw JSON would make
 // a log viewer unreadable for the two things most worth reading.
+//
+// They are not the only objects it logs. A handler that failed is one, with its
+// trace inside; it keeps its JSON and still has the trace read out of it, which
+// is why TraceID is looked for whatever the shape.
 type structured struct {
 	// The request log.
 	Method       string `json:"method"`

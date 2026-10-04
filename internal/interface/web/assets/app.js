@@ -457,7 +457,7 @@ function describeRefusal(err) {
 
   if (err.code) {
     const translated = t(`err.${err.code}`, err.message ?? '');
-    if (translated) return fillIn(translated, err.values);
+    if (translated) return fillIn(translated, refusalValues(err.code, err.values));
   }
 
   if (err.message) return err.message;
@@ -521,6 +521,38 @@ function showRefusal(target, err) {
 
   const detail = refusalDetail(err);
   if (detail) target.append(detailDisclosure(detail));
+}
+
+/**
+ * Which values of which refusal the screen writes in words of its own.
+ *
+ * fillIn writes a number the way the tables beside it do, and a string as it
+ * arrives. Two kinds of string arrive in a form nobody on this screen reads: a day
+ * in the order the wire uses, and a status as the word it is stored under. So a
+ * German refusal said "am 2026-10-04" beside a form showing 04.10.2026, and "ist
+ * completed" beside a badge saying "abgeschlossen" - a word the reader could look
+ * for and find nowhere.
+ *
+ * Named by code and position, because on the wire the values are plain strings
+ * and stay so: an API client reads them too. Which of them is a day or a status is
+ * known here, beside the sentences, and in the call that sends it.
+ * TestARefusalWritesItsValuesTheWayTheScreenDoes reads every such call and fails
+ * on one this does not name.
+ */
+const REFUSAL_VALUES = {
+  archiveNeedsCompleted: { 0: statusName },
+  overDailyLimit: { 2: fmtDate },
+  projectClosedForBooking: { 1: statusName },
+};
+
+/** The values of one refusal, each written the way the rest of the screen writes it. */
+function refusalValues(code, values) {
+  const written = REFUSAL_VALUES[code];
+  if (!written || !Array.isArray(values)) return values;
+
+  return values.map((value, i) => (written[i] && typeof value === 'string'
+    ? written[i](value)
+    : value));
 }
 
 /**
@@ -1304,10 +1336,15 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/** What a project's status is called, in the reader's language. */
+function statusName(status) {
+  return t(`status.${status}`, status);
+}
+
 function statusBadge(status) {
   // The class keeps the raw status so the colour rules still match; only the
   // label is translated.
-  return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
+  return el('span', { class: `status status-${status}`, text: statusName(status) });
 }
 
 /**
@@ -3310,7 +3347,7 @@ const TRANSLATIONS = {
     'tour.limits.title': 'Grenzwerte und Laufzeiten',
     'tour.limits.text': 'Wie lange eine Sitzung gilt, wie viele Anfragen jemand stellen darf und mit welchen Werten ein neues Konto startet.',
     'tour.telemetry.title': 'Metriken und Tracing',
-    'tour.telemetry.text': 'Log-Level, der Metrik-Endpunkt und wohin Traces exportiert werden. Alle drei werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
+    'tour.telemetry.text': 'Die Protokollstufe, der Metrik-Endpunkt und wohin Traces exportiert werden. Die Stufe gilt sofort; die beiden anderen werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
     'tour.log.title': 'Das Protokoll, ohne Shell',
     'tour.log.text': 'Was dieser Prozess schreibt, filterbar nach Stufe. Die erste Anlaufstelle, wenn etwas abgelehnt wurde und der Grund nicht auf dem Bildschirm stand.',
     'tour.theme.title': 'Darstellung und Sprache',
@@ -3373,9 +3410,10 @@ const TRANSLATIONS = {
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und Ihre Container-Verwaltung startet einen neuen aus dem '
-      + 'Abbild - was sie nur tut, wenn sie dazu angewiesen wurde. Die mit dieser '
-      + 'Anwendung ausgelieferte Bereitstellung ist es.',
+      + 'hält ihn an, und Ihre Container-Verwaltung startet ihn wieder - was sie nur '
+      + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
+      + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
+      + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
     'restart.modeProcess': 'Die Anwendung ersetzt sich selbst, läuft also durchgehend.',
     'restart.now': 'Jetzt neu starten',
     'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
@@ -3807,13 +3845,14 @@ const TRANSLATIONS = {
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
     'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
+    'log.restarted': 'Die Anwendung wurde neu gestartet. Es folgt das Protokoll des neuen Prozesses.',
     'log.skipped': 'Es kamen mehr Zeilen, als eine Seite fasst; {0} wurden übersprungen, um die neuesten zu zeigen.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
-    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
+    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – eine Stufe darunter anzuhaken zeigt deshalb nichts. Die Stufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt. Nur im Speicher gehalten: nach einem Neustart ist das bis dahin Erfasste verloren, und eine Protokollsammlung ersetzt das hier nicht.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
-    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Das Log-Level wird unter „Protokollierung, Metriken und Tracing“ geändert und gilt ab dem nächsten Start.',
+    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
     'log.paused': 'Angehalten.',
     'log.resume': 'Fortsetzen',
     'log.search': 'Suche',
@@ -3972,7 +4011,7 @@ const TRANSLATIONS = {
     'sync.directoryUsers': 'Im Verzeichnis',
     'sync.entries': 'Zeiteinträge',
     'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
-    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut.',
+    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut. Er läuft nach der Uhr des Servers, im ausgelieferten Container also in UTC, und nicht in der Zeitzone der Installation.',
     'sync.scheduleStored': 'Gespeichert',
     'sync.scheduleManual': 'Läuft nur, wenn der Knopf unten gedrückt wird.',
     'sync.scheduleShort': 'Verzeichnis-Zeitplan',
@@ -7884,8 +7923,8 @@ const TOUR_STEPS = [
     permission: 'settings:manage',
     title: () => t('tour.telemetry.title', 'Metrics and tracing'),
     text: () => t('tour.telemetry.text',
-      'The log level, the metrics endpoint and where traces are exported to. All three are '
-      + 'read when the process starts, so they wait for the next one.'),
+      'The log level, the metrics endpoint and where traces are exported to. The level applies '
+      + 'at once; the other two are read when the process starts, so they wait for the next one.'),
   },
   {
     target: '#log-card',
@@ -9676,9 +9715,10 @@ async function loadRestart() {
   const description = state.mode === 'container'
     ? t('restart.modeContainer',
       'This installation runs in a container. The button stops it, and your '
-      + 'container manager starts a new one from the image - which it only does '
-      + 'if it was told to restart the container. The deployment shipped with '
-      + 'this application is.')
+      + 'container manager starts it again - which it only does under a restart '
+      + 'policy that also restarts a container that ended without an error: '
+      + 'always or unless-stopped, not on-failure. The deployment shipped with '
+      + 'this application sets one.')
     : t('restart.modeProcess',
       'The application replaces itself, so it is never not running.');
 
@@ -10668,7 +10708,7 @@ function rowProblem(row) {
   const sentence = t(`row.${row.problemCode}`, '')
     || t(`err.${row.problemCode}`, row.problem);
 
-  return fillIn(sentence, row.problemValues);
+  return fillIn(sentence, refusalValues(row.problemCode, row.problemValues));
 }
 
 /** Shows what the file would do, row by row. */
@@ -12141,6 +12181,13 @@ function wirePasskeys() {
  */
 const logView = {
   since: 0,
+
+  // Which process counted `since`, as its last answer named it, and sent back
+  // with it. The numbers start again with the process, so without this a viewer
+  // left open across a restart asked the new process for "everything after" a
+  // number only the old one had reached - and was shown none of what the new one
+  // wrote while it started.
+  epoch: '',
   timer: null,
   polling: false,
   paused: false,
@@ -12321,6 +12368,44 @@ function setLogStatus(text) {
   if (status) status.textContent = text;
 }
 
+/**
+ * What a page of the log has to admit about itself: where the output stops
+ * being one unbroken run of lines. Empty when it is one.
+ *
+ * The three are not alternatives, which is why this is not a chain of else. A
+ * viewer that was paused, or sat in a tab the browser put to sleep, comes back
+ * to a process started while it was away and follows on into a log that has
+ * been written for hours: it has begun again *and* its first lines have left
+ * the buffer *and* more are left than a page holds. Said one at a time, a
+ * restart was announced over a page that began three hundred lines in.
+ */
+function logGaps(page) {
+  const said = [];
+
+  if (page.restarted) {
+    // The lines above were another process's. The output is one column of
+    // lines and would otherwise run the old log into the new one as though
+    // nothing had happened between them.
+    said.push(t('log.restarted',
+      'The application has started again. What follows is the log of the new process.'));
+  }
+
+  if (page.dropped > 0) {
+    said.push(t('log.dropped',
+      'Older lines have been discarded from the buffer and cannot be recovered.'));
+  }
+
+  if (page.skipped > 0) {
+    // More arrived than one page holds - after a pause, or on a busy
+    // installation - and the newest were shown.
+    said.push(t('log.skipped',
+      'More lines arrived than one page holds, so {0} were passed over to show the newest.')
+      .replace('{0}', String(page.skipped)));
+  }
+
+  return said.join(' ');
+}
+
 async function pollLog() {
   if (!logViewerActive() || logView.polling) return;
 
@@ -12328,6 +12413,7 @@ async function pollLog() {
 
   try {
     const query = new URLSearchParams({ since: String(logView.since), limit: '500' });
+    if (logView.epoch) query.set('epoch', logView.epoch);
 
     const levels = selectedLogLevels();
     // Every level ticked is the same request as none, and sending none keeps
@@ -12350,22 +12436,15 @@ async function pollLog() {
     }
 
     logView.since = page.lastSeq ?? logView.since;
+    logView.epoch = page.epoch ?? logView.epoch;
 
     appendLogLines(page.records ?? []);
 
-    const warning = $('#log-warning');
-    if (page.dropped > 0) {
-      warning.textContent = t('log.dropped',
-        'Older lines have been discarded from the buffer and cannot be recovered.');
-      warning.hidden = false;
-    } else if (page.skipped > 0) {
-      // More arrived than one page holds - after a pause, or on a busy
-      // installation - and the newest were shown. The ones before them were
-      // passed over, which is a gap this output would otherwise present as
-      // continuity.
-      warning.textContent = t('log.skipped',
-        'More lines arrived than one page holds, so {0} were passed over to show the newest.')
-        .replace('{0}', String(page.skipped));
+    const gaps = logGaps(page);
+    if (gaps) {
+      const warning = $('#log-warning');
+
+      warning.textContent = gaps;
       warning.hidden = false;
     }
 
@@ -12426,11 +12505,11 @@ const LOG_LEVELS_BY_DETAIL = ['DEBUG', 'INFO', 'NOTICE', 'WARN', 'ERROR', 'FATAL
  * at INFO look like a filter that is broken rather than one that is working
  * exactly as intended and has nothing to show.
  *
- * The level itself is on the logging card, and it applies at the next start,
- * because the framework changes a logger's level by writing a field every
- * request goroutine reads without synchronisation. So this is a sentence rather
- * than a button: what somebody has to do next is two screens and a restart away,
- * and being told that beats waiting for lines that are not coming.
+ * The level itself is set on the logging card, and that card is the one place
+ * that says when a saved level applies - this one went on saying "at the next
+ * start" after that had stopped being true, beside a card saying "at once".
+ * So this is a sentence rather than a button, and it stops at naming the card:
+ * being told where the level is beats waiting for lines that are not coming.
  */
 function warnAboutLevelsTheProcessDoesNotWrite() {
   const warning = $('#log-level-warning');
@@ -12450,7 +12529,7 @@ function warnAboutLevelsTheProcessDoesNotWrite() {
   warning.textContent = quieter.length
     ? t('log.levelTooQuiet',
       'This installation is writing {0} and above, so {1} will stay empty. '
-      + 'Change the log level under Logging, metrics and tracing; it applies at the next start.')
+      + 'The log level is set under "Logging, metrics and tracing" above.')
       .replace('{0}', logView.runningLevel)
       .replace('{1}', quieter.join(', '))
     : '';

@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,10 +54,14 @@ func TestAServerRefusalIsShownInTheReadersLanguage(t *testing.T) {
 
 	// A booking over the ceiling: a refusal with four values in it, which is the case
 	// that would fall apart if the values were dropped.
+	var day string
+
 	p.run("book over the ceiling",
 		chromedp.Click(`.tab[data-view="timesheets"]`, chromedp.ByQuery),
 		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
 		chromedp.SetValue(`#form-timesheet input[name="durationHours"]`, "9", chromedp.ByQuery),
+		// The day the form holds, as it travels: the named box is the native one.
+		chromedp.Value(`#form-timesheet input[name="date"]`, &day, chromedp.ByQuery),
 		p.click(`#form-timesheet button[type="submit"]`),
 	)
 
@@ -89,6 +94,120 @@ func TestAServerRefusalIsShownInTheReadersLanguage(t *testing.T) {
 		if !strings.Contains(shown, figure) {
 			t.Errorf("the notice lost the figure %s: %q", figure, shown)
 		}
+	}
+
+	// And the day is written the way every other day on this screen is: in the
+	// reader's order, not in the order it travels in. The sentence was German and
+	// the day in it was "2026-10-04".
+	when, err := time.Parse(time.DateOnly, day)
+	if err != nil {
+		t.Fatalf("the form held %q as its day, which is not one: %v", day, err)
+	}
+
+	if german := when.Format("02.01.2006"); !strings.Contains(shown, german) {
+		t.Errorf("the notice does not write the day as %s, the way the form beside it "+
+			"does: %q", german, shown)
+	}
+
+	if strings.Contains(shown, day) {
+		t.Errorf("the notice writes the day as it travels, %s: %q", day, shown)
+	}
+}
+
+// A status in a refusal is called what the screen calls it.
+//
+// A project that no longer takes bookings is refused by its status, and the
+// sentence put the status in as the server stores it: "Projekt „Brücke“ ist
+// completed", on a screen whose status badge, filter and form all say
+// "abgeschlossen". A reader looking for the word the refusal used would find it
+// nowhere.
+//
+// Reached the ordinary way: the project is chosen in the booking form and
+// completed from somewhere else before the form is sent - a second tab, or the
+// owner finishing it on another screen.
+func TestARefusalNamesAStatusTheWayTheScreenDoes(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+	p.chooseLanguage("de")
+
+	const named = "Brücke"
+
+	var id float64
+
+	p.run("make a project", chromedp.Evaluate(`(async () => {
+		const token = document.cookie.split('; ')
+			.find((c) => c.startsWith('gtr_csrf=')).split('=')[1];
+		const res = await fetch('/api/v1/projects', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+			body: JSON.stringify({ name: '`+named+`', startDate: '2026-01-05' }),
+		});
+		return res.ok ? (await res.json()).data.id : -res.status;
+	})()`, &id, awaitPromise))
+
+	if id <= 0 {
+		t.Fatalf("the project could not be made: %v", id)
+	}
+
+	// Reloaded, because the lists were filled before the project existed.
+	p.run("choose it in the form",
+		chromedp.Reload(),
+		chromedp.WaitVisible(`html[data-loaded="yes"]`, chromedp.ByQuery),
+		chromedp.Click(`.tab[data-view="timesheets"]`, chromedp.ByQuery),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
+		chromedp.SetValue(`#form-timesheet select[name="projectId"]`, strconv.Itoa(int(id)),
+			chromedp.ByQuery),
+		chromedp.SetValue(`#form-timesheet input[name="durationHours"]`, "1", chromedp.ByQuery),
+	)
+
+	var completed int
+
+	p.run("complete it elsewhere", chromedp.Evaluate(`(async () => {
+		const token = document.cookie.split('; ')
+			.find((c) => c.startsWith('gtr_csrf=')).split('=')[1];
+		const res = await fetch('/api/v1/projects/`+strconv.Itoa(int(id))+`', {
+			method: 'PUT',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+			body: JSON.stringify({ status: 'completed' }),
+		});
+		return res.status;
+	})()`, &completed, awaitPromise))
+
+	if completed != 200 {
+		t.Fatalf("completing the project answered %d", completed)
+	}
+
+	p.run("clear the notices", chromedp.Evaluate(
+		`document.querySelector('#toast').replaceChildren()`, nil))
+
+	p.run("book on it", p.click(`#form-timesheet button[type="submit"]`))
+
+	shown := ""
+
+	deadline := time.Now().Add(waitPatience)
+	for time.Now().Before(deadline) {
+		if shown = p.text("#toast"); strings.Contains(shown, named) {
+			break
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if !strings.Contains(shown, named) {
+		t.Fatalf("booking on a completed project raised no notice naming it: %q\n\n"+
+			"application log:\n%s", shown, p.app.Log())
+	}
+
+	if !strings.Contains(shown, "abgeschlossen") {
+		t.Errorf("the notice does not call the status what the screen calls it: %q", shown)
+	}
+
+	if strings.Contains(shown, "completed") {
+		t.Errorf("the notice names the status the way it is stored: %q", shown)
 	}
 }
 
