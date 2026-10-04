@@ -14375,6 +14375,14 @@ function afterAFailedFirstLoad(err) {
   // one. Unless somebody signed in while this was running, which showLogin
   // decides - it is the same question wherever it is asked from.
   showLogin();
+
+  // And said, where what failed was not the session refused. The server answers
+  // a session it could not check - a database that did not answer - as a
+  // failure, keeping its cookie for when the database is back, and the form on
+  // its own reads as the session having ended.
+  if (err?.status !== 401 && !$('#login-screen').hidden) {
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

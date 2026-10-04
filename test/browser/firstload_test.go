@@ -101,3 +101,56 @@ func TestAFirstLoadRefusedForWantOfASessionLeavesASignInAlone(t *testing.T) {
 		t.Error("the sign-in screen went up over the session that was signed in underneath")
 	}
 }
+
+// A first load whose session could not be checked shows the sign-in form and
+// says why.
+//
+// The server answers a session it could not read - a database that did not
+// answer - as a failure rather than as nobody signed in, and keeps the cookie, so
+// a reload once the database is back carries on in the same session. The form is
+// all this page can show without /me, but on its own it reads as the session
+// having ended, which is the one thing that did not happen.
+func TestAFirstLoadWhoseSessionCouldNotBeCheckedSaysSo(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	failTheSession := chromedp.ActionFunc(func(ctx context.Context) error {
+		_, err := cdppage.AddScriptToEvaluateOnNewDocument(`(() => {
+			const real = window.fetch;
+			window.fetch = (url, options) =>
+				/\/api\/v1\/me(\?|$)/.test(String(url)) && (options?.method ?? 'GET') === 'GET'
+					? Promise.resolve(new Response(
+						JSON.stringify({ error: { message: 'the database did not answer', code: 'internal' } }),
+						{ status: 500, headers: { 'Content-Type': 'application/json' } }))
+					: real(url, options);
+		})()`).Do(ctx)
+
+		return err
+	})
+
+	p.run("load the page again with the session unreadable", failTheSession, chromedp.Reload())
+
+	var concluded bool
+
+	for deadline := time.Now().Add(waitPatience); !concluded && time.Now().Before(deadline); {
+		p.run("see whether the first load has concluded", chromedp.Evaluate(`(() => {
+			const screen = document.querySelector('#login-screen');
+			return !screen.hidden && !screen.classList.contains('checking');
+		})()`, &concluded))
+
+		if !concluded {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+
+	if !concluded {
+		t.Fatal("the first load never concluded")
+	}
+
+	// Asked once the form is up, which is the same task the failure is said in.
+	if toast := p.text(".toast-note.error .toast-text"); !strings.Contains(toast, "Could not load everything") {
+		t.Errorf("the sign-in form went up over a session that could not be checked, and nothing said so: %q", toast)
+	}
+}
