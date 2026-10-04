@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -181,10 +183,11 @@ func signedIn(entry *ldap.Entry, config model.LDAPConfig, login string) (*appser
 	}
 
 	return &appservice.ExternalUser{
-		ID:    stableID(entry, config.IDAttribute),
-		Email: strings.ToLower(email),
-		Name:  entry.GetAttributeValue(config.NameAttribute),
-		Role:  config.DefaultRole,
+		ID:       stableID(entry, config.IDAttribute),
+		Email:    strings.ToLower(email),
+		Name:     entry.GetAttributeValue(config.NameAttribute),
+		Role:     config.DefaultRole,
+		Disabled: switchedOff(entry, time.Now()),
 	}, nil
 }
 
@@ -318,6 +321,44 @@ func requestedAttributes(config model.LDAPConfig) []string {
 	return attributes
 }
 
+// signInAttributes is what a sign-in asks of the directory for one entry: what
+// becomes the account, and the two attributes by which Active Directory says the
+// account is switched off - asked for here, or no entry would ever carry them.
+func signInAttributes(config model.LDAPConfig) []string {
+	return append(requestedAttributes(config), adAccountControl, adAccountExpires)
+}
+
+// The two attributes Active Directory keeps an account's state in. Other
+// directories carry neither, and an entry without them is taken as on.
+const (
+	adAccountControl = "userAccountControl"
+	adAccountExpires = "accountExpires"
+)
+
+// adAccountDisabled is userAccountControl's ACCOUNTDISABLE flag.
+const adAccountDisabled = 0x2
+
+// adEpochOffset is the seconds from Active Directory's epoch, 1601-01-01 UTC, to
+// Unix's; accountExpires counts 100-nanosecond steps from the first.
+const adEpochOffset = 11_644_473_600
+
+// switchedOff reports whether Active Directory has switched the entry's account
+// off: its disabled flag, or an expiry already past. 0 and the largest value an
+// accountExpires can hold both mean it never expires.
+func switchedOff(entry *ldap.Entry, now time.Time) bool {
+	flags, err := strconv.ParseUint(entry.GetAttributeValue(adAccountControl), 10, 32)
+	if err == nil && flags&adAccountDisabled != 0 {
+		return true
+	}
+
+	expires, err := strconv.ParseInt(entry.GetAttributeValue(adAccountExpires), 10, 64)
+	if err != nil || expires <= 0 || expires == math.MaxInt64 {
+		return false
+	}
+
+	return now.After(time.Unix(expires/10_000_000-adEpochOffset, 0))
+}
+
 // TestConnection checks the settings without signing anyone in, so the
 // administrator gets a straight answer from the settings screen.
 func (l *LDAP) TestConnection(ctx context.Context, config model.LDAPConfig) error {
@@ -406,7 +447,7 @@ func findUser(conn *ldap.Conn, config model.LDAPConfig, login string) (*ldap.Ent
 	result, err := conn.Search(ldap.NewSearchRequest(
 		config.BaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
 		2, int(dialTimeout.Seconds()), false,
-		filter, requestedAttributes(config), nil))
+		filter, signInAttributes(config), nil))
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}

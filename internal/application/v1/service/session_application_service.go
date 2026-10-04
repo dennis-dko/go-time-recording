@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +46,12 @@ type ExternalUser struct {
 	// first sign-in and a synchronisation, have to read what was saved rather
 	// than what was true at start-up. Empty means the service's own default.
 	Role string
+
+	// Disabled says the directory has switched the account off - Active
+	// Directory's own flag, or a day it expired on. A password sign-in learns
+	// this from the bind failing; a sign-in proved by a ticket has only the entry
+	// to go on, and the ticket stays valid for hours after the account is off.
+	Disabled bool
 }
 
 // SessionService signs users in and out.
@@ -381,6 +385,15 @@ func (s *SessionService) resolveUser(ctx context.Context, email, password string
 // under the new address either and created a second account for the same
 // person - an empty one, which they were then signed in to.
 func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *ExternalUser) (*model.User, error) {
+	// Not for an account the directory has switched off. A password sign-in never
+	// arrives here with one - the bind refuses it - but a ticket issued before the
+	// account went off stays valid for hours, and the entry is the one thing left
+	// that can say so. As vague to the caller as any refused sign-in.
+	if directoryUser.Disabled {
+		return nil, apperror.Invalidf("the directory has switched the account for %s off",
+			directoryUser.Email).WithCode("invalidCredentials")
+	}
+
 	email := normalizeEmail(directoryUser.Email)
 
 	if directoryUser.ID != "" {
@@ -740,56 +753,4 @@ func (s *SessionService) DisableTOTP(ctx context.Context, userID uint, code stri
 	// Off, and the secret gone with it: a secret left behind would sign somebody
 	// in again the moment the flag was flipped back.
 	return s.users.SetTOTP(ctx, user.ID, "", false)
-}
-
-// SetLanguage stores the user's interface language.
-func (s *SessionService) SetLanguage(ctx context.Context, userID uint, language string) error {
-	if !model.IsSupportedLanguage(language) {
-		return apperror.InvalidFields("language")
-	}
-
-	return s.users.SetPreference(ctx, userID, repository.PreferenceLanguage, language)
-}
-
-// SetTheme stores the appearance this person reads in, or clears it.
-//
-// An empty value is the normal case rather than an omission: it means "follow
-// the time of day", which is what somebody who has never chosen gets and what
-// they go back to by choosing automatic.
-func (s *SessionService) SetTheme(ctx context.Context, userID uint, theme string) error {
-	if !model.IsSupportedTheme(theme) {
-		return apperror.InvalidFields("theme")
-	}
-
-	return s.users.SetPreference(ctx, userID, repository.PreferenceTheme, theme)
-}
-
-// SetTourSeen records whether this person has been shown the guided tour.
-//
-// Settable both ways: someone who wants to see it again should be able to ask,
-// rather than being told they have already had their chance.
-func (s *SessionService) SetTourSeen(ctx context.Context, userID uint, seen bool) error {
-	// One column, not the whole row: this is written the moment somebody signs in,
-	// while they are already doing something else. Writing the row back would take
-	// whatever that something else changed with it.
-	return s.users.SetPreference(ctx, userID, repository.PreferenceTourSeen,
-		strconv.FormatBool(seen))
-}
-
-// SetTimezone stores the user's own zone, or clears it so they follow the
-// instance setting again.
-//
-// An empty name is the normal case and is deliberately allowed: most people
-// should move with the instance rather than be pinned to whatever zone they
-// happened to be in when the account was made.
-func (s *SessionService) SetTimezone(ctx context.Context, userID uint, timezone string) error {
-	timezone = strings.TrimSpace(timezone)
-
-	if timezone != "" && !model.IsSupportedTimezone(timezone) {
-		return apperror.InvalidFields("timezone")
-	}
-
-	err := s.users.SetPreference(ctx, userID, repository.PreferenceTimezone, timezone)
-
-	return err
 }
