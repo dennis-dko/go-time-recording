@@ -219,8 +219,8 @@ func TestARequestLogBecomesAReadableLine(t *testing.T) {
 		}
 	}
 
-	// Without lifting the trace out of the message, searching for one request's
-	// lines would be impossible.
+	// The readable line no longer says which request it was, so the trace has to
+	// survive beside it: it is what a search for one request is matched against.
 	if record.TraceID != "deadbeef" {
 		t.Errorf("TraceID = %q, want it lifted out of the message", record.TraceID)
 	}
@@ -397,11 +397,9 @@ func TestTheLevelsOfferedAndTheLevelsEmittedAreTheSame(t *testing.T) {
 
 // The administered level decides what is written and kept, from the next line.
 //
-// This is what lets the log level be changed without a restart. The framework
-// decides what to emit from a field every request goroutine reads without
-// synchronisation, so changing that while requests are in flight is a data race;
-// instead the framework is left at its most verbose and the level is applied
-// here, in the one goroutine that drains the captured output.
+// This is what lets the log level be changed without a restart: the framework
+// is left at its most verbose and the level is applied here, where the captured
+// output is drained. SetLevel says why it was built that way.
 func TestTheLevelDecidesWhatIsKept(t *testing.T) {
 	s := New(100)
 	s.SetLevel("WARN")

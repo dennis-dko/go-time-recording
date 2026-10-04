@@ -3310,7 +3310,7 @@ const TRANSLATIONS = {
     'tour.limits.title': 'Grenzwerte und Laufzeiten',
     'tour.limits.text': 'Wie lange eine Sitzung gilt, wie viele Anfragen jemand stellen darf und mit welchen Werten ein neues Konto startet.',
     'tour.telemetry.title': 'Metriken und Tracing',
-    'tour.telemetry.text': 'Log-Level, der Metrik-Endpunkt und wohin Traces exportiert werden. Alle drei werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
+    'tour.telemetry.text': 'Die Protokollstufe, der Metrik-Endpunkt und wohin Traces exportiert werden. Die Stufe gilt sofort; die beiden anderen werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
     'tour.log.title': 'Das Protokoll, ohne Shell',
     'tour.log.text': 'Was dieser Prozess schreibt, filterbar nach Stufe. Die erste Anlaufstelle, wenn etwas abgelehnt wurde und der Grund nicht auf dem Bildschirm stand.',
     'tour.theme.title': 'Darstellung und Sprache',
@@ -3808,13 +3808,14 @@ const TRANSLATIONS = {
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
     'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
+    'log.restarted': 'Die Anwendung wurde neu gestartet. Es folgt das Protokoll des neuen Prozesses.',
     'log.skipped': 'Es kamen mehr Zeilen, als eine Seite fasst; {0} wurden übersprungen, um die neuesten zu zeigen.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
-    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
+    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – eine Stufe darunter anzuhaken zeigt deshalb nichts. Die Stufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt. Nur im Speicher gehalten: nach einem Neustart ist das bis dahin Erfasste verloren, und eine Protokollsammlung ersetzt das hier nicht.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
-    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Das Log-Level wird unter „Protokollierung, Metriken und Tracing“ geändert und gilt ab dem nächsten Start.',
+    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
     'log.paused': 'Angehalten.',
     'log.resume': 'Fortsetzen',
     'log.search': 'Suche',
@@ -7885,8 +7886,8 @@ const TOUR_STEPS = [
     permission: 'settings:manage',
     title: () => t('tour.telemetry.title', 'Metrics and tracing'),
     text: () => t('tour.telemetry.text',
-      'The log level, the metrics endpoint and where traces are exported to. All three are '
-      + 'read when the process starts, so they wait for the next one.'),
+      'The log level, the metrics endpoint and where traces are exported to. The level applies '
+      + 'at once; the other two are read when the process starts, so they wait for the next one.'),
   },
   {
     target: '#log-card',
@@ -12143,6 +12144,13 @@ function wirePasskeys() {
  */
 const logView = {
   since: 0,
+
+  // Which process counted `since`, as its last answer named it, and sent back
+  // with it. The numbers start again with the process, so without this a viewer
+  // left open across a restart asked the new process for "everything after" a
+  // number only the old one had reached - and was shown none of what the new one
+  // wrote while it started.
+  epoch: '',
   timer: null,
   polling: false,
   paused: false,
@@ -12323,6 +12331,44 @@ function setLogStatus(text) {
   if (status) status.textContent = text;
 }
 
+/**
+ * What a page of the log has to admit about itself: where the output stops
+ * being one unbroken run of lines. Empty when it is one.
+ *
+ * The three are not alternatives, which is why this is not a chain of else. A
+ * viewer that was paused, or sat in a tab the browser put to sleep, comes back
+ * to a process started while it was away and follows on into a log that has
+ * been written for hours: it has begun again *and* its first lines have left
+ * the buffer *and* more are left than a page holds. Said one at a time, a
+ * restart was announced over a page that began three hundred lines in.
+ */
+function logGaps(page) {
+  const said = [];
+
+  if (page.restarted) {
+    // The lines above were another process's. The output is one column of
+    // lines and would otherwise run the old log into the new one as though
+    // nothing had happened between them.
+    said.push(t('log.restarted',
+      'The application has started again. What follows is the log of the new process.'));
+  }
+
+  if (page.dropped > 0) {
+    said.push(t('log.dropped',
+      'Older lines have been discarded from the buffer and cannot be recovered.'));
+  }
+
+  if (page.skipped > 0) {
+    // More arrived than one page holds - after a pause, or on a busy
+    // installation - and the newest were shown.
+    said.push(t('log.skipped',
+      'More lines arrived than one page holds, so {0} were passed over to show the newest.')
+      .replace('{0}', String(page.skipped)));
+  }
+
+  return said.join(' ');
+}
+
 async function pollLog() {
   if (!logViewerActive() || logView.polling) return;
 
@@ -12330,6 +12376,7 @@ async function pollLog() {
 
   try {
     const query = new URLSearchParams({ since: String(logView.since), limit: '500' });
+    if (logView.epoch) query.set('epoch', logView.epoch);
 
     const levels = selectedLogLevels();
     // Every level ticked is the same request as none, and sending none keeps
@@ -12352,22 +12399,15 @@ async function pollLog() {
     }
 
     logView.since = page.lastSeq ?? logView.since;
+    logView.epoch = page.epoch ?? logView.epoch;
 
     appendLogLines(page.records ?? []);
 
-    const warning = $('#log-warning');
-    if (page.dropped > 0) {
-      warning.textContent = t('log.dropped',
-        'Older lines have been discarded from the buffer and cannot be recovered.');
-      warning.hidden = false;
-    } else if (page.skipped > 0) {
-      // More arrived than one page holds - after a pause, or on a busy
-      // installation - and the newest were shown. The ones before them were
-      // passed over, which is a gap this output would otherwise present as
-      // continuity.
-      warning.textContent = t('log.skipped',
-        'More lines arrived than one page holds, so {0} were passed over to show the newest.')
-        .replace('{0}', String(page.skipped));
+    const gaps = logGaps(page);
+    if (gaps) {
+      const warning = $('#log-warning');
+
+      warning.textContent = gaps;
       warning.hidden = false;
     }
 
@@ -12428,11 +12468,11 @@ const LOG_LEVELS_BY_DETAIL = ['DEBUG', 'INFO', 'NOTICE', 'WARN', 'ERROR', 'FATAL
  * at INFO look like a filter that is broken rather than one that is working
  * exactly as intended and has nothing to show.
  *
- * The level itself is on the logging card, and it applies at the next start,
- * because the framework changes a logger's level by writing a field every
- * request goroutine reads without synchronisation. So this is a sentence rather
- * than a button: what somebody has to do next is two screens and a restart away,
- * and being told that beats waiting for lines that are not coming.
+ * The level itself is set on the logging card, and that card is the one place
+ * that says when a saved level applies - this one went on saying "at the next
+ * start" after that had stopped being true, beside a card saying "at once".
+ * So this is a sentence rather than a button, and it stops at naming the card:
+ * being told where the level is beats waiting for lines that are not coming.
  */
 function warnAboutLevelsTheProcessDoesNotWrite() {
   const warning = $('#log-level-warning');
@@ -12452,7 +12492,7 @@ function warnAboutLevelsTheProcessDoesNotWrite() {
   warning.textContent = quieter.length
     ? t('log.levelTooQuiet',
       'This installation is writing {0} and above, so {1} will stay empty. '
-      + 'Change the log level under Logging, metrics and tracing; it applies at the next start.')
+      + 'The log level is set under "Logging, metrics and tracing" above.')
       .replace('{0}', logView.runningLevel)
       .replace('{1}', quieter.join(', '))
     : '';

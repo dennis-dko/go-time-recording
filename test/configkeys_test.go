@@ -47,14 +47,14 @@ var configDocs = []string{
 // notOurs lists the variables the example files set for somebody else to read,
 // so their absence from this code is correct rather than a gap.
 //
-// GOFR_TELEMETRY and SHUTDOWN_GRACE_PERIOD are GoFr's own and are consumed
-// inside the framework; GTR_VERSION is read by compose to choose the image tag
-// and never reaches the process. Each is named here rather than matched by
-// prefix, so a fourth one is a decision somebody writes down.
+// GOFR_TELEMETRY is GoFr's own and is consumed inside the framework;
+// GTR_VERSION is read by compose to choose the image tag and never reaches the
+// process. Each is named here rather than matched by prefix, so a third one is a
+// decision somebody writes down. SHUTDOWN_GRACE_PERIOD used to be here as GoFr's
+// alone, and is read by main as well now, to wait for what GoFr's Run does not.
 var notOurs = map[string]bool{
-	"GOFR_TELEMETRY":        true,
-	"GTR_VERSION":           true,
-	"SHUTDOWN_GRACE_PERIOD": true,
+	"GOFR_TELEMETRY": true,
+	"GTR_VERSION":    true,
 }
 
 // TestEveryConfigurationKeyIsDocumented checks the keys the code reads against

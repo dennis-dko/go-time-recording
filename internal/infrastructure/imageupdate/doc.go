@@ -17,7 +17,8 @@
 // where the reasoning is written for the person granting it.
 //
 // Absent by default. Without the overlay there is no directory, this reports
-// itself unavailable, and the version card offers what it offered before: the
-// binary swapped inside the running container, which lasts until the container
-// is recreated.
+// itself unavailable, and the version card of a container offers no button at
+// all: it names the command that replaces the image, and this overlay. Swapping
+// the binary inside the container is what it does not offer, because that lasts
+// only until the container is recreated.
 package imageupdate

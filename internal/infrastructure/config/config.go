@@ -107,6 +107,11 @@ type Config struct {
 	RateLimit       int
 	RateLimitWindow time.Duration
 
+	// ShutdownGrace is how long a stop waits for the requests under way. GoFr
+	// bounds its own shutdown with the same key; main waits as long again,
+	// because GoFr's Run returns before that shutdown has finished waiting.
+	ShutdownGrace time.Duration
+
 	// TrustedProxies are the addresses whose X-Forwarded-For the rate limiter
 	// may believe, as CIDR ranges or single addresses.
 	//
@@ -261,6 +266,10 @@ const (
 	defaultRateLimit       = 30
 	defaultRateLimitWindow = time.Minute
 
+	// defaultShutdownGrace is GoFr's own default for SHUTDOWN_GRACE_PERIOD, so an
+	// unset key means the same wait to both.
+	defaultShutdownGrace = 30 * time.Second
+
 	// defaultSyncMaxDeleteRatio stops at half: that many directory-backed
 	// accounts disappearing in one run is far more likely to be a broken filter
 	// than a real mass departure.
@@ -326,6 +335,7 @@ func Load(p Provider) Config {
 		HSTSMaxAge:      durationOr(p.GetOrDefault("HSTS_MAX_AGE", ""), defaultHSTSMaxAge),
 		RateLimit:       intOr(p.GetOrDefault("RATE_LIMIT", ""), defaultRateLimit),
 		RateLimitWindow: durationOr(p.GetOrDefault("RATE_LIMIT_WINDOW", ""), defaultRateLimitWindow),
+		ShutdownGrace:   durationOr(p.GetOrDefault("SHUTDOWN_GRACE_PERIOD", ""), defaultShutdownGrace),
 		TrustedProxies:  splitList(p.Get("TRUSTED_PROXIES")),
 
 		// Empty by default: a scheduled run deletes people and their hours,

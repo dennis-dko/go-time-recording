@@ -54,7 +54,13 @@ func swap(self, staged, version string) error {
 }
 
 // removeLeftovers clears the note that an update is waiting, now that this
-// process is the version it was waiting for.
+// process is the version it was waiting for, and a download the last process
+// did not live to finish.
+//
+// An install removes what it staged on every way out, and a process stopped
+// mid-download has none: the file stayed beside the binary, executable and
+// checked against nothing, until another install wrote over it. Nothing can be
+// downloading while the program starts, so it goes here.
 //
 // The previous binary is deliberately not among the things cleared. Starting is
 // not serving: a version can come up far enough to run this line and still fail
@@ -67,4 +73,5 @@ func swap(self, staged, version string) error {
 // holds on both platforms.
 func removeLeftovers(self string) {
 	_ = os.Remove(self + ".pending")
+	_ = os.Remove(self + ".new")
 }

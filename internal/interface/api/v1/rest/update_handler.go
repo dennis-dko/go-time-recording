@@ -452,7 +452,6 @@ func (h *UpdateHandler) afterAFailedInstall(err error, version string) error {
 	}
 
 	h.hub.Publish(announce.Cancelled, version)
-	h.hub.Forget()
 
 	return toHTTPError(apperror.Internal(err))
 }
@@ -568,7 +567,6 @@ func (h *UpdateHandler) askForTheImage(c *gofr.Context, version string) (any, er
 		}
 
 		h.hub.Publish(announce.Cancelled, version)
-		h.hub.Forget()
 
 		c.Logger.Errorf("could not ask for a new image: %v", err)
 
@@ -657,7 +655,6 @@ func (h *UpdateHandler) awaitTheImage(logger warner, version string) {
 		}
 
 		h.hub.Publish(announce.Cancelled, version)
-		h.hub.Forget()
 
 		return
 	}
