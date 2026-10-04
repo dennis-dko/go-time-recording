@@ -1004,6 +1004,10 @@ function startAnnouncements() {
   // click, or until the once-a-minute permission poll came round.
   announcements.addEventListener('error', () => { void checkWhetherStillWelcome(); });
 
+  // The first open is the connection this page asked for; every later one is the
+  // browser coming back after it dropped.
+  let opened = false;
+
   announcements.addEventListener('open', () => {
     // Back. If the last thing said was that a restart was coming, this is the
     // other side of it: the application is answering again, and it is a different
@@ -1016,13 +1020,42 @@ function startAnnouncements() {
     if (announced === 'update.restarting') {
       announced = null;
       window.location.reload();
+
+      return;
     }
+
+    if (!opened) {
+      opened = true;
+
+      return;
+    }
+
+    // What still stands is replayed to every connection, right after this, so
+    // what was said before is taken down and the replay puts back what is still
+    // true. A retraction is not replayed - the hub forgets the update it takes
+    // back - so a page away when an installation was abandoned kept "a new
+    // version is being installed" up for good.
+    forgetTheUpdateNotice();
+
+    // And the restart is asked of the process rather than of what this page
+    // heard: an announcement lives in the memory of the process that made it, so
+    // a page asleep through an update, or offline the moment the restart was
+    // said, came back to the new version with nothing to tell it.
+    void theVersionChanged().then((changed) => {
+      if (changed) window.location.reload();
+    });
   });
 }
 
 function stopAnnouncements() {
   if (announcements) announcements.close();
   announcements = null;
+
+  forgetTheUpdateNotice();
+}
+
+/** Takes down what was said about an update, and forgets that it was said. */
+function forgetTheUpdateNotice() {
   announced = null;
 
   stopRedrawing('announcement');
