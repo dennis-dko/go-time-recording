@@ -28,9 +28,12 @@ import (
 // key nothing derives is a knob that does nothing, which is worse - it is
 // followed, set, and then quietly ignored.
 
-// configRead matches a configuration lookup by name. The three-character floor
-// keeps ordinary Get calls with a short constant out of it.
-var configRead = regexp.MustCompile(`\.Get(?:OrDefault)?\("([A-Z][A-Z_0-9]{2,})"`)
+// configRead matches a configuration lookup by name: the provider's own Get and
+// GetOrDefault, and the readers config.Load takes its typed settings through,
+// which name the key the same way and say when its value cannot be used. The
+// three-character floor keeps ordinary Get calls with a short constant out of it.
+var configRead = regexp.MustCompile(
+	`\.(?:Get(?:OrDefault)?|boolean|whole|duration|share|dailyHours)\("([A-Z][A-Z_0-9]{2,})"`)
 
 // assignedKey matches a variable set in an env file.
 var assignedKey = regexp.MustCompile(`(?m)^([A-Z][A-Z_0-9]+)=`)
