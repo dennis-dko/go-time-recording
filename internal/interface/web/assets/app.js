@@ -9283,8 +9283,17 @@ function renderUpdate(state) {
  */
 async function settleAfterRestart(previous, done, patience, givenUp = async () => false) {
   const overlay = $('#restart-overlay');
+  const cameBack = await waitForRestart(previous, patience, givenUp);
 
-  if (await waitForRestart(previous, patience, givenUp)) {
+  // The installer explains itself, and nothing on this page applies to it any
+  // more: the overlay stays up until the page it asked for replaces this one.
+  if (cameBack === 'installer') {
+    window.location.reload();
+
+    return;
+  }
+
+  if (cameBack) {
     // A different build came back, so everything in this tab is last version's.
     //
     // This was the one tab that did not reload. Every other open one did: the
@@ -9830,6 +9839,8 @@ const IMAGE_UPDATE_TIMEOUT_MS = 5 * 60000;
  * milliseconds, and a poll that misses that gap would report success without
  * anything having happened. The start time changing is what proves it.
  *
+ * Answers 'installer' when that is what came back - see theInstallerAnswers.
+ *
  * givenUp ends the wait early, with the same answer as running out of patience;
  * see settleAfterRestart.
  */
@@ -9848,10 +9859,33 @@ async function waitForRestart(previousStartedAt, patience = RESTART_TIMEOUT_MS,
     } catch {
       // Expected while it is down: the connection is refused, or the session
       // has not been read back out of the database yet.
+      if (await theInstallerAnswers()) return 'installer';
     }
   }
 
   return false;
+}
+
+/**
+ * Whether the installer, rather than the application, answers on this address.
+ *
+ * What a restart comes back as when no connection is left: it reads the
+ * configuration afresh, so a connection file that was removed - which is how the
+ * manual brings the installer back - takes the installation to its installer.
+ * That answers every path with its page, so the wait read it as an application
+ * not up yet and said after a minute that it might still be starting, of
+ * something that had been answering all along. Told apart the way the
+ * installer's own page tells them apart: it answers /install/state with JSON,
+ * where the application answers with a document.
+ */
+async function theInstallerAnswers() {
+  try {
+    const res = await reach('/install/state', { cache: 'no-store' });
+
+    return res.ok && (res.headers.get('content-type') || '').includes('json');
+  } catch {
+    return false;
+  }
 }
 
 
