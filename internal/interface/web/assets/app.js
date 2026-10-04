@@ -5414,6 +5414,9 @@ let timesheetEntries = [];
 /** How many there are altogether, which is what says whether there are more. */
 let timesheetTotal = 0;
 
+/** How many loads of the entries have begun, so an answer can tell it was overtaken. */
+let timesheetLoads = 0;
+
 /**
  * Loads the entries, one page at a time.
  *
@@ -5421,6 +5424,11 @@ let timesheetTotal = 0;
  * changing the filter, booking, correcting, deleting - starts again from the
  * first page on purpose: the list has changed underneath, and an offset into a
  * list that has moved skips one entry and repeats another.
+ *
+ * Only the newest load's answer is kept. Each one emptied the list as it began
+ * and added its answer when it came back, so two at once - stepping through the
+ * filter with the arrow keys sends one per step - put two projects' entries under
+ * a filter naming one, and two presses of "more" the same page twice.
  */
 async function loadTimesheets(more = false) {
   if (!can('timesheets:read:own')) return;
@@ -5429,18 +5437,24 @@ async function loadTimesheets(more = false) {
   const projectId = $('#filter-ts-project').value;
   if (projectId) params.set('projectId', projectId);
 
-  if (!more) timesheetEntries = [];
+  const before = more ? timesheetEntries : [];
 
   params.set('limit', String(TIMESHEET_PAGE));
-  params.set('offset', String(timesheetEntries.length));
+  params.set('offset', String(before.length));
+
+  timesheetLoads += 1;
+  const asked = timesheetLoads;
 
   const answer = await api(`/timesheets?${params}`);
+
+  if (asked !== timesheetLoads) return;
+
   const page = answer?.items ?? [];
 
   // What the server says, not what arrived: those differ exactly when there is
   // another page, which is the whole question this screen has to answer.
   timesheetTotal = answer?.totalCount ?? page.length;
-  timesheetEntries = timesheetEntries.concat(page);
+  timesheetEntries = before.concat(page);
 
   const entries = timesheetEntries;
 
@@ -5604,6 +5618,11 @@ async function loadCalendar() {
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
 
   const entries = await everyTimesheet({ from: ISO_DAY(first), to: ISO_DAY(last) });
+
+  // Not drawn if the arrows have moved on while it was on its way. Two quick
+  // presses ask for two months at once, and the fuller one answers later: drawn
+  // anyway, it put the month left behind under arrows already past it.
+  if (calendarMonth !== first) return;
 
   const byDay = new Map();
   for (const entry of entries) {
