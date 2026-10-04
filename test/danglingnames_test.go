@@ -73,14 +73,16 @@ func TestNothingIsNamedOnPurposeThatExistsOrIsUnmentioned(t *testing.T) {
 // namedOnPurpose is what comments may name without the tree declaring it.
 var namedOnPurpose = map[string]string{
 	// Somebody else's names.
-	"initMetricsServer": "GoFr's, which metricsPort mirrors",
-	"toLocale":          "the prefix of the JavaScript toLocale* methods",
-	"checkVisibility":   "a DOM method",
-	"getValueFrom":      "excelize's, where the spilled shared string is read",
-	"getFromStringItem": "excelize's, where the spilled shared string is read",
-	"sharedStringItem":  "excelize's",
-	"offsetRange":       "excelize's",
-	"userPrincipalName": "Active Directory's, the name@realm a Kerberos sign-in is also looked up by",
+	"initMetricsServer":  "GoFr's, which metricsPort mirrors",
+	"toLocale":           "the prefix of the JavaScript toLocale* methods",
+	"checkVisibility":    "a DOM method",
+	"getValueFrom":       "excelize's, where the spilled shared string is read",
+	"getFromStringItem":  "excelize's, where the spilled shared string is read",
+	"sharedStringItem":   "excelize's",
+	"offsetRange":        "excelize's",
+	"userAccountControl": "Active Directory's attribute, which a sign-in asks for by name",
+	"accountExpires":     "Active Directory's attribute, which a sign-in asks for by name",
+	"userPrincipalName":  "Active Directory's, the name@realm a Kerberos sign-in is also looked up by",
 
 	// Gone on purpose, and the comment says so where it stood.
 	"mayShare":                  "retired with the shared project",

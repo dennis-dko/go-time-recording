@@ -46,6 +46,12 @@ type ExternalUser struct {
 	// first sign-in and a synchronisation, have to read what was saved rather
 	// than what was true at start-up. Empty means the service's own default.
 	Role string
+
+	// Disabled says the directory has switched the account off - Active
+	// Directory's own flag, or a day it expired on. A password sign-in learns
+	// this from the bind failing; a sign-in proved by a ticket has only the entry
+	// to go on, and the ticket stays valid for hours after the account is off.
+	Disabled bool
 }
 
 // SessionService signs users in and out.
@@ -379,6 +385,15 @@ func (s *SessionService) resolveUser(ctx context.Context, email, password string
 // under the new address either and created a second account for the same
 // person - an empty one, which they were then signed in to.
 func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *ExternalUser) (*model.User, error) {
+	// Not for an account the directory has switched off. A password sign-in never
+	// arrives here with one - the bind refuses it - but a ticket issued before the
+	// account went off stays valid for hours, and the entry is the one thing left
+	// that can say so. As vague to the caller as any refused sign-in.
+	if directoryUser.Disabled {
+		return nil, apperror.Invalidf("the directory has switched the account for %s off",
+			directoryUser.Email).WithCode("invalidCredentials")
+	}
+
 	email := normalizeEmail(directoryUser.Email)
 
 	if directoryUser.ID != "" {
