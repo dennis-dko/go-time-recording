@@ -872,12 +872,12 @@ sentence assembled on the server in English.
 Four layers; dependencies point inwards only.
 
 ```text
-cmd/main.go                     Wiring (DI), migrations, cron, TLS
+cmd/                            Wiring (DI), migrations, TLS, the scheduled jobs
 │
 ├── internal/interface/         Entry points
 │   ├── api/v1/rest/              HTTP handlers, DTOs, authorization, status codes
 │   ├── web/                      Embedded web interface and its middleware
-│   └── worker/                   Scheduled background jobs
+│   └── installer/                First-run screen, served until a database is chosen
 │
 ├── internal/application/v1/    Use cases (CQRS-flavoured)
 │   ├── command/ query/           Input and output per use case
@@ -889,14 +889,23 @@ cmd/main.go                     Wiring (DI), migrations, cron, TLS
 │   ├── repository/               Repository interfaces
 │   └── service/                  Rules spanning several entities
 │
-└── internal/infrastructure/    Technical concerns
-    ├── config/                   Application settings and the datasource file
-    ├── directory/                LDAP client
-    ├── tlsserver/                Let's Encrypt termination
-    └── persistence/
-        ├── sqldb/                Repositories, dialect-agnostic
-        ├── memory/               In-memory repositories for tests
-        └── migrations/           Schema definition
+├── internal/infrastructure/    Technical concerns
+│   ├── config/                   Application settings and the datasource file
+│   ├── directory/                LDAP client
+│   ├── tlsserver/                Let's Encrypt termination
+│   ├── announce/                 What every open browser is told at once
+│   ├── selfupdate/ imageupdate/  Replacing the binary, or asking for a new image
+│   ├── restart/                  Restarting from the Settings screen
+│   ├── logsink/                  The recent log lines the Settings screen shows
+│   └── persistence/
+│       ├── sqldb/                Repositories, dialect-agnostic
+│       ├── memory/               In-memory repositories for tests
+│       └── migrations/           Schema definition
+│
+└── internal/support/           Leaf helpers that know nothing of the domain
+    ├── apperror/                 The closed catalogue of refusals
+    ├── security/                 Passwords, tokens and sealed secrets
+    └── document/ spreadsheet/ imaging/ qrcode/ hosting/
 ```
 
 Decisions that would otherwise be surprising:
