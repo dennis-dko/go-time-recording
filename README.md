@@ -1274,7 +1274,7 @@ running instance.
 | `GET/POST/PUT/DELETE` | `/api/v1/timesheets`, `/timesheets/{id}` | Time entries |
 | `GET/POST/DELETE` | `/api/v1/me/timer` | Own stopwatch: read, start, discard |
 | `POST` | `/api/v1/me/timer/stop` | Stop it and book the measured time |
-| `GET` | `/api/v1/me/statistics` | Own hours per day, per project and per state |
+| `GET` | `/api/v1/me/statistics` | Own hours per day and per project |
 | `POST` | `/api/v1/timesheets/{id}/transfer` | Move to another project |
 | `GET/PUT` | `/api/v1/settings/...` | Branding, database, LDAP, metrics and tracing |
 
@@ -1288,8 +1288,8 @@ tracing works here with no span code anywhere.
 
 What it cannot know is whether the application is doing its job. A deployment can
 serve every request in milliseconds while nobody has been able to book time since
-the directory changed. So four more are recorded here, each because somebody
-would act on it:
+the directory changed. So these are recorded here as well, each because
+somebody would act on it:
 
 | Metric | Says |
 | --- | --- |
