@@ -280,6 +280,12 @@ in the interface is an explicit act, and it would be surprising for a stale
 variable to override it silently. It only ever supplies `DB_*`, and only the
 fields it actually holds.
 
+A value written so it cannot be used - a word where a number belongs, a
+duration without its unit, `yes` for a switch that takes `true` - falls back to
+its default, and the start says so in a warning beginning `configuration:`,
+naming the setting, what it held and what applies instead. That is the line to
+look for when a setting seems to have no effect.
+
 `APP_ENV` selects layer 2, and it has to come from the **real environment**: GoFr
 reads it before it opens any file, so setting `APP_ENV` inside `configs/.env`
 cannot select an overlay. With it unset, layer 2 falls back to
@@ -640,8 +646,7 @@ the grounds that a changed host is a change to the same connection — which
 describes what the card *says* and answers the wrong question, because the
 connection is opened once while the application starts. Moving the database to
 another host is exactly as pending as moving it to another dialect, and it now
-reads as one line: `postgres db:5432/gtr as app` → `postgres db2:5432/gtr as
-app`. A default port and an omitted one are the same connection here as they
+reads as one line: `postgres app@db:5432/gtr` → `postgres app@db2:5432/gtr`. A default port and an omitted one are the same connection here as they
 are in fact, so spelling out `5432` is not reported as a change.
 
 A changed password appears as *Database password* with nothing beside it. The
@@ -654,13 +659,15 @@ saved* when the comparison finds nothing and *Applied on the next start* when it
 does — it used to promise a restart on every press, including on a form somebody
 had only opened to look at.
 
-**The in-application restart button replaces the process image, and passes the
-current environment on.** That matters in one case: a setting you cleared back to
-*follow the configuration file* is **not** restored by it, because the variable
-the previous process exported is inherited and still beats the file. The same
-goes for deleting `configs/datasource.json` — the inherited `DB_DIALECT` keeps
-the old connection instead of bringing the installer back. Those need a real stop
-and start.
+**The in-application restart button reads the configuration the way a stop and a
+start would.** Outside a container it replaces the process image, and what it
+hands the new process is the environment this one was *started* with — not the
+one it has by then, into which the configuration file's keys and the stored
+settings have been written. So an edited `configs/.env` is read, a setting you
+cleared back to *follow the configuration file* is restored, and deleting
+`configs/datasource.json` brings the installer back. It used to hand on the
+environment as it stood, and none of the three happened without a real stop and
+start.
 
 On Windows the button is not offered at all: there is no `execve`, so the nearest
 equivalent would leave a window with no application running. The card says so.
@@ -1102,6 +1109,13 @@ environment — a second place to write it would only disagree with the first. O
 two variables exist here: `LDAP_SYNC_SCHEDULE` (empty, so no scheduled run) and
 `LDAP_SYNC_MAX_DELETE_RATIO` (`0.5`).
 
+A schedule runs on the server's clock, not in the instance timezone the
+*Settings* screen administers. The shipped container sets no `TZ`, so there it is
+UTC: `0 4 * * *` typed in Los Angeles for four in the morning runs at eight the
+evening before. Set `TZ` on the container to move the clock, or write the
+schedule in UTC. The nightly removal of expired sessions, at three, runs on the
+same clock.
+
 There is no directory service in `compose.yaml`, because this application is a
 directory client: you point it at the one you already run.
 `compose.ldap.yaml` runs an OpenLDAP beside it for the two installations where
@@ -1178,7 +1192,13 @@ schedule, keep the log level at WARN or below - above it a run removes accounts
 and says nothing - and collect the log, because the viewer under *Settings*
 holds only the most recent lines in memory.
 
-Expired sessions are pruned at 03:00 daily. That schedule is not configurable.
+A stop ends a scheduled run where it stands, at its next call to the database,
+rather than letting it run on until the shutdown's deadline and closing the
+database under it - so the lines for whom it had removed are written before the
+process goes. What it had not reached yet, the next run does.
+
+Expired sessions are pruned at 03:00 daily, on the server's clock like the
+directory's schedule. That schedule is not configurable.
 
 ## Special modes
 
@@ -1229,7 +1249,6 @@ mistakes it for a configured installation.
 | A setting was changed and nothing happened | it needs a restart | *Settings* lists what is pending. Two things used to be missing from that list — a same-dialect database change and the trace sample ratio — and both are compared now |
 | TLS was enabled and the site is still plain HTTP | the listener could not bind, and that does not stop the process | check the log for `serving HTTPS on :443`; on a host, grant `CAP_NET_BIND_SERVICE` in the unit - a capability set on the binary with `setcap` is gone after the next update |
 | `docker compose … -f compose.tls.yaml` refuses to start | `TLS_DOMAINS` or `TLS_EMAIL` is unset | both use the error form and are required |
-| A setting was cleared back to "follow the configuration file" and still applies | the in-application restart inherited the exported variable | stop and start the process properly |
 | Saving the database connection appears to do nothing | it applies at the next start, on purpose | restart |
 | Every page load feels slow after an upgrade | assets are revalidated, not re-sent — check that your proxy is not stripping `ETag` or `If-None-Match` | |
 | A directory run refuses with a ratio message | more accounts would be deleted than the guard allows | check the base DN and the filter first. That message is almost always right |

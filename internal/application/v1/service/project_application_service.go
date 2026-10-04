@@ -266,14 +266,15 @@ func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd comma
 		return err
 	}
 
-	entries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{ProjectID: cmd.ID})
+	// Counted rather than loaded: the refusal needs the number and nothing else.
+	entries, err := s.timesheetRepository.CountByFilter(ctx, repository.TimesheetFilter{ProjectID: cmd.ID})
 	if err != nil {
 		return err
 	}
 
-	if len(entries) > 0 {
-		return apperror.Conflictf("cannot delete a project that still has %d time entries", len(entries)).
-			WithCode("projectHasEntries", len(entries))
+	if entries > 0 {
+		return apperror.Conflictf("cannot delete a project that still has %d time entries", entries).
+			WithCode("projectHasEntries", entries)
 	}
 
 	// A clock running against it counts too, for the same reason and one more.

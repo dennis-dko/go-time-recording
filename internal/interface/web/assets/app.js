@@ -457,7 +457,7 @@ function describeRefusal(err) {
 
   if (err.code) {
     const translated = t(`err.${err.code}`, err.message ?? '');
-    if (translated) return fillIn(translated, err.values);
+    if (translated) return fillIn(translated, refusalValues(err.code, err.values));
   }
 
   if (err.message) return err.message;
@@ -521,6 +521,38 @@ function showRefusal(target, err) {
 
   const detail = refusalDetail(err);
   if (detail) target.append(detailDisclosure(detail));
+}
+
+/**
+ * Which values of which refusal the screen writes in words of its own.
+ *
+ * fillIn writes a number the way the tables beside it do, and a string as it
+ * arrives. Two kinds of string arrive in a form nobody on this screen reads: a day
+ * in the order the wire uses, and a status as the word it is stored under. So a
+ * German refusal said "am 2026-10-04" beside a form showing 04.10.2026, and "ist
+ * completed" beside a badge saying "abgeschlossen" - a word the reader could look
+ * for and find nowhere.
+ *
+ * Named by code and position, because on the wire the values are plain strings
+ * and stay so: an API client reads them too. Which of them is a day or a status is
+ * known here, beside the sentences, and in the call that sends it.
+ * TestARefusalWritesItsValuesTheWayTheScreenDoes reads every such call and fails
+ * on one this does not name.
+ */
+const REFUSAL_VALUES = {
+  archiveNeedsCompleted: { 0: statusName },
+  overDailyLimit: { 2: fmtDate },
+  projectClosedForBooking: { 1: statusName },
+};
+
+/** The values of one refusal, each written the way the rest of the screen writes it. */
+function refusalValues(code, values) {
+  const written = REFUSAL_VALUES[code];
+  if (!written || !Array.isArray(values)) return values;
+
+  return values.map((value, i) => (written[i] && typeof value === 'string'
+    ? written[i](value)
+    : value));
 }
 
 /**
@@ -1323,10 +1355,15 @@ function holdFocus(button) {
   };
 }
 
+/** What a project's status is called, in the reader's language. */
+function statusName(status) {
+  return t(`status.${status}`, status);
+}
+
 function statusBadge(status) {
   // The class keeps the raw status so the colour rules still match; only the
   // label is translated.
-  return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
+  return el('span', { class: `status status-${status}`, text: statusName(status) });
 }
 
 /**
@@ -3392,9 +3429,10 @@ const TRANSLATIONS = {
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und Ihre Container-Verwaltung startet einen neuen aus dem '
-      + 'Abbild - was sie nur tut, wenn sie dazu angewiesen wurde. Die mit dieser '
-      + 'Anwendung ausgelieferte Bereitstellung ist es.',
+      + 'hält ihn an, und Ihre Container-Verwaltung startet ihn wieder - was sie nur '
+      + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
+      + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
+      + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
     'restart.modeProcess': 'Die Anwendung ersetzt sich selbst, läuft also durchgehend.',
     'restart.now': 'Jetzt neu starten',
     'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
@@ -3992,7 +4030,7 @@ const TRANSLATIONS = {
     'sync.directoryUsers': 'Im Verzeichnis',
     'sync.entries': 'Zeiteinträge',
     'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
-    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut.',
+    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut. Er läuft nach der Uhr des Servers, im ausgelieferten Container also in UTC, und nicht in der Zeitzone der Installation.',
     'sync.scheduleStored': 'Gespeichert',
     'sync.scheduleManual': 'Läuft nur, wenn der Knopf unten gedrückt wird.',
     'sync.scheduleShort': 'Verzeichnis-Zeitplan',
@@ -9699,9 +9737,10 @@ async function loadRestart() {
   const description = state.mode === 'container'
     ? t('restart.modeContainer',
       'This installation runs in a container. The button stops it, and your '
-      + 'container manager starts a new one from the image - which it only does '
-      + 'if it was told to restart the container. The deployment shipped with '
-      + 'this application is.')
+      + 'container manager starts it again - which it only does under a restart '
+      + 'policy that also restarts a container that ended without an error: '
+      + 'always or unless-stopped, not on-failure. The deployment shipped with '
+      + 'this application sets one.')
     : t('restart.modeProcess',
       'The application replaces itself, so it is never not running.');
 
@@ -10691,7 +10730,7 @@ function rowProblem(row) {
   const sentence = t(`row.${row.problemCode}`, '')
     || t(`err.${row.problemCode}`, row.problem);
 
-  return fillIn(sentence, row.problemValues);
+  return fillIn(sentence, refusalValues(row.problemCode, row.problemValues));
 }
 
 /** Shows what the file would do, row by row. */
@@ -12226,6 +12265,12 @@ function wireLogViewer() {
     schedulePoll({ immediate: !logView.paused });
   });
 
+  // Hidden is nobody looking - see logViewerActive.
+  document.addEventListener('visibilitychange', () => {
+    if (logViewerActive()) schedulePoll({ immediate: true });
+    else stopLogPolling();
+  });
+
   $('#log-clear').addEventListener('click', () => {
     // The view only. The server's buffer is not the viewer's to discard, and an
     // administrator clearing their screen must not destroy evidence for the
@@ -12338,6 +12383,12 @@ function stopLogPolling({ refused = false } = {}) {
  * Only while its own screen is on top: an administrator who moved on to book
  * time has no use for a request every three seconds, and the endpoint is not
  * free - it reads a mutex-guarded buffer.
+ *
+ * And only while its tab is the one being looked at, as for the other two things
+ * that ask in the background. At INFO every poll is a line in the buffer it
+ * shows, so a log screen left in a hidden tab overnight wrote one every few
+ * seconds into five thousand, and by morning had pushed out the lines somebody
+ * would have come to read. Looking again asks for what was missed in one go.
  */
 function logViewerActive() {
   const card = $('#log-card');
@@ -12346,7 +12397,8 @@ function logViewerActive() {
   // The sign-in screen being up means there is no session to poll with. Without
   // this the poller keeps asking through a password change - which ends every
   // session - and paints the screen with authentication failures.
-  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden;
+  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden
+    && !document.hidden;
 }
 
 function setLogStatus(text) {
@@ -12580,16 +12632,34 @@ function atLogBottom(output) {
   return output.scrollHeight - output.scrollTop - output.clientHeight < 40;
 }
 
+/**
+ * When a log line was written: the time to the second, and the day as well
+ * whenever it was not today.
+ *
+ * In the account's own zone, like every other moment on this screen - see
+ * fmtMoment. It was the browser's, so on a device set to another zone the log
+ * and the token list beside it gave the same minute two different times.
+ *
+ * The day because the buffer outlives it. It holds the last five thousand
+ * lines, and on a quiet installation - or one logging at WARN, as the manual
+ * asks of one with a schedule - those reach back days, so "03:00:01 ERROR"
+ * could not be told from this morning's.
+ */
 function formatLogTime(iso) {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return '';
 
-  // The viewer's own zone, which is the one they are comparing against a
-  // clock on the wall while working out what happened when. The reader's
-  // language for the rest, like every other figure on screen - it decides
-  // nothing at all while hour12 is off, and leaving it to the browser was one
-  // more place for the two to disagree later.
-  return at.toLocaleTimeString(activeLocale(), { hour12: false });
+  const timeZone = me.user?.effectiveTimezone || undefined;
+  const dayOf = (moment) => new Intl.DateTimeFormat('en-CA', { timeZone }).format(moment);
+
+  return new Intl.DateTimeFormat(activeLocale(), {
+    ...(dayOf(at) === dayOf(new Date()) ? {} : { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone,
+  }).format(at);
 }
 
 // -------------------------------------------------------- maintenance mode
