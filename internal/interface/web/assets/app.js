@@ -4290,15 +4290,41 @@ function applyLanguage(language) {
  */
 const redraws = new Map();
 
-/** Draws a screen now, and again whenever the language changes. */
-function redrawable(key, draw) {
+/** The keys of the draws that belong to the installation; see forgetEveryRedraw. */
+const installationDraws = new Set();
+
+/**
+ * Draws a screen now, and again whenever the language changes.
+ *
+ * Forgotten when its account signs out, unless it is declared as the
+ * installation's - the name and mark the sign-in screen shows.
+ */
+function redrawable(key, draw, { installation = false } = {}) {
   redraws.set(key, draw);
+
+  if (installation) installationDraws.add(key);
+  else installationDraws.delete(key);
+
   draw();
 }
 
 /** Forgets a screen's last answer, for one that has been emptied. */
 function stopRedrawing(key) {
   redraws.delete(key);
+}
+
+/**
+ * Forgets every screen drawn for whoever just signed out.
+ *
+ * Each draw keeps the answer it was made from, and the sign-out applies the
+ * language to the screen it hands back - which redrew them all: the evaluation,
+ * the balance and the import verdicts went back into the tables just emptied,
+ * and stood there for whoever signed in next.
+ */
+function forgetEveryRedraw() {
+  for (const key of [...redraws.keys()]) {
+    if (!installationDraws.has(key)) redraws.delete(key);
+  }
 }
 
 function redrawAll() {
@@ -5843,7 +5869,7 @@ async function loadBranding() {
   // again. Everything on this screen that a language change reaches goes the same
   // way; a title and a banner written in two languages would otherwise stay in
   // whichever one the page happened to load in.
-  redrawable('branding', () => drawBranding(branding));
+  redrawable('branding', () => drawBranding(branding), { installation: true });
 
   return branding;
 }
@@ -7479,6 +7505,42 @@ function forgetTheLastAccount() {
   // sign-out it is the same wrong answer that comment was written against,
   // reached from the other side.
   calendarMonth = null;
+
+  // And the month it drew. The grid is not a table, so emptying the tables left
+  // its days and their projects, and an account that may not read entries never
+  // draws over them - loadCalendar returns first.
+  $('#calendar-days').replaceChildren();
+  $('#calendar-summary').textContent = '';
+  $('#calendar-day-card').hidden = true;
+
+  // And the greeting, which names whoever it greeted beside their day's hours
+  // and last entries, and is drawn again only when somebody arrives on it.
+  $('#welcome-title').textContent = '';
+  $('#welcome-today').textContent = '';
+  $('#welcome-recent-list').replaceChildren();
+  $('#welcome-recent').hidden = true;
+
+  // And each form's own reset, which resetting the form does not reach: a hidden
+  // field keeps its value through one, so a form left correcting a record kept
+  // the record's id under its "edit" heading - and an administrator filling it in
+  // to add somebody changed the account their predecessor had open. After the
+  // caches and the account are gone, because two of them draw from those.
+  resetUserForm();
+  resetRoleForm();
+  resetProjectForm();
+  resetTimesheetForm();
+
+  // And the imports this account had checked. The cards are not forms, so the
+  // reset of every form never reached the file, the verdict or the button that
+  // writes it.
+  forgetEveryImport();
+
+  // And what it evaluated, which nothing asks for again at the next sign-in.
+  forgetEveryEvaluation();
+
+  // Last, after the tables are emptied: the sign-out applies the language next,
+  // and every draw still registered would put its account's rows back.
+  forgetEveryRedraw();
 }
 
 /**
@@ -10860,6 +10922,16 @@ function renderWorkbookPreview(result) {
   $('#wb-import').hidden = rejected > 0 || writable === 0;
 }
 
+/** The resets of the tables' import cards, which buildSheetCard builds. */
+const sheetCardResets = [];
+
+/** Puts every import card back to its resting state. */
+function forgetEveryImport() {
+  resetWorkbookCard();
+
+  for (const reset of sheetCardResets) reset();
+}
+
 /** Puts the card back to its resting state. */
 function resetWorkbookCard() {
   const input = $('#wb-file');
@@ -11531,6 +11603,7 @@ function buildSheetCard(spec) {
     }));
 
   cancel.addEventListener('click', reset);
+  sheetCardResets.push(reset);
 
   return el('div', { class: 'card', 'data-perm': spec.read },
     el('h2', { 'data-i18n': 'wb.title', text: 'Spreadsheet' }),
@@ -11591,6 +11664,33 @@ function wireSheetCards() {
 // labelled "no project" on an otherwise German screen. The words are made at
 // drawing time now, which is also the only time they are needed.
 const reportChart = { kind: 'bars', scope: 'projects', projects: [], days: [] };
+
+/**
+ * Takes down every evaluation this account ran, and the pictures of its hours.
+ *
+ * An evaluation is computed when somebody asks for one, and nothing on the next
+ * sign-in asks again: the result cards stayed up with the last account's totals,
+ * its name, target and booked hours, and the charts of where its time went. The
+ * chart's shape is a preference rather than anybody's hours, and its buttons
+ * show it, so only the figures go.
+ */
+function forgetEveryEvaluation() {
+  for (const card of ['#report-result', '#overtime-result']) {
+    const node = $(card);
+    if (node) node.hidden = true;
+  }
+
+  for (const said of ['#report-total', '#report-chart-caption', '#overtime-total', '#overtime-meta',
+    '#statistics-total']) {
+    const node = $(said);
+    if (node) node.textContent = '';
+  }
+
+  for (const picture of ['#report-chart', '#chart-days', '#chart-projects']) $(picture)?.replaceChildren();
+
+  reportChart.projects = [];
+  reportChart.days = [];
+}
 
 /**
  * Fetches the breakdown for the period just evaluated and draws it.
