@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -292,6 +293,15 @@ func TestNoTranslationIsUnused(t *testing.T) {
 				if _, known := projectStates(t)[state]; known {
 					continue
 				}
+			}
+
+			// What a kind of record is called, looked up as t(`entity.${entity}`)
+			// from the first value of a "not found".
+			// TestARefusalWritesItsValuesTheWayTheScreenDoes checks that every kind
+			// the server names has one.
+			if entity, isEntity := strings.CutPrefix(key, "entity."); isEntity &&
+				slices.Contains(notFoundEntities(t), entity) {
+				continue
 			}
 
 			// What a right is called and what it allows, looked up as

@@ -541,6 +541,7 @@ function showRefusal(target, err) {
  */
 const REFUSAL_VALUES = {
   archiveNeedsCompleted: { 0: statusName },
+  notFound: { 0: entityName },
   overDailyLimit: { 2: fmtDate },
   projectClosedForBooking: { 1: statusName },
 };
@@ -1339,6 +1340,15 @@ function el(tag, props = {}, ...children) {
 /** What a project's status is called, in the reader's language. */
 function statusName(status) {
   return t(`status.${status}`, status);
+}
+
+/**
+ * What a kind of record is called, in the reader's language - the word a
+ * refusal names when what it looked for is not there. The server's own word is
+ * the English, so a language without the entry still says something true.
+ */
+function entityName(entity) {
+  return t(`entity.${entity}`, entity);
 }
 
 function statusBadge(status) {
@@ -3607,6 +3617,14 @@ const TRANSLATIONS = {
     'detail.reference': 'Referenz: {0}',
     'err.unauthenticated': 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',
     'err.notFound': '{0} mit der Kennung {1} wurde nicht gefunden.',
+    // What a refusal for something that is not there names it - see entityName.
+    'entity.passkey': 'Passkey',
+    'entity.project': 'Projekt',
+    'entity.role': 'Rolle',
+    'entity.session': 'Sitzung',
+    'entity.timesheet': 'Zeiteintrag',
+    'entity.token': 'Token',
+    'entity.user': 'Konto',
     'err.invalidFields': 'Ungültige Felder',
     'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
     'err.updateCheckedRecently': 'Die Release-Quelle wurde gerade erst gefragt. '
