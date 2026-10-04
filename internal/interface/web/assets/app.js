@@ -457,7 +457,7 @@ function describeRefusal(err) {
 
   if (err.code) {
     const translated = t(`err.${err.code}`, err.message ?? '');
-    if (translated) return fillIn(translated, err.values);
+    if (translated) return fillIn(translated, refusalValues(err.code, err.values));
   }
 
   if (err.message) return err.message;
@@ -521,6 +521,38 @@ function showRefusal(target, err) {
 
   const detail = refusalDetail(err);
   if (detail) target.append(detailDisclosure(detail));
+}
+
+/**
+ * Which values of which refusal the screen writes in words of its own.
+ *
+ * fillIn writes a number the way the tables beside it do, and a string as it
+ * arrives. Two kinds of string arrive in a form nobody on this screen reads: a day
+ * in the order the wire uses, and a status as the word it is stored under. So a
+ * German refusal said "am 2026-10-04" beside a form showing 04.10.2026, and "ist
+ * completed" beside a badge saying "abgeschlossen" - a word the reader could look
+ * for and find nowhere.
+ *
+ * Named by code and position, because on the wire the values are plain strings
+ * and stay so: an API client reads them too. Which of them is a day or a status is
+ * known here, beside the sentences, and in the call that sends it.
+ * TestARefusalWritesItsValuesTheWayTheScreenDoes reads every such call and fails
+ * on one this does not name.
+ */
+const REFUSAL_VALUES = {
+  archiveNeedsCompleted: { 0: statusName },
+  overDailyLimit: { 2: fmtDate },
+  projectClosedForBooking: { 1: statusName },
+};
+
+/** The values of one refusal, each written the way the rest of the screen writes it. */
+function refusalValues(code, values) {
+  const written = REFUSAL_VALUES[code];
+  if (!written || !Array.isArray(values)) return values;
+
+  return values.map((value, i) => (written[i] && typeof value === 'string'
+    ? written[i](value)
+    : value));
 }
 
 /**
@@ -1304,10 +1336,15 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/** What a project's status is called, in the reader's language. */
+function statusName(status) {
+  return t(`status.${status}`, status);
+}
+
 function statusBadge(status) {
   // The class keeps the raw status so the colour rules still match; only the
   // label is translated.
-  return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
+  return el('span', { class: `status status-${status}`, text: statusName(status) });
 }
 
 /**
@@ -10671,7 +10708,7 @@ function rowProblem(row) {
   const sentence = t(`row.${row.problemCode}`, '')
     || t(`err.${row.problemCode}`, row.problem);
 
-  return fillIn(sentence, row.problemValues);
+  return fillIn(sentence, refusalValues(row.problemCode, row.problemValues));
 }
 
 /** Shows what the file would do, row by row. */
