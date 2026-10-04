@@ -91,11 +91,8 @@ func (h *LDAPSyncHandler) Run(c *gofr.Context) (any, error) {
 	// instead of it. A run that removed accounts and then failed still removed
 	// them, irreversibly, and the caller's log line is the only place that says
 	// which - so on the failure path it matters more than on the success one.
-	if report != nil && len(report.Deleted) > 0 {
-		for _, removed := range report.Deleted {
-			c.Logger.Warnf("directory sync removed %q and its %d time entry/entries",
-				removed.Email, removed.Timesheets)
-		}
+	for _, removed := range report.Removals() {
+		c.Logger.Warn(removed)
 	}
 
 	if err != nil {
