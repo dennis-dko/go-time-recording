@@ -55,11 +55,30 @@ func TestTheKeptPasswordGoesOnlyToItsOwnServer(t *testing.T) {
 	}
 
 	// Another user on the same server is another account's password to know.
-	admin.must(admin.api(http.MethodPost, "/settings/datasource/test", connection("someone", "")),
-		http.StatusOK, http.StatusCreated)
+	//
+	// So the box stays empty, and a PostgreSQL connection without a password is
+	// refused before anything is dialled, because the driver would read it with
+	// the database's name swallowed. The refusal is the evidence: had the stored
+	// password been put in, the connection would have been read as typed and
+	// dialled, and the listener would have caught it before the answer came back.
+	var probed struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
 
-	if got := caught(t, passwords); got == "the-stored-secret" {
-		t.Error("testing a connection for another user sent the stored password to it")
+	admin.must(admin.api(http.MethodPost, "/settings/datasource/test", connection("someone", "")),
+		http.StatusOK, http.StatusCreated).Data(t, &probed)
+
+	if probed.Error.Code != "passwordSwallowsName" {
+		t.Errorf("testing a connection for another user was answered %q, so the box was "+
+			"not left empty", probed.Error.Code)
+	}
+
+	select {
+	case got := <-passwords:
+		t.Errorf("testing a connection for another user sent %q to it", got)
+	default:
 	}
 }
 

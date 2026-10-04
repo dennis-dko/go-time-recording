@@ -363,6 +363,19 @@ For `postgres` and `mysql` you may leave `DB_PORT` out: the application fills in
 5432 or 3306 for the dialect and hands that to the database layer, so the port it
 proved is the port it uses.
 
+**Give PostgreSQL a password, even a server that asks for none.** The database
+layer writes the connection with the values as they are, and in that form an
+empty `DB_PASSWORD` takes the database's name for itself: measured against a
+server with trust authentication, the application created its tables in
+`postgres`, the database named after the account, while its own log named the
+one in `DB_NAME`. Any value does where the server does not ask. A space, a
+backslash or a leading quote in the user, the password or the name does not
+survive that form either, nor, for MySQL, a colon in the user or an IPv6 address
+without its square brackets. The installer and *Settings* refuse such a
+connection; an installation already running on one is not moved, because pointing
+it at the configured database would show an empty application, and every start
+says so in the log instead.
+
 ## Serving HTTPS everywhere
 
 Two routes, and which one applies is decided by whether the name this

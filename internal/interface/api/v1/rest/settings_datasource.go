@@ -125,6 +125,12 @@ func (h *SettingsHandler) SaveDatasource(c *gofr.Context) (any, error) {
 	}
 
 	if err := appconfig.SaveDatasource(appconfig.DatasourceFile, ds); err != nil {
+		// A connection the driver would misread is refused by name. Only a file
+		// that cannot be written is the server's fault.
+		if detail, ours := apperror.Detail(err); ours && detail.Code != "" {
+			return nil, toHTTPError(err)
+		}
+
 		return nil, toHTTPError(apperror.Internal(err))
 	}
 

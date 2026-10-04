@@ -5,8 +5,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,6 +32,23 @@ func TestARefusalWritesItsValuesTheWayTheScreenDoes(t *testing.T) {
 	sent := refusalValueKinds(t)
 	if len(sent) == 0 {
 		t.Fatal("found no refusal that sends a day or a status; this case is reading nothing")
+	}
+
+	// The one refusal not made through WithCode: rest builds "not found" from
+	// what was looked for, and its first value is the server's word for the kind
+	// of record - "timesheet mit der Kennung 42 wurde nicht gefunden" on a German
+	// screen until it went through entityName.
+	if names := notFoundEntities(t); len(names) > 0 {
+		sent["notFound#0"] = "entityName"
+
+		dict := dictionaries(t)["de"]
+
+		for _, name := range names {
+			if _, found := dict["entity."+name]; !found {
+				t.Errorf("the server can answer that a %s is not there, and the German "+
+					"dictionary has no entity.%s to name it by", name, name)
+			}
+		}
 	}
 
 	block := regexp.MustCompile(`(?s)const REFUSAL_VALUES = \{(.*?)\n\};`).
@@ -140,6 +159,61 @@ func refusalValueKinds(t *testing.T) map[string]string {
 	}
 
 	return kinds
+}
+
+// notFoundEntities is every kind of record the server names in a "not found",
+// read from its apperror.NotFound calls - and nothing when rest has stopped
+// sending the kind as the refusal's first value, which this would then be
+// guarding a value that no longer travels.
+func notFoundEntities(t *testing.T) []string {
+	t.Helper()
+
+	root := filepath.Join("..", "..", "..", "internal")
+
+	errorsGo, err := os.ReadFile(filepath.Join(root, "interface", "api", "v1", "rest", "errors.go"))
+	if err != nil {
+		t.Fatalf("reading rest's errors: %v", err)
+	}
+
+	if !strings.Contains(string(errorsGo), "values:  []any{detail.Entity, detail.ID}") {
+		return nil
+	}
+
+	seen := map[string]bool{}
+	call := regexp.MustCompile(`apperror\.NotFound\("([a-z]+)"`)
+
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		for _, m := range call.FindAllSubmatch(source, -1) {
+			seen[string(m[1])] = true
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("reading the server's not-found refusals: %v", err)
+	}
+
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	return names
 }
 
 // writtenWith is the function in app.js that writes a value of this shape, or

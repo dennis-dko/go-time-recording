@@ -541,6 +541,7 @@ function showRefusal(target, err) {
  */
 const REFUSAL_VALUES = {
   archiveNeedsCompleted: { 0: statusName },
+  notFound: { 0: entityName },
   overDailyLimit: { 2: fmtDate },
   projectClosedForBooking: { 1: statusName },
 };
@@ -1003,6 +1004,10 @@ function startAnnouncements() {
   // click, or until the once-a-minute permission poll came round.
   announcements.addEventListener('error', () => { void checkWhetherStillWelcome(); });
 
+  // The first open is the connection this page asked for; every later one is the
+  // browser coming back after it dropped.
+  let opened = false;
+
   announcements.addEventListener('open', () => {
     // Back. If the last thing said was that a restart was coming, this is the
     // other side of it: the application is answering again, and it is a different
@@ -1015,13 +1020,42 @@ function startAnnouncements() {
     if (announced === 'update.restarting') {
       announced = null;
       window.location.reload();
+
+      return;
     }
+
+    if (!opened) {
+      opened = true;
+
+      return;
+    }
+
+    // What still stands is replayed to every connection, right after this, so
+    // what was said before is taken down and the replay puts back what is still
+    // true. A retraction is not replayed - the hub forgets the update it takes
+    // back - so a page away when an installation was abandoned kept "a new
+    // version is being installed" up for good.
+    forgetTheUpdateNotice();
+
+    // And the restart is asked of the process rather than of what this page
+    // heard: an announcement lives in the memory of the process that made it, so
+    // a page asleep through an update, or offline the moment the restart was
+    // said, came back to the new version with nothing to tell it.
+    void theVersionChanged().then((changed) => {
+      if (changed) window.location.reload();
+    });
   });
 }
 
 function stopAnnouncements() {
   if (announcements) announcements.close();
   announcements = null;
+
+  forgetTheUpdateNotice();
+}
+
+/** Takes down what was said about an update, and forgets that it was said. */
+function forgetTheUpdateNotice() {
   announced = null;
 
   stopRedrawing('announcement');
@@ -1358,6 +1392,15 @@ function holdFocus(button) {
 /** What a project's status is called, in the reader's language. */
 function statusName(status) {
   return t(`status.${status}`, status);
+}
+
+/**
+ * What a kind of record is called, in the reader's language - the word a
+ * refusal names when what it looked for is not there. The server's own word is
+ * the English, so a language without the entry still says something true.
+ */
+function entityName(entity) {
+  return t(`entity.${entity}`, entity);
 }
 
 function statusBadge(status) {
@@ -3626,6 +3669,14 @@ const TRANSLATIONS = {
     'detail.reference': 'Referenz: {0}',
     'err.unauthenticated': 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',
     'err.notFound': '{0} mit der Kennung {1} wurde nicht gefunden.',
+    // What a refusal for something that is not there names it - see entityName.
+    'entity.passkey': 'Passkey',
+    'entity.project': 'Projekt',
+    'entity.role': 'Rolle',
+    'entity.session': 'Sitzung',
+    'entity.timesheet': 'Zeiteintrag',
+    'entity.token': 'Token',
+    'entity.user': 'Konto',
     'err.invalidFields': 'Ungültige Felder',
     'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
     'err.updateCheckedRecently': 'Die Release-Quelle wurde gerade erst gefragt. '
@@ -3663,6 +3714,9 @@ const TRANSLATIONS = {
     'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
     'err.credentialUnreadable': 'Der Anmeldeschlüssel konnte nicht gelesen werden.',
     'err.datasourceInvalid': 'Die Datenbank-Verbindung ist unvollständig oder ungültig.',
+    'err.passwordSwallowsName': 'Ohne Passwort erfährt PostgreSQL den Namen der Datenbank „{0}“ nicht und öffnet stattdessen die, die wie das Konto heißt. Nötig ist das Passwort des Kontos – irgendein Wert, wenn der Server keines verlangt – oder, wenn die Daten dieser Installation schon dort liegen, der Name dieser Datenbank.',
+    'err.postgresMisread': 'PostgreSQL würde diese Verbindung nicht so erhalten, wie sie eingegeben ist: GoFr schreibt sie ohne Anführungszeichen, und ein Leerzeichen, ein Backslash oder ein Anführungszeichen am Anfang übersteht das weder im Benutzer noch im Passwort noch im Datenbanknamen.',
+    'err.mysqlMisread': 'MySQL würde diese Verbindung nicht so erhalten, wie sie eingegeben ist: GoFr schreibt sie ohne Maskierung, und ein Doppelpunkt im Benutzer, ein Fragezeichen oder Schrägstrich im Datenbanknamen oder eine IPv6-Adresse ohne eckige Klammern übersteht das nicht.',
     'err.dateFormat': 'Das Datum „{0}“ muss YYYY-MM-DD oder RFC 3339 sein.',
     'err.deletionNeedsConfirming': '„{0}“ hat {1} erfasste Zeiteinträge. Sie würden mit dem Konto gelöscht und sind nicht wiederherstellbar – zum Fortfahren bitte bestätigen.',
     'err.emailTaken': 'Es gibt bereits einen Benutzer mit der E-Mail-Adresse „{0}“.',
@@ -4236,15 +4290,41 @@ function applyLanguage(language) {
  */
 const redraws = new Map();
 
-/** Draws a screen now, and again whenever the language changes. */
-function redrawable(key, draw) {
+/** The keys of the draws that belong to the installation; see forgetEveryRedraw. */
+const installationDraws = new Set();
+
+/**
+ * Draws a screen now, and again whenever the language changes.
+ *
+ * Forgotten when its account signs out, unless it is declared as the
+ * installation's - the name and mark the sign-in screen shows.
+ */
+function redrawable(key, draw, { installation = false } = {}) {
   redraws.set(key, draw);
+
+  if (installation) installationDraws.add(key);
+  else installationDraws.delete(key);
+
   draw();
 }
 
 /** Forgets a screen's last answer, for one that has been emptied. */
 function stopRedrawing(key) {
   redraws.delete(key);
+}
+
+/**
+ * Forgets every screen drawn for whoever just signed out.
+ *
+ * Each draw keeps the answer it was made from, and the sign-out applies the
+ * language to the screen it hands back - which redrew them all: the evaluation,
+ * the balance and the import verdicts went back into the tables just emptied,
+ * and stood there for whoever signed in next.
+ */
+function forgetEveryRedraw() {
+  for (const key of [...redraws.keys()]) {
+    if (!installationDraws.has(key)) redraws.delete(key);
+  }
 }
 
 function redrawAll() {
@@ -4519,7 +4599,12 @@ async function loadMe() {
   applyAccountTheme();
   applyPermissionVisibility();
 
-  renderTOTPState();
+  // Not over an enrolment under way. The account is not enrolled until its first
+  // code is confirmed, so drawn from it the card went back to "not enabled" -
+  // taking the QR code somebody was scanning and the field for its first code -
+  // on every reload, which a saved card or a change of language is. Leaving the
+  // screen and signing out close it, on purpose.
+  if ($('#totp-setup').hidden) renderTOTPState();
 }
 
 async function loadUsers() {
@@ -5334,6 +5419,9 @@ let timesheetEntries = [];
 /** How many there are altogether, which is what says whether there are more. */
 let timesheetTotal = 0;
 
+/** How many loads of the entries have begun, so an answer can tell it was overtaken. */
+let timesheetLoads = 0;
+
 /**
  * Loads the entries, one page at a time.
  *
@@ -5341,6 +5429,11 @@ let timesheetTotal = 0;
  * changing the filter, booking, correcting, deleting - starts again from the
  * first page on purpose: the list has changed underneath, and an offset into a
  * list that has moved skips one entry and repeats another.
+ *
+ * Only the newest load's answer is kept. Each one emptied the list as it began
+ * and added its answer when it came back, so two at once - stepping through the
+ * filter with the arrow keys sends one per step - put two projects' entries under
+ * a filter naming one, and two presses of "more" the same page twice.
  */
 async function loadTimesheets(more = false) {
   if (!can('timesheets:read:own')) return;
@@ -5349,18 +5442,24 @@ async function loadTimesheets(more = false) {
   const projectId = $('#filter-ts-project').value;
   if (projectId) params.set('projectId', projectId);
 
-  if (!more) timesheetEntries = [];
+  const before = more ? timesheetEntries : [];
 
   params.set('limit', String(TIMESHEET_PAGE));
-  params.set('offset', String(timesheetEntries.length));
+  params.set('offset', String(before.length));
+
+  timesheetLoads += 1;
+  const asked = timesheetLoads;
 
   const answer = await api(`/timesheets?${params}`);
+
+  if (asked !== timesheetLoads) return;
+
   const page = answer?.items ?? [];
 
   // What the server says, not what arrived: those differ exactly when there is
   // another page, which is the whole question this screen has to answer.
   timesheetTotal = answer?.totalCount ?? page.length;
-  timesheetEntries = timesheetEntries.concat(page);
+  timesheetEntries = before.concat(page);
 
   const entries = timesheetEntries;
 
@@ -5524,6 +5623,11 @@ async function loadCalendar() {
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
 
   const entries = await everyTimesheet({ from: ISO_DAY(first), to: ISO_DAY(last) });
+
+  // Not drawn if the arrows have moved on while it was on its way. Two quick
+  // presses ask for two months at once, and the fuller one answers later: drawn
+  // anyway, it put the month left behind under arrows already past it.
+  if (calendarMonth !== first) return;
 
   const byDay = new Map();
   for (const entry of entries) {
@@ -5789,7 +5893,7 @@ async function loadBranding() {
   // again. Everything on this screen that a language change reaches goes the same
   // way; a title and a banner written in two languages would otherwise stay in
   // whichever one the page happened to load in.
-  redrawable('branding', () => drawBranding(branding));
+  redrawable('branding', () => drawBranding(branding), { installation: true });
 
   return branding;
 }
@@ -7425,6 +7529,42 @@ function forgetTheLastAccount() {
   // sign-out it is the same wrong answer that comment was written against,
   // reached from the other side.
   calendarMonth = null;
+
+  // And the month it drew. The grid is not a table, so emptying the tables left
+  // its days and their projects, and an account that may not read entries never
+  // draws over them - loadCalendar returns first.
+  $('#calendar-days').replaceChildren();
+  $('#calendar-summary').textContent = '';
+  $('#calendar-day-card').hidden = true;
+
+  // And the greeting, which names whoever it greeted beside their day's hours
+  // and last entries, and is drawn again only when somebody arrives on it.
+  $('#welcome-title').textContent = '';
+  $('#welcome-today').textContent = '';
+  $('#welcome-recent-list').replaceChildren();
+  $('#welcome-recent').hidden = true;
+
+  // And each form's own reset, which resetting the form does not reach: a hidden
+  // field keeps its value through one, so a form left correcting a record kept
+  // the record's id under its "edit" heading - and an administrator filling it in
+  // to add somebody changed the account their predecessor had open. After the
+  // caches and the account are gone, because two of them draw from those.
+  resetUserForm();
+  resetRoleForm();
+  resetProjectForm();
+  resetTimesheetForm();
+
+  // And the imports this account had checked. The cards are not forms, so the
+  // reset of every form never reached the file, the verdict or the button that
+  // writes it.
+  forgetEveryImport();
+
+  // And what it evaluated, which nothing asks for again at the next sign-in.
+  forgetEveryEvaluation();
+
+  // Last, after the tables are emptied: the sign-out applies the language next,
+  // and every draw still registered would put its account's rows back.
+  forgetEveryRedraw();
 }
 
 /**
@@ -7658,7 +7798,13 @@ function wireTOTP() {
     const code = $('#totp-code').value.trim();
     mutate(() => api('/me/totp', { method: 'PUT', body: JSON.stringify({ code }) }),
       t('totp.enabled', 'Two-factor authentication enabled'),
-      async () => { $('#totp-code').value = ''; await refreshAll(); });
+      async () => {
+        $('#totp-code').value = '';
+        await refreshAll();
+
+        // Finished, so drawn from the account now - which the reload left alone.
+        renderTOTPState();
+      });
   });
 
   $('#totp-disable').addEventListener('click', () => {
@@ -8895,8 +9041,10 @@ async function nextSetupStep() {
   const after = setup.state.steps[setup.index];
 
   if (current.required && !after.done) {
-    setupError(t('setup.decideFirst', 'Please settle this step before continuing.'));
+    // Drawn first and said after: drawing a step begins by hiding the box, so
+    // said first, the wizard stayed put in silence.
     renderSetup();
+    setupError(t('setup.decideFirst', 'Please settle this step before continuing.'));
 
     return;
   }
@@ -9313,8 +9461,17 @@ function renderUpdate(state) {
  */
 async function settleAfterRestart(previous, done, patience, givenUp = async () => false) {
   const overlay = $('#restart-overlay');
+  const cameBack = await waitForRestart(previous, patience, givenUp);
 
-  if (await waitForRestart(previous, patience, givenUp)) {
+  // The installer explains itself, and nothing on this page applies to it any
+  // more: the overlay stays up until the page it asked for replaces this one.
+  if (cameBack === 'installer') {
+    window.location.reload();
+
+    return;
+  }
+
+  if (cameBack) {
     // A different build came back, so everything in this tab is last version's.
     //
     // This was the one tab that did not reload. Every other open one did: the
@@ -9863,6 +10020,8 @@ const IMAGE_UPDATE_TIMEOUT_MS = 5 * 60000;
  * milliseconds, and a poll that misses that gap would report success without
  * anything having happened. The start time changing is what proves it.
  *
+ * Answers 'installer' when that is what came back - see theInstallerAnswers.
+ *
  * givenUp ends the wait early, with the same answer as running out of patience;
  * see settleAfterRestart.
  */
@@ -9881,10 +10040,33 @@ async function waitForRestart(previousStartedAt, patience = RESTART_TIMEOUT_MS,
     } catch {
       // Expected while it is down: the connection is refused, or the session
       // has not been read back out of the database yet.
+      if (await theInstallerAnswers()) return 'installer';
     }
   }
 
   return false;
+}
+
+/**
+ * Whether the installer, rather than the application, answers on this address.
+ *
+ * What a restart comes back as when no connection is left: it reads the
+ * configuration afresh, so a connection file that was removed - which is how the
+ * manual brings the installer back - takes the installation to its installer.
+ * That answers every path with its page, so the wait read it as an application
+ * not up yet and said after a minute that it might still be starting, of
+ * something that had been answering all along. Told apart the way the
+ * installer's own page tells them apart: it answers /install/state with JSON,
+ * where the application answers with a document.
+ */
+async function theInstallerAnswers() {
+  try {
+    const res = await reach('/install/state', { cache: 'no-store' });
+
+    return res.ok && (res.headers.get('content-type') || '').includes('json');
+  } catch {
+    return false;
+  }
 }
 
 
@@ -10543,6 +10725,8 @@ async function loadStatistics() {
 
   const stats = await api(`/me/statistics?${params}`);
 
+  evaluatedPeriod.statistics = { from: stats.from, to: stats.to };
+
   $('#statistics-total').textContent =
     `${t('stats.total', 'Total')}: ${fmtHours(stats.totalHours ?? 0)}`;
 
@@ -10770,6 +10954,16 @@ function renderWorkbookPreview(result) {
   // The import button only where it would do something: offering it for a file
   // that would be refused is offering a failure.
   $('#wb-import').hidden = rejected > 0 || writable === 0;
+}
+
+/** The resets of the tables' import cards, which buildSheetCard builds. */
+const sheetCardResets = [];
+
+/** Puts every import card back to its resting state. */
+function forgetEveryImport() {
+  resetWorkbookCard();
+
+  for (const reset of sheetCardResets) reset();
 }
 
 /** Puts the card back to its resting state. */
@@ -11083,15 +11277,20 @@ function screenColours() {
 }
 
 /**
- * The period a document covers, worded as the two date fields have it.
+ * The period each evaluation on screen was worked out for, as its answer named it.
+ *
+ * Not the form's date boxes: they hold what the next evaluation will ask for. Read
+ * off them, a document was headed with whatever somebody had typed since - April
+ * over March's figures - and with nothing when the boxes were left empty and the
+ * server chose the period itself.
  */
-function periodOf(from, to) {
-  const start = from?.value ? fmtDate(from.value) : '';
-  const end = to?.value ? fmtDate(to.value) : '';
+const evaluatedPeriod = { report: null, overtime: null, statistics: null };
 
-  if (!start && !end) return '';
+/** The period a document covers, as an answer named it. */
+function periodOf(period) {
+  if (!period?.from || !period?.to) return '';
 
-  return `${start} – ${end}`;
+  return `${fmtDate(period.from)} – ${fmtDate(period.to)}`;
 }
 
 /**
@@ -11143,7 +11342,7 @@ async function reportDocument() {
   return {
     title: t('report.title', 'Report'),
     colours: screenColours(),
-    subtitle: periodOf($('#form-report').elements.from, $('#form-report').elements.to),
+    subtitle: periodOf(evaluatedPeriod.report),
     sections: [{
       heading: t('report.result', 'Result'),
       caption: $('#report-chart-caption').textContent.trim(),
@@ -11159,7 +11358,7 @@ async function statisticsDocument() {
   return {
     title: t('stats.title', 'My hours'),
     colours: screenColours(),
-    subtitle: periodOf($('#statistics-from'), $('#statistics-to')),
+    subtitle: periodOf(evaluatedPeriod.statistics),
     sections: [
       {
         heading: t('stats.perDay', 'Hours per day'),
@@ -11179,12 +11378,10 @@ async function statisticsDocument() {
 
 /** The overtime screen: the day-by-day table and the balance. */
 async function overtimeDocument() {
-  const form = $('#form-overtime');
-
   return {
     title: t('nav.overtime', 'Overtime'),
     colours: screenColours(),
-    subtitle: periodOf(form.elements.from, form.elements.to),
+    subtitle: periodOf(evaluatedPeriod.overtime),
     sections: [{
       heading: t('ot.balance', 'Balance'),
       caption: $('#overtime-meta').textContent.trim(),
@@ -11443,6 +11640,7 @@ function buildSheetCard(spec) {
     }));
 
   cancel.addEventListener('click', reset);
+  sheetCardResets.push(reset);
 
   return el('div', { class: 'card', 'data-perm': spec.read },
     el('h2', { 'data-i18n': 'wb.title', text: 'Spreadsheet' }),
@@ -11503,6 +11701,33 @@ function wireSheetCards() {
 // labelled "no project" on an otherwise German screen. The words are made at
 // drawing time now, which is also the only time they are needed.
 const reportChart = { kind: 'bars', scope: 'projects', projects: [], days: [] };
+
+/**
+ * Takes down every evaluation this account ran, and the pictures of its hours.
+ *
+ * An evaluation is computed when somebody asks for one, and nothing on the next
+ * sign-in asks again: the result cards stayed up with the last account's totals,
+ * its name, target and booked hours, and the charts of where its time went. The
+ * chart's shape is a preference rather than anybody's hours, and its buttons
+ * show it, so only the figures go.
+ */
+function forgetEveryEvaluation() {
+  for (const card of ['#report-result', '#overtime-result']) {
+    const node = $(card);
+    if (node) node.hidden = true;
+  }
+
+  for (const said of ['#report-total', '#report-chart-caption', '#overtime-total', '#overtime-meta',
+    '#statistics-total']) {
+    const node = $(said);
+    if (node) node.textContent = '';
+  }
+
+  for (const picture of ['#report-chart', '#chart-days', '#chart-projects']) $(picture)?.replaceChildren();
+
+  reportChart.projects = [];
+  reportChart.days = [];
+}
 
 /**
  * Fetches the breakdown for the period just evaluated and draws it.
@@ -11602,11 +11827,15 @@ let timerTick = null;
 /**
  * Renders the clock's state.
  *
- * The elapsed time is counted here from the start instant rather than polled,
- * because a request per second to be told the same thing is a request per second.
- * The server sends its own elapsed figure too, and that is what the entry will
- * record - so a browser with a wrong clock shows a slightly wrong number here and
- * still books the right one.
+ * The elapsed time is counted here rather than polled, because a request per
+ * second to be told the same thing is a request per second - and counted on the
+ * server's clock, which is the one the booking is measured on. The device's own
+ * can be minutes out: two minutes slow, its difference from the recorded start
+ * came out negative and the stopwatch read 00:00:00 for two minutes after Start.
+ * So the offset between the two is measured once, when the server's answer
+ * arrives - the start plus what it says it has measured is its own now - and
+ * the wall clock does the rest, which keeps counting through a laptop's sleep
+ * where a monotonic clock may not.
  */
 function renderTimer() {
   const card = $('#timer-card');
@@ -11632,9 +11861,10 @@ function renderTimer() {
   }
 
   const started = new Date(runningTimer.startedAt).getTime();
+  const offset = runningTimer.clockOffset ?? 0;
 
   const paint = () => {
-    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    const seconds = Math.max(0, Math.floor((Date.now() + offset - started) / 1000));
     const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
     const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
     const ss = String(seconds % 60).padStart(2, '0');
@@ -11651,7 +11881,15 @@ async function loadTimer() {
   if (!can('timesheets:write:own')) return;
 
   const state = await api('/me/timer');
-  runningTimer = state.running ? state : null;
+
+  runningTimer = state.running
+    ? {
+      ...state,
+      // How far the server's clock is ahead of this device's: see renderTimer.
+      clockOffset: new Date(state.startedAt).getTime() + (state.elapsedHours ?? 0) * 3600000
+        - Date.now(),
+    }
+    : null;
 
   // The project it was started with, so stopping books what was chosen - the
   // select is disabled while it runs, and this is what it shows.
@@ -12025,8 +12263,13 @@ function passkeyProblem(err) {
         + 'device trusts. Clicking past a certificate warning is not enough.');
     case 'AbortError':
       return t('passkey.err.aborted', 'The prompt closed before anything was done.');
-    default:
-      return err?.message || t('passkey.failed', 'The passkey was not accepted.');
+    default: {
+      // A name this does not know: still said in the reader's language, with the
+      // browser's own words - in the browser's language - kept as the detail.
+      const said = t('passkey.failed', 'The passkey was not accepted.');
+
+      return err?.message ? `${said} (${err.message})` : said;
+    }
   }
 }
 
@@ -13605,6 +13848,8 @@ function wireForms() {
   // One row, because the total covers the reader's own hours and nobody else's.
   // The column used to name the person, which is now always the same person.
   function renderReport(report) {
+    evaluatedPeriod.report = { from: report.from, to: report.to };
+
     const rows = (report.entries ?? []).map((entry) => el('tr', {},
       el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
       el('td', { class: 'num', text: fmtNumber(entry.hours) }),
@@ -13644,6 +13889,8 @@ function wireForms() {
   });
 
   function renderOvertime(balance) {
+    evaluatedPeriod.overtime = { from: balance.from, to: balance.to };
+
     const rows = (balance.days ?? []).map((d) => el('tr', {},
       el('td', { text: fmtDate(d.date) }),
       el('td', { class: 'num', text: fmtHours(d.booked) }),

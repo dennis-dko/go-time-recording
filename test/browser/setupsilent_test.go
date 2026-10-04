@@ -111,3 +111,81 @@ func TestTheSetupWizardSaysWhyItDidNotAdvance(t *testing.T) {
 
 	t.Logf("the wizard said: %q", said)
 }
+
+// The wizard says why it stays on a step the server does not count as done.
+//
+// A submit can return without an error and leave its step outstanding - the
+// server is the judge, and nextSetupStep asks it. For a required step it stays
+// put and says "Please settle this step before continuing." - and then redrew
+// the step, which begins by hiding that very box. So the wizard stayed where it
+// was and said nothing, exactly the silence the case above was written against.
+func TestTheSetupWizardSaysWhyItStaysOnAStepThatDidNotTake(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	p.signIn(harness.AdminEmail, harness.AdminPassword)
+	p.waitGone("#login-screen")
+	p.settled()
+
+	p.run("the wizard is up",
+		chromedp.WaitVisible(`#setup-wizard`, chromedp.ByID),
+		chromedp.WaitVisible(`#setup-step-fields input[name="newPassword"]`, chromedp.ByQuery))
+
+	// The password change goes through; the state read after it still has the
+	// step outstanding, as a server does when something did not take.
+	p.run("answer that the step is still outstanding", chromedp.Evaluate(`(() => {
+		const real = window.fetch;
+		window.__passwordStatus = 0;
+
+		window.fetch = async (input, init) => {
+			const url = typeof input === 'string' ? input : input.url;
+			const method = (init && init.method ? init.method : 'GET').toUpperCase();
+
+			if (method === 'GET' && url.includes('/api/v1/setup')) {
+				const answer = await (await real(input, init)).json();
+				answer.data.steps = answer.data.steps.map((s) => s.id === 'password' ? { ...s, done: false } : s);
+
+				return new Response(JSON.stringify(answer), { status: 200, headers: { 'Content-Type': 'application/json' } });
+			}
+
+			const response = await real(input, init);
+
+			if (url.includes('/api/v1/me/password')) window.__passwordStatus = response.status;
+
+			return response;
+		};
+
+		return true;
+	})()`, nil))
+
+	p.run("settle the step and press Next",
+		chromedp.SendKeys(`#setup-step-fields input[name="currentPassword"]`,
+			harness.AdminPassword, chromedp.ByQuery),
+		chromedp.SendKeys(`#setup-step-fields input[name="newPassword"]`,
+			adminPassword, chromedp.ByQuery),
+		p.click(`#setup-next`))
+
+	p.atRest()
+
+	var changed int
+
+	p.run("did the step itself take", chromedp.Evaluate(`window.__passwordStatus`, &changed))
+
+	if changed != 200 {
+		t.Fatalf("the password step did not succeed (status %d), so this case never "+
+			"reached the answer it is about", changed)
+	}
+
+	var said string
+
+	p.run("what the wizard says", chromedp.Evaluate(`(() => {
+		const box = document.querySelector('#setup-error');
+
+		return box && !box.hidden ? box.textContent.trim() : '';
+	})()`, &said))
+
+	if !strings.Contains(said, "settle this step") {
+		t.Errorf("the wizard stayed on a step the server did not count as done and said %q", said)
+	}
+}

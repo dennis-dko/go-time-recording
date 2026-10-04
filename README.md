@@ -1089,6 +1089,15 @@ button probes them before you commit. A connection saved there is written to
 `configs/datasource.json` and applied on the next restart; switching a live
 database under running requests is not safe, so it is deliberately not done.
 
+PostgreSQL needs a password here even where the server asks for none - any value
+does then. The connection is written with the values as they are, and in that
+form an empty password takes the database's name for itself, so the server opens
+the database named after the account: measured, the tables went into `postgres`
+while the log named `DB_NAME`. The installer and *Settings* refuse such a
+connection, and one the driver would mangle in other ways, which
+[the operations manual](deploy/OPERATIONS.md) lists; an installation already
+running on one keeps its data where it is and is told so at every start.
+
 On an installation configured through the environment — a compose deployment, or
 a container run with `DB_*` set — there is no such file, so the card is filled
 with the running connection instead, as values, and says above them where it came
