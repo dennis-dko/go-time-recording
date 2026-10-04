@@ -9011,8 +9011,10 @@ async function nextSetupStep() {
   const after = setup.state.steps[setup.index];
 
   if (current.required && !after.done) {
-    setupError(t('setup.decideFirst', 'Please settle this step before continuing.'));
+    // Drawn first and said after: drawing a step begins by hiding the box, so
+    // said first, the wizard stayed put in silence.
     renderSetup();
+    setupError(t('setup.decideFirst', 'Please settle this step before continuing.'));
 
     return;
   }
