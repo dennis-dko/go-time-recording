@@ -113,10 +113,10 @@ type PendingChange struct {
 type RestartResponse struct {
 	// Mode says what pressing the button does here, which is not one thing.
 	// Outside a container this process replaces itself and the installation is
-	// never not running; inside one it stops, and a new container is started by
-	// the restart policy - which this process cannot see, so the screen says
-	// which kind of restart is being offered rather than letting somebody find
-	// out afterwards.
+	// never not running; inside one it stops, and the restart policy starts the
+	// container again - which this process cannot see, so the screen says which
+	// kind of restart is being offered rather than letting somebody find out
+	// afterwards.
 	Mode string `json:"mode"`
 
 	// Supported is false where the process cannot restart itself at all, in which
@@ -212,20 +212,7 @@ func (h *RestartHandler) pending(c *gofr.Context) ([]PendingChange, error) {
 		return pending, nil
 	}
 
-	if running, saved := connectionSummary(h.running), connectionSummary(stored); running != saved {
-		pending = append(pending, PendingChange{
-			Setting: "database", Running: running, Stored: saved,
-		})
-	}
-
-	// The password is compared and never shown, on either side. What is pending is
-	// that it changed; printing the old one next to the new one on a screen would
-	// be a worse answer than the empty one the interface renders for this.
-	if stored.Password != h.running.Password {
-		pending = append(pending, PendingChange{Setting: "databasePassword"})
-	}
-
-	return pending, nil
+	return append(pending, databasePending(h.running, stored)...), nil
 }
 
 // schedulePending is whether a restart would change the directory schedule.
@@ -249,9 +236,35 @@ func schedulePending(stored, fromFile, running string) []PendingChange {
 	return nil
 }
 
+// databasePending is which parts of the database connection a restart would
+// change: stored is what is on disk, running what this process opened.
+//
+// A function for the reason telemetryPending is one. The database settings give
+// two answers of their own about a restart - what the saved connection reports,
+// and what a save answers - and both held an opinion older than this rule: the
+// save said a restart was required every time, also for the running connection
+// saved unchanged, and the settings carried a field nothing set, false while a
+// changed connection sat waiting. They ask this now.
+func databasePending(running, stored appconfig.Datasource) []PendingChange {
+	var pending []PendingChange
+
+	if is, next := connectionSummary(running), connectionSummary(stored); is != next {
+		pending = append(pending, PendingChange{Setting: "database", Running: is, Stored: next})
+	}
+
+	// The password is compared and never shown, on either side. What is pending is
+	// that it changed; printing the old one next to the new one on a screen would
+	// be a worse answer than the empty one the interface renders for this.
+	if stored.Password != running.Password {
+		pending = append(pending, PendingChange{Setting: "databasePassword"})
+	}
+
+	return pending
+}
+
 // telemetryPending is which telemetry settings a restart would change.
 //
-// A function of its three inputs rather than a method, so the rule can be asked
+// A function of its inputs rather than a method, so the rule can be asked
 // directly. What it decides is not obvious enough to be left only reachable
 // through a running instance: the interesting cases are about a setting nobody
 // has stored, and arranging those end-to-end means starting a process, storing a
@@ -416,12 +429,16 @@ func connectionSummary(ds appconfig.Datasource) string {
 		return strings.TrimSpace(dialect + " " + ds.Name)
 	}
 
-	summary := fmt.Sprintf("%s %s:%s/%s",
-		dialect, ds.Host, appconfig.DefaultPortFor(ds.Dialect, ds.Port), ds.Name)
-
+	// user@host, as a connection URL writes it: the card is read in the reader's
+	// language, and a word joining the values - it was "as" - is English on a
+	// German screen. The notation needs no translating.
+	user := ""
 	if ds.User != "" {
-		summary += " as " + ds.User
+		user = ds.User + "@"
 	}
+
+	summary := fmt.Sprintf("%s %s%s:%s/%s",
+		dialect, user, ds.Host, appconfig.DefaultPortFor(ds.Dialect, ds.Port), ds.Name)
 
 	if ds.SSLMode != "" {
 		summary += " (" + ds.SSLMode + ")"

@@ -3373,9 +3373,10 @@ const TRANSLATIONS = {
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und Ihre Container-Verwaltung startet einen neuen aus dem '
-      + 'Abbild - was sie nur tut, wenn sie dazu angewiesen wurde. Die mit dieser '
-      + 'Anwendung ausgelieferte Bereitstellung ist es.',
+      + 'hält ihn an, und Ihre Container-Verwaltung startet ihn wieder - was sie nur '
+      + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
+      + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
+      + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
     'restart.modeProcess': 'Die Anwendung ersetzt sich selbst, läuft also durchgehend.',
     'restart.now': 'Jetzt neu starten',
     'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
@@ -9677,9 +9678,10 @@ async function loadRestart() {
   const description = state.mode === 'container'
     ? t('restart.modeContainer',
       'This installation runs in a container. The button stops it, and your '
-      + 'container manager starts a new one from the image - which it only does '
-      + 'if it was told to restart the container. The deployment shipped with '
-      + 'this application is.')
+      + 'container manager starts it again - which it only does under a restart '
+      + 'policy that also restarts a container that ended without an error: '
+      + 'always or unless-stopped, not on-failure. The deployment shipped with '
+      + 'this application sets one.')
     : t('restart.modeProcess',
       'The application replaces itself, so it is never not running.');
 

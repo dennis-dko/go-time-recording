@@ -14,7 +14,8 @@ const (
 	// not running.
 	ModeProcess = "process"
 
-	// ModeContainer: this process stops, and the container manager starts a new
-	// container from the image. Which it only does if it was told to - see Now.
+	// ModeContainer: this process stops, and the container manager starts the
+	// container again. Which it only does under a restart policy that restarts a
+	// container that ended without an error - see Now.
 	ModeContainer = "container"
 )
