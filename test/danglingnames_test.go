@@ -80,6 +80,7 @@ var namedOnPurpose = map[string]string{
 	"getFromStringItem": "excelize's, where the spilled shared string is read",
 	"sharedStringItem":  "excelize's",
 	"offsetRange":       "excelize's",
+	"userPrincipalName": "Active Directory's, the name@realm a Kerberos sign-in is also looked up by",
 
 	// Gone on purpose, and the comment says so where it stood.
 	"mayShare":                  "retired with the shared project",

@@ -147,6 +147,59 @@
         }
       }
     },
+    "/auth/kerberos": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Whether a Kerberos sign-in is on offer",
+        "description": "True where a keytab was read at start and a directory is configured to look a ticket's owner up in. The interface asks before trying one, so a browser on an installation without either is never sent the Negotiate challenge.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign in with a Kerberos ticket",
+        "description": "The ticket travels as `Authorization: Negotiate …`, which a browser sends by itself once it trusts this address; a request without one is answered 401 with `WWW-Authenticate: Negotiate`, the challenge that asks for it. Only a ticket of the keytab's realm is accepted. Its owner is looked up in the directory - as named, then as name@REALM - and signed in to the account a directory password sign-in reaches, with the same session, cookie and CSRF rotation. A second factor the account holds is asked for with `totpRequired`, and the code is sent back as `totp` with the ticket.",
+        "security": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "totp": {
+                    "type": "string",
+                    "description": "Required when the account has two-factor authentication enabled."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Signed in; a session cookie is set. When the response says `totpRequired`, no cookie is set and the code must be supplied."
+          },
+          "401": {
+            "description": "No ticket, a ticket that does not verify, or an owner the directory does not hold. Without a ticket the answer carries `WWW-Authenticate: Negotiate`."
+          },
+          "409": {
+            "description": "No keytab was read at start (`kerberosOff`), or no directory is configured to look a ticket's owner up in (`kerberosNeedsDirectory`)."
+          },
+          "429": {
+            "description": "Too many attempts"
+          }
+        }
+      }
+    },
     "/auth/logout": {
       "post": {
         "tags": [

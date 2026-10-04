@@ -285,6 +285,13 @@ func (l *RateLimiter) guards(r *http.Request) bool {
 		return true
 	}
 
+	// The ticket sign-in as well: it checks a second factor as a password
+	// sign-in does, and a code is guessed at the same speed through either. Its
+	// GET only says whether it is on offer, and every sign-in screen asks.
+	if strings.HasSuffix(r.URL.Path, "/auth/kerberos") && r.Method == http.MethodPost {
+		return true
+	}
+
 	// Token holders are scripts; a browser session is already rate-limited by
 	// the human driving it.
 	return r.Header.Get(APITokenHeader) != "" ||

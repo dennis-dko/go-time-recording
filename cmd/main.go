@@ -33,6 +33,7 @@ import (
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/directory"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/kerberos"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
@@ -790,6 +791,22 @@ func main() {
 	// turn a warning in the log into an outage.
 	var httpsFrontEnd atomic.Bool
 
+	// A sign-in with the browser's Kerberos ticket, where a keytab is given. Read
+	// once, at start, like a certificate's key: a keytab that cannot be read turns
+	// the sign-in off and says so, rather than stopping an installation whose
+	// passwords still work.
+	var kerberosAcceptor *kerberos.Acceptor
+
+	if cfg.KerberosKeytab != "" {
+		acceptor, err := kerberos.Load(cfg.KerberosKeytab, cfg.KerberosServicePrincipal, app.Logger())
+		if err != nil {
+			app.Logger().Errorf("could not read the Kerberos keytab: %v; signing in with a ticket is off", err)
+		} else {
+			kerberosAcceptor = acceptor
+			app.Logger().Infof("signing in with a Kerberos ticket of realm %s is on", acceptor.Realm())
+		}
+	}
+
 	app.UseMiddleware(tlsserver.KeepThePlainPortLocal(httpsFrontEnd.Load, cfg.TLSPort))
 	// Then the size of it, before anything below reads a body - which all of them
 	// do. A request being sent to the encrypted address instead is not worth
@@ -803,6 +820,9 @@ func main() {
 	// without a session ever being resolved for it.
 	app.UseMiddleware(rest.CSRFMiddleware())
 	app.UseMiddleware(rest.CookieMiddleware())
+	// After both, so the ticket sign-in is inside the CSRF check and can set its
+	// cookie like the others.
+	app.UseMiddleware(rest.KerberosTicket(kerberosAcceptor))
 	app.UseMiddleware(rest.SessionMiddleware(sessions))
 	// Tokens are checked after sessions and only fill in when no session was
 	// found, so a browser session always wins over a stray header.
@@ -877,7 +897,10 @@ func main() {
 
 	v1.RegisterRoutes(app, v1.Handlers{
 		Auth: rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone).
-			WithMaintenance(maintenanceState),
+			WithMaintenance(maintenanceState).
+			// Only with a directory: a ticket names somebody, and the directory is
+			// where that name becomes an account.
+			WithKerberos(func() bool { return kerberosAcceptor != nil && ldapClient.Enabled() }),
 		Users: rest.NewUserHandler(users, userDomain, authorizer, auth, instanceTimezone).
 			// A password reset has to reach the sessions as well as the password:
 			// a cookie is not re-checked against the password that opened it, so
@@ -907,8 +930,9 @@ func main() {
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
-		Passkeys:   rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName),
-		Documents:  rest.NewDocumentHandler(authorizer, instanceName),
+		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
+			WithMaintenance(maintenanceState),
+		Documents: rest.NewDocumentHandler(authorizer, instanceName),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,

@@ -60,6 +60,24 @@ type client struct {
 	t    *testing.T
 	app  *app
 	http *http.Client
+
+	// extra is sent with every request, beside what do sets itself; see withHeader.
+	extra http.Header
+}
+
+// withHeader is this client sending name: value as well, sharing its cookies -
+// so a session the header opens is the session the next request carries.
+func (c *client) withHeader(name, value string) *client {
+	copied := *c
+	copied.extra = c.extra.Clone()
+
+	if copied.extra == nil {
+		copied.extra = http.Header{}
+	}
+
+	copied.extra.Set(name, value)
+
+	return &copied
 }
 
 // newClient opens a session and fetches the page once, which is what hands out
@@ -111,6 +129,7 @@ func (a *app) newClient() *client {
 type response struct {
 	Status int
 	Body   []byte
+	Header http.Header
 }
 
 // Data unmarshals GoFr's {data: …} envelope into target.
@@ -189,19 +208,11 @@ func (c *client) do(method, path string, body any) response {
 		req.Header.Set("X-CSRF-Token", c.csrfToken())
 	}
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		c.t.Fatalf("%s %s failed: %v\n%s", method, path, err, c.app.log())
+	for name, values := range c.extra {
+		req.Header[name] = values
 	}
 
-	defer func() { _ = resp.Body.Close() }()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.t.Fatalf("cannot read the response: %v", err)
-	}
-
-	return response{Status: resp.StatusCode, Body: data}
+	return c.send(req, method, path)
 }
 
 // raw sends a body exactly as given, so a malformed one can be sent on purpose.
@@ -264,7 +275,7 @@ func (c *client) send(req *http.Request, method, path string) response {
 		c.t.Fatalf("cannot read the response: %v", err)
 	}
 
-	return response{Status: resp.StatusCode, Body: data}
+	return response{Status: resp.StatusCode, Body: data, Header: resp.Header}
 }
 
 // api is do() with the /api/v1 prefix, which is every call but the assets.
