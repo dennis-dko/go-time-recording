@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -58,5 +59,61 @@ func TestTheCalendarShowsTheMonthItsArrowsAreOn(t *testing.T) {
 
 	if got := p.text("#calendar-title"); got != want {
 		t.Errorf("the arrows are on %s and the calendar shows %s", want, got)
+	}
+}
+
+// The time entries show the project the filter is on, whichever answer arrives
+// last.
+//
+// The list was emptied when a load began and the answer added to it when it
+// came back. Two loads at once - stepping through the filter with the arrow
+// keys sends one per step - both emptied it first, and then both added: the list
+// held the entries of two projects under a filter naming one, with the total of
+// whichever answered last.
+func TestTheTimeEntriesShowTheProjectTheFilterIsOn(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+	p.bookAnHourOn(t, "First")
+	p.bookAnHourOn(t, "Second")
+
+	p.run("load the screen again", chromedp.Evaluate(`void refreshAll()`, nil))
+	p.atRest()
+
+	p.run("hold back the first project and pick both in turn", chromedp.Evaluate(`(() => {
+		const id = (name) => String(cache.projects.find((project) => project.name === name).id);
+		const first = id('First');
+
+		const real = window.fetch;
+		window.fetch = async (input, init) => {
+			const url = typeof input === 'string' ? input : input.url;
+
+			if (url.includes('/timesheets?') && url.includes('projectId=' + first + '&')) {
+				await new Promise((resolve) => setTimeout(resolve, 1500));
+			}
+
+			return real(input, init);
+		};
+
+		const filter = document.querySelector('#filter-ts-project');
+
+		for (const name of ['First', 'Second']) {
+			filter.value = id(name);
+			filter.dispatchEvent(new Event('change'));
+		}
+
+		return 1;
+	})()`, nil))
+
+	p.atRest()
+
+	var shown []string
+
+	p.run("read the list", chromedp.Evaluate(
+		`[...document.querySelectorAll('#table-timesheets tbody tr')].map((row) => row.textContent)`, &shown))
+
+	if len(shown) != 1 || !strings.Contains(shown[0], "Second") {
+		t.Errorf("the filter is on Second and the list holds %d row(s): %q", len(shown), shown)
 	}
 }
