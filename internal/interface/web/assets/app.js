@@ -4101,6 +4101,7 @@ const TRANSLATIONS = {
     'update.willAskRestart': 'Der Download wird gegen die Prüfsumme des Releases geprüft. '
       + 'Danach muss die Anwendung von Hand neu gestartet werden — dieses System kann '
       + 'sich nicht selbst neu starten.',
+    'update.noBinary': 'Das Release enthält keinen Build für diese Plattform und kann daher nicht von hier aus installiert werden. Was es anbietet, steht auf der Release-Seite.',
     'update.inContainer': 'Dies läuft in einem Container. Ein ausgetauschtes Programm wäre '
       + 'beim nächsten Neuaufbau wieder weg — stattdessen das Abbild aktualisieren: '
       + 'docker compose pull && docker compose up -d',
@@ -9245,6 +9246,16 @@ function renderUpdate(state) {
     : t('update.willAskRestart', 'The download is checked against the release’s own '
       + 'checksum. Afterwards the application has to be restarted by hand — this '
       + 'platform cannot restart itself.');
+
+  // Before anything that describes the download: there is none on offer, and
+  // the card said there was beside a button that had gone.
+  if (state.why === 'noBinary') {
+    hint.textContent = t('update.noBinary',
+      'The release published no build for this platform, so it cannot be installed '
+      + 'from here. The release page says what it offers.');
+
+    return;
+  }
 
   // A container with an updater beside it takes the whole image, and what the
   // button does then is different enough to say plainly: it is not this
