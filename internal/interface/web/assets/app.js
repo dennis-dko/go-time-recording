@@ -457,7 +457,7 @@ function describeRefusal(err) {
 
   if (err.code) {
     const translated = t(`err.${err.code}`, err.message ?? '');
-    if (translated) return fillIn(translated, err.values);
+    if (translated) return fillIn(translated, refusalValues(err.code, err.values));
   }
 
   if (err.message) return err.message;
@@ -521,6 +521,38 @@ function showRefusal(target, err) {
 
   const detail = refusalDetail(err);
   if (detail) target.append(detailDisclosure(detail));
+}
+
+/**
+ * Which values of which refusal the screen writes in words of its own.
+ *
+ * fillIn writes a number the way the tables beside it do, and a string as it
+ * arrives. Two kinds of string arrive in a form nobody on this screen reads: a day
+ * in the order the wire uses, and a status as the word it is stored under. So a
+ * German refusal said "am 2026-10-04" beside a form showing 04.10.2026, and "ist
+ * completed" beside a badge saying "abgeschlossen" - a word the reader could look
+ * for and find nowhere.
+ *
+ * Named by code and position, because on the wire the values are plain strings
+ * and stay so: an API client reads them too. Which of them is a day or a status is
+ * known here, beside the sentences, and in the call that sends it.
+ * TestARefusalWritesItsValuesTheWayTheScreenDoes reads every such call and fails
+ * on one this does not name.
+ */
+const REFUSAL_VALUES = {
+  archiveNeedsCompleted: { 0: statusName },
+  overDailyLimit: { 2: fmtDate },
+  projectClosedForBooking: { 1: statusName },
+};
+
+/** The values of one refusal, each written the way the rest of the screen writes it. */
+function refusalValues(code, values) {
+  const written = REFUSAL_VALUES[code];
+  if (!written || !Array.isArray(values)) return values;
+
+  return values.map((value, i) => (written[i] && typeof value === 'string'
+    ? written[i](value)
+    : value));
 }
 
 /**
@@ -1304,10 +1336,15 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/** What a project's status is called, in the reader's language. */
+function statusName(status) {
+  return t(`status.${status}`, status);
+}
+
 function statusBadge(status) {
   // The class keeps the raw status so the colour rules still match; only the
   // label is translated.
-  return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
+  return el('span', { class: `status status-${status}`, text: statusName(status) });
 }
 
 /**
@@ -3373,9 +3410,10 @@ const TRANSLATIONS = {
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und Ihre Container-Verwaltung startet einen neuen aus dem '
-      + 'Abbild - was sie nur tut, wenn sie dazu angewiesen wurde. Die mit dieser '
-      + 'Anwendung ausgelieferte Bereitstellung ist es.',
+      + 'hält ihn an, und Ihre Container-Verwaltung startet ihn wieder - was sie nur '
+      + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
+      + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
+      + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
     'restart.modeProcess': 'Die Anwendung ersetzt sich selbst, läuft also durchgehend.',
     'restart.now': 'Jetzt neu starten',
     'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
@@ -9677,9 +9715,10 @@ async function loadRestart() {
   const description = state.mode === 'container'
     ? t('restart.modeContainer',
       'This installation runs in a container. The button stops it, and your '
-      + 'container manager starts a new one from the image - which it only does '
-      + 'if it was told to restart the container. The deployment shipped with '
-      + 'this application is.')
+      + 'container manager starts it again - which it only does under a restart '
+      + 'policy that also restarts a container that ended without an error: '
+      + 'always or unless-stopped, not on-failure. The deployment shipped with '
+      + 'this application sets one.')
     : t('restart.modeProcess',
       'The application replaces itself, so it is never not running.');
 
@@ -10669,7 +10708,7 @@ function rowProblem(row) {
   const sentence = t(`row.${row.problemCode}`, '')
     || t(`err.${row.problemCode}`, row.problem);
 
-  return fillIn(sentence, row.problemValues);
+  return fillIn(sentence, refusalValues(row.problemCode, row.problemValues));
 }
 
 /** Shows what the file would do, row by row. */

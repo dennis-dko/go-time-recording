@@ -309,19 +309,21 @@ func (s *UserApplicationService) DeleteUser(ctx context.Context, cmd command.Del
 			WithCode("directoryAccountUndeletable", user.Email)
 	}
 
-	// How much of the person's work is about to go with the account.
-	entries, err := s.timesheetRepository.GetByFilter(ctx,
+	// How much of the person's work is about to go with the account. Counted
+	// rather than loaded: this is everything they ever recorded, and the refusal
+	// needs the number and nothing else.
+	entries, err := s.timesheetRepository.CountByFilter(ctx,
 		repository.TimesheetFilter{UserID: cmd.ID})
 	if err != nil {
 		return err
 	}
 
-	if len(entries) > 0 && !cmd.Purge {
+	if entries > 0 && !cmd.Purge {
 		return apperror.Conflictf(
 			"%q has %d recorded time entries, which would be deleted with the account "+
 				"and cannot be recovered; confirm to proceed",
-			user.Email, len(entries)).
-			WithCode("deletionNeedsConfirming", user.Email, len(entries))
+			user.Email, entries).
+			WithCode("deletionNeedsConfirming", user.Email, entries)
 	}
 
 	return s.purger.PurgeUser(ctx, cmd.ID)
