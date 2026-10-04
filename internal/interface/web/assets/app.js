@@ -10532,6 +10532,8 @@ async function loadStatistics() {
 
   const stats = await api(`/me/statistics?${params}`);
 
+  evaluatedPeriod.statistics = { from: stats.from, to: stats.to };
+
   $('#statistics-total').textContent =
     `${t('stats.total', 'Total')}: ${fmtHours(stats.totalHours ?? 0)}`;
 
@@ -11072,15 +11074,20 @@ function screenColours() {
 }
 
 /**
- * The period a document covers, worded as the two date fields have it.
+ * The period each evaluation on screen was worked out for, as its answer named it.
+ *
+ * Not the form's date boxes: they hold what the next evaluation will ask for. Read
+ * off them, a document was headed with whatever somebody had typed since - April
+ * over March's figures - and with nothing when the boxes were left empty and the
+ * server chose the period itself.
  */
-function periodOf(from, to) {
-  const start = from?.value ? fmtDate(from.value) : '';
-  const end = to?.value ? fmtDate(to.value) : '';
+const evaluatedPeriod = { report: null, overtime: null, statistics: null };
 
-  if (!start && !end) return '';
+/** The period a document covers, as an answer named it. */
+function periodOf(period) {
+  if (!period?.from || !period?.to) return '';
 
-  return `${start} – ${end}`;
+  return `${fmtDate(period.from)} – ${fmtDate(period.to)}`;
 }
 
 /**
@@ -11132,7 +11139,7 @@ async function reportDocument() {
   return {
     title: t('report.title', 'Report'),
     colours: screenColours(),
-    subtitle: periodOf($('#form-report').elements.from, $('#form-report').elements.to),
+    subtitle: periodOf(evaluatedPeriod.report),
     sections: [{
       heading: t('report.result', 'Result'),
       caption: $('#report-chart-caption').textContent.trim(),
@@ -11148,7 +11155,7 @@ async function statisticsDocument() {
   return {
     title: t('stats.title', 'My hours'),
     colours: screenColours(),
-    subtitle: periodOf($('#statistics-from'), $('#statistics-to')),
+    subtitle: periodOf(evaluatedPeriod.statistics),
     sections: [
       {
         heading: t('stats.perDay', 'Hours per day'),
@@ -11168,12 +11175,10 @@ async function statisticsDocument() {
 
 /** The overtime screen: the day-by-day table and the balance. */
 async function overtimeDocument() {
-  const form = $('#form-overtime');
-
   return {
     title: t('nav.overtime', 'Overtime'),
     colours: screenColours(),
-    subtitle: periodOf(form.elements.from, form.elements.to),
+    subtitle: periodOf(evaluatedPeriod.overtime),
     sections: [{
       heading: t('ot.balance', 'Balance'),
       caption: $('#overtime-meta').textContent.trim(),
@@ -13594,6 +13599,8 @@ function wireForms() {
   // One row, because the total covers the reader's own hours and nobody else's.
   // The column used to name the person, which is now always the same person.
   function renderReport(report) {
+    evaluatedPeriod.report = { from: report.from, to: report.to };
+
     const rows = (report.entries ?? []).map((entry) => el('tr', {},
       el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
       el('td', { class: 'num', text: fmtNumber(entry.hours) }),
@@ -13633,6 +13640,8 @@ function wireForms() {
   });
 
   function renderOvertime(balance) {
+    evaluatedPeriod.overtime = { from: balance.from, to: balance.to };
+
     const rows = (balance.days ?? []).map((d) => el('tr', {},
       el('td', { text: fmtDate(d.date) }),
       el('td', { class: 'num', text: fmtHours(d.booked) }),
