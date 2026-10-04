@@ -182,7 +182,10 @@ func Build() (cleanup func(), err error) {
 		args = append(args, "-race")
 	}
 
-	args = append(args, "./cmd/main.go")
+	// The package rather than main.go: naming a file builds that file and no
+	// other, so a second one in cmd/ would be left out of every instance a
+	// suite starts.
+	args = append(args, "./cmd")
 
 	build := exec.Command("go", args...)
 	build.Dir = RepoRoot()

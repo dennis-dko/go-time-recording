@@ -94,6 +94,43 @@ func TestTheWaitLoopDistinguishesTheApplicationFromTheInstaller(t *testing.T) {
 	}
 }
 
+// The wait for the application ends, whoever is answering.
+//
+// The two-minute limit stood behind the return an installer still answering
+// takes. So when the process went away after a save and came back as an
+// installer - the connection file lost with the container it was written in -
+// the page waited for as long as the tab stayed open, under a line saying the
+// application was starting. Read from the page rather than driven: two minutes
+// of waiting is what the case would otherwise be.
+func TestTheWaitForTheApplicationEndsWhoeverAnswers(t *testing.T) {
+	page, err := assets.ReadFile("assets/install.html")
+	if err != nil {
+		t.Fatalf("reading the installer page: %v", err)
+	}
+
+	markup := string(page)
+
+	start := strings.Index(markup, "function waitForTheApplication()")
+	if start < 0 {
+		t.Fatal("the installer no longer waits for the application at all")
+	}
+
+	loop := markup[start:]
+
+	limit := strings.Index(loop, "attempts > 120")
+	asks := strings.Index(loop, "await whoAnswers()")
+
+	if limit < 0 || asks < 0 {
+		t.Fatalf("the wait loop no longer has a limit (%d) or no longer asks who "+
+			"answers (%d); this case is reading nothing", limit, asks)
+	}
+
+	if limit > asks {
+		t.Error("the limit stands behind the question of who answers, so an installer " +
+			"that goes on answering is waited on for ever")
+	}
+}
+
 // The installer speaks the browser's language.
 //
 // It is the first screen anybody sees and it was English only, on a German
@@ -138,6 +175,43 @@ func TestTheInstallerFollowsTheBrowserLanguage(t *testing.T) {
 	// still renders something.
 	if !strings.Contains(markup, ">Set up Time Recording</h1>") {
 		t.Error("the English original is gone from the markup, so there is no fallback")
+	}
+}
+
+// The page says nothing its dictionary cannot say in German.
+//
+// Two shapes, because both had happened on this page: a lookup whose key the
+// dictionary does not hold, which renders the English and looks translated in
+// the source; and a label written straight from a literal - the password
+// button's name was "Show the password" on an otherwise German screen, for
+// everybody who reads a screen by its accessible names.
+func TestTheInstallerPageSaysNothingItCannotTranslate(t *testing.T) {
+	raw, err := assets.ReadFile("assets/install.html")
+	if err != nil {
+		t.Fatalf("reading the installer page: %v", err)
+	}
+
+	page := string(raw)
+
+	// A whole key, followed by its fallback. The two lookups built from a prefix
+	// - a refusal's code, a field's name - are held by the case that knows which
+	// codes and fields the server sends.
+	looked := regexp.MustCompile(`\bt\('([a-zA-Z.]+)',`).FindAllStringSubmatch(page, -1)
+	if len(looked) < 10 {
+		t.Fatalf("found %d lookups in the page; this case is reading nothing", len(looked))
+	}
+
+	for _, lookup := range looked {
+		if !strings.Contains(page, "'"+lookup[1]+"':") {
+			t.Errorf("the page looks up %q and its German dictionary has no such entry", lookup[1])
+		}
+	}
+
+	for _, bare := range regexp.MustCompile(
+		`(?:\.title\s*=|setAttribute\('aria-label',|\.textContent\s*=|\.placeholder\s*=)\s*'[^']+'`).
+		FindAllString(page, -1) {
+		t.Errorf("the page writes a label from a literal, in English whatever the reader "+
+			"asked for: %s", bare)
 	}
 }
 
