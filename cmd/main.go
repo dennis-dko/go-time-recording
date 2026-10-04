@@ -134,6 +134,18 @@ func hostSuffix(ds appconfig.Datasource) string {
 	return fmt.Sprintf(", host %s, user %q", where, ds.User)
 }
 
+// misreadLine is the line a failure message adds when the driver would misread
+// the connection, or nothing. Where it does, that is usually why the connection
+// failed, and the driver's own words do not say so: for a space in the password
+// they name the half after it as a setting with no value.
+func misreadLine(misread error) string {
+	if misread == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("  %v\n", misread)
+}
+
 // sqliteBusyTimeout is how long a writer waits for another writer to finish
 // before giving up.
 //
@@ -336,17 +348,24 @@ func main() {
 		installerToken = chosen.Token
 	}
 
+	// Asked here and said once there is a logger, never refused: an installation
+	// running on a connection the driver misreads keeps its data where that
+	// connection took it, and refusing to start would cut it off from that data.
+	// The installer and the settings screen refuse to choose one.
+	misread := appconfig.Misreading(ds)
+
 	// Proven before GoFr touches it, with the same drivers GoFr will use. GoFr
 	// discovers an unreachable database part-way through its migrations and
 	// exits on a message about a table it could not create, which describes
 	// neither what is wrong nor where.
-	if err := appconfig.TestDatasource(context.Background(), ds); err != nil {
+	if err := appconfig.ProbeDatasource(context.Background(), ds); err != nil {
 		die(restoreOutput,
 			"cannot reach the configured database.\n"+
 				"  %v\n"+
+				"%s"+
 				"  dialect %q, name %q%s\n"+
 				"  Remove DB_DIALECT and %s to choose a connection interactively instead.",
-			err, ds.Dialect, ds.Name, hostSuffix(ds), appconfig.DatasourceFile)
+			err, misreadLine(misread), ds.Dialect, ds.Name, hostSuffix(ds), appconfig.DatasourceFile)
 	}
 
 	if err := appconfig.ApplyDatasource(ds); err != nil {
@@ -461,6 +480,12 @@ func main() {
 	// at start, where whoever set it will look for why it does not apply.
 	for _, unusable := range cfg.Unusable {
 		app.Logger().Warnf("configuration: %s", unusable)
+	}
+
+	// After GoFr's own line naming the database it was given, which is the line
+	// this one corrects.
+	if misread != nil {
+		app.Logger().Warnf("database: %v", misread)
 	}
 	app.Logger().Infof("go-time-recording %s starting (dialect=%s)", version, cfg.Dialect)
 

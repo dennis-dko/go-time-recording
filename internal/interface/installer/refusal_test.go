@@ -122,3 +122,56 @@ func TestAConnectionThatCannotBeSavedIsNamed(t *testing.T) {
 			"corrected answer would be refused")
 	}
 }
+
+// A connection the driver would read otherwise than it was typed is refused,
+// and says why, before anything is dialled.
+//
+// GoFr writes the connection string with the values as they are, and the probe
+// writes it the same way, so a probe that succeeds proves nothing about this.
+// Measured: with no password a PostgreSQL connection reads "password=
+// dbname=gtr", the driver takes "dbname=gtr" for the password, and the server
+// opens the database named after the account - against a server that asks for
+// no password, the installer saved it and the application created its tables in
+// "postgres" while its log said the database it had been given. A space in the
+// password was refused by the driver's parser, in its own English.
+func TestAConnectionTheDriverWouldReadOtherwiseIsRefused(t *testing.T) {
+	s := &server{
+		cfg:  Config{Token: "the-token", DatasourceFile: filepath.Join(t.TempDir(), "datasource.json"), Logf: t.Logf},
+		done: make(chan config.Datasource, 1),
+	}
+
+	// Nothing listens on port 1, so whatever is let through fails at once.
+	for _, c := range []struct{ what, body, code string }{
+		{"a PostgreSQL connection without a password",
+			`{"dialect":"postgres","name":"gtr","host":"127.0.0.1","port":"1","user":"postgres"}`,
+			"passwordSwallowsName"},
+		{"a PostgreSQL password with a space",
+			`{"dialect":"postgres","name":"gtr","host":"127.0.0.1","port":"1","user":"gtr","password":"two words"}`,
+			"postgresMisread"},
+		{"a MySQL address without its brackets",
+			`{"dialect":"mysql","name":"gtr","host":"::1","port":"1","user":"gtr","password":"x"}`,
+			"mysqlMisread"},
+		{"a MySQL password the driver reads intact",
+			`{"dialect":"mysql","name":"gtr","host":"127.0.0.1","port":"1","user":"gtr","password":"p@ss:w/rd?"}`,
+			"probeFailed"},
+	} {
+		for path, handler := range map[string]http.HandlerFunc{
+			"/install/test": s.test, "/install/save": s.save,
+		} {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(c.body))
+			req.Header.Set("X-Setup-Token", "the-token")
+
+			rec := httptest.NewRecorder()
+			handler(rec, req)
+
+			if answer := refusalOf(t, rec); rec.Code != http.StatusBadRequest || answer.Code != c.code {
+				t.Errorf("%s: %s answered %d %q, want %d %q: %s",
+					c.what, path, rec.Code, answer.Code, http.StatusBadRequest, c.code, answer.Error)
+			}
+		}
+	}
+
+	if s.saved {
+		t.Error("the installer saved a connection the driver would have read otherwise")
+	}
+}
