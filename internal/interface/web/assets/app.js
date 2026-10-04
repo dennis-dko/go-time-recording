@@ -12201,6 +12201,12 @@ function wireLogViewer() {
     schedulePoll({ immediate: !logView.paused });
   });
 
+  // Hidden is nobody looking - see logViewerActive.
+  document.addEventListener('visibilitychange', () => {
+    if (logViewerActive()) schedulePoll({ immediate: true });
+    else stopLogPolling();
+  });
+
   $('#log-clear').addEventListener('click', () => {
     // The view only. The server's buffer is not the viewer's to discard, and an
     // administrator clearing their screen must not destroy evidence for the
@@ -12313,6 +12319,12 @@ function stopLogPolling({ refused = false } = {}) {
  * Only while its own screen is on top: an administrator who moved on to book
  * time has no use for a request every three seconds, and the endpoint is not
  * free - it reads a mutex-guarded buffer.
+ *
+ * And only while its tab is the one being looked at, as for the other two things
+ * that ask in the background. At INFO every poll is a line in the buffer it
+ * shows, so a log screen left in a hidden tab overnight wrote one every few
+ * seconds into five thousand, and by morning had pushed out the lines somebody
+ * would have come to read. Looking again asks for what was missed in one go.
  */
 function logViewerActive() {
   const card = $('#log-card');
@@ -12321,7 +12333,8 @@ function logViewerActive() {
   // The sign-in screen being up means there is no session to poll with. Without
   // this the poller keeps asking through a password change - which ends every
   // session - and paints the screen with authentication failures.
-  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden;
+  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden
+    && !document.hidden;
 }
 
 function setLogStatus(text) {
