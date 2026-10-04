@@ -144,8 +144,14 @@ func (s *APITokenService) Resolve(ctx context.Context, secret string) (*Principa
 			WithCode("mustChangePasswordFirst")
 	}
 
-	// Best effort: failing to record usage must not fail the request.
-	_ = s.tokens.TouchLastUsed(ctx, token.ID)
+	// At most once a maxTouchInterval, for the reason a session's last use is:
+	// a script is what a token is for, and writing on every one of its requests
+	// made each a write and its commit - measured on SQLite, 3.3 to 6.3 ms a
+	// request against 0.5 without it. Best effort, like that one: failing to
+	// record a use must not fail the request.
+	if token.LastUsedAt == nil || time.Since(*token.LastUsedAt) >= maxTouchInterval {
+		_ = s.tokens.TouchLastUsed(ctx, token.ID)
+	}
 
 	return s.auth.principalFor(ctx, user)
 }

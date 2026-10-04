@@ -426,7 +426,7 @@
             "description": "Tokens"
           }
         },
-        "description": "`createdAt`, `expiresAt` and `lastUsedAt` are RFC 3339 moments, not dates. They used to be days, which is the wrong answer for the field somebody reads when they think a token has been taken: a token used at three in the morning read exactly like one used at three in the afternoon, and one used twice today read as used once."
+        "description": "`createdAt`, `expiresAt` and `lastUsedAt` are RFC 3339 moments, not dates. They used to be days, which is the wrong answer for the field somebody reads when they think a token has been taken: a token used at three in the morning read exactly like one used at three in the afternoon, and one used twice today read as used once. A use is written down at most once a minute, so `lastUsedAt` can be up to a minute behind the latest one."
       },
       "post": {
         "tags": [
