@@ -147,3 +147,20 @@ func TestAKerberosSignInAsksForAnEnrolledSecondFactor(t *testing.T) {
 		t.Errorf("the ticket and the right code were refused: %v", err)
 	}
 }
+
+// An account the directory has switched off is not signed in by a ticket.
+//
+// A password sign-in learns it from the bind, which a disabled Active Directory
+// account fails at once. A ticket was issued before the account was switched off
+// and stays valid for hours - the browser presents the service ticket it already
+// holds, and it is checked here with the keytab, offline - so the entry is all
+// there is to go on, and the ticket path read only that the entry was there.
+func TestAKerberosSignInIsRefusedForAnAccountTheDirectoryHasSwitchedOff(t *testing.T) {
+	_, sessions := kerberosSessions(t, map[string]*service.ExternalUser{
+		"jdoe": {ID: "uuid-jdoe", Email: "jdoe@example.com", Name: "Jane Doe", Disabled: true},
+	})
+
+	if _, err := sessions.KerberosLogin(context.Background(), "jdoe", "EXAMPLE.COM", ""); err == nil {
+		t.Fatal("a ticket opened a session for an account the directory has switched off")
+	}
+}

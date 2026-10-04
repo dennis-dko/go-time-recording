@@ -875,6 +875,11 @@ What a ticket reaches:
 - **Only tickets of the keytab's realm.** A trusted domain's KDC can issue a
   ticket for this service too, sealed with the same key; its owner is somebody
   else whose name the directory here may happen to hold, so it is refused.
+- **Not an account the directory has switched off.** A ticket stays valid for
+  hours after its owner's account is disabled, and the browser presents the one
+  it holds; so an Active Directory account whose `userAccountControl` says
+  disabled, or whose `accountExpires` has passed, is refused at once, as its
+  password would be. A directory without those attributes is not affected.
 - **A second factor is still asked for.** The ticket stands in for the password
   and for nothing else: an account with an authenticator code types it in, as
   it would after a password.

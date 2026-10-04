@@ -78,7 +78,12 @@ func TestTheTimeEntriesShowTheProjectTheFilterIsOn(t *testing.T) {
 	p.bookAnHourOn(t, "First")
 	p.bookAnHourOn(t, "Second")
 
+	// Until refreshAll says it has finished, not only until nothing is in flight:
+	// the projects come several loaders in, and the strip is put away in any gap
+	// longer than its fade - the page translating itself after /me on a busy
+	// runner is one - so at rest alone let this read a cache without them.
 	p.run("load the screen again", chromedp.Evaluate(`void refreshAll()`, nil))
+	p.settled()
 	p.atRest()
 
 	p.run("hold back the first project and pick both in turn", chromedp.Evaluate(`(() => {

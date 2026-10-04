@@ -124,6 +124,34 @@ func TestABinaryWithNoDatabaseServesItsInstaller(t *testing.T) {
 	}
 }
 
+// The health probes the image and compose run are answered while the installer
+// waits.
+//
+// Both ask /.well-known/alive on the port the installer holds, and a container
+// whose probe fails is killed and replaced - with a new token each time, printed
+// to a log nobody has read yet, so setup could never be finished. They are
+// answered by the page, which wget counts as alive; the route that does it was
+// written for deep links, so nothing said this was load-bearing until now.
+func TestTheHealthProbesAreAnsweredWhileTheInstallerWaits(t *testing.T) {
+	t.Parallel()
+
+	c := openInstaller(t)
+
+	for _, path := range []string{"/.well-known/alive", "/.well-known/health"} {
+		resp, err := http.Get(c.app.BaseURL() + path)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+
+		_ = resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			t.Errorf("%s answered %d while the installer waits; the container's own health "+
+				"check would kill it", path, resp.StatusCode)
+		}
+	}
+}
+
 // Until a database exists there is no account to authenticate against, so
 // whoever reaches this screen decides where the installation keeps its data.
 // The token is the only thing standing between an exposed port and that

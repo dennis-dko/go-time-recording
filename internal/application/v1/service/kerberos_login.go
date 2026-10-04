@@ -51,6 +51,12 @@ func (s *SessionService) KerberosLogin(ctx context.Context, name, realm, totpCod
 
 	user, err := s.provisionExternal(ctx, directoryUser)
 	if err != nil {
+		// A refusal counted as the password path counts it: an account the
+		// directory has switched off, or one this sign-in may never reach.
+		if apperror.KindOf(err) != apperror.KindInternal {
+			s.count(ctx, MetricSignInFailures, "reason", SignInFailureCredentials)
+		}
+
 		return nil, err
 	}
 
