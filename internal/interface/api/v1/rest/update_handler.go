@@ -10,6 +10,7 @@ import (
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/announce"
+	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/restart"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
@@ -74,6 +75,9 @@ type UpdateHandler struct {
 	// on every deployment that has not added that overlay - which is the default.
 	images *imageupdate.Updater
 
+	// running is the connection this process opened; see WithConnection.
+	running appconfig.Datasource
+
 	// awaitingImage is set from the moment a request for an image is written
 	// until its answer has been read. The updater marks itself running only once
 	// it takes the request, up to three seconds later, and a press in that gap
@@ -91,6 +95,14 @@ type UpdateHandler struct {
 // other one is a repair that expires.
 func (h *UpdateHandler) WithImageUpdater(images *imageupdate.Updater) *UpdateHandler {
 	h.images = images
+
+	return h
+}
+
+// WithConnection attaches the connection this process opened, which an update by
+// image asks after before the container is recreated; see theNextStartWouldStart.
+func (h *UpdateHandler) WithConnection(running appconfig.Datasource) *UpdateHandler {
+	h.running = running
 
 	return h
 }
@@ -561,6 +573,14 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 // the updater went on to replace the container underneath every screen that had
 // just been told to stop waiting.
 func (h *UpdateHandler) askForTheImage(c *gofr.Context, version string) (any, error) {
+	// Before anything is announced. The updater recreates this container and
+	// removes the image it replaced without looking at whether the new one comes
+	// up, so a container that cannot reach its database would go round its
+	// restart policy for good with the old image already gone.
+	if err := theNextStartWouldStart(c, h.running); err != nil {
+		return nil, err
+	}
+
 	if h.images.Running() || !h.awaitingImage.CompareAndSwap(false, true) {
 		return nil, imageUpdateRunning()
 	}

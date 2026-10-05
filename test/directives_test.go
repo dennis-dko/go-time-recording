@@ -76,9 +76,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "configLocation",
 		},
 		{
-			reference: "restart_handler.go:491",
+			reference: "restart_handler.go:488",
 			resolved:  "internal/interface/api/v1/rest/restart_handler.go",
-			line:      491,
+			line:      488,
 			contains:  "time.Sleep(",
 		},
 		{

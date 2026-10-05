@@ -1056,7 +1056,12 @@ type two commands should leave this out, and loses nothing but the button.
 | Ports | none |
 | Scope | `docker compose up -d --no-deps app`, which touches neither the database nor itself |
 
-**What happens when you press it.** The application announces a restart to every
+**What happens when you press it.** The application first asks the database the
+new container will open - the stored connection, or the environment's - the
+question its start asks first, and refuses the update if nothing answers: the
+updater does not look at whether the new container comes up, and one that cannot
+reach its database would go round its restart policy with the old image already
+removed. The restart button asks the same. Then it announces a restart to every
 open browser, writes the request and stops answering shortly afterwards - the
 updater has recreated it. The page waits for the version to come back, the way it
 waits out any restart. Two answers leave the running container exactly as it was,

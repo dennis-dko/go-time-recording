@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -466,14 +467,10 @@ func (h *RestartHandler) Restart(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	// The connection the next start opens is tried first, the way main tries it:
-	// main probes it before anything else and ends on one that does not answer.
-	// Saving a connection does not try it, so a typo saved and then restarted into
-	// was an installation that did not come back, with nothing left in a browser
-	// to put it right. Ahead of the platform's own refusal, so that a restart
-	// that could not go ahead anyway does not depend on which one is asked first.
-	if err := appconfig.ProbeDatasource(c, nextConnection(h.running)); err != nil {
-		return nil, refusedRestart(err)
+	// Ahead of the platform's own refusal, so that a restart that could not go
+	// ahead anyway does not depend on which of the two is asked first.
+	if err := theNextStartWouldStart(c, h.running); err != nil {
+		return nil, err
 	}
 
 	if !restart.Supported() {
@@ -506,6 +503,23 @@ func (h *RestartHandler) Restart(c *gofr.Context) (any, error) {
 		"status":  "restarting",
 		"message": "The application is restarting.",
 	}, nil
+}
+
+// theNextStartWouldStart asks the connection the next start opens what main asks
+// it first, for whatever is about to replace this process: the restart, and an
+// update that recreates the container.
+//
+// main probes that connection before anything else and ends on one that does not
+// answer. Saving a connection does not try it, so a typo saved and then
+// restarted into was an installation that did not come back, with nothing left
+// in a browser to put it right. A connection the driver would misread is let
+// through, because main lets it through too.
+func theNextStartWouldStart(ctx context.Context, running appconfig.Datasource) error {
+	if err := appconfig.ProbeDatasource(ctx, nextConnection(running)); err != nil {
+		return refusedRestart(err)
+	}
+
+	return nil
 }
 
 // refusedRestart answers a restart into a database that does not answer: the
