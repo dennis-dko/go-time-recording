@@ -948,11 +948,16 @@ rather than stopping an installation whose passwords still work:
 could not read the Kerberos keytab: ...; signing in with a ticket is off
 ```
 
-and one that can be read says so as well:
+and one that can be read says so as well - when a directory is already
+configured to look a ticket's owner up in:
 
 ```text
 signing in with a Kerberos ticket of realm EXAMPLE.COM is on
 ```
+
+Without one it says that the keytab was read and that the sign-in is offered to
+nobody until a directory is configured under Settings, which brings it on without
+a restart.
 
 - **A · B, compose:** add [`compose.kerberos.yaml`](compose.kerberos.yaml) and
   set `KERBEROS_KEYTAB_FILE` in `.env` to the keytab's path on the server. It is

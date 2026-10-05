@@ -569,13 +569,22 @@ func main() {
 	// the file's, which is why it is kept before cfg is overwritten.
 	fileSchedule := cfg.LDAPSyncSchedule
 
+	// Whether a directory is configured, for the line that says what a keytab
+	// amounts to: a ticket names somebody, and the directory is where that name
+	// becomes an account.
+	directoryConfigured := false
+
 	if stored, err := settingsService.LDAP(context.Background()); err != nil {
 		// Not fatal, and not loud: on a first start the settings table has only
 		// just been created by the migrations, so there is nothing to read yet.
 		app.Logger().Debugf("could not read the administered directory schedule (%v); "+
 			"the configuration file's value applies", err)
-	} else if stored.SyncSchedule != "" {
-		cfg.LDAPSyncSchedule = stored.SyncSchedule
+	} else {
+		directoryConfigured = stored.Enabled
+
+		if stored.SyncSchedule != "" {
+			cfg.LDAPSyncSchedule = stored.SyncSchedule
+		}
 	}
 	setup := appservice.NewSetupService(settingsService, userRepo)
 
@@ -803,7 +812,17 @@ func main() {
 			app.Logger().Errorf("could not read the Kerberos keytab: %v; signing in with a ticket is off", err)
 		} else {
 			kerberosAcceptor = acceptor
-			app.Logger().Infof("signing in with a Kerberos ticket of realm %s is on", acceptor.Realm())
+
+			// Not "on" without a directory, which the sign-in screen is then
+			// never offered - it is offered as soon as one is configured, without
+			// a restart.
+			if directoryConfigured {
+				app.Logger().Infof("signing in with a Kerberos ticket of realm %s is on", acceptor.Realm())
+			} else {
+				app.Logger().Warnf("the Kerberos keytab of realm %s was read, but no directory is configured "+
+					"to look a ticket's owner up in, so signing in with a ticket is offered to nobody "+
+					"until one is configured under Settings", acceptor.Realm())
+			}
 		}
 	}
 
