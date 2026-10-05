@@ -229,12 +229,19 @@ still the tidier arrangement and nothing here argues against it.
 ## D · Bare container
 
 ```bash
-docker run -d -p 8000:8000 -v gtr-data:/data \
+docker run -d -p 8000:8000 -v gtr-data:/data --stop-timeout 45 \
   ghcr.io/dennis-dko/go-time-recording:v1.2.3
 ```
 
 With no `DB_DIALECT` this serves its **installer** and waits — that is on
 purpose. Setting `DB_DIALECT` skips it, which is what Compose does.
+
+`--stop-timeout` is how long `docker stop` waits before it kills the process,
+and it has to be longer than the application waits for the requests under way,
+`SHUTDOWN_GRACE_PERIOD`, 30 seconds by default. Without it the daemon decides:
+ten seconds unless it is configured otherwise, and three on a Docker Desktop it
+was measured on — either cuts off an import that is still being written. Raise
+the two together.
 
 The image bakes in exactly one variable:
 

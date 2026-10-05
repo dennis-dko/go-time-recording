@@ -24,6 +24,12 @@ services:
   app:
     image: ${GTR_IMAGE:-ghcr.io/dennis-dko/go-time-recording}:${GTR_VERSION:-latest}
     restart: unless-stopped
+    # Longer than the application takes to stop: it waits for requests in flight
+    # for SHUTDOWN_GRACE_PERIOD, 30s by default, while the daemon's own default -
+    # ten seconds unless it is set otherwise, three on a Docker Desktop measured -
+    # kills it at an update or a restart of the stack with an import still being
+    # written. Raise the two together.
+    stop_grace_period: 45s
     depends_on:
       postgres:
         condition: service_healthy
