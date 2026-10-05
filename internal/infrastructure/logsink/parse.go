@@ -32,6 +32,10 @@ func parse(line string) Record {
 
 	var e entry
 	if err := json.Unmarshal([]byte(trimmed), &e); err != nil {
+		if level, ok := levelOfACutLine(trimmed); ok {
+			return Record{Time: time.Now(), Level: level, Message: line}
+		}
+
 		return Record{Time: time.Now(), Level: "INFO", Message: line, unlevelled: true}
 	}
 
@@ -63,6 +67,36 @@ func parse(line string) Record {
 	}
 
 	return record
+}
+
+// levelOfACutLine reads the level of a line GoFr wrote and readLine cut, which is
+// no longer JSON once cut.
+//
+// GoFr writes the request log at ERROR for an answer of 500 and up, with the
+// whole URI in it, and a URI may be up to a megabyte long - longer than a line
+// is kept. Left unlevelled, such a line was filed under INFO and was missing
+// from the filter somebody chooses to see what failed. GoFr encodes its entry
+// with the level first, so the start of the line still says it.
+func levelOfACutLine(trimmed string) (string, bool) {
+	const opening = `{"level":"`
+
+	if !strings.HasSuffix(trimmed, truncationNote) || !strings.HasPrefix(trimmed, opening) {
+		return "", false
+	}
+
+	rest := trimmed[len(opening):]
+
+	end := strings.IndexByte(rest, '"')
+	if end <= 0 {
+		return "", false
+	}
+
+	level := strings.ToUpper(rest[:end])
+	if _, known := severity[level]; !known {
+		return "", false
+	}
+
+	return level, true
 }
 
 // structured is the union of the two object-shaped messages summarised here:
