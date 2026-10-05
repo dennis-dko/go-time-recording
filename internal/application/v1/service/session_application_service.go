@@ -206,7 +206,31 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 		return nil, err
 	}
 
-	return s.OpenSession(ctx, user)
+	result, err := s.OpenSession(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	// Asked again once the session is written. A password change puts the new
+	// password in place and then ends the account's other sessions, and this
+	// sign-in checked the old one - slowly, by design - before writing its own:
+	// written after the change had ended the others, it kept a session opened
+	// with a password that no longer worked. Whichever of the two lands last now
+	// ends it, and so does an account removed in between.
+	if current, err := s.users.GetByID(ctx, user.ID); err != nil || current.PasswordHash != user.PasswordHash {
+		// Best effort: the refusal below is what matters, and a session left
+		// behind by a failed delete is one nobody was handed.
+		_ = s.sessions.Delete(ctx, security.HashToken(result.Token))
+
+		invalid := apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
+		if err != nil {
+			return nil, missingOr(err, invalid)
+		}
+
+		return nil, invalid
+	}
+
+	return result, nil
 }
 
 // secondFactor asks an account that holds one for its code, whatever proved the
