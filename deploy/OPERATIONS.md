@@ -1061,7 +1061,7 @@ new container will open - the stored connection, or the environment's - the
 question its start asks first, and refuses the update if nothing answers: the
 updater does not look at whether the new container comes up, and one that cannot
 reach its database would go round its restart policy with the old image already
-removed. The restart button asks the same. Then it announces a restart to every
+removed. The restart button and the update of a binary ask the same, before anything is announced. Then it announces a restart to every
 open browser, writes the request and stops answering shortly afterwards - the
 updater has recreated it. The page waits for the version to come back, the way it
 waits out any restart. Two answers leave the running container exactly as it was,

@@ -520,6 +520,14 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 			WithCode("updateInContainer"))
 	}
 
+	// Before anybody is told a restart is coming, as the image path asks: an
+	// install ends in a restart - at once where the platform can do it, and the
+	// page asks for it - and one into a database that does not answer is refused,
+	// which left the announcement standing on every screen.
+	if err := theNextStartWouldStart(c, h.running); err != nil {
+		return nil, err
+	}
+
 	// Everybody, before it starts rather than after it finished.
 	//
 	// The download and its checks take tens of seconds, and on a platform that can
