@@ -153,7 +153,7 @@ func DatasourceFromEnvironment() (Datasource, bool) {
 		User:     strings.TrimSpace(cfg.Get("DB_USER")),
 		Password: cfg.Get("DB_PASSWORD"),
 		SSLMode:  strings.TrimSpace(cfg.Get("DB_SSL_MODE")),
-	}, true
+	}.AsStored(), true
 }
 
 // Installer is what the first-run screen needs before GoFr exists.
@@ -237,6 +237,22 @@ func LoadDatasource(path string) (Datasource, bool) {
 	return ds, true
 }
 
+// AsStored is the connection the way SaveDatasource writes it, and so the way the
+// next start reads it back.
+//
+// SQLite is a local file and uses none of the server fields. Clearing them keeps
+// a password from a previous server connection from lingering in the file long
+// after it stopped being used - and whoever goes on with the value in hand, as
+// the application does after its installer, has to clear them too, or it holds
+// fields the file does not and the restart card reads that as a change waiting.
+func (d Datasource) AsStored() Datasource {
+	if strings.EqualFold(d.Dialect, "sqlite") {
+		d.Host, d.Port, d.User, d.Password, d.SSLMode = "", "", "", "", ""
+	}
+
+	return d
+}
+
 // SaveDatasource writes the connection for the next start.
 //
 // Not one the driver would read otherwise than it is written here: the next
@@ -251,12 +267,7 @@ func SaveDatasource(path string, ds Datasource) error {
 		return err
 	}
 
-	// SQLite is a local file and uses none of the server fields. Clearing them
-	// keeps a password from a previous server connection from lingering in the
-	// file long after it stopped being used.
-	if strings.EqualFold(ds.Dialect, "sqlite") {
-		ds.Host, ds.Port, ds.User, ds.Password, ds.SSLMode = "", "", "", "", ""
-	}
+	ds = ds.AsStored()
 
 	// 0700, to match the file it is being made for. The file is 0600 because it
 	// holds a database password, and a directory anybody may list is a directory
