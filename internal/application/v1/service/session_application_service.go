@@ -206,7 +206,31 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 		return nil, err
 	}
 
-	return s.OpenSession(ctx, user)
+	result, err := s.OpenSession(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	// Asked again once the session is written. A password change puts the new
+	// password in place and then ends the account's other sessions, and this
+	// sign-in checked the old one - slowly, by design - before writing its own:
+	// written after the change had ended the others, it kept a session opened
+	// with a password that no longer worked. Whichever of the two lands last now
+	// ends it, and so does an account removed in between.
+	if current, err := s.users.GetByID(ctx, user.ID); err != nil || current.PasswordHash != user.PasswordHash {
+		// Best effort: the refusal below is what matters, and a session left
+		// behind by a failed delete is one nobody was handed.
+		_ = s.sessions.Delete(ctx, security.HashToken(result.Token))
+
+		invalid := apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
+		if err != nil {
+			return nil, missingOr(err, invalid)
+		}
+
+		return nil, invalid
+	}
+
+	return result, nil
 }
 
 // secondFactor asks an account that holds one for its code, whatever proved the
@@ -553,8 +577,23 @@ func (s *SessionService) administers(ctx context.Context, user *model.User) (boo
 	return roleAdministers(role), nil
 }
 
-// Resolve turns a session token from a cookie into its principal.
+// Resolve turns a session token from a cookie into its principal, and counts the
+// request as the session being used.
 func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal, error) {
+	return s.resolve(ctx, token, true)
+}
+
+// ResolveUnattended is Resolve for a request the page made by itself - a check
+// on a timer, a stream reconnecting: held to the session's bounds like any other
+// request, and not counted as anybody being there.
+//
+// Counted, those kept every session that had a page open and in view, so the
+// idle timeout never ended the one it is for: a screen left open at lunch.
+func (s *SessionService) ResolveUnattended(ctx context.Context, token string) (*Principal, error) {
+	return s.resolve(ctx, token, false)
+}
+
+func (s *SessionService) resolve(ctx context.Context, token string, inUse bool) (*Principal, error) {
 	noSession := apperror.Invalidf("no session").WithCode("noSession")
 
 	if token == "" {
@@ -584,7 +623,9 @@ func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal,
 		return nil, apperror.Invalidf("session expired").WithCode("sessionExpired")
 	}
 
-	s.touch(ctx, session, now, idle)
+	if inUse {
+		s.touch(ctx, session, now, idle)
+	}
 
 	user, err := s.users.GetByID(ctx, session.UserID)
 	if err != nil {

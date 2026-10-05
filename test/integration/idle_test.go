@@ -72,3 +72,70 @@ func TestWithNoIdleTimeoutASessionIsNeverEndedForIdleness(t *testing.T) {
 
 	admin.must(admin.api(http.MethodGet, "/me", nil), http.StatusOK)
 }
+
+// What the page asks by itself does not keep an idle session.
+//
+// The page asks /me once a minute while it is in view, to notice rights that
+// have changed, and asks after maintenance and new releases beside it; an open
+// event stream reconnects when a proxy drops it. Every one of those is a request,
+// and the timeout counted every request as somebody being there - so a screen
+// left open at lunch, unlocked and in view, which is the screen this timeout is
+// for, was never signed out at all. The page says which requests are its own, and
+// those are still checked against the timeout without extending it.
+func TestWhatThePageAsksByItselfDoesNotKeepAnIdleSession(t *testing.T) {
+	t.Parallel()
+
+	a := start(t, "SESSION_IDLE=2s")
+	admin := a.signInAsAdmin("a-much-better-password")
+	unattended := admin.withHeader("X-Background-Request", "1")
+
+	ended := false
+
+	// Every second, for well past the timeout, and nothing else.
+	for range 6 {
+		time.Sleep(time.Second)
+
+		if unattended.api(http.MethodGet, "/me", nil).Status == http.StatusUnauthorized {
+			ended = true
+
+			break
+		}
+	}
+
+	if !ended {
+		t.Error("a session asked only by the page itself outlived a two-second idle timeout by four seconds")
+	}
+}
+
+// Nor does the event stream reopening by itself.
+//
+// A browser opens the stream and opens it again whenever something between it
+// and the server drops it, and a request opening it cannot carry a header to say
+// nobody asked for it - so it is known by its path.
+func TestTheEventStreamReopeningDoesNotKeepAnIdleSession(t *testing.T) {
+	t.Parallel()
+
+	a := start(t, "SESSION_IDLE=2s")
+	admin := a.signInAsAdmin("a-much-better-password")
+	unattended := admin.withHeader("X-Background-Request", "1")
+
+	ended := false
+
+	for range 6 {
+		time.Sleep(time.Second)
+
+		_, status, done := openFrames(t, admin)
+		done()
+
+		if status == http.StatusUnauthorized ||
+			unattended.api(http.MethodGet, "/me", nil).Status == http.StatusUnauthorized {
+			ended = true
+
+			break
+		}
+	}
+
+	if !ended {
+		t.Error("a session whose event stream kept reopening outlived a two-second idle timeout by four seconds")
+	}
+}
