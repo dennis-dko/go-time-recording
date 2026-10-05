@@ -26,6 +26,19 @@ type PasskeyHandler struct {
 	// maintenance is what the installation is doing; a passkey sign-in is turned
 	// away during it as a password one is. Nil reads as not out of service.
 	maintenance MaintenanceState
+
+	// timezone is the installation's, which the account in a sign-in's answer is
+	// described in when it keeps none of its own; see WithTimezone.
+	timezone InstanceTimezoneFunc
+}
+
+// WithTimezone attaches the installation's zone. A sign-in describes the account
+// it opened in it, as the password and the ticket sign-ins do; without it the
+// passkey's answer described an account that follows the installation in UTC.
+func (h *PasskeyHandler) WithTimezone(zone InstanceTimezoneFunc) *PasskeyHandler {
+	h.timezone = zone
+
+	return h
 }
 
 // WithMaintenance attaches the installation's maintenance state.
@@ -284,7 +297,7 @@ func (h *PasskeyHandler) FinishLogin(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return completeSignIn(c, h.sessions, h.maintenance, result, model.DefaultTimezone)
+	return completeSignIn(c, h.sessions, h.maintenance, result, h.timezone.resolve(c))
 }
 
 // parseCreation turns the browser's answer back into what the library parses.
