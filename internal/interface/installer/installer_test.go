@@ -264,3 +264,43 @@ func TestASecondAnswerIsRefusedOnceAConnectionIsSaved(t *testing.T) {
 		t.Errorf("the connection handed over is %q", handed.Name)
 	}
 }
+
+// The connection handed to the application is the one the next start reads.
+//
+// The application goes on in this process with what the installer hands over,
+// and the next start reads the file - and the restart card compares the two to
+// say whether a restart is waiting. Saving keeps no server fields for SQLite, so
+// an answer that carried some - the page sends none, a request written by hand
+// can - ran with a password the file did not have, and the card called a change
+// of password pending from the first minute of an installation it would not
+// change at all.
+func TestTheConnectionHandedOverIsTheOneTheNextStartReads(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "datasource.json")
+
+	s := &server{
+		cfg:  Config{Token: "the-token", DatasourceFile: file, Logf: t.Logf},
+		done: make(chan config.Datasource, 1),
+	}
+
+	body := fmt.Sprintf(`{"dialect":"sqlite","name":%q,"host":"db","port":"5432","user":"gtr",`+
+		`"password":"left-over","sslMode":"disable"}`, filepath.ToSlash(filepath.Join(dir, "gtr")))
+	req := httptest.NewRequest(http.MethodPost, "/install/save", strings.NewReader(body))
+	req.Header.Set("X-Setup-Token", "the-token")
+
+	rec := httptest.NewRecorder()
+	s.save(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the answer was refused with %d: %s", rec.Code, rec.Body)
+	}
+
+	saved, ok := config.LoadDatasource(file)
+	if !ok {
+		t.Fatal("nothing was saved")
+	}
+
+	if handed := <-s.done; handed != saved {
+		t.Errorf("the application goes on with %+v while the next start reads %+v", handed, saved)
+	}
+}

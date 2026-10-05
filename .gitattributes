@@ -79,6 +79,9 @@ go.sum      text eol=lf
 # that reads them. `git ls-files --eol` is how a wrong line ending gets found
 # here, and it is only worth running while every row reads w/lf: two permanent
 # exceptions teach whoever runs it to skim past the output, which is the state
-# this whole file exists to avoid.
+# this whole file exists to avoid. Docker's ignore file is pinned for the same
+# reason and only for it: BuildKit trims a carriage return from every line it
+# reads there - read in moby/patternmatcher, not assumed.
 .gitattributes text eol=lf
 .gitignore     text eol=lf
+.dockerignore  text eol=lf

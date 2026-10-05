@@ -82,9 +82,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "time.Sleep(",
 		},
 		{
-			reference: "project_application_service.go:140",
+			reference: "project_application_service.go:147",
 			resolved:  "internal/application/v1/service/project_application_service.go",
-			line:      140,
+			line:      147,
 			contains:  "VisibleTo(",
 		},
 		{

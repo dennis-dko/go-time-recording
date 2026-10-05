@@ -199,3 +199,33 @@ func TestAKerberosSignInIsOfferedOnlyWhereItCanSucceed(t *testing.T) {
 		t.Errorf("a ticket without a directory to look it up in was answered %d, want 409", r.Status)
 	}
 }
+
+// The start says what a keytab without a directory amounts to: a ticket sign-in
+// offered to nobody, rather than one that is on.
+//
+// The line was written the moment the keytab was read, before anybody had
+// looked for a directory, and the operations guide quotes it as the sign that
+// everything worked - while saying in the same section that a keytab without a
+// directory offers nothing. At INFO, so a wrong "on" would be in the log.
+func TestTheStartDoesNotCallATicketSignInOnWithoutADirectory(t *testing.T) {
+	t.Parallel()
+
+	keytab := kerberostest.KeytabFile(t, tempdir.New(t), "the-service-secret")
+	a := start(t, "KERBEROS_KEYTAB="+keytab, "LOG_LEVEL=INFO")
+
+	said := ""
+
+	told := eventually(func() bool {
+		said = a.log()
+
+		return strings.Contains(said, "offered to nobody")
+	})
+
+	if strings.Contains(said, "signing in with a Kerberos ticket of realm "+kerberostest.Realm+" is on") {
+		t.Error("the start called the ticket sign-in on with no directory to look a ticket's owner up in")
+	}
+
+	if !told {
+		t.Error("the start did not say that a keytab without a directory offers the ticket sign-in to nobody")
+	}
+}

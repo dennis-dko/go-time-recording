@@ -1,0 +1,40 @@
+# An image built from this work tree sees what a fresh checkout would, because
+# that is what CI builds the published image from. Without this file a local
+# build - task image, task stage - sent everything git keeps out of the
+# repository, and what lies in cmd/configs is copied into the image: measured, a
+# datasource.json left there by the installer put its password in a layer, and
+# the image skipped its installer and connected to the database it named.
+#
+# So this is .gitignore, line by line and in its order, written the way Docker
+# reads a pattern: from the root of the context, where git matches a name with no
+# slash at any depth. Add to .gitignore, not here first;
+# test/dockerignore_test.go says what this file has to say then.
+
+# The repository itself: most of what a build sent, and changed by every commit.
+.git
+
+**/bin
+**/coverage.out
+
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+configs/datasource.json
+cmd/configs/datasource.json
+bin/configs/datasource.json
+
+deploy/.env
+deploy/.env.ci
+
+cmd/configs/.local.env
+bin/configs/.local.env
+
+**/dist
+**/*.syso
+build/versioninfo.json
+test/browser/*.png
+**/AUDIT_REPORT.md
+
+.gotmp/*
+!.gotmp/.gitkeep

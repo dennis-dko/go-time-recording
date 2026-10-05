@@ -569,13 +569,22 @@ func main() {
 	// the file's, which is why it is kept before cfg is overwritten.
 	fileSchedule := cfg.LDAPSyncSchedule
 
+	// Whether a directory is configured, for the line that says what a keytab
+	// amounts to: a ticket names somebody, and the directory is where that name
+	// becomes an account.
+	directoryConfigured := false
+
 	if stored, err := settingsService.LDAP(context.Background()); err != nil {
 		// Not fatal, and not loud: on a first start the settings table has only
 		// just been created by the migrations, so there is nothing to read yet.
 		app.Logger().Debugf("could not read the administered directory schedule (%v); "+
 			"the configuration file's value applies", err)
-	} else if stored.SyncSchedule != "" {
-		cfg.LDAPSyncSchedule = stored.SyncSchedule
+	} else {
+		directoryConfigured = stored.Enabled
+
+		if stored.SyncSchedule != "" {
+			cfg.LDAPSyncSchedule = stored.SyncSchedule
+		}
 	}
 	setup := appservice.NewSetupService(settingsService, userRepo)
 
@@ -803,7 +812,17 @@ func main() {
 			app.Logger().Errorf("could not read the Kerberos keytab: %v; signing in with a ticket is off", err)
 		} else {
 			kerberosAcceptor = acceptor
-			app.Logger().Infof("signing in with a Kerberos ticket of realm %s is on", acceptor.Realm())
+
+			// Not "on" without a directory, which the sign-in screen is then
+			// never offered - it is offered as soon as one is configured, without
+			// a restart.
+			if directoryConfigured {
+				app.Logger().Infof("signing in with a Kerberos ticket of realm %s is on", acceptor.Realm())
+			} else {
+				app.Logger().Warnf("the Kerberos keytab of realm %s was read, but no directory is configured "+
+					"to look a ticket's owner up in, so signing in with a ticket is offered to nobody "+
+					"until one is configured under Settings", acceptor.Realm())
+			}
 		}
 	}
 
@@ -832,14 +851,14 @@ func main() {
 	// administers the installation needs to know who is calling - placed earlier
 	// it would turn away the only people who can end maintenance mode. Before the
 	// UI, so the assets are still served and the page can render the notice.
-	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState))
+	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState, authorizer))
 
 	// The two things this application says without being asked: that it is about
 	// to restart into a new version, and that the account holding the connection
 	// may suddenly do more, or less, than it could a moment ago. After the session
 	// middleware, which is what makes a stream belong to somebody, and before the
 	// interface, which would otherwise answer for a path it does not own.
-	app.UseMiddleware(rest.EventStream(hub, auth))
+	app.UseMiddleware(rest.EventStream(hub, auth, authorizer))
 
 	if cfg.UIEnabled {
 		// GoFr's AddStaticFiles only serves a directory from disk, which would
@@ -911,7 +930,7 @@ func main() {
 					return sessions.LogoutOthers(ctx, userID, "")
 				})),
 		Roles:      rest.NewRoleHandler(roles, authorizer),
-		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
+		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer).WithTimezone(instanceTimezone),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),
 		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone),
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
@@ -930,11 +949,11 @@ func main() {
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
-		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
+		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
 			WithMaintenance(maintenanceState).
 			WithTimezone(instanceTimezone),
-		Documents: rest.NewDocumentHandler(authorizer, instanceName),
+		Documents: rest.NewDocumentHandler(authorizer, instanceName).WithTimezone(instanceTimezone),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,

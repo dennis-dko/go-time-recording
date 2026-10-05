@@ -168,7 +168,8 @@ Restart=on-failure
 RestartSec=5s
 
 # The application answers the request before replacing itself, and waits for
-# requests in flight on shutdown - SHUTDOWN_GRACE_PERIOD, 30s by default.
+# requests in flight on shutdown - SHUTDOWN_GRACE_PERIOD, 30s by default - and
+# then up to ten seconds for its HTTPS front end.
 TimeoutStopSec=45s
 
 NoNewPrivileges=true
@@ -229,12 +230,20 @@ still the tidier arrangement and nothing here argues against it.
 ## D · Bare container
 
 ```bash
-docker run -d -p 8000:8000 -v gtr-data:/data \
+docker run -d -p 8000:8000 -v gtr-data:/data --stop-timeout 45 \
   ghcr.io/dennis-dko/go-time-recording:v1.2.3
 ```
 
 With no `DB_DIALECT` this serves its **installer** and waits — that is on
 purpose. Setting `DB_DIALECT` skips it, which is what Compose does.
+
+`--stop-timeout` is how long `docker stop` waits before it kills the process,
+and it has to be longer than the application takes to stop: it waits for the
+requests under way, `SHUTDOWN_GRACE_PERIOD`, 30 seconds by default, and then up
+to ten seconds for its HTTPS front end. Without it the daemon decides:
+ten seconds unless it is configured otherwise, and three on a Docker Desktop it
+was measured on — either cuts off an import that is still being written. Raise
+the two together.
 
 The image bakes in exactly one variable:
 
@@ -376,6 +385,18 @@ connection; an installation already running on one is not moved, because pointin
 it at the configured database would show an empty application, and every start
 says so in the log instead.
 
+**On MySQL, keep the zone the application runs in for the life of the
+database.** The database layer opens MySQL in this process's time zone, and the
+MySQL column for a moment keeps no zone, so a day - which the application holds
+as midnight UTC - is stored as the clock in this process's zone read at that
+moment, and read back through the same zone. A process in another zone reads it
+as something else: measured, a day written by the image, which runs in UTC, was
+read by a process in Europe/Berlin as the day before, and that day's totals did
+not find it; a day written west of UTC is read as the day before in UTC. Setting
+`TZ` on the container, or moving from the image to the binary on a host in
+another zone, does exactly that. PostgreSQL and SQLite keep the moment and are
+not affected.
+
 ## Serving HTTPS everywhere
 
 Two routes, and which one applies is decided by whether the name this
@@ -413,6 +434,20 @@ in service until it does, saying so if it stays that way. `TLS_ENABLED` with
 neither route configured refuses to
 pretend: it says so and carries on over plain HTTP rather than claiming HTTPS it
 cannot serve.
+
+## How long a connection may be held
+
+GoFr's own server, which answers on the plain port, bounds the time a request's
+headers may take - five seconds - and nothing after it: a connection left quiet
+between two requests, and a request whose body never arrives, are held for as
+long as the client likes. Measured: both were still held when the client gave up
+after seventy seconds. On a network you trust that costs nothing worth counting.
+On one you do not, keep the plain port off it. The built-in HTTPS front end
+closes a connection left quiet for two minutes, though like the plain port it
+waits out a slow body, which is what lets a large import through; a reverse
+proxy can bound both. With the front end, the plain port still accepts
+connections wherever it can be reached, because it turns a request away only
+once the request has arrived - so publish only the front end's ports.
 
 ## Behind a reverse proxy that is already there
 
@@ -934,11 +969,16 @@ rather than stopping an installation whose passwords still work:
 could not read the Kerberos keytab: ...; signing in with a ticket is off
 ```
 
-and one that can be read says so as well:
+and one that can be read says so as well - when a directory is already
+configured to look a ticket's owner up in:
 
 ```text
 signing in with a Kerberos ticket of realm EXAMPLE.COM is on
 ```
+
+Without one it says that the keytab was read and that the sign-in is offered to
+nobody until a directory is configured under Settings, which brings it on without
+a restart.
 
 - **A · B, compose:** add [`compose.kerberos.yaml`](compose.kerberos.yaml) and
   set `KERBEROS_KEYTAB_FILE` in `.env` to the keytab's path on the server. It is

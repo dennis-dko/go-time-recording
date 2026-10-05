@@ -11,6 +11,7 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/http/response"
 
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 	"github.com/dennis-dko/go-time-recording/internal/support/document"
 )
@@ -58,11 +59,22 @@ type DocumentHandler struct {
 
 	// instanceName is what the foot of every page calls this installation.
 	instanceName func(c *gofr.Context) string
+
+	// timezone is the instance-wide zone, which the foot of every page tells the
+	// time in for anybody who has not chosen a zone of their own.
+	timezone InstanceTimezoneFunc
 }
 
 // NewDocumentHandler creates the handler.
 func NewDocumentHandler(authz *Authorizer, instanceName func(c *gofr.Context) string) *DocumentHandler {
 	return &DocumentHandler{authz: authz, instanceName: instanceName}
+}
+
+// WithTimezone attaches the instance-wide zone.
+func (h *DocumentHandler) WithTimezone(zone InstanceTimezoneFunc) *DocumentHandler {
+	h.timezone = zone
+
+	return h
 }
 
 // DocumentTableRequest is one table as the screen showed it.
@@ -120,11 +132,19 @@ func (h *DocumentHandler) Export(c *gofr.Context) (any, error) {
 
 	doc.Language = language(c)
 	doc.Footer = strings.TrimSpace(h.instanceName(c))
+
+	// In the reader's zone, because the page names no zone: the server's clock
+	// told somebody in Berlin that an evaluation made at half past eight in the
+	// evening was made at half past six, and after midnight that it was made the
+	// day before.
+	zone := model.EffectiveTimezone("", h.timezone.resolve(c))
+
 	if principal != nil && principal.User != nil {
 		doc.Footer = strings.TrimSpace(doc.Footer + "  ·  " + principal.User.Name)
+		zone = principal.User.TimezoneOf(h.timezone.resolve(c))
 	}
 
-	doc.Written = time.Now()
+	doc.Written = time.Now().In(zone)
 
 	pdf, err := document.Write(doc)
 	if err != nil {

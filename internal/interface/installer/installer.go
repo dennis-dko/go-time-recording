@@ -312,6 +312,10 @@ func (s *server) save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// As it will be written, from here on: the application goes on with what is
+	// handed over, the next start with the file, and the two must be one value.
+	ds = ds.AsStored()
+
 	// Probed before it is written, not after. A saved connection that does not
 	// work would leave the process unable to start and unable to serve the
 	// screen that could fix it - the one state this design must not reach.
