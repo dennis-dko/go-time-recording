@@ -953,7 +953,7 @@ func main() {
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
 			WithMaintenance(maintenanceState).
 			WithTimezone(instanceTimezone),
-		Documents: rest.NewDocumentHandler(authorizer, instanceName),
+		Documents: rest.NewDocumentHandler(authorizer, instanceName).WithTimezone(instanceTimezone),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,
