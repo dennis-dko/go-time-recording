@@ -964,3 +964,19 @@ func SharedDatabase(t *testing.T) string {
 
 	return filepath.Join(tempdir.New(t), "shared")
 }
+
+// SharedServerDatabase is SharedDatabase's counterpart on the server the suite
+// is pointed at: the DB_* variables of a database of its own that two instances
+// started by one test can both be given, and nil where the suite runs on SQLite.
+func SharedServerDatabase(t *testing.T) []string {
+	t.Helper()
+
+	dsn := os.Getenv(DSNEnv)
+	if dsn == "" {
+		return nil
+	}
+
+	env, _, _ := serverEnv(t, dsn)
+
+	return env
+}

@@ -43,6 +43,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
+	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
 	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
@@ -647,6 +648,16 @@ func main() {
 	// The built-in administrator is created after the migrations have run, so
 	// there is always a way in even on a brand new database.
 	prepare := func(ctx *gofr.Context) error {
+		// Before anything writes a moment. MySQL keeps one without its zone, so a
+		// process in another zone than the one that wrote them reads every stored
+		// day as another; see StorageZoneService.
+		if cfg.Dialect == sqldb.DialectMySQL {
+			if err := appservice.NewStorageZoneService(settingsRepo, time.Local, hosting.ZoneName()).
+				Verify(ctx); err != nil {
+				return err
+			}
+		}
+
 		// Before anything reads a secret, and before the built-in administrator
 		// exists: a key that is not this installation's key has to stop the start
 		// rather than surface later as second factors that stopped working.
