@@ -35,3 +35,6 @@ bin/configs/.local.env
 build/versioninfo.json
 test/browser/*.png
 **/AUDIT_REPORT.md
+
+.gotmp/*
+!.gotmp/.gitkeep
