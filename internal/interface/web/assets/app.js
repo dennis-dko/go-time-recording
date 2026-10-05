@@ -3750,6 +3750,7 @@ const TRANSLATIONS = {
     'err.onlyBuiltInAdminSetsUp': 'Nur die eingebaute Administration darf die Einrichtung '
       + 'durchlaufen.',
     'err.restartUnsupported': 'Ein Neustart aus der Anwendung heraus ist auf diesem System nicht möglich. Gespeicherte Einstellungen werden beim nächsten regulären Start wirksam.',
+    'err.restartWouldNotStart': 'Die Datenbank, die der nächste Start öffnen würde, antwortet nicht – die Anwendung käme nicht wieder. Es wurde nicht neu gestartet.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',

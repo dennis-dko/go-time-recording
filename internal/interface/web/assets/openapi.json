@@ -2008,13 +2008,16 @@
           "settings"
         ],
         "summary": "Restart the process",
-        "description": "Only where the platform can do it: the process replaces itself, which needs exec, so it is refused on Windows with a reason naming what to do instead.",
+        "description": "Only where the platform can do it: the process replaces itself, which needs exec, so it is refused on Windows with a reason naming what to do instead. And only into a database that answers: the connection the next start opens - the stored one, or the environment's where none is stored - is probed first, the way the start probes it, because a start ends on one that does not answer and nothing would be left to put it right from. The refusal carries what the driver said as `detail`.",
         "responses": {
-          "202": {
+          "201": {
             "description": "Restarting"
           },
+          "400": {
+            "description": "The platform cannot restart in place (`restartUnsupported`)"
+          },
           "409": {
-            "description": "The platform cannot restart in place"
+            "description": "The database the next start would open does not answer (`restartWouldNotStart`); nothing was restarted"
           }
         }
       }

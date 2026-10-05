@@ -2,6 +2,7 @@ package rest
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -465,6 +466,16 @@ func (h *RestartHandler) Restart(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
+	// The connection the next start opens is tried first, the way main tries it:
+	// main probes it before anything else and ends on one that does not answer.
+	// Saving a connection does not try it, so a typo saved and then restarted into
+	// was an installation that did not come back, with nothing left in a browser
+	// to put it right. Ahead of the platform's own refusal, so that a restart
+	// that could not go ahead anyway does not depend on which one is asked first.
+	if err := appconfig.ProbeDatasource(c, nextConnection(h.running)); err != nil {
+		return nil, refusedRestart(err)
+	}
+
 	if !restart.Supported() {
 		// One code rather than one per reason. Which reason it is belongs on the
 		// card above the button, which already says it in the reader's language and
@@ -495,4 +506,34 @@ func (h *RestartHandler) Restart(c *gofr.Context) (any, error) {
 		"status":  "restarting",
 		"message": "The application is restarting.",
 	}, nil
+}
+
+// refusedRestart answers a restart into a database that does not answer: the
+// sentence for the reader's language, and what the driver said folded under it.
+func refusedRestart(cause error) error {
+	refusal := apperror.Conflictf("the database the next start would open does not answer, so the " +
+		"application would not come back; nothing was restarted").WithCode("restartWouldNotStart")
+
+	return restartRefusal{reason: reasonOf(refusal), detail: cause.Error()}
+}
+
+// restartRefusal is a refused restart carrying the words that made it necessary,
+// as an internal error carries its original ones.
+type restartRefusal struct {
+	reason
+
+	detail string
+}
+
+func (e restartRefusal) Error() string { return e.message + ": " + e.detail }
+
+// StatusCode is what GoFr's responder reads to pick the HTTP status.
+func (restartRefusal) StatusCode() int { return http.StatusConflict }
+
+// Response is GoFr's ResponseMarshaller.
+func (e restartRefusal) Response() map[string]any {
+	out := e.response()
+	out["detail"] = e.detail
+
+	return out
 }
