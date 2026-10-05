@@ -1408,6 +1408,7 @@ The server enforces these; the interface merely also hides what is not allowed:
 | Task | What it does |
 | --- | --- |
 | `task dev` | **Develop.** Backing services, then the locally built binary against them, on :8000 |
+| `task dev:watch` | **Develop.** The same, built and started again whenever the code, the interface or the configuration is saved |
 | `task test` | Unit and integration tests |
 | `task stage` | **Verify.** The shipped container image against real services, on :8080 |
 | `task image` | **Ship.** Build the deployment image |
@@ -1527,11 +1528,18 @@ already answer in under a millisecond against a local file.
 ```bash
 task dev                 # PostgreSQL + seeded directory, then the app
 task dev DB=sqlite       # no containers at all, straight onto a local file
+task dev:watch           # either of those, rebuilt and restarted on every save
 task env:down            # stop everything and delete the data
 ```
 
 The application runs in the foreground; `Ctrl-C` stops it and leaves the
-containers up, so the next start is quick. LDAP is not configured through the
+containers up, so the next start is quick. `task dev:watch` puts
+[air](https://github.com/air-verse/air) in front of it, at the version the
+Taskfile pins and without installing anything: a saved Go file, `app.js`, the
+stylesheet, the markup or a `.env` under `cmd/configs` builds the binary again
+and starts it, a few seconds later. The page is not reloaded for you, and a
+build that fails stops the running process, so the browser cannot show code
+that is no longer in the editor. [`.air.toml`](.air.toml) says what is watched. LDAP is not configured through the
 environment — it is administered in the running application under *Settings*;
 [`test/README.md`](test/README.md) lists the values and the seeded accounts
 that make the synchronisation's edge cases reproducible.

@@ -397,6 +397,24 @@ not find it; a day written west of UTC is read as the day before in UTC. Setting
 another zone, does exactly that. PostgreSQL and SQLite keep the moment and are
 not affected.
 
+So on MySQL the first start records its zone, by its offsets in January and July,
+and a start in another one stops with a line saying both, for example:
+
+```text
+the application did not start: this MySQL database's times were written in UTC
+(+00:00/+00:00) and this process runs in Europe/Berlin (+01:00/+02:00); ...
+```
+
+Start it in the zone named first - remove the `TZ` you added, or set
+`TZ=UTC` for the binary. A zone with the same offsets under another name
+starts. If the database holds nothing worth keeping yet, or its times have
+been moved to the new zone by hand, remove the record and the next start takes
+its own zone:
+
+```sql
+DELETE FROM settings WHERE key_name = 'instance.storageZone';
+```
+
 ## Serving HTTPS everywhere
 
 Two routes, and which one applies is decided by whether the name this
