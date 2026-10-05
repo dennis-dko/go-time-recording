@@ -414,6 +414,20 @@ neither route configured refuses to
 pretend: it says so and carries on over plain HTTP rather than claiming HTTPS it
 cannot serve.
 
+## How long a connection may be held
+
+GoFr's own server, which answers on the plain port, bounds the time a request's
+headers may take - five seconds - and nothing after it: a connection left quiet
+between two requests, and a request whose body never arrives, are held for as
+long as the client likes. Measured: both were still held when the client gave up
+after seventy seconds. On a network you trust that costs nothing worth counting.
+On one you do not, keep the plain port off it. The built-in HTTPS front end
+closes a connection left quiet for two minutes, though like the plain port it
+waits out a slow body, which is what lets a large import through; a reverse
+proxy can bound both. With the front end, the plain port still accepts
+connections wherever it can be reached, because it turns a request away only
+once the request has arrived - so publish only the front end's ports.
+
 ## Behind a reverse proxy that is already there
 
 Apache, nginx, or whatever already answers for the name. Then this process does
