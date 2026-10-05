@@ -1064,7 +1064,10 @@ sign-in: how long one act of proving who you are is worth, whatever anybody does
 with it. `SESSION_IDLE` is measured from the last request: whether anybody is
 still there. A person working all morning keeps their session by the second rule
 and eventually loses it by the first; the same person going home at noon loses it
-by the second while the first would still have let them back in.
+by the second while the first would still have let them back in. What the page
+asks by itself does not count - the check it makes once a minute, the event
+stream reopening, the log screen following along - so a screen left open and in
+view is signed out as surely as one that is closed.
 
 The idle timeout is **off** until somebody sets it — signing people out of a
 screen they left open is a decision about how an office works, not one to impose

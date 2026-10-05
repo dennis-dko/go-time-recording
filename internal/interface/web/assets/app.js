@@ -343,6 +343,14 @@ async function api(path, options = {}) {
     headers['X-CSRF-Token'] = readCookie('gtr_csrf');
   }
 
+  // A request this page makes by itself - a check on a timer - says so, and the
+  // server then does not count it as anybody being there. Counted, the minute's
+  // check kept every session with a page in view open, so the idle timeout never
+  // ended the one it is for: a screen left open at lunch.
+  if (options.background) {
+    headers['X-Background-Request'] = '1';
+  }
+
   // Reads only, and this is the whole reason the distinction is drawn here.
   //
   // Aborting in the browser does not stop the server: it finishes the work either
@@ -705,7 +713,7 @@ function askWhetherTheScreenIsStillTrue() {
   // for, and a toast about it - on a screen somebody is reading, once a minute
   // for as long as the network is unhappy - would be worse than the thing it
   // is watching for.
-  api('/me').catch(() => {});
+  api('/me', { background: true }).catch(() => {});
 
   // The announcement stream notices maintenance within seconds; this is what
   // covers a browser that has no EventSource at all.
@@ -745,7 +753,7 @@ async function checkWhetherStillWelcome() {
   let state;
 
   try {
-    state = await api('/maintenance');
+    state = await api('/maintenance', { background: true });
   } catch {
     // Unreachable, or refused. Either way this is a background question and the
     // answer to a failed one is to ask again next time.
@@ -820,7 +828,7 @@ async function checkForRelease() {
   let state;
 
   try {
-    state = await api('/settings/update');
+    state = await api('/settings/update', { background: true });
   } catch {
     // Taken down, not left standing. A feed that cannot be reached is not this
     // installation being broken, and the version card says so where somebody has
@@ -12807,7 +12815,8 @@ function schedulePoll({ immediate = false } = {}) {
   }
 
   logView.timer = setTimeout(() => {
-    void pollLog().finally(() => {
+    // The page's own: following along is not somebody being there.
+    void pollLog({ background: true }).finally(() => {
       // Not if that poll turned the viewer off itself. stopLogPolling clears
       // logView.timer, and this callback *is* that timer - there is nothing left
       // for it to clear, so without asking here the stop is undone by the line
@@ -12910,7 +12919,7 @@ function logGaps(page) {
   return said.join(' ');
 }
 
-async function pollLog() {
+async function pollLog({ background = false } = {}) {
   if (!logViewerActive() || logView.polling) return;
 
   logView.polling = true;
@@ -12929,7 +12938,7 @@ async function pollLog() {
     const search = $('#log-search').value.trim();
     if (search) query.set('search', search);
 
-    const page = await api(`/admin/logs?${query}`);
+    const page = await api(`/admin/logs?${query}`, { background });
 
     if (logView.levels === null) buildLogLevelFilters(page.levels ?? []);
 
