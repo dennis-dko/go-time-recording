@@ -851,7 +851,7 @@ func main() {
 	// administers the installation needs to know who is calling - placed earlier
 	// it would turn away the only people who can end maintenance mode. Before the
 	// UI, so the assets are still served and the page can render the notice.
-	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState))
+	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState, authorizer))
 
 	// The two things this application says without being asked: that it is about
 	// to restart into a new version, and that the account holding the connection
