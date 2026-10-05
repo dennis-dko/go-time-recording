@@ -858,7 +858,7 @@ func main() {
 	// may suddenly do more, or less, than it could a moment ago. After the session
 	// middleware, which is what makes a stream belong to somebody, and before the
 	// interface, which would otherwise answer for a path it does not own.
-	app.UseMiddleware(rest.EventStream(hub, auth))
+	app.UseMiddleware(rest.EventStream(hub, auth, authorizer))
 
 	if cfg.UIEnabled {
 		// GoFr's AddStaticFiles only serves a directory from disk, which would
