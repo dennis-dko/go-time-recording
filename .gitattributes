@@ -85,3 +85,7 @@ go.sum      text eol=lf
 .gitattributes text eol=lf
 .gitignore     text eol=lf
 .dockerignore  text eol=lf
+
+# The live reload's configuration, pinned for the same check and no other
+# reason: TOML allows a carriage return before every line break.
+*.toml         text eol=lf

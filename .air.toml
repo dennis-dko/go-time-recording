@@ -1,0 +1,49 @@
+# Live reload for development: `task dev:watch` runs air with this, and the
+# application is built and started again whenever the code, the interface or its
+# configuration changes.
+#
+# Run it through the task rather than on its own. The task starts the database
+# and the directory, hands the process the DB_* variables `task dev` does, and
+# runs air from bin/: GoFr reads ./configs from the working directory, the build
+# puts them there, and a process started anywhere else has no database. That is
+# also why the root is one up.
+root = ".."
+tmp_dir = "bin/air"
+
+[build]
+  # Both supplied by the task, as --build.cmd and --build.full_bin, because the
+  # names of the programs differ between Windows and everything else - and air
+  # on Windows warns that it cannot run a command not ending in .exe. The build is
+  # `task dev:rebuild` rather than go build: it copies the configuration beside
+  # the binary and names the file for the platform, so this builds what
+  # `task dev` runs, and the Taskfile says what else it takes care of.
+  cmd = ""
+  full_bin = ""
+
+  # Everything compiled into the binary or read by it at start. The interface is
+  # embedded, so app.js, the stylesheet and the markup are as much the program as
+  # main.go, and the .env files are what GoFr reads.
+  include_ext = ["go", "js", "css", "html", "json", "svg", "ico", "env", "mod", "sum"]
+
+  # Written out in full, because air leaves "assets" out by default - the very
+  # directory the interface lives in. The rest never reaches the binary: bin/ is
+  # where it is built and where it keeps its database, and test/, build/ and
+  # deploy/ are other programs and other people's files.
+  exclude_dir = [".git", ".github", ".gotmp", ".vscode", "bin", "build", "deploy", "dist", "test"]
+  exclude_regex = ["_test\\.go$"]
+
+  # A build that fails stops the old process, so a reload in the browser cannot
+  # show code that is no longer what is in the editor.
+  stop_on_error = true
+
+  # Several files saved at once - a search and replace, a branch switched - are
+  # one rebuild rather than many.
+  delay = 500
+
+  # SIGINT first, so the application closes its database before anything kills
+  # it. Windows has no such signal, and air ends the process there.
+  send_interrupt = true
+  kill_delay = "5s"
+
+[misc]
+  clean_on_exit = false
