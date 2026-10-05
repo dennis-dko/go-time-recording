@@ -2193,7 +2193,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "gtr_session",
-        "description": "A browser session. State-changing calls made with this must also echo the gtr_csrf cookie in the X-CSRF-Token header and come from this origin; calls authenticated by a personal API token are exempt."
+        "description": "A browser session. State-changing calls made with this must also echo the gtr_csrf cookie in the X-CSRF-Token header and come from this origin; calls authenticated by a personal API token are exempt. A call carrying `X-Background-Request: 1` is held to the session's lifetime and idle timeout like any other but is not counted as the session being used - the interface sends it on the checks it makes by itself, so that a screen left open is signed out by the idle timeout. Opening the event stream counts the same way."
       },
       "csrfToken": {
         "type": "apiKey",

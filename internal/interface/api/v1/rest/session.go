@@ -43,7 +43,12 @@ func SessionMiddleware(sessions *service.SessionService) func(http.Handler) http
 				return
 			}
 
-			principal, err := sessions.Resolve(r.Context(), cookie.Value)
+			resolve := sessions.Resolve
+			if unattended(r) {
+				resolve = sessions.ResolveUnattended
+			}
+
+			principal, err := resolve(r.Context(), cookie.Value)
 			if err != nil {
 				// A session that could not be read keeps its cookie, and the
 				// handlers are told so they say the caller could not be checked
@@ -76,6 +81,18 @@ func SessionMiddleware(sessions *service.SessionService) func(http.Handler) http
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// BackgroundRequestHeader marks a request the page made by itself rather than
+// one somebody made by doing something, so that it is not counted as the session
+// being used; see SessionService.ResolveUnattended.
+const BackgroundRequestHeader = "X-Background-Request"
+
+// unattended reports whether nobody had to be there for a request to be made:
+// the page says so of its own checks, and the event stream, which a browser opens
+// and reopens by itself, cannot carry a header to say it.
+func unattended(r *http.Request) bool {
+	return r.Header.Get(BackgroundRequestHeader) != "" || r.URL.Path == EventsPath
 }
 
 // PermissionRevisionHeader carries what the caller may currently do, as a value
