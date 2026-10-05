@@ -11,18 +11,21 @@ import (
 // Everything that stops the application gives it longer than it takes to stop.
 //
 // On a stop the application waits for the requests under way for up to
-// SHUTDOWN_GRACE_PERIOD, and main waits for that wait to finish. Whatever stops
-// it then waits its own time before killing it: systemd's TimeoutStopSec, which
-// the unit in the operations guide sets with exactly this reason, and Docker's
-// stop timeout, which neither compose.yaml nor the guide's docker run set at all
-// - so the container was killed at the daemon's default, ten seconds or less,
-// while the application meant to wait thirty, and an import under way at an
-// update or a restart of the stack was cut off.
+// SHUTDOWN_GRACE_PERIOD, main waits for that wait to finish, and only then stops
+// the HTTPS front end, which it gives tlsShutdownGrace. Whatever stops it waits
+// its own time before killing it: systemd's TimeoutStopSec, which the unit in the
+// operations guide sets with exactly this reason, and Docker's stop timeout,
+// which neither compose.yaml nor the guide's docker run set at all - so the
+// container was killed at the daemon's default, ten seconds or less, while the
+// application meant to wait thirty, and an import under way at an update or a
+// restart of the stack was cut off.
 func TestEverythingThatStopsTheApplicationWaitsLongerThanItsGrace(t *testing.T) {
 	t.Parallel()
 
 	grace := durationIn(t, filepath.Join("..", "cmd", "configs", ".env"),
-		regexp.MustCompile(`(?m)^SHUTDOWN_GRACE_PERIOD=(\S+)$`), "")
+		regexp.MustCompile(`(?m)^SHUTDOWN_GRACE_PERIOD=(\S+)$`), "") +
+		durationIn(t, filepath.Join("..", "cmd", "main.go"),
+			regexp.MustCompile(`(?m)^const tlsShutdownGrace = (\d+) \* time\.Second$`), "s")
 
 	for _, bound := range []struct {
 		what string
@@ -38,8 +41,8 @@ func TestEverythingThatStopsTheApplicationWaitsLongerThanItsGrace(t *testing.T) 
 			regexp.MustCompile(`(?m)^docker run .*--stop-timeout (\d+)`), "s"},
 	} {
 		if got := durationIn(t, bound.file, bound.in, bound.unit); got <= grace {
-			t.Errorf("%s is %s, no longer than the %s the application waits for requests under way",
-				bound.what, got, grace)
+			t.Errorf("%s is %s, no longer than the %s the application may take to stop: "+
+				"the requests under way, then its HTTPS front end", bound.what, got, grace)
 		}
 	}
 }

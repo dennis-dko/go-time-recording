@@ -168,7 +168,8 @@ Restart=on-failure
 RestartSec=5s
 
 # The application answers the request before replacing itself, and waits for
-# requests in flight on shutdown - SHUTDOWN_GRACE_PERIOD, 30s by default.
+# requests in flight on shutdown - SHUTDOWN_GRACE_PERIOD, 30s by default - and
+# then up to ten seconds for its HTTPS front end.
 TimeoutStopSec=45s
 
 NoNewPrivileges=true
@@ -237,8 +238,9 @@ With no `DB_DIALECT` this serves its **installer** and waits — that is on
 purpose. Setting `DB_DIALECT` skips it, which is what Compose does.
 
 `--stop-timeout` is how long `docker stop` waits before it kills the process,
-and it has to be longer than the application waits for the requests under way,
-`SHUTDOWN_GRACE_PERIOD`, 30 seconds by default. Without it the daemon decides:
+and it has to be longer than the application takes to stop: it waits for the
+requests under way, `SHUTDOWN_GRACE_PERIOD`, 30 seconds by default, and then up
+to ten seconds for its HTTPS front end. Without it the daemon decides:
 ten seconds unless it is configured otherwise, and three on a Docker Desktop it
 was measured on — either cuts off an import that is still being written. Raise
 the two together.

@@ -25,7 +25,8 @@ services:
     image: ${GTR_IMAGE:-ghcr.io/dennis-dko/go-time-recording}:${GTR_VERSION:-latest}
     restart: unless-stopped
     # Longer than the application takes to stop: it waits for requests in flight
-    # for SHUTDOWN_GRACE_PERIOD, 30s by default, while the daemon's own default -
+    # for SHUTDOWN_GRACE_PERIOD, 30s by default, and then up to ten seconds for
+    # its HTTPS front end where it serves one, while the daemon's own default -
     # ten seconds unless it is set otherwise, three on a Docker Desktop measured -
     # kills it at an update or a restart of the stack with an import still being
     # written. Raise the two together.
