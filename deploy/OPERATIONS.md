@@ -406,7 +406,11 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 825   -keyout privkey.pem -out f
 ```
 
 A certificate that cannot be read stops the start rather than being discovered by
-the first visitor, and `TLS_ENABLED` with neither route configured refuses to
+the first visitor. One renewed in place is served within a minute, without a
+restart: the files are looked at again from the next connection, and a pair that
+does not load yet - a certificate written before its key - leaves the one in hand
+in service until it does, saying so if it stays that way. `TLS_ENABLED` with
+neither route configured refuses to
 pretend: it says so and carries on over plain HTTP rather than claiming HTTPS it
 cannot serve.
 
