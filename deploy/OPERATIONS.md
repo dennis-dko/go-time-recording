@@ -385,6 +385,18 @@ connection; an installation already running on one is not moved, because pointin
 it at the configured database would show an empty application, and every start
 says so in the log instead.
 
+**On MySQL, keep the zone the application runs in for the life of the
+database.** The database layer opens MySQL in this process's time zone, and the
+MySQL column for a moment keeps no zone, so a day - which the application holds
+as midnight UTC - is stored as the clock in this process's zone read at that
+moment, and read back through the same zone. A process in another zone reads it
+as something else: measured, a day written by the image, which runs in UTC, was
+read by a process in Europe/Berlin as the day before, and that day's totals did
+not find it; a day written west of UTC is read as the day before in UTC. Setting
+`TZ` on the container, or moving from the image to the binary on a host in
+another zone, does exactly that. PostgreSQL and SQLite keep the moment and are
+not affected.
+
 ## Serving HTTPS everywhere
 
 Two routes, and which one applies is decided by whether the name this
