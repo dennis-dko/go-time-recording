@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"testing"
 )
 
@@ -51,4 +52,59 @@ func TestTheWorkspacesTemporaryDirectoryComesWithTheClone(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The workspace runs the race detector the way CLAUDE.md says to.
+//
+// The detector needs cgo, which the machine this is developed on does not have,
+// so both run it in a container, and every detail of that command was found by
+// the command failing without it. CLAUDE.md gained the fourth, GOTOOLCHAIN=auto,
+// when go.mod moved to a patch release the image's minor tag did not carry yet;
+// the editor's task did not, and answered "go.mod requires go >= 1.27.1 (running
+// go 1.27.0; GOTOOLCHAIN=local)" without testing a single package - measured.
+func TestTheWorkspaceRunsTheRaceDetectorTheWayCLAUDEmdSays(t *testing.T) {
+	t.Parallel()
+
+	documented := commandsIn(t, filepath.Join("..", "CLAUDE.md"),
+		regexp.MustCompile(`(?m)^\s*(MSYS_NO_PATHCONV=1 docker run .* go test -race \./\.\.\.)$`))
+	tasked := commandsIn(t, filepath.Join("..", ".vscode", "tasks.json"),
+		regexp.MustCompile(`"command": ("MSYS_NO_PATHCONV=1 docker run .* go test -race \./\.\.\.")`))
+
+	if len(documented) != 1 || len(tasked) != 1 {
+		t.Fatalf("found %d race commands in CLAUDE.md and %d in the workspace's tasks, want one each",
+			len(documented), len(tasked))
+	}
+
+	task, err := strconv.Unquote(tasked[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The one difference meant to be there: CLAUDE.md spells the work tree out,
+	// and the task asks the shell for it.
+	mount := regexp.MustCompile(`-v \S+:/app `)
+	asRun := func(command string) string { return mount.ReplaceAllString(command, "-v <the work tree>:/app ") }
+
+	if asRun(task) != asRun(documented[0]) {
+		t.Errorf("the workspace runs the race detector as\n\t%s\nwhere CLAUDE.md says\n\t%s", task, documented[0])
+	}
+}
+
+// commandsIn returns what the first group of a pattern finds in a file, every
+// time it finds it.
+func commandsIn(t *testing.T, file string, in *regexp.Regexp) []string {
+	t.Helper()
+
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var commands []string
+
+	for _, match := range in.FindAllSubmatch(raw, -1) {
+		commands = append(commands, string(match[1]))
+	}
+
+	return commands
 }
