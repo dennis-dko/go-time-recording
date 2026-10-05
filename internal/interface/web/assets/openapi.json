@@ -130,6 +130,9 @@
         "responses": {
           "200": {
             "description": "Challenge"
+          },
+          "429": {
+            "description": "Too many attempts"
           }
         }
       },
@@ -423,7 +426,7 @@
             "description": "Tokens"
           }
         },
-        "description": "`createdAt`, `expiresAt` and `lastUsedAt` are RFC 3339 moments, not dates. They used to be days, which is the wrong answer for the field somebody reads when they think a token has been taken: a token used at three in the morning read exactly like one used at three in the afternoon, and one used twice today read as used once."
+        "description": "`createdAt`, `expiresAt` and `lastUsedAt` are RFC 3339 moments, not dates. They used to be days, which is the wrong answer for the field somebody reads when they think a token has been taken: a token used at three in the morning read exactly like one used at three in the afternoon, and one used twice today read as used once. A use is written down at most once a minute, so `lastUsedAt` can be up to a minute behind the latest one."
       },
       "post": {
         "tags": [
@@ -2005,13 +2008,16 @@
           "settings"
         ],
         "summary": "Restart the process",
-        "description": "Only where the platform can do it: the process replaces itself, which needs exec, so it is refused on Windows with a reason naming what to do instead.",
+        "description": "Only where the platform can do it: the process replaces itself, which needs exec, so it is refused on Windows with a reason naming what to do instead. And only into a database that answers: the connection the next start opens - the stored one, or the environment's where none is stored - is probed first, the way the start probes it, because a start ends on one that does not answer and nothing would be left to put it right from. The refusal carries what the driver said as `detail`.",
         "responses": {
-          "202": {
+          "201": {
             "description": "Restarting"
           },
+          "400": {
+            "description": "The platform cannot restart in place (`restartUnsupported`)"
+          },
           "409": {
-            "description": "The platform cannot restart in place"
+            "description": "The database the next start would open does not answer (`restartWouldNotStart`); nothing was restarted"
           }
         }
       }

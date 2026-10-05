@@ -555,13 +555,15 @@ func (s *SessionService) administers(ctx context.Context, user *model.User) (boo
 
 // Resolve turns a session token from a cookie into its principal.
 func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal, error) {
+	noSession := apperror.Invalidf("no session").WithCode("noSession")
+
 	if token == "" {
-		return nil, apperror.Invalidf("no session").WithCode("noSession")
+		return nil, noSession
 	}
 
 	session, err := s.sessions.Get(ctx, security.HashToken(token))
 	if err != nil {
-		return nil, apperror.Invalidf("no session").WithCode("noSession")
+		return nil, missingOr(err, noSession)
 	}
 
 	now := time.Now()
@@ -586,7 +588,7 @@ func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal,
 
 	user, err := s.users.GetByID(ctx, session.UserID)
 	if err != nil {
-		return nil, apperror.Invalidf("no session").WithCode("noSession")
+		return nil, missingOr(err, noSession)
 	}
 
 	return s.auth.principalFor(ctx, user)

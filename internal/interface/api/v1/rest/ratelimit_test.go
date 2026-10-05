@@ -171,3 +171,42 @@ func TestATicketSignInIsLimitedAndAskingAboutOneIsNot(t *testing.T) {
 		t.Errorf("10 ticket sign-ins against a limit of 3 were refused %d times, want 7", n)
 	}
 }
+
+// Starting a passkey sign-in asks for nothing and leaves a challenge behind for
+// minutes, so it is counted; finishing one is not, because a ceremony begun
+// within the budget must not be refused halfway, and asking whether passkeys are
+// on offer is what every sign-in screen does.
+func TestStartingAPasskeySignInIsLimitedAndFinishingOneIsNot(t *testing.T) {
+	t.Parallel()
+
+	refused := func(method, path string) int {
+		limiter := rest.NewRateLimiter(3, time.Minute).Middleware()(passes())
+		count := 0
+
+		for range 10 {
+			r := httptest.NewRequest(method, path, nil)
+			r.RemoteAddr = "192.0.2.11:4000"
+
+			w := httptest.NewRecorder()
+			limiter.ServeHTTP(w, r)
+
+			if w.Code == http.StatusTooManyRequests {
+				count++
+			}
+		}
+
+		return count
+	}
+
+	if n := refused(http.MethodPost, "/api/v1/auth/passkey/login"); n != 7 {
+		t.Errorf("10 passkey sign-ins started against a limit of 3 were refused %d times, want 7", n)
+	}
+
+	if n := refused(http.MethodPut, "/api/v1/auth/passkey/login"); n != 0 {
+		t.Errorf("finishing a passkey sign-in was refused %d times in 10", n)
+	}
+
+	if n := refused(http.MethodGet, "/api/v1/auth/passkey"); n != 0 {
+		t.Errorf("asking whether passkeys are on offer was refused %d times in 10", n)
+	}
+}

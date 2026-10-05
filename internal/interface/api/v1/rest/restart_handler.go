@@ -1,7 +1,9 @@
 package rest
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -465,6 +467,12 @@ func (h *RestartHandler) Restart(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
+	// Ahead of the platform's own refusal, so that a restart that could not go
+	// ahead anyway does not depend on which of the two is asked first.
+	if err := theNextStartWouldStart(c, h.running); err != nil {
+		return nil, err
+	}
+
 	if !restart.Supported() {
 		// One code rather than one per reason. Which reason it is belongs on the
 		// card above the button, which already says it in the reader's language and
@@ -495,4 +503,51 @@ func (h *RestartHandler) Restart(c *gofr.Context) (any, error) {
 		"status":  "restarting",
 		"message": "The application is restarting.",
 	}, nil
+}
+
+// theNextStartWouldStart asks the connection the next start opens what main asks
+// it first, for whatever is about to replace this process: the restart, and an
+// update that recreates the container.
+//
+// main probes that connection before anything else and ends on one that does not
+// answer. Saving a connection does not try it, so a typo saved and then
+// restarted into was an installation that did not come back, with nothing left
+// in a browser to put it right. A connection the driver would misread is let
+// through, because main lets it through too.
+func theNextStartWouldStart(ctx context.Context, running appconfig.Datasource) error {
+	if err := appconfig.ProbeDatasource(ctx, nextConnection(running)); err != nil {
+		return refusedRestart(err)
+	}
+
+	return nil
+}
+
+// refusedRestart answers a restart into a database that does not answer: the
+// sentence for the reader's language, and what the driver said folded under it.
+func refusedRestart(cause error) error {
+	refusal := apperror.Conflictf("the database the next start would open does not answer, so the " +
+		"application would not come back; nothing was restarted").WithCode("restartWouldNotStart")
+
+	return restartRefusal{reason: reasonOf(refusal), detail: cause.Error()}
+}
+
+// restartRefusal is a refused restart carrying the words that made it necessary,
+// as an internal error carries its original ones.
+type restartRefusal struct {
+	reason
+
+	detail string
+}
+
+func (e restartRefusal) Error() string { return e.message + ": " + e.detail }
+
+// StatusCode is what GoFr's responder reads to pick the HTTP status.
+func (restartRefusal) StatusCode() int { return http.StatusConflict }
+
+// Response is GoFr's ResponseMarshaller.
+func (e restartRefusal) Response() map[string]any {
+	out := e.response()
+	out["detail"] = e.detail
+
+	return out
 }

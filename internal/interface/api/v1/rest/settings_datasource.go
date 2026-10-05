@@ -206,11 +206,18 @@ func (h *SettingsHandler) TestDatasource(c *gofr.Context) (any, error) {
 // deployment wrote a connection with no password, which wins over the
 // environment at the next start and could then not sign in to its own database.
 func (h *SettingsHandler) connectionInForce() appconfig.Datasource {
+	return nextConnection(h.running)
+}
+
+// nextConnection is the connection the next start opens, chosen as main chooses
+// it: the stored one, or the environment's where nothing is stored - which is
+// the one this process opened.
+func nextConnection(running appconfig.Datasource) appconfig.Datasource {
 	if stored, ok := appconfig.LoadDatasource(appconfig.DatasourceFile); ok {
 		return stored
 	}
 
-	return h.running
+	return running
 }
 
 // sslModeInForce is the SSL mode a connection runs with, so the card can show it

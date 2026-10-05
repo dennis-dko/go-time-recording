@@ -925,13 +925,15 @@ func main() {
 			// Present only where the deployment added the overlay that runs it;
 			// see deploy/compose.update.yaml for what that grants and why the
 			// application is not the thing granted it.
-			WithImageUpdater(imageupdate.New(os.Getenv("GTR_UPDATE_REQUESTS"))),
+			WithImageUpdater(imageupdate.New(os.Getenv("GTR_UPDATE_REQUESTS"))).
+			WithConnection(ds),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
-			WithMaintenance(maintenanceState),
+			WithMaintenance(maintenanceState).
+			WithTimezone(instanceTimezone),
 		Documents: rest.NewDocumentHandler(authorizer, instanceName),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,

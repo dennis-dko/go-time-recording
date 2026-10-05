@@ -3750,6 +3750,7 @@ const TRANSLATIONS = {
     'err.onlyBuiltInAdminSetsUp': 'Nur die eingebaute Administration darf die Einrichtung '
       + 'durchlaufen.',
     'err.restartUnsupported': 'Ein Neustart aus der Anwendung heraus ist auf diesem System nicht möglich. Gespeicherte Einstellungen werden beim nächsten regulären Start wirksam.',
+    'err.restartWouldNotStart': 'Die Datenbank, die der nächste Start öffnen würde, antwortet nicht – die Anwendung käme nicht wieder. Es wurde nicht neu gestartet.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
@@ -14375,6 +14376,14 @@ function afterAFailedFirstLoad(err) {
   // one. Unless somebody signed in while this was running, which showLogin
   // decides - it is the same question wherever it is asked from.
   showLogin();
+
+  // And said, where what failed was not the session refused. The server answers
+  // a session it could not check - a database that did not answer - as a
+  // failure, keeping its cookie for when the database is back, and the form on
+  // its own reads as the session having ended.
+  if (err?.status !== 401 && !$('#login-screen').hidden) {
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

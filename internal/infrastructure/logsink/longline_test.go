@@ -186,3 +186,32 @@ func TestAKeptLineIsBoundedWhateverTheLineWas(t *testing.T) {
 		t.Error("the cut went through the middle of a character")
 	}
 }
+
+// A line cut for its length keeps the level it was written at.
+//
+// GoFr writes the request log at ERROR for an answer of 500 and up, with the
+// whole of the URI in it, and a URI may be up to a megabyte long. Cut at
+// maxLineBytes the line is no longer JSON, so it was kept as an unlevelled INFO
+// line - still on the console and in the viewer, but missing from the very
+// filter somebody chooses when they look for what failed.
+func TestALineCutForItsLengthKeepsItsLevel(t *testing.T) {
+	t.Parallel()
+
+	line := `{"level":"ERROR","time":"2026-10-05T00:00:00Z","message":{"method":"GET","uri":"/api/v1/projects?q=` +
+		strings.Repeat("x", maxLineBytes) + `","response":500,"response_time":1200}}`
+
+	read, err := readLine(bufio.NewReader(strings.NewReader(line+"\n")), maxLineBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.HasSuffix(read, truncationNote) {
+		t.Fatalf("the line was not cut, so this case says nothing: %d bytes", len(read))
+	}
+
+	record := parse(read)
+
+	if record.Level != "ERROR" || record.unlevelled {
+		t.Errorf("a cut ERROR line was kept as level %q (unlevelled %v)", record.Level, record.unlevelled)
+	}
+}

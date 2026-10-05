@@ -3,6 +3,8 @@ package service
 import (
 	"regexp"
 	"strings"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // emailPattern is deliberately permissive. Fully validating an address by
@@ -39,4 +41,25 @@ func paginate[T any](items []T, page, limit int) []T {
 	end := min(start+limit, len(items))
 
 	return items[start:end]
+}
+
+// missingOr answers a lookup that failed: with refused where the record is not
+// there, and with the failure itself where it could not be read.
+//
+// Both ways a request names its caller, a session and a token, gave one answer
+// for the two, and the session middleware clears the cookie of a session that is
+// gone - so a database that did not answer for a moment, which a restart of its
+// container is enough for, signed out everybody whose request arrived in that
+// moment. A script was told its token was invalid, which sends somebody to
+// replace a token that works.
+func missingOr(err, refused error) error {
+	if apperror.KindOf(err) == apperror.KindNotFound {
+		return refused
+	}
+
+	if _, ours := apperror.Detail(err); ours {
+		return err
+	}
+
+	return apperror.Internal(err)
 }

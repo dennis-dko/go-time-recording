@@ -2,12 +2,17 @@ package web_test
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
 )
 
 // The published API description and the routes that exist are the same list.
@@ -113,5 +118,84 @@ func TestEveryRouteIsDescribedAndEveryDescriptionIsARoute(t *testing.T) {
 	if len(imaginary) > 0 {
 		t.Errorf("%d operation(s) in openapi.json have no route, so anybody following "+
 			"the documentation gets a 404: %v", len(imaginary), imaginary)
+	}
+}
+
+// The description says 429 exactly where the rate limiter counts a request.
+//
+// The two are kept in different places - the limiter decides by path in the rest
+// package, the description is a file somebody edits by hand - and the start of a
+// passkey sign-in was counted for a while before anybody would have thought to
+// write it down. Asked of the limiter itself rather than of a list, so a sign-in
+// added to it is held to the description without being named here. Requests are
+// sent without a token, which the limiter counts on every route.
+func TestTheDescriptionSaysTooManyRequestsWhereverTheLimiterCounts(t *testing.T) {
+	var document struct {
+		Paths map[string]map[string]json.RawMessage `json:"paths"`
+	}
+
+	if err := json.Unmarshal([]byte(asset(t, "/openapi.json")), &document); err != nil {
+		t.Fatalf("the served openapi.json is not valid JSON: %v", err)
+	}
+
+	methods := map[string]bool{
+		"get": true, "post": true, "put": true, "delete": true, "patch": true,
+	}
+
+	parameter := regexp.MustCompile(`\{[^}]+\}`)
+	counted := 0
+
+	for path, entries := range document.Paths {
+		for method, raw := range entries {
+			// A path also carries what its operations share, the parameters.
+			if !methods[strings.ToLower(method)] {
+				continue
+			}
+
+			method = strings.ToUpper(method)
+
+			var operation struct {
+				Responses map[string]json.RawMessage `json:"responses"`
+			}
+
+			if err := json.Unmarshal(raw, &operation); err != nil {
+				t.Fatalf("%s %s is not an operation: %v", method, path, err)
+			}
+
+			limiter := rest.NewRateLimiter(1, time.Minute).Middleware()(http.HandlerFunc(
+				func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+
+			var last int
+
+			for range 2 {
+				r := httptest.NewRequest(method, "/api/v1"+parameter.ReplaceAllString(path, "1"), nil)
+				r.RemoteAddr = "192.0.2.12:4000"
+
+				w := httptest.NewRecorder()
+				limiter.ServeHTTP(w, r)
+				last = w.Code
+			}
+
+			limited := last == http.StatusTooManyRequests
+			_, documented := operation.Responses["429"]
+
+			if limited {
+				counted++
+			}
+
+			switch {
+			case limited && !documented:
+				t.Errorf("%s %s is counted by the rate limiter and its description never says it can answer 429",
+					method, path)
+			case documented && !limited:
+				t.Errorf("%s %s is described as answering 429, and the rate limiter does not count it",
+					method, path)
+			}
+		}
+	}
+
+	if counted == 0 {
+		t.Fatal("the rate limiter counted none of the described routes; the way it decides changed and this " +
+			"guard no longer guards anything")
 	}
 }

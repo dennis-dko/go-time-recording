@@ -1099,6 +1099,10 @@ For PostgreSQL also set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` and
 button probes them before you commit. A connection saved there is written to
 `configs/datasource.json` and applied on the next restart; switching a live
 database under running requests is not safe, so it is deliberately not done.
+Saving does not try the connection, so that one can be prepared for a server
+that is not up yet - but the restart button does: it refuses to restart into a
+database that does not answer, because the start would end on it and nothing
+would be left to put it right from. Any other restart still reads the file.
 
 PostgreSQL needs a password here even where the server asks for none - any value
 does then. The connection is written with the values as they are, and in that

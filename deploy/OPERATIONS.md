@@ -406,7 +406,11 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 825   -keyout privkey.pem -out f
 ```
 
 A certificate that cannot be read stops the start rather than being discovered by
-the first visitor, and `TLS_ENABLED` with neither route configured refuses to
+the first visitor. One renewed in place is served within a minute, without a
+restart: the files are looked at again from the next connection, and a pair that
+does not load yet - a certificate written before its key - leaves the one in hand
+in service until it does, saying so if it stays that way. `TLS_ENABLED` with
+neither route configured refuses to
 pretend: it says so and carries on over plain HTTP rather than claiming HTTPS it
 cannot serve.
 
@@ -1056,7 +1060,12 @@ type two commands should leave this out, and loses nothing but the button.
 | Ports | none |
 | Scope | `docker compose up -d --no-deps app`, which touches neither the database nor itself |
 
-**What happens when you press it.** The application announces a restart to every
+**What happens when you press it.** The application first asks the database the
+new container will open - the stored connection, or the environment's - the
+question its start asks first, and refuses the update if nothing answers: the
+updater does not look at whether the new container comes up, and one that cannot
+reach its database would go round its restart policy with the old image already
+removed. The restart button and the update of a binary ask the same, before anything is announced. Then it announces a restart to every
 open browser, writes the request and stops answering shortly afterwards - the
 updater has recreated it. The page waits for the version to come back, the way it
 waits out any restart. Two answers leave the running container exactly as it was,
