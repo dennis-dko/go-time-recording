@@ -930,7 +930,7 @@ func main() {
 					return sessions.LogoutOthers(ctx, userID, "")
 				})),
 		Roles:      rest.NewRoleHandler(roles, authorizer),
-		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
+		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer).WithTimezone(instanceTimezone),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),
 		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone),
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
@@ -949,7 +949,7 @@ func main() {
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
-		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
+		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
 			WithMaintenance(maintenanceState).
 			WithTimezone(instanceTimezone),

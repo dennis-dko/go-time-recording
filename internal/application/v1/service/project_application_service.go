@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -72,8 +73,14 @@ func (s *ProjectApplicationService) CreateProject(
 	// to midnight UTC and is stored that way; this used to default to midnight in
 	// whatever zone the server runs in, which is the same field holding two
 	// different things - and one of them a day early once a driver normalises it.
+	// And the creator's day rather than the server's, which a caller that did not
+	// say has no default for: a guess here is a project on the wrong day.
 	if startDate.IsZero() {
-		startDate = model.CalendarDay(time.Now())
+		if cmd.Today.IsZero() {
+			return nil, apperror.Internal(errors.New("a project with no start date needs its creator's day"))
+		}
+
+		startDate = model.CalendarDay(cmd.Today)
 	}
 
 	if err := validateProject(cmd.Name, status, cmd.Description, startDate, cmd.EndDate); err != nil {

@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
@@ -30,7 +31,7 @@ func privateProject(t *testing.T, f *fixture, ownerID uint, name string) uint {
 	t.Helper()
 
 	created, err := f.projects.CreateProject(context.Background(), command.CreateProjectCommand{
-		Name: name, OwnerID: &ownerID,
+		Name: name, OwnerID: &ownerID, Today: time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("create private project: %v", err)
@@ -44,7 +45,7 @@ func TestPrivateProjectNeedsOnlyAName(t *testing.T) {
 	f := newFixture(t)
 
 	created, err := f.projects.CreateProject(context.Background(), command.CreateProjectCommand{
-		Name: "Meetings", OwnerID: &f.userID,
+		Name: "Meetings", OwnerID: &f.userID, Today: time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
