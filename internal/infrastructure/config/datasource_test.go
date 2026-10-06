@@ -167,6 +167,37 @@ func TestDatasourceFromEnvironmentFollowsTheEnvironment(t *testing.T) {
 	}
 }
 
+// A SQLite connection read from the environment holds what saving it keeps.
+//
+// The restart card compares the connection this process opened with the one the
+// next start reads, and a settings save writes a SQLite connection without the
+// server fields. Read from an environment that still named a server - left behind
+// by a move from PostgreSQL - the running connection kept a password the saved
+// one did not, and after a save the card called a change of password pending
+// that a restart would not make.
+func TestASQLiteConnectionFromTheEnvironmentHoldsWhatSavingItKeeps(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("DB_DIALECT", "sqlite")
+	t.Setenv("DB_NAME", "gtr")
+	t.Setenv("DB_HOST", "db.example")
+	t.Setenv("DB_USER", "gtr")
+	t.Setenv("DB_PASSWORD", "left-over")
+
+	running, ok := config.DatasourceFromEnvironment()
+	if !ok {
+		t.Fatal("a configured environment yielded no connection")
+	}
+
+	file := filepath.Join(t.TempDir(), "datasource.json")
+	if err := config.SaveDatasource(file, running); err != nil {
+		t.Fatal(err)
+	}
+
+	if stored, _ := config.LoadDatasource(file); stored != running {
+		t.Errorf("the environment's connection is %+v, and the same connection saved is %+v", running, stored)
+	}
+}
+
 // Whitespace is what a hand-edited .env file leaves behind, and " " is not a
 // configured database.
 func TestABlankDialectIsNotAConfiguredDatabase(t *testing.T) {

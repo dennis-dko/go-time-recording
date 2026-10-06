@@ -4,6 +4,7 @@ import (
 	"errors"
 	"mime/multipart"
 	"strings"
+	"time"
 
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/http/response"
@@ -25,6 +26,7 @@ type SheetHandler struct {
 	users    *service.UserWorkbookService
 	roles    *service.RoleWorkbookService
 	authz    *Authorizer
+	timezone InstanceTimezoneFunc
 }
 
 // NewSheetHandler creates the handler.
@@ -35,6 +37,15 @@ func NewSheetHandler(
 	authz *Authorizer,
 ) *SheetHandler {
 	return &SheetHandler{projects: projects, users: users, roles: roles, authz: authz}
+}
+
+// WithTimezone attaches the instance-wide zone, which decides the day an imported
+// project with an empty start begins on for anybody who has not chosen a zone of
+// their own.
+func (h *SheetHandler) WithTimezone(zone InstanceTimezoneFunc) *SheetHandler {
+	h.timezone = zone
+
+	return h
 }
 
 // SheetImportRow is one row of a file, as it would be written or the reason it
@@ -146,7 +157,8 @@ func (h *SheetHandler) ImportProjects(c *gofr.Context) (any, error) {
 		return out, nil
 	}
 
-	imported, err := h.projects.ApplyProjects(c, plan, principal.User)
+	imported, err := h.projects.ApplyProjects(c, plan, principal.User,
+		time.Now().In(principal.User.TimezoneOf(h.timezone.resolve(c))))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

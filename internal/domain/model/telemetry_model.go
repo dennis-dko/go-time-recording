@@ -60,11 +60,10 @@ type Telemetry struct {
 	//
 	// Here rather than left in the file because it is the one of these three an
 	// administrator needs while something is wrong, and the log viewer already
-	// in this application can only show what the process was started willing to
-	// write. Applied at the next start like the rest: GoFr can change a level
-	// while running, but it does so by assigning to a field that every request
-	// goroutine reads without synchronisation, and a data race is not a
-	// reasonable price for saving a restart.
+	// in this application can only show what the process is willing to write.
+	// It is also the one that does not wait for a restart, wherever the output
+	// is captured: the level is applied to the lines on their way out rather
+	// than handed to the framework. Sink.SetLevel in logsink says why.
 	LogLevel *string `json:"logLevel,omitempty"`
 }
 

@@ -65,6 +65,8 @@ type logPage struct {
 	} `json:"records"`
 	LastSeq   uint64   `json:"lastSeq"`
 	Dropped   uint64   `json:"dropped"`
+	Epoch     string   `json:"epoch"`
+	Restarted bool     `json:"restarted"`
 	Levels    []string `json:"levels"`
 	Available bool     `json:"available"`
 }
@@ -150,6 +152,10 @@ func TestTheLogCapturesWhatTheFrameworkWrote(t *testing.T) {
 	// running at WARN shows nothing and is not a bug.
 	a := start(t, "LOG_LEVEL=INFO")
 	c := a.signInAsAdmin("a-much-better-password")
+
+	// The sign-in's requests are what this looks for, and a request answered is
+	// not yet a line arrived - see logsContaining.
+	c.logsContaining(t, "?search=/api/v1/&limit=1")
 
 	page := c.logs(t, "?limit=500")
 
@@ -317,10 +323,12 @@ func TestSinceReturnsOnlyNewLines(t *testing.T) {
 		t.Fatal("nothing captured yet")
 	}
 
-	// Produce something new.
+	// Produce something new - and wait for it as for the first page: asked once,
+	// the request's line had not yet arrived 5 times in 200 on an instance with
+	// one processor, and the case then said the cursor did not move.
 	c.must(c.api(http.MethodGet, "/roles", nil), http.StatusOK)
 
-	second := c.logs(t, path("?since=", first.LastSeq, "&limit=500"))
+	second := c.logsContaining(t, path("?since=", first.LastSeq, "&limit=500"))
 
 	for _, record := range second.Records {
 		if record.Seq <= first.LastSeq {

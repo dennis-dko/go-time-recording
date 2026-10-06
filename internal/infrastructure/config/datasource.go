@@ -17,9 +17,10 @@ import (
 	// Registered for the connection test only. GoFr opens the application's
 	// own connection; these let the settings screen probe a target before
 	// anyone restarts into it. They are the same drivers GoFr uses, so a
-	// successful probe means the real connection will work too.
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
+	// successful probe means the real connection will work too - and their
+	// parsers say what GoFr's connection string will be read as; see Misreading.
+	"github.com/go-sql-driver/mysql"
+	"github.com/lib/pq"
 	_ "modernc.org/sqlite"
 
 	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
@@ -152,7 +153,7 @@ func DatasourceFromEnvironment() (Datasource, bool) {
 		User:     strings.TrimSpace(cfg.Get("DB_USER")),
 		Password: cfg.Get("DB_PASSWORD"),
 		SSLMode:  strings.TrimSpace(cfg.Get("DB_SSL_MODE")),
-	}, true
+	}.AsStored(), true
 }
 
 // Installer is what the first-run screen needs before GoFr exists.
@@ -236,18 +237,37 @@ func LoadDatasource(path string) (Datasource, bool) {
 	return ds, true
 }
 
+// AsStored is the connection the way SaveDatasource writes it, and so the way the
+// next start reads it back.
+//
+// SQLite is a local file and uses none of the server fields. Clearing them keeps
+// a password from a previous server connection from lingering in the file long
+// after it stopped being used - and whoever goes on with the value in hand, as
+// the application does after its installer, has to clear them too, or it holds
+// fields the file does not and the restart card reads that as a change waiting.
+func (d Datasource) AsStored() Datasource {
+	if strings.EqualFold(d.Dialect, "sqlite") {
+		d.Host, d.Port, d.User, d.Password, d.SSLMode = "", "", "", "", ""
+	}
+
+	return d
+}
+
 // SaveDatasource writes the connection for the next start.
+//
+// Not one the driver would read otherwise than it is written here: the next
+// start would open it, and on a PostgreSQL server that asks for no password that
+// is another database. See Misreading.
 func SaveDatasource(path string, ds Datasource) error {
 	if err := ds.Validate(); err != nil {
 		return err
 	}
 
-	// SQLite is a local file and uses none of the server fields. Clearing them
-	// keeps a password from a previous server connection from lingering in the
-	// file long after it stopped being used.
-	if strings.EqualFold(ds.Dialect, "sqlite") {
-		ds.Host, ds.Port, ds.User, ds.Password, ds.SSLMode = "", "", "", "", ""
+	if err := Misreading(ds); err != nil {
+		return err
 	}
+
+	ds = ds.AsStored()
 
 	// 0700, to match the file it is being made for. The file is 0600 because it
 	// holds a database password, and a directory anybody may list is a directory
@@ -291,12 +311,31 @@ func SaveDatasource(path string, ds Datasource) error {
 	return os.Rename(staged.Name(), path)
 }
 
-// TestDatasource opens the connection and runs a trivial query, so the
-// administrator learns whether the settings work before restarting into them.
+// TestDatasource tells the administrator whether the settings work before they
+// restart into them: it refuses a connection the driver would read otherwise
+// than it was typed, which no query can show, and then probes it.
+func TestDatasource(ctx context.Context, ds Datasource) error {
+	if err := ds.Validate(); err != nil {
+		return err
+	}
+
+	if err := Misreading(ds); err != nil {
+		return err
+	}
+
+	return ProbeDatasource(ctx, ds)
+}
+
+// ProbeDatasource opens the connection and runs a trivial query.
+//
+// TestDatasource without Misreading, for the start: an installation that has
+// been running on a misread connection keeps its data where that connection
+// took it, and refusing to start would cut it off from that data - so main says
+// it instead. Everywhere a connection is being chosen, TestDatasource refuses.
 //
 // The connection is opened and closed here rather than handed to the
 // application: this is a probe, not a switch.
-func TestDatasource(ctx context.Context, ds Datasource) error {
+func ProbeDatasource(ctx context.Context, ds Datasource) error {
 	if err := ds.Validate(); err != nil {
 		return err
 	}
@@ -363,6 +402,81 @@ func driverDSN(ds Datasource) (driver, dsn string, err error) {
 	default:
 		return "", "", fmt.Errorf("unsupported dialect %q", ds.Dialect)
 	}
+}
+
+// Misreading refuses a connection the driver would read otherwise than it was
+// typed, and answers nil for one it reads as it stands.
+//
+// GoFr writes the values into its connection string as they are - no quoting, no
+// escaping - and driverDSN writes them the same way, because a probe that
+// connected differently would not be a probe. So no probe can see this: it
+// connects exactly as wrongly as GoFr will, and succeeds where GoFr will. The
+// string is read back by the driver's own parser instead, and what comes out is
+// compared with what went in.
+//
+// Measured, and the reason this exists: with no password a PostgreSQL connection
+// reads "password= dbname=gtr", the driver takes "dbname=gtr" for the password,
+// and the server opens the database named after the account. Against a server
+// that asks for no password the probe and GoFr both succeeded - and the
+// application created its tables in "postgres" while its log named the database
+// it had been given. A space, a backslash or a leading quote is mangled the same
+// way; for MySQL, a colon in the user, a question mark in the database's name and
+// an IPv6 address without its brackets.
+//
+// The host is not compared for PostgreSQL: "h1,h2" is a list the driver fails
+// over between, and reads back as its first entry by design.
+func Misreading(ds Datasource) error {
+	driver, dsn, err := driverDSN(ds)
+	if err != nil {
+		return err
+	}
+
+	switch driver {
+	case "postgres":
+		read, err := pq.NewConfig(dsn)
+
+		// lib/pq refuses a handful of PG* environment variables, and the real
+		// connection fails on them just the same - with words that name the
+		// variable, which the probe passes on. Calling that a misreading of what
+		// was typed would send somebody to look at their password.
+		if err != nil && strings.HasPrefix(err.Error(), "pq: environment variable") {
+			return nil
+		}
+
+		switch {
+		case err != nil || read.User != ds.User || ds.Password != "" && read.Password != ds.Password:
+			return postgresMisread()
+		case read.Database != ds.Name && ds.Password == "":
+			return apperror.Invalidf("without a password, PostgreSQL is not told the database %q "+
+				"and opens the one named after the account instead; give the account's password - "+
+				"any value if the server asks for none - or, where this installation's data is "+
+				"already in that database, give its name", ds.Name).
+				WithCode("passwordSwallowsName", ds.Name)
+		case read.Database != ds.Name:
+			return postgresMisread()
+		}
+	case "mysql":
+		read, err := mysql.ParseDSN(dsn)
+
+		if err != nil || read.User != ds.User || read.Passwd != ds.Password || read.DBName != ds.Name ||
+			read.Addr != ds.Host+":"+DefaultPortFor(ds.Dialect, ds.Port) {
+			return apperror.Invalidf("MySQL would not receive this connection as typed: GoFr " +
+				"writes it without escaping, and a colon in the user, a question mark or a slash " +
+				"in the database's name, or an IPv6 address without its square brackets does " +
+				"not survive that").WithCode("mysqlMisread")
+		}
+	}
+
+	return nil
+}
+
+// postgresMisread is Misreading's refusal for a PostgreSQL value the driver
+// would read otherwise.
+func postgresMisread() error {
+	return apperror.Invalidf("PostgreSQL would not receive this connection as typed: GoFr " +
+		"writes it without quoting, and a space, a backslash or a leading quote in the " +
+		"user, the password or the database's name does not survive that").
+		WithCode("postgresMisread")
 }
 
 // mysqlTLSParam maps a stored SSL mode onto the DSN parameter the MySQL driver

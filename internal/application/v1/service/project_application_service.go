@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -72,8 +73,14 @@ func (s *ProjectApplicationService) CreateProject(
 	// to midnight UTC and is stored that way; this used to default to midnight in
 	// whatever zone the server runs in, which is the same field holding two
 	// different things - and one of them a day early once a driver normalises it.
+	// And the creator's day rather than the server's, which a caller that did not
+	// say has no default for: a guess here is a project on the wrong day.
 	if startDate.IsZero() {
-		startDate = model.CalendarDay(time.Now())
+		if cmd.Today.IsZero() {
+			return nil, apperror.Internal(errors.New("a project with no start date needs its creator's day"))
+		}
+
+		startDate = model.CalendarDay(cmd.Today)
 	}
 
 	if err := validateProject(cmd.Name, status, cmd.Description, startDate, cmd.EndDate); err != nil {
@@ -266,14 +273,15 @@ func (s *ProjectApplicationService) DeleteProject(ctx context.Context, cmd comma
 		return err
 	}
 
-	entries, err := s.timesheetRepository.GetByFilter(ctx, repository.TimesheetFilter{ProjectID: cmd.ID})
+	// Counted rather than loaded: the refusal needs the number and nothing else.
+	entries, err := s.timesheetRepository.CountByFilter(ctx, repository.TimesheetFilter{ProjectID: cmd.ID})
 	if err != nil {
 		return err
 	}
 
-	if len(entries) > 0 {
-		return apperror.Conflictf("cannot delete a project that still has %d time entries", len(entries)).
-			WithCode("projectHasEntries", len(entries))
+	if entries > 0 {
+		return apperror.Conflictf("cannot delete a project that still has %d time entries", entries).
+			WithCode("projectHasEntries", entries)
 	}
 
 	// A clock running against it counts too, for the same reason and one more.

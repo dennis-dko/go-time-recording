@@ -277,3 +277,23 @@ func TestAnOverLongMessageIsCutRatherThanRefused(t *testing.T) {
 
 	setMaintenance(t, admin, false, "")
 }
+
+// With authentication switched off whoever is there administers the
+// installation, and maintenance lets them through as it lets an administrator.
+//
+// The start says every request has full administrative access then, but the
+// exemption asked for the principal a session leaves on the request, which an
+// installation without authentication never has - so switching maintenance on
+// turned away the only person there is, from everything but the switch.
+func TestWithAuthenticationOffMaintenanceLetsTheOnlyPersonThrough(t *testing.T) {
+	t.Parallel()
+
+	a := start(t, "AUTH_ENABLED=false")
+	anybody := a.newClient()
+
+	setMaintenance(t, anybody, true, "Back at 14:00")
+
+	if got := anybody.api(http.MethodGet, "/timesheets", nil).Status; got != http.StatusOK {
+		t.Errorf("with authentication off and maintenance on, reading the entries answered %d", got)
+	}
+}

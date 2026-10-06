@@ -28,9 +28,12 @@ import (
 // key nothing derives is a knob that does nothing, which is worse - it is
 // followed, set, and then quietly ignored.
 
-// configRead matches a configuration lookup by name. The three-character floor
-// keeps ordinary Get calls with a short constant out of it.
-var configRead = regexp.MustCompile(`\.Get(?:OrDefault)?\("([A-Z][A-Z_0-9]{2,})"`)
+// configRead matches a configuration lookup by name: the provider's own Get and
+// GetOrDefault, and the readers config.Load takes its typed settings through,
+// which name the key the same way and say when its value cannot be used. The
+// three-character floor keeps ordinary Get calls with a short constant out of it.
+var configRead = regexp.MustCompile(
+	`\.(?:Get(?:OrDefault)?|boolean|whole|duration|share|dailyHours)\("([A-Z][A-Z_0-9]{2,})"`)
 
 // assignedKey matches a variable set in an env file.
 var assignedKey = regexp.MustCompile(`(?m)^([A-Z][A-Z_0-9]+)=`)
@@ -47,14 +50,14 @@ var configDocs = []string{
 // notOurs lists the variables the example files set for somebody else to read,
 // so their absence from this code is correct rather than a gap.
 //
-// GOFR_TELEMETRY and SHUTDOWN_GRACE_PERIOD are GoFr's own and are consumed
-// inside the framework; GTR_VERSION is read by compose to choose the image tag
-// and never reaches the process. Each is named here rather than matched by
-// prefix, so a fourth one is a decision somebody writes down.
+// GOFR_TELEMETRY is GoFr's own and is consumed inside the framework;
+// GTR_VERSION is read by compose to choose the image tag and never reaches the
+// process. Each is named here rather than matched by prefix, so a third one is a
+// decision somebody writes down. SHUTDOWN_GRACE_PERIOD used to be here as GoFr's
+// alone, and is read by main as well now, to wait for what GoFr's Run does not.
 var notOurs = map[string]bool{
-	"GOFR_TELEMETRY":        true,
-	"GTR_VERSION":           true,
-	"SHUTDOWN_GRACE_PERIOD": true,
+	"GOFR_TELEMETRY": true,
+	"GTR_VERSION":    true,
 }
 
 // TestEveryConfigurationKeyIsDocumented checks the keys the code reads against

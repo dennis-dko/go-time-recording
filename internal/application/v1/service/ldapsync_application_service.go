@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -58,6 +59,35 @@ type SyncReport struct {
 
 	// DryRun reports whether this was a preview.
 	DryRun bool
+}
+
+// Removals are the lines a caller writes for what a run deleted: one for each
+// account, naming it and how much went with it.
+//
+// Worded here because a caller's log is the only record of a deletion that
+// cannot be undone, and there are two callers. Each made the sentence for
+// itself - "(3 time entries)" from the schedule, "and its 3 time entry/entries"
+// from the button - for the same event, in the one place somebody searches to
+// find out what a run did. Empty for a run that never had a report, so a
+// caller that logs first and reads the error afterwards need not ask.
+func (r *SyncReport) Removals() []string {
+	if r == nil {
+		return nil
+	}
+
+	lines := make([]string, 0, len(r.Deleted))
+
+	for _, removed := range r.Deleted {
+		entries := "time entries"
+		if removed.Timesheets == 1 {
+			entries = "time entry"
+		}
+
+		lines = append(lines, fmt.Sprintf("directory sync removed %q with %d %s",
+			removed.Email, removed.Timesheets, entries))
+	}
+
+	return lines
 }
 
 // LDAPSyncService reconciles the local accounts with the directory.
@@ -417,14 +447,34 @@ func (s *LDAPSyncService) exceedsRatio(ctx context.Context, report *SyncReport) 
 	}
 
 	removing, of := len(report.Candidates), report.LocalExternal
-	share, limit := int(math.Round(ratio*100)), int(math.Round(ratioLimit*100))
+	share, limit := refusedShare(ratio, ratioLimit)
 
 	return apperror.Conflictf(
-		"would remove %d of %d directory accounts (%d%%), above the %d%% safety limit; "+
+		"would remove %d of %d directory accounts (%v%%), above the %v%% safety limit; "+
 			"check the directory filter and base DN, then raise the deletion limit under "+
 			"Operation and limits, or LDAP_SYNC_MAX_DELETE_RATIO, if this really is intended",
 		removing, of, share, limit).
 		WithCode("syncWouldRemoveTooMany", removing, of, share, limit)
+}
+
+// refusedShare writes the share a run would remove and the limit it passes, as
+// percentages a refusal can put side by side.
+//
+// The limit as it was set, and the share as a whole number unless rounding would
+// make it no larger than the limit: both were rounded, so 126 of 250 accounts -
+// 50.4% - read "(50%), above the 50% safety limit", which is wrong on its face,
+// and a limit of 12.5% was shown as 13%. The share then gets a decimal at a time
+// until it shows the difference the guard measured.
+func refusedShare(ratio, ratioLimit float64) (float64, float64) {
+	limit := math.Round(ratioLimit*100*1000) / 1000
+
+	for scale := 1.0; scale <= 10000; scale *= 10 {
+		if share := math.Round(ratio*100*scale) / scale; share > limit {
+			return share, limit
+		}
+	}
+
+	return ratio * 100, limit
 }
 
 // createMissing adds accounts the directory holds and this installation does

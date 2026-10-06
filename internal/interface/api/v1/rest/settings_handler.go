@@ -52,8 +52,7 @@ type SettingsHandler struct {
 	// logLevel applies a saved log level to the running process and reports what
 	// is in force. The one telemetry setting that does not wait for a restart:
 	// the log sink decides what is emitted, so changing it is a store in one
-	// place rather than a change to the framework's logger, which is read from
-	// every request goroutine without synchronisation.
+	// place rather than a change to the framework's logger.
 	//
 	// Both nil where the process output is not captured. There is nothing
 	// between the framework and the console to apply a level there, so the

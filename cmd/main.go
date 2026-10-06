@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"reflect"
@@ -22,6 +23,7 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
+	"gofr.dev/pkg/gofr/migration"
 	"modernc.org/sqlite"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
@@ -31,6 +33,7 @@ import (
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/directory"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/kerberos"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
@@ -40,6 +43,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
+	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
 	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
@@ -130,6 +134,18 @@ func hostSuffix(ds appconfig.Datasource) string {
 	}
 
 	return fmt.Sprintf(", host %s, user %q", where, ds.User)
+}
+
+// misreadLine is the line a failure message adds when the driver would misread
+// the connection, or nothing. Where it does, that is usually why the connection
+// failed, and the driver's own words do not say so: for a space in the password
+// they name the half after it as a setting with no value.
+func misreadLine(misread error) string {
+	if misread == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("  %v\n", misread)
 }
 
 // sqliteBusyTimeout is how long a writer waits for another writer to finish
@@ -267,6 +283,10 @@ func main() {
 		logs.SetPassthroughRenderer(consoleLine)
 	}
 
+	// The real console, kept before the capture takes its place: the one place a
+	// line is sure to arrive however the process ends. See sayingWhy.
+	console := os.Stderr
+
 	restoreOutput, err := logs.Capture()
 	if err != nil {
 		// Not fatal: an application that refuses to start because it could not
@@ -276,9 +296,11 @@ func main() {
 		defer restoreOutput()
 	}
 
-	// What a previous update left behind, now that this process is the new
-	// version. On Windows the old binary cannot be deleted while it is running,
-	// so the swap renames it aside and this is the first moment it can go.
+	// The note a previous update left saying it was waiting for a restart, now
+	// that this process is the version it was waiting for. Not the binary that
+	// update moved aside: that stays as the way back until the next update
+	// removes it, and removeLeftovers says why starting is not the moment to let
+	// go of it.
 	selfupdate.Cleanup()
 
 	// An administered database connection is exported into the environment
@@ -328,17 +350,24 @@ func main() {
 		installerToken = chosen.Token
 	}
 
+	// Asked here and said once there is a logger, never refused: an installation
+	// running on a connection the driver misreads keeps its data where that
+	// connection took it, and refusing to start would cut it off from that data.
+	// The installer and the settings screen refuse to choose one.
+	misread := appconfig.Misreading(ds)
+
 	// Proven before GoFr touches it, with the same drivers GoFr will use. GoFr
 	// discovers an unreachable database part-way through its migrations and
 	// exits on a message about a table it could not create, which describes
 	// neither what is wrong nor where.
-	if err := appconfig.TestDatasource(context.Background(), ds); err != nil {
+	if err := appconfig.ProbeDatasource(context.Background(), ds); err != nil {
 		die(restoreOutput,
 			"cannot reach the configured database.\n"+
 				"  %v\n"+
+				"%s"+
 				"  dialect %q, name %q%s\n"+
 				"  Remove DB_DIALECT and %s to choose a connection interactively instead.",
-			err, ds.Dialect, ds.Name, hostSuffix(ds), appconfig.DatasourceFile)
+			err, misreadLine(misread), ds.Dialect, ds.Name, hostSuffix(ds), appconfig.DatasourceFile)
 	}
 
 	if err := appconfig.ApplyDatasource(ds); err != nil {
@@ -375,13 +404,11 @@ func main() {
 	// The log level is the one telemetry setting that does not have to wait for a
 	// restart, and this is what buys that.
 	//
-	// The framework decides what to emit from a field it reads without
-	// synchronisation, so changing it while requests are in flight is a data
-	// race - which is why this does not use its ChangeLevel. Instead the
-	// framework is left at its most verbose and the level is applied on the way
-	// out, in the single goroutine draining the captured output. Raising or
-	// lowering it is then a store in one place with a mutex around it, and takes
-	// effect on the next line.
+	// The framework is left at its most verbose and the level is applied on the
+	// way out, where the captured output is drained. Raising or lowering it is
+	// then a store in one place with a mutex around it, and takes effect on the
+	// next line. Sink.SetLevel says why that was built rather than using the
+	// framework's ChangeLevel, and what has become of the reason.
 	//
 	// Only where the output is actually captured. Without capture there is
 	// nothing between the framework and the console to apply a level, so the
@@ -450,6 +477,18 @@ func main() {
 	}
 
 	cfg := appconfig.Load(app.Config)
+
+	// A setting written so it cannot be used falls back to its default. Said here,
+	// at start, where whoever set it will look for why it does not apply.
+	for _, unusable := range cfg.Unusable {
+		app.Logger().Warnf("configuration: %s", unusable)
+	}
+
+	// After GoFr's own line naming the database it was given, which is the line
+	// this one corrects.
+	if misread != nil {
+		app.Logger().Warnf("database: %v", misread)
+	}
 	app.Logger().Infof("go-time-recording %s starting (dialect=%s)", version, cfg.Dialect)
 
 	db := app.GetSQL()
@@ -459,7 +498,7 @@ func main() {
 
 	// Schema first: the binary provisions its own database on first start, so
 	// a deployment needs no separate migration step.
-	app.Migrate(migrations.All(cfg.Dialect))
+	app.Migrate(sayingWhy(migrations.All(cfg.Dialect), console))
 
 	if unavailable(db) {
 		// Without this the app starts happily and every request panics on a
@@ -531,13 +570,22 @@ func main() {
 	// the file's, which is why it is kept before cfg is overwritten.
 	fileSchedule := cfg.LDAPSyncSchedule
 
+	// Whether a directory is configured, for the line that says what a keytab
+	// amounts to: a ticket names somebody, and the directory is where that name
+	// becomes an account.
+	directoryConfigured := false
+
 	if stored, err := settingsService.LDAP(context.Background()); err != nil {
 		// Not fatal, and not loud: on a first start the settings table has only
 		// just been created by the migrations, so there is nothing to read yet.
 		app.Logger().Debugf("could not read the administered directory schedule (%v); "+
 			"the configuration file's value applies", err)
-	} else if stored.SyncSchedule != "" {
-		cfg.LDAPSyncSchedule = stored.SyncSchedule
+	} else {
+		directoryConfigured = stored.Enabled
+
+		if stored.SyncSchedule != "" {
+			cfg.LDAPSyncSchedule = stored.SyncSchedule
+		}
 	}
 	setup := appservice.NewSetupService(settingsService, userRepo)
 
@@ -600,6 +648,16 @@ func main() {
 	// The built-in administrator is created after the migrations have run, so
 	// there is always a way in even on a brand new database.
 	prepare := func(ctx *gofr.Context) error {
+		// Before anything writes a moment. MySQL keeps one without its zone, so a
+		// process in another zone than the one that wrote them reads every stored
+		// day as another; see StorageZoneService.
+		if cfg.Dialect == sqldb.DialectMySQL {
+			if err := appservice.NewStorageZoneService(settingsRepo, time.Local, hosting.ZoneName()).
+				Verify(ctx); err != nil {
+				return err
+			}
+		}
+
 		// Before anything reads a secret, and before the built-in administrator
 		// exists: a key that is not this installation's key has to stop the start
 		// rather than surface later as second factors that stopped working.
@@ -728,12 +786,18 @@ func main() {
 	//
 	// A second listener for the same signals GoFr handles. signal.Notify supports
 	// that, and the alternative is reaching into how GoFr shuts down.
-	go func() {
-		stopping := make(chan os.Signal, 1)
-		signal.Notify(stopping, os.Interrupt, syscall.SIGTERM)
+	//
+	// It ends a scheduled directory run as well, for the same kind of reason: GoFr
+	// gives a job a context nothing cancels. See scheduledSync.
+	stopping, stopped := context.WithCancel(context.Background())
 
-		<-stopping
+	go func() {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+		<-signals
 		hub.Close()
+		stopped()
 	}()
 
 	// Outermost, because everything after it is written for traffic that arrived
@@ -746,6 +810,32 @@ func main() {
 	// on the plain one, and redirecting it to a port with nothing behind it would
 	// turn a warning in the log into an outage.
 	var httpsFrontEnd atomic.Bool
+
+	// A sign-in with the browser's Kerberos ticket, where a keytab is given. Read
+	// once, at start, like a certificate's key: a keytab that cannot be read turns
+	// the sign-in off and says so, rather than stopping an installation whose
+	// passwords still work.
+	var kerberosAcceptor *kerberos.Acceptor
+
+	if cfg.KerberosKeytab != "" {
+		acceptor, err := kerberos.Load(cfg.KerberosKeytab, cfg.KerberosServicePrincipal, app.Logger())
+		if err != nil {
+			app.Logger().Errorf("could not read the Kerberos keytab: %v; signing in with a ticket is off", err)
+		} else {
+			kerberosAcceptor = acceptor
+
+			// Not "on" without a directory, which the sign-in screen is then
+			// never offered - it is offered as soon as one is configured, without
+			// a restart.
+			if directoryConfigured {
+				app.Logger().Infof("signing in with a Kerberos ticket of realm %s is on", acceptor.Realm())
+			} else {
+				app.Logger().Warnf("the Kerberos keytab of realm %s was read, but no directory is configured "+
+					"to look a ticket's owner up in, so signing in with a ticket is offered to nobody "+
+					"until one is configured under Settings", acceptor.Realm())
+			}
+		}
+	}
 
 	app.UseMiddleware(tlsserver.KeepThePlainPortLocal(httpsFrontEnd.Load, cfg.TLSPort))
 	// Then the size of it, before anything below reads a body - which all of them
@@ -760,6 +850,9 @@ func main() {
 	// without a session ever being resolved for it.
 	app.UseMiddleware(rest.CSRFMiddleware())
 	app.UseMiddleware(rest.CookieMiddleware())
+	// After both, so the ticket sign-in is inside the CSRF check and can set its
+	// cookie like the others.
+	app.UseMiddleware(rest.KerberosTicket(kerberosAcceptor))
 	app.UseMiddleware(rest.SessionMiddleware(sessions))
 	// Tokens are checked after sessions and only fill in when no session was
 	// found, so a browser session always wins over a stray header.
@@ -769,14 +862,14 @@ func main() {
 	// administers the installation needs to know who is calling - placed earlier
 	// it would turn away the only people who can end maintenance mode. Before the
 	// UI, so the assets are still served and the page can render the notice.
-	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState))
+	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState, authorizer))
 
 	// The two things this application says without being asked: that it is about
 	// to restart into a new version, and that the account holding the connection
 	// may suddenly do more, or less, than it could a moment ago. After the session
 	// middleware, which is what makes a stream belong to somebody, and before the
 	// interface, which would otherwise answer for a path it does not own.
-	app.UseMiddleware(rest.EventStream(hub, auth))
+	app.UseMiddleware(rest.EventStream(hub, auth, authorizer))
 
 	if cfg.UIEnabled {
 		// GoFr's AddStaticFiles only serves a directory from disk, which would
@@ -834,7 +927,10 @@ func main() {
 
 	v1.RegisterRoutes(app, v1.Handlers{
 		Auth: rest.NewAuthHandler(sessions, authorizer, cfg.AppName, instanceTimezone).
-			WithMaintenance(maintenanceState),
+			WithMaintenance(maintenanceState).
+			// Only with a directory: a ticket names somebody, and the directory is
+			// where that name becomes an account.
+			WithKerberos(func() bool { return kerberosAcceptor != nil && ldapClient.Enabled() }),
 		Users: rest.NewUserHandler(users, userDomain, authorizer, auth, instanceTimezone).
 			// A password reset has to reach the sessions as well as the password:
 			// a cookie is not re-checked against the password that opened it, so
@@ -845,7 +941,7 @@ func main() {
 					return sessions.LogoutOthers(ctx, userID, "")
 				})),
 		Roles:      rest.NewRoleHandler(roles, authorizer),
-		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer),
+		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer).WithTimezone(instanceTimezone),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),
 		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone),
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
@@ -859,13 +955,16 @@ func main() {
 			// Present only where the deployment added the overlay that runs it;
 			// see deploy/compose.update.yaml for what that grants and why the
 			// application is not the thing granted it.
-			WithImageUpdater(imageupdate.New(os.Getenv("GTR_UPDATE_REQUESTS"))),
+			WithImageUpdater(imageupdate.New(os.Getenv("GTR_UPDATE_REQUESTS"))).
+			WithConnection(ds),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
-		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer),
-		Passkeys:   rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName),
-		Documents:  rest.NewDocumentHandler(authorizer, instanceName),
+		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),
+		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
+			WithMaintenance(maintenanceState).
+			WithTimezone(instanceTimezone),
+		Documents: rest.NewDocumentHandler(authorizer, instanceName).WithTimezone(instanceTimezone),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,
@@ -898,37 +997,7 @@ func main() {
 	if cfg.LDAPSyncSchedule != "" {
 		app.Logger().Infof("directory reconciliation scheduled at %q", cfg.LDAPSyncSchedule)
 
-		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", func(ctx *gofr.Context) {
-			report, err := ldapSync.Sync(ctx)
-
-			// What it did, before whether it finished. A run that removed three
-			// accounts and then lost the database used to log "directory sync
-			// failed" and nothing else - three people's recorded hours gone, and
-			// no line naming them. The deletions are logged from the report
-			// whichever way the run ended.
-			if report != nil {
-				for _, removed := range report.Deleted {
-					ctx.Logger.Warnf("directory sync removed %q (%d time entries)",
-						removed.Email, removed.Timesheets)
-				}
-			}
-
-			if err != nil {
-				ctx.Logger.Errorf("directory sync failed: %v", err)
-
-				return
-			}
-
-			if report.Aborted != "" {
-				ctx.Logger.Warnf("directory sync refused: %s", report.Aborted)
-
-				return
-			}
-
-			if len(report.Created) > 0 {
-				ctx.Logger.Infof("directory sync added %d account(s)", len(report.Created))
-			}
-		})
+		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", scheduledSync(stopping, ldapSync))
 	}
 
 	// The nightly sweep that moved stale open entries to submitted is gone with the
@@ -950,12 +1019,69 @@ func main() {
 
 	app.Run()
 
+	// Run returns when GoFr's servers stop listening, which is the moment a stop
+	// begins rather than the moment it has finished waiting for the requests under
+	// way: net/http returns ListenAndServe as soon as Shutdown is called. GoFr
+	// stops the metrics server after the HTTP server has drained, so while metrics
+	// were on, that server held Run open until the wait was over. With them off -
+	// METRICS_PORT=0, or switched off under Settings - main ended while GoFr was
+	// still waiting, and a stop cut off every request being answered.
+	//
+	// Shutting down a second time waits for exactly what was missing. The server's
+	// Shutdown returns once every connection is idle, after its answer has gone,
+	// and every step after it is safe to repeat: the crontab stops once, the
+	// database closes once. Read in GoFr's own source rather than assumed. The
+	// HTTPS front end is stopped by a deferred call below this, so an answer on its
+	// way through it has left the backend first.
+	finishing, stopWaiting := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
+
+	if err := app.Shutdown(finishing); err != nil {
+		// Whatever GoFr's own pass found wrong it has reported; a second pass
+		// mostly meets things it already closed.
+		app.Logger().Debugf("waiting for the shutdown to finish: %v", err)
+	}
+
+	stopWaiting()
+
 	// Said again past the pipe, as every other refusal here is: GoFr's own line
 	// went through the capture, and die is what guarantees the reason reaches the
 	// console before the process is gone.
 	if startFailure != nil {
 		die(restoreOutput, "the application did not start: %v", startFailure)
 	}
+}
+
+// sayingWhy hands each migration to GoFr unchanged, except that one which fails
+// says so on the real console before GoFr ends the process.
+//
+// GoFr rolls a failed migration back and calls Fatal, and a Fatal goes through
+// the pipe the log viewer reads - the loss the logsink package describes - so the
+// reason could be gone before anything passed it on: measured, a start on a
+// database already holding a table of the same name exited 1 with an empty log
+// in one of its first two runs. A migration is this application's own, so it
+// says why itself, past the pipe, while GoFr still has the rollback to do.
+func sayingWhy(all map[int64]migration.Migrate, console io.Writer) map[int64]migration.Migrate {
+	said := make(map[int64]migration.Migrate, len(all))
+
+	for version, step := range all {
+		up := step.UP
+
+		step.UP = func(d migration.Datasource) error {
+			err := up(d)
+			if err != nil {
+				// Best effort, like every line to a console: there is nowhere
+				// further to report a console that will not take one.
+				_, _ = fmt.Fprintf(console, "cannot start: migration %d could not be applied: %v\n",
+					version, err)
+			}
+
+			return err
+		}
+
+		said[version] = step
+	}
+
+	return said
 }
 
 // registerBusinessMetrics declares the ones this application records itself.

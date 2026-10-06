@@ -53,6 +53,8 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/auth/passkey/login", h.Passkeys.BeginLogin)
 	app.PUT(base+"/auth/passkey/login", h.Passkeys.FinishLogin)
 	app.POST(base+"/auth/logout", h.Auth.Logout)
+	app.GET(base+"/auth/kerberos", h.Auth.KerberosSupport)
+	app.POST(base+"/auth/kerberos", h.Auth.KerberosLogin)
 	app.GET(base+"/languages", h.Auth.Languages)
 
 	// Branding is readable without a session: the sign-in screen shows the

@@ -54,3 +54,9 @@ test/browser/*.png
 # The audit scratchpad. Findings are worked through and land as commits and
 # tests; the running notes behind them are not something the repository needs.
 AUDIT_REPORT.md
+
+# The workspace's GOTMPDIR; .vscode/settings.json says why it is not bin/gotmp.
+# Go refuses to start when that directory is missing, so the directory comes with
+# the repository as an empty .gitkeep, and nothing the tests write into it does.
+.gotmp/*
+!.gotmp/.gitkeep

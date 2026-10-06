@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"time"
+
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -15,6 +17,7 @@ type ProjectHandler struct {
 	projects service.ProjectService
 	domain   *domainservice.ProjectDomainService
 	authz    *Authorizer
+	timezone InstanceTimezoneFunc
 }
 
 // NewProjectHandler creates a project handler.
@@ -24,6 +27,15 @@ func NewProjectHandler(
 	authz *Authorizer,
 ) *ProjectHandler {
 	return &ProjectHandler{projects: projects, domain: domain, authz: authz}
+}
+
+// WithTimezone attaches the instance-wide zone, which decides the day a project
+// sent without a start begins on for anybody who has not chosen a zone of their
+// own.
+func (h *ProjectHandler) WithTimezone(zone InstanceTimezoneFunc) *ProjectHandler {
+	h.timezone = zone
+
+	return h
 }
 
 // List handles GET /api/v1/projects.
@@ -101,6 +113,7 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 		Description: req.Description,
 		StartDate:   req.StartDate.Time,
 		Status:      req.Status,
+		Today:       time.Now().In(principal.User.TimezoneOf(h.timezone.resolve(c))),
 	}
 
 	// Whoever is asking. Zero means enforcement is switched off, and then there is no

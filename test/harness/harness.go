@@ -182,7 +182,10 @@ func Build() (cleanup func(), err error) {
 		args = append(args, "-race")
 	}
 
-	args = append(args, "./cmd/main.go")
+	// The package rather than main.go: naming a file builds that file and no
+	// other, so a second one in cmd/ would be left out of every instance a
+	// suite starts.
+	args = append(args, "./cmd")
 
 	build := exec.Command("go", args...)
 	build.Dir = RepoRoot()
@@ -266,6 +269,11 @@ func StartUnconfigured(t *testing.T, env ...string) *App {
 // Dir is the working directory of the instance, which is where its configs/ and
 // - for SQLite - its database file live.
 func (a *App) Dir() string { return a.dir }
+
+// Terminate sends the instance the signal a service manager stops it with and
+// returns at once, for a case with something to do while it stops. Windows
+// cannot deliver the signal, and says so in the error.
+func (a *App) Terminate() error { return a.cmd.Process.Signal(syscall.SIGTERM) }
 
 // Stop sends the instance the signal a service manager stops it with, and
 // returns its exit code once it has gone.
@@ -913,6 +921,37 @@ func (a *App) stop() {
 	tempdir.Remove(a.dir)
 }
 
+// EmptyDatabase opens a database nothing has migrated - on the server the suite is
+// pointed at, or in a SQLite file - and says which dialect it speaks.
+//
+// For a case that runs the migration chain itself, part of the way, so it can
+// put rows where an older version would have left them before running the rest.
+// An instance cannot do that: it migrates everything the moment it starts.
+func EmptyDatabase(t *testing.T) (dialect string, db *sql.DB) {
+	t.Helper()
+
+	dialect = "sqlite"
+	conn := "file:" + filepath.Join(tempdir.New(t), "empty.db")
+
+	if dsn := os.Getenv(DSNEnv); dsn != "" {
+		_, dialect, conn = serverEnv(t, dsn)
+	}
+
+	db, err := sql.Open(dialect, conn)
+	if err != nil {
+		t.Fatalf("cannot open an empty %s database: %v", dialect, err)
+	}
+
+	// Registered after the database's own removal, so it runs before it.
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := db.Ping(); err != nil {
+		t.Fatalf("cannot reach the empty %s database: %v", dialect, err)
+	}
+
+	return dialect, db
+}
+
 // SharedDatabase is a SQLite file that two instances started by one test can
 // both open - which is how a case proves that what one start stored is what the
 // next start applies.
@@ -924,4 +963,20 @@ func SharedDatabase(t *testing.T) string {
 	t.Helper()
 
 	return filepath.Join(tempdir.New(t), "shared")
+}
+
+// SharedServerDatabase is SharedDatabase's counterpart on the server the suite
+// is pointed at: the DB_* variables of a database of its own that two instances
+// started by one test can both be given, and nil where the suite runs on SQLite.
+func SharedServerDatabase(t *testing.T) []string {
+	t.Helper()
+
+	dsn := os.Getenv(DSNEnv)
+	if dsn == "" {
+		return nil
+	}
+
+	env, _, _ := serverEnv(t, dsn)
+
+	return env
 }

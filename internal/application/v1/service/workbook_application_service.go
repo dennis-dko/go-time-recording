@@ -377,6 +377,13 @@ func (s *WorkbookService) Apply(ctx context.Context, plan *ImportPlan) (int, err
 		return 0, err
 	}
 
+	// Counted as the booking counts them, after the write, through the timesheet
+	// service's own recorder: the metric says its sum is what was recorded, and
+	// these are written past the booking that would otherwise count them.
+	for _, entry := range entries {
+		s.entries.record(ctx, MetricHoursBooked, entry.DurationHours)
+	}
+
 	return len(entries), nil
 }
 

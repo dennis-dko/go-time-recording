@@ -3,6 +3,7 @@ version: '3'
 # Three things this file is for, in the order a change travels through them:
 #
 #   develop   task dev      local binary, fast rebuild, real backing services
+#                           (task dev:watch: rebuilt and restarted on every save)
 #   verify    task stage    the shipped container image, against real services
 #   ship      task release  a git tag; CI builds, publishes and releases
 #
@@ -18,6 +19,11 @@ vars:
 
   # Build scratch space for tests, kept out of %TEMP% - see the test task.
   TMP_DIR: bin/gotmp
+
+  # The live reload dev:watch puts in front of the binary, run with go run at
+  # this version rather than installed: nothing to put on PATH, and go.mod stays
+  # the application's.
+  AIR_VERSION: v1.67.4
 
   # Image and build version. Defaults to the nearest git tag (or the short SHA
   # if there is none yet). Override for releases: task release VERSION=v1.2.3
@@ -55,6 +61,28 @@ tasks:
     cmds:
       - task: '{{if eq .DB "sqlite"}}dev:sqlite{{else}}dev:services{{end}}'
 
+  dev:watch:
+    desc: 'Develop: as dev, and built and started again whenever the code, the interface or the configuration changes.'
+    summary: |
+      task dev with air in front of the binary. Saving a .go file, app.js, the
+      stylesheet, the markup or a .env under cmd/configs builds the binary again
+      and restarts it against the same services; .air.toml says what is watched,
+      and why the interface has to be named there.
+
+      A build that fails stops the running process rather than leaving the old
+      one up, so the browser cannot show code that is no longer in the editor.
+      The page is not reloaded for you: press F5 once the log says it started.
+
+      air is run with go run at AIR_VERSION, so there is nothing to install; the
+      first start downloads it.
+
+      Usage:
+        task dev:watch             PostgreSQL and the directory
+        task dev:watch DB=sqlite   no containers at all, straight onto a local file
+    cmds:
+      - task: '{{if eq .DB "sqlite"}}dev:sqlite{{else}}dev:services{{end}}'
+        vars: { WATCH: 'true' }
+
   dev:services:
     internal: true
     cmds:
@@ -65,6 +93,7 @@ tasks:
       - task: build
       - task: dev:binary
         vars:
+          WATCH: '{{.WATCH}}'
           MESSAGE: 'PostgreSQL on localhost:55432'
           DB_DIALECT: postgres
           DB_HOST: localhost
@@ -79,6 +108,7 @@ tasks:
       - task: build
       - task: dev:binary
         vars:
+          WATCH: '{{.WATCH}}'
           MESSAGE: 'a local SQLite file'
           DB_DIALECT: sqlite
 
@@ -99,6 +129,10 @@ tasks:
       DB_USER: '{{.DB_USER}}'
       DB_PASSWORD: '{{.DB_PASSWORD}}'
       DB_SSL_MODE: '{{.DB_SSL_MODE}}'
+      # Where go run builds air, out of %TEMP% for the reason the test tasks give,
+      # and not their bin/gotmp, which each of them deletes when it ends - under
+      # a watch that is still running, every rebuild after it would fail.
+      GOTMPDIR: '{{if .WATCH}}{{.ROOT_DIR}}/{{.BIN_DIR}}/air/gotmp{{end}}'
     cmds:
       # A datasource.json written by the Settings screen in an earlier session
       # is applied *before* GoFr reads its configuration and overwrites every
@@ -106,7 +140,20 @@ tasks:
       # else. Removing it is what keeps `task dev` mean one thing.
       - rm -f configs/datasource.json
       - echo "Starting against {{.MESSAGE}} - open http://localhost:8000"
-      - ./{{.APP_NAME}}{{exeExt}}
+      - '{{if .WATCH}}mkdir -p air/gotmp{{else}}true{{end}}'
+      # From here as well, so the process air starts finds ./configs; the root
+      # air watches is one up, which .air.toml says.
+      - '{{if .WATCH}}go run github.com/air-verse/air@{{.AIR_VERSION}} -c ../.air.toml --build.cmd "task{{exeExt}} dev:rebuild" --build.full_bin ./{{.APP_NAME}}{{exeExt}}{{else}}./{{.APP_NAME}}{{exeExt}}{{end}}'
+
+  # What air runs on every change, its first build included: the binary, and the
+  # stale connection removed for the reason dev:binary removes it. The build copies
+  # cmd/configs whole, and a datasource.json left there by a debug session that
+  # met the installer would take every restart somewhere else. Not internal,
+  # because air calls it from its own shell.
+  dev:rebuild:
+    cmds:
+      - task: build:binary
+      - rm -f {{.BIN_DIR}}/configs/datasource.json
 
   # ------------------------------------------------------------------ verify
 
@@ -254,6 +301,10 @@ tasks:
       recorded against it. That cannot be checked against a fake, because a fake
       returns whatever the test told it to.
 
+      The sign-in with a Kerberos ticket belongs here too, in the integration
+      suite and in the browser: a ticket's owner is looked up in the directory,
+      so those cases skip without one - and a skip looks exactly like a pass.
+
       Starts the directory and leaves it running; test/README.md documents the
       seeded accounts, and phpLDAPadmin is on http://localhost:5080 for looking
       at one by hand. `task env:down` stops it.
@@ -265,7 +316,8 @@ tasks:
         vars: { PROFILE: ldap }
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
-      - go test -tags integration -count=1 -timeout 10m -run 'Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed' ./test/integration/
+      - go test -tags integration -count=1 -timeout 10m -run 'Directory|LDAP|BaseDN|MailAddress|Synchronisation|NeverProposed|Kerberos' ./test/integration/
+      - go test -tags browser -count=1 -timeout 10m -parallel 2 -run 'Ticket' ./test/browser/
 
   test:traces:
     desc: 'Verify: export spans to a real Jaeger and read them back.'
@@ -455,21 +507,36 @@ tasks:
     desc: 'Ship: build the binary into bin/, with its configuration beside it.'
     deps: [tidy]
     cmds:
-      # The artifact is environment-independent: GoFr picks its config file from
-      # APP_ENV at start-up, so there is nothing to choose here.
-      - echo "Building {{.APP_NAME}} {{.VERSION}}"
-      - mkdir -p {{.BIN_DIR}}
-      - cp -r {{.CONFIG_SRC}} {{.BIN_DIR}}/
       # On Windows, the icon and the Properties tab - the same resource the
       # release builds, so a binary built here is not a different artefact from
       # the published one. Needs goversioninfo on PATH; without it the build goes
       # ahead unadorned rather than failing, because a missing tool is not a
       # reason to be unable to build the application.
       - '{{if eq OS "windows"}}sh build/windows-resource.sh {{.VERSION}} || echo "no goversioninfo on PATH - building without the resource"{{end}}'
+      - task: build:binary
+      - '{{if eq OS "windows"}}sh build/windows-resource.sh --clean{{end}}'
+
+  # The binary and its configuration, and nothing written anywhere but bin/: what
+  # dev:watch builds on every change. Not the module tidied first, which would add
+  # seconds to every save, and not the Windows resource, which is written into
+  # cmd/ - the directory air watches - and removed again: air starts the next
+  # build while the last is still running, and one deleted the file the other was
+  # linking, measured. Not internal, because air calls it from its own shell.
+  build:binary:
+    cmds:
+      # The artifact is environment-independent: GoFr picks its config file from
+      # APP_ENV at start-up, so there is nothing to choose here.
+      - echo "Building {{.APP_NAME}} {{.VERSION}}"
+      - mkdir -p {{.BIN_DIR}}
+      # Absolute, because on Windows this is Task's own cp, which asks whether the
+      # target is a directory relative to the process's working directory and
+      # copies relative to the Taskfile's: run from anywhere but here - air runs
+      # it from bin/ - it found no bin/ there and copied the files of configs
+      # into bin/ itself, where nothing reads them. Measured, from a subdirectory.
+      - cp -r "{{.ROOT_DIR}}/{{.CONFIG_SRC}}" "{{.ROOT_DIR}}/{{.BIN_DIR}}/"
       # ./cmd rather than ./cmd/main.go: naming the file builds that file, and a
       # .syso beside it in the package is not picked up.
       - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd
-      - '{{if eq OS "windows"}}sh build/windows-resource.sh --clean{{end}}'
 
   image:
     desc: 'Ship: build the deployment image, tagged with the version and "latest".'

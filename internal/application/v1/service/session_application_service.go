@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +46,12 @@ type ExternalUser struct {
 	// first sign-in and a synchronisation, have to read what was saved rather
 	// than what was true at start-up. Empty means the service's own default.
 	Role string
+
+	// Disabled says the directory has switched the account off - Active
+	// Directory's own flag, or a day it expired on. A password sign-in learns
+	// this from the bind failing; a sign-in proved by a ticket has only the entry
+	// to go on, and the ticket stays valid for hours after the account is off.
+	Disabled bool
 }
 
 // SessionService signs users in and out.
@@ -198,21 +202,58 @@ func (s *SessionService) Login(ctx context.Context, email, password, totpCode st
 		return nil, err
 	}
 
-	if user.TOTPEnabled {
-		// Not a failure: the password was right and the client is being asked
-		// for the second factor it was always going to be asked for.
-		if totpCode == "" {
-			return nil, ErrTOTPRequired
-		}
-
-		if err := s.spendTOTP(user, totpCode); err != nil {
-			s.count(ctx, MetricSignInFailures, "reason", SignInFailureTOTP)
-
-			return nil, err
-		}
+	if err := s.secondFactor(ctx, user, totpCode); err != nil {
+		return nil, err
 	}
 
-	return s.OpenSession(ctx, user)
+	result, err := s.OpenSession(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	// Asked again once the session is written. A password change puts the new
+	// password in place and then ends the account's other sessions, and this
+	// sign-in checked the old one - slowly, by design - before writing its own:
+	// written after the change had ended the others, it kept a session opened
+	// with a password that no longer worked. Whichever of the two lands last now
+	// ends it, and so does an account removed in between.
+	if current, err := s.users.GetByID(ctx, user.ID); err != nil || current.PasswordHash != user.PasswordHash {
+		// Best effort: the refusal below is what matters, and a session left
+		// behind by a failed delete is one nobody was handed.
+		_ = s.sessions.Delete(ctx, security.HashToken(result.Token))
+
+		invalid := apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
+		if err != nil {
+			return nil, missingOr(err, invalid)
+		}
+
+		return nil, invalid
+	}
+
+	return result, nil
+}
+
+// secondFactor asks an account that holds one for its code, whatever proved the
+// rest - a password or a Kerberos ticket. One place, so the two sign-ins cannot
+// come to ask it differently.
+func (s *SessionService) secondFactor(ctx context.Context, user *model.User, code string) error {
+	if !user.TOTPEnabled {
+		return nil
+	}
+
+	// Not a failure: the rest was proved and the client is being asked for the
+	// second factor it was always going to be asked for.
+	if code == "" {
+		return ErrTOTPRequired
+	}
+
+	if err := s.spendTOTP(user, code); err != nil {
+		s.count(ctx, MetricSignInFailures, "reason", SignInFailureTOTP)
+
+		return err
+	}
+
+	return nil
 }
 
 // OpenFirstSession issues the session the installer earned, or refuses.
@@ -368,6 +409,15 @@ func (s *SessionService) resolveUser(ctx context.Context, email, password string
 // under the new address either and created a second account for the same
 // person - an empty one, which they were then signed in to.
 func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *ExternalUser) (*model.User, error) {
+	// Not for an account the directory has switched off. A password sign-in never
+	// arrives here with one - the bind refuses it - but a ticket issued before the
+	// account went off stays valid for hours, and the entry is the one thing left
+	// that can say so. As vague to the caller as any refused sign-in.
+	if directoryUser.Disabled {
+		return nil, apperror.Invalidf("the directory has switched the account for %s off",
+			directoryUser.Email).WithCode("invalidCredentials")
+	}
+
 	email := normalizeEmail(directoryUser.Email)
 
 	if directoryUser.ID != "" {
@@ -527,15 +577,32 @@ func (s *SessionService) administers(ctx context.Context, user *model.User) (boo
 	return roleAdministers(role), nil
 }
 
-// Resolve turns a session token from a cookie into its principal.
+// Resolve turns a session token from a cookie into its principal, and counts the
+// request as the session being used.
 func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal, error) {
+	return s.resolve(ctx, token, true)
+}
+
+// ResolveUnattended is Resolve for a request the page made by itself - a check
+// on a timer, a stream reconnecting: held to the session's bounds like any other
+// request, and not counted as anybody being there.
+//
+// Counted, those kept every session that had a page open and in view, so the
+// idle timeout never ended the one it is for: a screen left open at lunch.
+func (s *SessionService) ResolveUnattended(ctx context.Context, token string) (*Principal, error) {
+	return s.resolve(ctx, token, false)
+}
+
+func (s *SessionService) resolve(ctx context.Context, token string, inUse bool) (*Principal, error) {
+	noSession := apperror.Invalidf("no session").WithCode("noSession")
+
 	if token == "" {
-		return nil, apperror.Invalidf("no session").WithCode("noSession")
+		return nil, noSession
 	}
 
 	session, err := s.sessions.Get(ctx, security.HashToken(token))
 	if err != nil {
-		return nil, apperror.Invalidf("no session").WithCode("noSession")
+		return nil, missingOr(err, noSession)
 	}
 
 	now := time.Now()
@@ -556,11 +623,13 @@ func (s *SessionService) Resolve(ctx context.Context, token string) (*Principal,
 		return nil, apperror.Invalidf("session expired").WithCode("sessionExpired")
 	}
 
-	s.touch(ctx, session, now, idle)
+	if inUse {
+		s.touch(ctx, session, now, idle)
+	}
 
 	user, err := s.users.GetByID(ctx, session.UserID)
 	if err != nil {
-		return nil, apperror.Invalidf("no session").WithCode("noSession")
+		return nil, missingOr(err, noSession)
 	}
 
 	return s.auth.principalFor(ctx, user)
@@ -727,56 +796,4 @@ func (s *SessionService) DisableTOTP(ctx context.Context, userID uint, code stri
 	// Off, and the secret gone with it: a secret left behind would sign somebody
 	// in again the moment the flag was flipped back.
 	return s.users.SetTOTP(ctx, user.ID, "", false)
-}
-
-// SetLanguage stores the user's interface language.
-func (s *SessionService) SetLanguage(ctx context.Context, userID uint, language string) error {
-	if !model.IsSupportedLanguage(language) {
-		return apperror.InvalidFields("language")
-	}
-
-	return s.users.SetPreference(ctx, userID, repository.PreferenceLanguage, language)
-}
-
-// SetTheme stores the appearance this person reads in, or clears it.
-//
-// An empty value is the normal case rather than an omission: it means "follow
-// the time of day", which is what somebody who has never chosen gets and what
-// they go back to by choosing automatic.
-func (s *SessionService) SetTheme(ctx context.Context, userID uint, theme string) error {
-	if !model.IsSupportedTheme(theme) {
-		return apperror.InvalidFields("theme")
-	}
-
-	return s.users.SetPreference(ctx, userID, repository.PreferenceTheme, theme)
-}
-
-// SetTourSeen records whether this person has been shown the guided tour.
-//
-// Settable both ways: someone who wants to see it again should be able to ask,
-// rather than being told they have already had their chance.
-func (s *SessionService) SetTourSeen(ctx context.Context, userID uint, seen bool) error {
-	// One column, not the whole row: this is written the moment somebody signs in,
-	// while they are already doing something else. Writing the row back would take
-	// whatever that something else changed with it.
-	return s.users.SetPreference(ctx, userID, repository.PreferenceTourSeen,
-		strconv.FormatBool(seen))
-}
-
-// SetTimezone stores the user's own zone, or clears it so they follow the
-// instance setting again.
-//
-// An empty name is the normal case and is deliberately allowed: most people
-// should move with the instance rather than be pinned to whatever zone they
-// happened to be in when the account was made.
-func (s *SessionService) SetTimezone(ctx context.Context, userID uint, timezone string) error {
-	timezone = strings.TrimSpace(timezone)
-
-	if timezone != "" && !model.IsSupportedTimezone(timezone) {
-		return apperror.InvalidFields("timezone")
-	}
-
-	err := s.users.SetPreference(ctx, userID, repository.PreferenceTimezone, timezone)
-
-	return err
 }

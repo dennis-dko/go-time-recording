@@ -90,6 +90,39 @@ func (c *client) tryRestartState() (RestartState, bool) {
 	return envelope.Data, true
 }
 
+// restartFromTheButton presses the button and waits until a different process
+// answers.
+//
+// A different process answering is the only honest signal that it happened:
+// replacing the image takes milliseconds, so waiting for the port to close and
+// open again would miss it entirely and report success for nothing.
+func restartFromTheButton(t *testing.T, a *app, admin *client) RestartState {
+	t.Helper()
+
+	before := restartState(t, admin)
+
+	admin.must(admin.api(http.MethodPost, "/settings/restart", nil),
+		http.StatusCreated, http.StatusOK)
+
+	var after RestartState
+
+	if !eventuallyWithin(45*time.Second, func() bool {
+		state, ok := admin.tryRestartState()
+		if !ok {
+			return false
+		}
+
+		after = state
+
+		return after.StartedAt != "" && after.StartedAt != before.StartedAt
+	}) {
+		t.Fatalf("the application did not come back as a different process\n\napplication log:\n%s",
+			truncate(a.log(), 2000))
+	}
+
+	return after
+}
+
 // A freshly started instance is running exactly what is stored, so there is
 // nothing to report and the card stays out of the way.
 func TestNothingIsPendingOnAnInstanceThatWasJustStarted(t *testing.T) {
@@ -270,32 +303,10 @@ func TestRestartingAppliesWhatWasWaiting(t *testing.T) {
 	a := start(t, "LOG_LEVEL=WARN")
 	admin := a.signInAsAdmin("a-much-better-password")
 
-	before := restartState(t, admin)
-
 	admin.must(admin.api(http.MethodPut, "/settings/telemetry",
 		map[string]any{"logLevel": "DEBUG"}), http.StatusOK)
 
-	admin.must(admin.api(http.MethodPost, "/settings/restart", nil),
-		http.StatusCreated, http.StatusOK)
-
-	// A different process answering is the only honest signal that it happened:
-	// replacing the image takes milliseconds, so waiting for the port to close
-	// and open again would miss it entirely and report success for nothing.
-	var after RestartState
-
-	if !eventuallyWithin(45*time.Second, func() bool {
-		state, ok := admin.tryRestartState()
-		if !ok {
-			return false
-		}
-
-		after = state
-
-		return after.StartedAt != "" && after.StartedAt != before.StartedAt
-	}) {
-		t.Fatalf("the application did not come back as a different process\n\napplication log:\n%s",
-			truncate(a.log(), 2000))
-	}
+	after := restartFromTheButton(t, a, admin)
 
 	// And it came back running the setting, which is the whole point - not
 	// merely running again.

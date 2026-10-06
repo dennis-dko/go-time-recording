@@ -10,6 +10,7 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // APITokenHeader is the alternative to "Authorization: Bearer <token>", for
@@ -39,7 +40,13 @@ func APITokenMiddleware(tokens *service.APITokenService) func(http.Handler) http
 			principal, err := tokens.Resolve(r.Context(), secret)
 			if err != nil {
 				// Left anonymous rather than rejected here: the handlers
-				// answer with 401, which keeps one place deciding that.
+				// answer with 401, which keeps one place deciding that. Told,
+				// where the token could not be looked up, so that the answer is
+				// that failure rather than an invalid token.
+				if apperror.KindOf(err) == apperror.KindInternal {
+					r = r.WithContext(context.WithValue(r.Context(), uncheckedCallerKey{}, err))
+				}
+
 				next.ServeHTTP(w, r)
 
 				return

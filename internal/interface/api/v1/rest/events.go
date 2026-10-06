@@ -62,7 +62,7 @@ type permissionsChanged struct {
 // for that by construction.
 //
 // Placed after the session middleware, so the caller is already resolved.
-func EventStream(hub *announce.Hub, auth *service.AuthService) func(http.Handler) http.Handler {
+func EventStream(hub *announce.Hub, auth *service.AuthService, authz *Authorizer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != EventsPath {
@@ -84,6 +84,14 @@ func EventStream(hub *announce.Hub, auth *service.AuthService) func(http.Handler
 			// anybody. Requiring a permission would only mean that the people who
 			// most need the warning are the ones who do not get it.
 			principal, ok := principalFromContext(r.Context())
+
+			// With authentication switched off nobody has a session and every
+			// handler is given a principal holding every right, so the stream is
+			// open too, with no account to watch for a change of rights.
+			if !ok && authz != nil && !authz.Enabled() {
+				principal, ok = &service.Principal{}, true
+			}
+
 			if !ok {
 				http.Error(w, "not authenticated", http.StatusUnauthorized)
 

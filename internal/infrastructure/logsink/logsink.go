@@ -2,11 +2,10 @@ package logsink
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/json"
-	"fmt"
+	"crypto/rand"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -15,10 +14,11 @@ import (
 
 // Record is one captured log line.
 type Record struct {
-	// Seq is a monotonic identifier. It never repeats and never goes
-	// backwards, which is what lets a client ask for "everything after what I
-	// already have" without comparing timestamps - several lines routinely
-	// share a millisecond.
+	// Seq is a monotonic identifier. Within one process it never repeats and
+	// never goes backwards, which is what lets a client ask for "everything
+	// after what I already have" without comparing timestamps - several lines
+	// routinely share a millisecond. It starts again with the process, which is
+	// what Query.Epoch is for.
 	Seq uint64
 
 	Time    time.Time
@@ -60,6 +60,10 @@ type Sink struct {
 	// threshold is the least severe level that is kept and forwarded. Zero
 	// means everything, which is what an uncaptured or unconfigured sink does.
 	threshold int
+
+	// epoch names this sink among every one there has been, which is to say this
+	// process among its predecessors. See Query.Epoch.
+	epoch string
 }
 
 // severity ranks the levels GoFr emits. Anything not in here is unranked, and
@@ -70,18 +74,21 @@ var severity = map[string]int{
 
 // SetLevel decides what is written and kept from now on.
 //
-// This is what makes the log level administrable while the application runs,
-// and the reason it lives here rather than being handed to the framework: GoFr
-// has a ChangeLevel, and it is a bare assignment to a field every request
-// goroutine reads without synchronisation. A data race is not a reasonable
-// price for saving a restart, and the race detector would be right to say so.
+// This is what makes the log level administrable while the application runs.
+// It was built here rather than handed to the framework because GoFr's
+// ChangeLevel was a bare assignment to a field every request goroutine reads
+// without synchronisation, and a data race is not a reasonable price for
+// saving a restart. That was true up to v1.59.0. From v1.60.0 the field is
+// atomic - read in its logging/logger.go - so the race is no longer what
+// stands between the framework and the level.
 //
-// So the framework is left at its most verbose and the decision is made on the
-// way out, once, in the single goroutine that drains the pipe. What the console
-// receives is unchanged: the lines below the threshold never reach it. What it
-// costs is that the framework formats a line that is then dropped, which is a
-// few microseconds against a decision an administrator can now make while the
-// thing they are diagnosing is still happening.
+// The framework is left at its most verbose and the decision is made on the
+// way out, once, by whichever of the two goroutines drains the pipe the line
+// came down. What the console receives is unchanged: the lines below the
+// threshold never reach it. What it costs is that the framework formats a line
+// that is then dropped - measured on a fast desktop processor, under four
+// microseconds and fifteen allocations for the pipe and the parse alone, three
+// to six times a request at INFO, where every statement is such a line.
 //
 // An empty or unrecognised level means no filtering, which is the safe
 // direction: showing too much is a nuisance, and hiding a line somebody needed
@@ -159,8 +166,14 @@ func New(capacity int) *Sink {
 		capacity = DefaultCapacity
 	}
 
-	return &Sink{ring: make([]Record, capacity)}
+	// Random rather than the time it was made: two sinks made in the same tick of
+	// a coarse clock would answer to one name, which is the one thing a name here
+	// is for - measured on Windows, where two made in a row did.
+	return &Sink{ring: make([]Record, capacity), epoch: rand.Text()}
 }
+
+// Epoch names the sink a sequence number was counted by.
+func (s *Sink) Epoch() string { return s.epoch }
 
 // SetPassthroughRenderer changes what is written to the real console.
 //
@@ -214,12 +227,17 @@ type Query struct {
 	Levels []string
 
 	// Search keeps only records whose message contains this text, compared
-	// without regard to case.
+	// without regard to case - or whose trace is this text, the whole of it,
+	// which is how the lines of one request are found.
 	Search string
 
 	// Limit caps how many records come back, keeping the newest. Zero means no
 	// cap beyond the ring itself.
 	Limit int
+
+	// Epoch is the sink Since was counted by, as a previous Result named it.
+	// Empty means the client does not say.
+	Epoch string
 }
 
 // Result is a page of records plus where the log now ends.
@@ -241,14 +259,57 @@ type Result struct {
 	// burst between two polls was the gap Dropped exists to admit, only unsaid:
 	// the records were still in the ring and the client never asked again.
 	Skipped uint64
+
+	// Epoch names this sink, for the client to send back with Since.
+	Epoch string
+
+	// Restarted says the client was following another sink - a process that has
+	// since been replaced - and was answered from the beginning of this one.
+	// Dropped and Skipped then count from that beginning: a client that comes
+	// back late is following on into a log that may already have rolled over.
+	Restarted bool
 }
 
 // Query returns the matching records, oldest first.
+//
+// The lock is held for a copy of what is newer than Since, and the matching is
+// done once it is let go. The goroutines draining the process's output store each
+// line under it, and a writer waiting on a read lock holds back every reader
+// behind it as well - so while Query held it for its whole scan both stopped, the
+// pipe filled, and every write to standard output blocked. Measured, a search
+// over a ring of eight-kilobyte lines, which anybody who can reach the port can
+// fill, held it for 114 ms a poll.
 func (s *Sink) Query(q Query) Result {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 
-	result := Result{LastSeq: s.lastSeq}
+	result := Result{LastSeq: s.lastSeq, Epoch: s.epoch}
+
+	// A position another sink counted says nothing about this one's lines: the
+	// numbers start again with the process. Taken at its word, the first answer
+	// after a restart held nothing, moved the client on to where the new log
+	// ended, and the lines the process wrote while starting were never shown.
+	//
+	// Named by the client where it can, and also recognised by a number this
+	// sink has not reached - which catches a client that does not say, and
+	// cannot catch a position this sink has already passed, which is why the
+	// name exists.
+	following := q.Since > 0
+
+	if (q.Epoch != "" && q.Epoch != s.epoch) || q.Since > s.lastSeq {
+		q.Since = 0
+		result.Restarted = true
+	}
+
+	// A client that asked for everything after a record the ring has already
+	// discarded is missing lines. Say so - and a client following on into a new
+	// process is owed every line of it, so there the count starts at none.
+	if oldest := s.oldestSeqLocked(); following && oldest > q.Since+1 {
+		result.Dropped = oldest - q.Since - 1
+	}
+
+	held := s.heldAfterLocked(q.Since)
+
+	s.mu.RUnlock()
 
 	wanted := make(map[string]bool, len(q.Levels))
 	for _, level := range q.Levels {
@@ -257,22 +318,17 @@ func (s *Sink) Query(q Query) Result {
 
 	search := strings.ToLower(strings.TrimSpace(q.Search))
 
-	// A client that asked for everything after a record the ring has already
-	// discarded is missing lines. Say so.
-	if oldest := s.oldestSeqLocked(); q.Since > 0 && oldest > q.Since+1 {
-		result.Dropped = oldest - q.Since - 1
-	}
-
-	for _, r := range s.orderedLocked() {
-		if r.Seq <= q.Since {
-			continue
-		}
-
+	for _, r := range held {
 		if len(wanted) > 0 && !wanted[r.Level] {
 			continue
 		}
 
-		if search != "" && !strings.Contains(strings.ToLower(r.Message), search) {
+		// The text of the line, or the whole of the trace it was written under.
+		// Not a part of one: a trace is thirty-two hexadecimal digits the line
+		// does not show, so somebody searching for 500 would be handed one line
+		// in about a hundred and forty that says 500 nowhere.
+		if search != "" && !strings.Contains(strings.ToLower(r.Message), search) &&
+			!strings.EqualFold(r.TraceID, search) {
 			continue
 		}
 
@@ -283,25 +339,46 @@ func (s *Sink) Query(q Query) Result {
 	// the ones worth having. Counted when the client is following on from a
 	// line it holds, because then what is trimmed is a gap in what it shows.
 	if q.Limit > 0 && len(result.Records) > q.Limit {
-		if q.Since > 0 {
+		if following {
 			result.Skipped = uint64(len(result.Records) - q.Limit)
 		}
 
 		result.Records = result.Records[len(result.Records)-q.Limit:]
 	}
 
+	// In the order the lines were written, which is not the order they reached
+	// the ring. GoFr writes ERROR and FATAL to standard error and the rest to
+	// standard output, two pipes read by two goroutines, and a line is numbered
+	// when its goroutine gets to the lock: measured, an error and the request
+	// line written straight after it came back the other way round about two
+	// times in five. Equal times, and the lines that carry no time of their own,
+	// keep the order they arrived in. A client follows on from LastSeq, not from
+	// the last record it was handed, so nothing is fetched twice for it.
+	slices.SortStableFunc(result.Records, func(a, b Record) int {
+		return a.Time.Compare(b.Time)
+	})
+
 	return result
 }
 
-// orderedLocked returns the held records oldest first.
-func (s *Sink) orderedLocked() []Record {
-	if !s.filled {
-		return s.ring[:s.next]
+// heldAfterLocked copies the held records newer than since, oldest first. A copy
+// and never a slice of the ring, because Query reads it after letting the lock
+// go, while Append goes on writing into the ring.
+func (s *Sink) heldAfterLocked(since uint64) []Record {
+	parts := [][]Record{s.ring[:s.next]}
+	if s.filled {
+		parts = [][]Record{s.ring[s.next:], s.ring[:s.next]}
 	}
 
-	out := make([]Record, 0, len(s.ring))
-	out = append(out, s.ring[s.next:]...)
-	out = append(out, s.ring[:s.next]...)
+	var out []Record
+
+	for _, part := range parts {
+		for _, r := range part {
+			if r.Seq > since {
+				out = append(out, r)
+			}
+		}
+	}
 
 	return out
 }
@@ -355,7 +432,7 @@ func (s *Sink) Capture() (restore func(), err error) {
 	return func() {
 		os.Stdout, os.Stderr = originalOut, originalErr
 
-		// Closing the write ends ends the scanners, which ends the goroutines.
+		// Closing the write ends ends the readers, which ends the goroutines.
 		_ = outWrite.Close()
 		_ = errWrite.Close()
 
@@ -504,210 +581,4 @@ func readLine(reader *bufio.Reader, limit int) (string, error) {
 	}
 
 	return built.String(), nil
-}
-
-// entry is the shape GoFr encodes. Message is any: a string for an ordinary
-// log call, an object for the request log.
-type entry struct {
-	Level   string          `json:"level"`
-	Time    time.Time       `json:"time"`
-	Message json.RawMessage `json:"message"`
-	TraceID string          `json:"trace_id"`
-}
-
-// parse turns a captured line into a record.
-//
-// Anything that is not GoFr's JSON - a panic trace, a driver writing to stderr
-// on its own, the framework's start-up banner - is kept verbatim at INFO. A
-// log viewer that silently dropped what it could not parse would hide exactly
-// the lines somebody is hunting for.
-func parse(line string) Record {
-	trimmed := strings.TrimSpace(line)
-
-	if !strings.HasPrefix(trimmed, "{") {
-		return Record{Time: time.Now(), Level: "INFO", Message: line, unlevelled: true}
-	}
-
-	var e entry
-	if err := json.Unmarshal([]byte(trimmed), &e); err != nil {
-		return Record{Time: time.Now(), Level: "INFO", Message: line, unlevelled: true}
-	}
-
-	text, traceID := messageText(e.Message)
-
-	record := Record{
-		Time:    e.Time,
-		Level:   strings.ToUpper(strings.TrimSpace(e.Level)),
-		Message: text,
-		TraceID: e.TraceID,
-	}
-
-	// The request and query logs carry the trace inside the message rather than
-	// beside it. Lifting it out is what makes searching for one request's lines
-	// possible at all.
-	if record.TraceID == "" {
-		record.TraceID = traceID
-	}
-
-	if record.Time.IsZero() {
-		record.Time = time.Now()
-	}
-
-	if record.Level == "" {
-		record.Level = "INFO"
-	}
-
-	return record
-}
-
-// structured is the union of the two message shapes GoFr logs as objects: the
-// request log from its HTTP middleware, and the query log from its SQL
-// datasource. Both are frequent enough that leaving them as raw JSON would make
-// a log viewer unreadable for the two things most worth reading.
-type structured struct {
-	// The request log.
-	Method       string `json:"method"`
-	URI          string `json:"uri"`
-	Response     int    `json:"response"`
-	ResponseTime int64  `json:"response_time"`
-	IP           string `json:"ip"`
-
-	// The query log.
-	Type     string `json:"type"`
-	Query    string `json:"query"`
-	Duration int64  `json:"duration"`
-
-	TraceID string `json:"trace_id"`
-}
-
-// messageText renders the message field as one line, and reports the trace it
-// mentions if it mentions one.
-//
-// A string is used as it is. A recognised object becomes a readable summary. An
-// unrecognised one keeps its JSON: wrong but complete beats a guess that drops
-// the field somebody needed.
-func messageText(raw json.RawMessage) (text, traceID string) {
-	if len(raw) == 0 {
-		return "", ""
-	}
-
-	if err := json.Unmarshal(raw, &text); err == nil {
-		return text, ""
-	}
-
-	var s structured
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return strings.TrimSpace(string(raw)), ""
-	}
-
-	switch {
-	case s.Method != "":
-		// GoFr reports response_time in microseconds.
-		line := fmt.Sprintf("%s %s %d %s", s.Method, s.URI, s.Response, micros(s.ResponseTime))
-		if s.IP != "" {
-			line += " from " + s.IP
-		}
-
-		return line, s.TraceID
-	case s.Query != "":
-		return fmt.Sprintf("%s %s %s", s.Type, micros(s.Duration), collapse(s.Query)), s.TraceID
-	default:
-		return strings.TrimSpace(string(raw)), s.TraceID
-	}
-}
-
-// withoutValues is a line as the framework wrote it, less the values of the
-// statement it logs.
-//
-// GoFr logs every SQL statement at DEBUG with its arguments, and this
-// application runs it at DEBUG always and applies the level on the way out - so
-// choosing DEBUG, which the Settings screen offers, sent every value every
-// statement carried to the console: a second factor's secret as it was
-// enrolled, the directory's bind password as it was saved, both in clear text
-// without SECRET_KEY, and everybody's hours and notes. The console is the
-// container's log or the journal, read by whoever runs the machine.
-//
-// Each value is replaced by its kind, so the line still says what ran and with
-// how many values of which sort, which is what a query log is for. Only a query
-// log is touched; every other line passes as the framework wrote it. Without
-// capture there is nothing here to do this, and the framework then runs at the
-// configured level rather than at DEBUG.
-func withoutValues(line string) string {
-	trimmed := strings.TrimSpace(line)
-	if !strings.HasPrefix(trimmed, "{") || !strings.Contains(trimmed, `"args"`) {
-		return line
-	}
-
-	var outer map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(trimmed), &outer); err != nil {
-		return line
-	}
-
-	var message map[string]json.RawMessage
-	if err := json.Unmarshal(outer["message"], &message); err != nil {
-		return line
-	}
-
-	var args []json.RawMessage
-	if _, isQuery := message["query"]; !isQuery || json.Unmarshal(message["args"], &args) != nil {
-		return line
-	}
-
-	kinds := make([]string, len(args))
-	for i, arg := range args {
-		kinds[i] = kindOf(arg)
-	}
-
-	message["args"] = plainJSON(kinds)
-	outer["message"] = plainJSON(message)
-
-	return string(plainJSON(outer))
-}
-
-// plainJSON encodes without escaping <, > and &, which json.Marshal does for the
-// sake of HTML: a statement comparing with < would otherwise reach the console
-// as an escape sequence. It cannot fail on what it is given here - strings and
-// raw JSON that has just been decoded.
-func plainJSON(v any) json.RawMessage {
-	var b bytes.Buffer
-
-	encoder := json.NewEncoder(&b)
-	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(v)
-
-	return bytes.TrimRight(b.Bytes(), "\n")
-}
-
-// kindOf names what sort of JSON value a raw one is, without its content.
-func kindOf(raw json.RawMessage) string {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" {
-		return "<empty>"
-	}
-
-	switch trimmed[0] {
-	case '"':
-		return "<string>"
-	case 't', 'f':
-		return "<bool>"
-	case 'n':
-		return "<null>"
-	case '[':
-		return "<array>"
-	case '{':
-		return "<object>"
-	default:
-		return "<number>"
-	}
-}
-
-// micros renders a microsecond duration the way a person reads it.
-func micros(us int64) string {
-	return (time.Duration(us) * time.Microsecond).String()
-}
-
-// collapse puts a statement on one line. GoFr logs the SQL as written, and the
-// repositories here write multi-line queries.
-func collapse(s string) string {
-	return strings.Join(strings.Fields(s), " ")
 }

@@ -564,3 +564,37 @@ func TestAPasskeyOpensNoSessionForADirectoryAccount(t *testing.T) {
 		t.Error("the refused sign-in says nothing")
 	}
 }
+
+// A refusal the browser names in a way the screen does not know is still said in
+// the reader's language.
+//
+// passkeyProblem translates the names it knows, because the browser's own message
+// is in the browser's language - and for every other name it handed on that
+// message alone, so an authenticator that failed for a reason of its own told a
+// German reader "The operation failed for an unknown transient reason." and
+// nothing else. The transport's own case was the same: the browser's exception on
+// a translated screen, now a translated sentence with the browser's words kept as
+// the detail.
+func TestAnUnknownPasskeyRefusalIsSaidInTheReadersLanguage(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.chooseLanguage("de")
+
+	var said string
+
+	p.run("ask what an unknown refusal is reported as", chromedp.Evaluate(
+		`passkeyProblem({
+			name: 'UnknownError',
+			message: 'The operation failed for an unknown transient reason.',
+		})`, &said))
+
+	if !strings.Contains(said, "Der Passkey wurde nicht akzeptiert") {
+		t.Errorf("an unknown refusal is reported on a German screen as %q", said)
+	}
+
+	if !strings.Contains(said, "unknown transient reason") {
+		t.Errorf("the browser's own words were dropped, which is all the detail there is: %q", said)
+	}
+}

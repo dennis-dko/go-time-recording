@@ -110,6 +110,7 @@
           "auth"
         ],
         "summary": "Whether passkeys can be used on this connection",
+        "security": [],
         "description": "Browsers expose WebAuthn only on a secure context - HTTPS, or localhost - and reject an IP address as a relying party identifier. The interface asks before offering a button that could only fail with \"SecurityError: This is an invalid domain\".",
         "responses": {
           "200": {
@@ -124,10 +125,14 @@
           "auth"
         ],
         "summary": "Start a passwordless sign-in",
+        "security": [],
         "description": "Returns a challenge. No username is asked for: the browser offers whichever credentials it holds for this site, and the one that signs names its own owner.",
         "responses": {
           "200": {
             "description": "Challenge"
+          },
+          "429": {
+            "description": "Too many attempts"
           }
         }
       },
@@ -136,10 +141,64 @@
           "auth"
         ],
         "summary": "Finish a passwordless sign-in",
+        "security": [],
         "description": "Verifies the signature and opens a session, exactly as a password sign-in does - same cookie, same lifetime, same CSRF rotation. Every failure answers alike.",
         "responses": {
           "201": {
             "description": "Signed in"
+          }
+        }
+      }
+    },
+    "/auth/kerberos": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Whether a Kerberos sign-in is on offer",
+        "description": "True where a keytab was read at start and a directory is configured to look a ticket's owner up in. The interface asks before trying one, so a browser on an installation without either is never sent the Negotiate challenge.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Sign in with a Kerberos ticket",
+        "description": "The ticket travels as `Authorization: Negotiate …`, which a browser sends by itself once it trusts this address; a request without one is answered 401 with `WWW-Authenticate: Negotiate`, the challenge that asks for it. Only a ticket of the keytab's realm is accepted. Its owner is looked up in the directory - as named, then as name@REALM - and signed in to the account a directory password sign-in reaches, with the same session, cookie and CSRF rotation. A second factor the account holds is asked for with `totpRequired`, and the code is sent back as `totp` with the ticket.",
+        "security": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "totp": {
+                    "type": "string",
+                    "description": "Required when the account has two-factor authentication enabled."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Signed in; a session cookie is set. When the response says `totpRequired`, no cookie is set and the code must be supplied."
+          },
+          "401": {
+            "description": "No ticket, a ticket that does not verify, or an owner the directory does not hold. Without a ticket the answer carries `WWW-Authenticate: Negotiate`."
+          },
+          "409": {
+            "description": "No keytab was read at start (`kerberosOff`), or no directory is configured to look a ticket's owner up in (`kerberosNeedsDirectory`)."
+          },
+          "429": {
+            "description": "Too many attempts"
           }
         }
       }
@@ -150,6 +209,7 @@
           "auth"
         ],
         "summary": "Sign out and end the session",
+        "security": [],
         "responses": {
           "201": {
             "description": "Signed out"
@@ -366,7 +426,7 @@
             "description": "Tokens"
           }
         },
-        "description": "`createdAt`, `expiresAt` and `lastUsedAt` are RFC 3339 moments, not dates. They used to be days, which is the wrong answer for the field somebody reads when they think a token has been taken: a token used at three in the morning read exactly like one used at three in the afternoon, and one used twice today read as used once."
+        "description": "`createdAt`, `expiresAt` and `lastUsedAt` are RFC 3339 moments, not dates. They used to be days, which is the wrong answer for the field somebody reads when they think a token has been taken: a token used at three in the morning read exactly like one used at three in the afternoon, and one used twice today read as used once. A use is written down at most once a minute, so `lastUsedAt` can be up to a minute behind the latest one."
       },
       "post": {
         "tags": [
@@ -1221,6 +1281,7 @@
           "setup"
         ],
         "summary": "Claim the session the installer earned",
+        "security": [],
         "description": "Answered before anybody is signed in, and only on a process that actually served an installer. The browser holding that installer’s setup token is given a session for the built-in administrator, so the first screen after the installation is the one asking for a password rather than one asking for the documented initial password. Refused once a password has been chosen, and refused entirely on an installation configured without the installer.",
         "parameters": [
           {
@@ -1887,6 +1948,7 @@
           "settings"
         ],
         "summary": "Whether the installation is in maintenance mode",
+        "security": [],
         "description": "Public, like the branding and for the same reason: somebody opening the page during maintenance should read the notice on the sign-in screen rather than watch requests fail silently.",
         "responses": {
           "200": {
@@ -1946,13 +2008,16 @@
           "settings"
         ],
         "summary": "Restart the process",
-        "description": "Only where the platform can do it: the process replaces itself, which needs exec, so it is refused on Windows with a reason naming what to do instead.",
+        "description": "Only where the platform can do it: the process replaces itself, which needs exec, so it is refused on Windows with a reason naming what to do instead. And only into a database that answers: the connection the next start opens - the stored one, or the environment's where none is stored - is probed first, the way the start probes it, because a start ends on one that does not answer and nothing would be left to put it right from. The refusal carries what the driver said as `detail`.",
         "responses": {
-          "202": {
+          "201": {
             "description": "Restarting"
           },
+          "400": {
+            "description": "The platform cannot restart in place (`restartUnsupported`)"
+          },
           "409": {
-            "description": "The platform cannot restart in place"
+            "description": "The database the next start would open does not answer (`restartWouldNotStart`); nothing was restarted"
           }
         }
       }
@@ -2025,7 +2090,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Case-insensitive substring of the message."
+            "description": "Case-insensitive substring of the message. A whole trace - the `traceId` of a record, which is also the `X-Correlation-ID` of the response to that request - finds the lines that request wrote."
           },
           {
             "name": "limit",
@@ -2036,11 +2101,19 @@
               "default": 300
             },
             "description": "How many lines at most; the newest are kept."
+          },
+          {
+            "name": "epoch",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The `epoch` of the answer `since` was taken from. Sequence numbers start again with the process, so a position counted by a process that has since been replaced is answered from the beginning of the running one, with `restarted` set."
           }
         ],
         "responses": {
           "200": {
-            "description": "Log lines, the levels that exist and how many were dropped"
+            "description": "Log lines, the levels that exist, how many were dropped or passed over, and the `epoch` to send back with `since`"
           }
         }
       }
@@ -2120,7 +2193,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "gtr_session",
-        "description": "A browser session. State-changing calls made with this must also echo the gtr_csrf cookie in the X-CSRF-Token header and come from this origin; calls authenticated by a personal API token are exempt."
+        "description": "A browser session. State-changing calls made with this must also echo the gtr_csrf cookie in the X-CSRF-Token header and come from this origin; calls authenticated by a personal API token are exempt. A call carrying `X-Background-Request: 1` is held to the session's lifetime and idle timeout like any other but is not counted as the session being used - the interface sends it on the checks it makes by itself, so that a screen left open is signed out by the idle timeout. Opening the event stream counts the same way."
       },
       "csrfToken": {
         "type": "apiKey",

@@ -168,7 +168,8 @@ Restart=on-failure
 RestartSec=5s
 
 # The application answers the request before replacing itself, and waits for
-# requests in flight on shutdown - SHUTDOWN_GRACE_PERIOD, 30s by default.
+# requests in flight on shutdown - SHUTDOWN_GRACE_PERIOD, 30s by default - and
+# then up to ten seconds for its HTTPS front end.
 TimeoutStopSec=45s
 
 NoNewPrivileges=true
@@ -199,6 +200,11 @@ Two things to know before you switch `TLS_ENABLED=true` on a host.
 host does not. As written, the unit runs as `gtr` with `NoNewPrivileges=true`, so
 binding 443 and 80 fails with "permission denied".
 
+In the unit, and not with `setcap` on the binary. An update from the interface
+puts a new file in the binary's place, and a capability set on the old file does
+not come with it: the next start then fails to bind exactly as described below,
+on an installation that had been serving HTTPS until the update.
+
 **And that failure does not stop the process.** The service comes up,
 `systemctl status` says `active (running)`, and the installation serves
 **unencrypted** HTTP on `HTTP_PORT`. It is now loud about it — the bind happens
@@ -224,12 +230,20 @@ still the tidier arrangement and nothing here argues against it.
 ## D · Bare container
 
 ```bash
-docker run -d -p 8000:8000 -v gtr-data:/data \
+docker run -d -p 8000:8000 -v gtr-data:/data --stop-timeout 45 \
   ghcr.io/dennis-dko/go-time-recording:v1.2.3
 ```
 
 With no `DB_DIALECT` this serves its **installer** and waits — that is on
 purpose. Setting `DB_DIALECT` skips it, which is what Compose does.
+
+`--stop-timeout` is how long `docker stop` waits before it kills the process,
+and it has to be longer than the application takes to stop: it waits for the
+requests under way, `SHUTDOWN_GRACE_PERIOD`, 30 seconds by default, and then up
+to ten seconds for its HTTPS front end. Without it the daemon decides:
+ten seconds unless it is configured otherwise, and three on a Docker Desktop it
+was measured on — either cuts off an import that is still being written. Raise
+the two together.
 
 The image bakes in exactly one variable:
 
@@ -275,6 +289,12 @@ in the interface is an explicit act, and it would be surprising for a stale
 variable to override it silently. It only ever supplies `DB_*`, and only the
 fields it actually holds.
 
+A value written so it cannot be used - a word where a number belongs, a
+duration without its unit, `yes` for a switch that takes `true` - falls back to
+its default, and the start says so in a warning beginning `configuration:`,
+naming the setting, what it held and what applies instead. That is the line to
+look for when a setting seems to have no effect.
+
 `APP_ENV` selects layer 2, and it has to come from the **real environment**: GoFr
 reads it before it opens any file, so setting `APP_ENV` inside `configs/.env`
 cannot select an overlay. With it unset, layer 2 falls back to
@@ -293,7 +313,7 @@ So the shipped `configs/.env` sets only what no screen can administer:
 | `TLS_*`, `HSTS_MAX_AGE` | same, and a wrong value makes the instance unreachable rather than merely wrong |
 | `DB_DIALECT`, `DB_NAME` | this is what decides whether there is a database to store a setting in |
 | `UI_ENABLED`, `AUTH_ENABLED` | either one switched off removes the screen that would switch it back |
-| `SHUTDOWN_GRACE_PERIOD` | read by the framework at start |
+| `SHUTDOWN_GRACE_PERIOD` | read at start - by the framework, and by the application's own wait for the requests under way when it stops |
 | `APP_NAME` | see below — it is not the instance title |
 
 Six values used to sit there **as well as** in Settings — the log level, the
@@ -352,6 +372,49 @@ For `postgres` and `mysql` you may leave `DB_PORT` out: the application fills in
 5432 or 3306 for the dialect and hands that to the database layer, so the port it
 proved is the port it uses.
 
+**Give PostgreSQL a password, even a server that asks for none.** The database
+layer writes the connection with the values as they are, and in that form an
+empty `DB_PASSWORD` takes the database's name for itself: measured against a
+server with trust authentication, the application created its tables in
+`postgres`, the database named after the account, while its own log named the
+one in `DB_NAME`. Any value does where the server does not ask. A space, a
+backslash or a leading quote in the user, the password or the name does not
+survive that form either, nor, for MySQL, a colon in the user or an IPv6 address
+without its square brackets. The installer and *Settings* refuse such a
+connection; an installation already running on one is not moved, because pointing
+it at the configured database would show an empty application, and every start
+says so in the log instead.
+
+**On MySQL, keep the zone the application runs in for the life of the
+database.** The database layer opens MySQL in this process's time zone, and the
+MySQL column for a moment keeps no zone, so a day - which the application holds
+as midnight UTC - is stored as the clock in this process's zone read at that
+moment, and read back through the same zone. A process in another zone reads it
+as something else: measured, a day written by the image, which runs in UTC, was
+read by a process in Europe/Berlin as the day before, and that day's totals did
+not find it; a day written west of UTC is read as the day before in UTC. Setting
+`TZ` on the container, or moving from the image to the binary on a host in
+another zone, does exactly that. PostgreSQL and SQLite keep the moment and are
+not affected.
+
+So on MySQL the first start records its zone, by its offsets in January and July,
+and a start in another one stops with a line saying both, for example:
+
+```text
+the application did not start: this MySQL database's times were written in UTC
+(+00:00/+00:00) and this process runs in Europe/Berlin (+01:00/+02:00); ...
+```
+
+Start it in the zone named first - remove the `TZ` you added, or set
+`TZ=UTC` for the binary. A zone with the same offsets under another name
+starts. If the database holds nothing worth keeping yet, or its times have
+been moved to the new zone by hand, remove the record and the next start takes
+its own zone:
+
+```sql
+DELETE FROM settings WHERE key_name = 'instance.storageZone';
+```
+
 ## Serving HTTPS everywhere
 
 Two routes, and which one applies is decided by whether the name this
@@ -382,9 +445,27 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 825   -keyout privkey.pem -out f
 ```
 
 A certificate that cannot be read stops the start rather than being discovered by
-the first visitor, and `TLS_ENABLED` with neither route configured refuses to
+the first visitor. One renewed in place is served within a minute, without a
+restart: the files are looked at again from the next connection, and a pair that
+does not load yet - a certificate written before its key - leaves the one in hand
+in service until it does, saying so if it stays that way. `TLS_ENABLED` with
+neither route configured refuses to
 pretend: it says so and carries on over plain HTTP rather than claiming HTTPS it
 cannot serve.
+
+## How long a connection may be held
+
+GoFr's own server, which answers on the plain port, bounds the time a request's
+headers may take - five seconds - and nothing after it: a connection left quiet
+between two requests, and a request whose body never arrives, are held for as
+long as the client likes. Measured: both were still held when the client gave up
+after seventy seconds. On a network you trust that costs nothing worth counting.
+On one you do not, keep the plain port off it. The built-in HTTPS front end
+closes a connection left quiet for two minutes, though like the plain port it
+waits out a slow body, which is what lets a large import through; a reverse
+proxy can bound both. With the front end, the plain port still accepts
+connections wherever it can be reached, because it turns a request away only
+once the request has arrived - so publish only the front end's ports.
 
 ## Behind a reverse proxy that is already there
 
@@ -616,21 +697,27 @@ list of pending changes with the running value beside the stored one:
 | --- | --- | --- |
 | the database connection | never swapped under live requests | yes — dialect, host, port, name, user and SSL mode |
 | the database password | same | yes, as the name of the setting alone |
-| log level | the logger's level is read at start | yes |
 | metrics off | the port is bound at start | yes |
 | trace exporter, collector URL, sample ratio | the exporter is built at start | yes |
 | the directory sync schedule | a cron job is registered at start | yes |
 
-Applying immediately: the operational limits, the whole directory connection, the
-instance timezone, branding and the logo, maintenance mode, users and roles.
+Applying immediately: the log level, the operational limits, the whole directory
+connection, the instance timezone, branding and the logo, maintenance mode, users
+and roles.
+
+The log level is on the same card as the metrics and tracing settings and is the
+one of them that does not wait: it is applied to every line on its way out of the
+process, so it holds from the next line written. The exception is a process whose
+output could not be captured when it started - it says so once on its console,
+`could not capture the log for the viewer` - where the level is the logger's own
+again, is read at start, and is listed as pending like the others.
 
 The connection is compared whole. It used to be compared by dialect alone, on
 the grounds that a changed host is a change to the same connection — which
 describes what the card *says* and answers the wrong question, because the
 connection is opened once while the application starts. Moving the database to
 another host is exactly as pending as moving it to another dialect, and it now
-reads as one line: `postgres db:5432/gtr as app` → `postgres db2:5432/gtr as
-app`. A default port and an omitted one are the same connection here as they
+reads as one line: `postgres app@db:5432/gtr` → `postgres app@db2:5432/gtr`. A default port and an omitted one are the same connection here as they
 are in fact, so spelling out `5432` is not reported as a change.
 
 A changed password appears as *Database password* with nothing beside it. The
@@ -643,13 +730,15 @@ saved* when the comparison finds nothing and *Applied on the next start* when it
 does — it used to promise a restart on every press, including on a form somebody
 had only opened to look at.
 
-**The in-application restart button replaces the process image, and passes the
-current environment on.** That matters in one case: a setting you cleared back to
-*follow the configuration file* is **not** restored by it, because the variable
-the previous process exported is inherited and still beats the file. The same
-goes for deleting `configs/datasource.json` — the inherited `DB_DIALECT` keeps
-the old connection instead of bringing the installer back. Those need a real stop
-and start.
+**The in-application restart button reads the configuration the way a stop and a
+start would.** Outside a container it replaces the process image, and what it
+hands the new process is the environment this one was *started* with — not the
+one it has by then, into which the configuration file's keys and the stored
+settings have been written. So an edited `configs/.env` is read, a setting you
+cleared back to *follow the configuration file* is restored, and deleting
+`configs/datasource.json` brings the installer back. It used to hand on the
+environment as it stood, and none of the three happened without a real stop and
+start.
 
 On Windows the button is not offered at all: there is no `execve`, so the nearest
 equivalent would leave a window with no application running. The card says so.
@@ -816,6 +905,161 @@ not in the database dump below:
 docker compose exec -T openldap slapcat -f /etc/ldap/slapd.conf | gzip > ldap-$(date +%F).ldif.gz
 ```
 
+## Signing in with Kerberos
+
+Where the people using this sign in to a Windows domain — or hold a Kerberos
+ticket some other way — their browser can present that ticket instead of a
+password. It is off until a keytab is given, and it needs the directory
+configured under *Settings*: a ticket says who somebody is, and the directory is
+where that name becomes an account. With a keytab and no directory nothing is
+offered.
+
+The sign-in screen asks whether a ticket sign-in is on offer and, where it is,
+tries one by itself. A browser that trusts this address answers with its ticket
+and is signed in without seeing the form; one that does not, or holds no ticket,
+is shown the form as always, with a button beside it to try again. After signing
+out the screen does not try by itself in that tab — otherwise signing out would
+sign straight back in.
+
+What a ticket reaches:
+
+- **The account a directory password sign-in reaches.** Its owner is looked up
+  with the directory's user filter, first by the name in the ticket — `jdoe`,
+  which the default filter finds as `uid` or `sAMAccountName` — and then as
+  `jdoe@EXAMPLE.COM`, which finds an Active Directory account by its
+  `userPrincipalName` once the filter asks for that attribute. An account here
+  with the same address becomes the directory's, as it does when its owner
+  signs in with the directory's password.
+- **Only tickets of the keytab's realm.** A trusted domain's KDC can issue a
+  ticket for this service too, sealed with the same key; its owner is somebody
+  else whose name the directory here may happen to hold, so it is refused.
+- **Not an account the directory has switched off.** A ticket stays valid for
+  hours after its owner's account is disabled, and the browser presents the one
+  it holds; so an Active Directory account whose `userAccountControl` says
+  disabled, or whose `accountExpires` has passed, is refused at once, as its
+  password would be. A directory without those attributes is not affected.
+- **A second factor is still asked for.** The ticket stands in for the password
+  and for nothing else: an account with an authenticator code types it in, as
+  it would after a password.
+- **Never the built-in administrator, and never anybody who administers** — the
+  rule a directory sign-in keeps, for the same reason: the directory must not be
+  a way into the installation's own administration.
+
+### The service principal and the keytab
+
+A browser asks its KDC for a ticket to `HTTP/` and the name in the address bar,
+so the principal is named after the name people use — `HTTP/time.example.com`,
+never an IP address. Give that name an A record rather than a CNAME, or
+register the principal for the name the CNAME points at as well: Chrome and
+Edge resolve a CNAME before asking, unless the `DisableAuthNegotiateCnameLookup`
+policy says otherwise.
+
+In Active Directory the principal belongs to an account of its own — a user with
+a long random password that does not expire, and *This account supports
+Kerberos AES 256 bit encryption* ticked, or tickets arrive sealed with a key the
+keytab does not hold:
+
+```powershell
+setspn -S HTTP/time.example.com EXAMPLE\svc-timerecording
+ktpass /princ HTTP/time.example.com@EXAMPLE.COM /mapuser EXAMPLE\svc-timerecording `
+  /crypto AES256-SHA1 /ptype KRB5_NT_PRINCIPAL /pass * /out http.keytab
+```
+
+With MIT Kerberos or FreeIPA:
+
+```bash
+kadmin -q "addprinc -randkey HTTP/time.example.com"
+kadmin -q "ktadd -k http.keytab HTTP/time.example.com"
+```
+
+**The keytab is the service's key.** Whoever has it can pose as this service to
+every browser in the realm, so it is kept like a certificate's private key:
+readable by the account the application runs as and by nobody else, never in
+`.env`, never in an image. Resetting the service account's password changes the
+key, and the keytab has to be made again.
+
+### Handing it to the application
+
+It is read once, at start. A keytab that cannot be read — a wrong path, a
+permission, a file that is not a keytab — turns the sign-in off and says why,
+rather than stopping an installation whose passwords still work:
+
+```text
+could not read the Kerberos keytab: ...; signing in with a ticket is off
+```
+
+and one that can be read says so as well - when a directory is already
+configured to look a ticket's owner up in:
+
+```text
+signing in with a Kerberos ticket of realm EXAMPLE.COM is on
+```
+
+Without one it says that the keytab was read and that the sign-in is offered to
+nobody until a directory is configured under Settings, which brings it on without
+a restart.
+
+- **A · B, compose:** add [`compose.kerberos.yaml`](compose.kerberos.yaml) and
+  set `KERBEROS_KEYTAB_FILE` in `.env` to the keytab's path on the server. It is
+  mounted read-only, the container runs as uid 10001, and that user has to be
+  able to read it (`chown 10001 http.keytab && chmod 0400 http.keytab`). A path
+  that does not exist stops the start rather than mounting an empty directory
+  in its place.
+
+  ```bash
+  docker compose -f compose.yaml -f compose.kerberos.yaml up -d
+  ```
+
+- **C · single binary:** `KERBEROS_KEYTAB` in the environment file — the
+  keytab's path, readable by the service's user.
+- **D · bare container:** mount it and name it:
+  `-v /etc/go-time-recording/http.keytab:/run/secrets/http.keytab:ro -e KERBEROS_KEYTAB=/run/secrets/http.keytab`.
+
+`KERBEROS_SERVICE_PRINCIPAL` is only needed when the keytab holds keys for more
+than one service: it names the one to use, `HTTP/time.example.com`, with or
+without `@EXAMPLE.COM`.
+
+### The browsers
+
+A browser sends a ticket only to an address it has been told to trust, and that
+part is set up on the clients rather than here:
+
+- **Edge and Chrome on Windows** trust the *Local intranet* zone, or the
+  addresses the `AuthServerAllowlist` policy names (`*.example.com`). A
+  browser there that does not trust the address asks for a user name and
+  password in a dialog of its own instead - measured with Chrome, as soon as
+  the sign-in screen tries the ticket. Cancelling it leaves the sign-in form,
+  and the screen does not try again by itself in that tab.
+- **Chrome and Edge on macOS and Linux** need the `AuthServerAllowlist` policy.
+- **Firefox** needs `network.negotiate-auth.trusted-uris`, in `about:config` or
+  as `Authentication.SPNEGO` in its enterprise policies.
+
+Over HTTPS, like everything else here: the session a ticket opens is a cookie,
+and a cookie sent in the clear can be taken by whoever reads the traffic.
+
+### When a browser falls back to the form
+
+A refused ticket is invisible from the browser — the form simply appears — so
+the reason is written to the log as a warning, prefixed `Kerberos:`. The usual
+ones:
+
+- **The clocks.** A ticket is refused when this server's clock and the KDC's are
+  more than five minutes apart. Keep NTP running here.
+- **The key.** "integrity verification failed" or a key version the keytab does
+  not hold: the keytab is older than the service account's password, or the
+  ticket was issued for another principal — a CNAME, see above.
+- **NTLM rather than Kerberos.** "SPNEGO OID of MechToken is not of type KRB5":
+  a browser that could not get a ticket offered NTLM inside the same header,
+  which is refused - usually a machine outside the domain, or an address the
+  browser does not trust.
+- **Nobody by that name.** "the directory holds nobody named …": the ticket was
+  good and the user filter found neither form of the name.
+
+One case the log cannot help with: behind a proxy, a ticket that lists client
+addresses is compared with the address the request arrives from, which is the
+proxy's. Active Directory issues tickets without addresses, so this only
+concerns a KDC configured to add them.
+
 ## Updating from the interface
 
 *Settings* carries a **Version** card. It says what is running, what the newest
@@ -825,17 +1069,18 @@ that difference is the whole of it.
 | | What the card offers |
 | --- | --- |
 | **C** Single binary | A button. It downloads the release's binary for this platform, checks it against the `SHA256SUMS` published beside it, and puts it where the running file is. |
-| **A/B/D** Container | A button, and a caveat: the new binary is in this container and not in the image, so the next recreate brings the old one back. |
+| **A/B/D** Container | No button. The card says a newer version exists, which command updates the image - `docker compose pull && docker compose up -d` - and that adding `compose.update.yaml` lets it do that from here. |
 | **A/B/D** Container **with `compose.update.yaml`** | A button that pulls a new image, recreates the container from it, and removes the image it replaced. Nothing is left behind. |
 
-**The caveat, in a container without the overlay.** A binary swapped inside a
-container is undone by the next `docker compose up -d` that recreates it - which
-can be the moment somebody is most certain the update took. It is offered anyway,
-because a restart of the *same* container keeps it and that is what the shipped
-restart policy does: the update works and holds until somebody runs the image
-again. The card says exactly that rather than refusing, which is what it used to
-do - and refusing left the deployment this application ships with no way to
-update from its own interface at all.
+**Why a container without the overlay gets no button.** A binary swapped inside
+a container works and does not last: it changes that container and not the image
+it was made from, so the next `docker compose up -d` that recreates it brings the
+old version back - which can be the moment somebody is most certain the update
+took. An update that reverts on a day nobody connects to the button they pressed
+is worse than no button, so the card names the command instead, and the server
+refuses the request as well: a client written against the API is told the same
+thing as the screen. The way to update such a deployment from its own interface
+is the overlay below, which replaces the image rather than the binary.
 
 ### Updating the image from the interface
 
@@ -874,7 +1119,12 @@ type two commands should leave this out, and loses nothing but the button.
 | Ports | none |
 | Scope | `docker compose up -d --no-deps app`, which touches neither the database nor itself |
 
-**What happens when you press it.** The application announces a restart to every
+**What happens when you press it.** The application first asks the database the
+new container will open - the stored connection, or the environment's - the
+question its start asks first, and refuses the update if nothing answers: the
+updater does not look at whether the new container comes up, and one that cannot
+reach its database would go round its restart policy with the old image already
+removed. The restart button and the update of a binary ask the same, before anything is announced. Then it announces a restart to every
 open browser, writes the request and stops answering shortly afterwards - the
 updater has recreated it. The page waits for the version to come back, the way it
 waits out any restart. Two answers leave the running container exactly as it was,
@@ -1090,6 +1340,13 @@ environment — a second place to write it would only disagree with the first. O
 two variables exist here: `LDAP_SYNC_SCHEDULE` (empty, so no scheduled run) and
 `LDAP_SYNC_MAX_DELETE_RATIO` (`0.5`).
 
+A schedule runs on the server's clock, not in the instance timezone the
+*Settings* screen administers. The shipped container sets no `TZ`, so there it is
+UTC: `0 4 * * *` typed in Los Angeles for four in the morning runs at eight the
+evening before. Set `TZ` on the container to move the clock, or write the
+schedule in UTC. The nightly removal of expired sessions, at three, runs on the
+same clock.
+
 There is no directory service in `compose.yaml`, because this application is a
 directory client: you point it at the one you already run.
 `compose.ldap.yaml` runs an OpenLDAP beside it for the two installations where
@@ -1150,7 +1407,29 @@ run has nobody to ask and is held by the three guards above alone, and so is an
 API call that names no accounts (`POST /api/v1/settings/ldap/sync` without
 `?confirmed=`).
 
-Expired sessions are pruned at 03:00 daily. That schedule is not configurable.
+**What a run removed is in the log, and nowhere else.** Each account is one line
+at WARN, whoever started the run and whichever way it ended:
+
+```
+directory sync removed "dave@example.com" with 12 time entries
+```
+
+The account and every row that named it are gone by then, so nothing in the
+database says there was ever such a person. A scheduled run leaves three more
+kinds of line, since it has no screen to show them on: one at WARN when a guard
+refused it, saying why; one at ERROR when it failed; and at INFO when it started
+and finished, and how many accounts it added. So on an installation that runs a
+schedule, keep the log level at WARN or below - above it a run removes accounts
+and says nothing - and collect the log, because the viewer under *Settings*
+holds only the most recent lines in memory.
+
+A stop ends a scheduled run where it stands, at its next call to the database,
+rather than letting it run on until the shutdown's deadline and closing the
+database under it - so the lines for whom it had removed are written before the
+process goes. What it had not reached yet, the next run does.
+
+Expired sessions are pruned at 03:00 daily, on the server's clock like the
+directory's schedule. That schedule is not configurable.
 
 ## Special modes
 
@@ -1199,9 +1478,8 @@ mistakes it for a configured installation.
 | The installer appears on an installation that was working | nothing is configured any more — a lost volume, or a working directory that changed | check where `configs/datasource.json` is expected to be, and do not answer the installer until you know |
 | The container is healthy but nobody can sign in | the healthcheck is satisfied by the installer | ask `/api/v1/branding` for a `version` field |
 | A setting was changed and nothing happened | it needs a restart | *Settings* lists what is pending. Two things used to be missing from that list — a same-dialect database change and the trace sample ratio — and both are compared now |
-| TLS was enabled and the site is still plain HTTP | the listener could not bind, and that does not stop the process | check the log for `serving HTTPS on :443`; on a host, grant `CAP_NET_BIND_SERVICE` |
+| TLS was enabled and the site is still plain HTTP | the listener could not bind, and that does not stop the process | check the log for `serving HTTPS on :443`; on a host, grant `CAP_NET_BIND_SERVICE` in the unit - a capability set on the binary with `setcap` is gone after the next update |
 | `docker compose … -f compose.tls.yaml` refuses to start | `TLS_DOMAINS` or `TLS_EMAIL` is unset | both use the error form and are required |
-| A setting was cleared back to "follow the configuration file" and still applies | the in-application restart inherited the exported variable | stop and start the process properly |
 | Saving the database connection appears to do nothing | it applies at the next start, on purpose | restart |
 | Every page load feels slow after an upgrade | assets are revalidated, not re-sent — check that your proxy is not stripping `ETag` or `If-None-Match` | |
 | A directory run refuses with a ratio message | more accounts would be deleted than the guard allows | check the base DN and the filter first. That message is almost always right |

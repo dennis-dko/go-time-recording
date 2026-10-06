@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -90,6 +92,112 @@ func (c Config) usesOwnCertificate() bool {
 	return strings.TrimSpace(c.CertFile) != "" && strings.TrimSpace(c.KeyFile) != ""
 }
 
+// certificateFiles serves a certificate this installation brought, and reads its
+// two files again when either changes on disk.
+//
+// Read once at start, a certificate renewed on disk was served from the next
+// restart and not before: the old one went on being served until it expired, and
+// then every browser refused the address, with nothing said anywhere beforehand.
+// Whatever renews it - certbot, a company authority's agent, somebody with
+// openssl - writes the files and moves on, and nothing told this process to look.
+//
+// Looked at from the handshake that comes along, at most once a
+// certificateRecheck, rather than by a timer: a stat of two files is nothing
+// beside a handshake, and nothing has to be stopped at shutdown. A pair that
+// does not load is left for the next look and the one in hand goes on being
+// served, because a renewal can write the certificate and the key a moment apart.
+type certificateFiles struct {
+	certFile, keyFile string
+	logger            Logger
+
+	mu      sync.Mutex
+	pair    *tls.Certificate
+	written [2]time.Time
+	looked  time.Time
+
+	// failed and said are the modification times a load last failed on and was
+	// last reported for, so that a pair caught between its two writes is not an
+	// error and one left broken is said once.
+	failed, said [2]time.Time
+}
+
+// certificateRecheck is how long certificateFiles goes without looking at the
+// files: a renewed certificate is served within it.
+const certificateRecheck = time.Minute
+
+// loadCertificateFiles reads the pair for the first time.
+func loadCertificateFiles(certFile, keyFile string, logger Logger) (*certificateFiles, error) {
+	pair, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+
+	written, _ := modificationTimes(certFile, keyFile)
+
+	return &certificateFiles{
+		certFile: certFile, keyFile: keyFile, logger: logger,
+		pair: &pair, written: written, looked: time.Now(),
+	}, nil
+}
+
+// certificate is what the TLS listener asks for on every handshake.
+func (f *certificateFiles) certificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if time.Since(f.looked) >= certificateRecheck {
+		f.looked = time.Now()
+		f.readAgainIfRenewed()
+	}
+
+	return f.pair, nil
+}
+
+// readAgainIfRenewed loads the files again when either has changed since the pair
+// in hand was read, and keeps that pair when they do not load.
+func (f *certificateFiles) readAgainIfRenewed() {
+	written, ok := modificationTimes(f.certFile, f.keyFile)
+	if !ok || written == f.written {
+		return
+	}
+
+	pair, err := tls.LoadX509KeyPair(f.certFile, f.keyFile)
+	if err != nil {
+		if written == f.failed && written != f.said {
+			f.said = written
+			f.logger.Errorf("the certificate files changed and cannot be read (%v); "+
+				"the previous certificate is still being served", err)
+		}
+
+		f.failed = written
+
+		return
+	}
+
+	f.pair, f.written = &pair, written
+
+	if pair.Leaf != nil {
+		f.logger.Infof("serving the renewed certificate for %s, valid until %s",
+			namesIn(pair.Leaf), pair.Leaf.NotAfter.Format(time.DateOnly))
+	}
+}
+
+// modificationTimes are when the two files were last written, following links,
+// which is how a renewal that repoints one is seen.
+func modificationTimes(certFile, keyFile string) ([2]time.Time, bool) {
+	cert, err := os.Stat(certFile)
+	if err != nil {
+		return [2]time.Time{}, false
+	}
+
+	key, err := os.Stat(keyFile)
+	if err != nil {
+		return [2]time.Time{}, false
+	}
+
+	return [2]time.Time{cert.ModTime(), key.ModTime()}, true
+}
+
 // Logger is the small part of GoFr's logger this package needs.
 type Logger interface {
 	Infof(format string, args ...any)
@@ -130,16 +238,17 @@ func Start(cfg Config, logger Logger) (stop func(context.Context) error, err err
 	)
 
 	if own {
-		// Loaded once, here, so a file that is missing or does not parse stops
+		// Loaded first, here, so a file that is missing or does not parse stops
 		// the start rather than every request: a certificate read lazily is a
-		// certificate whose mistakes are found by the first visitor.
-		pair, loadErr := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
+		// certificate whose mistakes are found by the first visitor. Read again
+		// when it is renewed; see certificateFiles.
+		files, loadErr := loadCertificateFiles(cfg.CertFile, cfg.KeyFile, logger)
 		if loadErr != nil {
 			return nil, fmt.Errorf("cannot read the certificate and key: %w", loadErr)
 		}
 
-		served = namesIn(pair.Leaf)
-		certificate = func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &pair, nil }
+		served = namesIn(files.pair.Leaf)
+		certificate = files.certificate
 	} else {
 		manager = &autocert.Manager{
 			Prompt: autocert.AcceptTOS,

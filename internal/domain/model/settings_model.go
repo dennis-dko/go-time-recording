@@ -47,6 +47,12 @@ const (
 	// refuses to start and says which of the two is out of step.
 	SettingSecretKeyCheck = "instance.secretKeyCheck"
 
+	// SettingStorageZone is the zone the first start on MySQL read its clock in,
+	// kept so a later start can tell whether it reads the stored moments the way
+	// they were written. MySQL keeps a moment without its zone; see
+	// StorageZoneService for what a start in another one did to every day.
+	SettingStorageZone = "instance.storageZone"
+
 	// SettingTimezone is the instance-wide zone that decides which calendar day
 	// a booking belongs to, for everyone who has not set their own.
 	SettingTimezone = "instance.timezone"

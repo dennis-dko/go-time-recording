@@ -114,7 +114,7 @@ func (c *cachedMaintenance) Invalidate() {
 // 503 with Retry-After. A monitor reads that as "down on purpose, come back",
 // where a 200 with an apology in the body reads as working and a 500 reads as
 // broken.
-func MaintenanceMiddleware(state MaintenanceState) func(http.Handler) http.Handler {
+func MaintenanceMiddleware(state MaintenanceState, authz *Authorizer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if state == nil {
@@ -130,7 +130,12 @@ func MaintenanceMiddleware(state MaintenanceState) func(http.Handler) http.Handl
 				return
 			}
 
-			if maintenanceExempt(r) || isInstallationAdminRequest(r) {
+			// With authentication switched off whoever is there administers the
+			// installation - every handler says so - and nobody has a session to
+			// show it with.
+			open := authz != nil && !authz.Enabled()
+
+			if open || maintenanceExempt(r) || isInstallationAdminRequest(r) {
 				next.ServeHTTP(w, r)
 
 				return
@@ -159,6 +164,8 @@ func maintenanceExempt(r *http.Request) bool {
 	case base + "/auth/login", base + "/auth/logout", base + "/branding", base + "/languages":
 		return true
 	case base + "/auth/passkey", base + "/auth/passkey/login":
+		return true
+	case base + "/auth/kerberos":
 		return true
 	case base + "/me", base + "/maintenance":
 		// /me so the interface knows who it is talking to and can decide what to

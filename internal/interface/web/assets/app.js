@@ -343,6 +343,14 @@ async function api(path, options = {}) {
     headers['X-CSRF-Token'] = readCookie('gtr_csrf');
   }
 
+  // A request this page makes by itself - a check on a timer - says so, and the
+  // server then does not count it as anybody being there. Counted, the minute's
+  // check kept every session with a page in view open, so the idle timeout never
+  // ended the one it is for: a screen left open at lunch.
+  if (options.background) {
+    headers['X-Background-Request'] = '1';
+  }
+
   // Reads only, and this is the whole reason the distinction is drawn here.
   //
   // Aborting in the browser does not stop the server: it finishes the work either
@@ -457,7 +465,7 @@ function describeRefusal(err) {
 
   if (err.code) {
     const translated = t(`err.${err.code}`, err.message ?? '');
-    if (translated) return fillIn(translated, err.values);
+    if (translated) return fillIn(translated, refusalValues(err.code, err.values));
   }
 
   if (err.message) return err.message;
@@ -521,6 +529,39 @@ function showRefusal(target, err) {
 
   const detail = refusalDetail(err);
   if (detail) target.append(detailDisclosure(detail));
+}
+
+/**
+ * Which values of which refusal the screen writes in words of its own.
+ *
+ * fillIn writes a number the way the tables beside it do, and a string as it
+ * arrives. Two kinds of string arrive in a form nobody on this screen reads: a day
+ * in the order the wire uses, and a status as the word it is stored under. So a
+ * German refusal said "am 2026-10-04" beside a form showing 04.10.2026, and "ist
+ * completed" beside a badge saying "abgeschlossen" - a word the reader could look
+ * for and find nowhere.
+ *
+ * Named by code and position, because on the wire the values are plain strings
+ * and stay so: an API client reads them too. Which of them is a day or a status is
+ * known here, beside the sentences, and in the call that sends it.
+ * TestARefusalWritesItsValuesTheWayTheScreenDoes reads every such call and fails
+ * on one this does not name.
+ */
+const REFUSAL_VALUES = {
+  archiveNeedsCompleted: { 0: statusName },
+  notFound: { 0: entityName },
+  overDailyLimit: { 2: fmtDate },
+  projectClosedForBooking: { 1: statusName },
+};
+
+/** The values of one refusal, each written the way the rest of the screen writes it. */
+function refusalValues(code, values) {
+  const written = REFUSAL_VALUES[code];
+  if (!written || !Array.isArray(values)) return values;
+
+  return values.map((value, i) => (written[i] && typeof value === 'string'
+    ? written[i](value)
+    : value));
 }
 
 /**
@@ -672,7 +713,7 @@ function askWhetherTheScreenIsStillTrue() {
   // for, and a toast about it - on a screen somebody is reading, once a minute
   // for as long as the network is unhappy - would be worse than the thing it
   // is watching for.
-  api('/me').catch(() => {});
+  api('/me', { background: true }).catch(() => {});
 
   // The announcement stream notices maintenance within seconds; this is what
   // covers a browser that has no EventSource at all.
@@ -712,7 +753,7 @@ async function checkWhetherStillWelcome() {
   let state;
 
   try {
-    state = await api('/maintenance');
+    state = await api('/maintenance', { background: true });
   } catch {
     // Unreachable, or refused. Either way this is a background question and the
     // answer to a failed one is to ask again next time.
@@ -787,7 +828,7 @@ async function checkForRelease() {
   let state;
 
   try {
-    state = await api('/settings/update');
+    state = await api('/settings/update', { background: true });
   } catch {
     // Taken down, not left standing. A feed that cannot be reached is not this
     // installation being broken, and the version card says so where somebody has
@@ -971,6 +1012,10 @@ function startAnnouncements() {
   // click, or until the once-a-minute permission poll came round.
   announcements.addEventListener('error', () => { void checkWhetherStillWelcome(); });
 
+  // The first open is the connection this page asked for; every later one is the
+  // browser coming back after it dropped.
+  let opened = false;
+
   announcements.addEventListener('open', () => {
     // Back. If the last thing said was that a restart was coming, this is the
     // other side of it: the application is answering again, and it is a different
@@ -983,13 +1028,42 @@ function startAnnouncements() {
     if (announced === 'update.restarting') {
       announced = null;
       window.location.reload();
+
+      return;
     }
+
+    if (!opened) {
+      opened = true;
+
+      return;
+    }
+
+    // What still stands is replayed to every connection, right after this, so
+    // what was said before is taken down and the replay puts back what is still
+    // true. A retraction is not replayed - the hub forgets the update it takes
+    // back - so a page away when an installation was abandoned kept "a new
+    // version is being installed" up for good.
+    forgetTheUpdateNotice();
+
+    // And the restart is asked of the process rather than of what this page
+    // heard: an announcement lives in the memory of the process that made it, so
+    // a page asleep through an update, or offline the moment the restart was
+    // said, came back to the new version with nothing to tell it.
+    void theVersionChanged().then((changed) => {
+      if (changed) window.location.reload();
+    });
   });
 }
 
 function stopAnnouncements() {
   if (announcements) announcements.close();
   announcements = null;
+
+  forgetTheUpdateNotice();
+}
+
+/** Takes down what was said about an update, and forgets that it was said. */
+function forgetTheUpdateNotice() {
   announced = null;
 
   stopRedrawing('announcement');
@@ -1304,10 +1378,43 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/**
+ * Gives the focus back to a button that is turned off while its request runs.
+ *
+ * A focused button that becomes disabled loses the focus to the page, so
+ * somebody who pressed it from the keyboard was afterwards nowhere, and the next
+ * Tab began again at the top. Asked before the button is turned off; what it
+ * returns is called once the button is back, and leaves the focus alone if it
+ * has gone somewhere on purpose in the meantime.
+ */
+function holdFocus(button) {
+  const had = document.activeElement === button;
+
+  return () => {
+    if (had && (!document.activeElement || document.activeElement === document.body)) {
+      button.focus();
+    }
+  };
+}
+
+/** What a project's status is called, in the reader's language. */
+function statusName(status) {
+  return t(`status.${status}`, status);
+}
+
+/**
+ * What a kind of record is called, in the reader's language - the word a
+ * refusal names when what it looked for is not there. The server's own word is
+ * the English, so a language without the entry still says something true.
+ */
+function entityName(entity) {
+  return t(`entity.${entity}`, entity);
+}
+
 function statusBadge(status) {
   // The class keeps the raw status so the colour rules still match; only the
   // label is translated.
-  return el('span', { class: `status status-${status}`, text: t(`status.${status}`, status) });
+  return el('span', { class: `status status-${status}`, text: statusName(status) });
 }
 
 /**
@@ -3310,7 +3417,7 @@ const TRANSLATIONS = {
     'tour.limits.title': 'Grenzwerte und Laufzeiten',
     'tour.limits.text': 'Wie lange eine Sitzung gilt, wie viele Anfragen jemand stellen darf und mit welchen Werten ein neues Konto startet.',
     'tour.telemetry.title': 'Metriken und Tracing',
-    'tour.telemetry.text': 'Log-Level, der Metrik-Endpunkt und wohin Traces exportiert werden. Alle drei werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
+    'tour.telemetry.text': 'Die Protokollstufe, der Metrik-Endpunkt und wohin Traces exportiert werden. Die Stufe gilt sofort; die beiden anderen werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
     'tour.log.title': 'Das Protokoll, ohne Shell',
     'tour.log.text': 'Was dieser Prozess schreibt, filterbar nach Stufe. Die erste Anlaufstelle, wenn etwas abgelehnt wurde und der Grund nicht auf dem Bildschirm stand.',
     'tour.theme.title': 'Darstellung und Sprache',
@@ -3373,9 +3480,10 @@ const TRANSLATIONS = {
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und Ihre Container-Verwaltung startet einen neuen aus dem '
-      + 'Abbild - was sie nur tut, wenn sie dazu angewiesen wurde. Die mit dieser '
-      + 'Anwendung ausgelieferte Bereitstellung ist es.',
+      + 'hält ihn an, und Ihre Container-Verwaltung startet ihn wieder - was sie nur '
+      + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
+      + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
+      + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
     'restart.modeProcess': 'Die Anwendung ersetzt sich selbst, läuft also durchgehend.',
     'restart.now': 'Jetzt neu starten',
     'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
@@ -3440,6 +3548,10 @@ const TRANSLATIONS = {
     'passkey.err.certificate': 'Dieses Gerät vertraut dem Zertifikat dieser Seite nicht, deshalb ist hier kein Passkey möglich. Die Zertifizierungsstelle muss auf dem Gerät installiert werden.',
     'passkey.err.aborted': 'Die Abfrage wurde geschlossen, bevor etwas geschehen ist.',
     'passkey.failed': 'Der Passkey wurde nicht akzeptiert.',
+    'kerberos.signIn': 'Mit Single Sign-on anmelden',
+    'kerberos.usePassword': 'Stattdessen mit Passwort anmelden',
+    'kerberos.failed': 'Die Anmeldung per Single Sign-on hat nicht geklappt: Der Browser hat kein Ticket vorgelegt, das diese Installation annimmt, oder das Verzeichnis kennt das Konto nicht.',
+    'kerberos.codeFailed': 'Die Anmeldung wurde nicht angenommen. Bitte den Code prüfen.',
 
     'tz.title': 'Zeitzone',
     'tz.hint': 'Bestimmt, auf welchen Kalendertag eine Buchung fällt — für alle, die unter „Mein Konto" keine eigene gesetzt haben.',
@@ -3569,6 +3681,14 @@ const TRANSLATIONS = {
     'detail.reference': 'Referenz: {0}',
     'err.unauthenticated': 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',
     'err.notFound': '{0} mit der Kennung {1} wurde nicht gefunden.',
+    // What a refusal for something that is not there names it - see entityName.
+    'entity.passkey': 'Passkey',
+    'entity.project': 'Projekt',
+    'entity.role': 'Rolle',
+    'entity.session': 'Sitzung',
+    'entity.timesheet': 'Zeiteintrag',
+    'entity.token': 'Token',
+    'entity.user': 'Konto',
     'err.invalidFields': 'Ungültige Felder',
     'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
     'err.updateCheckedRecently': 'Die Release-Quelle wurde gerade erst gefragt. '
@@ -3606,6 +3726,9 @@ const TRANSLATIONS = {
     'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
     'err.credentialUnreadable': 'Der Anmeldeschlüssel konnte nicht gelesen werden.',
     'err.datasourceInvalid': 'Die Datenbank-Verbindung ist unvollständig oder ungültig.',
+    'err.passwordSwallowsName': 'Ohne Passwort erfährt PostgreSQL den Namen der Datenbank „{0}“ nicht und öffnet stattdessen die, die wie das Konto heißt. Nötig ist das Passwort des Kontos – irgendein Wert, wenn der Server keines verlangt – oder, wenn die Daten dieser Installation schon dort liegen, der Name dieser Datenbank.',
+    'err.postgresMisread': 'PostgreSQL würde diese Verbindung nicht so erhalten, wie sie eingegeben ist: GoFr schreibt sie ohne Anführungszeichen, und ein Leerzeichen, ein Backslash oder ein Anführungszeichen am Anfang übersteht das weder im Benutzer noch im Passwort noch im Datenbanknamen.',
+    'err.mysqlMisread': 'MySQL würde diese Verbindung nicht so erhalten, wie sie eingegeben ist: GoFr schreibt sie ohne Maskierung, und ein Doppelpunkt im Benutzer, ein Fragezeichen oder Schrägstrich im Datenbanknamen oder eine IPv6-Adresse ohne eckige Klammern übersteht das nicht.',
     'err.dateFormat': 'Das Datum „{0}“ muss YYYY-MM-DD oder RFC 3339 sein.',
     'err.deletionNeedsConfirming': '„{0}“ hat {1} erfasste Zeiteinträge. Sie würden mit dem Konto gelöscht und sind nicht wiederherstellbar – zum Fortfahren bitte bestätigen.',
     'err.emailTaken': 'Es gibt bereits einen Benutzer mit der E-Mail-Adresse „{0}“.',
@@ -3635,6 +3758,7 @@ const TRANSLATIONS = {
     'err.onlyBuiltInAdminSetsUp': 'Nur die eingebaute Administration darf die Einrichtung '
       + 'durchlaufen.',
     'err.restartUnsupported': 'Ein Neustart aus der Anwendung heraus ist auf diesem System nicht möglich. Gespeicherte Einstellungen werden beim nächsten regulären Start wirksam.',
+    'err.restartWouldNotStart': 'Die Datenbank, die der nächste Start öffnen würde, antwortet nicht – die Anwendung käme nicht wieder. Es wurde nicht neu gestartet.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
@@ -3679,6 +3803,8 @@ const TRANSLATIONS = {
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
     'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warten Sie auf den nächsten.',
+    'err.kerberosOff': 'Die Anmeldung mit einem Kerberos-Ticket ist auf dieser Installation nicht eingerichtet.',
+    'err.kerberosNeedsDirectory': 'Eine Kerberos-Anmeldung wird im Verzeichnis nachgeschlagen, und hier ist kein Verzeichnis eingerichtet.',
     'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
     'err.twoFactorNotStarted': 'Bitte zuerst die Zwei-Faktor-Einrichtung starten.',
     'err.twoFactorRequired': 'Ein Zwei-Faktor-Code ist erforderlich.',
@@ -3807,13 +3933,14 @@ const TRANSLATIONS = {
     'log.clear': 'Ansicht leeren',
     'log.delay': 'Aktualisierung alle (s)',
     'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
+    'log.restarted': 'Die Anwendung wurde neu gestartet. Es folgt das Protokoll des neuen Prozesses.',
     'log.skipped': 'Es kamen mehr Zeilen, als eine Seite fasst; {0} wurden übersprungen, um die neuesten zu zeigen.',
     'log.failed': 'Das Protokoll konnte nicht gelesen werden',
     'log.follow': 'Mitlaufen',
-    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – ein Level darunter anzuhaken zeigt deshalb nichts. Die Stufe steht oben unter „Protokoll, Metriken und Traces" und wirkt ab dem nächsten Start. Nur im Speicher gehalten: nach einem Neustart ist die Ansicht leer, und sie ersetzt keine Protokollsammlung.',
+    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – eine Stufe darunter anzuhaken zeigt deshalb nichts. Die Stufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt. Nur im Speicher gehalten: nach einem Neustart ist das bis dahin Erfasste verloren, und eine Protokollsammlung ersetzt das hier nicht.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
-    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Das Log-Level wird unter „Protokollierung, Metriken und Tracing“ geändert und gilt ab dem nächsten Start.',
+    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
     'log.paused': 'Angehalten.',
     'log.resume': 'Fortsetzen',
     'log.search': 'Suche',
@@ -3972,7 +4099,7 @@ const TRANSLATIONS = {
     'sync.directoryUsers': 'Im Verzeichnis',
     'sync.entries': 'Zeiteinträge',
     'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
-    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut.',
+    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut. Er läuft nach der Uhr des Servers, im ausgelieferten Container also in UTC, und nicht in der Zeitzone der Installation.',
     'sync.scheduleStored': 'Gespeichert',
     'sync.scheduleManual': 'Läuft nur, wenn der Knopf unten gedrückt wird.',
     'sync.scheduleShort': 'Verzeichnis-Zeitplan',
@@ -4043,6 +4170,7 @@ const TRANSLATIONS = {
     'update.willAskRestart': 'Der Download wird gegen die Prüfsumme des Releases geprüft. '
       + 'Danach muss die Anwendung von Hand neu gestartet werden — dieses System kann '
       + 'sich nicht selbst neu starten.',
+    'update.noBinary': 'Das Release enthält keinen Build für diese Plattform und kann daher nicht von hier aus installiert werden. Was es anbietet, steht auf der Release-Seite.',
     'update.inContainer': 'Dies läuft in einem Container. Ein ausgetauschtes Programm wäre '
       + 'beim nächsten Neuaufbau wieder weg — stattdessen das Abbild aktualisieren: '
       + 'docker compose pull && docker compose up -d',
@@ -4177,15 +4305,41 @@ function applyLanguage(language) {
  */
 const redraws = new Map();
 
-/** Draws a screen now, and again whenever the language changes. */
-function redrawable(key, draw) {
+/** The keys of the draws that belong to the installation; see forgetEveryRedraw. */
+const installationDraws = new Set();
+
+/**
+ * Draws a screen now, and again whenever the language changes.
+ *
+ * Forgotten when its account signs out, unless it is declared as the
+ * installation's - the name and mark the sign-in screen shows.
+ */
+function redrawable(key, draw, { installation = false } = {}) {
   redraws.set(key, draw);
+
+  if (installation) installationDraws.add(key);
+  else installationDraws.delete(key);
+
   draw();
 }
 
 /** Forgets a screen's last answer, for one that has been emptied. */
 function stopRedrawing(key) {
   redraws.delete(key);
+}
+
+/**
+ * Forgets every screen drawn for whoever just signed out.
+ *
+ * Each draw keeps the answer it was made from, and the sign-out applies the
+ * language to the screen it hands back - which redrew them all: the evaluation,
+ * the balance and the import verdicts went back into the tables just emptied,
+ * and stood there for whoever signed in next.
+ */
+function forgetEveryRedraw() {
+  for (const key of [...redraws.keys()]) {
+    if (!installationDraws.has(key)) redraws.delete(key);
+  }
 }
 
 function redrawAll() {
@@ -4460,7 +4614,12 @@ async function loadMe() {
   applyAccountTheme();
   applyPermissionVisibility();
 
-  renderTOTPState();
+  // Not over an enrolment under way. The account is not enrolled until its first
+  // code is confirmed, so drawn from it the card went back to "not enabled" -
+  // taking the QR code somebody was scanning and the field for its first code -
+  // on every reload, which a saved card or a change of language is. Leaving the
+  // screen and signing out close it, on purpose.
+  if ($('#totp-setup').hidden) renderTOTPState();
 }
 
 async function loadUsers() {
@@ -5275,6 +5434,9 @@ let timesheetEntries = [];
 /** How many there are altogether, which is what says whether there are more. */
 let timesheetTotal = 0;
 
+/** How many loads of the entries have begun, so an answer can tell it was overtaken. */
+let timesheetLoads = 0;
+
 /**
  * Loads the entries, one page at a time.
  *
@@ -5282,6 +5444,11 @@ let timesheetTotal = 0;
  * changing the filter, booking, correcting, deleting - starts again from the
  * first page on purpose: the list has changed underneath, and an offset into a
  * list that has moved skips one entry and repeats another.
+ *
+ * Only the newest load's answer is kept. Each one emptied the list as it began
+ * and added its answer when it came back, so two at once - stepping through the
+ * filter with the arrow keys sends one per step - put two projects' entries under
+ * a filter naming one, and two presses of "more" the same page twice.
  */
 async function loadTimesheets(more = false) {
   if (!can('timesheets:read:own')) return;
@@ -5290,18 +5457,24 @@ async function loadTimesheets(more = false) {
   const projectId = $('#filter-ts-project').value;
   if (projectId) params.set('projectId', projectId);
 
-  if (!more) timesheetEntries = [];
+  const before = more ? timesheetEntries : [];
 
   params.set('limit', String(TIMESHEET_PAGE));
-  params.set('offset', String(timesheetEntries.length));
+  params.set('offset', String(before.length));
+
+  timesheetLoads += 1;
+  const asked = timesheetLoads;
 
   const answer = await api(`/timesheets?${params}`);
+
+  if (asked !== timesheetLoads) return;
+
   const page = answer?.items ?? [];
 
   // What the server says, not what arrived: those differ exactly when there is
   // another page, which is the whole question this screen has to answer.
   timesheetTotal = answer?.totalCount ?? page.length;
-  timesheetEntries = timesheetEntries.concat(page);
+  timesheetEntries = before.concat(page);
 
   const entries = timesheetEntries;
 
@@ -5466,6 +5639,11 @@ async function loadCalendar() {
 
   const entries = await everyTimesheet({ from: ISO_DAY(first), to: ISO_DAY(last) });
 
+  // Not drawn if the arrows have moved on while it was on its way. Two quick
+  // presses ask for two months at once, and the fuller one answers later: drawn
+  // anyway, it put the month left behind under arrows already past it.
+  if (calendarMonth !== first) return;
+
   const byDay = new Map();
   for (const entry of entries) {
     if (!byDay.has(entry.date)) byDay.set(entry.date, []);
@@ -5621,6 +5799,11 @@ function fillSettingsForm() {
 async function loadTokens() {
   const tokens = (await api('/me/tokens'))?.items ?? [];
 
+  // A value on the card whose token is no longer listed - revoked here or in
+  // another tab - opens nothing, and the card went on saying "copy it now".
+  const shown = $('#token-secret')?.dataset.token;
+  if (shown && !tokens.some((token) => String(token.id) === shown)) forgetTheTokenValue();
+
   const rows = tokens.map((token) => el('tr', { class: token.expired ? 'empty' : '' },
     el('td', { text: token.name }),
     el('td', {}, el('code', { text: `${token.prefix}…` })),
@@ -5660,6 +5843,7 @@ function forgetTheTokenValue() {
   if (!panel) return;
 
   panel.hidden = true;
+  delete panel.dataset.token;
   $('#token-secret-value').textContent = '';
 }
 
@@ -5679,6 +5863,7 @@ function wireTokens() {
       // is what makes "until you navigate away" true rather than a description
       // of what was meant.
       $('#token-secret-value').textContent = created.secret;
+      $('#token-secret').dataset.token = String(created.id);
       $('#token-secret').hidden = false;
       e.target.reset();
       await loadTokens();
@@ -5730,7 +5915,7 @@ async function loadBranding() {
   // again. Everything on this screen that a language change reaches goes the same
   // way; a title and a banner written in two languages would otherwise stay in
   // whichever one the page happened to load in.
-  redrawable('branding', () => drawBranding(branding));
+  redrawable('branding', () => drawBranding(branding), { installation: true });
 
   return branding;
 }
@@ -7151,7 +7336,7 @@ function hideLogin() {
   $('#login-screen').classList.remove('checking');
   $('#login-screen').hidden = true;
   $('#login-error').hidden = true;
-  $('#login-totp-field').hidden = true;
+  backToThePasswordForm();
   $('#form-login').reset();
 }
 
@@ -7159,6 +7344,15 @@ async function submitLogin(e) {
   e.preventDefault();
 
   const form = e.target;
+
+  // The second step of a ticket sign-in, which asks for the code and nothing
+  // else. See askForTheCodeAfterATicket.
+  if (form.dataset.via === 'ticket') {
+    await signInWithTicket({ totp: form.elements.totp.value.trim() });
+
+    return;
+  }
+
   const body = {
     email: form.elements.email.value.trim(),
     password: form.elements.password.value,
@@ -7197,6 +7391,19 @@ async function submitLogin(e) {
     return;
   }
 
+  await arriveAfterSignIn();
+}
+
+/**
+ * Takes a page that has just been signed into from the sign-in screen to the
+ * application: the same arrival whichever way somebody signed in.
+ *
+ * One function for the password, the passkey and the ticket. The passkey kept a
+ * copy of these lines that described itself as "the same arrival the password
+ * sign-in makes", and a third copy is how three ways in start arriving
+ * differently.
+ */
+async function arriveAfterSignIn() {
   hideLogin();
 
   try {
@@ -7204,7 +7411,9 @@ async function submitLogin(e) {
 
     // The same choice a page load makes, rather than always the first tab: signing
     // out and back in used to discard the screen somebody was working on, so the
-    // only way back to it was to reload the page afterwards.
+    // only way back to it was to reload the page afterwards. Through
+    // openTheStartingView rather than switchView, so the page does not call itself
+    // loaded while it is still about to change screens - see the comment there.
     openTheStartingView();
 
     // Here as well as on a page load, or the greeting would only ever appear to
@@ -7216,6 +7425,187 @@ async function submitLogin(e) {
     // screen that will accept the same password and do this again.
     toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
   }
+}
+
+/** Whether this installation offers a sign-in with the browser's Kerberos ticket. */
+let ticketsOffered = false;
+
+/**
+ * Where a tab remembers not to try a ticket by itself.
+ *
+ * Set by signing out, or reloading the sign-in screen would sign straight back
+ * in and signing out would be something this page could not do. Set as well by
+ * an attempt of its own that failed: on Windows a browser that does not trust
+ * this address may answer the challenge with a password dialog of its own, and
+ * one of those on every reload would be all the sign-in screen did. A ticket
+ * sign-in that works clears it. sessionStorage, so it is this tab's and ends
+ * with it.
+ */
+const TICKET_HELD_BACK_KEY = 'gtr.kerberos.heldBack';
+
+/** Whether the page may try the ticket before anybody asks it to. */
+function mayTryTheTicketUnasked() {
+  try {
+    return window.sessionStorage.getItem(TICKET_HELD_BACK_KEY) === null;
+  } catch {
+    // Without storage a sign-out could not be remembered past a reload, so the
+    // page would sign straight back in. The button still works.
+    return false;
+  }
+}
+
+function holdTheTicketBack() {
+  try {
+    window.sessionStorage.setItem(TICKET_HELD_BACK_KEY, '1');
+  } catch {
+    // Nothing to remember it in; mayTryTheTicketUnasked already says no.
+  }
+}
+
+function letTheTicketTryAgain() {
+  try {
+    window.sessionStorage.removeItem(TICKET_HELD_BACK_KEY);
+  } catch {
+    // Nothing was stored, so nothing is held back by it.
+  }
+}
+
+/**
+ * Asks the server whether to offer a sign-in with the browser's ticket.
+ *
+ * Offered only where one can succeed - a keytab was read and a directory is
+ * configured - so a browser is never sent the Negotiate challenge by an
+ * installation that could do nothing with the answer.
+ */
+async function loadTicketSupport() {
+  try {
+    ticketsOffered = Boolean((await api('/auth/kerberos'))?.available);
+  } catch {
+    ticketsOffered = false;
+  }
+
+  $('#login-kerberos').hidden = !ticketsOffered;
+}
+
+/**
+ * Signs in with the browser's Kerberos ticket.
+ *
+ * The browser does the work. The POST is answered with the Negotiate
+ * challenge, a browser that trusts this address and holds a ticket sends the
+ * same request again with it, and one that does not keeps the 401 - which
+ * cannot be told apart from here from a ticket the server refused, and does not
+ * need to be.
+ *
+ * quietly is the attempt the page makes by itself when it opens: a failure says
+ * nothing, because the form is the answer, and holds the ticket back for the
+ * rest of the tab. Asked for with the button, a failure is said.
+ */
+async function signInWithTicket({ quietly = false, totp = '' } = {}) {
+  let result;
+
+  try {
+    result = await api('/auth/kerberos', {
+      method: 'POST',
+      body: JSON.stringify(totp ? { totp } : {}),
+    });
+  } catch (err) {
+    if (quietly) {
+      holdTheTicketBack();
+
+      return;
+    }
+
+    let message = err.message;
+
+    if (err.status === 401) {
+      message = totp
+        ? t('kerberos.codeFailed', 'The sign-in was not accepted. Please check the code.')
+        : t('kerberos.failed', 'Single sign-on did not work: the browser presented no ticket this installation accepts, or the directory does not know the account.');
+    }
+
+    showLogin(message);
+
+    if (totp) {
+      const field = $('#form-login').elements.totp;
+      field.value = '';
+      field.focus();
+    }
+
+    return;
+  }
+
+  // The ticket was good and the account has a second factor: the ticket stands in
+  // for the password and for nothing else.
+  if (result?.totpRequired) {
+    askForTheCodeAfterATicket();
+
+    return;
+  }
+
+  letTheTicketTryAgain();
+  await arriveAfterSignIn();
+}
+
+/**
+ * Turns the sign-in form into the second step of a ticket sign-in: the code, and
+ * nowhere to type an address or a password.
+ *
+ * The same form rather than a second one, so the band, the language and the
+ * button stay where they are; what changes is where it is sent, which
+ * submitLogin reads off data-via. The address and the password are put away
+ * and stop being required - a hidden field that is still required cannot be
+ * submitted past, and the form would silently do nothing.
+ */
+function askForTheCodeAfterATicket() {
+  const form = $('#form-login');
+
+  form.dataset.via = 'ticket';
+
+  for (const name of ['email', 'password']) {
+    form.elements[name].required = false;
+    form.elements[name].closest('label').hidden = true;
+  }
+
+  $('#login-totp-field').hidden = false;
+  $('#login-kerberos').hidden = true;
+  $('#login-passkey').hidden = true;
+  $('#login-kerberos-leave').hidden = false;
+
+  const error = $('#login-error');
+  error.textContent = t('login.totpNeeded', 'Please enter the code from your authenticator app.');
+  error.hidden = false;
+
+  form.elements.totp.focus();
+}
+
+/**
+ * Puts the sign-in form back to asking for an address and a password.
+ *
+ * From the button, and from hideLogin, so a form left asking for a ticket's code
+ * is not what the next person to sign in on this page finds.
+ */
+function backToThePasswordForm() {
+  const form = $('#form-login');
+
+  delete form.dataset.via;
+
+  for (const name of ['email', 'password']) {
+    form.elements[name].required = true;
+    form.elements[name].closest('label').hidden = false;
+  }
+
+  form.elements.totp.value = '';
+  $('#login-totp-field').hidden = true;
+  $('#login-kerberos').hidden = !ticketsOffered;
+  $('#login-passkey').hidden = !passkeysAvailable;
+  $('#login-kerberos-leave').hidden = true;
+  $('#login-error').hidden = true;
+}
+
+/** The two buttons a ticket sign-in adds to the form. */
+function wireTicketSignIn() {
+  $('#login-kerberos').addEventListener('click', () => signInWithTicket());
+  $('#login-kerberos-leave').addEventListener('click', backToThePasswordForm);
 }
 
 /**
@@ -7366,6 +7756,42 @@ function forgetTheLastAccount() {
   // sign-out it is the same wrong answer that comment was written against,
   // reached from the other side.
   calendarMonth = null;
+
+  // And the month it drew. The grid is not a table, so emptying the tables left
+  // its days and their projects, and an account that may not read entries never
+  // draws over them - loadCalendar returns first.
+  $('#calendar-days').replaceChildren();
+  $('#calendar-summary').textContent = '';
+  $('#calendar-day-card').hidden = true;
+
+  // And the greeting, which names whoever it greeted beside their day's hours
+  // and last entries, and is drawn again only when somebody arrives on it.
+  $('#welcome-title').textContent = '';
+  $('#welcome-today').textContent = '';
+  $('#welcome-recent-list').replaceChildren();
+  $('#welcome-recent').hidden = true;
+
+  // And each form's own reset, which resetting the form does not reach: a hidden
+  // field keeps its value through one, so a form left correcting a record kept
+  // the record's id under its "edit" heading - and an administrator filling it in
+  // to add somebody changed the account their predecessor had open. After the
+  // caches and the account are gone, because two of them draw from those.
+  resetUserForm();
+  resetRoleForm();
+  resetProjectForm();
+  resetTimesheetForm();
+
+  // And the imports this account had checked. The cards are not forms, so the
+  // reset of every form never reached the file, the verdict or the button that
+  // writes it.
+  forgetEveryImport();
+
+  // And what it evaluated, which nothing asks for again at the next sign-in.
+  forgetEveryEvaluation();
+
+  // Last, after the tables are emptied: the sign-out applies the language next,
+  // and every draw still registered would put its account's rows back.
+  forgetEveryRedraw();
 }
 
 /**
@@ -7392,6 +7818,12 @@ async function endTheSessionQuietly() {
 
 async function doLogout() {
   await endTheSessionQuietly();
+
+  // Somebody who signs out means it: a reload of the sign-in screen must not
+  // sign them straight back in with the ticket. Here rather than wherever a
+  // session ends, because a session the server ended is not a choice anybody
+  // made.
+  holdTheTicketBack();
 
   handBackTheScreen();
 }
@@ -7599,7 +8031,13 @@ function wireTOTP() {
     const code = $('#totp-code').value.trim();
     mutate(() => api('/me/totp', { method: 'PUT', body: JSON.stringify({ code }) }),
       t('totp.enabled', 'Two-factor authentication enabled'),
-      async () => { $('#totp-code').value = ''; await refreshAll(); });
+      async () => {
+        $('#totp-code').value = '';
+        await refreshAll();
+
+        // Finished, so drawn from the account now - which the reload left alone.
+        renderTOTPState();
+      });
   });
 
   $('#totp-disable').addEventListener('click', () => {
@@ -7884,8 +8322,8 @@ const TOUR_STEPS = [
     permission: 'settings:manage',
     title: () => t('tour.telemetry.title', 'Metrics and tracing'),
     text: () => t('tour.telemetry.text',
-      'The log level, the metrics endpoint and where traces are exported to. All three are '
-      + 'read when the process starts, so they wait for the next one.'),
+      'The log level, the metrics endpoint and where traces are exported to. The level applies '
+      + 'at once; the other two are read when the process starts, so they wait for the next one.'),
   },
   {
     target: '#log-card',
@@ -8836,8 +9274,10 @@ async function nextSetupStep() {
   const after = setup.state.steps[setup.index];
 
   if (current.required && !after.done) {
-    setupError(t('setup.decideFirst', 'Please settle this step before continuing.'));
+    // Drawn first and said after: drawing a step begins by hiding the box, so
+    // said first, the wizard stayed put in silence.
     renderSetup();
+    setupError(t('setup.decideFirst', 'Please settle this step before continuing.'));
 
     return;
   }
@@ -9188,6 +9628,16 @@ function renderUpdate(state) {
       + 'checksum. Afterwards the application has to be restarted by hand — this '
       + 'platform cannot restart itself.');
 
+  // Before anything that describes the download: there is none on offer, and
+  // the card said there was beside a button that had gone.
+  if (state.why === 'noBinary') {
+    hint.textContent = t('update.noBinary',
+      'The release published no build for this platform, so it cannot be installed '
+      + 'from here. The release page says what it offers.');
+
+    return;
+  }
+
   // A container with an updater beside it takes the whole image, and what the
   // button does then is different enough to say plainly: it is not this
   // application replacing its own binary, it is something else replacing this
@@ -9244,8 +9694,17 @@ function renderUpdate(state) {
  */
 async function settleAfterRestart(previous, done, patience, givenUp = async () => false) {
   const overlay = $('#restart-overlay');
+  const cameBack = await waitForRestart(previous, patience, givenUp);
 
-  if (await waitForRestart(previous, patience, givenUp)) {
+  // The installer explains itself, and nothing on this page applies to it any
+  // more: the overlay stays up until the page it asked for replaces this one.
+  if (cameBack === 'installer') {
+    window.location.reload();
+
+    return;
+  }
+
+  if (cameBack) {
     // A different build came back, so everything in this tab is last version's.
     //
     // This was the one tab that did not reload. Every other open one did: the
@@ -9401,6 +9860,8 @@ function wireUpdateCheck() {
     // export had to learn.
     button.style.minWidth = `${button.offsetWidth}px`;
 
+    const giveBack = holdFocus(button);
+
     button.disabled = true;
     button.textContent = t('update.checking', 'Looking …');
 
@@ -9422,6 +9883,7 @@ function wireUpdateCheck() {
       button.disabled = false;
       button.textContent = wasSaying;
       button.style.minWidth = '';
+      giveBack();
     }
   });
 }
@@ -9676,9 +10138,10 @@ async function loadRestart() {
   const description = state.mode === 'container'
     ? t('restart.modeContainer',
       'This installation runs in a container. The button stops it, and your '
-      + 'container manager starts a new one from the image - which it only does '
-      + 'if it was told to restart the container. The deployment shipped with '
-      + 'this application is.')
+      + 'container manager starts it again - which it only does under a restart '
+      + 'policy that also restarts a container that ended without an error: '
+      + 'always or unless-stopped, not on-failure. The deployment shipped with '
+      + 'this application sets one.')
     : t('restart.modeProcess',
       'The application replaces itself, so it is never not running.');
 
@@ -9790,6 +10253,8 @@ const IMAGE_UPDATE_TIMEOUT_MS = 5 * 60000;
  * milliseconds, and a poll that misses that gap would report success without
  * anything having happened. The start time changing is what proves it.
  *
+ * Answers 'installer' when that is what came back - see theInstallerAnswers.
+ *
  * givenUp ends the wait early, with the same answer as running out of patience;
  * see settleAfterRestart.
  */
@@ -9808,10 +10273,33 @@ async function waitForRestart(previousStartedAt, patience = RESTART_TIMEOUT_MS,
     } catch {
       // Expected while it is down: the connection is refused, or the session
       // has not been read back out of the database yet.
+      if (await theInstallerAnswers()) return 'installer';
     }
   }
 
   return false;
+}
+
+/**
+ * Whether the installer, rather than the application, answers on this address.
+ *
+ * What a restart comes back as when no connection is left: it reads the
+ * configuration afresh, so a connection file that was removed - which is how the
+ * manual brings the installer back - takes the installation to its installer.
+ * That answers every path with its page, so the wait read it as an application
+ * not up yet and said after a minute that it might still be starting, of
+ * something that had been answering all along. Told apart the way the
+ * installer's own page tells them apart: it answers /install/state with JSON,
+ * where the application answers with a document.
+ */
+async function theInstallerAnswers() {
+  try {
+    const res = await reach('/install/state', { cache: 'no-store' });
+
+    return res.ok && (res.headers.get('content-type') || '').includes('json');
+  } catch {
+    return false;
+  }
 }
 
 
@@ -10470,6 +10958,8 @@ async function loadStatistics() {
 
   const stats = await api(`/me/statistics?${params}`);
 
+  evaluatedPeriod.statistics = { from: stats.from, to: stats.to };
+
   $('#statistics-total').textContent =
     `${t('stats.total', 'Total')}: ${fmtHours(stats.totalHours ?? 0)}`;
 
@@ -10668,7 +11158,7 @@ function rowProblem(row) {
   const sentence = t(`row.${row.problemCode}`, '')
     || t(`err.${row.problemCode}`, row.problem);
 
-  return fillIn(sentence, row.problemValues);
+  return fillIn(sentence, refusalValues(row.problemCode, row.problemValues));
 }
 
 /** Shows what the file would do, row by row. */
@@ -10697,6 +11187,16 @@ function renderWorkbookPreview(result) {
   // The import button only where it would do something: offering it for a file
   // that would be refused is offering a failure.
   $('#wb-import').hidden = rejected > 0 || writable === 0;
+}
+
+/** The resets of the tables' import cards, which buildSheetCard builds. */
+const sheetCardResets = [];
+
+/** Puts every import card back to its resting state. */
+function forgetEveryImport() {
+  resetWorkbookCard();
+
+  for (const reset of sheetCardResets) reset();
 }
 
 /** Puts the card back to its resting state. */
@@ -11010,15 +11510,20 @@ function screenColours() {
 }
 
 /**
- * The period a document covers, worded as the two date fields have it.
+ * The period each evaluation on screen was worked out for, as its answer named it.
+ *
+ * Not the form's date boxes: they hold what the next evaluation will ask for. Read
+ * off them, a document was headed with whatever somebody had typed since - April
+ * over March's figures - and with nothing when the boxes were left empty and the
+ * server chose the period itself.
  */
-function periodOf(from, to) {
-  const start = from?.value ? fmtDate(from.value) : '';
-  const end = to?.value ? fmtDate(to.value) : '';
+const evaluatedPeriod = { report: null, overtime: null, statistics: null };
 
-  if (!start && !end) return '';
+/** The period a document covers, as an answer named it. */
+function periodOf(period) {
+  if (!period?.from || !period?.to) return '';
 
-  return `${start} – ${end}`;
+  return `${fmtDate(period.from)} – ${fmtDate(period.to)}`;
 }
 
 /**
@@ -11037,6 +11542,7 @@ async function exportEvaluation(button, name, build) {
   // exactly when the two are the same thing.
   const key = button.dataset.i18n;
   const english = button.dataset.i18nSource ?? button.textContent;
+  const giveBack = holdFocus(button);
 
   button.disabled = true;
 
@@ -11057,6 +11563,8 @@ async function exportEvaluation(button, name, build) {
 
     if (key) swapTheLabel(button, key, english);
     else button.textContent = english;
+
+    giveBack();
   }
 }
 
@@ -11067,7 +11575,7 @@ async function reportDocument() {
   return {
     title: t('report.title', 'Report'),
     colours: screenColours(),
-    subtitle: periodOf($('#form-report').elements.from, $('#form-report').elements.to),
+    subtitle: periodOf(evaluatedPeriod.report),
     sections: [{
       heading: t('report.result', 'Result'),
       caption: $('#report-chart-caption').textContent.trim(),
@@ -11083,7 +11591,7 @@ async function statisticsDocument() {
   return {
     title: t('stats.title', 'My hours'),
     colours: screenColours(),
-    subtitle: periodOf($('#statistics-from'), $('#statistics-to')),
+    subtitle: periodOf(evaluatedPeriod.statistics),
     sections: [
       {
         heading: t('stats.perDay', 'Hours per day'),
@@ -11103,12 +11611,10 @@ async function statisticsDocument() {
 
 /** The overtime screen: the day-by-day table and the balance. */
 async function overtimeDocument() {
-  const form = $('#form-overtime');
-
   return {
     title: t('nav.overtime', 'Overtime'),
     colours: screenColours(),
-    subtitle: periodOf(form.elements.from, form.elements.to),
+    subtitle: periodOf(evaluatedPeriod.overtime),
     sections: [{
       heading: t('ot.balance', 'Balance'),
       caption: $('#overtime-meta').textContent.trim(),
@@ -11367,6 +11873,7 @@ function buildSheetCard(spec) {
     }));
 
   cancel.addEventListener('click', reset);
+  sheetCardResets.push(reset);
 
   return el('div', { class: 'card', 'data-perm': spec.read },
     el('h2', { 'data-i18n': 'wb.title', text: 'Spreadsheet' }),
@@ -11427,6 +11934,33 @@ function wireSheetCards() {
 // labelled "no project" on an otherwise German screen. The words are made at
 // drawing time now, which is also the only time they are needed.
 const reportChart = { kind: 'bars', scope: 'projects', projects: [], days: [] };
+
+/**
+ * Takes down every evaluation this account ran, and the pictures of its hours.
+ *
+ * An evaluation is computed when somebody asks for one, and nothing on the next
+ * sign-in asks again: the result cards stayed up with the last account's totals,
+ * its name, target and booked hours, and the charts of where its time went. The
+ * chart's shape is a preference rather than anybody's hours, and its buttons
+ * show it, so only the figures go.
+ */
+function forgetEveryEvaluation() {
+  for (const card of ['#report-result', '#overtime-result']) {
+    const node = $(card);
+    if (node) node.hidden = true;
+  }
+
+  for (const said of ['#report-total', '#report-chart-caption', '#overtime-total', '#overtime-meta',
+    '#statistics-total']) {
+    const node = $(said);
+    if (node) node.textContent = '';
+  }
+
+  for (const picture of ['#report-chart', '#chart-days', '#chart-projects']) $(picture)?.replaceChildren();
+
+  reportChart.projects = [];
+  reportChart.days = [];
+}
 
 /**
  * Fetches the breakdown for the period just evaluated and draws it.
@@ -11526,11 +12060,15 @@ let timerTick = null;
 /**
  * Renders the clock's state.
  *
- * The elapsed time is counted here from the start instant rather than polled,
- * because a request per second to be told the same thing is a request per second.
- * The server sends its own elapsed figure too, and that is what the entry will
- * record - so a browser with a wrong clock shows a slightly wrong number here and
- * still books the right one.
+ * The elapsed time is counted here rather than polled, because a request per
+ * second to be told the same thing is a request per second - and counted on the
+ * server's clock, which is the one the booking is measured on. The device's own
+ * can be minutes out: two minutes slow, its difference from the recorded start
+ * came out negative and the stopwatch read 00:00:00 for two minutes after Start.
+ * So the offset between the two is measured once, when the server's answer
+ * arrives - the start plus what it says it has measured is its own now - and
+ * the wall clock does the rest, which keeps counting through a laptop's sleep
+ * where a monotonic clock may not.
  */
 function renderTimer() {
   const card = $('#timer-card');
@@ -11556,9 +12094,10 @@ function renderTimer() {
   }
 
   const started = new Date(runningTimer.startedAt).getTime();
+  const offset = runningTimer.clockOffset ?? 0;
 
   const paint = () => {
-    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    const seconds = Math.max(0, Math.floor((Date.now() + offset - started) / 1000));
     const hh = String(Math.floor(seconds / 3600)).padStart(2, '0');
     const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
     const ss = String(seconds % 60).padStart(2, '0');
@@ -11575,7 +12114,15 @@ async function loadTimer() {
   if (!can('timesheets:write:own')) return;
 
   const state = await api('/me/timer');
-  runningTimer = state.running ? state : null;
+
+  runningTimer = state.running
+    ? {
+      ...state,
+      // How far the server's clock is ahead of this device's: see renderTimer.
+      clockOffset: new Date(state.startedAt).getTime() + (state.elapsedHours ?? 0) * 3600000
+        - Date.now(),
+    }
+    : null;
 
   // The project it was started with, so stopping books what was chosen - the
   // select is disabled while it runs, and this is what it shows.
@@ -11949,8 +12496,13 @@ function passkeyProblem(err) {
         + 'device trusts. Clicking past a certificate warning is not enough.');
     case 'AbortError':
       return t('passkey.err.aborted', 'The prompt closed before anything was done.');
-    default:
-      return err?.message || t('passkey.failed', 'The passkey was not accepted.');
+    default: {
+      // A name this does not know: still said in the reader's language, with the
+      // browser's own words - in the browser's language - kept as the detail.
+      const said = t('passkey.failed', 'The passkey was not accepted.');
+
+      return err?.message ? `${said} (${err.message})` : said;
+    }
   }
 }
 
@@ -12112,20 +12664,7 @@ function wirePasskeys() {
       return;
     }
 
-    hideLogin();
-
-    try {
-      await refreshAll();
-
-      // The same arrival the password sign-in makes. Through openTheStartingView
-      // rather than switchView, so the page does not call itself loaded while it
-      // is still about to change screens - see the comment there.
-      openTheStartingView();
-
-      await greetAfterSignIn();
-    } catch (err) {
-      toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
-    }
+    await arriveAfterSignIn();
   });
 }
 
@@ -12141,6 +12680,13 @@ function wirePasskeys() {
  */
 const logView = {
   since: 0,
+
+  // Which process counted `since`, as its last answer named it, and sent back
+  // with it. The numbers start again with the process, so without this a viewer
+  // left open across a restart asked the new process for "everything after" a
+  // number only the old one had reached - and was shown none of what the new one
+  // wrote while it started.
+  epoch: '',
   timer: null,
   polling: false,
   paused: false,
@@ -12191,6 +12737,12 @@ function wireLogViewer() {
     logView.paused = !logView.paused;
     renderPauseButton();
     schedulePoll({ immediate: !logView.paused });
+  });
+
+  // Hidden is nobody looking - see logViewerActive.
+  document.addEventListener('visibilitychange', () => {
+    if (logViewerActive()) schedulePoll({ immediate: true });
+    else stopLogPolling();
   });
 
   $('#log-clear').addEventListener('click', () => {
@@ -12263,7 +12815,8 @@ function schedulePoll({ immediate = false } = {}) {
   }
 
   logView.timer = setTimeout(() => {
-    void pollLog().finally(() => {
+    // The page's own: following along is not somebody being there.
+    void pollLog({ background: true }).finally(() => {
       // Not if that poll turned the viewer off itself. stopLogPolling clears
       // logView.timer, and this callback *is* that timer - there is nothing left
       // for it to clear, so without asking here the stop is undone by the line
@@ -12305,6 +12858,12 @@ function stopLogPolling({ refused = false } = {}) {
  * Only while its own screen is on top: an administrator who moved on to book
  * time has no use for a request every three seconds, and the endpoint is not
  * free - it reads a mutex-guarded buffer.
+ *
+ * And only while its tab is the one being looked at, as for the other two things
+ * that ask in the background. At INFO every poll is a line in the buffer it
+ * shows, so a log screen left in a hidden tab overnight wrote one every few
+ * seconds into five thousand, and by morning had pushed out the lines somebody
+ * would have come to read. Looking again asks for what was missed in one go.
  */
 function logViewerActive() {
   const card = $('#log-card');
@@ -12313,7 +12872,8 @@ function logViewerActive() {
   // The sign-in screen being up means there is no session to poll with. Without
   // this the poller keeps asking through a password change - which ends every
   // session - and paints the screen with authentication failures.
-  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden;
+  return can('settings:manage') && !$('#view-admin').hidden && $('#login-screen').hidden
+    && !document.hidden;
 }
 
 function setLogStatus(text) {
@@ -12321,13 +12881,52 @@ function setLogStatus(text) {
   if (status) status.textContent = text;
 }
 
-async function pollLog() {
+/**
+ * What a page of the log has to admit about itself: where the output stops
+ * being one unbroken run of lines. Empty when it is one.
+ *
+ * The three are not alternatives, which is why this is not a chain of else. A
+ * viewer that was paused, or sat in a tab the browser put to sleep, comes back
+ * to a process started while it was away and follows on into a log that has
+ * been written for hours: it has begun again *and* its first lines have left
+ * the buffer *and* more are left than a page holds. Said one at a time, a
+ * restart was announced over a page that began three hundred lines in.
+ */
+function logGaps(page) {
+  const said = [];
+
+  if (page.restarted) {
+    // The lines above were another process's. The output is one column of
+    // lines and would otherwise run the old log into the new one as though
+    // nothing had happened between them.
+    said.push(t('log.restarted',
+      'The application has started again. What follows is the log of the new process.'));
+  }
+
+  if (page.dropped > 0) {
+    said.push(t('log.dropped',
+      'Older lines have been discarded from the buffer and cannot be recovered.'));
+  }
+
+  if (page.skipped > 0) {
+    // More arrived than one page holds - after a pause, or on a busy
+    // installation - and the newest were shown.
+    said.push(t('log.skipped',
+      'More lines arrived than one page holds, so {0} were passed over to show the newest.')
+      .replace('{0}', String(page.skipped)));
+  }
+
+  return said.join(' ');
+}
+
+async function pollLog({ background = false } = {}) {
   if (!logViewerActive() || logView.polling) return;
 
   logView.polling = true;
 
   try {
     const query = new URLSearchParams({ since: String(logView.since), limit: '500' });
+    if (logView.epoch) query.set('epoch', logView.epoch);
 
     const levels = selectedLogLevels();
     // Every level ticked is the same request as none, and sending none keeps
@@ -12339,7 +12938,7 @@ async function pollLog() {
     const search = $('#log-search').value.trim();
     if (search) query.set('search', search);
 
-    const page = await api(`/admin/logs?${query}`);
+    const page = await api(`/admin/logs?${query}`, { background });
 
     if (logView.levels === null) buildLogLevelFilters(page.levels ?? []);
 
@@ -12350,22 +12949,15 @@ async function pollLog() {
     }
 
     logView.since = page.lastSeq ?? logView.since;
+    logView.epoch = page.epoch ?? logView.epoch;
 
     appendLogLines(page.records ?? []);
 
-    const warning = $('#log-warning');
-    if (page.dropped > 0) {
-      warning.textContent = t('log.dropped',
-        'Older lines have been discarded from the buffer and cannot be recovered.');
-      warning.hidden = false;
-    } else if (page.skipped > 0) {
-      // More arrived than one page holds - after a pause, or on a busy
-      // installation - and the newest were shown. The ones before them were
-      // passed over, which is a gap this output would otherwise present as
-      // continuity.
-      warning.textContent = t('log.skipped',
-        'More lines arrived than one page holds, so {0} were passed over to show the newest.')
-        .replace('{0}', String(page.skipped));
+    const gaps = logGaps(page);
+    if (gaps) {
+      const warning = $('#log-warning');
+
+      warning.textContent = gaps;
       warning.hidden = false;
     }
 
@@ -12426,11 +13018,11 @@ const LOG_LEVELS_BY_DETAIL = ['DEBUG', 'INFO', 'NOTICE', 'WARN', 'ERROR', 'FATAL
  * at INFO look like a filter that is broken rather than one that is working
  * exactly as intended and has nothing to show.
  *
- * The level itself is on the logging card, and it applies at the next start,
- * because the framework changes a logger's level by writing a field every
- * request goroutine reads without synchronisation. So this is a sentence rather
- * than a button: what somebody has to do next is two screens and a restart away,
- * and being told that beats waiting for lines that are not coming.
+ * The level itself is set on the logging card, and that card is the one place
+ * that says when a saved level applies - this one went on saying "at the next
+ * start" after that had stopped being true, beside a card saying "at once".
+ * So this is a sentence rather than a button, and it stops at naming the card:
+ * being told where the level is beats waiting for lines that are not coming.
  */
 function warnAboutLevelsTheProcessDoesNotWrite() {
   const warning = $('#log-level-warning');
@@ -12450,7 +13042,7 @@ function warnAboutLevelsTheProcessDoesNotWrite() {
   warning.textContent = quieter.length
     ? t('log.levelTooQuiet',
       'This installation is writing {0} and above, so {1} will stay empty. '
-      + 'Change the log level under Logging, metrics and tracing; it applies at the next start.')
+      + 'The log level is set under "Logging, metrics and tracing" above.')
       .replace('{0}', logView.runningLevel)
       .replace('{1}', quieter.join(', '))
     : '';
@@ -12515,16 +13107,34 @@ function atLogBottom(output) {
   return output.scrollHeight - output.scrollTop - output.clientHeight < 40;
 }
 
+/**
+ * When a log line was written: the time to the second, and the day as well
+ * whenever it was not today.
+ *
+ * In the account's own zone, like every other moment on this screen - see
+ * fmtMoment. It was the browser's, so on a device set to another zone the log
+ * and the token list beside it gave the same minute two different times.
+ *
+ * The day because the buffer outlives it. It holds the last five thousand
+ * lines, and on a quiet installation - or one logging at WARN, as the manual
+ * asks of one with a schedule - those reach back days, so "03:00:01 ERROR"
+ * could not be told from this morning's.
+ */
 function formatLogTime(iso) {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return '';
 
-  // The viewer's own zone, which is the one they are comparing against a
-  // clock on the wall while working out what happened when. The reader's
-  // language for the rest, like every other figure on screen - it decides
-  // nothing at all while hour12 is off, and leaving it to the browser was one
-  // more place for the two to disagree later.
-  return at.toLocaleTimeString(activeLocale(), { hour12: false });
+  const timeZone = me.user?.effectiveTimezone || undefined;
+  const dayOf = (moment) => new Intl.DateTimeFormat('en-CA', { timeZone }).format(moment);
+
+  return new Intl.DateTimeFormat(activeLocale(), {
+    ...(dayOf(at) === dayOf(new Date()) ? {} : { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone,
+  }).format(at);
 }
 
 // -------------------------------------------------------- maintenance mode
@@ -13459,6 +14069,8 @@ function wireForms() {
   // One row, because the total covers the reader's own hours and nobody else's.
   // The column used to name the person, which is now always the same person.
   function renderReport(report) {
+    evaluatedPeriod.report = { from: report.from, to: report.to };
+
     const rows = (report.entries ?? []).map((entry) => el('tr', {},
       el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
       el('td', { class: 'num', text: fmtNumber(entry.hours) }),
@@ -13498,6 +14110,8 @@ function wireForms() {
   });
 
   function renderOvertime(balance) {
+    evaluatedPeriod.overtime = { from: balance.from, to: balance.to };
+
     const rows = (balance.days ?? []).map((d) => el('tr', {},
       el('td', { text: fmtDate(d.date) }),
       el('td', { class: 'num', text: fmtHours(d.booked) }),
@@ -13602,6 +14216,7 @@ async function init() {
   // the user must still be able to sign in rather than face a form whose
   // submit handler was never attached, which would silently reload the page.
   $('#form-login').addEventListener('submit', submitLogin);
+  wireTicketSignIn();
 
   // Here rather than with the rest of the wiring below, so the sign-in form has
   // its reveal before anything that could fail has been tried. It also registers
@@ -13654,8 +14269,10 @@ async function init() {
   applyLanguage(activeLanguage());
 
   // Before the sign-in screen is shown, so its passkey button appears with it
-  // rather than popping in afterwards.
+  // rather than popping in afterwards. The ticket's button likewise, and the
+  // answer decides whether a ticket is tried at all below.
   await loadPasskeySupport();
+  await loadTicketSupport();
   await loadMaintenance();
 
   try {
@@ -13728,6 +14345,15 @@ async function init() {
     saySoAfterTheReload();
   } catch (err) {
     afterAFailedFirstLoad(err);
+
+    // Then the ticket, where the installation offers one and this tab has not
+    // been told otherwise - after the form is up, so a browser without a ticket
+    // is simply left looking at it. Only where the failure put the form up: a
+    // load that failed behind a session that was accepted keeps its screen.
+    if (!$('#login-screen').hidden && ticketsOffered && !handedToASession
+      && mayTryTheTicketUnasked()) {
+      await signInWithTicket({ quietly: true });
+    }
   }
 }
 
@@ -13759,6 +14385,14 @@ function afterAFailedFirstLoad(err) {
   // one. Unless somebody signed in while this was running, which showLogin
   // decides - it is the same question wherever it is asked from.
   showLogin();
+
+  // And said, where what failed was not the session refused. The server answers
+  // a session it could not check - a database that did not answer - as a
+  // failure, keeping its cookie for when the database is back, and the form on
+  // its own reads as the session having ended.
+  if (err?.status !== 401 && !$('#login-screen').hidden) {
+    toastFailure(err, t('msg.loadFailed', 'Could not load everything'));
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

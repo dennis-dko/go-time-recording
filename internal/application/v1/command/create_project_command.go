@@ -14,9 +14,15 @@ type CreateProjectCommand struct {
 	EndDate     *time.Time
 	Status      string
 
-	// OwnerID makes the project private to that user, where it serves as a
-	// personal category. nil creates a shared project.
+	// OwnerID is whose the project is. nil only where authentication is switched
+	// off and there is nobody to record.
 	OwnerID *uint
+
+	// Today is the creator's own date, which a project given no start begins on.
+	// The caller reads it in the creator's zone, because only the caller knows
+	// that zone: the server's clock put a project created in the evening west of
+	// UTC on the next day.
+	Today time.Time
 }
 
 // CreateProjectCommandResult command to get create result of new project

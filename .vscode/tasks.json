@@ -62,11 +62,15 @@
     {
       // The race detector needs cgo, and this machine has CGO_ENABLED=0 with
       // no gcc on PATH - so it does not run here at all, and this is the
-      // fallback that does. Three details, each found by the command failing
+      // fallback that does. Four details, each found by the command failing
       // without it: MSYS_NO_PATHCONV stops Git Bash rewriting -w /app into a
       // Windows path, golang:1.27 matches go.mod rather than drifting with
-      // :latest, and -buildvcs=false is needed because the mounted .git
-      // belongs to another user inside the container. About ten minutes.
+      // :latest, -buildvcs=false is needed because the mounted .git belongs to
+      // another user inside the container, and GOTOOLCHAIN=auto fetches the
+      // patch release go.mod asks for, which the minor tag can lag behind -
+      // without it the image refuses the module and tests nothing. It is the
+      // command CLAUDE.md gives, and test/workspace_test.go holds the two
+      // together. About ten minutes.
       //
       // Git Bash by full path, not "bash.exe": the bash on this machine's
       // Windows PATH is C:\WINDOWS\system32\bash.exe, which is WSL. Both of
@@ -81,7 +85,7 @@
       // daemon wants. ${workspaceFolder} would not do - VS Code substitutes it
       // as c:\Users\..., which is the Windows spelling this whole line exists to
       // avoid.
-      "command": "MSYS_NO_PATHCONV=1 docker run --rm -v \"$(pwd)\":/app -w /app -e GOFLAGS=-buildvcs=false golang:1.27 go test -race ./...",
+      "command": "MSYS_NO_PATHCONV=1 docker run --rm -v \"$(pwd)\":/app -w /app -e GOFLAGS=-buildvcs=false -e GOTOOLCHAIN=auto golang:1.27 go test -race ./...",
       "options": {
         // Windows: Git Bash at its default install location. On Linux or macOS
         // this line is the one thing to change - "/bin/bash" - and the command

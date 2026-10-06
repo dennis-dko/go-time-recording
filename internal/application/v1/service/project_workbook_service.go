@@ -258,10 +258,14 @@ func projectCells(language string, row spreadsheet.ProjectRow) []string {
 // by name and updates it, so re-importing finishes the job rather than doubling it.
 // The count of what was written is returned either way, so nobody has to guess
 // where it stopped.
+//
+// today is the actor's own date, read in their zone, which a row with an empty
+// start begins on; see CreateProjectCommand.Today.
 func (s *ProjectWorkbookService) ApplyProjects(
 	ctx context.Context,
 	plan *ProjectPlan,
 	actor *model.User,
+	today time.Time,
 ) (int, error) {
 	if actor == nil {
 		return 0, apperror.InvalidFields("actor")
@@ -278,7 +282,7 @@ func (s *ProjectWorkbookService) ApplyProjects(
 	written := 0
 
 	for _, planned := range plan.writable {
-		if err := s.write(ctx, planned, actor); err != nil {
+		if err := s.write(ctx, planned, actor, today); err != nil {
 			return written, apperror.Conflictf("row %d: %v; %d rows were written before it",
 				planned.row.Number, err, written).
 				WithCode("importStoppedAtRow", planned.row.Number, written)
@@ -294,6 +298,7 @@ func (s *ProjectWorkbookService) write(
 	ctx context.Context,
 	planned plannedProject,
 	actor *model.User,
+	today time.Time,
 ) error {
 	row := planned.row
 
@@ -334,7 +339,7 @@ func (s *ProjectWorkbookService) write(
 
 	_, err := s.projects.CreateProject(ctx, command.CreateProjectCommand{
 		Name: row.Name, Description: description, StartDate: row.StartDate,
-		EndDate: end, Status: row.Status, OwnerID: &owner,
+		EndDate: end, Status: row.Status, OwnerID: &owner, Today: today,
 	})
 
 	return err

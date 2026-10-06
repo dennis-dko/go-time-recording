@@ -326,3 +326,22 @@ func TestARoleChangeReachesTheStreamOfTheAccountItWasMadeTo(t *testing.T) {
 		}
 	}
 }
+
+// With authentication switched off the stream is open as everything else is.
+//
+// The start says every request has full access then, and every handler is
+// given a principal holding every right - but the stream asked for a session,
+// which an installation without authentication never hands out, so no screen
+// of one was ever told a restart or an update was coming.
+func TestWithAuthenticationOffTheStreamIsOpenToo(t *testing.T) {
+	t.Parallel()
+
+	a := start(t, "AUTH_ENABLED=false")
+
+	_, status, done := openFrames(t, a.newClient())
+	defer done()
+
+	if status != http.StatusOK {
+		t.Errorf("opening the stream on an installation without authentication answered %d", status)
+	}
+}

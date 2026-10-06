@@ -470,6 +470,13 @@
                expose WebAuthn over HTTPS or on localhost, and a button that cannot
                work is worse than no button. -->
           <button type="button" class="secondary" id="login-passkey" hidden data-i18n="passkey.signIn">Sign in with a passkey</button>
+          <!-- Hidden until the server says a ticket can succeed here: a keytab
+               was read and a directory is configured. The page tries one by
+               itself when it opens; this is the way to try again. -->
+          <button type="button" class="secondary" id="login-kerberos" hidden data-i18n="kerberos.signIn">Sign in with single sign-on</button>
+          <!-- Only while the form asks for the code after a ticket, which puts
+               the address and the password away. -->
+          <button type="button" class="secondary" id="login-kerberos-leave" hidden data-i18n="kerberos.usePassword">Use a password instead</button>
         </div>
       </div>
     </form>
@@ -1419,7 +1426,7 @@
               <input type="text" name="syncSchedule" maxlength="120" placeholder="0 4 * * *" spellcheck="false">
             </label>
           </div>
-          <p class="muted" data-i18n="sync.scheduleHint">Empty by default, and worth leaving empty until a preview has been read: an automatic run deletes without anybody looking. Applied at the next start — the scheduler is built while the application starts.</p>
+          <p class="muted" data-i18n="sync.scheduleHint">Empty by default, and worth leaving empty until a preview has been read: an automatic run deletes without anybody looking. Applied at the next start — the scheduler is built while the application starts. It runs on the server's clock, which is UTC in the container this application ships, and not in the instance timezone.</p>
           <p class="muted" id="sync-schedule-active"></p>
           <button type="submit" data-i18n="action.save">Save</button>
         </form>
@@ -1452,7 +1459,7 @@
            what you scroll to when something already went wrong. -->
       <div class="card" id="log-card">
         <h2 data-i18n="log.title">Live log</h2>
-        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what the log level admits reaches here, so ticking a level below it shows nothing — the level is under "Logging, metrics and tracing" above, and takes effect at the next start. Held in memory only: the view is empty after a restart, and this is no substitute for collecting logs.</p>
+        <p class="muted" data-i18n="log.hint">What this process has written, newest at the bottom. Only what the log level admits reaches here, so ticking a level below it shows nothing — the level is set under "Logging, metrics and tracing" above. Held in memory only: what was captured is gone after a restart, and this is no substitute for collecting logs.</p>
 
         <div class="log-controls">
           <div class="log-levels" id="log-levels" role="group" aria-label="Log levels"></div>
