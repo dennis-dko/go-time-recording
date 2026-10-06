@@ -670,7 +670,7 @@ yourself; then nothing is printed and a provisioning script can drive the page.
 
 Two things about an exposed installer. `GET /install/state` needs no token and
 says the instance name and the build version; whatever database prefill the
-environment supplied — name, host, port, user, SSL mode — it adds only for a
+environment supplied — dialect, name, host, port, user, SSL mode — it adds only for a
 request that carries the token, and the password for nobody. And it stands there
 until somebody completes it, so do not leave the port open to the world while it
 is sitting there.

@@ -49,7 +49,7 @@ and drive the screen unattended.
 The token guards the decision, and what the environment already said about it.
 `GET /install/state` needs no token for the instance name and the build version,
 which the page shows before anybody has typed anything. Whatever database prefill
-the environment supplied — name, host, port, user, SSL mode — is in the answer
+the environment supplied — dialect, name, host, port, user, SSL mode — is in the answer
 only for a request that carries the token, and the password is in it for nobody.
 An installer left reachable from the internet is still worth closing rather than
 merely not answering: it stands there until somebody completes it.
