@@ -2311,7 +2311,10 @@ a.tab:hover {
 
 @media (max-width: 640px) {
   .log-controls { align-items: stretch; flex-direction: column; }
-  .log-delay, .log-search { width: auto; }
+  /* none, because a flex basis is measured along the line, and in a column that
+     is the height: the search box's 200px of width became 200px of height, most
+     of it empty between "Search" and the refresh interval. */
+  .log-delay, .log-search { flex: none; width: auto; }
   /* The timestamp is the first thing worth losing when there is no room. */
   .log-time { display: none; }
 }

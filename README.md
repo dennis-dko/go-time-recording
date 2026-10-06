@@ -46,11 +46,13 @@ thing standing between an exposed port and that decision is a value only somebod
 who can already see the process can read. Set `SETUP_TOKEN` to choose it yourself
 and drive the screen unattended.
 
-The token guards the decision, not the page. `GET /install/state` needs no token
-and answers with the instance name, the build version and whatever database
-prefill the environment supplied — dialect, name, host, port, user, SSL mode. No
-password is in it, but the intended topology is, so an installer left reachable
-from the internet is worth closing rather than merely not answering.
+The token guards the decision, and what the environment already said about it.
+`GET /install/state` needs no token for the instance name and the build version,
+which the page shows before anybody has typed anything. Whatever database prefill
+the environment supplied — dialect, name, host, port, user, SSL mode — is in the answer
+only for a request that carries the token, and the password is in it for nobody.
+An installer left reachable from the internet is still worth closing rather than
+merely not answering: it stands there until somebody completes it.
 
 Setting `DB_DIALECT` skips the installer entirely, which is how a container
 deployment configures itself; see [Deployment](#deployment). `task dev` sets it

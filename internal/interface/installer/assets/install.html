@@ -513,6 +513,50 @@
 
   $('dialect').addEventListener('change', syncFields);
 
+  // Whether somebody has started answering. From then on the form is theirs:
+  // what the environment supplied arrives only once the token is in, which can
+  // be after they have typed a host of their own.
+  let answering = false;
+
+  $('form').addEventListener('input', () => { answering = true; });
+  $('form').addEventListener('change', () => { answering = true; });
+
+  /**
+   * Fills in what the environment already supplies, so an operator who set some
+   * of it in a compose file does not retype it here.
+   *
+   * Asked with the token, and only once there is one. The server names the
+   * database's host, its name and the account that opens it to nobody else -
+   * they used to come with the page's own label, to anybody who could reach the
+   * port. A wrong token is answered like no token, with the label alone, so
+   * this stays quiet about it; Test and Save are where a wrong one is said.
+   */
+  async function prefill() {
+    const token = $('token').value.trim();
+    if (!token || answering) return;
+
+    try {
+      const res = await fetch('/install/state', {
+        cache: 'no-store',
+        headers: { 'X-Setup-Token': token },
+      });
+      const state = await res.json();
+
+      if (!state.datasource || answering) return;
+
+      for (const [key, value] of Object.entries(state.datasource)) {
+        const field = $(key);
+        if (field && value) field.value = value;
+      }
+
+      syncFields();
+    } catch {
+      // Nothing is lost: the form is empty, as it is with no environment at all.
+    }
+  }
+
+  $('token').addEventListener('change', prefill);
+
   $('test').addEventListener('click', async () => {
     if (working) return;
 
@@ -649,19 +693,13 @@
       }
 
       if (state.version) $('footer').textContent = state.version;
-
-      // Pre-filling what the environment already supplies means an operator who
-      // set some of it in a compose file does not retype it here.
-      if (state.datasource) {
-        for (const [key, value] of Object.entries(state.datasource)) {
-          const field = $(key);
-          if (field && value) field.value = value;
-        }
-        syncFields();
-      }
     } catch {
       // The page is still usable; only the labelling is missing.
     }
+
+    // The token came with the link, so what the environment supplied can be
+    // asked for straight away.
+    await prefill();
   })();
 </script>
 </body>
