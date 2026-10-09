@@ -1,9 +1,11 @@
 package test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -60,17 +62,18 @@ var fileSuffix = []string{
 	".env", ".example", ".sh", ".conf", ".template", ".ldif", ".in", ".txt",
 }
 
-// ignoredPath is the one file the document names that is not in the tree, and
-// that is the point of naming it: `deploy/.env` holds real passwords and is
-// git-ignored, so a clone that has one has been configured and a clone that has
-// not is correct.
+// ignoredPath lists the files the document names that are not in the tree, and
+// that is the point of naming them: `deploy/.env` and `cmd/configs/datasource.json`
+// hold real passwords and are git-ignored, so a clone that has them has been
+// configured and a clone that has not is correct.
 //
 // Listed here rather than resolved with `git check-ignore`, for two reasons. It
 // keeps the case free of a dependency on git being on the PATH, and it makes the
 // next addition a decision somebody writes down instead of a rule that quietly
 // widens.
 var ignoredPath = map[string]bool{
-	"deploy/.env": true,
+	"deploy/.env":             true,
+	"configs/datasource.json": true,
 }
 
 // TestCLAUDEmdNamesOnlyFilesThatAreThere checks every file path the document
@@ -94,6 +97,23 @@ func TestCLAUDEmdNamesOnlyFilesThatAreThere(t *testing.T) {
 			t.Errorf("CLAUDE.md names %s and the tree has no such file. Either the "+
 				"file moved and the sentence naming it did not, or the sentence is "+
 				"describing something that no longer exists", token)
+		}
+	}
+
+	tree := treeFiles(t, root)
+
+	for _, token := range shortenedPaths(doc, tops) {
+		if ignoredPath[token] {
+			continue
+		}
+
+		checked++
+
+		if !slices.ContainsFunc(tree, func(file string) bool { return strings.HasSuffix("/"+file, "/"+token) }) {
+			t.Errorf("CLAUDE.md names %s and no file in the tree ends in it. A directory "+
+				"it was under may have been renamed, which takes it out of the check "+
+				"above, since that one knows this repository's paths by their first "+
+				"directory", token)
 		}
 	}
 
@@ -262,6 +282,83 @@ func namedPaths(doc string, tops map[string]bool) []string {
 		seen[token] = true
 
 		out = append(out, token)
+	}
+
+	return out
+}
+
+// shortenedPaths returns the file paths CLAUDE.md names that do not start at
+// one of the tree's own top-level directories: those it names from somewhere
+// below the root, as `sqldb/purge.go` or `rest/csrf.go`, and those whose first
+// directory is gone.
+//
+// namedPaths cannot see either kind, because it recognises this repository's
+// paths by their first directory. So renaming a directory took every sentence
+// naming a file in it out of the check, and the check stayed green - found by
+// renaming docs/ to doc/ while the document still named docs/audit-ledger.md.
+// What is not a path here is what namedPaths' first directory kept out: an
+// absolute or home path, a URL, a glob.
+func shortenedPaths(doc string, tops map[string]bool) []string {
+	var out []string
+
+	seen := map[string]bool{}
+
+	for _, token := range backtickedPerLine(doc) {
+		if strings.ContainsAny(token, "<> *?~") || !strings.Contains(token, "/") || strings.HasPrefix(token, "/") {
+			continue
+		}
+
+		if colon := strings.LastIndex(token, ":"); colon > 0 {
+			if _, err := strconv.Atoi(token[colon+1:]); err == nil {
+				token = token[:colon]
+			}
+		}
+
+		if seen[token] || strings.Contains(token, ":") || tops[strings.SplitN(token, "/", 2)[0]] || !looksLikeFile(token) {
+			continue
+		}
+
+		seen[token] = true
+
+		out = append(out, token)
+	}
+
+	return out
+}
+
+// treeFiles returns every file under root as a slash path from root, leaving
+// out the directories that hold nothing the document could mean: git's own,
+// and those a build or a test run leaves behind.
+func treeFiles(t *testing.T, root string) []string {
+	t.Helper()
+
+	var out []string
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", ".tmp", ".gotmp", "bin":
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+
+		out = append(out, filepath.ToSlash(rel))
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the tree: %v", err)
 	}
 
 	return out
