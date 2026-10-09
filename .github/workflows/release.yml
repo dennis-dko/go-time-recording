@@ -293,6 +293,28 @@ jobs:
 
           build darwin  arm64
 
+      # An asset larger than the versions already installed will download is one
+      # none of them can take: the update card offers it, every install is turned
+      # away, and a running version cannot be given a larger bound but by hand.
+      # So it stops here, before anything is published. largest_installable is
+      # maxDownload in internal/infrastructure/selfupdate, the bound every version
+      # that updates itself has carried, and a test there holds it no larger.
+      - name: Refuse an asset no installed version can download
+        run: |
+          set -euo pipefail
+
+          largest_installable=104857600
+
+          for asset in dist/*; do
+            size=$(stat -c %s "${asset}")
+            echo "${asset}: ${size} bytes"
+
+            if [ "${size}" -gt "${largest_installable}" ]; then
+              echo "::error::${asset} is ${size} bytes, and installed versions download nothing over ${largest_installable}"
+              exit 1
+            fi
+          done
+
       - name: Measure what will be published
         run: |
           set -euo pipefail

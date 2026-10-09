@@ -37,7 +37,6 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-21 | A failed handler's line is raw JSON. Show it summarised as its error? |
 | D-new-22 | When capturing the output fails, the log handler still gets the sink - available and empty for ever - and its "not installed" sentence is unreachable. Hand it nothing then? |
 | D-new-23 | A guard that fails when the GoFr requirement moves, until the forty-odd statements about the framework have been read again? |
-| D-new-24 | A release-workflow step refusing an asset larger than installed versions accept? |
 | D-new-25 | A record of deletions that no log level can switch off? |
 | D-new-27 | In a container a restart is an exit, because re-executing used to inherit the environment; that reason is gone. Replace the process there too? |
 | D-new-28 | A panic during an install leaves the "installing" banner up, because the retraction is on the error path. Retract it in a deferred call? |

@@ -257,7 +257,9 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 // worth keeping honest, because this bound is compiled into the version that is
 // running: the day a release passes it, every installation already out there
 // refuses that release, and none of them can be given a larger bound except by
-// hand. It is the number to revisit long before it is the number that breaks.
+// hand. It is the number to revisit long before it is the number that breaks -
+// and the release workflow refuses an asset past it, so a release that outgrows
+// it fails before it is published rather than at every installation after.
 const maxDownload = 100 << 20
 
 // outgrown is the refusal of a release larger than this version downloads.
