@@ -12550,25 +12550,53 @@ async function registerPasskey(name) {
 
   if (!created) throw new Error(t('passkey.cancelled', 'The passkey was not created.'));
 
-  return api('/me/passkeys/register', {
-    method: 'PUT',
-    body: JSON.stringify({
-      token: started.token,
-      name,
-      credential: {
-        id: created.id,
-        rawId: bytesToB64url(created.rawId),
-        type: created.type,
-        response: {
-          clientDataJSON: bytesToB64url(created.response.clientDataJSON),
-          attestationObject: bytesToB64url(created.response.attestationObject),
+  try {
+    return await api('/me/passkeys/register', {
+      method: 'PUT',
+      body: JSON.stringify({
+        token: started.token,
+        name,
+        credential: {
+          id: created.id,
+          rawId: bytesToB64url(created.rawId),
+          type: created.type,
+          response: {
+            clientDataJSON: bytesToB64url(created.response.clientDataJSON),
+            attestationObject: bytesToB64url(created.response.attestationObject),
+          },
+          // What the device is: a phone, a security key, the laptop itself. The
+          // server keeps it so the next prompt can ask for the right thing.
+          transports: created.response.getTransports?.() ?? [],
         },
-        // What the device is: a phone, a security key, the laptop itself. The
-        // server keeps it so the next prompt can ask for the right thing.
-        transports: created.response.getTransports?.() ?? [],
-      },
-    }),
-  });
+      }),
+    });
+  } catch (err) {
+    dropFromTheDevice(options, created, err);
+
+    throw err;
+  }
+}
+
+/**
+ * Tells the device that a passkey it has just made is one this installation
+ * does not hold, so that it can drop it.
+ *
+ * The device makes the passkey before the server has seen it, and a server that
+ * then refuses it - the attempt had run out, the check failed - left it on the
+ * device, offered at every sign-in and refused at every one. Only a refusal is
+ * said: a request that never arrived, or one the server failed on, may have
+ * stored the passkey after all, and one the server already holds is not unknown
+ * to it. Best effort, and nothing at all on a browser without the Signal API.
+ */
+function dropFromTheDevice(options, created, err) {
+  if (!err?.status || err.status >= 500 || err.refusal?.code === 'passkeyKnown') return;
+
+  if (typeof window.PublicKeyCredential?.signalUnknownCredential !== 'function') return;
+
+  PublicKeyCredential.signalUnknownCredential({
+    rpId: options.rp?.id || location.hostname,
+    credentialId: created.id,
+  }).catch(() => {});
 }
 
 /**
