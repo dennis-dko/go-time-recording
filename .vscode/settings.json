@@ -147,7 +147,7 @@
 
   // ------------------------------------------------------------------ lint
   // The same tool and the same version CI uses (.golangci-lint-version pins
-  // v2.13.1), so a warning here is a warning there. The build tags are not
+  // v2.14.0), so a warning here is a warning there. The build tags are not
   // repeated: .golangci.yml already sets integration, browser and firefox for
   // a bare `golangci-lint run`.
   //
