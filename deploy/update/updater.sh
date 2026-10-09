@@ -17,6 +17,10 @@
 #   request   written by the application, removed by this. Empty.
 #   running   written by this while it works, so a second press does nothing.
 #   result    written by this when it is over: "ok", "none" or "failed: ...".
+#   alive     written by this on every round, holding the seconds between
+#             rounds. The application offers its button only while this is
+#             fresh: the volume outlives this container, and a stopped updater
+#             would otherwise leave a button whose request nobody reads.
 #
 # The application reads `result` and shows it. It usually does not get to read a
 # successful one, because a successful update replaces the container that would
@@ -214,6 +218,10 @@ log "watching $REQUESTS for $SERVICE, every ${POLL}s"
 rm -f "$REQUESTS/running"
 
 while true; do
+    # The sign of life, rewritten rather than touched, so the round in it is
+    # there even if something removed the file in between.
+    printf '%s\n' "$POLL" > "$REQUESTS/alive"
+
     if [ -f "$REQUESTS/request" ]; then
         # Taken before the work starts, so a second press while this runs finds
         # no request to make and the marker saying why.
