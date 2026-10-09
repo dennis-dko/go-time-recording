@@ -189,6 +189,19 @@ func (r *UserRepository) GetByExternalID(_ context.Context, externalID string) (
 	return nil, apperror.NotFound("user", externalID)
 }
 
+// ForgetExternalIDs clears every recorded identifier under one lock, as the SQL
+// repository does in one statement.
+func (r *UserRepository) ForgetExternalIDs(_ context.Context) error {
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+
+	for _, user := range r.store.items {
+		user.ExternalID = ""
+	}
+
+	return nil
+}
+
 func (r *UserRepository) GetAll(_ context.Context) ([]*model.User, error) {
 	users := r.store.all()
 	for _, user := range users {

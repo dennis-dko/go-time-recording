@@ -502,3 +502,59 @@ func TestAnExternalAdministratorStillSignsIn(t *testing.T) {
 		t.Errorf("a directory-backed administrator was refused: %v", err)
 	}
 }
+
+// Changing the attribute the directory's identifier is read from forgets every
+// identifier recorded under the old one, so a run after the change finds the
+// people it found before.
+//
+// The two attributes give the same people different values - an entryUUID is not
+// an objectGUID - and kept, every recorded one read as somebody who had left: the
+// next run proposed each account whose owner had not signed in since for
+// deletion, with their hours, and only the ratio guard stood in the way.
+// Forgotten, each account is matched by its address again and records the new
+// identifier the next time its owner signs in.
+func TestChangingTheIdentifierAttributeKeepsEveryAccountFound(t *testing.T) {
+	f := newSyncFixture(t, 1.0)
+	settings := service.NewSettingsService(newStubSettings(), f.roleRepo, f.userRepo, "Test")
+
+	config := model.DefaultLDAPConfig()
+	if err := settings.SaveLDAP(context.Background(), config); err != nil {
+		t.Fatalf("store the directory settings: %v", err)
+	}
+
+	staying := externalUserWithID(t, f.fixture, "worker@example.com", "uuid-recorded")
+
+	// Saved again unchanged, which the card does whenever anything else on it
+	// changes.
+	if err := settings.SaveLDAP(context.Background(), config); err != nil {
+		t.Fatalf("store the same settings again: %v", err)
+	}
+
+	kept, err := f.userRepo.GetByID(context.Background(), staying)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+
+	if kept.ExternalID != "uuid-recorded" {
+		t.Errorf("saving the same attribute again forgot the identifier, %q is left", kept.ExternalID)
+	}
+
+	config.IDAttribute = "objectGUID"
+	if err := settings.SaveLDAP(context.Background(), config); err != nil {
+		t.Fatalf("change the identifier attribute: %v", err)
+	}
+
+	f.directory.users = []service.ExternalUser{
+		{ID: "guid-under-the-new-attribute", Email: "worker@example.com"},
+	}
+
+	report, err := f.sync.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if len(report.Deleted) != 0 || len(report.Candidates) != 0 {
+		t.Fatalf("the run after the change deleted %+v and proposed %+v, for somebody still in the directory",
+			report.Deleted, report.Candidates)
+	}
+}

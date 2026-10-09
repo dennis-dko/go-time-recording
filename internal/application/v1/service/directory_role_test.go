@@ -132,7 +132,7 @@ func TestTheDirectorysDefaultRoleMayNotAdminister(t *testing.T) {
 	f := newFixture(t)
 	customRole(t, f, "keyholder", model.PermTimesheetReadOwn, model.PermSettingsManage)
 
-	settings := service.NewSettingsService(newStubSettings(), f.roleRepo, "Test")
+	settings := service.NewSettingsService(newStubSettings(), f.roleRepo, f.userRepo, "Test")
 
 	config := model.DefaultLDAPConfig()
 	config.DefaultRole = "keyholder"

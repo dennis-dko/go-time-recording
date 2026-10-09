@@ -556,7 +556,7 @@ func main() {
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
 	passkeys := appservice.NewPasskeyService(passkeyRepo, userRepo)
-	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, cfg.AppName).
+	settingsService := appservice.NewSettingsService(settingsRepo, roleRepo, userRepo, cfg.AppName).
 		WithSecrets(secrets)
 
 	// The administered directory schedule wins over the configuration file, the

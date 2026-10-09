@@ -21,6 +21,10 @@ type SettingsService struct {
 	settings repository.SettingsRepository
 	roles    repository.RoleRepository
 
+	// users is here for one write: the identifiers the directory left on the
+	// accounts, forgotten when the attribute they were read from changes.
+	users repository.UserRepository
+
 	// appName is APP_NAME from the environment, used as the instance title
 	// until an administrator sets one under Settings.
 	appName string
@@ -50,11 +54,12 @@ func (s *SettingsService) WithSecrets(secrets *security.Sealer) *SettingsService
 func NewSettingsService(
 	settings repository.SettingsRepository,
 	roles repository.RoleRepository,
+	users repository.UserRepository,
 	appName string,
 ) *SettingsService {
 	empty, _ := security.NewSealer("")
 
-	return &SettingsService{settings: settings, roles: roles, appName: appName, secrets: empty}
+	return &SettingsService{settings: settings, roles: roles, users: users, appName: appName, secrets: empty}
 }
 
 // Branding returns the instance labelling, with defaults filled in.
@@ -472,6 +477,28 @@ func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig)
 	raw, err := json.Marshal(config)
 	if err != nil {
 		return apperror.Internal(err)
+	}
+
+	// The identifiers already recorded were read from the attribute stored now,
+	// and another attribute gives the same people other values - an entryUUID is
+	// not an objectGUID. Kept, every account read to a run as somebody who had
+	// left, and was proposed for deletion with their hours. Forgotten, each is
+	// matched by its address until its owner signs in again.
+	//
+	// Any change of the name counts, case included, because the directory client
+	// matches the name exactly. And before storing rather than after: a store that
+	// fails then costs identifiers the next sign-ins record again, where the other
+	// order could leave the new attribute stored over the old identifiers, with
+	// nothing left that would notice the change.
+	stored, err := s.LDAP(ctx)
+	if err != nil {
+		return err
+	}
+
+	if stored.IDAttribute != config.IDAttribute {
+		if err := s.users.ForgetExternalIDs(ctx); err != nil {
+			return err
+		}
 	}
 
 	return s.settings.Set(ctx, model.SettingLDAPSettings, string(raw))
