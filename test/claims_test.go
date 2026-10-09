@@ -99,9 +99,10 @@ func TestCLAUDEmdNamesOnlyFilesThatAreThere(t *testing.T) {
 
 	// A path count that silently fell to zero would make this case pass while
 	// reading nothing, which is the failure a document check is most prone to.
-	// Twelve is what the document carries today once the one git-ignored path is
-	// set aside; the floor is below that rather than at it, so ordinary editing
-	// does not trip it and an extraction that has stopped working does.
+	// It named twelve paths when this was written, the one git-ignored path set
+	// aside, and twenty-eight once the logic-read ledger had moved out of it; the
+	// floor is below either rather than at one, so ordinary editing does not trip
+	// it and an extraction that has stopped working does.
 	if checked < 8 {
 		t.Fatalf("only %d file paths were found in CLAUDE.md; the extraction has "+
 			"stopped matching the document rather than the document having emptied",
@@ -173,6 +174,58 @@ func TestCLAUDEmdNamesOnlyTasksThatExist(t *testing.T) {
 	if len(seen) < 5 {
 		t.Fatalf("only %d task names were found in CLAUDE.md; the extraction has "+
 			"stopped matching the document", len(seen))
+	}
+}
+
+// TestTheLedgerNamesOnlyFilesThatAreThere checks the files the logic-read
+// ledger in docs/audit-ledger.md is about.
+//
+// A row's first column is where every walk over the ledger starts: CLAUDE.md
+// asks what has landed since the row's commit with git log over the path the
+// row names, and git answers a path it does not know with nothing - which is
+// what it answers for a file nothing has changed. So a file renamed, or named
+// from anywhere but the repository's root, drops out of the walk without a
+// word. The rows named their files from the layer down until 2026-10-09, and
+// for installer.go that empty answer stood where three commits had landed since
+// its last read. Every path a row names is a file from the root, then, and a
+// neighbour it names by its bare name - parse.go beside logsink.go - is beside it.
+func TestTheLedgerNamesOnlyFilesThatAreThere(t *testing.T) {
+	root := ".."
+	ledger := read(t, filepath.Join(root, "docs", "audit-ledger.md"))
+
+	rows := 0
+
+	for _, line := range strings.Split(ledger, "\n") {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+
+		rows++
+
+		first, _, _ := strings.Cut(strings.TrimPrefix(line, "|"), "|")
+		dir := ""
+
+		for i, m := range backticked.FindAllStringSubmatch(first, -1) {
+			path := filepath.Join(root, filepath.FromSlash(m[1]))
+			where := "from its root"
+
+			if i > 0 && !strings.Contains(m[1], "/") {
+				path = filepath.Join(dir, m[1])
+				where = "beside the row's first file"
+			}
+
+			if i == 0 {
+				dir = filepath.Dir(path)
+			}
+
+			if _, err := os.Stat(path); err != nil {
+				t.Errorf("the ledger has a row for %s, and the tree has no such file %s", m[1], where)
+			}
+		}
+	}
+
+	if rows < 5 {
+		t.Fatalf("only %d rows were found in the ledger; the extraction has stopped matching it", rows)
 	}
 }
 
