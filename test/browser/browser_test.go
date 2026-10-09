@@ -88,6 +88,14 @@ func launch(language string, more ...chromedp.ExecAllocatorOption) []chromedp.Ex
 		chromedp.NoSandbox,
 
 		chromedp.WSURLReadTimeout(browserStart),
+
+		// No name resolves but localhost, which is where every case finds the
+		// application; an IP literal needs no lookup and is not affected.
+		// Everything else a browser here looks up is Chrome's own business, a
+		// dozen names for each of the hundreds a run starts, and answering it
+		// inside the browser keeps all of it off the network - see
+		// TestTheBrowserAsksAboutNoNameButLocalhost for what was measured.
+		chromedp.Flag("host-resolver-rules", "MAP * ~NOTFOUND , EXCLUDE localhost"),
 	)
 
 	if path := os.Getenv("CHROME_PATH"); path != "" {
