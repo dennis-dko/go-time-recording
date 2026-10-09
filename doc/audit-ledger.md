@@ -1,10 +1,10 @@
 # The logic-read ledger
 
 The record kept by the logic read, step 5 of the Agentic Auditing Workflow in
-`CLAUDE.md`: the files only reading can check, what only reading catches in
-each, every read put to them - its commit, its date, its question and its
-verdict - and how far `app.js`'s own rotation has got. The rules for reading are
-in `CLAUDE.md`; this file is what they have produced.
+[`audit-method.md`](audit-method.md): the files only reading can check, what only
+reading catches in each, every read put to them - its commit, its date, its
+question and its verdict - and how far `app.js`'s own rotation has got. The rules
+for reading are in `audit-method.md`; this file is what they have produced.
 
 It is kept out of `CLAUDE.md` on purpose. That file is loaded into every session
 and every agent, and this record had grown to more than a third of it - a

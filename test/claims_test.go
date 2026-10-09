@@ -80,7 +80,7 @@ var ignoredPath = map[string]bool{
 // names against the tree.
 func TestCLAUDEmdNamesOnlyFilesThatAreThere(t *testing.T) {
 	root := ".."
-	doc := read(t, filepath.Join(root, "CLAUDE.md"))
+	doc := rules(t, root)
 
 	tops := childDirs(t, root)
 
@@ -94,7 +94,7 @@ func TestCLAUDEmdNamesOnlyFilesThatAreThere(t *testing.T) {
 		checked++
 
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(token))); err != nil {
-			t.Errorf("CLAUDE.md names %s and the tree has no such file. Either the "+
+			t.Errorf("CLAUDE.md or doc/audit-method.md names %s and the tree has no such file. Either the "+
 				"file moved and the sentence naming it did not, or the sentence is "+
 				"describing something that no longer exists", token)
 		}
@@ -110,7 +110,7 @@ func TestCLAUDEmdNamesOnlyFilesThatAreThere(t *testing.T) {
 		checked++
 
 		if !slices.ContainsFunc(tree, func(file string) bool { return strings.HasSuffix("/"+file, "/"+token) }) {
-			t.Errorf("CLAUDE.md names %s and no file in the tree ends in it. A directory "+
+			t.Errorf("CLAUDE.md or doc/audit-method.md names %s and no file in the tree ends in it. A directory "+
 				"it was under may have been renamed, which takes it out of the check "+
 				"above, since that one knows this repository's paths by their first "+
 				"directory", token)
@@ -139,7 +139,7 @@ func TestCLAUDEmdNamesOnlyFilesThatAreThere(t *testing.T) {
 // section is for.
 func TestCLAUDEmdNamesEveryPackageUnderInternal(t *testing.T) {
 	root := ".."
-	doc := read(t, filepath.Join(root, "CLAUDE.md"))
+	doc := rules(t, root)
 
 	for name := range childDirs(t, filepath.Join(root, "internal")) {
 		// The segment has to end where the name ends, so that internal/api is
@@ -160,7 +160,7 @@ func TestCLAUDEmdNamesEveryPackageUnderInternal(t *testing.T) {
 // reasonably assume they mistyped it rather than that the document is wrong.
 func TestCLAUDEmdNamesOnlyTasksThatExist(t *testing.T) {
 	root := ".."
-	doc := read(t, filepath.Join(root, "CLAUDE.md"))
+	doc := rules(t, root)
 	taskfile := read(t, filepath.Join(root, "Taskfile.yml"))
 
 	targets := map[string]bool{}
@@ -185,7 +185,7 @@ func TestCLAUDEmdNamesOnlyTasksThatExist(t *testing.T) {
 			seen[name] = true
 
 			if !targets[name] {
-				t.Errorf("CLAUDE.md tells somebody to run `task %s` and Taskfile.yml "+
+				t.Errorf("CLAUDE.md or doc/audit-method.md tells somebody to run `task %s` and Taskfile.yml "+
 					"has no such target", name)
 			}
 		}

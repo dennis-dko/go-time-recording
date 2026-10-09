@@ -88,7 +88,7 @@ func (p *page) waitGone(selector string) {
 // something the case had already put there and something else had removed.
 //
 // Three cases say what the banner should show and none of them settled this
-// first, which is the shape Section 2 of CLAUDE.md is about - one piece of
+// first, which is the shape doc/audit-method.md's audit step 4 is about - one piece of
 // reasoning needed in three places and written down in none. So it is one
 // function, and it forces the order rather than hoping for it: let the check that
 // is already running finish, stop the watch so no later tick repeats it, and
