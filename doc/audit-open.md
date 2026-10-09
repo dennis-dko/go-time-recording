@@ -47,7 +47,6 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-31 | Make an empty PostgreSQL password work by quoting what GoFr receives? It moves installations whose data sits in the account's own database. |
 | D-new-32 | Refuse to start, rather than warn, on a connection the driver reads differently from how it was typed? |
 | D-new-33 | Report the unquoted connection string to GoFr upstream? |
-| D-new-34 | Should a report's document name the project the report was filtered by? |
 | D-new-35 | A passkey the device created but the server refused stays on the device. Drop it through the Signal API? |
 | D-new-36 | A directory sign-in under way while the identifier attribute is changed can record an identifier read under the old attribute, and its owner is refused from then on, until the attribute is changed again. Closing the window means the settings service applying the directory configuration itself and forgetting the identifiers a second time after it - worth it, for milliseconds around a change made once? |
 | D-new-37 | The recover() in `spreadsheet.rowsOf` has no known panic left to catch: go.mod requires the upstream excelize commit that fixes GHSA-wcg2-648h-mhxq and the fifteen advisories of 2026-10-09. Keep it for the next one, given that record, or remove it as the test that watched it intended - a recover() with no reason left? Either way, go.mod moves from the pseudo-version to the first release that carries the fixes. |

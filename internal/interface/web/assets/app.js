@@ -11512,12 +11512,13 @@ function screenColours() {
 }
 
 /**
- * The period each evaluation on screen was worked out for, as its answer named it.
+ * The period each evaluation on screen was worked out for, as its answer named it,
+ * and for the report the projects it was asked about.
  *
  * Not the form's date boxes: they hold what the next evaluation will ask for. Read
  * off them, a document was headed with whatever somebody had typed since - April
  * over March's figures - and with nothing when the boxes were left empty and the
- * server chose the period itself.
+ * server chose the period itself. The report's select is the same kind of box.
  */
 const evaluatedPeriod = { report: null, overtime: null, statistics: null };
 
@@ -11526,6 +11527,22 @@ function periodOf(period) {
   if (!period?.from || !period?.to) return '';
 
   return `${fmtDate(period.from)} – ${fmtDate(period.to)}`;
+}
+
+/**
+ * Which projects a report covers, in the words its select offers them in.
+ *
+ * Kept as it was asked rather than as the answer names it, because the answer
+ * says 0 both for every project and for none of them.
+ */
+function coverageOf(evaluated) {
+  if (!evaluated) return '';
+
+  if (!evaluated.projectId) return t('filter.allProjects', 'All projects');
+
+  if (evaluated.projectId === 'none') return t('report.noProject', 'No project');
+
+  return projectName(Number(evaluated.projectId));
 }
 
 /**
@@ -11577,7 +11594,8 @@ async function reportDocument() {
   return {
     title: t('report.title', 'Report'),
     colours: screenColours(),
-    subtitle: periodOf(evaluatedPeriod.report),
+    subtitle: [coverageOf(evaluatedPeriod.report), periodOf(evaluatedPeriod.report)]
+      .filter(Boolean).join(' · '),
     sections: [{
       heading: t('report.result', 'Result'),
       caption: $('#report-chart-caption').textContent.trim(),
@@ -14070,8 +14088,8 @@ function wireForms() {
 
   // One row, because the total covers the reader's own hours and nobody else's.
   // The column used to name the person, which is now always the same person.
-  function renderReport(report) {
-    evaluatedPeriod.report = { from: report.from, to: report.to };
+  function renderReport(report, projectId) {
+    evaluatedPeriod.report = { from: report.from, to: report.to, projectId };
 
     const rows = (report.entries ?? []).map((entry) => el('tr', {},
       el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
@@ -14101,7 +14119,7 @@ function wireForms() {
 
       // Drawn through redrawable, so a language change draws it again from this
       // same answer rather than leaving an English total under a German heading.
-      redrawable('report', () => renderReport(report));
+      redrawable('report', () => renderReport(report, projectId));
 
       // The same period as a picture. The figures come from the statistics
       // endpoint rather than the report, because a total is one number and a
