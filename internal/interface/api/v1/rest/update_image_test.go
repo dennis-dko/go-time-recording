@@ -159,6 +159,12 @@ func imageUpdateUnderTest(t *testing.T) (*UpdateHandler, *announce.Hub, string) 
 	dir := t.TempDir()
 	hub := announce.New()
 
+	// The updater's sign of life, as it writes it on every round - on a round of
+	// an hour here, so it is still fresh however long the case takes.
+	if err := os.WriteFile(filepath.Join(dir, "alive"), []byte("3600\n"), 0o600); err != nil {
+		t.Fatalf("cannot write the updater's sign of life: %v", err)
+	}
+
 	// A connection that answers, as the running one does: an update asks the
 	// next start's connection first, and nothing is stored where these run.
 	running := appconfig.Datasource{Dialect: "sqlite", Name: filepath.Join(dir, "gtr.db")}

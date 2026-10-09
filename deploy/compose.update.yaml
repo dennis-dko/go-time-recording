@@ -71,9 +71,11 @@ services:
       - update-requests:/var/lib/gtr/update
 
     environment:
-      # Tells the application an updater is present, so the version card offers
-      # the image rather than the binary. Read as a directory it can write to -
-      # the flag and the channel are the same thing, so they cannot disagree.
+      # Tells the application where to ask, so the version card offers the image
+      # rather than the binary. Read as a directory it can write to - the flag
+      # and the channel are the same thing, so they cannot disagree - and offered
+      # only while the updater below says it is there, by rewriting a file in it
+      # on every round: the volume outlives a stopped updater.
       GTR_UPDATE_REQUESTS: /var/lib/gtr/update
 
   updater:

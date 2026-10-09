@@ -21,4 +21,10 @@
 // all: it names the command that replaces the image, and this overlay. Swapping
 // the binary inside the container is what it does not offer, because that lasts
 // only until the container is recreated.
+//
+// Absent too where the updater has stopped. The directory is a volume, and it
+// outlives the container that watches it, so the updater says it is there the
+// way it hears a request - with a file, rewritten on every round - and an
+// updater that has stopped saying so is taken for gone: the card names the
+// command rather than offer a button whose request nobody would read.
 package imageupdate
