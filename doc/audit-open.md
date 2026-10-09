@@ -20,7 +20,6 @@ What is below was raised and is not recorded as decided anywhere.
 
 | | Question |
 | --- | --- |
-| D5 | `TimerService.Stop` says a running clock can be pointed elsewhere and stopped again; nothing does that. Correct the comment to the real ways out - reopen the project, or shorten another entry of that day? |
 | D-new-1 | A database failure during the local lookup of a sign-in is counted as wrong credentials in the sign-in failure metric. Count it apart? |
 | D-new-2 | The HTTPS front end has no read timeout, because large imports are legitimate. Bound it, from a measured upload size and speed? |
 | D-new-3 | GoFr's own server bounds only a request's headers. Behind the HTTPS front end it is loopback-only; without TLS it faces the network. A change in GoFr, a front end on the plain port as well, or keep-alive off? |

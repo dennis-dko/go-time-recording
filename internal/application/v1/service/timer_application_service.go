@@ -156,8 +156,10 @@ func (s *TimerService) Stop(
 	})
 	if err != nil {
 		// The clock stays, so the time is not lost to a refusal the user can act
-		// on - a daily cap reached, a project archived while the clock ran. They
-		// can change what it points at and stop it again.
+		// on - a daily cap reached, a project completed or archived while the
+		// clock ran. The way out is to make room and stop it again: reopen the
+		// project, or shorten another entry of that day. Starting it again is
+		// not one, because a start replaces the clock and its start with it.
 		return nil, err
 	}
 
