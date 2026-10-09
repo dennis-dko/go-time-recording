@@ -178,7 +178,7 @@ func TestCLAUDEmdNamesOnlyTasksThatExist(t *testing.T) {
 }
 
 // TestTheLedgerNamesOnlyFilesThatAreThere checks the files the logic-read
-// ledger in docs/audit-ledger.md is about.
+// ledger in doc/audit-ledger.md is about.
 //
 // A row's first column is where every walk over the ledger starts: CLAUDE.md
 // asks what has landed since the row's commit with git log over the path the
@@ -191,7 +191,7 @@ func TestCLAUDEmdNamesOnlyTasksThatExist(t *testing.T) {
 // neighbour it names by its bare name - parse.go beside logsink.go - is beside it.
 func TestTheLedgerNamesOnlyFilesThatAreThere(t *testing.T) {
 	root := ".."
-	ledger := read(t, filepath.Join(root, "docs", "audit-ledger.md"))
+	ledger := read(t, filepath.Join(root, "doc", "audit-ledger.md"))
 
 	rows := 0
 
