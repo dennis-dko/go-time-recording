@@ -3437,6 +3437,7 @@ const TRANSLATIONS = {
     'ops.rateLimit': 'Ratenbegrenzung (Anfragen)',
     'ops.rateWindow': 'Zeitfenster der Ratenbegrenzung (Sekunden)',
     'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1, 0 = keine Grenze)',
+    'ops.deleteRatioSmall': 'Die Löschgrenze ist ein Anteil an den Verzeichniskonten, die es hier schon gibt. Bei einem oder zwei davon ist ein einziger Weggang alle oder die Hälfte, und eine Grenze darunter lehnt ihn ab: Ist der Weggang echt, die Grenze für diesen Lauf anheben.',
     'ops.reset': 'Alle Werte auf die Konfigurationsdatei zurücksetzen',
     'ops.saved': 'Grenzwerte gespeichert',
     'ops.reset.done': 'Alle Werte folgen wieder der Konfigurationsdatei',
