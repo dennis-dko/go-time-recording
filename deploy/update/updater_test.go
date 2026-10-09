@@ -373,4 +373,61 @@ func TestAProjectAtADifferentPathOnEachSideIsRefused(t *testing.T) {
 		t.Error("it pulled although the project is at a different path on the host, " +
 			"so the recreate would have mounted empty directories")
 	}
+
+	// And it does not say it is there, so the application offers no button that
+	// this updater would refuse.
+	if _, err := os.Stat(filepath.Join(requests, "alive")); err == nil {
+		t.Error("an updater that refuses to run says it is there, so the button is offered over it")
+	}
+}
+
+// The updater says it is there on every round, naming its round.
+//
+// The application offers the button only while this file is fresh, because the
+// volume it asks through outlives the container that reads it: a stopped
+// updater leaves the directory writable and the request unread. The round goes
+// into the file, so the application can tell a slow updater from a stopped one.
+func TestTheUpdaterSaysItIsThereOnEveryRound(t *testing.T) {
+	t.Parallel()
+
+	stubDir, _ := stub(t, "sha256:old", "sha256:old", "")
+	requests := tempdir.New(t)
+	alive := filepath.Join(requests, "alive")
+
+	start(t, stubDir, requests)
+
+	first := waitForChange(t, alive, time.Time{}, 15*time.Second)
+
+	round, err := os.ReadFile(alive)
+	if err != nil {
+		t.Fatalf("cannot read the sign of life: %v", err)
+	}
+
+	if got := strings.TrimSpace(string(round)); got != "1" {
+		t.Errorf("the sign of life names a round of %q seconds, and the updater was started with one", got)
+	}
+
+	// Rewritten, not written once: a file that only says the updater started
+	// says nothing about whether it is still there.
+	waitForChange(t, alive, first, 10*time.Second)
+}
+
+// waitForChange waits for a file to be written after a given moment, and
+// returns when it was.
+func waitForChange(t *testing.T, path string, after time.Time, patience time.Duration) time.Time {
+	t.Helper()
+
+	deadline := time.Now().Add(patience)
+
+	for time.Now().Before(deadline) {
+		if info, err := os.Stat(path); err == nil && info.ModTime().After(after) {
+			return info.ModTime()
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatalf("%s was not written after %s within %s", path, after.Format(time.RFC3339Nano), patience)
+
+	return time.Time{}
 }

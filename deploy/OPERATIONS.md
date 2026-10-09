@@ -1111,6 +1111,18 @@ owns the application is the update the operator already configured.
 That is a real reduction and it is not zero. An installation that would rather
 type two commands should leave this out, and loses nothing but the button.
 
+**The button is there only while the updater is.** The shared volume outlives
+the container that watches it, so the updater says it is there: on every round it
+rewrites a file named `alive` in the volume, holding the seconds between rounds,
+and the application offers the button only while that file is younger than three
+rounds and ten seconds - or while an update is under way. An updater that has
+been stopped, has crashed or refuses to start leaves the volume behind, and the
+card then names the command instead of a button whose request nobody would read.
+The updater reads its script from `update/updater.sh` beside the compose files,
+so an installation whose copy predates this has no `alive`: copy the new script
+there and restart the updater - `docker compose restart updater` - before or
+after updating the application, and the button is back within a round.
+
 | | |
 | --- | --- |
 | Image | `docker:28-cli`, pinned to a major |

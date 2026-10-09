@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
 )
@@ -43,15 +44,113 @@ func TestAFileWhereTheDirectoryShouldBeIsNotAnUpdater(t *testing.T) {
 	}
 }
 
+// sayAlive writes what the updater writes on every round of its loop: the alive
+// file, naming the seconds between rounds, last written at the given moment.
+func sayAlive(t *testing.T, dir, round string, at time.Time) {
+	t.Helper()
+
+	path := filepath.Join(dir, "alive")
+
+	if err := os.WriteFile(path, []byte(round+"\n"), 0o600); err != nil {
+		t.Fatalf("cannot write the sign of life: %v", err)
+	}
+
+	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatalf("cannot date the sign of life: %v", err)
+	}
+}
+
+// A directory the updater could write into is not an updater that is there.
+//
+// The volume outlives the container that watches it: an updater stopped, crashed
+// or taken out of the deployment leaves the directory mounted and writable, and a
+// button offered over it writes a request nobody reads. So the updater says that
+// it is there, by rewriting a file on every round, and silence means absence.
+func TestAnUpdaterThatHasNeverSaidItIsThereIsNotAvailable(t *testing.T) {
+	t.Parallel()
+
+	if imageupdate.New(t.TempDir()).Available() {
+		t.Error("a directory nothing has said it watches is reported as an updater")
+	}
+}
+
+// An updater whose last sign of life is old has stopped, and is not offered.
+func TestAnUpdaterThatHasStoppedSayingItIsThereIsNotAvailable(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	sayAlive(t, dir, "3", time.Now().Add(-5*time.Minute))
+
+	if imageupdate.New(dir).Available() {
+		t.Error("an updater on a three-second round, last heard from five minutes ago, is reported as there")
+	}
+}
+
+// An updater that has just said it is there is available.
+func TestAnUpdaterThatSaysItIsThereIsAvailable(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	sayAlive(t, dir, "3", time.Now())
+
+	if !imageupdate.New(dir).Available() {
+		t.Error("an updater heard from just now is not reported as there")
+	}
+}
+
+// How long a sign of life counts is the updater's own round, not a number here.
+//
+// GTR_UPDATE_POLL sets the round, and a fixed window would take an updater set to
+// a minute for stopped between two of its rounds. The file names the round, so a
+// slow updater can be told from a stopped one.
+func TestAnUpdaterIsHeardForAsLongAsItsOwnRoundSays(t *testing.T) {
+	t.Parallel()
+
+	slow, quick := t.TempDir(), t.TempDir()
+	twoMinutesAgo := time.Now().Add(-2 * time.Minute)
+
+	sayAlive(t, slow, "60", twoMinutesAgo)
+	sayAlive(t, quick, "3", twoMinutesAgo)
+
+	if !imageupdate.New(slow).Available() {
+		t.Error("an updater on a one-minute round, heard from two minutes ago, is taken for stopped")
+	}
+
+	if imageupdate.New(quick).Available() {
+		t.Error("an updater on a three-second round, silent for two minutes, is taken for there")
+	}
+}
+
+// An update under way is a sign of life too.
+//
+// The updater rewrites its file between rounds, and a pull and a recreate are one
+// long round: taking that for silence would turn the card to the manual command
+// in the middle of the very update it is showing.
+func TestAnUpdateUnderWayCountsAsTheUpdaterBeingThere(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	sayAlive(t, dir, "3", time.Now().Add(-10*time.Minute))
+
+	if err := os.WriteFile(filepath.Join(dir, "running"), nil, 0o600); err != nil {
+		t.Fatalf("cannot mark one as running: %v", err)
+	}
+
+	if !imageupdate.New(dir).Available() {
+		t.Error("an updater in the middle of an update is reported as absent")
+	}
+}
+
 // Asking leaves the request where the updater looks, and nowhere else.
 func TestAskingLeavesARequestTheUpdaterCanFind(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+	sayAlive(t, dir, "3", time.Now())
 	updater := imageupdate.New(dir)
 
 	if !updater.Available() {
-		t.Fatal("a writable directory does not report an updater")
+		t.Fatal("a writable directory with an updater heard from just now does not report one")
 	}
 
 	if err := updater.Ask(); err != nil {
@@ -158,6 +257,7 @@ func TestAskingClearsTheLastOutcome(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+	sayAlive(t, dir, "3", time.Now())
 	updater := imageupdate.New(dir)
 
 	if err := os.WriteFile(filepath.Join(dir, "result"),

@@ -38,6 +38,12 @@ func TestTheUpdateCardSaysWhatTheLastImageUpdateCameTo(t *testing.T) {
 		t.Fatalf("cannot leave the updater's answer: %v", err)
 	}
 
+	// The updater's sign of life, on a round of an hour so it stays fresh for
+	// as long as the case runs: without it the card names the command instead.
+	if err := os.WriteFile(filepath.Join(dir, "alive"), []byte("3600\n"), 0o600); err != nil {
+		t.Fatalf("cannot leave the updater's sign of life: %v", err)
+	}
+
 	p := openWith(t, "UPDATE_FEED="+feed.URL, "GTR_UPDATE_REQUESTS="+dir)
 	p.readyAdmin()
 
