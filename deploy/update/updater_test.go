@@ -105,9 +105,24 @@ func hostSeesADifferentPath(t *testing.T, stubDir string) {
 	}
 }
 
-// run starts the script against a request directory and stops it once it has
-// answered.
+// run starts the script against a request directory and waits for it to answer.
 func run(t *testing.T, stubDir, requests string) string {
+	t.Helper()
+
+	start(t, stubDir, requests)
+
+	answered := waitForResult(t, requests, 30*time.Second)
+
+	if answered == "" {
+		t.Fatal("the updater never answered")
+	}
+
+	return answered
+}
+
+// start starts the script against a request directory, and stops it when the
+// case is over.
+func start(t *testing.T, stubDir, requests string) {
 	t.Helper()
 
 	script, err := filepath.Abs("updater.sh")
@@ -140,14 +155,6 @@ func run(t *testing.T, stubDir, requests string) string {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	})
-
-	answered := waitForResult(t, requests, 30*time.Second)
-
-	if answered == "" {
-		t.Fatal("the updater never answered")
-	}
-
-	return answered
 }
 
 // posixShell finds a shell that can run updater.sh.
@@ -347,6 +354,11 @@ func TestAProjectAtADifferentPathOnEachSideIsRefused(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(requests, "request"), nil, 0o600); err != nil {
 		t.Fatalf("cannot leave the request: %v", err)
 	}
+
+	// Started, which this case did not do for as long as it existed: it waited on
+	// a script nobody had run, so silence was all it could find, and with the path
+	// check taken out of the script it stayed green.
+	start(t, stubDir, requests)
 
 	// It refuses by not answering: there is nothing safe to do and nothing to
 	// report to a screen that is not there yet. What it does instead is say why
