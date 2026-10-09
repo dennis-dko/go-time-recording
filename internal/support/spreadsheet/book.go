@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -170,6 +171,18 @@ var ErrNoSheet = errors.New("the workbook has no readable sheet")
 // this one was never understood at all. Both reach the caller as notAWorkbook, so
 // the distinction is for whoever reads the log rather than for the screen.
 var ErrUnreadableWorkbook = errors.New("the workbook could not be parsed")
+
+// Panic is what guarded caught: the dependency's panic, and where it happened.
+//
+// Carried inside the ErrUnreadableWorkbook the reader is answered with, so the
+// refusal the person reads does not cost the stack whoever maintains this needs:
+// unreadableWorkbook writes it to the log, and only there.
+type Panic struct {
+	Value any
+	Stack []byte
+}
+
+func (p *Panic) Error() string { return fmt.Sprintf("the workbook reader panicked: %v", p.Value) }
 
 // ErrWrongSheet is a workbook of the right shape and the wrong kind.
 //
@@ -359,58 +372,64 @@ func read(r io.Reader, table Table) ([][]string, error) {
 const maxUnzippedBytes = 128 << 20
 
 // rowsOf opens a workbook and returns every row of the sheet that belongs to this
-// table, heading included.
+// table, heading included, under guarded: the open and the read are where bytes
+// somebody uploaded decide what a dependency does with an index.
+func rowsOf(r io.Reader, table Table) ([][]string, error) {
+	return guarded(func() ([][]string, error) {
+		book, err := excelize.OpenReader(r, excelize.Options{UnzipSizeLimit: maxUnzippedBytes})
+		if err != nil {
+			return nil, fmt.Errorf("reading the workbook: %w", err)
+		}
+
+		defer func() { _ = book.Close() }()
+
+		sheet, err := readableSheet(book, table)
+		if err != nil {
+			return nil, err
+		}
+
+		raw, err := book.GetRows(sheet)
+		if err != nil {
+			return nil, fmt.Errorf("reading the sheet %q: %w", sheet, err)
+		}
+
+		if len(raw) == 0 {
+			return nil, ErrNoSheet
+		}
+
+		return raw, nil
+	})
+}
+
+// guarded runs read, and turns a panic inside it into ErrUnreadableWorkbook.
 //
 // It holds the only recover() in this tree, and the exception is narrow on
-// purpose: this is the one place where bytes somebody uploaded decide what a
+// purpose: rowsOf is the one place where bytes somebody uploaded decide what a
 // dependency does with an index, and the dependency has been wrong about that
 // again and again. A cell naming a negative shared string panicked every release
 // up to v2.11.0 - GHSA-wcg2-648h-mhxq, from a 54 KB file the upload bound let
 // through - and ten of the fifteen advisories published against v2.11.0 on
 // 2026-10-09 describe a panic on crafted input as well. go.mod requires the
 // upstream commit that fixes all of them, ahead of a release, so no panic is
-// known to reach this guard today; it stays for the next one, and whether it
-// should is put to the maintainer.
+// known to reach this guard today; it stays for the next one.
 //
 // GoFr recovers a panic inside a handler, so the process survives either way.
-// What the guard buys is the difference between a logged stack trace and a person
-// being told their file cannot be read - unreadableWorkbook answers this with
-// notAWorkbook, which is what the file is.
+// What the guard buys is a person being told their file cannot be read -
+// unreadableWorkbook answers this with notAWorkbook, which is what the file is -
+// instead of a request that dies as an internal error.
 //
-// It is registered before the workbook is opened, so it also covers the open, and
-// runs after the deferred Close rather than instead of it. The returns are named
-// because a recovered panic has to set both: a guard that left rows nil and err
-// nil would turn a refused file into an empty import, which is worse than the
-// panic it replaced.
-func rowsOf(r io.Reader, table Table) (rows [][]string, err error) {
+// The returns are named because a recovered panic has to set both: a guard that
+// left rows nil and err nil would turn a refused file into an empty import, which
+// is worse than the panic it replaced. A deferred Close inside read runs as the
+// panic unwinds, before this recovers it.
+func guarded(read func() ([][]string, error)) (rows [][]string, err error) {
 	defer func() {
 		if re := recover(); re != nil {
-			rows, err = nil, fmt.Errorf("%w: %v", ErrUnreadableWorkbook, re)
+			rows, err = nil, fmt.Errorf("%w: %w", ErrUnreadableWorkbook, &Panic{Value: re, Stack: debug.Stack()})
 		}
 	}()
 
-	book, err := excelize.OpenReader(r, excelize.Options{UnzipSizeLimit: maxUnzippedBytes})
-	if err != nil {
-		return nil, fmt.Errorf("reading the workbook: %w", err)
-	}
-
-	defer func() { _ = book.Close() }()
-
-	sheet, err := readableSheet(book, table)
-	if err != nil {
-		return nil, err
-	}
-
-	raw, err := book.GetRows(sheet)
-	if err != nil {
-		return nil, fmt.Errorf("reading the sheet %q: %w", sheet, err)
-	}
-
-	if len(raw) == 0 {
-		return nil, ErrNoSheet
-	}
-
-	return raw, nil
+	return read()
 }
 
 // readableSheet picks the sheet to read.

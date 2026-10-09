@@ -144,7 +144,7 @@ func (h *SheetHandler) ImportProjects(c *gofr.Context) (any, error) {
 
 	rows, problems, err := spreadsheet.ReadProjects(sent.file)
 	if err != nil {
-		return nil, unreadableWorkbook(err)
+		return nil, unreadableWorkbook(c, err)
 	}
 
 	plan, err := h.projects.PlanProjects(c, language(c), rows, problems, principal.User)
@@ -200,7 +200,7 @@ func (h *SheetHandler) ImportUsers(c *gofr.Context) (any, error) {
 
 	rows, problems, err := spreadsheet.ReadUsers(sent.file)
 	if err != nil {
-		return nil, unreadableWorkbook(err)
+		return nil, unreadableWorkbook(c, err)
 	}
 
 	plan, err := h.users.PlanUsers(c, language(c), rows, problems)
@@ -260,7 +260,7 @@ func (h *SheetHandler) ImportRoles(c *gofr.Context) (any, error) {
 
 	rows, problems, err := spreadsheet.ReadRoles(sent.file, model.AllPermissions())
 	if err != nil {
-		return nil, unreadableWorkbook(err)
+		return nil, unreadableWorkbook(c, err)
 	}
 
 	plan, err := h.roles.PlanRoles(c, language(c), rows, problems)
@@ -351,7 +351,14 @@ func uploadedFile(c *gofr.Context) (*upload, error) {
 // unreadableWorkbook is the answer to a file that is not a workbook of this kind
 // at all, as opposed to one with bad rows in it: there is nothing to preview and
 // nothing to fix row by row.
-func unreadableWorkbook(err error) error {
+func unreadableWorkbook(c *gofr.Context, err error) error {
+	// A file that made the reader panic is the dependency's bug as much as the
+	// file's fault, and the person is told only that the file cannot be read; the
+	// log is told where the reader gave way, or nobody can report it upstream.
+	if caught, ok := errors.AsType[*spreadsheet.Panic](err); ok {
+		c.Logger.Errorf("an uploaded workbook made the reader panic: %v\n%s", caught.Value, caught.Stack)
+	}
+
 	if errors.Is(err, spreadsheet.ErrWrongSheet) {
 		return toHTTPError(apperror.Invalidf(
 			"this workbook holds something else: %v", err).WithCode("wrongWorkbook"))

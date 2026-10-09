@@ -18,9 +18,10 @@ What is below was raised and is not recorded as decided anywhere.
 
 ## Decisions waiting on the maintainer
 
+None today: the last were decided on 2026-10-09. The table stays for the next.
+
 | | Question |
 | --- | --- |
-| D-new-37 | The recover() in `spreadsheet.rowsOf` has no known panic left to catch: go.mod requires the upstream excelize commit that fixes GHSA-wcg2-648h-mhxq and the fifteen advisories of 2026-10-09. Keep it for the next one, given that record, or remove it as the test that watched it intended - a recover() with no reason left? Either way, go.mod moves from the pseudo-version to the first release that carries the fixes. |
 
 ## Measurements reading cannot make
 

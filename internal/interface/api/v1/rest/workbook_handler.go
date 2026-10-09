@@ -152,7 +152,7 @@ func (h *WorkbookHandler) Import(c *gofr.Context) (any, error) {
 
 	rows, problems, err := spreadsheet.Read(sent.file)
 	if err != nil {
-		return nil, unreadableWorkbook(err)
+		return nil, unreadableWorkbook(c, err)
 	}
 
 	// With enforcement off there is no caller to restrict, which is the same
