@@ -153,9 +153,9 @@ func TestTelemetryNeedsTheRightToManageSettings(t *testing.T) {
 }
 
 // Every value below is one GoFr accepts and then fails on without saying so: an
-// unknown exporter drops each span, a collector address with a scheme fails inside
-// the exporter, and a ratio it cannot parse samples nothing. Refusing them here is
-// the only point at which somebody is still looking.
+// unknown exporter is logged once and leaves tracing off, a collector address with
+// a scheme fails inside the exporter, and a ratio outside 0..1 is clamped without
+// a word. Refusing them here is the only point at which somebody is still looking.
 func TestTelemetryRefusesWhatWouldFailSilently(t *testing.T) {
 	t.Parallel()
 

@@ -324,8 +324,8 @@ tasks:
     summary: |
       The one thing the rest of the tracing tests cannot show: that a span
       exported by this application actually arrives somewhere. Every way that
-      fails is silent - an exporter GoFr does not recognise drops each batch
-      after logging once, a collector address it cannot dial fails inside the
+      fails is silent - an exporter GoFr does not recognise is logged once and
+      leaves tracing off, a collector address it cannot dial fails inside the
       exporter, and a sampler that records nothing looks exactly like a
       collector with nothing to show.
 

@@ -18,7 +18,7 @@ import (
 // settings are stored, that they are refused when GoFr could not use them, that
 // they reach the process before gofr.New(). None of that shows a span arriving
 // anywhere, and every way that fails is silent - an exporter GoFr does not
-// recognise drops each batch after logging once, a collector address it cannot
+// recognise is logged once and leaves tracing off, a collector address it cannot
 // dial fails inside the exporter, a sampler that records nothing looks exactly
 // like a collector with nothing to show.
 //

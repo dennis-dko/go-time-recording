@@ -1478,7 +1478,8 @@ mistakes it for a configured installation.
   not survive the promotion.
 - Parsing is forgiving, not strict. A duration, integer or float that does not
   parse becomes the default **silently**. `LOG_LEVEL` resolves any unrecognised
-  name to `INFO`. A `TRACER_RATIO` it cannot read samples nothing.
+  name to `INFO`. A `TRACER_RATIO` it cannot read records every trace, with an
+  error line naming the value.
 - `TLS_ENABLED=true` with an empty `TLS_DOMAINS` logs an error and carries on
   over plain HTTP. It does not refuse to start. Neither does a TLS listener that
   cannot bind its port — see *If this process terminates TLS*.

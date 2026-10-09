@@ -157,12 +157,11 @@ func (t Telemetry) Administered() bool {
 // InvalidTelemetryFields lists the fields whose values could not be used.
 //
 // Every rule here exists because GoFr fails these quietly. An exporter it does
-// not recognise is logged once and then hands a nil exporter to the batch
-// processor, which accepts it and drops every span; a collector address with a
-// scheme in front of it produces "too many colons in address" on each export,
-// inside the exporter, where nobody is looking; and a sampling ratio it cannot
-// parse leaves the ratio at zero, which samples nothing. All three look exactly
-// like working tracing from the screen that configured them.
+// not recognise is logged once and tracing is then off; a collector address with
+// a scheme in front of it produces "too many colons in address" on each export,
+// inside the exporter, where nobody is looking; and a sampling ratio outside 0..1
+// is clamped by the sampler without a word. All three look exactly like working
+// tracing from the screen that configured them.
 func (t Telemetry) InvalidTelemetryFields() []string {
 	var invalid []string
 

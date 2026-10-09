@@ -8,11 +8,11 @@ import (
 )
 
 // GoFr fails every one of these settings quietly. An exporter it does not know
-// drops each span without a word, a collector address with a scheme in front of
-// it fails inside the exporter where nobody is looking, and a sampling ratio it
-// cannot read samples nothing at all. From the screen that configured them, all
-// three look exactly like working tracing - so the rejection has to happen here,
-// on the way in, or it never happens.
+// is logged once and leaves tracing off, a collector address with a scheme in
+// front of it fails inside the exporter where nobody is looking, and a sampling
+// ratio outside 0..1 is clamped without a word. From the screen that configured
+// them, all three look exactly like working tracing - so the rejection has to
+// happen here, on the way in, or it never happens.
 
 // Nothing administered means the configuration file still decides everything,
 // and there is nothing to reject.
@@ -120,7 +120,7 @@ func TestValidationRejectsWhatWouldSilentlyDropEverySpan(t *testing.T) {
 		field string
 	}{
 		{
-			"an exporter GoFr does not know hands it a nil exporter, which drops every span",
+			"an exporter GoFr does not know is logged once and leaves tracing off",
 			model.Telemetry{TraceExporter: new("otel"), TracerURL: new("collector:4317")},
 			"traceExporter",
 		},

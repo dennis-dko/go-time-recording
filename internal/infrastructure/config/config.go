@@ -231,14 +231,13 @@ func metricsPort(raw string) int {
 }
 
 // traceRatio resolves TRACER_RATIO the way GoFr does, which is worth spelling
-// out because the failure is silent: GoFr reports a parse error and then carries
-// on with the zero value, so an unreadable ratio samples nothing rather than
-// falling back to everything. The sampler then clamps whatever is left into
-// 0..1.
+// out because the screen reports it: GoFr logs a value it cannot read and records
+// every trace instead, so an unreadable ratio samples everything rather than
+// nothing. The sampler then clamps whatever is left into 0..1.
 func traceRatio(raw string) float64 {
 	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
-		return 0
+		return 1
 	}
 
 	// ParseFloat reads "NaN" happily, and a sampler compares false against it and

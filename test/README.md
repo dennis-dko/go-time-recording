@@ -172,8 +172,8 @@ task test:traces
 Starts Jaeger, configures an instance through its own settings API, restarts it,
 makes a request and reads the trace back out of the collector. It is the only
 check here that shows a span arriving anywhere: every other way tracing fails is
-silent — an exporter GoFr does not recognise drops each batch after logging
-once, a collector address it cannot dial fails inside the exporter, and a
+silent — an exporter GoFr does not recognise is logged once and leaves tracing
+off, a collector address it cannot dial fails inside the exporter, and a
 sampler that records nothing looks exactly like a collector with nothing to
 show.
 

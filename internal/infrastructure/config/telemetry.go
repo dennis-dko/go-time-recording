@@ -137,7 +137,7 @@ func ApplyTelemetry(telemetry model.Telemetry) error {
 	if telemetry.TracerRatio != nil {
 		// 'f' with the shortest exact precision: GoFr parses this with
 		// ParseFloat, which reads "1e-05" but not the comma a German locale would
-		// produce, and reports a parse failure by sampling nothing at all.
+		// produce, and answers a parse failure by recording every trace.
 		values["TRACER_RATIO"] = strconv.FormatFloat(*telemetry.TracerRatio, 'f', -1, 64)
 	}
 
