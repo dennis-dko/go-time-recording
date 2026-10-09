@@ -62,13 +62,15 @@ func TestTheWorkspacesTemporaryDirectoryComesWithTheClone(t *testing.T) {
 // when go.mod moved to a patch release the image's minor tag did not carry yet;
 // the editor's task did not, and answered "go.mod requires go >= 1.27.1 (running
 // go 1.27.0; GOTOOLCHAIN=local)" without testing a single package - measured.
+// Flags may stand between -race and the packages, as -count=1 does, because both
+// are compared whole below.
 func TestTheWorkspaceRunsTheRaceDetectorTheWayCLAUDEmdSays(t *testing.T) {
 	t.Parallel()
 
 	documented := commandsIn(t, filepath.Join("..", "CLAUDE.md"),
-		regexp.MustCompile(`(?m)^\s*(MSYS_NO_PATHCONV=1 docker run .* go test -race \./\.\.\.)$`))
+		regexp.MustCompile(`(?m)^\s*(MSYS_NO_PATHCONV=1 docker run .* go test -race( -\S+)* \./\.\.\.)$`))
 	tasked := commandsIn(t, filepath.Join("..", ".vscode", "tasks.json"),
-		regexp.MustCompile(`"command": ("MSYS_NO_PATHCONV=1 docker run .* go test -race \./\.\.\.")`))
+		regexp.MustCompile(`"command": ("MSYS_NO_PATHCONV=1 docker run .* go test -race( -\S+)* \./\.\.\.")`))
 
 	if len(documented) != 1 || len(tasked) != 1 {
 		t.Fatalf("found %d race commands in CLAUDE.md and %d in the workspace's tasks, want one each",
