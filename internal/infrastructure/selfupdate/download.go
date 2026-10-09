@@ -219,6 +219,15 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 		return fmt.Errorf("the download broke off: %w", err)
 	}
 
+	// On the disk before the swap renames it into place: that rename lands on a
+	// name moved aside a moment before, which ext4 does not hold back for the
+	// data, so a power cut soon after could leave the service an empty binary.
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+
+		return fmt.Errorf("cannot write the download to disk: %w", err)
+	}
+
 	if err := file.Close(); err != nil {
 		return err
 	}

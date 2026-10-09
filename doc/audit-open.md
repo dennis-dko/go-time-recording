@@ -24,7 +24,6 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-2 | The HTTPS front end has no read timeout, because large imports are legitimate. Bound it, from a measured upload size and speed? |
 | D-new-3 | GoFr's own server bounds only a request's headers. Behind the HTTPS front end it is loopback-only; without TLS it faces the network. A change in GoFr, a front end on the plain port as well, or keep-alive off? |
 | D-new-4 | Guessing a second-factor code is bounded only by the per-address rate limit. A per-account limit on wrong codes, with its lock-out trade-off? |
-| D-new-5 | Force the self-update download and the datasource file to disk before the rename: a power cut in the half minute after an update can leave an empty binary on ext4. |
 | D-new-6 | The swap drops the error of putting the running binary back; if that fails as well, the path is empty and the message does not say so. Needs a seam to test. |
 | D-new-8 | A stop arriving within the restart's half-second grace, with a shutdown lasting past it, lets the re-execution replace the process mid-shutdown until the service manager kills it. A fix that buys little: it needs a seam only a test would use. |
 | D-new-10 | A person whose directory entry lost its mail keeps the account through a run but cannot sign in, and the refusal tells them to change the attribute setting. Allow the sign-in keyed on the identifier? |
