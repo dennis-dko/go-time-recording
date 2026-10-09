@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -136,5 +137,75 @@ func TestAScheduledDirectoryRunRemovesWhoHasLeftAndSaysSo(t *testing.T) {
 		return false
 	}) {
 		t.Error("the run removed dave@example.com, and no completed scheduled run is published")
+	}
+}
+
+// What a directory run changed is recorded, and the record names nobody.
+//
+// The log names the people a run removed, and a level above WARN drops that line
+// while the console's rotation ends it anyway; the record lasts. It dates the
+// run, says whether somebody confirmed it against a preview, and counts what it
+// removed and added - and carries no address, because the people a run removed
+// are the people the purge erased.
+func TestADirectoryRunIsRecordedWithoutNamingAnybody(t *testing.T) {
+	t.Parallel()
+
+	host, port := requireLDAP(t)
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	configureLDAP(t, admin, host, port, ldapBaseDN)
+
+	// Everybody the directory holds arrives, by a run nobody confirmed.
+	admin.must(admin.api(http.MethodPost, "/settings/ldap/sync", nil),
+		http.StatusCreated, http.StatusOK)
+
+	// Then the contractor leaves, and somebody confirms the preview that says so.
+	configureLDAP(t, admin, host, port, ldapPeopleDN)
+
+	var preview struct {
+		Candidates []struct {
+			UserID uint `json:"userId"`
+		} `json:"candidates"`
+	}
+
+	admin.must(admin.api(http.MethodPost, "/settings/ldap/sync/preview", nil),
+		http.StatusCreated, http.StatusOK).Data(t, &preview)
+
+	if len(preview.Candidates) != 1 {
+		t.Fatalf("the preview proposed %d account(s), want the contractor alone", len(preview.Candidates))
+	}
+
+	admin.must(admin.api(http.MethodPost,
+		fmt.Sprintf("/settings/ldap/sync?confirmed=%d", preview.Candidates[0].UserID), nil),
+		http.StatusCreated, http.StatusOK)
+
+	answer := admin.must(admin.api(http.MethodGet, "/settings/ldap/sync/runs", nil), http.StatusOK)
+
+	if strings.Contains(string(answer.Body), "@") {
+		t.Errorf("the record of the runs names somebody:\n%s", answer.Body)
+	}
+
+	var runs listOf[struct {
+		RanAt     time.Time `json:"ranAt"`
+		Confirmed bool      `json:"confirmed"`
+		Deleted   int       `json:"deleted"`
+		Created   int       `json:"created"`
+	}]
+
+	answer.Data(t, &runs)
+
+	if len(runs.Items) != 2 {
+		t.Fatalf("two runs changed something and %d are recorded:\n%s", len(runs.Items), answer.Body)
+	}
+
+	removed, arrived := runs.Items[0], runs.Items[1]
+
+	if !removed.Confirmed || removed.Deleted != 1 || removed.RanAt.IsZero() {
+		t.Errorf("the newest record is %+v, want the confirmed run that removed one account", removed)
+	}
+
+	if arrived.Confirmed || arrived.Created == 0 || arrived.Deleted != 0 {
+		t.Errorf("the older record is %+v, want the unconfirmed run that added the directory", arrived)
 	}
 }

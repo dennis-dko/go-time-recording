@@ -2,6 +2,7 @@ package rest
 
 import (
 	"strconv"
+	"time"
 
 	"gofr.dev/pkg/gofr"
 
@@ -187,4 +188,47 @@ func candidates(in []service.SyncCandidate) []SyncCandidateResponse {
 	}
 
 	return out
+}
+
+// directoryRunsShown is how many of the latest runs the card lists.
+const directoryRunsShown = 20
+
+// DirectoryRunResponse is what one run changed, and nothing about whom.
+type DirectoryRunResponse struct {
+	RanAt          time.Time `json:"ranAt"`
+	Confirmed      bool      `json:"confirmed"`
+	Deleted        int       `json:"deleted"`
+	EntriesDeleted int       `json:"entriesDeleted"`
+	Created        int       `json:"created"`
+}
+
+// Runs handles GET /api/v1/settings/ldap/sync/runs: the latest runs that changed
+// something, newest first.
+//
+// The built-in administrator's, as running one is. The answer names nobody, so
+// it would harm nobody to show it wider; it stays with the run because it says
+// what the run did.
+func (h *LDAPSyncHandler) Runs(c *gofr.Context) (any, error) {
+	if err := h.requireSystemAdmin(c); err != nil {
+		return nil, err
+	}
+
+	runs, err := h.sync.Runs(c, directoryRunsShown)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	items := make([]DirectoryRunResponse, 0, len(runs))
+
+	for _, run := range runs {
+		items = append(items, DirectoryRunResponse{
+			RanAt:          run.RanAt.UTC(),
+			Confirmed:      run.Confirmed,
+			Deleted:        run.Deleted,
+			EntriesDeleted: run.EntriesDeleted,
+			Created:        run.Created,
+		})
+	}
+
+	return listResponse[DirectoryRunResponse]{Items: items, TotalCount: uint(len(items))}, nil
 }

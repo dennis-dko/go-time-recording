@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
@@ -101,6 +103,10 @@ type LDAPSyncService struct {
 	timesheets repository.TimesheetRepository
 	purger     UserPurger
 
+	// runs keeps what each run changed, and nothing about whom; see
+	// model.DirectoryRun. Nil keeps nothing, which only a test wants.
+	runs repository.DirectoryRunRepository
+
 	// maxDeleteRatio caps how much of the external population one run may
 	// remove. A directory that answers with a truncated list would otherwise
 	// read as a mass departure.
@@ -152,6 +158,7 @@ func NewLDAPSyncService(
 	roles repository.RoleRepository,
 	timesheets repository.TimesheetRepository,
 	purger UserPurger,
+	runs repository.DirectoryRunRepository,
 	maxDeleteRatio float64,
 	defaultRole string,
 ) *LDAPSyncService {
@@ -165,6 +172,7 @@ func NewLDAPSyncService(
 		roles:          roles,
 		timesheets:     timesheets,
 		purger:         purger,
+		runs:           runs,
 		maxDeleteRatio: maxDeleteRatio,
 		defaultRole:    defaultRole,
 	}
@@ -181,7 +189,9 @@ func (s *LDAPSyncService) Preview(ctx context.Context) (*SyncReport, error) {
 // entries, private projects, tokens and sessions. Accounts the directory has
 // and this installation does not are created.
 func (s *LDAPSyncService) Sync(ctx context.Context) (*SyncReport, error) {
-	return s.run(ctx, false, nil)
+	report, err := s.run(ctx, false, nil)
+
+	return report, s.record(ctx, false, report, err)
 }
 
 // SyncAsConfirmed is Sync bound to what somebody agreed to: it deletes exactly
@@ -203,7 +213,7 @@ func (s *LDAPSyncService) SyncAsConfirmed(ctx context.Context, confirmed []uint)
 		agreed[id] = true
 	}
 
-	return s.run(ctx, false, func(report *SyncReport) *apperror.Error {
+	report, err := s.run(ctx, false, func(report *SyncReport) *apperror.Error {
 		same := len(report.Candidates) == len(agreed)
 
 		for _, candidate := range report.Candidates {
@@ -219,6 +229,53 @@ func (s *LDAPSyncService) SyncAsConfirmed(ctx context.Context, confirmed []uint)
 			"preview again", len(report.Candidates)).
 			WithCode("syncDiffersFromPreview", len(report.Candidates))
 	})
+
+	return report, s.record(ctx, true, report, err)
+}
+
+// record keeps what a run changed - when, whether somebody confirmed it, how
+// many accounts and entries it removed or added - and nothing about whom; see
+// model.DirectoryRun. A run that changed nothing leaves nothing, and neither does
+// a preview, which never comes here.
+//
+// Written on the way out of a run that stopped part-way too, and past a
+// cancelled request: what was deleted stays deleted whether or not the caller is
+// still waiting, so the record of it must not depend on that. A record that
+// cannot be written is the run's failure as well, beside whatever the run itself
+// returned, because without it the deletion is once again recorded nowhere that
+// lasts.
+func (s *LDAPSyncService) record(ctx context.Context, confirmed bool, report *SyncReport, err error) error {
+	if s.runs == nil || report == nil || (len(report.Deleted) == 0 && len(report.Created) == 0) {
+		return err
+	}
+
+	run := &model.DirectoryRun{
+		RanAt:     time.Now().UTC(),
+		Confirmed: confirmed,
+		Deleted:   len(report.Deleted),
+		Created:   len(report.Created),
+	}
+
+	for _, deleted := range report.Deleted {
+		run.EntriesDeleted += deleted.Timesheets
+	}
+
+	if recordErr := s.runs.Record(context.WithoutCancel(ctx), run); recordErr != nil {
+		return errors.Join(err, apperror.Internal(fmt.Errorf(
+			"the run removed %d and added %d account(s), and its record could not be kept: %w",
+			run.Deleted, run.Created, recordErr)))
+	}
+
+	return err
+}
+
+// Runs returns the most recent records of what runs changed, newest first.
+func (s *LDAPSyncService) Runs(ctx context.Context, limit int) ([]*model.DirectoryRun, error) {
+	if s.runs == nil {
+		return []*model.DirectoryRun{}, nil
+	}
+
+	return s.runs.Latest(ctx, limit)
 }
 
 // run is the body Sync, SyncAsConfirmed and Preview share; dryRun decides

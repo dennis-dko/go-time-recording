@@ -2060,6 +2060,20 @@
         }
       }
     },
+    "/settings/ldap/sync/runs": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "List what recent directory runs changed",
+        "description": "The latest runs that removed or added an account, newest first, at most twenty: when each ran, whether somebody confirmed it against a preview (the schedule and a script that sent no list did not), how many accounts it removed, how many time entries went with them, and how many accounts it added. Nothing about whom: the people a run removed are the people the purge erases, and the log names them for as long as it lasts. The built-in administrator's, as running one is.",
+        "responses": {
+          "200": {
+            "description": "The runs, in `items`"
+          }
+        }
+      }
+    },
     "/admin/logs": {
       "get": {
         "tags": [

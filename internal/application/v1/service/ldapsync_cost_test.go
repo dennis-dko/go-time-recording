@@ -81,7 +81,7 @@ func TestARunReadsTheDatabaseByWhatChangesNotByTheSizeOfTheDirectory(t *testing.
 			directory := &fakeDirectory{enabled: true}
 			purger := &recordingPurger{users: f.userRepo}
 
-			sync := service.NewLDAPSyncService(directory, users, roles, entries, purger, 1, model.RoleUser)
+			sync := service.NewLDAPSyncService(directory, users, roles, entries, purger, nil, 1, model.RoleUser)
 
 			for _, leaver := range []string{"one@example.com", "two@example.com", "three@example.com"} {
 				externalUser(t, f, leaver)

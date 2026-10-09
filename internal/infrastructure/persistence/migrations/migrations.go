@@ -105,7 +105,33 @@ func All(dialect string) map[int64]migration.Migrate {
 		20260831010000: {UP: func(d migration.Datasource) error {
 			return rememberWhenAnEntryWasBookedAndCorrected(d, dialect)
 		}},
+		20261009010000: {UP: func(d migration.Datasource) error {
+			return recordWhatEachDirectoryRunChanged(d, dialect)
+		}},
 	}
+}
+
+// recordWhatEachDirectoryRunChanged keeps a row for every directory run that
+// changed something: when, whether somebody confirmed it against a preview, and
+// how many accounts and time entries it removed or added.
+//
+// Nothing about whom, and that is the point rather than an omission. The people
+// a run removed are the people the purge exists to erase, so a table naming them
+// would keep exactly what the deletion was for; the log names them, for as long
+// as the log lasts. What could not be found out before was that a run had removed
+// anybody at all, once a log level above WARN or the console's rotation had taken
+// the lines.
+//
+// No key to users: the rows outlive the accounts they counted.
+func recordWhatEachDirectoryRunChanged(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE directory_runs (
+		%s,
+		ran_at %s NOT NULL,
+		confirmed %s NOT NULL,
+		deleted INT NOT NULL,
+		entries_deleted INT NOT NULL,
+		created INT NOT NULL
+	)`, primaryKey(dialect), timestamp(dialect), boolean(dialect)))
 }
 
 // rememberWhenAnEntryWasBookedAndCorrected gives a time entry the two moments a

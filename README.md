@@ -766,6 +766,12 @@ Listing is paged, because directories commonly cap a plain search at 500 or
 1000 entries — a silent truncation would read as "everyone beyond the first
 page has left".
 
+Every run that removes or adds an account is listed under **Recent runs** on
+the card: when it ran, whether somebody confirmed it against a preview, and how
+many accounts and time entries it took or brought. It names nobody — the people
+a run removed are the people the deletion erased — and the log, which does name
+them, can be switched off by its level; this list cannot.
+
 ## Overtime
 
 Every user has a **daily target** (the basis for overtime) and a **daily maximum**

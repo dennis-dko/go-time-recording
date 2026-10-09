@@ -59,6 +59,7 @@ type syncFixture struct {
 
 	directory *fakeDirectory
 	purger    *recordingPurger
+	runs      *memory.DirectoryRunRepository
 	sync      *service.LDAPSyncService
 }
 
@@ -68,13 +69,15 @@ func newSyncFixture(t *testing.T, ratio float64) *syncFixture {
 	f := newFixture(t)
 	directory := &fakeDirectory{enabled: true}
 	purger := &recordingPurger{users: f.userRepo}
+	runs := memory.NewDirectoryRunRepository()
 
 	return &syncFixture{
 		fixture:   f,
 		directory: directory,
 		purger:    purger,
+		runs:      runs,
 		sync: service.NewLDAPSyncService(directory, f.userRepo, f.roleRepo,
-			f.timesheetRepo, purger, ratio, model.RoleUser),
+			f.timesheetRepo, purger, runs, ratio, model.RoleUser),
 	}
 }
 
@@ -289,7 +292,7 @@ func TestThePreviewCountsEntriesWithoutReadingThem(t *testing.T) {
 	purger := &recordingPurger{users: f.userRepo}
 
 	sync := service.NewLDAPSyncService(directory, f.userRepo, f.roleRepo,
-		counting, purger, 1, model.RoleUser)
+		counting, purger, nil, 1, model.RoleUser)
 
 	leaver := externalUser(t, f, "leaver@example.com")
 
