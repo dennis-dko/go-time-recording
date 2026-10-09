@@ -11,14 +11,14 @@ import (
 // Everything that stops the application gives it longer than it takes to stop.
 //
 // On a stop the application waits for the requests under way for up to
-// SHUTDOWN_GRACE_PERIOD, main waits for that wait to finish, and only then stops
-// the HTTPS front end, which it gives tlsShutdownGrace. Whatever stops it waits
-// its own time before killing it: systemd's TimeoutStopSec, which the unit in the
-// operations guide sets with exactly this reason, and Docker's stop timeout,
-// which neither compose.yaml nor the guide's docker run set at all - so the
-// container was killed at the daemon's default, ten seconds or less, while the
-// application meant to wait thirty, and an import under way at an update or a
-// restart of the stack was cut off.
+// SHUTDOWN_GRACE_PERIOD, GoFr's Run waits for that wait to finish, and only then
+// does main stop the HTTPS front end, which it gives tlsShutdownGrace. Whatever
+// stops it waits its own time before killing it: systemd's TimeoutStopSec, which
+// the unit in the operations guide sets with exactly this reason, and Docker's
+// stop timeout, which neither compose.yaml nor the guide's docker run set at
+// all - so the container was killed at the daemon's default, ten seconds or
+// less, while the application meant to wait thirty, and an import under way at
+// an update or a restart of the stack was cut off.
 func TestEverythingThatStopsTheApplicationWaitsLongerThanItsGrace(t *testing.T) {
 	t.Parallel()
 

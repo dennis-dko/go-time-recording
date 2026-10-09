@@ -313,7 +313,7 @@ So the shipped `configs/.env` sets only what no screen can administer:
 | `TLS_*`, `HSTS_MAX_AGE` | same, and a wrong value makes the instance unreachable rather than merely wrong |
 | `DB_DIALECT`, `DB_NAME` | this is what decides whether there is a database to store a setting in |
 | `UI_ENABLED`, `AUTH_ENABLED` | either one switched off removes the screen that would switch it back |
-| `SHUTDOWN_GRACE_PERIOD` | read at start - by the framework, and by the application's own wait for the requests under way when it stops |
+| `SHUTDOWN_GRACE_PERIOD` | read at start by the framework, which waits that long for the requests under way when it stops |
 | `APP_NAME` | see below — it is not the instance title |
 
 Six values used to sit there **as well as** in Settings — the log level, the
