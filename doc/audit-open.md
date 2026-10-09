@@ -26,7 +26,6 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-4 | Guessing a second-factor code is bounded only by the per-address rate limit. A per-account limit on wrong codes, with its lock-out trade-off? |
 | D-new-5 | Force the self-update download and the datasource file to disk before the rename: a power cut in the half minute after an update can leave an empty binary on ext4. |
 | D-new-6 | The swap drops the error of putting the running binary back; if that fails as well, the path is empty and the message does not say so. Needs a seam to test. |
-| D-new-7 | `test/filelength_test.go` calls `selfupdate_test.go` "a few lines over"; it is 957 lines against a budget of 800. |
 | D-new-8 | A stop arriving within the restart's half-second grace, with a shutdown lasting past it, lets the re-execution replace the process mid-shutdown until the service manager kills it. A fix that buys little: it needs a seam only a test would use. |
 | D-new-10 | A person whose directory entry lost its mail keeps the account through a run but cannot sign in, and the refusal tells them to change the attribute setting. Allow the sign-in keyed on the identifier? |
 | D-new-11 | The project list loads every project and filters in memory: 11.8 ms a call on SQLite over 10,000 projects, against 23 µs for the indexed query. A decision about scale. |

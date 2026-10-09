@@ -31,8 +31,9 @@ var overBudget = map[string]string{
 	"test/harness/harness.go": "one object shared by three suites - building the binary, giving an " +
 		"instance its database and port, knowing when it is ready; creating the database is the part " +
 		"that could stand alone",
-	"internal/infrastructure/selfupdate/selfupdate_test.go": "a few lines over, and one subject: the " +
-		"updater's own cases beside the one file they test",
+	"internal/infrastructure/selfupdate/selfupdate_test.go": "three subjects in one - the feed, the " +
+		"download and the swap, which the code keeps in three files; the split along them is owed and " +
+		"nobody has made it yet",
 	"internal/interface/web/assets/app.js": "one script with no build step to split it; read by its " +
 		"section banners instead, on the rotation CLAUDE.md keeps",
 	"internal/interface/web/assets/app.css": "one stylesheet for one page, kept in the order of the " +
