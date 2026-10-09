@@ -26,11 +26,9 @@ var _ repository.TimerRepository = (*TimerRepository)(nil)
 func (r *TimerRepository) Get(ctx context.Context, userID uint) (*model.RunningTimer, error) {
 	timer := model.RunningTimer{UserID: userID}
 
-	var projectID sql.NullInt64
-
 	err := r.db.QueryRowContext(ctx, r.rebind(
 		"SELECT project_id, description, started_at FROM running_timers WHERE user_id = ?"),
-		userID).Scan(&projectID, &timer.Description, &timer.StartedAt)
+		userID).Scan(&timer.ProjectID, &timer.Description, &timer.StartedAt)
 
 	// Nothing running is the ordinary state, not a failure.
 	if errors.Is(err, sql.ErrNoRows) {
@@ -39,11 +37,6 @@ func (r *TimerRepository) Get(ctx context.Context, userID uint) (*model.RunningT
 
 	if err != nil {
 		return nil, apperror.Internal(err)
-	}
-
-	if projectID.Valid {
-		id := uint(projectID.Int64)
-		timer.ProjectID = &id
 	}
 
 	return &timer, nil
@@ -73,13 +66,8 @@ func (r *TimerRepository) Start(ctx context.Context, timer *model.RunningTimer) 
 				description = VALUES(description), started_at = VALUES(started_at)`
 	}
 
-	var projectID any
-	if timer.ProjectID != nil {
-		projectID = *timer.ProjectID
-	}
-
 	if _, err := r.exec(ctx, query,
-		timer.UserID, projectID, timer.Description, timer.StartedAt); err != nil {
+		timer.UserID, timer.ProjectID, timer.Description, timer.StartedAt); err != nil {
 		return apperror.Internal(err)
 	}
 

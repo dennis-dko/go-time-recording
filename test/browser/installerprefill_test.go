@@ -4,7 +4,6 @@ package browser
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -31,17 +30,7 @@ func TestTheInstallerFillsInTheEnvironmentsAnswersOnceItHasTheToken(t *testing.T
 	app := harness.StartUnconfigured(t,
 		"SETUP_TOKEN="+token, "DB_HOST=db.internal", "DB_NAME=hours", "DB_USER=gtr")
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("lang", "en-US"),
-		chromedp.NoSandbox,
-	)
-
-	if path := os.Getenv("CHROME_PATH"); path != "" {
-		opts = append(opts, chromedp.ExecPath(path))
-	}
-
-	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
+	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), launch("en-US")...)
 	defer cancelAlloc()
 
 	ctx, cancel := chromedp.NewContext(alloc)
