@@ -22,7 +22,12 @@ type synchroniser interface {
 // removed - the only record of a deletion - raced the end of the process. Ended
 // at the stop, it stops at its next call to the database, and the report it
 // hands back says what it did.
-func scheduledSync(stopping context.Context, directory synchroniser) gofr.CronFunc {
+//
+// What each run came to is counted in runs as well. GoFr counts a job as a
+// success whenever it returns, and a run refused by a guard or cut off from the
+// directory returns like one that worked - and nobody presses the button for a
+// scheduled run, so nobody sees the refusal the screen would have shown.
+func scheduledSync(stopping context.Context, directory synchroniser, runs appservice.Recorder) gofr.CronFunc {
 	return func(ctx *gofr.Context) {
 		run, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -43,12 +48,14 @@ func scheduledSync(stopping context.Context, directory synchroniser) gofr.CronFu
 
 		if err != nil {
 			ctx.Logger.Errorf("directory sync failed: %v", err)
+			countRun(ctx, runs, appservice.DirectoryRunFailed)
 
 			return
 		}
 
 		if report.Aborted != "" {
 			ctx.Logger.Warnf("directory sync refused: %s", report.Aborted)
+			countRun(ctx, runs, appservice.DirectoryRunRefused)
 
 			return
 		}
@@ -56,5 +63,15 @@ func scheduledSync(stopping context.Context, directory synchroniser) gofr.CronFu
 		if len(report.Created) > 0 {
 			ctx.Logger.Infof("directory sync added %d account(s)", len(report.Created))
 		}
+
+		countRun(ctx, runs, appservice.DirectoryRunCompleted)
+	}
+}
+
+// countRun records what a scheduled run came to, where there is anything to
+// record it in.
+func countRun(ctx context.Context, runs appservice.Recorder, outcome string) {
+	if runs != nil {
+		runs.IncrementCounter(ctx, appservice.MetricDirectoryRuns, "outcome", outcome)
 	}
 }

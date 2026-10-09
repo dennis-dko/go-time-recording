@@ -94,10 +94,14 @@ func TestFollowingTheLogAcrossARestartStartsAtTheNewBeginning(t *testing.T) {
 			truncate(a.log(), 2000))
 	}
 
-	// Every request is a line, so asking is also what moves the new log on.
+	// Every request is a line but a poll of the log itself, which is kept out of
+	// what the viewer shows - so a request beside each poll is what moves the new
+	// log on.
 	var fresh logPage
 
 	for range 200 {
+		admin.must(admin.api(http.MethodGet, "/roles", nil), http.StatusOK)
+
 		fresh = admin.follow(t, 0, "")
 		if fresh.LastSeq > held.LastSeq {
 			break

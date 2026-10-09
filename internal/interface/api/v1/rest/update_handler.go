@@ -537,9 +537,27 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 	// notice is the length of the download rather than nothing.
 	h.hub.Publish(announce.Installing, release.Version)
 
+	// Taken back on every way out that does not say what is true itself, a panic
+	// included: GoFr recovers one inside a handler and the process carries on,
+	// and it carried on with "installing" on every screen for an install that had
+	// ended - the retraction was on the error path only.
+	unsaid := announce.Cancelled
+
+	defer func() {
+		if unsaid != "" {
+			h.hub.Publish(unsaid, release.Version)
+		}
+	}()
+
 	if err := h.source.Install(c, release); err != nil {
+		unsaid = ""
+
 		return nil, h.afterAFailedInstall(err, release.Version)
 	}
+
+	// In place from here, so what a later way out leaves standing is that it
+	// waits for a restart rather than that it did not happen.
+	unsaid = announce.Pending
 
 	// Downloaded and in place. Whether it takes effect now or when somebody walks
 	// over to the machine is the restart card's question, and the answer differs
@@ -555,6 +573,8 @@ func (h *UpdateHandler) Apply(c *gofr.Context) (any, error) {
 	} else {
 		h.hub.Publish(announce.Pending, release.Version)
 	}
+
+	unsaid = ""
 
 	return state, nil
 }

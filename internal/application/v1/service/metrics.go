@@ -8,7 +8,7 @@ import "context"
 // milliseconds while nobody has been able to book time since the directory
 // changed, and app_http_response looks the same either way.
 //
-// So these three measure the work rather than the plumbing, and each one is here
+// So these four measure the work rather than the plumbing, and each one is here
 // because somebody would act on it:
 //
 //   - hours booked, which is what the installation exists to record, and whose
@@ -16,7 +16,9 @@ import "context"
 //   - refused sign-ins, which is either a directory that has stopped answering
 //     or somebody working through a password list;
 //   - accounts the directory synchronisation creates and deletes, which is the
-//     one operation here that removes people together with their recorded hours.
+//     one operation here that removes people together with their recorded hours;
+//   - what each scheduled synchronisation came to, because GoFr counts a job
+//     that returned as a success, and a refused run returns like one that worked.
 //
 // Deliberately absent: anything labelled with a user, an address or a project
 // name. A label is a time series, and one per person is both a memory leak in
@@ -35,6 +37,17 @@ const (
 	// MetricDirectoryAccounts counts what a synchronisation did, labelled
 	// "action" with "created" or "deleted".
 	MetricDirectoryAccounts = "gtr_directory_accounts_total"
+
+	// MetricDirectoryRuns counts what each scheduled synchronisation came to,
+	// labelled "outcome" with one of the DirectoryRun values.
+	MetricDirectoryRuns = "gtr_directory_scheduled_runs_total"
+)
+
+// What a scheduled synchronisation came to. A closed set, because it is a label.
+const (
+	DirectoryRunCompleted = "completed"
+	DirectoryRunRefused   = "refused"
+	DirectoryRunFailed    = "failed"
 )
 
 // Reasons a sign-in was refused. A closed set, because it is a label.
@@ -42,6 +55,11 @@ const (
 	SignInFailureCredentials = "credentials"
 	SignInFailureDirectory   = "directory"
 	SignInFailureTOTP        = "totp"
+
+	// SignInFailureDatabase is a sign-in this installation could not answer
+	// because its own database did not: counted as credentials, it looked like
+	// everybody mistyping their password at once.
+	SignInFailureDatabase = "database"
 )
 
 // Recorder is the part of the framework's metrics manager this application

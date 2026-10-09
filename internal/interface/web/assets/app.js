@@ -3437,6 +3437,7 @@ const TRANSLATIONS = {
     'ops.rateLimit': 'Ratenbegrenzung (Anfragen)',
     'ops.rateWindow': 'Zeitfenster der Ratenbegrenzung (Sekunden)',
     'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1, 0 = keine Grenze)',
+    'ops.deleteRatioSmall': 'Die Löschgrenze ist ein Anteil an den Verzeichniskonten, die es hier schon gibt. Bei einem oder zwei davon ist ein einziger Weggang alle oder die Hälfte, und eine Grenze darunter lehnt ihn ab: Ist der Weggang echt, die Grenze für diesen Lauf anheben.',
     'ops.reset': 'Alle Werte auf die Konfigurationsdatei zurücksetzen',
     'ops.saved': 'Grenzwerte gespeichert',
     'ops.reset.done': 'Alle Werte folgen wieder der Konfigurationsdatei',
@@ -11511,12 +11512,13 @@ function screenColours() {
 }
 
 /**
- * The period each evaluation on screen was worked out for, as its answer named it.
+ * The period each evaluation on screen was worked out for, as its answer named it,
+ * and for the report the projects it was asked about.
  *
  * Not the form's date boxes: they hold what the next evaluation will ask for. Read
  * off them, a document was headed with whatever somebody had typed since - April
  * over March's figures - and with nothing when the boxes were left empty and the
- * server chose the period itself.
+ * server chose the period itself. The report's select is the same kind of box.
  */
 const evaluatedPeriod = { report: null, overtime: null, statistics: null };
 
@@ -11525,6 +11527,22 @@ function periodOf(period) {
   if (!period?.from || !period?.to) return '';
 
   return `${fmtDate(period.from)} – ${fmtDate(period.to)}`;
+}
+
+/**
+ * Which projects a report covers, in the words its select offers them in.
+ *
+ * Kept as it was asked rather than as the answer names it, because the answer
+ * says 0 both for every project and for none of them.
+ */
+function coverageOf(evaluated) {
+  if (!evaluated) return '';
+
+  if (!evaluated.projectId) return t('filter.allProjects', 'All projects');
+
+  if (evaluated.projectId === 'none') return t('report.noProject', 'No project');
+
+  return projectName(Number(evaluated.projectId));
 }
 
 /**
@@ -11576,7 +11594,8 @@ async function reportDocument() {
   return {
     title: t('report.title', 'Report'),
     colours: screenColours(),
-    subtitle: periodOf(evaluatedPeriod.report),
+    subtitle: [coverageOf(evaluatedPeriod.report), periodOf(evaluatedPeriod.report)]
+      .filter(Boolean).join(' · '),
     sections: [{
       heading: t('report.result', 'Result'),
       caption: $('#report-chart-caption').textContent.trim(),
@@ -12531,25 +12550,53 @@ async function registerPasskey(name) {
 
   if (!created) throw new Error(t('passkey.cancelled', 'The passkey was not created.'));
 
-  return api('/me/passkeys/register', {
-    method: 'PUT',
-    body: JSON.stringify({
-      token: started.token,
-      name,
-      credential: {
-        id: created.id,
-        rawId: bytesToB64url(created.rawId),
-        type: created.type,
-        response: {
-          clientDataJSON: bytesToB64url(created.response.clientDataJSON),
-          attestationObject: bytesToB64url(created.response.attestationObject),
+  try {
+    return await api('/me/passkeys/register', {
+      method: 'PUT',
+      body: JSON.stringify({
+        token: started.token,
+        name,
+        credential: {
+          id: created.id,
+          rawId: bytesToB64url(created.rawId),
+          type: created.type,
+          response: {
+            clientDataJSON: bytesToB64url(created.response.clientDataJSON),
+            attestationObject: bytesToB64url(created.response.attestationObject),
+          },
+          // What the device is: a phone, a security key, the laptop itself. The
+          // server keeps it so the next prompt can ask for the right thing.
+          transports: created.response.getTransports?.() ?? [],
         },
-        // What the device is: a phone, a security key, the laptop itself. The
-        // server keeps it so the next prompt can ask for the right thing.
-        transports: created.response.getTransports?.() ?? [],
-      },
-    }),
-  });
+      }),
+    });
+  } catch (err) {
+    dropFromTheDevice(options, created, err);
+
+    throw err;
+  }
+}
+
+/**
+ * Tells the device that a passkey it has just made is one this installation
+ * does not hold, so that it can drop it.
+ *
+ * The device makes the passkey before the server has seen it, and a server that
+ * then refuses it - the attempt had run out, the check failed - left it on the
+ * device, offered at every sign-in and refused at every one. Only a refusal is
+ * said: a request that never arrived, or one the server failed on, may have
+ * stored the passkey after all, and one the server already holds is not unknown
+ * to it. Best effort, and nothing at all on a browser without the Signal API.
+ */
+function dropFromTheDevice(options, created, err) {
+  if (!err?.status || err.status >= 500 || err.refusal?.code === 'passkeyKnown') return;
+
+  if (typeof window.PublicKeyCredential?.signalUnknownCredential !== 'function') return;
+
+  PublicKeyCredential.signalUnknownCredential({
+    rpId: options.rp?.id || location.hostname,
+    credentialId: created.id,
+  }).catch(() => {});
 }
 
 /**
@@ -14069,8 +14116,8 @@ function wireForms() {
 
   // One row, because the total covers the reader's own hours and nobody else's.
   // The column used to name the person, which is now always the same person.
-  function renderReport(report) {
-    evaluatedPeriod.report = { from: report.from, to: report.to };
+  function renderReport(report, projectId) {
+    evaluatedPeriod.report = { from: report.from, to: report.to, projectId };
 
     const rows = (report.entries ?? []).map((entry) => el('tr', {},
       el('td', { text: `${fmtDate(report.from)} – ${fmtDate(report.to)}` }),
@@ -14100,7 +14147,7 @@ function wireForms() {
 
       // Drawn through redrawable, so a language change draws it again from this
       // same answer rather than leaving an English total under a German heading.
-      redrawable('report', () => renderReport(report));
+      redrawable('report', () => renderReport(report, projectId));
 
       // The same period as a picture. The figures come from the statistics
       // endpoint rather than the report, because a total is one number and a

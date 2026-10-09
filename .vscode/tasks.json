@@ -85,7 +85,7 @@
       // daemon wants. ${workspaceFolder} would not do - VS Code substitutes it
       // as c:\Users\..., which is the Windows spelling this whole line exists to
       // avoid.
-      "command": "MSYS_NO_PATHCONV=1 docker run --rm -v \"$(pwd)\":/app -w /app -e GOFLAGS=-buildvcs=false -e GOTOOLCHAIN=auto golang:1.27 go test -race ./...",
+      "command": "MSYS_NO_PATHCONV=1 docker run --rm -v \"$(pwd)\":/app -w /app -e GOFLAGS=-buildvcs=false -e GOTOOLCHAIN=auto golang:1.27 go test -race -count=1 ./...",
       "options": {
         // Windows: Git Bash at its default install location. On Linux or macOS
         // this line is the one thing to change - "/bin/bash" - and the command

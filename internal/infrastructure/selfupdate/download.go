@@ -219,6 +219,15 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 		return fmt.Errorf("the download broke off: %w", err)
 	}
 
+	// On the disk before the swap renames it into place: that rename lands on a
+	// name moved aside a moment before, which ext4 does not hold back for the
+	// data, so a power cut soon after could leave the service an empty binary.
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+
+		return fmt.Errorf("cannot write the download to disk: %w", err)
+	}
+
 	if err := file.Close(); err != nil {
 		return err
 	}
@@ -248,7 +257,9 @@ func (s *Source) download(ctx context.Context, url, into, want string) error {
 // worth keeping honest, because this bound is compiled into the version that is
 // running: the day a release passes it, every installation already out there
 // refuses that release, and none of them can be given a larger bound except by
-// hand. It is the number to revisit long before it is the number that breaks.
+// hand. It is the number to revisit long before it is the number that breaks -
+// and the release workflow refuses an asset past it, so a release that outgrows
+// it fails before it is published rather than at every installation after.
 const maxDownload = 100 << 20
 
 // outgrown is the refusal of a release larger than this version downloads.

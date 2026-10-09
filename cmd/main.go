@@ -275,6 +275,10 @@ func main() {
 	// given something to show. See the logsink package for what that costs.
 	logs := logsink.New(logsink.DefaultCapacity)
 
+	// The log viewer's own polls go to the console and not into what it shows;
+	// see QuietRequestsTo. The route is the one RegisterRoutes gives the viewer.
+	logs.QuietRequestsTo("/api/v1/admin/logs")
+
 	if terminal {
 		// Interception makes the output a pipe, and GoFr prints JSON when its
 		// output is not a terminal. On a terminal that would be a regression in
@@ -997,7 +1001,7 @@ func main() {
 	if cfg.LDAPSyncSchedule != "" {
 		app.Logger().Infof("directory reconciliation scheduled at %q", cfg.LDAPSyncSchedule)
 
-		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", scheduledSync(stopping, ldapSync))
+		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", scheduledSync(stopping, ldapSync, app.Metrics()))
 	}
 
 	// The nightly sweep that moved stale open entries to submitted is gone with the
@@ -1109,6 +1113,8 @@ func registerBusinessMetrics(app *gofr.App) {
 		"Refused sign-ins, by reason.")
 	m.NewCounter(appservice.MetricDirectoryAccounts,
 		"Accounts the directory synchronisation created or deleted.")
+	m.NewCounter(appservice.MetricDirectoryRuns,
+		"Scheduled directory synchronisations, by what each came to.")
 }
 
 // tlsShutdownGrace bounds how long the HTTPS listener is given to drain.

@@ -304,6 +304,15 @@ func SaveDatasource(path string, ds Datasource) error {
 		return err
 	}
 
+	// On the disk before the rename: the rename can be recorded before the data
+	// it points at, and a power cut between the two leaves an empty file - after
+	// which the next start serves the installer as if nothing had been configured.
+	if err := staged.Sync(); err != nil {
+		_ = staged.Close()
+
+		return err
+	}
+
 	if err := staged.Close(); err != nil {
 		return err
 	}

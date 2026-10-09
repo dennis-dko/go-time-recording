@@ -122,4 +122,19 @@ func TestAScheduledDirectoryRunRemovesWhoHasLeftAndSaysSo(t *testing.T) {
 	if saysItRemoved(a.log(), "alice@example.com") || saysItRemoved(a.log(), "bob@example.com") {
 		t.Error("the scheduled run says it removed somebody the directory still holds")
 	}
+
+	// And what it came to is published, apart from GoFr's own count of the job,
+	// which calls every run that returned a success.
+	if !eventually(func() bool {
+		for line := range strings.Lines(scrape(t, a)) {
+			if strings.HasPrefix(line, "gtr_directory_scheduled_runs_total") &&
+				strings.Contains(line, `outcome="completed"`) {
+				return true
+			}
+		}
+
+		return false
+	}) {
+		t.Error("the run removed dave@example.com, and no completed scheduled run is published")
+	}
 }
