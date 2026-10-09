@@ -180,10 +180,11 @@ jobs:
       # the fix, which is true of that advisory - the in-memory lookup. The 54 KB
       # crafted workbook that panics the parser reaches a second flaw in the
       # spilled lookup, GHSA-wcg2-648h-mhxq, fixed upstream after v2.11.0 and in
-      # no release or database yet. The register can only hold what govulncheck
-      # reports, so what watches that one is a test beside the guard -
-      # TestExcelizeStillPanicsOnASpilledNegativeSharedString in
-      # internal/support/spreadsheet - which fails once a release carries the fix.
+      # no release or database. The register can only hold what govulncheck
+      # reports, so a test beside the guard watched that one until the fix
+      # arrived: go.mod moved to the upstream commit carrying it on 2026-10-09,
+      # ahead of any release, when fifteen more advisories against v2.11.0 were
+      # published at once - none of them in the database that day either.
       #
       # So the register below is the third answer, and it is held to three rules
       # rather than one. An advisory it does not name fails the build, which is

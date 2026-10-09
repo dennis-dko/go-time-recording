@@ -374,6 +374,59 @@ func TestSignInAfterARenameKeepsTheSameAccount(t *testing.T) {
 	}
 }
 
+// Whoever is given a mailbox somebody had before them is not given that person's
+// account with it.
+//
+// The address found an account recording another entry's identifier, and the
+// sign-in took it over and wrote the newcomer's identifier into it: measured with
+// a probe against a real directory, the successor landed in the predecessor's
+// hours and projects. A run reads the same pair as a departure and an arrival.
+// The refusal covers anybody who can write an entry with somebody else's address
+// into the directory as well, which is the same act done on purpose.
+func TestAMailboxPassedOnDoesNotPassTheAccountOnWithIt(t *testing.T) {
+	f, sessions := newSessionFixture(t, &service.ExternalUser{
+		ID: "uuid-successor", Email: "office@example.com", Name: "New Person",
+	})
+
+	predecessor := externalUserWithID(t, f, "office@example.com", "uuid-predecessor")
+
+	_, err := sessions.Login(context.Background(), "office@example.com", "anything", "")
+	if !hasCode(err, "accountOfAnotherEntry") {
+		t.Fatalf("the successor's sign-in answered %v, want a refusal naming the other entry", err)
+	}
+
+	unchanged, err := f.userRepo.GetByID(context.Background(), predecessor)
+	if err != nil {
+		t.Fatalf("the predecessor's account must still exist: %v", err)
+	}
+
+	if unchanged.ExternalID != "uuid-predecessor" || unchanged.Name == "New Person" {
+		t.Errorf("the refused sign-in still rewrote the account: identifier %q, name %q",
+			unchanged.ExternalID, unchanged.Name)
+	}
+}
+
+// An entry that carries no identifier still signs in by its address, as a run
+// still finds it by its address: with the identifier attribute cleared, every
+// entry arrives that way, and its silence says nothing about who it is.
+func TestAnEntryWithoutAnIdentifierStillSignsInByItsAddress(t *testing.T) {
+	f, sessions := newSessionFixture(t, &service.ExternalUser{
+		Email: "office@example.com",
+	})
+
+	existing := externalUserWithID(t, f, "office@example.com", "uuid-recorded")
+
+	result, err := sessions.Login(context.Background(), "office@example.com", "anything", "")
+	if err != nil {
+		t.Fatalf("an entry without an identifier was refused its account: %v", err)
+	}
+
+	if result.Principal.User.ID != existing {
+		t.Errorf("signed in as %d, want the account under the address, %d",
+			result.Principal.User.ID, existing)
+	}
+}
+
 func countWithEmail(users []*model.User, email string) int {
 	var count int
 
@@ -500,5 +553,61 @@ func TestAnExternalAdministratorStillSignsIn(t *testing.T) {
 
 	if _, err := sessions.Login(context.Background(), "boss@example.com", "anything", ""); err != nil {
 		t.Errorf("a directory-backed administrator was refused: %v", err)
+	}
+}
+
+// Changing the attribute the directory's identifier is read from forgets every
+// identifier recorded under the old one, so a run after the change finds the
+// people it found before.
+//
+// The two attributes give the same people different values - an entryUUID is not
+// an objectGUID - and kept, every recorded one read as somebody who had left: the
+// next run proposed each account whose owner had not signed in since for
+// deletion, with their hours, and only the ratio guard stood in the way.
+// Forgotten, each account is matched by its address again and records the new
+// identifier the next time its owner signs in.
+func TestChangingTheIdentifierAttributeKeepsEveryAccountFound(t *testing.T) {
+	f := newSyncFixture(t, 1.0)
+	settings := service.NewSettingsService(newStubSettings(), f.roleRepo, f.userRepo, "Test")
+
+	config := model.DefaultLDAPConfig()
+	if err := settings.SaveLDAP(context.Background(), config); err != nil {
+		t.Fatalf("store the directory settings: %v", err)
+	}
+
+	staying := externalUserWithID(t, f.fixture, "worker@example.com", "uuid-recorded")
+
+	// Saved again unchanged, which the card does whenever anything else on it
+	// changes.
+	if err := settings.SaveLDAP(context.Background(), config); err != nil {
+		t.Fatalf("store the same settings again: %v", err)
+	}
+
+	kept, err := f.userRepo.GetByID(context.Background(), staying)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+
+	if kept.ExternalID != "uuid-recorded" {
+		t.Errorf("saving the same attribute again forgot the identifier, %q is left", kept.ExternalID)
+	}
+
+	config.IDAttribute = "objectGUID"
+	if err := settings.SaveLDAP(context.Background(), config); err != nil {
+		t.Fatalf("change the identifier attribute: %v", err)
+	}
+
+	f.directory.users = []service.ExternalUser{
+		{ID: "guid-under-the-new-attribute", Email: "worker@example.com"},
+	}
+
+	report, err := f.sync.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	if len(report.Deleted) != 0 || len(report.Candidates) != 0 {
+		t.Fatalf("the run after the change deleted %+v and proposed %+v, for somebody still in the directory",
+			report.Deleted, report.Candidates)
 	}
 }

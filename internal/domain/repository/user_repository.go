@@ -20,6 +20,11 @@ type UserRepository interface {
 	// mail address does not.
 	GetByExternalID(ctx context.Context, externalID string) (*model.User, error)
 
+	// ForgetExternalIDs clears the identifier every account recorded from the
+	// directory, in one write, so each is matched by its address again until its
+	// owner next signs in and records the identifier the directory gives now.
+	ForgetExternalIDs(ctx context.Context) error
+
 	GetAll(ctx context.Context) ([]*model.User, error)
 
 	Update(ctx context.Context, user *model.User) (*model.User, error)

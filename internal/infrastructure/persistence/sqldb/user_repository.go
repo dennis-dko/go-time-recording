@@ -105,6 +105,13 @@ func (r *UserRepository) GetByExternalID(ctx context.Context, externalID string)
 	return user, nil
 }
 
+// ForgetExternalIDs clears every recorded directory identifier in one statement.
+func (r *UserRepository) ForgetExternalIDs(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, "UPDATE users SET external_id = '' WHERE external_id <> ''")
+
+	return err
+}
+
 // GetByEmail looks a user up by their login identifier.
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {
 	row := r.db.QueryRowContext(ctx, r.rebind(userSelect+" WHERE u.email = ?"), strings.ToLower(email))
