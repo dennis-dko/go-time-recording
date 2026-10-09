@@ -745,18 +745,20 @@ func main() {
 		return nil
 	}
 
-	// What stopped the start, if anything did. GoFr runs its start hooks inside
-	// Run, and a hook that fails makes Run log it and return rather than exit.
-	// Run is the last thing main does, so the process then ended with 0, and a
-	// supervisor that restarts on failure - the systemd unit OPERATIONS.md ships -
-	// read a refused start as a clean stop. For a database that was only briefly
-	// away, that is an outage nothing brings back.
-	var startFailure error
-
+	// GoFr runs its start hooks inside Run, and a hook that fails makes Run release
+	// what start-up opened and exit 1 from inside - the status a supervisor that
+	// restarts on failure has to read. GoFr's line saying why goes through the
+	// capture and the exit can overtake it, so the reason is said past the pipe
+	// here first, as a failed migration's is. A start the operator stopped is no
+	// failure: Run returns for that, and the process ends with 0.
 	app.OnStart(func(ctx *gofr.Context) error {
-		startFailure = prepare(ctx)
+		err := prepare(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			// Best effort, like every line to a console.
+			_, _ = fmt.Fprintf(console, "the application did not start: %v\n", err)
+		}
 
-		return startFailure
+		return err
 	})
 
 	if cfg.AuthEnabled() {
@@ -1028,13 +1030,6 @@ func main() {
 	// HTTPS front end is stopped by the deferred call above, so an answer on its
 	// way through it has left the backend first.
 	app.Run()
-
-	// Said again past the pipe, as every other refusal here is: GoFr's own line
-	// went through the capture, and die is what guarantees the reason reaches the
-	// console before the process is gone.
-	if startFailure != nil {
-		die(restoreOutput, "the application did not start: %v", startFailure)
-	}
 }
 
 // sayingWhy hands each migration to GoFr unchanged, except that one which fails

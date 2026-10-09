@@ -43,14 +43,18 @@ func TestAnInstanceThatCannotStartIsSeenToExit(t *testing.T) {
 	}
 }
 
-// A start refused by the application's own start-up step exits as a failure.
+// A start refused by the application's own start-up step exits as a failure,
+// and says why itself.
 //
 // The step that checks SECRET_KEY against what the installation's secrets were
-// written with runs inside GoFr's start hooks, and a hook that fails makes GoFr's
-// Run return rather than exit. Run was the last thing main did, so the process
-// ended with 0: the systemd unit OPERATIONS.md ships restarts on failure, and it
-// read a refused start as a clean stop - which, for a database that was only
-// briefly away, is an outage nothing brings back.
+// written with runs inside GoFr's start hooks. A hook that failed used to make
+// GoFr's Run return rather than exit, so the process ended with 0: the systemd
+// unit OPERATIONS.md ships restarts on failure, and it read a refused start as a
+// clean stop - which, for a database that was only briefly away, is an outage
+// nothing brings back. Since v1.62.0 Run exits 1 itself, from inside, and main's
+// own sentence after Run - the one written past the log capture, which is sure to
+// arrive - was never reached; GoFr's line goes through the capture, and an exit
+// can come before it has been passed on.
 func TestAStartTheApplicationRefusesExitsAsAFailure(t *testing.T) {
 	t.Parallel()
 
@@ -75,6 +79,11 @@ func TestAStartTheApplicationRefusesExitsAsAFailure(t *testing.T) {
 
 	if !strings.Contains(log, "SECRET_KEY is not the key") {
 		t.Errorf("the refusal did not say why:\n%s", log)
+	}
+
+	if !strings.Contains(log, "the application did not start: ") {
+		t.Errorf("the refusal was said only through the log capture, which an exit can "+
+			"overtake, and not by the application itself:\n%s", log)
 	}
 }
 
