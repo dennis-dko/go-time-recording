@@ -39,7 +39,6 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-23 | A guard that fails when the GoFr requirement moves, until the forty-odd statements about the framework have been read again? |
 | D-new-25 | A record of deletions that no log level can switch off? |
 | D-new-27 | In a container a restart is an exit, because re-executing used to inherit the environment; that reason is gone. Replace the process there too? |
-| D-new-28 | A panic during an install leaves the "installing" banner up, because the retraction is on the error path. Retract it in a deferred call? |
 | D-new-31 | Make an empty PostgreSQL password work by quoting what GoFr receives? It moves installations whose data sits in the account's own database. |
 | D-new-32 | Refuse to start, rather than warn, on a connection the driver reads differently from how it was typed? |
 | D-new-33 | Report the unquoted connection string to GoFr upstream? |
