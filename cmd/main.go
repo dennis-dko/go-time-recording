@@ -997,7 +997,7 @@ func main() {
 	if cfg.LDAPSyncSchedule != "" {
 		app.Logger().Infof("directory reconciliation scheduled at %q", cfg.LDAPSyncSchedule)
 
-		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", scheduledSync(stopping, ldapSync))
+		app.AddCronJob(cfg.LDAPSyncSchedule, "ldap-sync", scheduledSync(stopping, ldapSync, app.Metrics()))
 	}
 
 	// The nightly sweep that moved stale open entries to submitted is gone with the
@@ -1109,6 +1109,8 @@ func registerBusinessMetrics(app *gofr.App) {
 		"Refused sign-ins, by reason.")
 	m.NewCounter(appservice.MetricDirectoryAccounts,
 		"Accounts the directory synchronisation created or deleted.")
+	m.NewCounter(appservice.MetricDirectoryRuns,
+		"Scheduled directory synchronisations, by what each came to.")
 }
 
 // tlsShutdownGrace bounds how long the HTTPS listener is given to drain.

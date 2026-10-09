@@ -41,7 +41,6 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-25 | A record of deletions that no log level can switch off? |
 | D-new-27 | In a container a restart is an exit, because re-executing used to inherit the environment; that reason is gone. Replace the process there too? |
 | D-new-28 | A panic during an install leaves the "installing" banner up, because the retraction is on the error path. Retract it in a deferred call? |
-| D-new-29 | Should a scheduled directory run's outcome be visible beyond the log? GoFr's `app_cron_job_success` counts a failed or refused run as a success. |
 | D-new-31 | Make an empty PostgreSQL password work by quoting what GoFr receives? It moves installations whose data sits in the account's own database. |
 | D-new-32 | Refuse to start, rather than warn, on a connection the driver reads differently from how it was typed? |
 | D-new-33 | Report the unquoted connection string to GoFr upstream? |
