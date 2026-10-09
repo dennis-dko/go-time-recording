@@ -45,6 +45,21 @@ func (s *SessionService) provisionExternal(ctx context.Context, directoryUser *E
 
 	existing, err := s.users.GetByEmail(ctx, email)
 	if err == nil {
+		// Found by its address while recording another entry's identifier: the
+		// account of whoever held the address before - or of whoever an entry
+		// naming that address was written to impersonate. Taken over, the
+		// newcomer signed in to the other person's hours. A run reads the same
+		// pair as a departure and an arrival, and this agrees with it. Changing
+		// the identifier attribute forgets every recorded identifier, so that
+		// change does not land here for everybody; an entry that arrives with no
+		// identifier says nothing about who it is, and is let through as before.
+		if directoryUser.ID != "" && existing.ExternalID != "" && existing.ExternalID != directoryUser.ID {
+			return nil, apperror.Conflictf("the account under %s records the directory entry %q, "+
+				"and the entry signing in is %q; whose account it is is for an administrator to settle",
+				email, existing.ExternalID, directoryUser.ID).
+				WithCode("accountOfAnotherEntry", email)
+		}
+
 		return s.reconcileExternal(ctx, existing, directoryUser, email)
 	}
 

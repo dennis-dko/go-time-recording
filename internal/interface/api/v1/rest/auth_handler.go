@@ -95,16 +95,30 @@ func (h *AuthHandler) Login(c *gofr.Context) (any, error) {
 		// away and a mistyped password are the same event to whoever has to work
 		// out why nobody can sign in: a 401 and nothing else.
 		//
-		// Only the internal ones. Wrong credentials are the ordinary case and
-		// would bury the rest under every typo anybody makes.
-		if apperror.KindOf(err) == apperror.KindInternal {
+		// Not wrong credentials or a mistyped code, which are the ordinary case
+		// and would bury the rest under every typo anybody makes. What else
+		// refuses a sign-in is the installation's to settle - the directory
+		// accepted the password, and the address belongs here to the account of
+		// another entry - and is said at WARN, as a refused ticket is.
+		switch {
+		case apperror.KindOf(err) == apperror.KindInternal:
 			c.Logger.Errorf("sign-in for %q could not be completed: %v", req.Email, err)
+		case !mistypedCredentials(err):
+			c.Logger.Warnf("sign-in for %q refused: %v", req.Email, err)
 		}
 
 		return nil, unauthorizedError{}
 	}
 
 	return completeSignIn(c, h.sessions, h.maintenance, result, h.timezone.resolve(c))
+}
+
+// mistypedCredentials is mistypedSecondFactor for a password sign-in, where the
+// password itself can be the typo; a ticket cannot.
+func mistypedCredentials(err error) bool {
+	detail, coded := apperror.Detail(err)
+
+	return mistypedSecondFactor(err) || (coded && detail.Code == "invalidCredentials")
 }
 
 // Logout handles POST /api/v1/auth/logout.

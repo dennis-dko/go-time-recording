@@ -700,6 +700,17 @@ password, so it is no longer asked for a new one and the initial password no
 longer opens it, and a synchronisation treats it like any other. An account that
 administers this installation is never taken over.
 
+Nor is one that already belongs to another directory entry. A directory account
+remembers its entry by the identifier the card names — `entryUUID`, or
+`objectGUID` in Active Directory — so somebody given an address another entry
+had before is not handed that entry's account and its hours: the sign-in is
+refused as vaguely as a wrong password, and the log says at WARN which entry the
+account belongs to. It stays the predecessor's until a synchronisation removes
+it, which happens once their entry has left the directory; the next sign-in then
+starts an account of the newcomer's own. Changing the identifier attribute on the
+card forgets the identifiers recorded under the old one, and each account is
+matched by its address again until its owner next signs in.
+
 ### Signing in with a Kerberos ticket
 
 Where people sign in to a Windows domain, their browser can present its Kerberos

@@ -34,7 +34,6 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-12 | TLS is configured but HTTPS cannot start: the process carries on in plain HTTP and says so at ERROR. Refuse to start instead - failing closed, with an outage? |
 | D-new-13 | 39 of 50 write operations in the OpenAPI document have no request body schema. |
 | D-new-14 | The automatic Kerberos attempt on opening the sign-in screen shows the browser's credential dialog once per tab on a Windows machine that does not trust the address. |
-| D-new-15 | A directory run reads "same address, different identifier" as a successor and proposes the old account for deletion; a sign-in takes the account over and records the new identifier. With the schedule empty, whoever inherits a mailbox signs in to the predecessor's hours. |
 | D-new-17 | Should the installer refuse, before saving, a database holding tables this application did not create? A restored database of this application must still pass. |
 | D-new-18 | Hand the log level to GoFr's `ChangeLevel`, now that it is atomic? It removes the forced DEBUG and the restart card's one exception, with a wide diff. |
 | D-new-19 | The log viewer shows a trace only as a tooltip, which cannot be copied. Click a line to search for its request? |
@@ -53,6 +52,7 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-33 | Report the unquoted connection string to GoFr upstream? |
 | D-new-34 | Should a report's document name the project the report was filtered by? |
 | D-new-35 | A passkey the device created but the server refused stays on the device. Drop it through the Signal API? |
+| D-new-36 | A directory sign-in under way while the identifier attribute is changed can record an identifier read under the old attribute, and its owner is refused from then on, until the attribute is changed again. Closing the window means the settings service applying the directory configuration itself and forgetting the identifiers a second time after it - worth it, for milliseconds around a change made once? |
 
 ## Measurements reading cannot make
 

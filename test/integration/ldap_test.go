@@ -274,6 +274,56 @@ func TestAWrongDirectoryPasswordIsRefused(t *testing.T) {
 	}
 }
 
+// A directory sign-in is not handed the account of whoever held the address
+// before, and the log says why where the answer does not.
+//
+// Measured with a probe before this was refused: Alice's sign-in landed on the
+// account under her address that recorded another entry, and wrote her identifier
+// over its own - the predecessor's hours and projects were hers from then on. The
+// answer stays as vague as any refused sign-in, so the line in the log is all an
+// administrator has to go on when somebody says their password is not taken.
+func TestADirectorySignInIsRefusedTheAccountOfAnotherEntry(t *testing.T) {
+	t.Parallel()
+
+	host, port := requireLDAP(t)
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+	configureLDAP(t, admin, host, port, ldapBaseDN)
+
+	created := admin.api(http.MethodPost, "/users", map[string]any{
+		"name": "Who Had The Address", "email": "alice@example.com",
+		"role": "user", "password": "a-predecessors-password",
+	})
+
+	var made struct {
+		ID uint `json:"id"`
+	}
+
+	admin.must(created, http.StatusCreated).Data(t, &made)
+	markAsDirectoryAccount(t, a, made.ID)
+
+	predecessor := recordedIdentifier(t, a, made.ID)
+
+	refused := a.newClient().api(http.MethodPost, "/auth/login", map[string]string{
+		"email": "alice@example.com", "password": "alice-password",
+	})
+
+	if refused.Status != http.StatusUnauthorized {
+		t.Fatalf("Alice's sign-in onto the account of another entry answered %d, want %d\n%s",
+			refused.Status, http.StatusUnauthorized, refused.Body)
+	}
+
+	if got := recordedIdentifier(t, a, made.ID); got != predecessor {
+		t.Errorf("the refused sign-in still wrote its identifier over the account's: %q, was %q",
+			got, predecessor)
+	}
+
+	if !strings.Contains(a.Log(), predecessor) || !strings.Contains(a.Log(), "alice@example.com") {
+		t.Errorf("nothing in the log names the account and the entry it records:\n%s", a.Log())
+	}
+}
+
 // The base DN decides who the directory even contains, and getting it wrong is
 // invisible until somebody cannot sign in. Dave sits outside ou=people on
 // purpose, so narrowing the base DN has to make him disappear.

@@ -3717,6 +3717,7 @@ const TRANSLATIONS = {
     'cal.months': 'Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember',
     'cal.today': 'Heute',
     'cal.weekdays': 'Mo,Di,Mi,Do,Fr,Sa,So',
+    'err.accountOfAnotherEntry': 'Das Konto unter „{0}“ gehört zu einem anderen Verzeichniseintrag, in der Regel zu jemandem, der die Adresse vorher hatte. Wem es gehört, muss die Administration klären.',
     'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
     'err.directoryAccountHasNoPasskey': 'Ein Konto aus dem Verzeichnis meldet sich mit dem Kennwort des Verzeichnisses an, damit das Verzeichnis es beenden kann.',
     'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',

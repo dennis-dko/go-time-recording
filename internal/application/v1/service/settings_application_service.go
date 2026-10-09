@@ -489,7 +489,10 @@ func (s *SettingsService) SaveLDAP(ctx context.Context, config model.LDAPConfig)
 	// matches the name exactly. And before storing rather than after: a store that
 	// fails then costs identifiers the next sign-ins record again, where the other
 	// order could leave the new attribute stored over the old identifiers, with
-	// nothing left that would notice the change.
+	// nothing left that would notice the change. A sign-in that read its entry
+	// under the old attribute and lands after this records an identifier read
+	// under it, and is refused from then on as another entry's, until the
+	// attribute changes again: a window of milliseconds, put to the maintainer.
 	stored, err := s.LDAP(ctx)
 	if err != nil {
 		return err
