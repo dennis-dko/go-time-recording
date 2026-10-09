@@ -102,14 +102,14 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 	}
 
 	root := ".."
-	directives := read(t, filepath.Join(root, "CLAUDE.md"))
+	directives := rules(t, root)
 
 	// Every reference in the table is one CLAUDE.md actually makes. Without this
 	// the table could quietly outlive the sentence that needed it, and go on
 	// passing about a reference nobody reads any more.
 	for _, want := range references {
 		if !strings.Contains(directives, "`"+want.reference+"`") {
-			t.Errorf("this test expects CLAUDE.md to cite %s and it no longer does; "+
+			t.Errorf("this test expects CLAUDE.md or doc/audit-method.md to cite %s and it no longer does; "+
 				"drop the row if the directive went, or fix the row if it moved",
 				want.reference)
 		}
@@ -131,7 +131,7 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		}
 
 		if !found {
-			t.Errorf("CLAUDE.md cites %s:%s and this test does not check it, "+
+			t.Errorf("CLAUDE.md or doc/audit-method.md cites %s:%s and this test does not check it, "+
 				"so nothing would notice when it drifts", m[1], m[2])
 		}
 	}
@@ -140,7 +140,7 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		lines := strings.Split(read(t, filepath.Join(root, want.resolved)), "\n")
 
 		if want.line > len(lines) {
-			t.Errorf("CLAUDE.md cites %s but the file has only %d lines",
+			t.Errorf("CLAUDE.md or doc/audit-method.md cites %s but the file has only %d lines",
 				want.reference, len(lines))
 
 			continue
@@ -153,7 +153,7 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		// Say where it went. An auditor reading this failure wants the new line
 		// number, not the news that the old one is wrong - and finding it by hand
 		// in a 1,554-line migration chain is the tedious half of the job.
-		t.Errorf("CLAUDE.md cites %s for %q and line %d reads %q%s",
+		t.Errorf("CLAUDE.md or doc/audit-method.md cites %s for %q and line %d reads %q%s",
 			want.reference, want.contains, want.line,
 			strings.TrimSpace(lines[want.line-1]), whereItWent(lines, want.contains))
 	}
@@ -186,4 +186,16 @@ func read(t *testing.T, path string) string {
 	}
 
 	return strings.ReplaceAll(string(content), "\r\n", "\n")
+}
+
+// rules is CLAUDE.md and the audit method it points at, read as one document.
+//
+// The method left CLAUDE.md to keep it out of every session, and took paths,
+// citations and task names with it; a check that read CLAUDE.md alone would
+// have stopped watching those the day they moved.
+func rules(t *testing.T, root string) string {
+	t.Helper()
+
+	return read(t, filepath.Join(root, "CLAUDE.md")) + "\n" +
+		read(t, filepath.Join(root, "doc", "audit-method.md"))
 }

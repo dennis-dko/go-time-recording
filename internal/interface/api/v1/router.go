@@ -72,6 +72,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/settings/ldap/test", h.Settings.TestLDAP)
 	app.POST(base+"/settings/ldap/sync/preview", h.LDAPSync.Preview)
 	app.POST(base+"/settings/ldap/sync", h.LDAPSync.Run)
+	app.GET(base+"/settings/ldap/sync/runs", h.LDAPSync.Runs)
 	app.GET(base+"/setup", h.Setup.State)
 	app.POST(base+"/setup/complete", h.Setup.Complete)
 	// Answered before anybody is signed in, which is the one thing that makes

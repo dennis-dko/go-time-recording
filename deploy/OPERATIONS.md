@@ -1419,15 +1419,23 @@ run has nobody to ask and is held by the three guards above alone, and so is an
 API call that names no accounts (`POST /api/v1/settings/ldap/sync` without
 `?confirmed=`).
 
-**What a run removed is in the log, and nowhere else.** Each account is one line
-at WARN, whoever started the run and whichever way it ended:
+**Whom a run removed is in the log, and nowhere else; that it removed them is
+recorded for good.** Each account is one line at WARN, whoever started the run
+and whichever way it ended:
 
 ```
 directory sync removed "dave@example.com" with 12 time entries
 ```
 
 The account and every row that named it are gone by then, so nothing in the
-database says there was ever such a person. A scheduled run leaves three more
+database says there was ever such a person - on purpose, since erasing them is
+what the run is for. What the database does keep is that the run happened: every
+run that removed or added an account leaves a row in `directory_runs`, listed
+under *Recent runs* on the synchronisation card and at
+`GET /api/v1/settings/ldap/sync/runs` - when it ran, whether somebody confirmed
+it against a preview, and how many accounts it removed, how many time entries
+went with them and how many accounts it added. No log level switches that off,
+and it names nobody. A scheduled run leaves three more
 kinds of line, since it has no screen to show them on: one at WARN when a guard
 refused it, saying why; one at ERROR when it failed; and at INFO when it started
 and finished, and how many accounts it added. So on an installation that runs a

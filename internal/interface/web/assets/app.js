@@ -4099,7 +4099,17 @@ const TRANSLATIONS = {
     'sync.created': 'Angelegt',
     'sync.deleted': 'Gelöscht',
     'sync.directoryUsers': 'Im Verzeichnis',
+    'sync.byPerson': 'Bestätigt nach Vorschau',
     'sync.entries': 'Zeiteinträge',
+    'sync.noRuns': 'Noch kein Lauf hat ein Konto entfernt oder angelegt.',
+    'sync.runAdded': 'Angelegt',
+    'sync.runAt': 'Zeitpunkt',
+    'sync.runEntries': 'Zeiteinträge entfernt',
+    'sync.runRemoved': 'Entfernt',
+    'sync.runStarted': 'Gestartet von',
+    'sync.runs': 'Letzte Läufe',
+    'sync.runsHint': 'Was jeder Lauf geändert hat, der ein Konto entfernt oder angelegt hat – ohne Namen, damit die Personen, die ein Lauf entfernt hat, gelöscht bleiben. Das Protokoll nennt sie, solange es reicht.',
+    'sync.unattended': 'Zeitplan oder Skript',
     'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
     'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut. Er läuft nach der Uhr des Servers, im ausgelieferten Container also in UTC, und nicht in der Zeitzone der Installation.',
     'sync.scheduleStored': 'Gespeichert',
@@ -6461,6 +6471,8 @@ async function loadAdmin() {
   // account it is.
   $('#sync-card').hidden = !administersOnly();
 
+  await loadSyncRuns();
+
   // And said, to the account it is taken from. Everybody who reaches this screen
   // administers; the ones who also record time found one card fewer and nothing
   // about why, on a screen the tour had told them carried it.
@@ -6489,6 +6501,34 @@ async function loadAdmin() {
       ? `${t('sync.scheduleStored', 'Saved')}: ${ldap.syncSchedule}`
       : t('sync.scheduleManual', 'Runs only when the button below is pressed.');
   }
+}
+
+/**
+ * The latest runs that removed or added an account, and nothing about whom.
+ *
+ * What lasts of a run that deleted people: the log names them for as long as the
+ * log lasts, and this says that it happened - when, started how, and how much
+ * went with them. Only for an account that may run one, as the server asks.
+ */
+async function loadSyncRuns() {
+  const tbody = $('#table-sync-runs tbody');
+  if (!tbody || !administersOnly()) return;
+
+  const runs = await api('/settings/ldap/sync/runs');
+
+  const rows = (runs.items ?? []).map((run) => el('tr', {},
+    el('td', { text: fmtMoment(run.ranAt) }),
+    el('td', {
+      text: run.confirmed
+        ? t('sync.byPerson', 'Confirmed against a preview')
+        : t('sync.unattended', 'Schedule or script'),
+    }),
+    el('td', { class: 'num', text: String(run.deleted) }),
+    el('td', { class: 'num', text: String(run.entriesDeleted) }),
+    el('td', { class: 'num', text: String(run.created) }),
+  ));
+
+  fillTable(tbody, rows, 5, t('sync.noRuns', 'No run has removed or added an account yet.'));
 }
 
 /** The logo travels as a data URI, so it needs no upload endpoint. */

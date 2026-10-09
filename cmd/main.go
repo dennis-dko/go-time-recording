@@ -556,6 +556,7 @@ func main() {
 	timerRepo := sqldb.NewTimerRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
+	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
 
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
@@ -619,7 +620,7 @@ func main() {
 		WithMetrics(app.Metrics())
 
 	ldapSync := appservice.NewLDAPSyncService(ldapClient, userRepo, roleRepo, timesheetRepo,
-		userRepo, cfg.LDAPSyncMaxDeleteRatio, model.RoleUser).
+		userRepo, directoryRunRepo, cfg.LDAPSyncMaxDeleteRatio, model.RoleUser).
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
 

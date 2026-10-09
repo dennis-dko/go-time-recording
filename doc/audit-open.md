@@ -18,13 +18,10 @@ What is below was raised and is not recorded as decided anywhere.
 
 ## Decisions waiting on the maintainer
 
+None today: the last were decided on 2026-10-09. The table stays for the next.
+
 | | Question |
 | --- | --- |
-| D-new-12 | TLS is configured but HTTPS cannot start: the process carries on in plain HTTP and says so at ERROR. Refuse to start instead - failing closed, with an outage? |
-| D-new-25 | A record of deletions that no log level can switch off? |
-| D-new-33 | Report the unquoted connection string to GoFr upstream? |
-| D-new-36 | A directory sign-in under way while the identifier attribute is changed can record an identifier read under the old attribute, and its owner is refused from then on, until the attribute is changed again. Closing the window means the settings service applying the directory configuration itself and forgetting the identifiers a second time after it - worth it, for milliseconds around a change made once? |
-| D-new-37 | The recover() in `spreadsheet.rowsOf` has no known panic left to catch: go.mod requires the upstream excelize commit that fixes GHSA-wcg2-648h-mhxq and the fifteen advisories of 2026-10-09. Keep it for the next one, given that record, or remove it as the test that watched it intended - a recover() with no reason left? Either way, go.mod moves from the pseudo-version to the first release that carries the fixes. |
 
 ## Measurements reading cannot make
 

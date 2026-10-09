@@ -46,7 +46,9 @@ func TestRunningTheSynchronisationSendsWhatWasConfirmed(t *testing.T) {
 
 			if (path === '/settings/ldap/sync/preview') return report(true, window.proposed);
 
-			if (path.startsWith('/settings/ldap/sync')) {
+			// The run itself, with or without what it was confirmed for - and not
+			// the list of past runs the card reads after it, which shares the prefix.
+			if (path === '/settings/ldap/sync' || path.startsWith('/settings/ldap/sync?')) {
 				window.runs.push(path);
 
 				return report(false, window.proposed);
@@ -118,7 +120,7 @@ func TestAFailedSynchronisationShowsWhatIsLeft(t *testing.T) {
 				});
 			}
 
-			if (path.startsWith('/settings/ldap/sync')) {
+			if (path === '/settings/ldap/sync' || path.startsWith('/settings/ldap/sync?')) {
 				window.remaining = window.remaining.slice(1);
 
 				return Promise.reject(new Error('the run stopped part-way'));

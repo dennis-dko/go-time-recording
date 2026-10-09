@@ -724,3 +724,40 @@ func (r *SessionRepository) DeleteExpired(_ context.Context) (int64, error) {
 
 	return removed, nil
 }
+
+// DirectoryRunRepository keeps what each directory synchronisation changed.
+type DirectoryRunRepository struct{ store *store[model.DirectoryRun] }
+
+// NewDirectoryRunRepository creates an empty run store.
+func NewDirectoryRunRepository() *DirectoryRunRepository {
+	return &DirectoryRunRepository{store: newStore[model.DirectoryRun]("directory run")}
+}
+
+var _ repository.DirectoryRunRepository = (*DirectoryRunRepository)(nil)
+
+func (r *DirectoryRunRepository) Record(_ context.Context, run *model.DirectoryRun) error {
+	stored := r.store.add(run, func(stored *model.DirectoryRun, id uint) { stored.ID = id })
+	run.ID = stored.ID
+
+	return nil
+}
+
+// Latest is newest first by when a run happened, and by id within the same
+// moment, as the SQL repository orders it.
+func (r *DirectoryRunRepository) Latest(_ context.Context, limit int) ([]*model.DirectoryRun, error) {
+	runs := r.store.all()
+
+	sort.SliceStable(runs, func(i, j int) bool {
+		if !runs[i].RanAt.Equal(runs[j].RanAt) {
+			return runs[i].RanAt.After(runs[j].RanAt)
+		}
+
+		return runs[i].ID > runs[j].ID
+	})
+
+	if len(runs) > limit {
+		runs = runs[:limit]
+	}
+
+	return runs, nil
+}
