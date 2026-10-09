@@ -275,6 +275,10 @@ func main() {
 	// given something to show. See the logsink package for what that costs.
 	logs := logsink.New(logsink.DefaultCapacity)
 
+	// The log viewer's own polls go to the console and not into what it shows;
+	// see QuietRequestsTo. The route is the one RegisterRoutes gives the viewer.
+	logs.QuietRequestsTo("/api/v1/admin/logs")
+
 	if terminal {
 		// Interception makes the output a pipe, and GoFr prints JSON when its
 		// output is not a terminal. On a terminal that would be a regression in

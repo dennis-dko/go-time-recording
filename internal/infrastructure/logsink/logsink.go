@@ -34,6 +34,16 @@ type Record struct {
 	// act on a level nobody claimed: a stack trace dropped because somebody set
 	// WARN is exactly the line they were about to need.
 	unlevelled bool
+
+	// request is what a line the framework wrote for a request says about it,
+	// and empty for any other line. See QuietRequestsTo.
+	request requestLine
+}
+
+// requestLine is the request a request-log line was written for.
+type requestLine struct {
+	method, uri string
+	status      int
 }
 
 // Levels are the levels GoFr emits, most to least severe. Exported so the
@@ -64,6 +74,10 @@ type Sink struct {
 	// epoch names this sink among every one there has been, which is to say this
 	// process among its predecessors. See Query.Epoch.
 	epoch string
+
+	// quietPath is the route whose successful GET requests go to the console and
+	// not into the ring. See QuietRequestsTo.
+	quietPath string
 }
 
 // severity ranks the levels GoFr emits. Anything not in here is unranked, and
@@ -174,6 +188,33 @@ func New(capacity int) *Sink {
 
 // Epoch names the sink a sequence number was counted by.
 func (s *Sink) Epoch() string { return s.epoch }
+
+// QuietRequestsTo keeps the successful GET requests to path out of the ring,
+// while the console still has them.
+//
+// For the log viewer's own polls. Each is a request, and the framework writes a
+// line for every request at INFO, so a viewer left open wrote one every few
+// seconds into the ring it shows - whoever read it saw mostly themselves reading
+// it, while the lines they had come for were pushed out. The console is the
+// operator's and keeps them; a poll that failed stays in both, because a viewer
+// that fails is worth finding afterwards.
+func (s *Sink) QuietRequestsTo(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.quietPath = path
+}
+
+// quiet reports a request QuietRequestsTo keeps out of the ring.
+func (s *Sink) quiet(r Record) bool {
+	s.mu.RLock()
+	path := s.quietPath
+	s.mu.RUnlock()
+
+	asked, _, _ := strings.Cut(r.request.uri, "?")
+
+	return path != "" && r.request.method == "GET" && asked == path && r.request.status < 400
+}
 
 // SetPassthroughRenderer changes what is written to the real console.
 //
@@ -535,7 +576,9 @@ func (s *Sink) drain(from io.Reader, console io.Writer) {
 
 		_, _ = io.WriteString(console, out+"\n")
 
-		s.Append(record)
+		if !s.quiet(record) {
+			s.Append(record)
+		}
 
 		if err != nil {
 			return

@@ -39,13 +39,14 @@ func parse(line string) Record {
 		return Record{Time: time.Now(), Level: "INFO", Message: line, unlevelled: true}
 	}
 
-	text, traceID := messageText(e.Message)
+	text, traceID, asked := messageText(e.Message)
 
 	record := Record{
 		Time:    e.Time,
 		Level:   strings.ToUpper(strings.TrimSpace(e.Level)),
 		Message: text,
 		TraceID: e.TraceID,
+		request: asked,
 	}
 
 	// The request log carries its trace inside the message rather than beside
@@ -124,23 +125,23 @@ type structured struct {
 }
 
 // messageText renders the message field as one line, and reports the trace it
-// mentions if it mentions one.
+// mentions if it mentions one, and the request when it is a request log.
 //
 // A string is used as it is. A recognised object becomes a readable summary. An
 // unrecognised one keeps its JSON: wrong but complete beats a guess that drops
 // the field somebody needed.
-func messageText(raw json.RawMessage) (text, traceID string) {
+func messageText(raw json.RawMessage) (text, traceID string, asked requestLine) {
 	if len(raw) == 0 {
-		return "", ""
+		return "", "", requestLine{}
 	}
 
 	if err := json.Unmarshal(raw, &text); err == nil {
-		return text, ""
+		return text, "", requestLine{}
 	}
 
 	var s structured
 	if err := json.Unmarshal(raw, &s); err != nil {
-		return strings.TrimSpace(string(raw)), ""
+		return strings.TrimSpace(string(raw)), "", requestLine{}
 	}
 
 	switch {
@@ -151,11 +152,11 @@ func messageText(raw json.RawMessage) (text, traceID string) {
 			line += " from " + s.IP
 		}
 
-		return line, s.TraceID
+		return line, s.TraceID, requestLine{method: s.Method, uri: s.URI, status: s.Response}
 	case s.Query != "":
-		return fmt.Sprintf("%s %s %s", s.Type, micros(s.Duration), collapse(s.Query)), s.TraceID
+		return fmt.Sprintf("%s %s %s", s.Type, micros(s.Duration), collapse(s.Query)), s.TraceID, requestLine{}
 	default:
-		return strings.TrimSpace(string(raw)), s.TraceID
+		return strings.TrimSpace(string(raw)), s.TraceID, requestLine{}
 	}
 }
 

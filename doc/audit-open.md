@@ -33,7 +33,6 @@ What is below was raised and is not recorded as decided anywhere.
 | D-new-17 | Should the installer refuse, before saving, a database holding tables this application did not create? A restored database of this application must still pass. |
 | D-new-18 | Hand the log level to GoFr's `ChangeLevel`, now that it is atomic? It removes the forced DEBUG and the restart card's one exception, with a wide diff. |
 | D-new-19 | The log viewer shows a trace only as a tooltip, which cannot be copied. Click a line to search for its request? |
-| D-new-20 | The log viewer's own polls are lines in the log it shows. Leave them out? |
 | D-new-21 | A failed handler's line is raw JSON. Show it summarised as its error? |
 | D-new-22 | When capturing the output fails, the log handler still gets the sink - available and empty for ever - and its "not installed" sentence is unreachable. Hand it nothing then? |
 | D-new-23 | A guard that fails when the GoFr requirement moves, until the forty-odd statements about the framework have been read again? |
