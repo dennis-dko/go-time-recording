@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,5 +97,99 @@ func TestADirectorySignInDoesNotCreateASecondAccountWhenTheLookupFails(t *testin
 		if user.Email == "married.name@example.com" {
 			t.Errorf("a second account was created for the same directory entry: %+v", user)
 		}
+	}
+}
+
+// unreadableAddresses answers a lookup by address with a database failure.
+type unreadableAddresses struct{ repository.UserRepository }
+
+func (unreadableAddresses) GetByEmail(context.Context, string) (*model.User, error) {
+	return nil, apperror.Internal(errors.New("the database did not answer"))
+}
+
+// counterSpy keeps the labels of every counter incremented, by name.
+type counterSpy struct {
+	counted map[string][]string
+}
+
+func (c *counterSpy) IncrementCounter(_ context.Context, name string, labels ...string) {
+	c.counted[name] = append(c.counted[name], strings.Join(labels, "="))
+}
+
+func (*counterSpy) RecordHistogram(context.Context, string, float64, ...string) {}
+
+// A password sign-in that cannot read the account it is for is a database that
+// failed, not a wrong password - in what it answers and in what it counts.
+//
+// It was read as no such account: the sign-in was refused as wrong credentials,
+// which the handler does not log because a typo is the ordinary case, and the
+// metric counted it where a password list being worked through is counted. A
+// database that stopped answering showed as nobody being able to type their
+// password, and nowhere as itself.
+func TestASignInTheDatabaseCannotAnswerIsCountedAsTheDatabase(t *testing.T) {
+	f := newFixture(t)
+	spy := &counterSpy{counted: map[string][]string{}}
+
+	sessions := service.NewSessionService(unreadableAddresses{f.userRepo}, f.roleRepo,
+		newStubSessions(), f.auth, time.Hour).WithMetrics(spy)
+
+	_, err := sessions.Login(context.Background(), "someone@example.com", "a-password", "")
+	if apperror.KindOf(err) != apperror.KindInternal {
+		t.Errorf("the sign-in answered %v, want an internal failure the handler logs", err)
+	}
+
+	if got := spy.counted[service.MetricSignInFailures]; len(got) != 1 || got[0] != "reason=database" {
+		t.Errorf("the refusal was counted as %v, want reason=database", got)
+	}
+}
+
+// The same for a ticket, whose account is looked up after the directory has
+// answered: a lookup that failed there was counted as nothing at all.
+func TestATicketSignInTheDatabaseCannotAnswerIsCountedAsTheDatabase(t *testing.T) {
+	f := newFixture(t)
+	spy := &counterSpy{counted: map[string][]string{}}
+
+	sessions := service.NewSessionService(unreadableIdentifiers{f.userRepo}, f.roleRepo,
+		newStubSessions(), f.auth, time.Hour).
+		WithExternalAuth(&lookupDirectory{entries: map[string]*service.ExternalUser{
+			"jdoe": {ID: "uuid-jdoe", Email: "jdoe@example.com"},
+		}}, model.RoleUser).
+		WithMetrics(spy)
+
+	if _, err := sessions.KerberosLogin(context.Background(), "jdoe", "EXAMPLE.COM", ""); err == nil {
+		t.Fatal("a ticket sign-in whose account could not be read was let through")
+	}
+
+	if got := spy.counted[service.MetricSignInFailures]; len(got) != 1 || got[0] != "reason=database" {
+		t.Errorf("the refusal was counted as %v, want reason=database", got)
+	}
+}
+
+// unansweringDirectory is a directory that is configured and does not answer.
+type unansweringDirectory struct{}
+
+func (unansweringDirectory) Enabled() bool { return true }
+
+func (unansweringDirectory) Authenticate(context.Context, string, string) (*service.ExternalUser, bool, error) {
+	return nil, false, errors.New("dial tcp: connection refused")
+}
+
+// And a directory that does not answer is counted as the directory, apart from
+// the database, because the two are fixed by different people.
+func TestASignInTheDirectoryCannotAnswerIsCountedAsTheDirectory(t *testing.T) {
+	f := newFixture(t)
+	spy := &counterSpy{counted: map[string][]string{}}
+
+	sessions := service.NewSessionService(f.userRepo, f.roleRepo, newStubSessions(), f.auth, time.Hour).
+		WithExternalAuth(unansweringDirectory{}, model.RoleUser).
+		WithMetrics(spy)
+
+	_, err := sessions.Login(context.Background(), "someone@example.com", "a-password", "")
+	if apperror.KindOf(err) != apperror.KindInternal {
+		t.Errorf("the sign-in answered %v, want an internal failure the handler logs", err)
+	}
+
+	if got := spy.counted[service.MetricSignInFailures]; len(got) != 1 || got[0] != "reason=directory" {
+		t.Errorf("the refusal was counted as %v, want reason=directory", got)
 	}
 }

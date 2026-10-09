@@ -20,7 +20,6 @@ What is below was raised and is not recorded as decided anywhere.
 
 | | Question |
 | --- | --- |
-| D-new-1 | A database failure during the local lookup of a sign-in is counted as wrong credentials in the sign-in failure metric. Count it apart? |
 | D-new-2 | The HTTPS front end has no read timeout, because large imports are legitimate. Bound it, from a measured upload size and speed? |
 | D-new-3 | GoFr's own server bounds only a request's headers. Behind the HTTPS front end it is loopback-only; without TLS it faces the network. A change in GoFr, a front end on the plain port as well, or keep-alive off? |
 | D-new-4 | Guessing a second-factor code is bounded only by the per-address rate limit. A per-account limit on wrong codes, with its lock-out trade-off? |

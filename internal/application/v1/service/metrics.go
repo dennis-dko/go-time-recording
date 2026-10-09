@@ -42,6 +42,11 @@ const (
 	SignInFailureCredentials = "credentials"
 	SignInFailureDirectory   = "directory"
 	SignInFailureTOTP        = "totp"
+
+	// SignInFailureDatabase is a sign-in this installation could not answer
+	// because its own database did not: counted as credentials, it looked like
+	// everybody mistyping their password at once.
+	SignInFailureDatabase = "database"
 )
 
 // Recorder is the part of the framework's metrics manager this application

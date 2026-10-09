@@ -1348,7 +1348,7 @@ somebody would act on it:
 | Metric | Says |
 | --- | --- |
 | `gtr_timesheet_hours_booked` | hours per entry — the sum is what was recorded, the count in how many pieces |
-| `gtr_signin_failures_total` | refused sign-ins, by reason — `credentials` is somebody guessing, `directory` is a directory that stopped answering |
+| `gtr_signin_failures_total` | refused sign-ins, by reason — `credentials` is somebody guessing, `totp` a second factor that did not take, `directory` a directory that stopped answering, `database` this installation's own database that did |
 | `gtr_directory_accounts_total` | accounts the synchronisation created or deleted — the one operation that removes people together with their hours |
 
 None of them carries a user, an address or a project name as a label. A label is

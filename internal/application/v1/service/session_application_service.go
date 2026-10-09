@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -188,16 +190,7 @@ type LoginResult struct {
 func (s *SessionService) Login(ctx context.Context, email, password, totpCode string) (*LoginResult, error) {
 	user, err := s.resolveUser(ctx, email, password)
 	if err != nil {
-		// Counted apart, because they mean different things to whoever is
-		// looking: a rising "credentials" is somebody working through a password
-		// list, and a rising "directory" is a directory that has stopped
-		// answering - which turns away people whose passwords are perfectly good.
-		reason := SignInFailureCredentials
-		if apperror.KindOf(err) == apperror.KindInternal {
-			reason = SignInFailureDirectory
-		}
-
-		s.count(ctx, MetricSignInFailures, "reason", reason)
+		s.count(ctx, MetricSignInFailures, "reason", signInFailureOf(err))
 
 		return nil, err
 	}
@@ -342,12 +335,41 @@ func (s *SessionService) OpenSession(ctx context.Context, user *model.User) (*Lo
 	return &LoginResult{Token: token, ExpiresAt: session.ExpiresAt, Principal: principal}, nil
 }
 
+// errDirectoryUnanswered marks a sign-in the directory could not answer, so it
+// is counted apart from one the database could not.
+var errDirectoryUnanswered = errors.New("the directory did not answer")
+
+// signInFailureOf says why a sign-in was refused, for the metric.
+//
+// Counted apart, because they mean different things to whoever is looking: a
+// rising "credentials" is somebody working through a password list, a rising
+// "directory" a directory that has stopped answering, and a rising "database"
+// this installation's own database - the last two turn away people whose
+// passwords are perfectly good.
+func signInFailureOf(err error) string {
+	switch {
+	case errors.Is(err, errDirectoryUnanswered):
+		return SignInFailureDirectory
+	case apperror.KindOf(err) == apperror.KindInternal:
+		return SignInFailureDatabase
+	default:
+		return SignInFailureCredentials
+	}
+}
+
 // resolveUser finds the account behind the credentials, consulting the
 // directory first when one is configured.
 func (s *SessionService) resolveUser(ctx context.Context, email, password string) (*model.User, error) {
 	invalid := apperror.Invalidf("invalid credentials").WithCode("invalidCredentials")
 
 	local, localErr := s.users.GetByEmail(ctx, normalizeEmail(email))
+
+	// A lookup that failed is not an address nobody holds. Read as one, it was
+	// refused as a wrong password - unlogged, and counted where a password list
+	// is - while the database had simply stopped answering.
+	if localErr != nil && apperror.KindOf(localErr) != apperror.KindNotFound {
+		return nil, localErr
+	}
 
 	// The built-in administrator is authenticated locally and only locally. It
 	// exists so an installation always has a way back in, which it would not be
@@ -358,7 +380,7 @@ func (s *SessionService) resolveUser(ctx context.Context, email, password string
 	if !systemAccount && s.external != nil && s.external.Enabled() {
 		directoryUser, ok, err := s.external.Authenticate(ctx, email, password)
 		if err != nil {
-			return nil, apperror.Internal(err)
+			return nil, apperror.Internal(fmt.Errorf("%w: %w", errDirectoryUnanswered, err))
 		}
 
 		if ok {
