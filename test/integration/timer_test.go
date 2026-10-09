@@ -87,6 +87,28 @@ func TestStartingAndReadingBackTheClock(t *testing.T) {
 	}
 }
 
+// A clock started without a project reads back without one. The column holds
+// NULL then, and a reader that turned it into a zero would hand the stop a
+// project nobody chose - one that, on every dialect, does not exist.
+func TestAClockStartedWithoutAProjectReadsBackWithoutOne(t *testing.T) {
+	t.Parallel()
+
+	_, _, worker := startWithWorker(t)
+
+	worker.must(worker.api(http.MethodPost, "/me/timer",
+		map[string]any{"description": "nothing in particular"}), http.StatusCreated, http.StatusOK)
+
+	timer := runningTimer(t, worker)
+
+	if !timer.Running {
+		t.Fatal("the timer is not running when read back")
+	}
+
+	if timer.ProjectID != nil {
+		t.Errorf("the timer points at project %d, and none was chosen", *timer.ProjectID)
+	}
+}
+
 // Starting a second time replaces the first. Somebody who does that has changed
 // their mind about what they are doing, and refusing would leave them to stop a
 // clock that is measuring the wrong thing.
