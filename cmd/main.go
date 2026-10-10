@@ -745,18 +745,20 @@ func main() {
 		return nil
 	}
 
-	// What stopped the start, if anything did. GoFr runs its start hooks inside
-	// Run, and a hook that fails makes Run log it and return rather than exit.
-	// Run is the last thing main does, so the process then ended with 0, and a
-	// supervisor that restarts on failure - the systemd unit OPERATIONS.md ships -
-	// read a refused start as a clean stop. For a database that was only briefly
-	// away, that is an outage nothing brings back.
-	var startFailure error
-
+	// GoFr runs its start hooks inside Run, and a hook that fails makes Run release
+	// what start-up opened and exit 1 from inside - the status a supervisor that
+	// restarts on failure has to read. GoFr's line saying why goes through the
+	// capture and the exit can overtake it, so the reason is said past the pipe
+	// here first, as a failed migration's is. A start the operator stopped is no
+	// failure: Run returns for that, and the process ends with 0.
 	app.OnStart(func(ctx *gofr.Context) error {
-		startFailure = prepare(ctx)
+		err := prepare(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			// Best effort, like every line to a console.
+			_, _ = fmt.Fprintf(console, "the application did not start: %v\n", err)
+		}
 
-		return startFailure
+		return err
 	})
 
 	if cfg.AuthEnabled() {
@@ -1022,38 +1024,12 @@ func main() {
 		}()
 	}
 
-	app.Run()
-
-	// Run returns when GoFr's servers stop listening, which is the moment a stop
-	// begins rather than the moment it has finished waiting for the requests under
-	// way: net/http returns ListenAndServe as soon as Shutdown is called. GoFr
-	// stops the metrics server after the HTTP server has drained, so while metrics
-	// were on, that server held Run open until the wait was over. With them off -
-	// METRICS_PORT=0, or switched off under Settings - main ended while GoFr was
-	// still waiting, and a stop cut off every request being answered.
-	//
-	// Shutting down a second time waits for exactly what was missing. The server's
-	// Shutdown returns once every connection is idle, after its answer has gone,
-	// and every step after it is safe to repeat: the crontab stops once, the
-	// database closes once. Read in GoFr's own source rather than assumed. The
-	// HTTPS front end is stopped by a deferred call below this, so an answer on its
+	// Run returns once GoFr's shutdown has finished with the requests under way,
+	// or given up on them at SHUTDOWN_GRACE_PERIOD - since v1.62.0, before which it
+	// returned as the stop began and main had to wait a second time itself. The
+	// HTTPS front end is stopped by the deferred call above, so an answer on its
 	// way through it has left the backend first.
-	finishing, stopWaiting := context.WithTimeout(context.Background(), cfg.ShutdownGrace)
-
-	if err := app.Shutdown(finishing); err != nil {
-		// Whatever GoFr's own pass found wrong it has reported; a second pass
-		// mostly meets things it already closed.
-		app.Logger().Debugf("waiting for the shutdown to finish: %v", err)
-	}
-
-	stopWaiting()
-
-	// Said again past the pipe, as every other refusal here is: GoFr's own line
-	// went through the capture, and die is what guarantees the reason reaches the
-	// console before the process is gone.
-	if startFailure != nil {
-		die(restoreOutput, "the application did not start: %v", startFailure)
-	}
+	app.Run()
 }
 
 // sayingWhy hands each migration to GoFr unchanged, except that one which fails

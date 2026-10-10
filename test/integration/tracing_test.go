@@ -18,7 +18,7 @@ import (
 // settings are stored, that they are refused when GoFr could not use them, that
 // they reach the process before gofr.New(). None of that shows a span arriving
 // anywhere, and every way that fails is silent - an exporter GoFr does not
-// recognise drops each batch after logging once, a collector address it cannot
+// recognise is logged once and leaves tracing off, a collector address it cannot
 // dial fails inside the exporter, a sampler that records nothing looks exactly
 // like a collector with nothing to show.
 //
@@ -101,6 +101,27 @@ func TestTracingConfiguredFromTheScreenActuallyExportsSpans(t *testing.T) {
 	t.Parallel()
 
 	collector := requireJaeger(t)
+	exportsSpansConfiguredAs(t, collector, collector)
+}
+
+// The same with the collector written the way its own documentation writes it.
+//
+// The screen refused a scheme for as long as GoFr handed TRACER_URL to the gRPC
+// dialer as it stood, where "http://" became part of the host name. GoFr reads
+// http:// and https:// since v1.61.0, so the form an administrator is most likely
+// to paste is accepted now - and this is what shows it exports rather than only
+// saving.
+func TestTracingToACollectorNamedWithItsSchemeExportsSpans(t *testing.T) {
+	t.Parallel()
+
+	collector := requireJaeger(t)
+	exportsSpansConfiguredAs(t, "http://"+collector, collector)
+}
+
+// exportsSpansConfiguredAs saves tracerURL through the settings API, starts the
+// next instance and waits for its spans to reach the collector at collector.
+func exportsSpansConfiguredAs(t *testing.T, tracerURL, collector string) {
+	t.Helper()
 
 	if dsn := os.Getenv(harness.DSNEnv); dsn != "" {
 		t.Skip("this test shares a SQLite file between two instances")
@@ -119,7 +140,7 @@ func TestTracingConfiguredFromTheScreenActuallyExportsSpans(t *testing.T) {
 	// tracing in the environment at all.
 	admin.must(admin.api(http.MethodPut, "/settings/telemetry", map[string]any{
 		"traceExporter": "otlp",
-		"tracerUrl":     collector,
+		"tracerUrl":     tracerURL,
 		"tracerRatio":   1,
 	}), http.StatusOK)
 
@@ -142,9 +163,9 @@ func TestTracingConfiguredFromTheScreenActuallyExportsSpans(t *testing.T) {
 	if !eventuallyWithin(45*time.Second, func() bool {
 		return contains(tracedServices(t), service)
 	}) {
-		t.Errorf("no span from %q reached the collector at %s; Jaeger knows only %v\n\n"+
-			"application log:\n%s",
-			service, collector, tracedServices(t), truncate(second.Log(), 2000))
+		t.Errorf("no span from %q reached the collector at %s, configured as %s; Jaeger "+
+			"knows only %v\n\napplication log:\n%s",
+			service, collector, tracerURL, tracedServices(t), truncate(second.Log(), 2000))
 	}
 }
 

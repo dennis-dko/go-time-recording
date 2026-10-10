@@ -15,11 +15,12 @@ import (
 //
 // The operations guide promises it - the application "waits for requests in
 // flight on shutdown", for SHUTDOWN_GRACE_PERIOD - and GoFr's shutdown does
-// wait, inside http.Server.Shutdown. But the server's ListenAndServe returns the
-// moment that shutdown begins, GoFr's Run returns when it does, and main ends
-// when Run does: the process could be gone while the shutdown was still
-// waiting. A booking being saved at that moment is answered by nothing, and
-// whoever sent it is left to guess whether it was stored.
+// wait, inside http.Server.Shutdown. For as long as GoFr's Run returned the
+// moment that shutdown began, main ending when Run did meant the process could
+// be gone while the shutdown was still waiting: a booking being saved at that
+// moment was answered by nothing, and whoever sent it was left to guess whether
+// it was stored. Run waits for its own shutdown since v1.62.0, and main no longer
+// waits a second time, so this case is what holds GoFr to it.
 //
 // So the request here is one whose body is still arriving when the stop does,
 // which keeps it under way for as long as the case chooses.

@@ -134,8 +134,8 @@ func TestAnAdministeredExporterReplacesTheFile(t *testing.T) {
 	}
 }
 
-// GoFr parses the ratio with ParseFloat and, on failure, carries on with the zero
-// value - which samples nothing. So the exported form has to be one ParseFloat
+// GoFr parses the ratio with ParseFloat and, on failure, records every trace
+// instead of the share chosen. So the exported form has to be one ParseFloat
 // reads: no exponent worth arguing about, and above all no decimal comma.
 func TestTheSamplingRatioIsWrittenInAFormGoFrCanParse(t *testing.T) {
 	cases := map[float64]string{
@@ -228,10 +228,11 @@ func TestTheReportedTelemetryFollowsGoFrsOwnRules(t *testing.T) {
 		"a configured port is reported as it stands": {
 			mapConfig{"METRICS_PORT": "9100"}, 9100, true, 1, false,
 		},
-		// The silent one: GoFr logs the parse error and samples nothing.
-		"a ratio GoFr cannot read means nothing is sampled, not everything": {
+		// GoFr logs the parse error and records every trace instead, which is
+		// the opposite of what the setting most likely meant.
+		"a ratio GoFr cannot read means everything is sampled, not nothing": {
 			mapConfig{"TRACE_EXPORTER": "otlp", "TRACER_URL": "c:4317", "TRACER_RATIO": "half"},
-			2121, true, 0, true,
+			2121, true, 1, true,
 		},
 		"a ratio above one is clamped by the sampler": {
 			mapConfig{"TRACER_RATIO": "2"}, 2121, true, 1, false,

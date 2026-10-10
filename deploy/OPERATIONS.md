@@ -313,7 +313,7 @@ So the shipped `configs/.env` sets only what no screen can administer:
 | `TLS_*`, `HSTS_MAX_AGE` | same, and a wrong value makes the instance unreachable rather than merely wrong |
 | `DB_DIALECT`, `DB_NAME` | this is what decides whether there is a database to store a setting in |
 | `UI_ENABLED`, `AUTH_ENABLED` | either one switched off removes the screen that would switch it back |
-| `SHUTDOWN_GRACE_PERIOD` | read at start - by the framework, and by the application's own wait for the requests under way when it stops |
+| `SHUTDOWN_GRACE_PERIOD` | read at start by the framework, which waits that long for the requests under way when it stops |
 | `APP_NAME` | see below — it is not the instance title |
 
 Six values used to sit there **as well as** in Settings — the log level, the
@@ -814,11 +814,13 @@ there is applied over the environment at the next start. So switch it on under
 | Field | Value |
 | --- | --- |
 | Trace exporter | `OTLP` |
-| Collector as host:port | `jaeger:4317` — **no** `http://` in front |
+| Collector as host:port, encrypted with https:// in front | `jaeger:4317` |
 | Share of traces recorded | `1` while investigating, lower if left on |
 
-The scheme matters: that string goes to a gRPC dialer, which reads `http://` as
-part of the host name and then resolves nothing.
+`http://jaeger:4317` means the same as the bare form. `https://` in front
+encrypts the export, for a collector that serves TLS - the one in this overlay
+does not, so it stays without. Any other scheme, or a path such as `/v1/traces`,
+is refused: the exporter speaks OTLP over gRPC, which takes neither.
 
 **Then restart the application.** The exporter is built while it starts, so a
 saved setting does nothing until it does. All three go into it, so all three
@@ -1478,7 +1480,8 @@ mistakes it for a configured installation.
   not survive the promotion.
 - Parsing is forgiving, not strict. A duration, integer or float that does not
   parse becomes the default **silently**. `LOG_LEVEL` resolves any unrecognised
-  name to `INFO`. A `TRACER_RATIO` it cannot read samples nothing.
+  name to `INFO`. A `TRACER_RATIO` it cannot read records every trace, with an
+  error line naming the value.
 - `TLS_ENABLED=true` with an empty `TLS_DOMAINS` logs an error and carries on
   over plain HTTP. It does not refuse to start. Neither does a TLS listener that
   cannot bind its port — see *If this process terminates TLS*.

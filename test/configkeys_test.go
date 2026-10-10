@@ -50,14 +50,27 @@ var configDocs = []string{
 // notOurs lists the variables the example files set for somebody else to read,
 // so their absence from this code is correct rather than a gap.
 //
-// GOFR_TELEMETRY is GoFr's own and is consumed inside the framework;
-// GTR_VERSION is read by compose to choose the image tag and never reaches the
-// process. Each is named here rather than matched by prefix, so a third one is a
-// decision somebody writes down. SHUTDOWN_GRACE_PERIOD used to be here as GoFr's
-// alone, and is read by main as well now, to wait for what GoFr's Run does not.
+// GOFR_TELEMETRY and SHUTDOWN_GRACE_PERIOD are GoFr's own and are consumed inside
+// the framework; GTR_VERSION is read by compose to choose the image tag and never
+// reaches the process. Each is named here rather than matched by prefix, so the
+// next one is a decision somebody writes down. SHUTDOWN_GRACE_PERIOD was read by
+// main as well while GoFr's Run returned before its shutdown had finished; Run
+// waits for it since v1.62.0, which left main's own wait nothing to wait for.
 var notOurs = map[string]bool{
-	"GOFR_TELEMETRY": true,
-	"GTR_VERSION":    true,
+	"GOFR_TELEMETRY":        true,
+	"GTR_VERSION":           true,
+	"SHUTDOWN_GRACE_PERIOD": true,
+}
+
+// TestNothingNamedAsSomebodyElsesIsReadHere keeps notOurs from outliving its
+// reasons: a variable this code reads is not somebody else's alone, and a row
+// saying it is would hide the next example file that sets it for nothing.
+func TestNothingNamedAsSomebodyElsesIsReadHere(t *testing.T) {
+	for _, key := range derivedKeys(t, "..") {
+		if notOurs[key] {
+			t.Errorf("%s is read by this code and named in notOurs as somebody else's", key)
+		}
+	}
 }
 
 // TestEveryConfigurationKeyIsDocumented checks the keys the code reads against

@@ -1401,7 +1401,7 @@
           "settings"
         ],
         "summary": "Set the logging, metrics and tracing settings; applied on the next restart",
-        "description": "Send only the fields to administer; an empty object makes everything follow the configuration file again. \"logLevel\" is DEBUG, INFO, NOTICE, WARN, ERROR or FATAL. \"traceExporter\" is \"otlp\", \"jaeger\" or \"\" for off, and needs \"tracerUrl\" as a bare host:port when it names an exporter - a scheme is read as part of the host name and exports nothing. \"metricsOff\": true stops the metrics endpoint being served; the port itself stays in the configuration file, because GoFr refuses to start when something already holds it. Applied when the application is restarted: GoFr reads the level, binds the port and builds the exporter while starting up. Administrator only.",
+        "description": "Send only the fields to administer; an empty object makes everything follow the configuration file again. \"logLevel\" is DEBUG, INFO, NOTICE, WARN, ERROR or FATAL. \"traceExporter\" is \"otlp\", \"jaeger\" or \"\" for off, and needs \"tracerUrl\" as host:port when it names an exporter, with https:// in front to encrypt the export or http:// or nothing for plaintext - another scheme or a path is refused, because the exporter speaks OTLP over gRPC. \"metricsOff\": true stops the metrics endpoint being served; the port itself stays in the configuration file, because GoFr refuses to start when something already holds it. The log level takes effect on the next line written; the rest is applied when the application is restarted, because GoFr binds the port and builds the exporter while starting up. Administrator only.",
         "responses": {
           "200": {
             "description": "Saved"

@@ -121,11 +121,6 @@ type Config struct {
 	// with the default used instead, for main to say at start.
 	Unusable []string
 
-	// ShutdownGrace is how long a stop waits for the requests under way. GoFr
-	// bounds its own shutdown with the same key; main waits as long again,
-	// because GoFr's Run returns before that shutdown has finished waiting.
-	ShutdownGrace time.Duration
-
 	// TrustedProxies are the addresses whose X-Forwarded-For the rate limiter
 	// may believe, as CIDR ranges or single addresses.
 	//
@@ -236,14 +231,13 @@ func metricsPort(raw string) int {
 }
 
 // traceRatio resolves TRACER_RATIO the way GoFr does, which is worth spelling
-// out because the failure is silent: GoFr reports a parse error and then carries
-// on with the zero value, so an unreadable ratio samples nothing rather than
-// falling back to everything. The sampler then clamps whatever is left into
-// 0..1.
+// out because the screen reports it: GoFr logs a value it cannot read and records
+// every trace instead, so an unreadable ratio samples everything rather than
+// nothing. The sampler then clamps whatever is left into 0..1.
 func traceRatio(raw string) float64 {
 	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
-		return 0
+		return 1
 	}
 
 	// ParseFloat reads "NaN" happily, and a sampler compares false against it and
@@ -279,10 +273,6 @@ const (
 	// guessing a password or a token is hopeless.
 	defaultRateLimit       = 30
 	defaultRateLimitWindow = time.Minute
-
-	// defaultShutdownGrace is GoFr's own default for SHUTDOWN_GRACE_PERIOD, so an
-	// unset key means the same wait to both.
-	defaultShutdownGrace = 30 * time.Second
 
 	// defaultSyncMaxDeleteRatio stops at half: that many directory-backed
 	// accounts disappearing in one run is far more likely to be a broken filter
@@ -354,7 +344,6 @@ func Load(p Provider) Config {
 		HSTSMaxAge:      v.duration("HSTS_MAX_AGE", defaultHSTSMaxAge),
 		RateLimit:       v.whole("RATE_LIMIT", defaultRateLimit),
 		RateLimitWindow: v.duration("RATE_LIMIT_WINDOW", defaultRateLimitWindow),
-		ShutdownGrace:   v.duration("SHUTDOWN_GRACE_PERIOD", defaultShutdownGrace),
 		TrustedProxies:  splitList(p.Get("TRUSTED_PROXIES")),
 
 		// Empty by default: a scheduled run deletes people and their hours,

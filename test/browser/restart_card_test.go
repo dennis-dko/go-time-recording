@@ -190,6 +190,13 @@ func TestTheRestartCardSpeaksTheReadersLanguage(t *testing.T) {
 	if strings.Contains(said, "0.35") || !strings.Contains(said, "1 → 0,35") {
 		t.Errorf("the card reads %q, which does not write the share as 1 → 0,35", said)
 	}
+
+	// The collector is named the way the English card names it, not with the
+	// whole of the form's label - which in German carried an instruction about
+	// the address into the list of what is waiting.
+	if strings.Contains(said, "host:port") || !strings.Contains(said, "Collector: ") {
+		t.Errorf("the card reads %q, which does not name the collector by its short name", said)
+	}
 }
 
 // Nobody who cannot administer the installation sees either of them.

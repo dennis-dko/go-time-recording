@@ -1830,9 +1830,9 @@ tracing is administered in the running application and what is stored there is
 applied over the environment at the next start — a variable set in the compose
 file would be the losing half of a disagreement nobody can see. Switch it on
 under *Settings → Logging, metrics and tracing*: exporter `OTLP`, collector
-`jaeger:4317` (the service name, no `http://` in front of it — GoFr hands that
-string to a gRPC dialer, which reads a scheme as part of the host name), the
-recorded share at `1` while investigating something. **Then restart**: the
+`jaeger:4317` (the service name; `http://` in front means the same, and
+`https://` would encrypt the export to a collector that serves TLS, which this
+one does not), the recorded share at `1` while investigating something. **Then restart**: the
 exporter is built while the application starts, so a saved setting does nothing
 until it does. The banner across the top of the screen says so and offers the
 button.

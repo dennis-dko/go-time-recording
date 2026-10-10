@@ -153,9 +153,10 @@ func TestTelemetryNeedsTheRightToManageSettings(t *testing.T) {
 }
 
 // Every value below is one GoFr accepts and then fails on without saying so: an
-// unknown exporter drops each span, a collector address with a scheme fails inside
-// the exporter, and a ratio it cannot parse samples nothing. Refusing them here is
-// the only point at which somebody is still looking.
+// unknown exporter is logged once and leaves tracing off, a collector address it
+// cannot dial fails inside the exporter, and a ratio outside 0..1 is clamped
+// without a word. Refusing them here is the only point at which somebody is still
+// looking.
 func TestTelemetryRefusesWhatWouldFailSilently(t *testing.T) {
 	t.Parallel()
 
@@ -167,8 +168,9 @@ func TestTelemetryRefusesWhatWouldFailSilently(t *testing.T) {
 		"zipkin, which is on its way out": {"traceExporter": "zipkin", "tracerUrl": "z:9411"},
 		"the hosted gofr exporter":        {"traceExporter": "gofr"},
 		"an exporter with no collector":   {"traceExporter": "otlp"},
-		"a collector with a scheme":       {"traceExporter": "otlp", "tracerUrl": "http://jaeger:4317"},
+		"a scheme GoFr does not read":     {"traceExporter": "otlp", "tracerUrl": "grpc://jaeger:4317"},
 		"a collector with a path":         {"traceExporter": "otlp", "tracerUrl": "jaeger:4317/v1/traces"},
+		"a path after the scheme":         {"traceExporter": "otlp", "tracerUrl": "http://jaeger:4318/v1/traces"},
 		"a collector with no port":        {"traceExporter": "otlp", "tracerUrl": "jaeger"},
 		"a ratio above one":               {"tracerRatio": 1.5},
 		"a negative ratio":                {"tracerRatio": -1},

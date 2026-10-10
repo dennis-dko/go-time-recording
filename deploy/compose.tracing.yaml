@@ -20,9 +20,9 @@
 # card:
 #
 #   - Trace exporter: OTLP
-#   - Collector as host:port: jaeger:4317 - the service name below, and no
-#     "http://" in front of it. GoFr hands that string to a gRPC dialer, which
-#     reads the scheme as part of the host name and then resolves nothing.
+#   - Collector: jaeger:4317 - the service name below. "http://" in front means
+#     the same; "https://" would encrypt the export, and this collector serves
+#     no TLS.
 #   - Share of traces recorded: 1 while investigating something; lower it if
 #     tracing is left on permanently.
 #
