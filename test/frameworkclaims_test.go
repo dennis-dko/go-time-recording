@@ -17,10 +17,13 @@ import (
 // was applied by the sink "because GoFr's ChangeLevel is a data race" for three
 // weeks after v1.60.0 had made that field atomic.
 //
-// Moved only by whoever has run the sweep doc/audit-method.md describes - every sentence
-// in internal/ and cmd/ naming GoFr or the framework beside a word of limitation
-// - against the new version, and corrected what no longer holds.
-const frameworkClaimsReadAgainst = "v1.61.0"
+// Moved only by whoever has run both halves of the sweep doc/audit-method.md
+// describes against the new version - the scan of every sentence in internal/
+// and cmd/ naming GoFr or the framework beside a word of limitation, and the
+// read of GoFr's own diff between the two versions - and corrected what no
+// longer holds. The scan alone is not the sweep: at v1.62.0 the diff found all
+// five claims that had stopped being true, and the scan none of them.
+const frameworkClaimsReadAgainst = "v1.62.0"
 
 // TestTheFrameworkClaimsWereReadAgainstTheGoFrRequired fails once go.mod requires
 // another GoFr than the one the claims were last read against.
