@@ -47,10 +47,10 @@ type Telemetry struct {
 	// supported exporters.
 	TraceExporter *string `json:"traceExporter,omitempty"`
 
-	// TracerURL is the collector's address as host:port. Not a URL despite the
-	// name, which is GoFr's: the exporter speaks OTLP over gRPC and hands the
-	// value to a gRPC dialer, which reads a scheme as part of the host and
-	// resolves nothing.
+	// TracerURL is the collector's address: host:port, with http:// or https://
+	// in front or neither. The name is GoFr's; the exporter speaks OTLP over
+	// gRPC, which takes no path, and the scheme decides only whether the export
+	// is encrypted.
 	TracerURL *string `json:"tracerUrl,omitempty"`
 
 	// TracerRatio is the share of traces sampled, between 0 and 1.
@@ -157,11 +157,11 @@ func (t Telemetry) Administered() bool {
 // InvalidTelemetryFields lists the fields whose values could not be used.
 //
 // Every rule here exists because GoFr fails these quietly. An exporter it does
-// not recognise is logged once and tracing is then off; a collector address with
-// a scheme in front of it produces "too many colons in address" on each export,
-// inside the exporter, where nobody is looking; and a sampling ratio outside 0..1
-// is clamped by the sampler without a word. All three look exactly like working
-// tracing from the screen that configured them.
+// not recognise is logged once and tracing is then off; a collector address it
+// cannot dial fails on each export, inside the exporter, where nobody is
+// looking; and a sampling ratio outside 0..1 is clamped by the sampler without
+// a word. All three look exactly like working tracing from the screen that
+// configured them.
 func (t Telemetry) InvalidTelemetryFields() []string {
 	var invalid []string
 
@@ -176,7 +176,7 @@ func (t Telemetry) InvalidTelemetryFields() []string {
 	// off while the screen showed an exporter.
 	if t.TracingAdministered() && (t.TracerURL == nil || *t.TracerURL == "") {
 		invalid = append(invalid, "tracerUrl")
-	} else if t.TracerURL != nil && *t.TracerURL != "" && !isHostPort(*t.TracerURL) {
+	} else if t.TracerURL != nil && *t.TracerURL != "" && !isCollectorAddress(*t.TracerURL) {
 		invalid = append(invalid, "tracerUrl")
 	}
 
@@ -200,14 +200,25 @@ func (t Telemetry) InvalidTelemetryFields() []string {
 	return invalid
 }
 
-// isHostPort reports whether the address is the bare host:port a gRPC dialer can
-// use.
+// isCollectorAddress reports whether GoFr's OTLP exporter can dial the address:
+// host:port, with http:// or https:// in front or neither.
 //
-// A scheme or a path is the mistake worth catching, because it is the form every
-// collector's own documentation shows: "http://jaeger:4317" is what an
-// administrator will type, and it is exactly what does not work.
-func isHostPort(address string) bool {
-	if strings.Contains(address, "://") || strings.Contains(address, "/") {
+// GoFr reads those two schemes since v1.61.0 - https encrypts the export, http
+// and the bare form do not - and hands anything else to the gRPC dialer as it
+// stands, so another scheme becomes part of the address and resolves nothing. A
+// path is refused with a scheme or without: it is OTLP over HTTP's form, which
+// this exporter does not speak, and behind a scheme it is dropped, leaving the
+// port that came with it - most often the HTTP one, which answers no gRPC.
+func isCollectorAddress(address string) bool {
+	for _, scheme := range []string{"http://", "https://"} {
+		if len(address) >= len(scheme) && strings.EqualFold(address[:len(scheme)], scheme) {
+			address = address[len(scheme):]
+
+			break
+		}
+	}
+
+	if strings.Contains(address, "/") {
 		return false
 	}
 

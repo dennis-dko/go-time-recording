@@ -340,11 +340,9 @@ tasks:
         vars: { PROFILE: traces }
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}
-      # Only the tracing cases: the rest of the integration suite is `task
-      # test:integration`, and running it twice for these two is minutes wasted.
-      # Both tracing cases carry "Tracing" in their name; the rest of the
-      # integration suite is `task test:integration`, and running it again for
-      # these two is minutes wasted.
+      # Only the tracing cases, which all carry "Tracing" in their name: the
+      # rest of the integration suite is `task test:integration`, and running
+      # it again for these is minutes wasted.
       - go test -tags integration -count=1 -timeout 10m -run Tracing ./test/integration/
 
   test:browser:

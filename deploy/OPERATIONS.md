@@ -814,11 +814,13 @@ there is applied over the environment at the next start. So switch it on under
 | Field | Value |
 | --- | --- |
 | Trace exporter | `OTLP` |
-| Collector as host:port | `jaeger:4317` — **no** `http://` in front |
+| Collector as host:port, encrypted with https:// in front | `jaeger:4317` |
 | Share of traces recorded | `1` while investigating, lower if left on |
 
-The scheme matters: that string goes to a gRPC dialer, which reads `http://` as
-part of the host name and then resolves nothing.
+`http://jaeger:4317` means the same as the bare form. `https://` in front
+encrypts the export, for a collector that serves TLS - the one in this overlay
+does not, so it stays without. Any other scheme, or a path such as `/v1/traces`,
+is refused: the exporter speaks OTLP over gRPC, which takes neither.
 
 **Then restart the application.** The exporter is built while it starts, so a
 saved setting does nothing until it does. All three go into it, so all three

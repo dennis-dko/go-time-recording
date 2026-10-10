@@ -8,11 +8,11 @@ import (
 )
 
 // GoFr fails every one of these settings quietly. An exporter it does not know
-// is logged once and leaves tracing off, a collector address with a scheme in
-// front of it fails inside the exporter where nobody is looking, and a sampling
-// ratio outside 0..1 is clamped without a word. From the screen that configured
-// them, all three look exactly like working tracing - so the rejection has to
-// happen here, on the way in, or it never happens.
+// is logged once and leaves tracing off, a collector address it cannot dial
+// fails inside the exporter where nobody is looking, and a sampling ratio
+// outside 0..1 is clamped without a word. From the screen that configured them,
+// all three look exactly like working tracing - so the rejection has to happen
+// here, on the way in, or it never happens.
 
 // Nothing administered means the configuration file still decides everything,
 // and there is nothing to reject.
@@ -140,18 +140,34 @@ func TestValidationRejectsWhatWouldSilentlyDropEverySpan(t *testing.T) {
 			"tracerUrl",
 		},
 		{
-			"a scheme is what every collector's own documentation shows, and it resolves nothing",
+			"a scheme GoFr does not read is handed to the dialer as part of the address",
 			model.Telemetry{
 				TraceExporter: new(model.TraceExporterOTLP),
-				TracerURL:     new("http://jaeger:4317"),
+				TracerURL:     new("grpc://jaeger:4317"),
 			},
 			"tracerUrl",
 		},
 		{
-			"a path is read as part of the host name",
+			"a path is OTLP over HTTP's form, and without a scheme it joins the address",
 			model.Telemetry{
 				TraceExporter: new(model.TraceExporterOTLP),
 				TracerURL:     new("jaeger:4317/v1/traces"),
+			},
+			"tracerUrl",
+		},
+		{
+			"a path after a scheme is dropped, and the port it came with is the HTTP one",
+			model.Telemetry{
+				TraceExporter: new(model.TraceExporterOTLP),
+				TracerURL:     new("http://jaeger:4318/v1/traces"),
+			},
+			"tracerUrl",
+		},
+		{
+			"a scheme with no address after it names nothing to dial",
+			model.Telemetry{
+				TraceExporter: new(model.TraceExporterOTLP),
+				TracerURL:     new("https://"),
 			},
 			"tracerUrl",
 		},
@@ -241,6 +257,26 @@ func TestValidationAcceptsWhatGoFrCanActuallyUse(t *testing.T) {
 		"a collector on IPv6": {
 			TraceExporter: new(model.TraceExporterOTLP),
 			TracerURL:     new("[::1]:4317"),
+		},
+		// The form every collector's own documentation shows. GoFr reads the
+		// scheme since v1.61.0, and http:// means what the bare form does.
+		"a collector with http:// in front": {
+			TraceExporter: new(model.TraceExporterOTLP),
+			TracerURL:     new("http://jaeger:4317"),
+		},
+		// The one form that encrypts the export: GoFr derives transport security
+		// from the scheme, and a bare host:port goes out in plaintext.
+		"a collector with https:// in front": {
+			TraceExporter: new(model.TraceExporterJaeger),
+			TracerURL:     new("https://collector.example:4317"),
+		},
+		"a scheme in capitals, which GoFr compares without regard to case": {
+			TraceExporter: new(model.TraceExporterOTLP),
+			TracerURL:     new("HTTPS://collector.example:4317"),
+		},
+		"a scheme in front of an IPv6 address": {
+			TraceExporter: new(model.TraceExporterOTLP),
+			TracerURL:     new("http://[::1]:4317"),
 		},
 		// Zero is a real choice: it keeps the exporter configured while recording
 		// nothing, which is how sampling is turned down without being torn out.
