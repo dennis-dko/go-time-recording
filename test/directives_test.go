@@ -58,9 +58,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "regexp.MustCompile(",
 		},
 		{
-			reference: "internal/interface/api/v1/rest/security.go:141",
+			reference: "internal/interface/api/v1/rest/security.go:150",
 			resolved:  "internal/interface/api/v1/rest/security.go",
-			line:      141,
+			line:      150,
 			contains:  "netip.MustParsePrefix(",
 		},
 		{

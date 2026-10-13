@@ -103,3 +103,30 @@ func TestAValueThatCannotBeUsedIsNamed(t *testing.T) {
 		t.Errorf("an installation that sets nothing is told %q", quiet)
 	}
 }
+
+// HSTS_MAX_AGE=0 switches the header off.
+//
+// The middleware has always read zero that way, and the reader turned it into a
+// year before the middleware saw it. So an installation that set 0 because it
+// makes its own certificate told every browser that trusted it to accept nothing
+// less for a year, and a certificate that lapsed or was replaced would have left
+// those browsers no way past the warning - the lock-out the setting was there to
+// prevent - while the start said only that 0 "cannot be used".
+func TestZeroSwitchesHSTSOffRatherThanFallingBack(t *testing.T) {
+	cfg := config.Load(mapConfig{"HSTS_MAX_AGE": "0"})
+
+	if cfg.HSTSMaxAge != 0 {
+		t.Errorf("HSTS_MAX_AGE=0 is read as %s rather than as off", cfg.HSTSMaxAge)
+	}
+
+	if len(cfg.Unusable) != 0 {
+		t.Errorf("HSTS_MAX_AGE=0 is reported as a value that cannot be used: %q", cfg.Unusable)
+	}
+
+	// Below zero is still a mistake, and still says so.
+	cfg = config.Load(mapConfig{"HSTS_MAX_AGE": "-1h"})
+
+	if cfg.HSTSMaxAge <= 0 || !strings.Contains(strings.Join(cfg.Unusable, "\n"), "HSTS_MAX_AGE") {
+		t.Errorf("HSTS_MAX_AGE=-1h is read as %s, and the start is told %q", cfg.HSTSMaxAge, cfg.Unusable)
+	}
+}

@@ -33,7 +33,7 @@ import (
 // which name the key the same way and say when its value cannot be used. The
 // three-character floor keeps ordinary Get calls with a short constant out of it.
 var configRead = regexp.MustCompile(
-	`\.(?:Get(?:OrDefault)?|boolean|whole|duration|share|dailyHours)\("([A-Z][A-Z_0-9]{2,})"`)
+	`\.(?:Get(?:OrDefault)?|boolean|whole|duration(?:OrOff)?|share|dailyHours)\("([A-Z][A-Z_0-9]{2,})"`)
 
 // assignedKey matches a variable set in an env file.
 var assignedKey = regexp.MustCompile(`(?m)^([A-Z][A-Z_0-9]+)=`)

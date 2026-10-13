@@ -1046,7 +1046,7 @@ nothing sets the variable.
 | `TLS_EMAIL` | – | receives expiry warnings |
 | `TLS_PORT` / `TLS_REDIRECT_PORT` | `443` / `80` | HTTPS, and the ACME/redirect listener |
 | `TLS_STAGING` | `false` | Let's Encrypt test authority |
-| `HSTS_MAX_AGE` | `8760h` | only sent over HTTPS |
+| `HSTS_MAX_AGE` | `8760h` | only sent over HTTPS. `0` switches it off, and tells browsers that stored it before to forget it |
 | `RATE_LIMIT` / `RATE_LIMIT_WINDOW` | `30` / `1m` | sign-in and token requests per client. **Administered under Settings**; not in `configs/.env` |
 | `TRUSTED_PROXIES` | empty | comma separated CIDR ranges or addresses whose `X-Forwarded-For` the rate limiter may believe. Loopback is always believed, so the built-in HTTPS front end needs no entry — this is for a proxy that is somewhere else, such as an nginx in the next container. Leave it empty when nothing is in front: a forwarded header from the open network is written by the client, so believing it would hand out a fresh sign-in budget per request |
 | `UPDATE_CHECK` | `true` | ask the release feed whether a newer version exists. `false` for an installation that must not reach the internet. The answer is kept for six hours, so the *Version* card can be up to that far behind a release you have just cut — **Check for updates** on the card asks at once, at most once every five minutes |

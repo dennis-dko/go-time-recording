@@ -60,9 +60,18 @@ func SecurityHeaders(hstsMaxAge time.Duration) func(http.Handler) http.Handler {
 			// HSTS is only meaningful, and only safe, over a connection that
 			// already is HTTPS: sending it over plain HTTP would let a single
 			// intercepted response lock a host out of working at all.
-			if hstsMaxAge > 0 && isTLS(r) {
-				header.Set("Strict-Transport-Security",
-					"max-age="+itoa(int(hstsMaxAge.Seconds()))+"; includeSubDomains")
+			//
+			// Switched off, it is still sent, as max-age=0. A browser keeps a
+			// policy it was given until the policy runs out, so leaving the
+			// header out would switch nothing off where it was ever sent; zero
+			// is how RFC 6797 tells a browser to forget the host.
+			if isTLS(r) {
+				policy := "max-age=0"
+				if hstsMaxAge > 0 {
+					policy = "max-age=" + itoa(int(hstsMaxAge.Seconds())) + "; includeSubDomains"
+				}
+
+				header.Set("Strict-Transport-Security", policy)
 			}
 
 			next.ServeHTTP(w, r)
