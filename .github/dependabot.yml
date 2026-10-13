@@ -23,6 +23,20 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # chromedp v0.20 replaces the action API the browser suite is written in -
+    # typed selectors, Evaluate returning its value, Run becoming Do - which is
+    # more than 1,800 uses in 126 files, and every weekly group carrying it was
+    # red on the browser suite, holding back whatever else was in it. It is a
+    # test dependency only: nothing it does reaches the binary, and v0.16 drives
+    # the Chrome CI installs. Held here, decided by the maintainer on 2026-10-13,
+    # until one of those stops being true - Chrome breaking v0.16, or a reason to
+    # want the new API. cdproto is held with it, because it is the protocol
+    # chromedp is built against. Patch releases of v0.16 still arrive.
+    ignore:
+      - dependency-name: github.com/chromedp/chromedp
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: github.com/chromedp/cdproto
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
       go-dependencies:
         patterns:
