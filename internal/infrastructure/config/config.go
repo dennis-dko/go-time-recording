@@ -110,7 +110,7 @@ type Config struct {
 	KerberosServicePrincipal string
 
 	// HSTSMaxAge tells browsers to refuse plain HTTP for this long. It is only
-	// sent over connections that already are HTTPS.
+	// sent over connections that already are HTTPS, and zero switches it off.
 	HSTSMaxAge time.Duration
 
 	// RateLimit bounds sign-in and API-token requests per client per window.
@@ -341,7 +341,7 @@ func Load(p Provider) Config {
 		KerberosKeytab:           strings.TrimSpace(p.Get("KERBEROS_KEYTAB")),
 		KerberosServicePrincipal: strings.TrimSpace(p.Get("KERBEROS_SERVICE_PRINCIPAL")),
 
-		HSTSMaxAge:      v.duration("HSTS_MAX_AGE", defaultHSTSMaxAge),
+		HSTSMaxAge:      v.durationOrOff("HSTS_MAX_AGE", defaultHSTSMaxAge),
 		RateLimit:       v.whole("RATE_LIMIT", defaultRateLimit),
 		RateLimitWindow: v.duration("RATE_LIMIT_WINDOW", defaultRateLimitWindow),
 		TrustedProxies:  splitList(p.Get("TRUSTED_PROXIES")),
@@ -428,6 +428,19 @@ func (v *values) duration(key string, fallback time.Duration) time.Duration {
 	}
 
 	return used
+}
+
+// durationOrOff is duration for the setting where zero is a value - off - rather
+// than one to fall back from. Every other duration here is a length something
+// needs, so zero there is a mistake; HSTS_MAX_AGE=0 is a decision, by which an
+// installation that makes its own certificate keeps one that lapses or is
+// replaced from locking out every browser that trusted the last.
+func (v *values) durationOrOff(key string, fallback time.Duration) time.Duration {
+	if parsed, err := time.ParseDuration(v.set(key)); err == nil && parsed == 0 {
+		return 0
+	}
+
+	return v.duration(key, fallback)
 }
 
 // share and dailyHours compare what was written with what is used, which also

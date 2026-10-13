@@ -438,7 +438,11 @@ TLS_KEY_FILE=/etc/gtr/privkey.pem
 Nothing is requested from anybody: no domain, no challenge, no authority, so
 port 80 is only the redirect. The certificate can come from a company authority —
 which the machines already trust, so browsers say nothing — or be made for the
-purpose, which they will warn about once per machine until it is trusted:
+purpose, which they will warn about once per machine until it is trusted. A
+browser that trusts it also keeps the HSTS header for a year, and on a host it
+keeps that for it offers no way past a certificate warning; if nothing renews
+the certificate for you, `HSTS_MAX_AGE=0` keeps one that lapses from locking
+those browsers out, and tells the ones that stored it to forget it:
 
 ```bash
 openssl req -x509 -newkey rsa:2048 -nodes -days 825   -keyout privkey.pem -out fullchain.pem   -subj "/CN=zeiterfassung.intern"   -addext "subjectAltName=DNS:zeiterfassung.intern"
