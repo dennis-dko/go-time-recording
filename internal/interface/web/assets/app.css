@@ -1846,6 +1846,25 @@ body:has(#login-screen:not([hidden])) .site-footer {
   z-index: 31;
 }
 
+/* Nothing of the application under the sign-in screen.
+ *
+ * The screen and the raised footer meet at --footer-height, so between them they
+ * cover the window - by geometry, which a telephone does not keep. Firefox for
+ * Android moves what is fixed to the bottom of the window with its toolbar and
+ * leaves what is fixed at both ends where it was, and the strip that opened
+ * between the two showed the screen that had just been signed out of. No
+ * measurement can follow a compositor's offset, so the application is simply not
+ * drawn while the screen is up, and a strip shows the page's background, which
+ * is the screen's own.
+ *
+ * visibility rather than display: a returning visitor's first screen is drawn
+ * behind the sign-in screen while it still checks the session, and display would
+ * take its layout away. Hidden like this it also cannot be reached by Tab or by
+ * a screen reader from the sign-in form. */
+body:has(#login-screen:not([hidden])) > :is(.topbar, .banner, #standing-notices, main) {
+  visibility: hidden;
+}
+
 /* The same image in the sign-in band, at the header's bound of 328x96, so one
  * picture is drawn at one size wherever it appears - and narrower where the band
  * is, which on a telephone is less than 328px.

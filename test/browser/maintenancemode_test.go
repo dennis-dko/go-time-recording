@@ -39,12 +39,18 @@ func TestTurningMaintenanceModeOnAndOffFromTheInterface(t *testing.T) {
 
 	p.waitForText("#maintenance-banner", "Restoring a backup")
 
-	// Signed out, the notice is what a person sees instead of silence.
+	// Signed out, the notice is what a person sees instead of silence - the one
+	// inside the sign-in screen. This asked after the banner at the top of the
+	// page, which the sign-in screen has always covered: checkVisibility does not
+	// see one element under another, so the case passed on a notice nobody could
+	// read, and failed only once the page under the screen stopped being drawn.
 	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
 		chromedp.WaitVisible("#form-login", chromedp.ByID))
 
-	if !p.visible("#maintenance-banner") {
-		t.Error("the notice is not shown on the sign-in screen, where it matters most")
+	if !p.visible("#login-maintenance") ||
+		!strings.Contains(p.text("#login-maintenance"), "Restoring a backup") {
+		t.Errorf("the notice is not shown on the sign-in screen, where it matters most: %q",
+			p.text("#login-maintenance"))
 	}
 
 	// And back in, the administrator can end it.
