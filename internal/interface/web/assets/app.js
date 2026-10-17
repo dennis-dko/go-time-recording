@@ -10905,8 +10905,11 @@ function drawBarChart(container, bars, formatValue) {
   bars.forEach((bar, index) => {
     const y = index * (rowHeight + gap);
 
+    // Both texts stand a few units in from the edges of the drawing rather than on
+    // them. Gecko measures an outer glyph a pixel past the point it is anchored at,
+    // and the drawing clips there - on a telephone, where the drawing is the box.
     const label = svg('text', {
-      x: 0,
+      x: 3,
       y: y + rowHeight * 0.72,
       class: 'chart-label',
       'data-room': labelWidth - 8,
@@ -10943,7 +10946,7 @@ function drawBarChart(container, bars, formatValue) {
     }
 
     const value = svg('text', {
-      x: width,
+      x: width - 3,
       y: y + rowHeight * 0.72,
       class: 'chart-value',
       'text-anchor': 'end',
