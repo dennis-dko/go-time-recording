@@ -757,6 +757,18 @@ th { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: upp
 td.num, th.num { text-align: right; }
 td.actions, th.actions { text-align: right; }
 
+/* A dropdown in a cell is as wide as what it says, up to a bound.
+ *
+ * The full width every field takes is a share of the cell, and a share adds
+ * nothing to how wide a table makes the column - so the role in a user's row got
+ * whatever the column had left and cut its own label: "Benutze" for Benutzer and
+ * for Benutzer & Administrator alike. Bounded, because each option carries what
+ * the role is for after its name, and the name is the part that has to fit. */
+td > select {
+  max-width: 16em;
+  width: auto;
+}
+
 /* The checkbox column for selecting several rows. As narrow as its content, so
    it takes nothing away from the columns that carry meaning. */
 td.pick, th.pick { padding-right: 0; width: 1px; }
