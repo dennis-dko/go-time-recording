@@ -619,6 +619,63 @@ func TestOneWordForTheTour(t *testing.T) {
 	}
 }
 
+// German says du to its reader, everywhere.
+//
+// The tour, the welcome screen and most hints said du; fourteen entries said Sie
+// - the refusals a reader meets when they reach for somebody else's hours, the
+// hints on the project and token cards, a warning about the directory's
+// deletion limit - so the same person was addressed two ways on one screen. Du
+// was decided on 2026-10-17, as the form the screens read first already used.
+//
+// Three shapes are formal address: a capitalised pronoun inside a sentence, a
+// capitalised possessive anywhere, and Sie opening a sentence before a plural
+// verb. A Sie opening a sentence before a singular verb is the pronoun for a zone
+// or a clock - "Sie bestimmt, auf welchen Kalendertag ..." - and is not counted.
+func TestTheGermanSaysDu(t *testing.T) {
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("app.js has no German dictionary")
+	}
+
+	piece := regexp.MustCompile(`'((?:[^'\\]|\\.)*)'`)
+	inside := regexp.MustCompile(`[a-zäöüß0-9,;:–\-)] (Sie|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres|Ihnen)\b`)
+	possessive := regexp.MustCompile(`\b(Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres|Ihnen)\b`)
+	opening := regexp.MustCompile(`(?:^|[.!?]\s+)Sie (dürfen|können|müssen|haben|sind|werden|sollten|möchten|wollen|brauchen|finden|sehen)\b`)
+	du := regexp.MustCompile(`\b(du|dein|deine|deinen|deinem|deiner|deines|dir|dich)\b`)
+
+	saysDu := 0
+
+	var formal []string
+
+	for key, raw := range dict {
+		var text strings.Builder
+
+		for _, m := range piece.FindAllStringSubmatch(raw, -1) {
+			text.WriteString(m[1])
+		}
+
+		said := text.String()
+
+		if du.MatchString(said) {
+			saysDu++
+		}
+
+		if inside.MatchString(said) || possessive.MatchString(said) || opening.MatchString(said) {
+			formal = append(formal, key+": "+said)
+		}
+	}
+
+	sort.Strings(formal)
+
+	for _, entry := range formal {
+		t.Errorf("this German entry says Sie, where the rest of the screen says du: %s", entry)
+	}
+
+	if saysDu == 0 {
+		t.Fatal("no German entry says du; this case is holding a form of address nobody uses")
+	}
+}
+
 // The installer's own refusals have their own translations.
 //
 // It cannot use the dictionary in app.js: it runs before there is a database, so

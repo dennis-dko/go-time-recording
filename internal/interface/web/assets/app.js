@@ -3403,7 +3403,7 @@ const TRANSLATIONS = {
     'admin.logoCropHint': 'Jede Vorschau zeigt einen Ausschnitt des Logos. Zum Wählen darauf klicken.',
     'crop.title': 'Welcher Teil des Logos?',
     'crop.text': 'Ziehen, um den Teil des Logos zu wählen, der hier verwendet wird: {0}.',
-    'crop.free': 'Ziehen Sie die Ecken in eine beliebige Form. Der gewählte Teil wird in die jeweilige Stelle eingepasst, niemals verzerrt.',
+    'crop.free': 'Ziehe die Ecken in eine beliebige Form. Der gewählte Teil wird in die jeweilige Stelle eingepasst, niemals verzerrt.',
     'crop.whole': 'Ganzes Logo verwenden',
     'crop.apply': 'Diesen Teil verwenden',
     'admin.logoAsFavicon': 'Im Browser-Tab',
@@ -3553,7 +3553,7 @@ const TRANSLATIONS = {
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und Ihre Container-Verwaltung startet ihn wieder - was sie nur '
+      + 'hält ihn an, und deine Container-Verwaltung startet ihn wieder - was sie nur '
       + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
       + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
       + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
@@ -3594,7 +3594,7 @@ const TRANSLATIONS = {
     'row.hoursMissing': 'Die Stunden fehlen.',
     'row.hoursNotANumber': '„{0}“ ist keine Stundenzahl.',
     'row.noSuchUser': 'Es gibt niemanden mit dem Namen „{0}“.',
-    'row.notYourTime': 'Sie dürfen nur eigene Zeiten importieren, und diese Zeile gehört '
+    'row.notYourTime': 'Du darfst nur eigene Zeiten importieren, und diese Zeile gehört '
       + 'zu {0}.',
     'row.noSuchProject': 'Es gibt kein Projekt mit dem Namen „{0}“.',
     'row.projectNotActive': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
@@ -3655,7 +3655,7 @@ const TRANSLATIONS = {
     'bulk.text': 'Das lässt sich nicht rückgängig machen.',
     'bulk.done': '{n} gelöscht',
     'bulk.refused': '{n} konnten nicht gelöscht werden',
-    'sheet.projects.text': 'Exportiert Ihre Projekte. Ein Import '
+    'sheet.projects.text': 'Exportiert deine Projekte. Ein Import '
       + 'ordnet Zeilen über den Namen zu: ein vorhandener Name wird aktualisiert, ein neuer '
       + 'angelegt. Eine leere '
       + 'Zelle lässt den Wert unverändert, es geht also nichts verloren, wenn eine Spalte '
@@ -3694,7 +3694,7 @@ const TRANSLATIONS = {
     'stats.deletedProject': 'gelöschtes Projekt',
     'stats.empty': 'In diesem Zeitraum wurde nichts erfasst.',
     'timer.title': 'Stoppuhr',
-    'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in Ihrer eigenen Zeitzone.',
+    'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in deiner eigenen Zeitzone.',
     'timer.start': 'Starten',
     'timer.stop': 'Stoppen und buchen',
     'timer.discard': 'Verwerfen',
@@ -3816,14 +3816,14 @@ const TRANSLATIONS = {
     'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
     'err.logoTooManyPixels': 'Das Logo darf höchstens {0} Megapixel haben. Eine kleine Datei kann trotzdem sehr viele Bildpunkte enthalten.',
     'err.missingPermission': 'Dafür fehlt die Berechtigung „{0}“.',
-    'err.onlyOwnWorkingTimes': 'Sie können nur Ihre eigenen Arbeitszeiten ändern.',
-    'err.onlyOwnEntriesRead': 'Sie können nur Ihre eigenen Zeiteinträge sehen.',
-    'err.onlyOwnEntriesWrite': 'Sie können nur Ihre eigenen Zeiteinträge ändern.',
-    'err.onlyOwnOvertime': 'Sie können nur Ihren eigenen Überstundenstand sehen.',
+    'err.onlyOwnWorkingTimes': 'Du kannst nur deine eigenen Arbeitszeiten ändern.',
+    'err.onlyOwnEntriesRead': 'Du kannst nur deine eigenen Zeiteinträge sehen.',
+    'err.onlyOwnEntriesWrite': 'Du kannst nur deine eigenen Zeiteinträge ändern.',
+    'err.onlyOwnOvertime': 'Du kannst nur deinen eigenen Überstundenstand sehen.',
     'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
       + 'abgleichen.',
     'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
-      + 'warten Sie, bis sie abgeschlossen ist.',
+      + 'warte, bis sie abgeschlossen ist.',
     'err.updateAlreadyInstalled': '{0} ist bereits heruntergeladen und startet mit dem nächsten Neustart.',
     'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
     'err.updateInContainer': 'Dies läuft in einem Container. Ein dort ausgetauschtes Programm wird beim nächsten Neuerzeugen des Containers überschrieben. Bitte das Abbild von Hand aktualisieren – oder deploy/compose.update.yaml zur Bereitstellung hinzufügen, dann geht es von hier aus.',
@@ -3845,7 +3845,7 @@ const TRANSLATIONS = {
       + 'prüfen.',
     'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat niemanden mit einer Mailadresse geliefert; es wird niemand gelöscht.',
     'err.syncWouldRemoveTooMany': 'Würde {0} von {1} Verzeichniskonten entfernen ({2} %), mehr als die '
-      + 'Sicherheitsgrenze von {3} %. Prüfen Sie Filter und Base-DN des Verzeichnisses und heben Sie die '
+      + 'Sicherheitsgrenze von {3} %. Prüfe Filter und Base-DN des Verzeichnisses und hebe die '
       + 'Löschgrenze unter „Betrieb und Grenzwerte“ oder LDAP_SYNC_MAX_DELETE_RATIO an, wenn das wirklich '
       + 'beabsichtigt ist.',
     'err.noSession': 'Keine Sitzung.',
@@ -3877,7 +3877,7 @@ const TRANSLATIONS = {
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
-    'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warten Sie auf den nächsten.',
+    'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warte auf den nächsten.',
     'err.kerberosOff': 'Die Anmeldung mit einem Kerberos-Ticket ist auf dieser Installation nicht eingerichtet.',
     'err.kerberosNeedsDirectory': 'Eine Kerberos-Anmeldung wird im Verzeichnis nachgeschlagen, und hier ist kein Verzeichnis eingerichtet.',
     'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
@@ -4090,7 +4090,7 @@ const TRANSLATIONS = {
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
     'project.edit': 'Projekt bearbeiten',
-    'project.hint': 'Ihre Projekte sind Ihre: nur Sie sehen sie, und nur Sie buchen darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
+    'project.hint': 'Deine Projekte sind deine: nur du siehst sie, und nur du buchst darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
     'report.result': 'Ergebnis',
@@ -4209,7 +4209,7 @@ const TRANSLATIONS = {
     'token.empty': 'Noch keine Tokens angelegt.',
     'token.expires': 'Gültig für (Tage, 0 = unbegrenzt)',
     'token.expiresAt': 'Läuft ab',
-    'token.hint': 'Ein Token ersetzt bei API-Aufrufen Ihr Passwort und hat immer genau die Rechte Ihrer aktuellen Rolle. Der Wert wird nur einmal angezeigt.',
+    'token.hint': 'Ein Token ersetzt bei API-Aufrufen dein Passwort und hat immer genau die Rechte deiner aktuellen Rolle. Der Wert wird nur einmal angezeigt.',
     'token.lastUsed': 'Zuletzt genutzt',
     'token.name': 'Bezeichnung',
     'token.never': 'unbegrenzt',
