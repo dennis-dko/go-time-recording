@@ -586,6 +586,39 @@ func TestOneWordForAnHour(t *testing.T) {
 	}
 }
 
+// One word for the tour.
+//
+// German called it a Rundgang on the welcome screen and in every sentence about
+// it, and a Tour on three labels: the card that starts it again was headed
+// "Geführte Tour" above a sentence about "ein kurzer Rundgang" and a button reading
+// "Tour anzeigen", and the bubble walking through it offered "Tour überspringen" to
+// somebody who had just pressed "Rundgang starten". One thing under two names
+// reads as two things.
+func TestOneWordForTheTour(t *testing.T) {
+	dict, ok := dictionaries(t)["de"]
+	if !ok {
+		t.Fatal("app.js has no German dictionary")
+	}
+
+	other := regexp.MustCompile(`\bTour\b`)
+	agreed := 0
+
+	for key, value := range dict {
+		if strings.Contains(value, "Rundgang") {
+			agreed++
+		}
+
+		if other.MatchString(value) {
+			t.Errorf("%s calls the tour a Tour, where the rest of the screen calls it a "+
+				"Rundgang: %s", key, value)
+		}
+	}
+
+	if agreed == 0 {
+		t.Fatal("no German string says Rundgang any more; this case is holding a word nobody uses")
+	}
+}
+
 // The installer's own refusals have their own translations.
 //
 // It cannot use the dictionary in app.js: it runs before there is a database, so
