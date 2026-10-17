@@ -2194,14 +2194,17 @@ function prepareBulkDelete(tbody, rows) {
       });
 
       box.deletes = deletes;
-      cell.append(box);
+
+      // In a label, which passes a tap on to its box: the room around the box is
+      // what makes it something a finger can hit, and the box keeps its size.
+      cell.append(el('label', { class: 'pick-hit' }, box));
     }
 
     row.prepend(cell);
   }
 
   if (!column && head) {
-    head.prepend(el('th', { class: 'pick' }, el('input', {
+    head.prepend(el('th', { class: 'pick' }, el('label', { class: 'pick-hit' }, el('input', {
       type: 'checkbox',
       class: 'pick-all',
       'aria-label': t('bulk.pickAll', 'Select all'),
@@ -2212,7 +2215,7 @@ function prepareBulkDelete(tbody, rows) {
 
         refreshBulkBar(table);
       },
-    })));
+    }))));
   }
 
   ensureBulkBar(table);

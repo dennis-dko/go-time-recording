@@ -774,6 +774,19 @@ td > select {
 td.pick, th.pick { padding-right: 0; width: 1px; }
 td.pick input, th.pick input { cursor: pointer; margin: 0; }
 
+/* The room around a selection box, 24 pixels square, which is what a finger can
+   hit beside the next row's box; the box itself is 13. A label, so a tap on the
+   room ticks the box. */
+.pick-hit {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 24px;
+  min-width: 24px;
+  vertical-align: middle;
+}
+
 /* The bar above a table, shown only while something is ticked.
  *
  * Kept out of the flow when hidden rather than merely invisible: a permanently
@@ -1829,6 +1842,16 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   left: 20px;
 }
 
+/* 24 pixels for a finger around an 18-pixel mark, drawn by nothing: a tap on the
+   pseudo-element is a tap on the link, and the mark and its box stay where they
+   are. Padding would have moved them - the corner is centred by a translate of
+   half its own height, which no margin gives back. */
+.footer-corner::after {
+  content: '';
+  inset: -3px;
+  position: absolute;
+}
+
 /* The mark alone, at the height of the line the version sits on. It carries the
    colour of the text around it rather than the accent every other link has:
    in a corner, at this size, a coloured mark reads as a decoration somebody
@@ -1861,9 +1884,11 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
     transform: none;
   }
 
+  /* Relative rather than static: it lies in the flow the same way, and gives the
+     room around the mark something to be placed against. */
   .footer-corner {
     order: -1;
-    position: static;
+    position: relative;
     transform: none;
   }
 }
