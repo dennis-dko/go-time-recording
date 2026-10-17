@@ -1189,8 +1189,11 @@
           </table>
           <p class="muted" data-i18n="markup.note">Everything else is shown exactly as typed. These texts are read on the sign-in screen by people who have not signed in, so they are not HTML.</p>
         </div>
+        <p class="muted" id="logo-hint" data-i18n="admin.logo">Logo (PNG or JPEG, max. 256 KB)</p>
         <div class="row">
-          <label data-i18n="admin.logo">Logo (PNG or JPEG, max. 256 KB)<input type="file" id="logo-file" accept="image/png,image/jpeg">
+          <label class="file-pick">
+            <span data-i18n="admin.logoChoose">Choose an image…</span>
+            <input type="file" id="logo-file" accept="image/png,image/jpeg" aria-describedby="logo-hint">
           </label>
           <button type="button" class="secondary" id="logo-clear" data-i18n="admin.logoClear">Remove logo</button>
         </div>

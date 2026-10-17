@@ -3337,6 +3337,7 @@ const TRANSLATIONS = {
     'admin.dbHost': 'Host',
     'admin.dbPort': 'Port',
     'admin.logo': 'Logo (PNG oder JPEG, max. 256 KB)',
+    'admin.logoChoose': 'Bild wählen…',
     'admin.logoInHeader': 'In der Kopfzeile',
     'admin.logoCropHint': 'Jede Vorschau zeigt einen Ausschnitt des Logos. Zum Wählen darauf klicken.',
     'crop.title': 'Welcher Teil des Logos?',
