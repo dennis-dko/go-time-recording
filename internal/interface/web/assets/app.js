@@ -10798,10 +10798,56 @@ function chartWidth(container) {
 function fitChart(container, again) {
   const width = chartWidth(container);
 
-  fittedCharts.set(container, { again, width });
+  // A chart drawn blind is remembered as drawn for no width at all, so the first
+  // width its box has draws it again - which is also the first moment its names
+  // can be measured (fitChartTexts).
+  fittedCharts.set(container, { again, width: container.clientWidth > 0 ? width : 0 });
   chartBoxes?.observe(container);
 
   return width;
+}
+
+/**
+ * Shortens each name in a chart to the room it was given, with a mark where it
+ * was cut and the whole of it on hover.
+ *
+ * A name longer than its place was cut wherever the drawing happened to end: the
+ * bars painted their track over the rest of it, a column's name ran off the
+ * picture and across its neighbour's, and the pie's key lost the figure at the
+ * end of its line past the right edge. Measured rather than counted in letters,
+ * because the type is proportional - so only once the chart is on the page, and
+ * not while its screen is hidden, where a text has no length. What follows the
+ * name, the key's figure, stays whole and the name gives way to it.
+ */
+function fitChartTexts(chart) {
+  for (const text of chart.querySelectorAll('text[data-room]')) {
+    const room = Number(text.dataset.room);
+
+    if (text.getComputedTextLength() <= room) continue;
+
+    const whole = text.textContent;
+    const after = text.dataset.after ?? '';
+    const name = whole.slice(0, whole.length - after.length);
+
+    // The longest start of the name that fits with the mark and what follows it.
+    let fits = 0;
+    let tooLong = name.length;
+
+    while (tooLong - fits > 1) {
+      const middle = Math.floor((fits + tooLong) / 2);
+
+      text.textContent = `${name.slice(0, middle).trimEnd()}…${after}`;
+
+      if (text.getComputedTextLength() <= room) fits = middle;
+      else tooLong = middle;
+    }
+
+    text.textContent = `${name.slice(0, fits).trimEnd()}…${after}`;
+
+    const title = svg('title');
+    title.textContent = whole;
+    text.append(title);
+  }
 }
 
 /**
@@ -10863,6 +10909,7 @@ function drawBarChart(container, bars, formatValue) {
       x: 0,
       y: y + rowHeight * 0.72,
       class: 'chart-label',
+      'data-room': labelWidth - 8,
     });
     label.textContent = bar.label;
     chart.append(label);
@@ -10906,6 +10953,7 @@ function drawBarChart(container, bars, formatValue) {
   });
 
   container.append(chart);
+  fitChartTexts(chart);
 }
 
 /**
@@ -10977,12 +11025,14 @@ function drawColumnChart(container, bars, formatValue) {
       y: valueBand + plot + 16,
       class: 'chart-label',
       'text-anchor': 'middle',
+      'data-room': slot - 6,
     });
     label.textContent = bar.label;
     chart.append(label);
   });
 
   container.append(chart);
+  fitChartTexts(chart);
 }
 
 /**
@@ -11071,14 +11121,23 @@ function drawPieChart(container, slices, formatValue) {
       class: `chart-slice ${chartColourFor(slice.key) || `chart-slice-${index % 6}`}`,
     }));
 
-    const label = svg('text', { x: keyLeft + 20, y, class: 'chart-label' });
-    label.textContent = `${slice.label} — ${formatValue(slice.value)}`;
+    const figure = ` — ${formatValue(slice.value)}`;
+
+    const label = svg('text', {
+      x: keyLeft + 20,
+      y,
+      class: 'chart-label',
+      'data-room': width - keyLeft - 24,
+      'data-after': figure,
+    });
+    label.textContent = `${slice.label}${figure}`;
     chart.append(label);
 
     angle = end;
   });
 
   container.append(chart);
+  fitChartTexts(chart);
 }
 
 /** The default range: the current month, in whatever zone applies to the user. */
