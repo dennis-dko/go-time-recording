@@ -880,6 +880,13 @@ tbody tr.clickable:focus-visible {
 
 .file-pick:hover { border-color: var(--accent); }
 
+/* The focus ring belongs on the label, which is what is drawn: the input that has
+   the focus is hidden by design, as a switch's is. */
+.file-pick:has(input:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+}
+
 .file-pick input[type="file"] {
   height: 0;
   opacity: 0;
