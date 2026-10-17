@@ -4032,7 +4032,7 @@ const TRANSLATIONS = {
     'msg.booked': 'Zeit gebucht',
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.entrySaved': 'Eintrag gespeichert',
-    'maint.confirm': 'Installation außer Betrieb nehmen? Alle außer diesem Konto werden abgewiesen.',
+    'maint.confirm': 'Installation außer Betrieb nehmen? Alle, die sie nicht verwalten dürfen, werden abgewiesen.',
     'admin.markupLegend': 'Was in Banner, Fußzeile und rechtlichem Hinweis möglich ist',
     'markup.year': 'Das aktuelle Jahr — eine Copyright-Zeile bleibt richtig, ohne dass jemand sie ändert',
     'markup.date': 'Das heutige Datum, geschrieben wie es die lesende Person schreibt',
@@ -13412,7 +13412,7 @@ function wireMaintenance() {
       const proceed = await confirmDialog({
         title: t('maint.title', 'Maintenance mode'),
         text: t('maint.confirm',
-          'Turn this installation out of service? Everyone except this account will be turned away.'),
+          'Turn this installation out of service? Everyone who may not administer it will be turned away.'),
         confirmLabel: t('maint.enabled', 'Out of service'),
       });
 
