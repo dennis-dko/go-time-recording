@@ -7940,6 +7940,13 @@ function handBackTheScreen(message) {
   // the sign-in screen within reach is the right answer anyway.
   for (const overlay of $$('.overlay')) overlay.hidden = true;
 
+  // And the notices in the corner, which belong to the session they were raised
+  // in. One lingers for up to twenty seconds and the stack sits above the sign-in
+  // screen on purpose, so whoever signed in next at the same desk read the last
+  // account's "Password changed", or a failure with that account's detail folded
+  // under it. The reason a session ends is said on the sign-in form instead.
+  $('#toast')?.replaceChildren();
+
   // And the stopwatch, which is the fifth of them. It is cleared in one place
   // only - inside renderTimer, on a pass where nothing is running - so signing
   // out with a clock going left setInterval firing once a second, painting one
