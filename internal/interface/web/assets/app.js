@@ -4694,6 +4694,9 @@ async function loadMe() {
     who.replaceChildren(el('span', { text: t('auth.disabled', 'Authentication disabled') }));
   }
 
+  // The bar cuts the line short where it has no room; the whole of it is here.
+  who.title = who.textContent;
+
   $("#password-banner").hidden = !me.user.mustChangePassword;
   $("#logout").hidden = !me.authEnabled;
 

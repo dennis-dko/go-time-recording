@@ -175,3 +175,86 @@ func TestNothingOnTheBarIsDrawnOverAnythingElse(t *testing.T) {
 
 	measure("a wide logo")
 }
+
+// The account's name and role stay on one line of the bar, cut short where there
+// is no room, and whole in the tooltip.
+//
+// The right-hand column of the bar holds the account and three controls, and its
+// share of a laptop's width is little more than the controls need. The account
+// was allowed to wrap, so it took what was left - the width of its longest word -
+// and stood as a column of words: "System / Administrator / · / Administrator" at
+// 1,024 pixels, six lines for a long name, and the bar that stays on top of every
+// screen grew to 255 pixels. It keeps to one line now, at most 12em wide, which is
+// what kept the bar no taller than before at every width measured; decided on
+// 2026-10-17.
+func TestTheAccountStaysOneLineOnTheBar(t *testing.T) {
+	t.Parallel()
+
+	const long = "Maximiliane Freifrau von und zu Beispielhausen"
+
+	p := open(t)
+	p.readyAdmin()
+
+	var status string
+
+	p.run("create an account with a long name", chromedp.Evaluate(`(async () => {
+		const csrf = document.cookie.split(';').map(c => c.trim())
+			.find(c => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+		const r = await fetch('/api/v1/users', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+			body: JSON.stringify({ name: '`+long+`', email: 'long@example.com', role: 'user-admin',
+				password: 'a-long-enough-password' }),
+		});
+		return String(r.status);
+	})()`, &status, awaitPromise))
+
+	if status != "201" && status != "200" {
+		t.Fatalf("could not create the account: HTTP %s", status)
+	}
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	p.signIn("long@example.com", "a-long-enough-password")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+
+	for _, language := range []string{"de", "en"} {
+		p.run("a desktop", chromedp.EmulateViewport(1600, 900))
+		p.chooseLanguage(language)
+
+		for _, width := range []int64{1440, 1280, 1100, 1024, 960, 901} {
+			p.run(fmt.Sprintf("%dpx", width), chromedp.EmulateViewport(width, 800))
+
+			var who struct {
+				Lines float64 `json:"lines"`
+				Cut   bool    `json:"cut"`
+				Said  string  `json:"said"`
+				Title string  `json:"title"`
+			}
+
+			p.evalJSON(`JSON.stringify((() => {
+				const who = document.querySelector('#who');
+				const line = parseFloat(getComputedStyle(who).lineHeight) || 16;
+
+				return {
+					lines: who.getBoundingClientRect().height / line,
+					cut: who.scrollWidth > who.clientWidth + 1,
+					said: who.textContent,
+					title: who.title,
+				};
+			})())`, &who)
+
+			if who.Lines > 1.5 {
+				t.Errorf("%s, %dpx: the account takes %.1f lines of the bar: %q", language, width, who.Lines, who.Said)
+			}
+
+			if who.Cut && who.Title != who.Said {
+				t.Errorf("%s, %dpx: the account is cut short and its tooltip says %q rather than %q",
+					language, width, who.Title, who.Said)
+			}
+		}
+	}
+}

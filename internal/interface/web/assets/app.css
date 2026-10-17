@@ -1031,7 +1031,21 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 /* No margin pushing it right any more: it sits in the right-hand column, which
    is what puts it in the corner now. */
-.who { color: var(--muted); font-size: 13px; text-align: right; }
+/* One line, at most 12em, and cut short with the whole in its tooltip. Allowed to
+   wrap, the account took what the controls beside it left - the width of its
+   longest word - and stood as a column of words, six lines for a long name, in
+   the bar that stays on top of every screen. Measured from 901 to 1,440 pixels in
+   both languages with a long name and a one-word title: at 12em the bar is never
+   taller than it was; from 14em the title is squeezed to three lines at 901. */
+.who {
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 12em;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .who strong { color: var(--text); font-weight: 600; }
 
 .muted { color: var(--muted); font-size: 13px; }
@@ -2546,7 +2560,8 @@ a.tab:hover {
   .topbar-side:empty { display: none; }
   .topbar-side-end { justify-content: flex-start; }
 
-  .who { margin-left: 0; text-align: left; }
+  /* A line of its own here, so nothing to cut it short for. */
+  .who { margin-left: 0; max-width: none; text-align: left; white-space: normal; }
 }
 
 /* A line of air over the buttons, so Save and New are not the next thing after
