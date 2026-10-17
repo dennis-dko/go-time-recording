@@ -3080,6 +3080,73 @@ function watchForEditing(form) {
 }
 
 /**
+ * Puts the browser's own refusals of a field into the screen's language.
+ *
+ * The forms state their rules in the markup - required, a minimum, a maximum, a
+ * length, an address - and the browser holds a form to them before anything is
+ * sent, in its own words: on a German screen in an English browser, "Value must
+ * be less than or equal to 24." Each refusal is written here instead, from the
+ * same rule, in the language the screen is in.
+ *
+ * A refusal set this way makes a field invalid until it is taken back, which is
+ * the part to be careful with. It is taken back when the value changes, when a
+ * form is reset, and before every attempt to send one - because a value the
+ * script puts in raises no event, and the field would go on refusing a figure its
+ * own rule accepts.
+ */
+function wireValidityMessages() {
+  // Captured, because invalid does not bubble.
+  document.addEventListener('invalid', (event) => {
+    const field = event.target;
+    if (typeof field.setCustomValidity !== 'function') return;
+
+    field.setCustomValidity('');
+
+    const message = validityMessage(field);
+    if (message) field.setCustomValidity(message);
+  }, true);
+
+  const takeBack = (field) => {
+    if (typeof field?.setCustomValidity === 'function') field.setCustomValidity('');
+  };
+
+  for (const type of ['input', 'change']) {
+    document.addEventListener(type, (event) => takeBack(event.target), true);
+  }
+
+  document.addEventListener('reset', (event) => {
+    for (const field of event.target.elements ?? []) takeBack(field);
+  }, true);
+
+  // A button's click comes before its form is checked - Enter in a field presses
+  // the form's button too - so the fields are checked afresh, by their own rules.
+  document.addEventListener('click', (event) => {
+    const form = event.target.closest?.('button, input[type="submit"]')?.form;
+
+    for (const field of form?.elements ?? []) takeBack(field);
+  }, true);
+}
+
+/** What a field's rule says about its value, or nothing where it has no objection. */
+function validityMessage(field) {
+  const { validity } = field;
+  const limit = (value) => (field.type === 'date' ? fmtDate(value) : Number(value));
+
+  if (validity.valueMissing) return t('valid.required', 'Please fill in this field.');
+  if (validity.badInput) return t('valid.number', 'Please enter a number.');
+  if (validity.typeMismatch && field.type === 'email') return t('valid.email', 'Please enter an email address.');
+  if (validity.typeMismatch && field.type === 'url') return t('valid.url', 'Please enter a web address.');
+  if (validity.rangeUnderflow) return fillIn(t('valid.min', 'At least {0}.'), [limit(field.min)]);
+  if (validity.rangeOverflow) return fillIn(t('valid.max', 'At most {0}.'), [limit(field.max)]);
+  if (validity.tooLong) return fillIn(t('valid.maxLength', 'At most {0} characters.'), [field.maxLength]);
+  if (validity.tooShort) return fillIn(t('valid.minLength', 'At least {0} characters.'), [field.minLength]);
+
+  // A pattern, a step, or whatever a later browser checks: its own words are
+  // better than a wrong sentence of ours.
+  return '';
+}
+
+/**
  * Saves a form, and stops protecting what is in it once the save has landed.
  *
  * The same as mutate, with the one thing every form that is refilled from the
@@ -3913,6 +3980,14 @@ const TRANSLATIONS = {
       + 'die Datei kann erneut importiert werden, um den Rest nachzuholen.',
     'err.uploadUnreadable': 'Die übermittelte Datei konnte nicht gelesen werden.',
     'field.actor': 'Aufrufer',
+    'valid.email': 'Bitte gib eine E-Mail-Adresse ein.',
+    'valid.max': 'Höchstens {0}.',
+    'valid.maxLength': 'Höchstens {0} Zeichen.',
+    'valid.min': 'Mindestens {0}.',
+    'valid.minLength': 'Mindestens {0} Zeichen.',
+    'valid.number': 'Bitte gib eine Zahl ein.',
+    'valid.required': 'Bitte fülle dieses Feld aus.',
+    'valid.url': 'Bitte gib eine Webadresse ein.',
     'wb.allReady': 'Alle {0} Zeilen können importiert werden.',
     'wb.choose': 'Datei wählen…',
     'wb.chosen': 'Zum Prüfen auf „Datei prüfen“ klicken.',
@@ -14572,6 +14647,10 @@ async function init() {
   // Beside the password fields, and for the same reason: a field added later is
   // covered without anybody remembering to come back here.
   enhanceDateFields();
+
+  // The same again for what the browser says when it refuses a field: bound to
+  // the document, so a form drawn later is covered too.
+  wireValidityMessages();
 
   // Every form, and before anything is loaded, so a reader who starts typing
   // into a card the moment it appears is already protected from the loaders
