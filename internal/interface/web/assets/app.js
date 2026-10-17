@@ -10664,6 +10664,30 @@ function nameTheChart(container, chart) {
 }
 
 /**
+ * The drawing a chart goes into: as wide as its container, and never narrower than
+ * it is drawn.
+ *
+ * Narrower than that it used to shrink as a whole - the viewBox fits the picture
+ * into its box, type included - so on a telephone a chart's labels came out at
+ * about five pixels, between bands of empty space where the box kept the height
+ * the rows needed. At its drawn width the type stays what the stylesheet says,
+ * and the wrap around the chart scrolls sideways instead; .chart-wrap was written
+ * for exactly that and had never had anything to scroll.
+ */
+function chartDrawing(width, height) {
+  const chart = svg('svg', {
+    viewBox: `0 0 ${width} ${height}`,
+    width: '100%',
+    height,
+    role: 'img',
+  });
+
+  chart.style.minWidth = `${width}px`;
+
+  return chart;
+}
+
+/**
  * Renders bars into a container.
  *
  * bars is [{label, value, key, title}], where key is the identity the colour is
@@ -10685,13 +10709,7 @@ function drawBarChart(container, bars, formatValue) {
   const height = bars.length * (rowHeight + gap);
   const trackWidth = width - labelWidth - valueWidth;
 
-  const chart = svg('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    // Scales to its container's width while keeping the row height readable.
-    width: '100%',
-    height,
-    role: 'img',
-  });
+  const chart = chartDrawing(width, height);
 
   nameTheChart(container, chart);
 
@@ -10770,12 +10788,7 @@ function drawColumnChart(container, bars, formatValue) {
   const slot = width / bars.length;
   const barWidth = Math.min(56, slot * 0.6);
 
-  const chart = svg('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    width: '100%',
-    height,
-    role: 'img',
-  });
+  const chart = chartDrawing(width, height);
 
   nameTheChart(container, chart);
 
@@ -10862,12 +10875,7 @@ function drawPieChart(container, slices, formatValue) {
   const keyTop = 14;
   const height = Math.max(size, keyTop + shown.length * keyRow + 6);
 
-  const chart = svg('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    width: '100%',
-    height,
-    role: 'img',
-  });
+  const chart = chartDrawing(width, height);
 
   nameTheChart(container, chart);
 

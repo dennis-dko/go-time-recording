@@ -305,3 +305,68 @@ func TestTheEvaluationScreensArriveWithTheirPeriodFilledIn(t *testing.T) {
 		})
 	}
 }
+
+// The charts stay readable on a telephone.
+//
+// Every chart is drawn 640 units wide into an SVG as wide as its container and as
+// tall as its rows, and the viewBox fits the drawing into that box whole - so on a
+// 390px screen it shrank to under half, labels and figures included, to about five
+// pixels, above and below a band of empty space where the rows' height stayed. The
+// wrap around a chart was written to scroll sideways on a narrow screen instead,
+// and never had anything to scroll.
+func TestTheChartsStayReadableOnAPhone(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	p.run("book time", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
+		chromedp.SetValue(`#form-timesheet input[name="durationHours"]`, "2.5", chromedp.ByQuery),
+		p.click(`#form-timesheet button[type="submit"]`))
+
+	p.waitForText("#table-timesheets tbody", "2.5")
+
+	p.run("evaluate", p.click(`.tab[data-view="report"]`),
+		chromedp.WaitVisible("#form-report", chromedp.ByID),
+		p.click(`#form-report button[type="submit"]`),
+		chromedp.WaitVisible("#report-result", chromedp.ByID))
+
+	p.run("chart the own hours", p.click(`.tab[data-view="overtime"]`), p.click("#statistics-load"))
+	p.waitShown("#chart-days svg")
+
+	p.run("a telephone", chromedp.EmulateViewport(390, 844))
+
+	for _, view := range []string{"overtime", "report"} {
+		var measured struct {
+			Smallest float64 `json:"smallest"`
+			Count    int     `json:"count"`
+			Sideways float64 `json:"sideways"`
+		}
+
+		p.run("open "+view, chromedp.Evaluate(`switchView('`+view+`')`, nil))
+		p.atRest()
+
+		p.evalJSON(`JSON.stringify((() => {
+			const heights = [...document.querySelectorAll('#view-`+view+` .chart-label, #view-`+view+` .chart-value')]
+				.map((text) => text.getBoundingClientRect().height).filter((height) => height > 0);
+			const root = document.documentElement;
+
+			return { smallest: Math.min(...heights), count: heights.length, sideways: root.scrollWidth - root.clientWidth };
+		})())`, &measured)
+
+		if measured.Count == 0 {
+			t.Fatalf("the %s screen has no chart text to measure", view)
+		}
+
+		if measured.Smallest < 10 {
+			t.Errorf("on a 390px screen the %s chart's smallest label is drawn %.1fpx tall, "+
+				"where its 11px type would be about 13", view, measured.Smallest)
+		}
+
+		if measured.Sideways > 0 {
+			t.Errorf("on a 390px screen the %s screen is %.0fpx wider than the window: the "+
+				"chart widened the page instead of scrolling inside its own box", view, measured.Sideways)
+		}
+	}
+}
