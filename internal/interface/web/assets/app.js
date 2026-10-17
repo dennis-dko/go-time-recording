@@ -10737,6 +10737,73 @@ function nameTheChart(container, chart) {
   if (words) chart.setAttribute('aria-label', words);
 }
 
+/** The width a chart is drawn at where there is room for it. */
+const CHART_WIDEST = 640;
+
+/**
+ * The width below which a chart is no longer squeezed but scrolls: the bars'
+ * labels and figures take 180 of it, and what is left is the track.
+ */
+const CHART_NARROWEST = 260;
+
+/** How to draw each chart box's chart again, and the width it was drawn at. */
+const fittedCharts = new WeakMap();
+
+/**
+ * Draws a chart again when its box changes width.
+ *
+ * A frame later rather than inside the observer: the drawing changes the box's
+ * height, and changing what is being observed from inside the observer is a loop
+ * the browser reports as an error. And only while the box still holds a drawing -
+ * one emptied since, by a sign-out or by an answer with nothing to chart, stays
+ * empty rather than getting the old picture back.
+ */
+const chartBoxes = typeof ResizeObserver === 'function'
+  ? new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      const fitted = fittedCharts.get(target);
+
+      if (fitted && target.clientWidth > 0 && chartWidth(target) !== fitted.width) {
+        requestAnimationFrame(() => {
+          if (target.lastElementChild instanceof SVGSVGElement) fittedCharts.get(target)?.again();
+        });
+      }
+    }
+  })
+  : null;
+
+/** The width to draw a chart at: its box's, within the two bounds above. */
+function chartWidth(container) {
+  const room = container.clientWidth;
+
+  // Nothing while its screen is hidden, which is when most charts are drawn - a
+  // reload fills every screen. Drawn at the widest then, and again on arrival.
+  if (room === 0) return CHART_WIDEST;
+
+  return Math.min(Math.max(room, CHART_NARROWEST), CHART_WIDEST);
+}
+
+/**
+ * Gives a chart the width of the box it goes into, and remembers how to draw it
+ * again when that changes.
+ *
+ * Drawn 640 wide whatever the box, a chart on a telephone either shrank as a
+ * whole - its type at five pixels - or, kept at its size, put the bars' figures
+ * and the whole of the pie's key past the right edge of a box that scrolls with
+ * no bar on a touch screen to say so. At the box's own width the type stays what
+ * the stylesheet says and every part is where it can be seen. The width changes
+ * after the drawing - a hidden screen opened, a telephone turned, a window
+ * narrowed - so the box is watched; see chartBoxes.
+ */
+function fitChart(container, again) {
+  const width = chartWidth(container);
+
+  fittedCharts.set(container, { again, width });
+  chartBoxes?.observe(container);
+
+  return width;
+}
+
 /**
  * The drawing a chart goes into: as wide as its container, and never narrower than
  * it is drawn.
@@ -10744,9 +10811,9 @@ function nameTheChart(container, chart) {
  * Narrower than that it used to shrink as a whole - the viewBox fits the picture
  * into its box, type included - so on a telephone a chart's labels came out at
  * about five pixels, between bands of empty space where the box kept the height
- * the rows needed. At its drawn width the type stays what the stylesheet says,
- * and the wrap around the chart scrolls sideways instead; .chart-wrap was written
- * for exactly that and had never had anything to scroll.
+ * the rows needed. It is drawn for its box's width now (fitChart), and a box
+ * narrower than the narrowest a chart is drawn at scrolls sideways rather than
+ * shrinking it.
  */
 function chartDrawing(width, height) {
   const chart = svg('svg', {
@@ -10779,7 +10846,7 @@ function drawBarChart(container, bars, formatValue) {
   const gap = 4;
   const labelWidth = 118;
   const valueWidth = 62;
-  const width = 640;
+  const width = fitChart(container, () => drawBarChart(container, bars, formatValue));
   const height = bars.length * (rowHeight + gap);
   const trackWidth = width - labelWidth - valueWidth;
 
@@ -10854,7 +10921,7 @@ function drawColumnChart(container, bars, formatValue) {
 
   if (bars.length === 0) return;
 
-  const width = 640;
+  const width = fitChart(container, () => drawColumnChart(container, bars, formatValue));
   const height = 260;
   const labelBand = 46;
   const valueBand = 16;
@@ -10936,18 +11003,27 @@ function drawPieChart(container, slices, formatValue) {
 
   const size = 260;
   const radius = size / 2 - 8;
-  const centre = size / 2;
-  const width = 640;
+  const width = fitChart(container, () => drawPieChart(container, slices, formatValue));
 
-  // One row of the key per slice, and the picture is whichever is taller. The pie
-  // is a fixed 260 and the key runs down the right beside it, so from the
-  // thirteenth project the key was simply outside the box - not clipped visibly,
-  // just absent, on a chart that otherwise looked finished. The key is what tells
-  // two projects sharing one of the eight hues apart, which is the reason
-  // chartColourFor gives for eight being enough.
+  // The key beside the pie where there is room for it, and under it where there
+  // is not: on a telephone a key beside a pie this size starts where the screen
+  // ends.
+  const stacked = width < size + 24 + 200;
+  const cx = stacked ? width / 2 : size / 2;
+  const cy = size / 2;
+  const keyLeft = stacked ? 0 : size + 24;
+
+  // One row of the key per slice. Beside the pie the picture is whichever of the
+  // two is taller: the pie is a fixed 260 and the key runs down beside it, so from
+  // the thirteenth project the key was simply outside the box - not clipped
+  // visibly, just absent, on a chart that otherwise looked finished. Under it, the
+  // picture is both. The key is what tells two projects sharing one of the eight
+  // hues apart, which is the reason chartColourFor gives for eight being enough.
   const keyRow = 20;
-  const keyTop = 14;
-  const height = Math.max(size, keyTop + shown.length * keyRow + 6);
+  const keyTop = stacked ? size + 24 : 14;
+  const height = stacked
+    ? keyTop + (shown.length - 1) * keyRow + 8
+    : Math.max(size, keyTop + shown.length * keyRow + 6);
 
   const chart = chartDrawing(width, height);
 
@@ -10963,13 +11039,13 @@ function drawPieChart(container, slices, formatValue) {
     // A full circle cannot be drawn as an arc - the start and end points would
     // be the same and the path collapses - so the single-slice case is a circle.
     const shape = shown.length === 1
-      ? svg('circle', { cx: centre, cy: centre, r: radius })
+      ? svg('circle', { cx, cy, r: radius })
       : svg('path', {
         d: [
-          `M ${centre} ${centre}`,
-          `L ${centre + radius * Math.cos(angle)} ${centre + radius * Math.sin(angle)}`,
+          `M ${cx} ${cy}`,
+          `L ${cx + radius * Math.cos(angle)} ${cy + radius * Math.sin(angle)}`,
           `A ${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1`,
-          `${centre + radius * Math.cos(end)} ${centre + radius * Math.sin(end)}`,
+          `${cx + radius * Math.cos(end)} ${cy + radius * Math.sin(end)}`,
           'Z',
         ].join(' '),
       });
@@ -10991,11 +11067,11 @@ function drawPieChart(container, slices, formatValue) {
     const y = keyTop + index * keyRow;
 
     chart.append(svg('rect', {
-      x: size + 24, y: y - 10, width: 12, height: 12, rx: 3,
+      x: keyLeft, y: y - 10, width: 12, height: 12, rx: 3,
       class: `chart-slice ${chartColourFor(slice.key) || `chart-slice-${index % 6}`}`,
     }));
 
-    const label = svg('text', { x: size + 44, y, class: 'chart-label' });
+    const label = svg('text', { x: keyLeft + 20, y, class: 'chart-label' });
     label.textContent = `${slice.label} — ${formatValue(slice.value)}`;
     chart.append(label);
 
