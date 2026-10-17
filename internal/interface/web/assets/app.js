@@ -4715,6 +4715,20 @@ async function loadMe() {
   if ($('#totp-setup').hidden) renderTOTPState();
 }
 
+/**
+ * An e-mail address that may fold after its @ and nowhere else.
+ *
+ * An address has no space, so a table cell holding one could not fold at all and
+ * was as wide as the longest address in the column - room the row's actions did
+ * not then have. After the @ is the one place a reader expects it to break.
+ */
+function foldableAddress(address) {
+  const at = String(address ?? '').indexOf('@');
+  if (at < 0) return [address ?? ''];
+
+  return [address.slice(0, at + 1), el('wbr'), address.slice(at + 1)];
+}
+
 async function loadUsers() {
   // Listing accounts is a permission, and administering them is the only thing this
   // list is for now.
@@ -4834,11 +4848,17 @@ async function loadUsers() {
     } else if (can('users:write') && can('roles:read')) {
       // Changing a role is a select rather than a form: it is the one field
       // that is changed on its own often enough to deserve it.
+      //
+      // Named by its title alone, where the account form adds what each role is
+      // for. A dropdown is as wide as its longest choice, and in a row that is
+      // room taken from the row's actions; the closed box showed the title and
+      // the first letter of the purpose anyway.
       const select = el('select', {
         onchange: (e) => patch(`/users/${u.id}/role`, { role: e.target.value },
           t('msg.roleChanged', 'Role changed'), refreshAll),
       });
-      fillSelect(select, roleChoices(), { labelKey: 'label', valueKey: 'name' });
+      fillSelect(select, roleChoices().map((role) => ({ ...role, label: roleTitle(role.name) })),
+        { labelKey: 'label', valueKey: 'name' });
       select.value = u.role;
       roleCell.append(select);
     } else {
@@ -4847,7 +4867,7 @@ async function loadUsers() {
 
     return el('tr', { class: me.user && u.id === me.user.id ? 'self' : '' },
       el('td', { text: u.name }),
-      el('td', { text: u.email }),
+      el('td', {}, ...foldableAddress(u.email)),
       roleCell,
       // Where the account is kept. It decides what may be done to it here, and
       // was only visible as a note beside the buttons - which is the wrong place

@@ -745,12 +745,29 @@ button.danger:not(.link) {
 
 table { border-collapse: collapse; width: 100%; }
 
+/* Eight pixels a side rather than ten: the accounts table has eight columns, and
+   in the faces the CI runner draws with it needed 1,015 of the card's 1,002
+   pixels - thirteen too many - before anything else gave. */
 th, td {
   border-bottom: 1px solid var(--border);
-  padding: 9px 10px;
+  padding: 9px 8px;
   text-align: left;
   white-space: nowrap;
 }
+
+/* One line for a heading, a figure or a tick box, and as many as it takes for
+   text: names, addresses, descriptions and messages fold rather than push the
+   row's actions out of the card. Every cell used to be one line, so that a table
+   scrolled inside its box instead of widening the page - which kept the page
+   still and put "bearbeiten" and "löschen" past the edge of the card at 1,024
+   pixels and at 1,600. The box still scrolls where even folded text does not
+   fit, which is a telephone. */
+td { overflow-wrap: break-word; white-space: normal; }
+td.num, td.pick { white-space: nowrap; }
+
+/* The actions fold between one another and never inside one: "Passwort
+   zurücksetzen" broken over two lines reads as two buttons. */
+td.actions > * { white-space: nowrap; }
 
 th { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; }
 
