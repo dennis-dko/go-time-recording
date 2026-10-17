@@ -3548,7 +3548,7 @@ const TRANSLATIONS = {
 
     'restart.title': 'Neustart',
     'restart.open': 'Neustart',
-    'restart.summary': '{0} gespeicherte Einstellung(en) warten auf einen {1}.',
+    'restart.summary': 'Für {0} gespeicherte Einstellung(en) steht ein {1} aus.',
     'restart.unsupported.noExecve': 'Ein Neustart aus der Anwendung heraus ist unter Windows nicht möglich: dafür wird execve gebraucht, das es dort nicht gibt. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
@@ -10238,9 +10238,12 @@ async function loadRestart() {
 
     // Split on the placeholder rather than on a marker put through the filler:
     // where the link falls in the sentence is the translator's business, and
-    // the two halves are whatever they wrote around it.
+    // the two halves are whatever they wrote around it - the count included,
+    // which is why both are filled. The verb belongs to the restart rather than
+    // to the settings in both languages, because one setting is the usual case
+    // and "1 saved setting(s) are waiting" agreed with none.
     const [before, after] = t('restart.summary',
-      '{0} saved setting(s) are waiting for a {1}.').split('{1}');
+      'A {1} is pending for {0} saved setting(s).').split('{1}');
 
     summary.append(fillIn(before ?? '', [pending.length]));
 
@@ -10254,7 +10257,7 @@ async function loadRestart() {
     link.addEventListener('click', openTheRestartCard);
     summary.append(link);
 
-    summary.append(after ?? '');
+    summary.append(fillIn(after ?? '', [pending.length]));
   }
 
   // What the button does, said before it is pressed rather than found out
