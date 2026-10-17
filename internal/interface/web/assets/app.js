@@ -3953,7 +3953,7 @@ const TRANSLATIONS = {
     'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – eine Stufe darunter anzuhaken zeigt deshalb nichts. Die Stufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt. Nur im Speicher gehalten: nach einem Neustart ist das bis dahin Erfasste verloren, und eine Protokollsammlung ersetzt das hier nicht.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
-    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
+    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, bei {1} bleibt es also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
     'log.paused': 'Angehalten.',
     'log.resume': 'Fortsetzen',
     'log.search': 'Suche',
