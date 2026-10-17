@@ -252,6 +252,13 @@ func serverErrorCodes(t *testing.T) map[string]struct{} {
 // The interface looks each one up as t(`field.${name}`), so nothing in the source
 // mentions the key and the coverage tests cannot see it - which is how a field
 // could be rejected by name and shown as an identifier for good.
+//
+// In English too, which is the language this used to forget. TRANSLATIONS.en is
+// empty on purpose, so the English is whatever the lookup falls back to - and the
+// fallback was the name itself: a refused import row said "Invalid field(s):
+// durationHours" about a box labelled Hours, while the German beside it said
+// Stunden. FIELD_NAMES holds the English, the way PERMISSION_TITLES does for the
+// rights.
 func TestEveryRejectedFieldIsNamed(t *testing.T) {
 	fields := rejectedFields(t)
 	if len(fields) == 0 {
@@ -277,6 +284,61 @@ func TestEveryRejectedFieldIsNamed(t *testing.T) {
 		t.Errorf("%d field(s) the server rejects have no German name, so a refusal "+
 			"shows the column name: %v", len(unnamed), unnamed)
 	}
+
+	english := fieldNames(t)
+
+	var nameless []string
+
+	for field := range fields {
+		if english[field] == "" {
+			nameless = append(nameless, field)
+		}
+	}
+
+	sort.Strings(nameless)
+
+	if len(nameless) > 0 {
+		t.Errorf("%d field(s) the server rejects have no English name in FIELD_NAMES, so "+
+			"an English refusal shows the column name: %v", len(nameless), nameless)
+	}
+
+	for field := range english {
+		if _, rejected := fields[field]; !rejected {
+			t.Errorf("FIELD_NAMES names %q, which nothing rejects", field)
+		}
+	}
+
+	// And every lookup takes its English from there. Two did the same lookup with
+	// the bare name as the fallback, the refused request and the refused row, so a
+	// table only one of them read would have left the other saying the column name.
+	lookup := regexp.MustCompile("t\\(`field\\.\\$\\{[^`]*`,\\s*([^)]*)\\)")
+
+	for _, call := range lookup.FindAllStringSubmatch(asset(t, "/app.js"), -1) {
+		if !strings.Contains(call[1], "FIELD_NAMES") {
+			t.Errorf("a field is named past FIELD_NAMES, so in English it is its column "+
+				"name: %s", call[0])
+		}
+	}
+}
+
+// fieldNames reads FIELD_NAMES out of app.js: the English a rejected field is
+// named by. Empty when there is no such table, so its absence reads as every field
+// lacking a name, which is what it means.
+func fieldNames(t *testing.T) map[string]string {
+	t.Helper()
+
+	names := map[string]string{}
+
+	block := regexp.MustCompile(`(?s)const FIELD_NAMES = \{(.*?)\n\};`).FindStringSubmatch(asset(t, "/app.js"))
+	if block == nil {
+		return names
+	}
+
+	for _, entry := range regexp.MustCompile(`(\w+):\s*'([^']*)'`).FindAllStringSubmatch(block[1], -1) {
+		names[entry[1]] = entry[2]
+	}
+
+	return names
 }
 
 // rejectedFields collects the field names that reach apperror.InvalidFields.

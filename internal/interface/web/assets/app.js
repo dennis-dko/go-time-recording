@@ -430,6 +430,67 @@ function errorMessage(body) {
 }
 
 /**
+ * FIELD_NAMES is the English a refused field is named by, in the words the forms
+ * and tables use.
+ *
+ * Refusals name fields by their column names. German has field.<name> for each,
+ * and English has no dictionary, so English is whatever the lookup falls back to -
+ * which was the name itself: an English refusal read "Invalid field(s):
+ * durationHours" about a box labelled Hours. The same arrangement as
+ * PERMISSION_TITLES, for the same reason.
+ */
+const FIELD_NAMES = {
+  actor: 'Caller',
+  banner: 'Banner text',
+  baseDn: 'Base DN',
+  code: 'Code',
+  companyName: 'Company',
+  companyUrl: 'Company website',
+  confirmed: 'Confirmed accounts',
+  dailyTargetHours: 'Target h/day',
+  date: 'Date',
+  defaultRole: 'Default role',
+  description: 'Description',
+  durationHours: 'Hours',
+  email: 'Email',
+  endDate: 'End',
+  expiresInDays: 'Valid for (days)',
+  footerText: 'Footer',
+  host: 'Host',
+  id: 'ID',
+  language: 'Language',
+  ldapSyncMaxDeleteRatio: 'Deletion limit',
+  legalNotice: 'Legal notice',
+  logLevel: 'Log level',
+  maxDailyHours: 'Max h/day',
+  name: 'Name',
+  port: 'Port',
+  projectId: 'Project',
+  rateLimit: 'Rate limit',
+  rateLimitWindowSeconds: 'Rate limit window (seconds)',
+  role: 'Role',
+  sessionIdleMinutes: 'Sign out after inactivity (minutes)',
+  sessionLifetimeHours: 'Session lifetime (hours)',
+  startDate: 'Start',
+  status: 'Status',
+  syncSchedule: 'Schedule',
+  tabTitle: 'Browser tab',
+  theme: 'Appearance',
+  timezone: 'Timezone',
+  title: 'Title',
+  traceExporter: 'Trace exporter',
+  tracerRatio: 'Share of traces recorded',
+  tracerUrl: 'Collector',
+  userFilter: 'User filter',
+  userId: 'User',
+};
+
+/** fieldName names a refused field the way the screen names it, in the reader's language. */
+function fieldName(field) {
+  return t(`field.${field}`, FIELD_NAMES[field] ?? field);
+}
+
+/**
  * One refusal, in the reader's language where the server said which rule it was.
  *
  * Split out of errorMessage because a refusal does not always arrive as an error
@@ -458,7 +519,7 @@ function describeRefusal(err) {
   // The fields are labelled the way the form labels them rather than by their
   // column names, which is the whole reason they travel as data.
   if (Array.isArray(err.param) && err.param.length) {
-    const named = err.param.map((field) => t(`field.${field}`, field));
+    const named = err.param.map(fieldName);
 
     return `${t('err.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
   }
@@ -11216,7 +11277,7 @@ function rowProblem(row) {
   // not what the labels above the form say - the same case errorMessage handles,
   // and named from the same list so both screens use one word per field.
   if (row.problemCode === 'invalidFields') {
-    const named = (row.problemValues ?? []).map((field) => t(`field.${field}`, field));
+    const named = (row.problemValues ?? []).map(fieldName);
 
     return `${t('err.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
   }
