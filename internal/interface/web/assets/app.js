@@ -3614,6 +3614,7 @@ const TRANSLATIONS = {
     'passkey.added.done': 'Passkey hinzugefügt',
     'passkey.removed': 'Passkey entfernt',
     'passkey.cancelled': 'Der Passkey wurde nicht verwendet.',
+    'passkey.notCreated': 'Der Passkey wurde nicht angelegt.',
     'passkey.err.notAllowed': 'Die Abfrage wurde abgebrochen oder lief ab. Es wurde nichts geändert.',
     'passkey.err.already': 'Dieses Gerät hat für dieses Konto schon einen Passkey.',
     'passkey.err.unsupported': 'Dieses Gerät kann keinen Passkey der Art erstellen, die diese Installation verlangt.',
@@ -3912,6 +3913,7 @@ const TRANSLATIONS = {
     'wb.allReady': 'Alle {0} Zeilen können importiert werden.',
     'wb.choose': 'Datei wählen…',
     'wb.chosen': 'Zum Prüfen auf „Datei prüfen“ klicken.',
+    'wb.clear': 'abbrechen',
     'wb.empty': 'Die Datei enthält keine Einträge.',
     'wb.export': 'Als .xlsx exportieren',
     'wb.exported': 'Export gespeichert',
@@ -11887,7 +11889,7 @@ function buildSheetCard(spec) {
   const write = el('button', { type: 'button', 'data-i18n': 'wb.import', text: 'Import' });
 
   const cancel = el('button', {
-    type: 'button', class: 'link', 'data-i18n': 'action.cancelEdit', text: 'cancel',
+    type: 'button', class: 'link', 'data-i18n': 'wb.clear', text: 'cancel',
   });
 
   for (const button of [check, write, cancel]) button.hidden = true;
@@ -12676,7 +12678,7 @@ async function registerPasskey(name) {
     throw new Error(passkeyProblem(err));
   }
 
-  if (!created) throw new Error(t('passkey.cancelled', 'The passkey was not created.'));
+  if (!created) throw new Error(t('passkey.notCreated', 'The passkey was not created.'));
 
   try {
     return await api('/me/passkeys/register', {
@@ -12807,7 +12809,7 @@ async function loadPasskeys() {
       text: passkey.lastUsedAt ? fmtMoment(passkey.lastUsedAt) : t('passkey.never', 'never'),
     }),
     el('td', { class: 'actions' }, deleteButton({
-      label: `${t('passkey.name', 'Name')} "${passkey.name}"`,
+      label: `${t('field.name', 'Name')} "${passkey.name}"`,
       path: `/me/passkeys/${passkey.id}`,
       message: t('passkey.removed', 'Passkey removed'),
       after: loadPasskeys,
