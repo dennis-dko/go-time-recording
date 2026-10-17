@@ -1150,6 +1150,14 @@ button.secondary {
 
 .perm-grid { display: grid; gap: 6px 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 
+/* The role editor's rights from 300 pixels, where a right's name and identifier
+   fit side by side: at 220 a desktop had four columns, and in German four
+   identifiers sat under their names and the rest beside them - a ragged grid
+   rather than a list. Never wider than the card, or a 320-pixel telephone is
+   dragged sideways; and the rights alone, because the directory card borrows
+   .perm-grid for four short switches that fit four to a row. */
+#permission-list { grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
+
 .perm-grid label {
   align-items: center;
   color: var(--text);

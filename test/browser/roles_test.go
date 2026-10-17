@@ -496,3 +496,37 @@ func TestTheMarkupLegendSurvivesSigningOut(t *testing.T) {
 			"it is markup, and nothing draws it again", after, before)
 	}
 }
+
+// Every right keeps its identifier beside its name where there is room for both.
+//
+// The rights were laid out in columns from 220 pixels, and German names are long:
+// on a desktop four of fifteen identifiers sat under their name and the rest
+// beside it, so the grid read as ragged rather than as a list, with ten names
+// broken over two or three lines. Columns start at 300 pixels now - three on a
+// desktop, two on a laptop, as decided on 2026-10-17 - and name and identifier
+// fit side by side.
+func TestEveryRightKeepsItsIdentifierBesideItsName(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.chooseLanguage("de")
+
+	p.run("open the roles", p.click(`.tab[data-view="roles"]`),
+		chromedp.WaitVisible("#permission-list .perm-switch", chromedp.ByQuery))
+
+	for _, width := range []int64{1600, 1280, 1024} {
+		p.run("a window that wide", chromedp.EmulateViewport(width, 900))
+
+		var under []string
+
+		p.evalJSON(`JSON.stringify([...document.querySelectorAll('#permission-list .perm-switch')]
+			.filter((row) => row.querySelector('.perm-id').getBoundingClientRect().top
+				>= row.querySelector('.perm-name').getBoundingClientRect().bottom - 2)
+			.map((row) => row.querySelector('.perm-id').textContent))`, &under)
+
+		if len(under) > 0 {
+			t.Errorf("at %dpx the identifier sits under its name instead of beside it for %v", width, under)
+		}
+	}
+}
