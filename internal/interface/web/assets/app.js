@@ -3191,13 +3191,22 @@ function enhanceDateFields(root = document) {
       }
     });
 
-    draw();
-
-    // Redrawn when the language changes, like everything else that was written
-    // into the page rather than translated in it.
-    redraws.set('dateField:' + redraws.size, draw);
+    // Drawn now and again whenever the language changes, like everything else
+    // written into the page rather than translated in it - and kept across a
+    // sign-out with the installation's own draws, because a date field holds
+    // nothing of an account's and outlives all of them. Forgotten with the
+    // account's draws, every field nobody had touched went on reading in the
+    // convention of the language before the sign-out.
+    //
+    // Numbered rather than keyed on the registry's size, which shrinks whenever
+    // a draw is forgotten and would hand the next field a key already in use.
+    dateFieldsDrawn += 1;
+    redrawable(`dateField:${dateFieldsDrawn}`, draw, { installation: true });
   }
 }
+
+/** How many date fields have been given a drawing; it names the next one's. */
+let dateFieldsDrawn = 0;
 
 /** The pattern a date is written in here, as a placeholder. */
 function datePattern() {
@@ -4325,7 +4334,8 @@ const installationDraws = new Set();
  * Draws a screen now, and again whenever the language changes.
  *
  * Forgotten when its account signs out, unless it is declared as the
- * installation's - the name and mark the sign-in screen shows.
+ * installation's - the name and mark the sign-in screen shows, and the page's own
+ * date fields.
  */
 function redrawable(key, draw, { installation = false } = {}) {
   redraws.set(key, draw);
