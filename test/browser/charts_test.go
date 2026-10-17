@@ -305,3 +305,210 @@ func TestTheEvaluationScreensArriveWithTheirPeriodFilledIn(t *testing.T) {
 		})
 	}
 }
+
+// The charts stay readable on a telephone, and whole.
+//
+// Every chart is drawn 640 units wide into an SVG as wide as its container and as
+// tall as its rows, and the viewBox fits the drawing into that box whole - so on a
+// 390px screen it shrank to under half, labels and figures included, to about five
+// pixels, above and below a band of empty space where the rows' height stayed.
+//
+// Kept at its drawn size instead, it was readable and no longer fitted: the bars'
+// figures and the whole of the pie's key lay past the right edge of a box that
+// scrolls sideways, which a touch screen shows no bar for. So nothing a chart
+// says may lie outside the part of its box that can be seen - in every shape, and
+// after the window has narrowed under a chart already drawn.
+func TestTheChartsStayReadableOnAPhone(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	p.run("book time", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID),
+		chromedp.SetValue(`#form-timesheet input[name="durationHours"]`, "2.5", chromedp.ByQuery),
+		p.click(`#form-timesheet button[type="submit"]`))
+
+	p.waitForText("#table-timesheets tbody", "2.5")
+
+	p.run("evaluate", p.click(`.tab[data-view="report"]`),
+		chromedp.WaitVisible("#form-report", chromedp.ByID),
+		p.click(`#form-report button[type="submit"]`),
+		chromedp.WaitVisible("#report-result", chromedp.ByID))
+
+	p.run("chart the own hours", p.click(`.tab[data-view="overtime"]`), p.click("#statistics-load"))
+	p.waitShown("#chart-days svg")
+
+	p.run("a telephone", chromedp.EmulateViewport(390, 844))
+
+	for _, chart := range []struct{ view, kind string }{
+		{"overtime", ""},
+		{"report", "bars"},
+		{"report", "columns"},
+		{"report", "pie"},
+	} {
+		var measured struct {
+			Smallest float64  `json:"smallest"`
+			Count    int      `json:"count"`
+			Sideways float64  `json:"sideways"`
+			Outside  []string `json:"outside"`
+		}
+
+		name := strings.TrimSpace(chart.view + " " + chart.kind)
+
+		p.run("open "+chart.view, chromedp.Evaluate(`switchView('`+chart.view+`')`, nil))
+
+		if chart.kind != "" {
+			p.run("draw as "+chart.kind, p.click(`#report-chart-switch button[data-chart="`+chart.kind+`"]`))
+		}
+
+		p.atRest()
+
+		p.evalJSON(`JSON.stringify((() => {
+			const texts = [...document.querySelectorAll('#view-`+chart.view+` .chart-label, #view-`+chart.view+` .chart-value')]
+				.filter((text) => text.getBoundingClientRect().height > 0);
+			const root = document.documentElement;
+
+			const outside = texts.filter((text) => {
+				const box = text.getBoundingClientRect();
+				const seen = text.closest('.chart-wrap').getBoundingClientRect();
+
+				return box.left < seen.left - 1 || box.right > seen.right + 1;
+			}).map((text) => text.textContent.trim());
+
+			return {
+				smallest: Math.min(...texts.map((text) => text.getBoundingClientRect().height)),
+				count: texts.length,
+				sideways: root.scrollWidth - root.clientWidth,
+				outside,
+			};
+		})())`, &measured)
+
+		if measured.Count == 0 {
+			t.Fatalf("the %s chart has no text to measure", name)
+		}
+
+		if measured.Smallest < 10 {
+			t.Errorf("on a 390px screen the %s chart's smallest label is drawn %.1fpx tall, "+
+				"where its 11px type would be about 13", name, measured.Smallest)
+		}
+
+		if measured.Sideways > 0 {
+			t.Errorf("on a 390px screen the %s screen is %.0fpx wider than the window: the "+
+				"chart widened the page instead of scrolling inside its own box", name, measured.Sideways)
+		}
+
+		if len(measured.Outside) > 0 {
+			t.Errorf("on a 390px screen the %s chart draws %q outside the part of its box that "+
+				"can be seen, where only a sideways swipe nothing asks for would find it",
+				name, measured.Outside)
+		}
+	}
+}
+
+// A long name in a chart is shortened with a mark, never simply cut.
+//
+// A name longer than its place was cut wherever the drawing happened to end: the
+// bars painted their track over the rest of it, a column's name ran off the edge
+// of the picture and across its neighbour's, and the pie's key lost the figure at
+// the end of its line past the right edge. Shortened instead, with "…" where it
+// was cut and the whole of it on hover - at the widths a telephone, a laptop and a
+// wide screen give the chart.
+func TestALongNameInAChartIsShortenedWithAMark(t *testing.T) {
+	t.Parallel()
+
+	const long = "Projektmanagement und Qualitätssicherung der Digitalisierungsinitiative 2026"
+
+	p := open(t)
+	p.readyWorker()
+
+	p.bookAnHourOn(t, long)
+	p.bookAnHourOn(t, "Kurz")
+
+	// First a chart drawn while its screen is hidden, which is how every reload
+	// draws the statistics. A text that is not laid out has no length to shorten
+	// it by, so the chart has to be drawn again once it can be seen - even where
+	// the width it was drawn at blind is the width it then has.
+	p.run("fill the screens behind this one", chromedp.Evaluate(`refreshAll()`, nil, awaitPromise))
+	p.run("open the own hours", p.click(`.tab[data-view="overtime"]`))
+
+	// Waited for rather than read at once: the chart is drawn again a frame after
+	// its box is given a width, and there is no request in flight to wait on.
+	p.waitEvaluates("what of the project chart's names reaches in under its bars", `(() => {
+		const chart = document.querySelector('#chart-projects svg');
+		if (!chart) return '(no chart was drawn)';
+
+		const tracks = [...chart.querySelectorAll('.chart-track')].map((track) => track.getBoundingClientRect().left);
+
+		return [...chart.querySelectorAll('.chart-label')]
+			.filter((label) => label.getBoundingClientRect().right > Math.min(...tracks) + 1)
+			.map((label) => label.textContent)
+			.join(' | ');
+	})()`, "")
+
+	p.run("evaluate", p.click(`.tab[data-view="report"]`),
+		chromedp.WaitVisible("#form-report", chromedp.ByID),
+		p.click(`#form-report button[type="submit"]`),
+		chromedp.WaitVisible("#report-result", chromedp.ByID))
+
+	for _, size := range []struct {
+		name string
+		w, h int64
+	}{{"telephone", 390, 844}, {"laptop", 1024, 768}, {"wide screen", 1600, 900}} {
+		p.run("a "+size.name, chromedp.EmulateViewport(size.w, size.h))
+
+		for _, kind := range []string{"bars", "columns", "pie"} {
+			p.run("draw as "+kind, p.click(`#report-chart-switch button[data-chart="`+kind+`"]`))
+			p.atRest()
+
+			var found []string
+
+			p.evalJSON(`JSON.stringify((() => {
+				const chart = document.querySelector('#report-chart svg');
+				const seen = document.querySelector('#report-chart').getBoundingClientRect();
+				const tracks = [...chart.querySelectorAll('.chart-track')].map((track) => track.getBoundingClientRect().left);
+				const labels = [...chart.querySelectorAll('.chart-label')];
+				const shownOf = (label) => [...label.childNodes]
+					.filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => node.nodeValue).join('');
+				const problems = [];
+
+				labels.forEach((label, index) => {
+					const box = label.getBoundingClientRect();
+					const shown = shownOf(label);
+					const whole = label.querySelector('title')?.textContent ?? shown;
+
+					if (box.left < seen.left - 1 || box.right > seen.right + 1) {
+						problems.push('runs out of the part of the box that can be seen: ' + shown);
+					}
+
+					if (tracks.length > 0 && box.right > Math.min(...tracks) + 1) {
+						problems.push('reaches in under the bars: ' + shown);
+					}
+
+					for (const other of labels.slice(index + 1)) {
+						const next = other.getBoundingClientRect();
+
+						if (Math.abs(next.top - box.top) < 2 && next.left < box.right - 1 && box.left < next.right - 1) {
+							problems.push('runs across the next one, ' + shownOf(other) + ': ' + shown);
+						}
+					}
+
+					if (shown !== whole && !shown.includes('…')) {
+						problems.push('is shortened without a mark: ' + shown);
+					}
+				});
+
+				const named = labels.some((label) =>
+					(label.querySelector('title')?.textContent ?? shownOf(label)).includes('`+long+`'));
+
+				if (!named) problems.push('is nowhere in full, not even on hover: `+long+`');
+
+				return problems;
+			})())`, &found)
+
+			for _, problem := range found {
+				t.Errorf("%s, %s: a name %s", size.name, kind, problem)
+			}
+		}
+	}
+}

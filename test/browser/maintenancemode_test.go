@@ -138,3 +138,52 @@ func TestTheMaintenanceCardNamesEveryoneWhoMayWork(t *testing.T) {
 		t.Errorf("the maintenance card does not say the role may work: %q", said)
 	}
 }
+
+// The question asked before going out of service names everyone who may still
+// work, as the card does.
+//
+// The card was corrected when maintenance began letting everybody who may
+// administer past rather than the built-in account alone; the dialog that asks
+// before the switch goes on was not, and went on saying "everyone except this
+// account will be turned away". That is the sentence read at the moment of
+// deciding, by an administrator about to restore a database while a colleague
+// holding the administrator role can still write to it.
+func TestTheMaintenanceQuestionNamesEveryoneWhoMayWork(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("open Settings", p.click(`.tab[data-view="admin"]`),
+		chromedp.WaitVisible("#form-maintenance", chromedp.ByID))
+
+	for _, language := range []struct{ code, rule, alone string }{
+		{"en", "administer", "except this account"},
+		{"de", "verwalten dürfen", "außer diesem Konto"},
+	} {
+		p.chooseLanguage(language.code)
+
+		// The card is what the question has to agree with.
+		card := p.text(`#form-maintenance [data-i18n="maint.who"]`)
+		if !strings.Contains(card, language.rule) {
+			t.Fatalf("%s: the card no longer says who may work in the words this case "+
+				"holds the question to, %q: %q", language.code, language.rule, card)
+		}
+
+		p.run("ask to go out of service",
+			p.click(`#form-maintenance input[name="enabled"]`),
+			p.click(`#form-maintenance button[type="submit"]`),
+			chromedp.WaitVisible(".confirm-overlay", chromedp.ByQuery))
+
+		asked := p.text(".confirm-overlay")
+
+		p.run("decline", p.click(".confirm-actions button.secondary"),
+			chromedp.WaitNotPresent(".confirm-overlay", chromedp.ByQuery))
+
+		if strings.Contains(asked, language.alone) || !strings.Contains(asked, language.rule) {
+			t.Errorf("%s: the question before going out of service turns away everyone "+
+				"but this account, where everybody who may administer stays: %q",
+				language.code, asked)
+		}
+	}
+}

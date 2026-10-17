@@ -430,6 +430,67 @@ function errorMessage(body) {
 }
 
 /**
+ * FIELD_NAMES is the English a refused field is named by, in the words the forms
+ * and tables use.
+ *
+ * Refusals name fields by their column names. German has field.<name> for each,
+ * and English has no dictionary, so English is whatever the lookup falls back to -
+ * which was the name itself: an English refusal read "Invalid field(s):
+ * durationHours" about a box labelled Hours. The same arrangement as
+ * PERMISSION_TITLES, for the same reason.
+ */
+const FIELD_NAMES = {
+  actor: 'Caller',
+  banner: 'Banner text',
+  baseDn: 'Base DN',
+  code: 'Code',
+  companyName: 'Company',
+  companyUrl: 'Company website',
+  confirmed: 'Confirmed accounts',
+  dailyTargetHours: 'Target h/day',
+  date: 'Date',
+  defaultRole: 'Default role',
+  description: 'Description',
+  durationHours: 'Hours',
+  email: 'Email',
+  endDate: 'End',
+  expiresInDays: 'Valid for (days)',
+  footerText: 'Footer',
+  host: 'Host',
+  id: 'ID',
+  language: 'Language',
+  ldapSyncMaxDeleteRatio: 'Deletion limit',
+  legalNotice: 'Legal notice',
+  logLevel: 'Log level',
+  maxDailyHours: 'Max h/day',
+  name: 'Name',
+  port: 'Port',
+  projectId: 'Project',
+  rateLimit: 'Rate limit',
+  rateLimitWindowSeconds: 'Rate limit window (seconds)',
+  role: 'Role',
+  sessionIdleMinutes: 'Sign out after inactivity (minutes)',
+  sessionLifetimeHours: 'Session lifetime (hours)',
+  startDate: 'Start',
+  status: 'Status',
+  syncSchedule: 'Schedule',
+  tabTitle: 'Browser tab',
+  theme: 'Appearance',
+  timezone: 'Timezone',
+  title: 'Title',
+  traceExporter: 'Trace exporter',
+  tracerRatio: 'Share of traces recorded',
+  tracerUrl: 'Collector',
+  userFilter: 'User filter',
+  userId: 'User',
+};
+
+/** fieldName names a refused field the way the screen names it, in the reader's language. */
+function fieldName(field) {
+  return t(`field.${field}`, FIELD_NAMES[field] ?? field);
+}
+
+/**
  * One refusal, in the reader's language where the server said which rule it was.
  *
  * Split out of errorMessage because a refusal does not always arrive as an error
@@ -458,7 +519,7 @@ function describeRefusal(err) {
   // The fields are labelled the way the form labels them rather than by their
   // column names, which is the whole reason they travel as data.
   if (Array.isArray(err.param) && err.param.length) {
-    const named = err.param.map((field) => t(`field.${field}`, field));
+    const named = err.param.map(fieldName);
 
     return `${t('err.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
   }
@@ -2133,14 +2194,17 @@ function prepareBulkDelete(tbody, rows) {
       });
 
       box.deletes = deletes;
-      cell.append(box);
+
+      // In a label, which passes a tap on to its box: the room around the box is
+      // what makes it something a finger can hit, and the box keeps its size.
+      cell.append(el('label', { class: 'pick-hit' }, box));
     }
 
     row.prepend(cell);
   }
 
   if (!column && head) {
-    head.prepend(el('th', { class: 'pick' }, el('input', {
+    head.prepend(el('th', { class: 'pick' }, el('label', { class: 'pick-hit' }, el('input', {
       type: 'checkbox',
       class: 'pick-all',
       'aria-label': t('bulk.pickAll', 'Select all'),
@@ -2151,7 +2215,7 @@ function prepareBulkDelete(tbody, rows) {
 
         refreshBulkBar(table);
       },
-    })));
+    }))));
   }
 
   ensureBulkBar(table);
@@ -3016,6 +3080,73 @@ function watchForEditing(form) {
 }
 
 /**
+ * Puts the browser's own refusals of a field into the screen's language.
+ *
+ * The forms state their rules in the markup - required, a minimum, a maximum, a
+ * length, an address - and the browser holds a form to them before anything is
+ * sent, in its own words: on a German screen in an English browser, "Value must
+ * be less than or equal to 24." Each refusal is written here instead, from the
+ * same rule, in the language the screen is in.
+ *
+ * A refusal set this way makes a field invalid until it is taken back, which is
+ * the part to be careful with. It is taken back when the value changes, when a
+ * form is reset, and before every attempt to send one - because a value the
+ * script puts in raises no event, and the field would go on refusing a figure its
+ * own rule accepts.
+ */
+function wireValidityMessages() {
+  // Captured, because invalid does not bubble.
+  document.addEventListener('invalid', (event) => {
+    const field = event.target;
+    if (typeof field.setCustomValidity !== 'function') return;
+
+    field.setCustomValidity('');
+
+    const message = validityMessage(field);
+    if (message) field.setCustomValidity(message);
+  }, true);
+
+  const takeBack = (field) => {
+    if (typeof field?.setCustomValidity === 'function') field.setCustomValidity('');
+  };
+
+  for (const type of ['input', 'change']) {
+    document.addEventListener(type, (event) => takeBack(event.target), true);
+  }
+
+  document.addEventListener('reset', (event) => {
+    for (const field of event.target.elements ?? []) takeBack(field);
+  }, true);
+
+  // A button's click comes before its form is checked - Enter in a field presses
+  // the form's button too - so the fields are checked afresh, by their own rules.
+  document.addEventListener('click', (event) => {
+    const form = event.target.closest?.('button, input[type="submit"]')?.form;
+
+    for (const field of form?.elements ?? []) takeBack(field);
+  }, true);
+}
+
+/** What a field's rule says about its value, or nothing where it has no objection. */
+function validityMessage(field) {
+  const { validity } = field;
+  const limit = (value) => (field.type === 'date' ? fmtDate(value) : Number(value));
+
+  if (validity.valueMissing) return t('valid.required', 'Please fill in this field.');
+  if (validity.badInput) return t('valid.number', 'Please enter a number.');
+  if (validity.typeMismatch && field.type === 'email') return t('valid.email', 'Please enter an email address.');
+  if (validity.typeMismatch && field.type === 'url') return t('valid.url', 'Please enter a web address.');
+  if (validity.rangeUnderflow) return fillIn(t('valid.min', 'At least {0}.'), [limit(field.min)]);
+  if (validity.rangeOverflow) return fillIn(t('valid.max', 'At most {0}.'), [limit(field.max)]);
+  if (validity.tooLong) return fillIn(t('valid.maxLength', 'At most {0} characters.'), [field.maxLength]);
+  if (validity.tooShort) return fillIn(t('valid.minLength', 'At least {0} characters.'), [field.minLength]);
+
+  // A pattern, a step, or whatever a later browser checks: its own words are
+  // better than a wrong sentence of ours.
+  return '';
+}
+
+/**
  * Saves a form, and stops protecting what is in it once the save has landed.
  *
  * The same as mutate, with the one thing every form that is refilled from the
@@ -3191,13 +3322,22 @@ function enhanceDateFields(root = document) {
       }
     });
 
-    draw();
-
-    // Redrawn when the language changes, like everything else that was written
-    // into the page rather than translated in it.
-    redraws.set('dateField:' + redraws.size, draw);
+    // Drawn now and again whenever the language changes, like everything else
+    // written into the page rather than translated in it - and kept across a
+    // sign-out with the installation's own draws, because a date field holds
+    // nothing of an account's and outlives all of them. Forgotten with the
+    // account's draws, every field nobody had touched went on reading in the
+    // convention of the language before the sign-out.
+    //
+    // Numbered rather than keyed on the registry's size, which shrinks whenever
+    // a draw is forgotten and would hand the next field a key already in use.
+    dateFieldsDrawn += 1;
+    redrawable(`dateField:${dateFieldsDrawn}`, draw, { installation: true });
   }
 }
+
+/** How many date fields have been given a drawing; it names the next one's. */
+let dateFieldsDrawn = 0;
 
 /** The pattern a date is written in here, as a placeholder. */
 function datePattern() {
@@ -3328,11 +3468,12 @@ const TRANSLATIONS = {
     'admin.dbHost': 'Host',
     'admin.dbPort': 'Port',
     'admin.logo': 'Logo (PNG oder JPEG, max. 256 KB)',
+    'admin.logoChoose': 'Bild wählen…',
     'admin.logoInHeader': 'In der Kopfzeile',
     'admin.logoCropHint': 'Jede Vorschau zeigt einen Ausschnitt des Logos. Zum Wählen darauf klicken.',
     'crop.title': 'Welcher Teil des Logos?',
     'crop.text': 'Ziehen, um den Teil des Logos zu wählen, der hier verwendet wird: {0}.',
-    'crop.free': 'Ziehen Sie die Ecken in eine beliebige Form. Der gewählte Teil wird in die jeweilige Stelle eingepasst, niemals verzerrt.',
+    'crop.free': 'Ziehe die Ecken in eine beliebige Form. Der gewählte Teil wird in die jeweilige Stelle eingepasst, niemals verzerrt.',
     'crop.whole': 'Ganzes Logo verwenden',
     'crop.apply': 'Diesen Teil verwenden',
     'admin.logoAsFavicon': 'Im Browser-Tab',
@@ -3357,13 +3498,13 @@ const TRANSLATIONS = {
     'setup.password.text': 'Dieses Konto hat noch das Passwort aus der Dokumentation, das jeder nachlesen kann. Bis zur Änderung lässt sich nichts anderes nutzen.',
     'setup.timezone.title': 'Zeitzone wählen',
     'setup.timezone.text': 'Sie bestimmt, auf welchen Kalendertag eine Buchung fällt. Ohne Angabe gilt UTC, was Abendbuchungen für den Großteil der Welt auf den falschen Tag legt.',
-    'tour.card.title': 'Geführte Tour',
+    'tour.card.title': 'Geführter Rundgang',
     'tour.card.text': 'Ein kurzer Rundgang durch die Bereiche der Anwendung. Wird bei der ersten Anmeldung einmal gezeigt; jederzeit erneut startbar.',
-    'tour.card.start': 'Tour anzeigen',
+    'tour.card.start': 'Rundgang anzeigen',
     'tour.count': 'Schritt {n} von {total}',
     'tour.next': 'Weiter',
     'tour.back': 'Zurück',
-    'tour.end': 'Tour überspringen',
+    'tour.end': 'Rundgang überspringen',
     'tour.finish': 'Fertig',
     'tour.welcome.title': 'Der Weg zurück',
     'tour.welcome.text': 'Der Titel bringt dich von überall auf die Willkommensseite. Dort steht, was der heutige Tag schon hat – und von dort lässt sich dieser Rundgang erneut starten.',
@@ -3477,12 +3618,12 @@ const TRANSLATIONS = {
 
     'restart.title': 'Neustart',
     'restart.open': 'Neustart',
-    'restart.summary': '{0} gespeicherte Einstellung(en) warten auf einen {1}.',
+    'restart.summary': 'Für {0} gespeicherte Einstellung(en) steht ein {1} aus.',
     'restart.unsupported.noExecve': 'Ein Neustart aus der Anwendung heraus ist unter Windows nicht möglich: dafür wird execve gebraucht, das es dort nicht gibt. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
     'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
     'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und Ihre Container-Verwaltung startet ihn wieder - was sie nur '
+      + 'hält ihn an, und deine Container-Verwaltung startet ihn wieder - was sie nur '
       + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
       + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
       + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
@@ -3523,7 +3664,7 @@ const TRANSLATIONS = {
     'row.hoursMissing': 'Die Stunden fehlen.',
     'row.hoursNotANumber': '„{0}“ ist keine Stundenzahl.',
     'row.noSuchUser': 'Es gibt niemanden mit dem Namen „{0}“.',
-    'row.notYourTime': 'Sie dürfen nur eigene Zeiten importieren, und diese Zeile gehört '
+    'row.notYourTime': 'Du darfst nur eigene Zeiten importieren, und diese Zeile gehört '
       + 'zu {0}.',
     'row.noSuchProject': 'Es gibt kein Projekt mit dem Namen „{0}“.',
     'row.projectNotActive': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
@@ -3543,6 +3684,7 @@ const TRANSLATIONS = {
     'passkey.added.done': 'Passkey hinzugefügt',
     'passkey.removed': 'Passkey entfernt',
     'passkey.cancelled': 'Der Passkey wurde nicht verwendet.',
+    'passkey.notCreated': 'Der Passkey wurde nicht angelegt.',
     'passkey.err.notAllowed': 'Die Abfrage wurde abgebrochen oder lief ab. Es wurde nichts geändert.',
     'passkey.err.already': 'Dieses Gerät hat für dieses Konto schon einen Passkey.',
     'passkey.err.unsupported': 'Dieses Gerät kann keinen Passkey der Art erstellen, die diese Installation verlangt.',
@@ -3583,7 +3725,7 @@ const TRANSLATIONS = {
     'bulk.text': 'Das lässt sich nicht rückgängig machen.',
     'bulk.done': '{n} gelöscht',
     'bulk.refused': '{n} konnten nicht gelöscht werden',
-    'sheet.projects.text': 'Exportiert Ihre Projekte. Ein Import '
+    'sheet.projects.text': 'Exportiert deine Projekte. Ein Import '
       + 'ordnet Zeilen über den Namen zu: ein vorhandener Name wird aktualisiert, ein neuer '
       + 'angelegt. Eine leere '
       + 'Zelle lässt den Wert unverändert, es geht also nichts verloren, wenn eine Spalte '
@@ -3622,7 +3764,7 @@ const TRANSLATIONS = {
     'stats.deletedProject': 'gelöschtes Projekt',
     'stats.empty': 'In diesem Zeitraum wurde nichts erfasst.',
     'timer.title': 'Stoppuhr',
-    'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in Ihrer eigenen Zeitzone.',
+    'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in deiner eigenen Zeitzone.',
     'timer.start': 'Starten',
     'timer.stop': 'Stoppen und buchen',
     'timer.discard': 'Verwerfen',
@@ -3744,14 +3886,14 @@ const TRANSLATIONS = {
     'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
     'err.logoTooManyPixels': 'Das Logo darf höchstens {0} Megapixel haben. Eine kleine Datei kann trotzdem sehr viele Bildpunkte enthalten.',
     'err.missingPermission': 'Dafür fehlt die Berechtigung „{0}“.',
-    'err.onlyOwnWorkingTimes': 'Sie können nur Ihre eigenen Arbeitszeiten ändern.',
-    'err.onlyOwnEntriesRead': 'Sie können nur Ihre eigenen Zeiteinträge sehen.',
-    'err.onlyOwnEntriesWrite': 'Sie können nur Ihre eigenen Zeiteinträge ändern.',
-    'err.onlyOwnOvertime': 'Sie können nur Ihren eigenen Überstundenstand sehen.',
+    'err.onlyOwnWorkingTimes': 'Du kannst nur deine eigenen Arbeitszeiten ändern.',
+    'err.onlyOwnEntriesRead': 'Du kannst nur deine eigenen Zeiteinträge sehen.',
+    'err.onlyOwnEntriesWrite': 'Du kannst nur deine eigenen Zeiteinträge ändern.',
+    'err.onlyOwnOvertime': 'Du kannst nur deinen eigenen Überstundenstand sehen.',
     'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
       + 'abgleichen.',
     'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
-      + 'warten Sie, bis sie abgeschlossen ist.',
+      + 'warte, bis sie abgeschlossen ist.',
     'err.updateAlreadyInstalled': '{0} ist bereits heruntergeladen und startet mit dem nächsten Neustart.',
     'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
     'err.updateInContainer': 'Dies läuft in einem Container. Ein dort ausgetauschtes Programm wird beim nächsten Neuerzeugen des Containers überschrieben. Bitte das Abbild von Hand aktualisieren – oder deploy/compose.update.yaml zur Bereitstellung hinzufügen, dann geht es von hier aus.',
@@ -3773,7 +3915,7 @@ const TRANSLATIONS = {
       + 'prüfen.',
     'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat niemanden mit einer Mailadresse geliefert; es wird niemand gelöscht.',
     'err.syncWouldRemoveTooMany': 'Würde {0} von {1} Verzeichniskonten entfernen ({2} %), mehr als die '
-      + 'Sicherheitsgrenze von {3} %. Prüfen Sie Filter und Base-DN des Verzeichnisses und heben Sie die '
+      + 'Sicherheitsgrenze von {3} %. Prüfe Filter und Base-DN des Verzeichnisses und hebe die '
       + 'Löschgrenze unter „Betrieb und Grenzwerte“ oder LDAP_SYNC_MAX_DELETE_RATIO an, wenn das wirklich '
       + 'beabsichtigt ist.',
     'err.noSession': 'Keine Sitzung.',
@@ -3805,7 +3947,7 @@ const TRANSLATIONS = {
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
-    'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warten Sie auf den nächsten.',
+    'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warte auf den nächsten.',
     'err.kerberosOff': 'Die Anmeldung mit einem Kerberos-Ticket ist auf dieser Installation nicht eingerichtet.',
     'err.kerberosNeedsDirectory': 'Eine Kerberos-Anmeldung wird im Verzeichnis nachgeschlagen, und hier ist kein Verzeichnis eingerichtet.',
     'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
@@ -3838,9 +3980,18 @@ const TRANSLATIONS = {
       + 'die Datei kann erneut importiert werden, um den Rest nachzuholen.',
     'err.uploadUnreadable': 'Die übermittelte Datei konnte nicht gelesen werden.',
     'field.actor': 'Aufrufer',
+    'valid.email': 'Bitte gib eine E-Mail-Adresse ein.',
+    'valid.max': 'Höchstens {0}.',
+    'valid.maxLength': 'Höchstens {0} Zeichen.',
+    'valid.min': 'Mindestens {0}.',
+    'valid.minLength': 'Mindestens {0} Zeichen.',
+    'valid.number': 'Bitte gib eine Zahl ein.',
+    'valid.required': 'Bitte fülle dieses Feld aus.',
+    'valid.url': 'Bitte gib eine Webadresse ein.',
     'wb.allReady': 'Alle {0} Zeilen können importiert werden.',
     'wb.choose': 'Datei wählen…',
     'wb.chosen': 'Zum Prüfen auf „Datei prüfen“ klicken.',
+    'wb.clear': 'abbrechen',
     'wb.empty': 'Die Datei enthält keine Einträge.',
     'wb.export': 'Als .xlsx exportieren',
     'wb.exported': 'Export gespeichert',
@@ -3943,7 +4094,7 @@ const TRANSLATIONS = {
     'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – eine Stufe darunter anzuhaken zeigt deshalb nichts. Die Stufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt. Nur im Speicher gehalten: nach einem Neustart ist das bis dahin Erfasste verloren, und eine Protokollsammlung ersetzt das hier nicht.',
     'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
     'log.pause': 'Anhalten',
-    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, {1} bleibt also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
+    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, bei {1} bleibt es also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
     'log.paused': 'Angehalten.',
     'log.resume': 'Fortsetzen',
     'log.search': 'Suche',
@@ -3961,7 +4112,7 @@ const TRANSLATIONS = {
     'msg.booked': 'Zeit gebucht',
     'msg.entryDeleted': 'Eintrag gelöscht',
     'msg.entrySaved': 'Eintrag gespeichert',
-    'maint.confirm': 'Installation außer Betrieb nehmen? Alle außer diesem Konto werden abgewiesen.',
+    'maint.confirm': 'Installation außer Betrieb nehmen? Alle, die sie nicht verwalten dürfen, werden abgewiesen.',
     'admin.markupLegend': 'Was in Banner, Fußzeile und rechtlichem Hinweis möglich ist',
     'markup.year': 'Das aktuelle Jahr — eine Copyright-Zeile bleibt richtig, ohne dass jemand sie ändert',
     'markup.date': 'Das heutige Datum, geschrieben wie es die lesende Person schreibt',
@@ -4017,7 +4168,7 @@ const TRANSLATIONS = {
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
     'project.edit': 'Projekt bearbeiten',
-    'project.hint': 'Ihre Projekte sind Ihre: nur Sie sehen sie, und nur Sie buchen darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
+    'project.hint': 'Deine Projekte sind deine: nur du siehst sie, und nur du buchst darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
     'report.result': 'Ergebnis',
@@ -4136,7 +4287,7 @@ const TRANSLATIONS = {
     'token.empty': 'Noch keine Tokens angelegt.',
     'token.expires': 'Gültig für (Tage, 0 = unbegrenzt)',
     'token.expiresAt': 'Läuft ab',
-    'token.hint': 'Ein Token ersetzt bei API-Aufrufen Ihr Passwort und hat immer genau die Rechte Ihrer aktuellen Rolle. Der Wert wird nur einmal angezeigt.',
+    'token.hint': 'Ein Token ersetzt bei API-Aufrufen dein Passwort und hat immer genau die Rechte deiner aktuellen Rolle. Der Wert wird nur einmal angezeigt.',
     'token.lastUsed': 'Zuletzt genutzt',
     'token.name': 'Bezeichnung',
     'token.never': 'unbegrenzt',
@@ -4325,7 +4476,8 @@ const installationDraws = new Set();
  * Draws a screen now, and again whenever the language changes.
  *
  * Forgotten when its account signs out, unless it is declared as the
- * installation's - the name and mark the sign-in screen shows.
+ * installation's - the name and mark the sign-in screen shows, and the page's own
+ * date fields.
  */
 function redrawable(key, draw, { installation = false } = {}) {
   redraws.set(key, draw);
@@ -4620,6 +4772,9 @@ async function loadMe() {
     who.replaceChildren(el('span', { text: t('auth.disabled', 'Authentication disabled') }));
   }
 
+  // The bar cuts the line short where it has no room; the whole of it is here.
+  who.title = who.textContent;
+
   $("#password-banner").hidden = !me.user.mustChangePassword;
   $("#logout").hidden = !me.authEnabled;
 
@@ -4633,6 +4788,20 @@ async function loadMe() {
   // on every reload, which a saved card or a change of language is. Leaving the
   // screen and signing out close it, on purpose.
   if ($('#totp-setup').hidden) renderTOTPState();
+}
+
+/**
+ * An e-mail address that may fold after its @ and nowhere else.
+ *
+ * An address has no space, so a table cell holding one could not fold at all and
+ * was as wide as the longest address in the column - room the row's actions did
+ * not then have. After the @ is the one place a reader expects it to break.
+ */
+function foldableAddress(address) {
+  const at = String(address ?? '').indexOf('@');
+  if (at < 0) return [address ?? ''];
+
+  return [address.slice(0, at + 1), el('wbr'), address.slice(at + 1)];
 }
 
 async function loadUsers() {
@@ -4754,11 +4923,17 @@ async function loadUsers() {
     } else if (can('users:write') && can('roles:read')) {
       // Changing a role is a select rather than a form: it is the one field
       // that is changed on its own often enough to deserve it.
+      //
+      // Named by its title alone, where the account form adds what each role is
+      // for. A dropdown is as wide as its longest choice, and in a row that is
+      // room taken from the row's actions; the closed box showed the title and
+      // the first letter of the purpose anyway.
       const select = el('select', {
         onchange: (e) => patch(`/users/${u.id}/role`, { role: e.target.value },
           t('msg.roleChanged', 'Role changed'), refreshAll),
       });
-      fillSelect(select, roleChoices(), { labelKey: 'label', valueKey: 'name' });
+      fillSelect(select, roleChoices().map((role) => ({ ...role, label: roleTitle(role.name) })),
+        { labelKey: 'label', valueKey: 'name' });
       select.value = u.role;
       roleCell.append(select);
     } else {
@@ -4767,7 +4942,7 @@ async function loadUsers() {
 
     return el('tr', { class: me.user && u.id === me.user.id ? 'self' : '' },
       el('td', { text: u.name }),
-      el('td', { text: u.email }),
+      el('td', {}, ...foldableAddress(u.email)),
       roleCell,
       // Where the account is kept. It decides what may be done to it here, and
       // was only visible as a note beside the buttons - which is the wrong place
@@ -7930,6 +8105,13 @@ function handBackTheScreen(message) {
   // the sign-in screen within reach is the right answer anyway.
   for (const overlay of $$('.overlay')) overlay.hidden = true;
 
+  // And the notices in the corner, which belong to the session they were raised
+  // in. One lingers for up to twenty seconds and the stack sits above the sign-in
+  // screen on purpose, so whoever signed in next at the same desk read the last
+  // account's "Password changed", or a failure with that account's detail folded
+  // under it. The reason a session ends is said on the sign-in form instead.
+  $('#toast')?.replaceChildren();
+
   // And the stopwatch, which is the fifth of them. It is cleared in one place
   // only - inside renderTimer, on a pass where nothing is running - so signing
   // out with a clock going left setInterval firing once a second, painting one
@@ -10157,9 +10339,12 @@ async function loadRestart() {
 
     // Split on the placeholder rather than on a marker put through the filler:
     // where the link falls in the sentence is the translator's business, and
-    // the two halves are whatever they wrote around it.
+    // the two halves are whatever they wrote around it - the count included,
+    // which is why both are filled. The verb belongs to the restart rather than
+    // to the settings in both languages, because one setting is the usual case
+    // and "1 saved setting(s) are waiting" agreed with none.
     const [before, after] = t('restart.summary',
-      '{0} saved setting(s) are waiting for a {1}.').split('{1}');
+      'A {1} is pending for {0} saved setting(s).').split('{1}');
 
     summary.append(fillIn(before ?? '', [pending.length]));
 
@@ -10173,7 +10358,7 @@ async function loadRestart() {
     link.addEventListener('click', openTheRestartCard);
     summary.append(link);
 
-    summary.append(after ?? '');
+    summary.append(fillIn(after ?? '', [pending.length]));
   }
 
   // What the button does, said before it is pressed rather than found out
@@ -10653,6 +10838,143 @@ function nameTheChart(container, chart) {
   if (words) chart.setAttribute('aria-label', words);
 }
 
+/** The width a chart is drawn at where there is room for it. */
+const CHART_WIDEST = 640;
+
+/**
+ * The width below which a chart is no longer squeezed but scrolls: the bars'
+ * labels and figures take 180 of it, and what is left is the track.
+ */
+const CHART_NARROWEST = 260;
+
+/** How to draw each chart box's chart again, and the width it was drawn at. */
+const fittedCharts = new WeakMap();
+
+/**
+ * Draws a chart again when its box changes width.
+ *
+ * A frame later rather than inside the observer: the drawing changes the box's
+ * height, and changing what is being observed from inside the observer is a loop
+ * the browser reports as an error. And only while the box still holds a drawing -
+ * one emptied since, by a sign-out or by an answer with nothing to chart, stays
+ * empty rather than getting the old picture back.
+ */
+const chartBoxes = typeof ResizeObserver === 'function'
+  ? new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      const fitted = fittedCharts.get(target);
+
+      if (fitted && target.clientWidth > 0 && chartWidth(target) !== fitted.width) {
+        requestAnimationFrame(() => {
+          if (target.lastElementChild instanceof SVGSVGElement) fittedCharts.get(target)?.again();
+        });
+      }
+    }
+  })
+  : null;
+
+/** The width to draw a chart at: its box's, within the two bounds above. */
+function chartWidth(container) {
+  const room = container.clientWidth;
+
+  // Nothing while its screen is hidden, which is when most charts are drawn - a
+  // reload fills every screen. Drawn at the widest then, and again on arrival.
+  if (room === 0) return CHART_WIDEST;
+
+  return Math.min(Math.max(room, CHART_NARROWEST), CHART_WIDEST);
+}
+
+/**
+ * Gives a chart the width of the box it goes into, and remembers how to draw it
+ * again when that changes.
+ *
+ * Drawn 640 wide whatever the box, a chart on a telephone either shrank as a
+ * whole - its type at five pixels - or, kept at its size, put the bars' figures
+ * and the whole of the pie's key past the right edge of a box that scrolls with
+ * no bar on a touch screen to say so. At the box's own width the type stays what
+ * the stylesheet says and every part is where it can be seen. The width changes
+ * after the drawing - a hidden screen opened, a telephone turned, a window
+ * narrowed - so the box is watched; see chartBoxes.
+ */
+function fitChart(container, again) {
+  const width = chartWidth(container);
+
+  // A chart drawn blind is remembered as drawn for no width at all, so the first
+  // width its box has draws it again - which is also the first moment its names
+  // can be measured (fitChartTexts).
+  fittedCharts.set(container, { again, width: container.clientWidth > 0 ? width : 0 });
+  chartBoxes?.observe(container);
+
+  return width;
+}
+
+/**
+ * Shortens each name in a chart to the room it was given, with a mark where it
+ * was cut and the whole of it on hover.
+ *
+ * A name longer than its place was cut wherever the drawing happened to end: the
+ * bars painted their track over the rest of it, a column's name ran off the
+ * picture and across its neighbour's, and the pie's key lost the figure at the
+ * end of its line past the right edge. Measured rather than counted in letters,
+ * because the type is proportional - so only once the chart is on the page, and
+ * not while its screen is hidden, where a text has no length. What follows the
+ * name, the key's figure, stays whole and the name gives way to it.
+ */
+function fitChartTexts(chart) {
+  for (const text of chart.querySelectorAll('text[data-room]')) {
+    const room = Number(text.dataset.room);
+
+    if (text.getComputedTextLength() <= room) continue;
+
+    const whole = text.textContent;
+    const after = text.dataset.after ?? '';
+    const name = whole.slice(0, whole.length - after.length);
+
+    // The longest start of the name that fits with the mark and what follows it.
+    let fits = 0;
+    let tooLong = name.length;
+
+    while (tooLong - fits > 1) {
+      const middle = Math.floor((fits + tooLong) / 2);
+
+      text.textContent = `${name.slice(0, middle).trimEnd()}…${after}`;
+
+      if (text.getComputedTextLength() <= room) fits = middle;
+      else tooLong = middle;
+    }
+
+    text.textContent = `${name.slice(0, fits).trimEnd()}…${after}`;
+
+    const title = svg('title');
+    title.textContent = whole;
+    text.append(title);
+  }
+}
+
+/**
+ * The drawing a chart goes into: as wide as its container, and never narrower than
+ * it is drawn.
+ *
+ * Narrower than that it used to shrink as a whole - the viewBox fits the picture
+ * into its box, type included - so on a telephone a chart's labels came out at
+ * about five pixels, between bands of empty space where the box kept the height
+ * the rows needed. It is drawn for its box's width now (fitChart), and a box
+ * narrower than the narrowest a chart is drawn at scrolls sideways rather than
+ * shrinking it.
+ */
+function chartDrawing(width, height) {
+  const chart = svg('svg', {
+    viewBox: `0 0 ${width} ${height}`,
+    width: '100%',
+    height,
+    role: 'img',
+  });
+
+  chart.style.minWidth = `${width}px`;
+
+  return chart;
+}
+
 /**
  * Renders bars into a container.
  *
@@ -10671,17 +10993,11 @@ function drawBarChart(container, bars, formatValue) {
   const gap = 4;
   const labelWidth = 118;
   const valueWidth = 62;
-  const width = 640;
+  const width = fitChart(container, () => drawBarChart(container, bars, formatValue));
   const height = bars.length * (rowHeight + gap);
   const trackWidth = width - labelWidth - valueWidth;
 
-  const chart = svg('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    // Scales to its container's width while keeping the row height readable.
-    width: '100%',
-    height,
-    role: 'img',
-  });
+  const chart = chartDrawing(width, height);
 
   nameTheChart(container, chart);
 
@@ -10690,10 +11006,14 @@ function drawBarChart(container, bars, formatValue) {
   bars.forEach((bar, index) => {
     const y = index * (rowHeight + gap);
 
+    // Both texts stand a few units in from the edges of the drawing rather than on
+    // them. Gecko measures an outer glyph a pixel past the point it is anchored at,
+    // and the drawing clips there - on a telephone, where the drawing is the box.
     const label = svg('text', {
-      x: 0,
+      x: 3,
       y: y + rowHeight * 0.72,
       class: 'chart-label',
+      'data-room': labelWidth - 8,
     });
     label.textContent = bar.label;
     chart.append(label);
@@ -10727,7 +11047,7 @@ function drawBarChart(container, bars, formatValue) {
     }
 
     const value = svg('text', {
-      x: width,
+      x: width - 3,
       y: y + rowHeight * 0.72,
       class: 'chart-value',
       'text-anchor': 'end',
@@ -10737,6 +11057,7 @@ function drawBarChart(container, bars, formatValue) {
   });
 
   container.append(chart);
+  fitChartTexts(chart);
 }
 
 /**
@@ -10752,7 +11073,7 @@ function drawColumnChart(container, bars, formatValue) {
 
   if (bars.length === 0) return;
 
-  const width = 640;
+  const width = fitChart(container, () => drawColumnChart(container, bars, formatValue));
   const height = 260;
   const labelBand = 46;
   const valueBand = 16;
@@ -10760,12 +11081,7 @@ function drawColumnChart(container, bars, formatValue) {
   const slot = width / bars.length;
   const barWidth = Math.min(56, slot * 0.6);
 
-  const chart = svg('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    width: '100%',
-    height,
-    role: 'img',
-  });
+  const chart = chartDrawing(width, height);
 
   nameTheChart(container, chart);
 
@@ -10813,12 +11129,14 @@ function drawColumnChart(container, bars, formatValue) {
       y: valueBand + plot + 16,
       class: 'chart-label',
       'text-anchor': 'middle',
+      'data-room': slot - 6,
     });
     label.textContent = bar.label;
     chart.append(label);
   });
 
   container.append(chart);
+  fitChartTexts(chart);
 }
 
 /**
@@ -10839,25 +11157,29 @@ function drawPieChart(container, slices, formatValue) {
 
   const size = 260;
   const radius = size / 2 - 8;
-  const centre = size / 2;
-  const width = 640;
+  const width = fitChart(container, () => drawPieChart(container, slices, formatValue));
 
-  // One row of the key per slice, and the picture is whichever is taller. The pie
-  // is a fixed 260 and the key runs down the right beside it, so from the
-  // thirteenth project the key was simply outside the box - not clipped visibly,
-  // just absent, on a chart that otherwise looked finished. The key is what tells
-  // two projects sharing one of the eight hues apart, which is the reason
-  // chartColourFor gives for eight being enough.
+  // The key beside the pie where there is room for it, and under it where there
+  // is not: on a telephone a key beside a pie this size starts where the screen
+  // ends.
+  const stacked = width < size + 24 + 200;
+  const cx = stacked ? width / 2 : size / 2;
+  const cy = size / 2;
+  const keyLeft = stacked ? 0 : size + 24;
+
+  // One row of the key per slice. Beside the pie the picture is whichever of the
+  // two is taller: the pie is a fixed 260 and the key runs down beside it, so from
+  // the thirteenth project the key was simply outside the box - not clipped
+  // visibly, just absent, on a chart that otherwise looked finished. Under it, the
+  // picture is both. The key is what tells two projects sharing one of the eight
+  // hues apart, which is the reason chartColourFor gives for eight being enough.
   const keyRow = 20;
-  const keyTop = 14;
-  const height = Math.max(size, keyTop + shown.length * keyRow + 6);
+  const keyTop = stacked ? size + 24 : 14;
+  const height = stacked
+    ? keyTop + (shown.length - 1) * keyRow + 8
+    : Math.max(size, keyTop + shown.length * keyRow + 6);
 
-  const chart = svg('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    width: '100%',
-    height,
-    role: 'img',
-  });
+  const chart = chartDrawing(width, height);
 
   nameTheChart(container, chart);
 
@@ -10871,13 +11193,13 @@ function drawPieChart(container, slices, formatValue) {
     // A full circle cannot be drawn as an arc - the start and end points would
     // be the same and the path collapses - so the single-slice case is a circle.
     const shape = shown.length === 1
-      ? svg('circle', { cx: centre, cy: centre, r: radius })
+      ? svg('circle', { cx, cy, r: radius })
       : svg('path', {
         d: [
-          `M ${centre} ${centre}`,
-          `L ${centre + radius * Math.cos(angle)} ${centre + radius * Math.sin(angle)}`,
+          `M ${cx} ${cy}`,
+          `L ${cx + radius * Math.cos(angle)} ${cy + radius * Math.sin(angle)}`,
           `A ${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1`,
-          `${centre + radius * Math.cos(end)} ${centre + radius * Math.sin(end)}`,
+          `${cx + radius * Math.cos(end)} ${cy + radius * Math.sin(end)}`,
           'Z',
         ].join(' '),
       });
@@ -10899,18 +11221,27 @@ function drawPieChart(container, slices, formatValue) {
     const y = keyTop + index * keyRow;
 
     chart.append(svg('rect', {
-      x: size + 24, y: y - 10, width: 12, height: 12, rx: 3,
+      x: keyLeft, y: y - 10, width: 12, height: 12, rx: 3,
       class: `chart-slice ${chartColourFor(slice.key) || `chart-slice-${index % 6}`}`,
     }));
 
-    const label = svg('text', { x: size + 44, y, class: 'chart-label' });
-    label.textContent = `${slice.label} — ${formatValue(slice.value)}`;
+    const figure = ` — ${formatValue(slice.value)}`;
+
+    const label = svg('text', {
+      x: keyLeft + 20,
+      y,
+      class: 'chart-label',
+      'data-room': width - keyLeft - 24,
+      'data-after': figure,
+    });
+    label.textContent = `${slice.label}${figure}`;
     chart.append(label);
 
     angle = end;
   });
 
   container.append(chart);
+  fitChartTexts(chart);
 }
 
 /** The default range: the current month, in whatever zone applies to the user. */
@@ -11190,7 +11521,7 @@ function rowProblem(row) {
   // not what the labels above the form say - the same case errorMessage handles,
   // and named from the same list so both screens use one word per field.
   if (row.problemCode === 'invalidFields') {
-    const named = (row.problemValues ?? []).map((field) => t(`field.${field}`, field));
+    const named = (row.problemValues ?? []).map(fieldName);
 
     return `${t('err.invalidFields', 'Invalid field(s)')}: ${named.join(', ')}`;
   }
@@ -11800,7 +12131,7 @@ function buildSheetCard(spec) {
   const write = el('button', { type: 'button', 'data-i18n': 'wb.import', text: 'Import' });
 
   const cancel = el('button', {
-    type: 'button', class: 'link', 'data-i18n': 'action.cancelEdit', text: 'cancel',
+    type: 'button', class: 'link', 'data-i18n': 'wb.clear', text: 'cancel',
   });
 
   for (const button of [check, write, cancel]) button.hidden = true;
@@ -12589,7 +12920,7 @@ async function registerPasskey(name) {
     throw new Error(passkeyProblem(err));
   }
 
-  if (!created) throw new Error(t('passkey.cancelled', 'The passkey was not created.'));
+  if (!created) throw new Error(t('passkey.notCreated', 'The passkey was not created.'));
 
   try {
     return await api('/me/passkeys/register', {
@@ -12720,7 +13051,7 @@ async function loadPasskeys() {
       text: passkey.lastUsedAt ? fmtMoment(passkey.lastUsedAt) : t('passkey.never', 'never'),
     }),
     el('td', { class: 'actions' }, deleteButton({
-      label: `${t('passkey.name', 'Name')} "${passkey.name}"`,
+      label: `${t('field.name', 'Name')} "${passkey.name}"`,
       path: `/me/passkeys/${passkey.id}`,
       message: t('passkey.removed', 'Passkey removed'),
       after: loadPasskeys,
@@ -13325,7 +13656,7 @@ function wireMaintenance() {
       const proceed = await confirmDialog({
         title: t('maint.title', 'Maintenance mode'),
         text: t('maint.confirm',
-          'Turn this installation out of service? Everyone except this account will be turned away.'),
+          'Turn this installation out of service? Everyone who may not administer it will be turned away.'),
         confirmLabel: t('maint.enabled', 'Out of service'),
       });
 
@@ -14316,6 +14647,10 @@ async function init() {
   // Beside the password fields, and for the same reason: a field added later is
   // covered without anybody remembering to come back here.
   enhanceDateFields();
+
+  // The same again for what the browser says when it refuses a field: bound to
+  // the document, so a form drawn later is covered too.
+  wireValidityMessages();
 
   // Every form, and before anything is loaded, so a reader who starts typing
   // into a card the moment it appears is already protected from the loaders

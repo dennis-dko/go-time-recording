@@ -149,6 +149,13 @@ func TestTheRestartNoticeCarriesItsLinkInsideTheSentence(t *testing.T) {
 		t.Fatal("the notice says nothing")
 	}
 
+	// Every placeholder filled, on whichever side of the link it falls: the count
+	// used to be filled into the half before it only, so a sentence naming the
+	// count after the link showed "{0}".
+	if strings.Contains(sentence, "{") {
+		t.Errorf("the notice shows a placeholder unfilled: %q", sentence)
+	}
+
 	// The link is a word in it rather than a control beside it.
 	var link string
 

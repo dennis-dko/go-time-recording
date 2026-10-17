@@ -608,7 +608,7 @@
           </label>
           <button type="button" class="secondary" id="wb-preview" hidden data-i18n="wb.preview">Check the file</button>
           <button type="button" id="wb-import" hidden data-i18n="wb.import">Import</button>
-          <button type="button" class="link" id="wb-clear" hidden data-i18n="action.cancelEdit">cancel</button>
+          <button type="button" class="link" id="wb-clear" hidden data-i18n="wb.clear">cancel</button>
         </div>
         <p class="muted" id="wb-summary"></p>
         <div class="table-wrap" id="wb-preview-wrap" hidden>
@@ -937,7 +937,7 @@
           <button type="button" class="secondary" data-chart="pie" data-i18n="report.pie">Pie</button>
         </div>
         <p class="muted" id="report-chart-caption"></p>
-        <div id="report-chart" class="chart"></div>
+        <div id="report-chart" class="chart chart-wrap"></div>
 
         <div class="table-wrap">
           <table id="table-report">
@@ -991,7 +991,7 @@
           <table id="table-passkeys">
             <thead>
               <tr>
-                <th data-i18n="passkey.name">Name</th>
+                <th data-i18n="field.name">Name</th>
                 <th data-i18n="passkey.added">Added</th>
                 <th data-i18n="passkey.lastUsed">Last used</th>
                 <th class="actions" data-i18n="field.action">Action</th>
@@ -1189,8 +1189,11 @@
           </table>
           <p class="muted" data-i18n="markup.note">Everything else is shown exactly as typed. These texts are read on the sign-in screen by people who have not signed in, so they are not HTML.</p>
         </div>
+        <p class="muted" id="logo-hint" data-i18n="admin.logo">Logo (PNG or JPEG, max. 256 KB)</p>
         <div class="row">
-          <label data-i18n="admin.logo">Logo (PNG or JPEG, max. 256 KB)<input type="file" id="logo-file" accept="image/png,image/jpeg">
+          <label class="file-pick">
+            <span data-i18n="admin.logoChoose">Choose an image…</span>
+            <input type="file" id="logo-file" accept="image/png,image/jpeg" aria-describedby="logo-hint">
           </label>
           <button type="button" class="secondary" id="logo-clear" data-i18n="admin.logoClear">Remove logo</button>
         </div>

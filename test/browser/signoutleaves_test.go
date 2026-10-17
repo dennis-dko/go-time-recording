@@ -276,3 +276,28 @@ func TestASignOutTakesTheCalendarAndTheGreetingWithIt(t *testing.T) {
 		t.Errorf("after the sign-out %s", what)
 	}
 }
+
+// A sign-out takes the notices in the corner with it.
+//
+// A notice lingers for up to twenty seconds, and the stack sits above the sign-in
+// screen on purpose - so whoever signed in next at the same desk read the last
+// account's "Password changed", or a failure with that account's detail folded
+// under it. Found by walking the interface: the administrator's password notice
+// was still on screen after signing in as somebody else.
+func TestASignOutTakesItsNoticesWithIt(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	p.run("raise a notice", chromedp.Evaluate(
+		`toast('Something only this account was told')`, nil))
+	p.waitShown("#toast .toast-note")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	if left := p.text("#toast"); left != "" {
+		t.Errorf("the sign-in screen still carries the last session's notice: %q", left)
+	}
+}
