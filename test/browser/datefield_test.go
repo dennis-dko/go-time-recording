@@ -247,3 +247,37 @@ func TestARestoredDateIsReadableAndNotOnlyCorrect(t *testing.T) {
 			shown, shownBefore)
 	}
 }
+
+// A date field follows the language after a sign-out, as it does before one.
+//
+// Each field's drawing is registered to be done again when the language changes,
+// and a sign-out forgets every drawing that belongs to the account leaving - which
+// took the date fields with it, though they carry nothing of anybody's. So once
+// somebody had signed out on a page, a change of language left every date field
+// nobody had touched in the convention it was drawn in: a German screen giving the
+// evaluation's period as 10/01/2026, which a German reader takes for the tenth of
+// January.
+func TestADateFieldFollowsTheLanguageAfterASignOut(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	// The administrator signs out and the worker signs in: a sign-out on this page.
+	p.readyWorker()
+	p.chooseLanguage("de")
+
+	var stale []string
+
+	p.evalJSON(`JSON.stringify([...document.querySelectorAll('.date-wrap')].flatMap((wrap) => {
+		const shown = wrap.querySelector('.date-shown');
+		const native = wrap.querySelector('.date-native');
+		const want = native.value ? fmtDate(native.value) : '';
+
+		return shown.value === want ? [] : [(native.id || native.name) + ' reads "' + shown.value + '" for "' + want + '"'];
+	}))`, &stale)
+
+	if len(stale) > 0 {
+		t.Errorf("after a sign-out and a change to German, %d date fields still read in "+
+			"another convention, the first %s", len(stale), stale[0])
+	}
+}

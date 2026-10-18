@@ -38,6 +38,32 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/**
+ * A description from the specification, drawn the way it is written.
+ *
+ * The descriptions are CommonMark, as OpenAPI allows, so Swagger UI and Postman
+ * draw them - and fifty-odd use the two forms that matter on this page: `code`
+ * for a field, a header or a path, and **bold** for the word a sentence turns
+ * on. Through textContent they arrived as backticks and asterisks. Those two
+ * forms become elements; everything else stays text, and nothing is ever parsed
+ * as HTML.
+ */
+function prose(text) {
+  const out = document.createDocumentFragment();
+
+  for (const part of String(text).split(/(`[^`]+`|\*\*[^*]+\*\*)/)) {
+    if (part.length > 2 && part.startsWith('`') && part.endsWith('`')) {
+      out.append(el('code', { text: part.slice(1, -1) }));
+    } else if (part.length > 4 && part.startsWith('**') && part.endsWith('**')) {
+      out.append(el('strong', { text: part.slice(2, -2) }));
+    } else if (part) {
+      out.append(part);
+    }
+  }
+
+  return out;
+}
+
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'];
 
 async function render() {
@@ -45,7 +71,7 @@ async function render() {
 
   document.title = `${spec.info.title} — API`;
   $('#doc-title').textContent = spec.info.title;
-  $('#doc-description').textContent = spec.info.description ?? '';
+  $('#doc-description').replaceChildren(prose(spec.info.description ?? ''));
 
   const body = $('#doc-body');
   const base = spec.servers?.[0]?.url ?? '';
@@ -78,7 +104,7 @@ async function render() {
     const meta = (spec.tags ?? []).find((t) => t.name === tag);
     const card = el('div', { class: 'card' }, el('h2', { text: tag }));
 
-    if (meta?.description) card.append(el('p', { class: 'muted', text: meta.description }));
+    if (meta?.description) card.append(el('p', { class: 'muted' }, prose(meta.description)));
 
     for (const entry of byTag.get(tag)) card.append(operationBlock(base, entry));
 
@@ -98,7 +124,7 @@ function operationBlock(base, { path, method, operation, parameters }) {
   ));
 
   if (operation.description) {
-    block.append(el('p', { class: 'muted', text: operation.description }));
+    block.append(el('p', { class: 'muted' }, prose(operation.description)));
   }
 
   // An operation with `security: []` overrides the global requirement, which
@@ -163,7 +189,7 @@ function table(headers, rows) {
   const wrap = el('div', { class: 'table-wrap' });
   const head = el('tr', {}, ...headers.map((h) => el('th', { text: h })));
   const bodyRows = rows.length
-    ? rows.map((cells) => el('tr', {}, ...cells.map((c) => el('td', { text: String(c) }))))
+    ? rows.map((cells) => el('tr', {}, ...cells.map((c) => el('td', {}, prose(c)))))
     : [el('tr', {}, el('td', { class: 'empty', colspan: headers.length, text: 'none' }))];
 
   wrap.append(el('table', {}, el('thead', {}, head), el('tbody', {}, ...bodyRows)));
