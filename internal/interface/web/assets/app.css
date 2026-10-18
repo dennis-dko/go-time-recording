@@ -1902,10 +1902,14 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   }
 
   /* Relative rather than static: it lies in the flow the same way, and gives the
-     room around the mark something to be placed against. */
+     room around the mark something to be placed against. But relative honours
+     left and top, which static ignores, so the wide screen's are taken back -
+     left in place, they moved the mark 20 pixels onto the footer's text. */
   .footer-corner {
+    left: auto;
     order: -1;
     position: relative;
+    top: auto;
     transform: none;
   }
 }
