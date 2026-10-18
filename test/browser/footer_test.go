@@ -254,3 +254,50 @@ func TestTheSignInScreenShowsTheFooter(t *testing.T) {
 			edges.Screen, edges.Footer)
 	}
 }
+
+// On a telephone the mark keeps to its own place beside the footer's text.
+//
+// The corners are taken out of the flow on a wide screen and put back into it on
+// a narrow one. The mark went back as position: relative, so that the room for a
+// finger around it has something to be placed against - and relative is the one
+// position that lets the wide screen's left and top move it: it sat 20 pixels to
+// the right of its place, on the first letters of the copyright line. Nothing had
+// measured a narrow footer with text in it; the harness configures none, and
+// alone on its line the mark overlapped nothing.
+func TestOnAPhoneTheSourceMarkKeepsOffTheFooterText(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	p.run("a telephone", chromedp.EmulateViewport(390, 844))
+	p.waitShown("#footer-source")
+
+	// The line an installation writes there, which the harness leaves empty.
+	p.run("a footer line", chromedp.Evaluate(`(() => {
+		const text = document.querySelector('#footer-text');
+		text.hidden = false;
+		text.textContent = 'Copyright @ 2026 Dennis Köhler';
+		return 1;
+	})()`, nil))
+
+	var drawn struct {
+		Overlap float64 `json:"overlap"`
+		Mark    string  `json:"mark"`
+		Text    string  `json:"text"`
+	}
+
+	p.evalJSON(`JSON.stringify((() => {
+		const mark = document.querySelector('#footer-source').getBoundingClientRect();
+		const text = document.querySelector('#footer-text').getBoundingClientRect();
+		const across = Math.min(mark.right, text.right) - Math.max(mark.left, text.left);
+		const down = Math.min(mark.bottom, text.bottom) - Math.max(mark.top, text.top);
+		const span = (r) => r.left.toFixed(0) + '..' + r.right.toFixed(0) + ' x ' + r.top.toFixed(0) + '..' + r.bottom.toFixed(0);
+
+		return { overlap: across > 0 && down > 0 ? across : 0, mark: span(mark), text: span(text) };
+	})())`, &drawn)
+
+	if drawn.Overlap > 0 {
+		t.Errorf("on a telephone the source mark (%s) lies %.0fpx over the footer's text (%s)",
+			drawn.Mark, drawn.Overlap, drawn.Text)
+	}
+}
