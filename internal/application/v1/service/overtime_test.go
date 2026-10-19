@@ -14,7 +14,8 @@ import (
 
 // overtimeFor builds a service over the same repositories the fixture uses.
 func overtimeFor(f *fixture) *service.OvertimeService {
-	return service.NewOvertimeService(f.timesheetRepo, f.userRepo, memory.NewWorkScheduleRepository())
+	return service.NewOvertimeService(f.timesheetRepo, f.userRepo, memory.NewWorkScheduleRepository(),
+		memory.NewAbsenceRepository())
 }
 
 func TestOvertimeUsesTheUsersOwnTarget(t *testing.T) {

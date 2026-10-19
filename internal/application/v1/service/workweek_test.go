@@ -21,6 +21,7 @@ type plannedFixture struct {
 
 	weeks    *service.WorkScheduleService
 	overtime *service.OvertimeService
+	away     *service.AbsenceService
 }
 
 func newPlannedFixture(t *testing.T) *plannedFixture {
@@ -28,11 +29,13 @@ func newPlannedFixture(t *testing.T) *plannedFixture {
 
 	f := newFixture(t)
 	schedules := memory.NewWorkScheduleRepository()
+	absences := memory.NewAbsenceRepository()
 
 	return &plannedFixture{
 		fixture:  f,
 		weeks:    service.NewWorkScheduleService(schedules, f.userRepo),
-		overtime: service.NewOvertimeService(f.timesheetRepo, f.userRepo, schedules),
+		overtime: service.NewOvertimeService(f.timesheetRepo, f.userRepo, schedules, absences),
+		away:     service.NewAbsenceService(absences, f.userRepo, schedules),
 	}
 }
 

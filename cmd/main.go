@@ -557,6 +557,7 @@ func main() {
 	timerRepo := sqldb.NewTimerRepository(db, cfg.Dialect)
 	scheduleRepo := sqldb.NewWorkScheduleRepository(db, cfg.Dialect)
 	templateRepo := sqldb.NewTemplateRepository(db, cfg.Dialect)
+	absenceRepo := sqldb.NewAbsenceRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
@@ -634,9 +635,10 @@ func main() {
 		timesheetRepo, userRepo, projectRepo, cfg.MaxDailyHours).
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
-	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo)
+	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo, absenceRepo)
 	workWeeks := appservice.NewWorkScheduleService(scheduleRepo, userRepo)
 	templates := appservice.NewTemplateService(templateRepo, projectRepo)
+	absences := appservice.NewAbsenceService(absenceRepo, userRepo, scheduleRepo)
 
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
@@ -972,6 +974,7 @@ func main() {
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Schedules:  rest.NewScheduleHandler(workWeeks, authorizer),
 		Templates:  rest.NewTemplateHandler(templates, authorizer),
+		Absences:   rest.NewAbsenceHandler(absences, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),

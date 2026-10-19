@@ -57,7 +57,7 @@ type holidayRule struct {
 // municipalities, Corpus Christi in parts of Saxony and Thuringia, the Peace
 // Festival in Augsburg - because a state's answer cannot know which part somebody
 // works in, and granting such a day to the whole state is as wrong as granting it
-// to nobody. Somebody it applies to records the day off as their own.
+// to nobody. Somebody it applies to records it as an absence, AbsenceLocalHoliday.
 //
 // A holiday a state introduced counts from the year it was introduced, and one
 // that was abolished until the year it was, so working out an earlier year does

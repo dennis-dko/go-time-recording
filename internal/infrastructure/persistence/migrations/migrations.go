@@ -114,6 +114,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261019020000: {UP: func(d migration.Datasource) error {
 			return keepEntryTemplates(d, dialect)
 		}},
+		20261019030000: {UP: func(d migration.Datasource) error {
+			return recordAbsences(d, dialect)
+		}},
 	}
 }
 
@@ -1628,4 +1631,21 @@ func keepEntryTemplates(d migration.Datasource, dialect string) error {
 		duration_hours %s,
 		description TEXT
 	)`, primaryKey(dialect), foreignKeyID(dialect), foreignKeyID(dialect), float(dialect)))
+}
+
+// recordAbsences keeps the days people record themselves as away, and why: leave,
+// half a day of it, illness, a day taken against overtime, a local holiday.
+//
+// A row per day rather than per stretch, because a day is what a balance and an
+// allowance count, and a fortnight's leave that is cut short is one day removed
+// rather than a stretch rewritten. The person and the day are unique together, so
+// one day has one reason, and that is also the index every read goes through.
+func recordAbsences(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE absences (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		day %s NOT NULL,
+		kind VARCHAR(16) NOT NULL,
+		UNIQUE (user_id, day)
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
 }

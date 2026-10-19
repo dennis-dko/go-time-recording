@@ -710,6 +710,8 @@ button.danger:not(.link) {
 .week-grid tfoot tr:first-child th,
 .week-grid tfoot tr:first-child td { border-top: 2px solid var(--border); }
 .week-add select { min-width: 12em; }
+/* What a day is besides its date - an absence - under it, quieter than the date. */
+.week-grid .week-tag { color: var(--muted); display: block; font-size: 11px; font-weight: 400; }
 
 /* Seven narrow figures in a row, as a week reads; four to a row on a telephone,
    where seven would not fit. */
@@ -1677,6 +1679,11 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 }
 
 .cal-projects { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A day somebody is away, said in words and tinted, so a fortnight of leave
+ * reads as one stretch rather than as ten days with nothing on them. */
+.cal-day.away { background: color-mix(in srgb, var(--muted) 10%, var(--bg)); }
+.cal-away { color: var(--muted); font-size: 11px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* --- branding: logo and footer --- */
 

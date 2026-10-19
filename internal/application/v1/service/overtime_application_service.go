@@ -38,27 +38,49 @@ type Day struct {
 	Date   time.Time
 	Booked float64
 	Target float64
+
+	// Absence is the kind of absence recorded on the day, or empty.
+	Absence string
 }
 
 // MaxDays is the longest range Days answers: fifty-three weeks, which is what a
 // year drawn as whole weeks from Monday to Sunday can span.
 const MaxDays = 371
 
+// dayRange reads a range of days, refusing one that ends before it begins or
+// spans more than MaxDays - the bounds every answer given a day at a time keeps.
+func dayRange(from, to time.Time) (first, last time.Time, err error) {
+	first, last = model.CalendarDay(from), model.CalendarDay(to)
+
+	if last.Before(first) {
+		return first, last, apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted")
+	}
+
+	if span := int(last.Sub(first).Hours()/24) + 1; span > MaxDays {
+		return first, last, apperror.Invalidf("a range of days may span at most %d days", MaxDays).
+			WithCode("rangeTooLong", MaxDays)
+	}
+
+	return first, last, nil
+}
+
 // OvertimeService computes overtime balances.
 type OvertimeService struct {
 	timesheets repository.TimesheetRepository
 	users      repository.UserRepository
 	schedules  repository.WorkScheduleRepository
+	absences   repository.AbsenceRepository
 }
 
-// NewOvertimeService needs the accounts and their planned weeks as well as their
-// hours, because the target a balance is measured against is each account's own.
+// NewOvertimeService needs the accounts, their planned weeks and their absences as
+// well as their hours, because what a day asks is each account's own.
 func NewOvertimeService(
 	timesheets repository.TimesheetRepository,
 	users repository.UserRepository,
 	schedules repository.WorkScheduleRepository,
+	absences repository.AbsenceRepository,
 ) *OvertimeService {
-	return &OvertimeService{timesheets: timesheets, users: users, schedules: schedules}
+	return &OvertimeService{timesheets: timesheets, users: users, schedules: schedules, absences: absences}
 }
 
 // Balance computes the overtime balance for one user over a date range.
@@ -178,15 +200,9 @@ func (s *OvertimeService) Days(ctx context.Context, userID uint, from, to time.T
 		return nil, apperror.InvalidFields("userId")
 	}
 
-	first, last := model.CalendarDay(from), model.CalendarDay(to)
-
-	if last.Before(first) {
-		return nil, apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted")
-	}
-
-	if span := int(last.Sub(first).Hours()/24) + 1; span > MaxDays {
-		return nil, apperror.Invalidf("a range of days may span at most %d days", MaxDays).
-			WithCode("rangeTooLong", MaxDays)
+	first, last, err := dayRange(from, to)
+	if err != nil {
+		return nil, err
 	}
 
 	user, err := s.users.GetByID(ctx, userID)
@@ -213,15 +229,26 @@ func (s *OvertimeService) Days(ctx context.Context, userID uint, from, to time.T
 		booked[model.CalendarDay(entry.Date)] += entry.DurationHours
 	}
 
+	away, err := s.absences.Between(ctx, userID, first, last)
+	if err != nil {
+		return nil, err
+	}
+
+	absent := make(map[time.Time]string, len(away))
+	for _, absence := range away {
+		absent[absence.Day] = absence.Kind
+	}
+
 	before := model.DefaultWeek(user.EffectiveDailyTarget())
 
 	var days []Day
 
 	for d := first; !d.After(last); d = d.AddDate(0, 0, 1) {
 		days = append(days, Day{
-			Date:   d,
-			Booked: settled(booked[d]),
-			Target: model.TargetOn(d, schedules, before),
+			Date:    d,
+			Booked:  settled(booked[d]),
+			Target:  model.TargetOn(d, schedules, before),
+			Absence: absent[d],
 		})
 	}
 

@@ -25,6 +25,7 @@ type Handlers struct {
 	Timers     *rest.TimerHandler
 	Schedules  *rest.ScheduleHandler
 	Templates  *rest.TemplateHandler
+	Absences   *rest.AbsenceHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -143,6 +144,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/templates", h.Templates.List)
 	app.POST(base+"/me/templates", h.Templates.Save)
 	app.DELETE(base+"/me/templates/{id}", h.Templates.Delete)
+
+	// The days somebody is away, and why - the caller's own, like their entries.
+	app.GET(base+"/me/absences", h.Absences.List)
+	app.POST(base+"/me/absences", h.Absences.Save)
+	app.DELETE(base+"/me/absences/{day}", h.Absences.Delete)
 
 	app.GET(base+"/me/passkeys", h.Passkeys.List)
 	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)

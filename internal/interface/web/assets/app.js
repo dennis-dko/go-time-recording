@@ -449,6 +449,7 @@ const FIELD_NAMES = {
   confirmed: 'Confirmed accounts',
   dailyTargetHours: 'Target h/day',
   date: 'Date',
+  day: 'Day',
   defaultRole: 'Default role',
   description: 'Description',
   durationHours: 'Hours',
@@ -461,6 +462,7 @@ const FIELD_NAMES = {
   host: 'Host',
   hours: 'Hours',
   id: 'ID',
+  kind: 'Reason',
   language: 'Language',
   ldapSyncMaxDeleteRatio: 'Deletion limit',
   legalNotice: 'Legal notice',
@@ -3965,6 +3967,7 @@ const TRANSLATIONS = {
     'entity.role': 'Rolle',
     'entity.schedule': 'Wochenplan',
     'entity.template': 'Vorlage',
+    'entity.absence': 'Abwesenheit',
     'entity.session': 'Sitzung',
     'entity.timesheet': 'Zeiteintrag',
     'entity.token': 'Token',
@@ -4088,6 +4091,7 @@ const TRANSLATIONS = {
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
     'err.tooManyTemplates': 'Höchstens {0} Vorlagen pro Person. Lösch zuerst eine.',
     'err.templateEmpty': 'Eine Vorlage muss etwas ausfüllen: ein Projekt, Stunden oder eine Beschreibung.',
+    'err.noWorkingDays': 'In diesem Zeitraum liegt kein Arbeitstag, also gibt es nichts zu erfassen.',
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
     'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warte auf den nächsten.',
@@ -4219,6 +4223,8 @@ const TRANSLATIONS = {
     'field.date': 'Datum',
     'field.default': 'Standard',
     'field.description': 'Beschreibung',
+    'field.day': 'Tag',
+    'field.kind': 'Grund',
     'field.email': 'E-Mail',
     'field.end': 'Ende',
     'field.from': 'Von',
@@ -4474,6 +4480,17 @@ const TRANSLATIONS = {
     'tpl.one': 'Vorlage',
     'tpl.deleted': 'Vorlage gelöscht',
     'tpl.empty': 'Noch keine Vorlagen.',
+    'absence.title': 'Abwesenheiten',
+    'absence.hint': 'Urlaub, Krankheit und Tage, die vom Überstundenkonto genommen werden. Erfasst werden nur die Tage, an denen deine Woche etwas verlangt – zwei Wochen Urlaub sind also seine zehn Arbeitstage.',
+    'absence.vacation': 'Urlaub',
+    'absence.halfVacation': 'Halber Tag Urlaub',
+    'absence.sick': 'Krank',
+    'absence.flexDay': 'Gleittag (vom Überstundenkonto)',
+    'absence.localHoliday': 'Feiertag am Arbeitsort',
+    'absence.save': 'Erfassen',
+    'absence.recorded': 'Erfasste Tage: {0}',
+    'absence.removed': 'Abwesenheit zurückgenommen',
+    'absence.empty': 'In diesem Jahr ist keine Abwesenheit erfasst.',
     'ts.empty': 'Keine Einträge für diesen Filter.',
     'ts.more': 'Mehr anzeigen',
     'ts.showing': '{0} von {1} Einträgen',
@@ -6117,6 +6134,10 @@ function drawWeekGrid() {
   for (const head of $$('#table-week th[data-day]')) {
     const i = Number(head.dataset.day);
     head.textContent = `${names[i] ?? ''} ${dayLabel.format(new Date(`${dates[i]}T00:00:00Z`))}`;
+
+    // And what else the day is: an absence somebody recorded on it.
+    const away = days.find((day) => day.date === dates[i])?.absence;
+    if (away) head.append(el('span', { class: 'week-tag', text: absenceName(away) }));
   }
 
   // The field being typed into, so the redraw can hand it back.
@@ -6595,7 +6616,14 @@ async function loadCalendar() {
   const first = currentCalendarMonth();
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
 
-  const entries = await everyTimesheet({ from: ISO_DAY(first), to: ISO_DAY(last) });
+  const span = { from: ISO_DAY(first), to: ISO_DAY(last) };
+
+  // The month's days beside its entries, for what each day is besides worked on:
+  // a day somebody is away.
+  const [entries, month] = await Promise.all([
+    everyTimesheet(span),
+    api(`/me/days?${new URLSearchParams(span)}`),
+  ]);
 
   // Not drawn if the arrows have moved on while it was on its way. Two quick
   // presses ask for two months at once, and the fuller one answers later: drawn
@@ -6608,10 +6636,12 @@ async function loadCalendar() {
     byDay.get(entry.date).push(entry);
   }
 
-  renderCalendarGrid(first, last, byDay);
+  const marks = new Map((month?.days ?? []).map((day) => [day.date, day]));
+
+  renderCalendarGrid(first, last, byDay, marks);
 }
 
-function renderCalendarGrid(first, last, byDay) {
+function renderCalendarGrid(first, last, byDay, marks) {
   const monthNames = t('cal.months', 'January,February,March,April,May,June,July,August,September,October,November,December').split(',');
   $('#calendar-title').textContent = `${monthNames[first.getMonth()]} ${first.getFullYear()}`;
 
@@ -6639,14 +6669,19 @@ function renderCalendarGrid(first, last, byDay) {
     const hours = dayEntries.reduce((sum, e) => sum + e.durationHours, 0);
     monthTotal += hours;
 
+    const away = marks.get(iso)?.absence;
+
     const classes = ['cal-day'];
     if (dayEntries.length) classes.push('has-entries');
     if (iso === todayIso) classes.push('today');
+    if (away) classes.push('away');
 
     const cell = el(dayEntries.length ? 'button' : 'div', {
       class: classes.join(' '),
       ...(dayEntries.length ? { type: 'button' } : {}),
     }, el('span', { class: 'cal-daynum', text: String(d) }));
+
+    if (away) cell.append(el('span', { class: 'cal-away', text: absenceName(away) }));
 
     if (hours > 0) {
       cell.append(el('span', { class: 'cal-hours', text: fmtHours(hours) }));
@@ -6730,6 +6765,73 @@ function wireCalendar() {
     mutate(loadCalendar, null, null);
   });
   $('#calendar-day-close').addEventListener('click', () => { $('#calendar-day-card').hidden = true; });
+}
+
+/**
+ * What a kind of absence is called, in words.
+ *
+ * Each written out rather than looked up as absence.${kind}: the translation
+ * checks read literal keys, and a key built at run time is one they cannot see
+ * go missing.
+ */
+function absenceName(kind) {
+  const names = {
+    vacation: () => t('absence.vacation', 'Leave'),
+    halfVacation: () => t('absence.halfVacation', 'Half a day of leave'),
+    sick: () => t('absence.sick', 'Sick'),
+    flexDay: () => t('absence.flexDay', 'Day off against overtime'),
+    localHoliday: () => t('absence.localHoliday', 'Holiday where I work'),
+  };
+
+  return names[kind]?.() ?? kind;
+}
+
+/** Loads this year's absences into their card. */
+async function loadAbsences() {
+  if (!can('timesheets:read:own')) return;
+
+  const absences = (await api('/me/absences'))?.items ?? [];
+
+  const rows = absences.map((absence) => el('tr', {},
+    el('td', { text: fmtDate(absence.day) }),
+    el('td', { class: 'text', text: absenceName(absence.kind) }),
+    el('td', { class: 'actions' }, can('timesheets:write:own') ? deleteButton({
+      label: `${fmtDate(absence.day)}, ${absenceName(absence.kind)}`,
+      path: `/me/absences/${absence.day}`,
+      message: t('absence.removed', 'Absence taken back'),
+      after: reloadAbsences,
+    }) : null),
+  ));
+
+  fillTable($('#table-absences tbody'), rows, 3, t('absence.empty', 'No absence recorded this year.'));
+}
+
+/** Everything that shows somebody's absences, drawn again after one changed. */
+async function reloadAbsences() {
+  await loadAbsences();
+  await reloadTimeViews();
+}
+
+function wireAbsences() {
+  $('#form-absence')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    const form = event.target;
+    const body = formData(form);
+
+    mutate(() => api('/me/absences', { method: 'POST', body: JSON.stringify(body) }), null,
+      async (recorded) => {
+        toast(fillIn(t('absence.recorded', 'Days recorded: {0}'), [recorded?.totalCount ?? 0]), 'ok');
+
+        // Emptied through setDateField: reset empties the box the browser keeps,
+        // not the one shown beside it.
+        form.reset();
+        setDateField(form.elements.from, '');
+        setDateField(form.elements.to, '');
+
+        await reloadAbsences();
+      });
+  });
 }
 
 function fillSettingsForm() {
@@ -15669,6 +15771,7 @@ async function refreshAll() {
   await loadPasskeys();
   await loadSchedules();
   await loadTemplates();
+  await loadAbsences();
   fillSettingsForm();
 
   document.documentElement.dataset.loaded = 'yes';
@@ -16086,6 +16189,7 @@ async function init() {
     wireForms();
     wireTOTP();
     wireCalendar();
+    wireAbsences();
     wireAdmin();
     wireTokens();
     wireDirectorySync();

@@ -8,11 +8,13 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
 
-// DayResponse is one day: what was booked on it and what it asked.
+// DayResponse is one day: what was booked on it and what it asked, and why it
+// asks less where somebody is away.
 type DayResponse struct {
-	Date   Date    `json:"date"`
-	Booked float64 `json:"booked"`
-	Target float64 `json:"target"`
+	Date    Date    `json:"date"`
+	Booked  float64 `json:"booked"`
+	Target  float64 `json:"target"`
+	Absence string  `json:"absence,omitempty"`
 }
 
 // DaysResponse is every day of a range, and what they add up to.
@@ -53,7 +55,7 @@ func (h *MeHandler) Days(c *gofr.Context) (any, error) {
 
 	for _, day := range days {
 		answer.Days = append(answer.Days, DayResponse{
-			Date: Date{Time: day.Date}, Booked: day.Booked, Target: day.Target,
+			Date: Date{Time: day.Date}, Booked: day.Booked, Target: day.Target, Absence: day.Absence,
 		})
 
 		answer.TotalBooked += day.Booked

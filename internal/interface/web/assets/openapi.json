@@ -1663,13 +1663,67 @@
         }
       }
     },
+    "/me/absences": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The days you are away",
+        "description": "Answers {\"items\": [{\"day\": \"2026-10-14\", \"kind\": \"halfVacation\"}], \"totalCount\": 1}, earliest first. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD; the default is the calendar year today falls in, in your own timezone. At most 371 days (rangeTooLong). A kind is one of vacation, halfVacation, sick, flexDay (a day off taken from the overtime balance, which keeps what the day asks) and localHoliday (a holiday where you work that your state does not keep as a whole).",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Record the working days of a range as away",
+        "description": "Body: {\"from\": \"2026-10-12\", \"to\": \"2026-10-23\", \"kind\": \"vacation\"}. Only the days your planned week asks something of are recorded - a fortnight of leave is its ten working days - and a day already recorded takes the new kind. A range with no working day in it is refused (noWorkingDays). Answers with the days recorded, in the shape GET answers.",
+        "responses": {
+          "200": {
+            "description": "The days recorded"
+          },
+          "201": {
+            "description": "The days recorded"
+          }
+        }
+      }
+    },
+    "/me/absences/{day}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take back the absence on a day",
+        "description": "A day with no absence recorded answers 404.",
+        "parameters": [
+          {
+            "name": "day",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
     "/me/days": {
       "get": {
         "tags": [
           "me"
         ],
         "summary": "Every day of a range: what was booked and what it asked",
-        "description": "Answers {\"from\", \"to\", \"days\": [{\"date\": \"2026-10-19\", \"booked\": 6.5, \"target\": 8}], \"totalBooked\", \"totalTarget\"}. Every day of the range is there, the ones with nothing booked included - unlike the overtime balance, which counts only the days somebody worked. What a day asks is the week in force on it (see /me/schedules). Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD; the default is the week, Monday to Sunday, that today falls in, in your own timezone. At most 371 days (rangeTooLong), which is a year drawn as whole weeks.",
+        "description": "Answers {\"from\", \"to\", \"days\": [{\"date\": \"2026-10-19\", \"booked\": 6.5, \"target\": 8, \"absence\": \"sick\"}], \"totalBooked\", \"totalTarget\"} - absence only on a day one is recorded (see /me/absences). Every day of the range is there, the ones with nothing booked included - unlike the overtime balance, which counts only the days somebody worked. What a day asks is the week in force on it (see /me/schedules). Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD; the default is the week, Monday to Sunday, that today falls in, in your own timezone. At most 371 days (rangeTooLong), which is a year drawn as whole weeks.",
         "responses": {
           "200": {
             "description": "OK"

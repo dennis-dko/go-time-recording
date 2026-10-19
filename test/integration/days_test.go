@@ -14,9 +14,10 @@ type daysOnTheWire struct {
 	TotalBooked float64 `json:"totalBooked"`
 	TotalTarget float64 `json:"totalTarget"`
 	Days        []struct {
-		Date   string  `json:"date"`
-		Booked float64 `json:"booked"`
-		Target float64 `json:"target"`
+		Date    string  `json:"date"`
+		Booked  float64 `json:"booked"`
+		Target  float64 `json:"target"`
+		Absence string  `json:"absence"`
 	} `json:"days"`
 }
 

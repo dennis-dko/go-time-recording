@@ -863,6 +863,40 @@
         </div>
         <p class="muted" data-i18n="cal.clickToEdit">Click an entry to edit it.</p>
       </div>
+
+      <!-- The days somebody is away, and why. Recorded over a range, but only on
+           the days their week asks something of; the calendar above marks them. -->
+      <div class="card" id="absence-card" data-perm="timesheets:write:own">
+        <h2 data-i18n="absence.title">Days away</h2>
+        <p class="muted" data-i18n="absence.hint">Leave, illness and days taken against overtime. Only the days your week asks something of are recorded, so a fortnight of leave is its ten working days.</p>
+        <form method="post" id="form-absence" class="form">
+          <div class="grid">
+            <label data-i18n="field.from">From<input type="date" name="from" required></label>
+            <label data-i18n="field.to">To<input type="date" name="to" required></label>
+            <label data-i18n="field.kind">Reason<select name="kind" required>
+                <option value="vacation" data-i18n="absence.vacation">Leave</option>
+                <option value="halfVacation" data-i18n="absence.halfVacation">Half a day of leave</option>
+                <option value="sick" data-i18n="absence.sick">Sick</option>
+                <option value="flexDay" data-i18n="absence.flexDay">Day off against overtime</option>
+                <option value="localHoliday" data-i18n="absence.localHoliday">Holiday where I work</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit" data-i18n="absence.save">Record</button>
+        </form>
+        <div class="table-wrap">
+          <table id="table-absences">
+            <thead>
+              <tr>
+                <th data-i18n="field.day">Day</th>
+                <th data-i18n="field.kind">Reason</th>
+                <th class="actions" data-i18n="field.action">Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- Overtime -->
