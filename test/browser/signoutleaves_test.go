@@ -138,7 +138,7 @@ func TestASignOutTakesTheLastEvaluationWithIt(t *testing.T) {
 			if (!document.querySelector(card).hidden) left.push(card + ' is up');
 		}
 
-		for (const text of ['#report-total', '#overtime-total', '#overtime-meta', '#report-chart-caption', '#statistics-total']) {
+		for (const text of ['#report-total', '#overtime-total', '#overtime-meta', '#overtime-rule', '#report-chart-caption', '#statistics-total']) {
 			if (document.querySelector(text).textContent.trim()) left.push(text + ' says ' + document.querySelector(text).textContent);
 		}
 

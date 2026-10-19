@@ -16,6 +16,10 @@ type DayResponse struct {
 	Target  float64 `json:"target"`
 	Absence string  `json:"absence,omitempty"`
 	Holiday string  `json:"holiday,omitempty"`
+
+	// Counts says whether the day counts towards the overtime balance, by the rule
+	// the balance keeps - so that a week drawn from these comes to its figure.
+	Counts bool `json:"counts"`
 }
 
 // DaysResponse is every day of a range, and what they add up to.
@@ -57,7 +61,7 @@ func (h *MeHandler) Days(c *gofr.Context) (any, error) {
 	for _, day := range days {
 		answer.Days = append(answer.Days, DayResponse{
 			Date: Date{Time: day.Date}, Booked: day.Booked, Target: day.Target,
-			Absence: day.Absence, Holiday: day.Holiday,
+			Absence: day.Absence, Holiday: day.Holiday, Counts: day.Counts,
 		})
 
 		answer.TotalBooked += day.Booked

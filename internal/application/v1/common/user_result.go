@@ -1,6 +1,10 @@
 package common
 
-import "github.com/dennis-dko/go-time-recording/internal/domain/model"
+import (
+	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+)
 
 // UserResult result model. It deliberately carries no password material, so a
 // hash cannot leak by being passed outwards.
@@ -50,6 +54,10 @@ type UserResult struct {
 	// through the stricter of this and the installation's.
 	DailyTargetHours float64
 	MaxDailyHours    float64
+
+	// EveryDayCountsFrom is the day from which every working day counts, nil
+	// while only the days booked on do.
+	EveryDayCountsFrom *time.Time
 }
 
 func NewUserResultFromModel(userModels ...*model.User) []*UserResult {
@@ -77,6 +85,7 @@ func NewUserResultFromModel(userModels ...*model.User) []*UserResult {
 			TourSeen:           userModel.TourSeen,
 			DailyTargetHours:   userModel.DailyTargetHours,
 			MaxDailyHours:      userModel.MaxDailyHours,
+			EveryDayCountsFrom: userModel.EveryDayCountsFrom,
 		})
 	}
 

@@ -25,6 +25,9 @@ type plannedFixture struct {
 
 	// region is the state the installation keeps the holidays of, empty for none.
 	region string
+
+	// today is the day the balance is worked out on.
+	today time.Time
 }
 
 func newPlannedFixture(t *testing.T) *plannedFixture {
@@ -33,11 +36,14 @@ func newPlannedFixture(t *testing.T) *plannedFixture {
 	schedules := memory.NewWorkScheduleRepository()
 	absences := memory.NewAbsenceRepository()
 
-	f := &plannedFixture{fixture: newFixture(t)}
+	// A Friday at the end of July, after every day the fixture books on.
+	f := &plannedFixture{fixture: newFixture(t), today: day(31)}
 	regions := service.RegionSource(func(context.Context) (string, error) { return f.region, nil })
 
 	f.weeks = service.NewWorkScheduleService(schedules, f.userRepo)
-	f.overtime = service.NewOvertimeService(f.timesheetRepo, f.userRepo, schedules, absences, regions)
+	clock := service.Today(func(context.Context, *model.User) time.Time { return f.today })
+
+	f.overtime = service.NewOvertimeService(f.timesheetRepo, f.userRepo, schedules, absences, regions, clock)
 	f.away = service.NewAbsenceService(absences, f.userRepo, schedules, regions)
 
 	return f

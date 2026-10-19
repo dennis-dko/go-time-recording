@@ -120,6 +120,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261019040000: {UP: func(d migration.Datasource) error {
 			return letEachPersonKeepTheirStatesHolidays(d, dialect)
 		}},
+		20261019050000: {UP: func(d migration.Datasource) error {
+			return letEachPersonCountEveryWorkingDay(d, dialect)
+		}},
 	}
 }
 
@@ -1663,4 +1666,15 @@ func letEachPersonKeepTheirStatesHolidays(d migration.Datasource, dialect string
 
 	return execAll(d,
 		"ALTER TABLE users ADD COLUMN holiday_region VARCHAR(8) NOT NULL DEFAULT ''")
+}
+
+// letEachPersonCountEveryWorkingDay records the day from which every working day
+// counts towards somebody's overtime balance, booked or not.
+//
+// Null for every existing account, which keeps the rule they had - only the days
+// booked on count - because a month already behind somebody must not turn into a
+// deficit the moment holidays and absences are known.
+func letEachPersonCountEveryWorkingDay(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(
+		"ALTER TABLE users ADD COLUMN every_day_counts_from %s", timestamp(dialect)))
 }

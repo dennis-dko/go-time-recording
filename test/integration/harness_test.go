@@ -533,6 +533,7 @@ type userResponse struct {
 	TourSeen           bool    `json:"tourSeen"`
 	DailyTargetHours   float64 `json:"dailyTargetHours"`
 	MaxDailyHours      float64 `json:"maxDailyHours"`
+	EveryDayCountsFrom *string `json:"everyDayCountsFrom"`
 }
 
 type timesheetResponse struct {

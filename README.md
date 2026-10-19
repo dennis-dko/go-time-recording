@@ -297,8 +297,8 @@ exactly those checksums.
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
 | Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
-| Days away | Leave, half a day of it, sick days, days taken against overtime and holidays that hold only where somebody works, recorded over a range - but only on the days the planned week asks something of, so a fortnight of leave is its ten working days - and named in the calendar and on the week grid |
-| Public holidays | The public holidays of every German state, worked out in the binary rather than fetched from anywhere. The installation chooses a state under *Settings*, and anybody can choose another - or none - under *My account*. They are named in the calendar and on the week, and leave is not recorded on them |
+| Days away | Leave, half a day of it, sick days, days taken against overtime and holidays that hold only where somebody works, recorded over a range - but only on the days the planned week asks something of, so a fortnight of leave is its ten working days - and named in the calendar and on the week grid. From the day every working day counts from, each takes its part off what the day asks |
+| Public holidays | The public holidays of every German state, worked out in the binary rather than fetched from anywhere. The installation chooses a state under *Settings*, and anybody can choose another - or none - under *My account*. They are named in the calendar and on the week, leave is not recorded on them, and from the day every working day counts from they ask nothing |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
 | Installable | A manifest and icons per installation - its own name and logo - so the page installs as an app on a telephone or a desktop, with shortcuts to the time entries, the calendar and the overtime. Browsers offer this over HTTPS or on localhost only |
 | Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |
@@ -795,10 +795,18 @@ own day shorter than the installation allows, because that is your time; you can
 raise it past what the installation allows, because that ceiling is configuration and
 configuration is the administrator's.
 
-The balance is the sum of `booked − target` over the days that **have
-bookings**. Days without bookings deliberately do not count: without a holiday
-and leave calendar — which this application does not have — weekends and time
-off would otherwise accumulate as a growing deficit.
+The balance is the sum of `booked − target` over the days that count, and which
+days count is each person's choice of a day under *My account*. Until one is
+chosen, only the days that **have bookings** count — the rule from before there
+was a holiday and leave calendar, kept so that a month already behind somebody
+does not turn into a deficit the moment holidays and absences become known.
+From the chosen day on, **every working day** up to today counts, booked or not,
+and asks what its week plans less what a public holiday or an absence takes off
+it: nothing on a public holiday, a day of leave, a sick day or a holiday that
+holds only where somebody works; half on half a day of leave; the whole day on
+a day off against overtime, which is what takes it off the balance. A day after
+today counts once something is booked on it. The overtime table names the
+holiday or the absence on each day that asks less, and says which rule counted.
 
 What a day asks is the **week planned** for it. Under *My account* a week is
 planned as seven figures, Monday first, from a day on: a later plan takes over

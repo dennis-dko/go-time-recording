@@ -454,6 +454,7 @@ const FIELD_NAMES = {
   description: 'Description',
   durationHours: 'Hours',
   email: 'Email',
+  everyDayCountsFrom: 'Every working day counts from',
   endDate: 'End',
   endedAt: 'Ended at',
   expiresInDays: 'Valid for (days)',
@@ -3606,7 +3607,7 @@ const TRANSLATIONS = {
     'tour.stats.title': 'Deine eigenen Zahlen',
     'tour.stats.text': 'Stunden pro Tag und pro Projekt, über einen Zeitraum deiner Wahl. Nur deine eigenen – und niemand sonst sieht sie.',
     'tour.overtime.title': 'Dein Überstundensaldo',
-    'tour.overtime.text': 'Gebuchte Stunden gegen das, was der Tag von dir verlangt: deinen Wochenplan, oder ohne einen dein Tagesziel von Montag bis Freitag. Nur Tage mit Buchungen zählen, damit Wochenenden und freie Tage sich nicht stillschweigend als Minus aufsummieren.',
+    'tour.overtime.text': 'Gebuchte Stunden gegen das, was der Tag von dir verlangt: deinen Wochenplan, oder ohne einen dein Tagesziel von Montag bis Freitag. Bis du unter „Mein Konto“ einen Tag wählst, zählen nur Tage mit Buchungen; ab dann zählt jeder Arbeitstag, und Feiertage und Abwesenheiten verlangen weniger.',
     'tour.projects.title': 'Deine Projekte',
     'tour.projects.text': 'Ein Platz für deine Stunden, und zwar nur deiner: Nur du siehst sie und nur du buchst darauf. Zwei Menschen an derselben Sache haben jeweils ein eigenes Projekt.',
     'tour.report.title': 'Auswertungen',
@@ -4227,6 +4228,7 @@ const TRANSLATIONS = {
     'field.day': 'Tag',
     'field.kind': 'Grund',
     'field.region': 'Bundesland',
+    'field.everyDayCountsFrom': 'Jeder Arbeitstag zählt ab',
     'field.email': 'E-Mail',
     'field.end': 'Ende',
     'field.from': 'Von',
@@ -4327,6 +4329,9 @@ const TRANSLATIONS = {
     'ot.filename': 'ueberstunden',
     'ot.booked': 'Gebucht',
     'ot.empty': 'Keine Buchungen in diesem Zeitraum.',
+    'ot.nothingCounts': 'In diesem Zeitraum zählt nichts für den Saldo.',
+    'ot.ruleEveryDay': 'Jeder Arbeitstag zählt ab dem {0}.',
+    'ot.ruleBooked': 'Es zählen nur die Tage, an denen du gebucht hast. Wähle unter „Mein Konto“ einen Tag, ab dem jeder Arbeitstag zählt.',
     'ot.meta': '{0} · Soll {1}/Tag · gebucht {2} von {3}',
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
@@ -4409,6 +4414,8 @@ const TRANSLATIONS = {
     'settings.targetHours': 'Soll-Stunden pro Tag',
     'settings.workingTimes': 'Meine Arbeitszeiten',
     'settings.workingTimesHint': 'Das Tagessoll ist die Grundlage der Überstunden, von Montag bis Freitag, solange kein Wochenplan unten etwas anderes sagt. Das Tagesmaximum begrenzt, wie viel an einem Tag gebucht werden darf.',
+    'settings.everyDayCountsFrom': 'Jeder Arbeitstag zählt ab',
+    'settings.everyDayCountsFromHint': 'Bis du einen Tag wählst, zählen für deinen Saldo nur die Tage, an denen du gebucht hast. Ab dem gewählten Tag zählt jeder Arbeitstag bis heute, gebucht oder nicht, abzüglich dessen, was ein Feiertag oder eine Abwesenheit wegnimmt. Leere das Feld, um zurückzukehren.',
     'sync.aborted': 'Abgebrochen',
     'sync.confirm': 'ACHTUNG: {n} Konto/Konten und {h} Zeiteinträge werden unwiderruflich gelöscht. Fortfahren?',
     'sync.created': 'Angelegt',
@@ -4483,7 +4490,7 @@ const TRANSLATIONS = {
     'tpl.deleted': 'Vorlage gelöscht',
     'tpl.empty': 'Noch keine Vorlagen.',
     'holiday.myTitle': 'Meine Feiertage',
-    'holiday.myHint': 'Die gesetzlichen Feiertage des Bundeslands, in dem du arbeitest, sind im Kalender und in der Woche markiert, und Urlaub, den du erfasst, wird an ihnen nicht gezählt. Lass es auf „der Installation folgen“, außer du arbeitest in einem anderen Bundesland oder außerhalb Deutschlands.',
+    'holiday.myHint': 'Die gesetzlichen Feiertage des Bundeslands, in dem du arbeitest: im Kalender und in der Woche markiert, bei erfasstem Urlaub ausgelassen, und ab dem Tag, ab dem jeder Arbeitstag zählt, ohne Soll. Lass es auf „der Installation folgen“, außer du arbeitest in einem anderen Bundesland oder außerhalb Deutschlands.',
     'holiday.region': 'Bundesland',
     'holiday.title': 'Gesetzliche Feiertage',
     'holiday.hint': 'Das Bundesland, dessen gesetzliche Feiertage für alle gelten, die unter „Mein Konto“ kein eigenes gewählt haben. Ohne eines gelten für niemanden Feiertage.',
@@ -6291,9 +6298,12 @@ function drawWeekGrid() {
   const sumOf = (values) => values.reduce((a, b) => a + b, 0);
   const signed = (n) => (Math.abs(n) < 0.005 ? '±0' : `${n > 0 ? '+' : '−'}${fmtShare(Math.abs(n))}`);
 
-  // The balance counts only the days somebody booked on, so a day with nothing
-  // on it has none here either, rather than one the balance does not have.
-  const balance = dates.map((_, i) => (booked[i] > 0 ? booked[i] - target[i] : null));
+  // A day that does not count towards the balance has none here either, rather
+  // than one the balance does not have. Which days count is the server's to say -
+  // the booked ones, and from the day somebody chose every working day up to
+  // today - so the row comes to what the balance says.
+  const counts = dates.map((date) => days.find((d) => d.date === date)?.counts ?? false);
+  const balance = dates.map((_, i) => (counts[i] ? booked[i] - target[i] : null));
   const counted = balance.filter((value) => value !== null);
 
   const footRow = (label, values, total, format) => el('tr', {},
@@ -7004,6 +7014,7 @@ function fillSettingsForm() {
 
   form.elements.dailyTargetHours.value = me.user.dailyTargetHours || '';
   form.elements.maxDailyHours.value = me.user.maxDailyHours || '';
+  setDateField(form.elements.everyDayCountsFrom, me.user.everyDayCountsFrom ?? '');
 }
 
 // --------------------------------------------------------------- API tokens
@@ -9528,8 +9539,9 @@ const TOUR_STEPS = [
     title: () => t('tour.overtime.title', 'Your overtime balance'),
     text: () => t('tour.overtime.text',
       'Booked hours against what the day asks of you: your weekly plan, or without one '
-      + 'your daily target from Monday to Friday. Only days with bookings count, so weekends '
-      + 'and time off do not quietly pile up as a deficit.'),
+      + 'your daily target from Monday to Friday. Only days with bookings count until you choose '
+      + 'a day under My account; from then on every working day counts, and public holidays and '
+      + 'absences ask less.'),
   },
   {
     target: '#form-project',
@@ -13605,7 +13617,7 @@ function forgetEveryEvaluation() {
   }
 
   for (const said of ['#report-total', '#report-chart-caption', '#overtime-total', '#overtime-meta',
-    '#statistics-total']) {
+    '#overtime-rule', '#statistics-total']) {
     const node = $(said);
     if (node) node.textContent = '';
   }
@@ -16137,13 +16149,19 @@ function wireForms() {
     evaluatedPeriod.overtime = { from: balance.from, to: balance.to };
 
     const rows = (balance.days ?? []).map((d) => el('tr', {},
-      el('td', { text: fmtDate(d.date) }),
+      el('td', { text: [fmtDate(d.date), d.holiday ? holidayName(d.holiday) : null,
+        d.absence ? absenceName(d.absence) : null].filter(Boolean).join(' · ') }),
       el('td', { class: 'num', text: fmtHours(d.booked) }),
       el('td', { class: 'num', text: fmtHours(d.target) }),
       balanceCell(d.balance),
     ));
 
-    fillTable($('#table-overtime tbody'), rows, 4, t('ot.empty', 'No bookings in this period.'));
+    fillTable($('#table-overtime tbody'), rows, 4,
+      t('ot.nothingCounts', 'Nothing in this period counts towards the balance.'));
+
+    $('#overtime-rule').textContent = balance.everyDayCountsFrom
+      ? fillIn(t('ot.ruleEveryDay', 'Every working day counts from {0}.'), [fmtDate(balance.everyDayCountsFrom)])
+      : t('ot.ruleBooked', 'Only the days you booked on count. Choose a day under "My account" to count every working day.');
 
     const total = balance.totalBalance;
     const pill = $('#overtime-total');
@@ -16181,6 +16199,9 @@ function wireForms() {
     const body = {
       dailyTargetHours: Number(form.elements.dailyTargetHours.value || 0),
       maxDailyHours: Number(form.elements.maxDailyHours.value || 0),
+      // An empty field is the request to take the day off again, which is how the
+      // server reads an empty string.
+      everyDayCountsFrom: form.elements.everyDayCountsFrom.value,
     };
     saveForm(form, () => api(`/users/${me.user.id}/working-times`,
       { method: 'PUT', body: JSON.stringify(body) }),

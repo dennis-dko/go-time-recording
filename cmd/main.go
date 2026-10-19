@@ -639,7 +639,20 @@ func main() {
 	// chosen on the Settings screen holds from the next answer on.
 	regions := appservice.RegionSource(settingsService.HolidayRegion)
 
-	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo, absenceRepo, regions)
+	// Which day it is for somebody, in their own zone: a working day nobody booked
+	// counts once it has been, and for somebody in Auckland that is a day earlier
+	// than for the server. The installation's zone where they have none, and its
+	// default where it cannot be read, as every page decides it.
+	today := appservice.Today(func(ctx context.Context, user *model.User) time.Time {
+		zone, err := settingsService.Timezone(ctx)
+		if err != nil {
+			zone = model.DefaultTimezone
+		}
+
+		return time.Now().In(user.TimezoneOf(zone))
+	})
+
+	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo, absenceRepo, regions, today)
 	workWeeks := appservice.NewWorkScheduleService(scheduleRepo, userRepo)
 	templates := appservice.NewTemplateService(templateRepo, projectRepo)
 	absences := appservice.NewAbsenceService(absenceRepo, userRepo, scheduleRepo, regions)
