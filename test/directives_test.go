@@ -64,9 +64,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "netip.MustParsePrefix(",
 		},
 		{
-			reference: "internal/infrastructure/persistence/migrations/migrations.go:1334",
+			reference: "internal/infrastructure/persistence/migrations/migrations.go:1337",
 			resolved:  "internal/infrastructure/persistence/migrations/migrations.go",
-			line:      1334,
+			line:      1337,
 			contains:  "fmt.Sprintf(",
 		},
 		{

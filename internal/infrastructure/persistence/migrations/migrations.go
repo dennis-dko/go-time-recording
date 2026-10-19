@@ -108,6 +108,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261009010000: {UP: func(d migration.Datasource) error {
 			return recordWhatEachDirectoryRunChanged(d, dialect)
 		}},
+		20261019010000: {UP: func(d migration.Datasource) error {
+			return planTheWorkingWeek(d, dialect)
+		}},
 	}
 }
 
@@ -1574,4 +1577,33 @@ func moveTheAppearanceOntoTheAccount(d migration.Datasource, dialect string) err
 
 	return execAll(d,
 		"ALTER TABLE users ADD COLUMN theme VARCHAR(8) NOT NULL DEFAULT ''")
+}
+
+// planTheWorkingWeek keeps the weeks people plan their hours in: seven figures,
+// Monday first, in force from a day until the next plan's.
+//
+// A row per plan rather than seven columns on the account, because a plan
+// changes - to part time and back - and the months before a change have to go on
+// being measured against the week that was planned then.
+//
+// The person and the first day are unique together, so two plans can never claim
+// one day, and that constraint is also the index every read goes through. Part of
+// the table rather than an index made after it, so this stays the one schema
+// statement a migration here carries.
+func planTheWorkingWeek(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE work_schedules (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		valid_from %s NOT NULL,
+		monday %s NOT NULL,
+		tuesday %s NOT NULL,
+		wednesday %s NOT NULL,
+		thursday %s NOT NULL,
+		friday %s NOT NULL,
+		saturday %s NOT NULL,
+		sunday %s NOT NULL,
+		UNIQUE (user_id, valid_from)
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect),
+		float(dialect), float(dialect), float(dialect), float(dialect),
+		float(dialect), float(dialect), float(dialect)))
 }

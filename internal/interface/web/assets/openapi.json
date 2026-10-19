@@ -885,7 +885,7 @@
           "reports"
         ],
         "summary": "Overtime balance for one user",
-        "description": "Your own balance, which needs `reports:read:own`. Anyone else’s is refused outright: a balance is their recorded time, totalled, and nobody reads that. Only days with bookings count.",
+        "description": "Your own balance, which needs `reports:read:own`. Anyone else’s is refused outright: a balance is their recorded time, totalled, and nobody reads that. Only days with bookings count, each measured against the week in force on it (see /me/schedules) - without a plan, the daily target from Monday to Friday and nothing at the weekend.",
         "parameters": [
           {
             "name": "id",
@@ -1552,6 +1552,60 @@
           },
           "201": {
             "description": "The entry booked and the clock now running"
+          }
+        }
+      }
+    },
+    "/me/schedules": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Your planned weeks",
+        "description": "Answers {\"items\": [{\"validFrom\": \"2026-10-19\", \"hours\": [8, 8, 8, 8, 6, 0, 0]}], \"before\": [8, 8, 8, 8, 8, 0, 0]}. Each item is a week, Monday first, in force from its day until the next item's; items are earliest first. `before` is the week for the days before the first plan, and for everybody who has none: the daily target from Monday to Friday and nothing at the weekend. The overtime balance measures each booked day against the week in force on it, so a day the week leaves free counts every hour booked on it as overtime.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Plan a week from a day on",
+        "description": "Body: {\"validFrom\": \"2026-10-19\", \"hours\": [8, 8, 8, 8, 6, 0, 0]} - exactly seven figures, Monday first. Replaces a plan starting on the same day; the days before keep the plan that was in force then, so going part time does not rewrite last month. Each figure is between 0 and 24, and none may exceed your own daily maximum (targetOverMaximum).",
+        "responses": {
+          "200": {
+            "description": "The planned week"
+          },
+          "201": {
+            "description": "The planned week"
+          }
+        }
+      }
+    },
+    "/me/schedules/{validFrom}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take back the plan that starts on a day",
+        "description": "Its days go back to the plan before it, or to the daily target where there is none. A day no plan starts on answers 404.",
+        "parameters": [
+          {
+            "name": "validFrom",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
           }
         }
       }

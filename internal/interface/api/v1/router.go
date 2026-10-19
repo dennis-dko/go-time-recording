@@ -23,6 +23,7 @@ type Handlers struct {
 	Restart    *rest.RestartHandler
 	Update     *rest.UpdateHandler
 	Timers     *rest.TimerHandler
+	Schedules  *rest.ScheduleHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -126,6 +127,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/me/timer/stop", h.Timers.Stop)
 	app.POST(base+"/me/timer/switch", h.Timers.Switch)
 	app.DELETE(base+"/me/timer", h.Timers.Discard)
+
+	// The weeks a balance is measured against, the caller's own like the clock.
+	app.GET(base+"/me/schedules", h.Schedules.List)
+	app.POST(base+"/me/schedules", h.Schedules.Save)
+	app.DELETE(base+"/me/schedules/{validFrom}", h.Schedules.Delete)
 
 	app.GET(base+"/me/passkeys", h.Passkeys.List)
 	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)

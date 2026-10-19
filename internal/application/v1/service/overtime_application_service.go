@@ -37,15 +37,17 @@ type OvertimeBalance struct {
 type OvertimeService struct {
 	timesheets repository.TimesheetRepository
 	users      repository.UserRepository
+	schedules  repository.WorkScheduleRepository
 }
 
-// NewOvertimeService needs the accounts as well as their hours, because the
-// target a balance is measured against is each account's own.
+// NewOvertimeService needs the accounts and their planned weeks as well as their
+// hours, because the target a balance is measured against is each account's own.
 func NewOvertimeService(
 	timesheets repository.TimesheetRepository,
 	users repository.UserRepository,
+	schedules repository.WorkScheduleRepository,
 ) *OvertimeService {
-	return &OvertimeService{timesheets: timesheets, users: users}
+	return &OvertimeService{timesheets: timesheets, users: users, schedules: schedules}
 }
 
 // Balance computes the overtime balance for one user over a date range.
@@ -54,6 +56,11 @@ func NewOvertimeService(
 // every calendar day would turn weekends, holidays and leave into a growing
 // deficit, which would make the figure meaningless without a holiday calendar
 // this application does not have.
+//
+// A booked day is measured against the week in force on it - see model.TargetOn -
+// so a day the week leaves free counts every hour booked on it as overtime.
+// DailyTarget stays the account's own figure, which is what that week is made of
+// where no plan has been made.
 func (s *OvertimeService) Balance(
 	ctx context.Context,
 	userID uint,
@@ -87,6 +94,16 @@ func (s *OvertimeService) Balance(
 
 	target := user.EffectiveDailyTarget()
 
+	// What each day asks is the week planned for it, and before any plan the
+	// daily target from Monday to Friday - not the daily target on every day,
+	// which counted a Saturday's work as a shortfall.
+	schedules, err := s.schedules.ForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	before := model.DefaultWeek(target)
+
 	bookedPerDay := make(map[time.Time]float64)
 
 	// Keyed by the calendar day rather than by the value in the column, because a
@@ -109,11 +126,13 @@ func (s *OvertimeService) Balance(
 
 	// Settled, every figure that is a sum or a difference: see settled.
 	for day, booked := range bookedPerDay {
+		planned := model.TargetOn(day, schedules, before)
+
 		balance.Days = append(balance.Days, OvertimeDay{
 			Date:    day,
 			Booked:  settled(booked),
-			Target:  target,
-			Balance: settled(booked - target),
+			Target:  planned,
+			Balance: settled(booked - planned),
 		})
 	}
 

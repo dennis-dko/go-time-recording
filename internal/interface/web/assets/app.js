@@ -458,6 +458,7 @@ const FIELD_NAMES = {
   expiresInDays: 'Valid for (days)',
   footerText: 'Footer',
   host: 'Host',
+  hours: 'Hours',
   id: 'ID',
   language: 'Language',
   ldapSyncMaxDeleteRatio: 'Deletion limit',
@@ -486,6 +487,7 @@ const FIELD_NAMES = {
   tracerUrl: 'Collector',
   userFilter: 'User filter',
   userId: 'User',
+  validFrom: 'Applies from',
 };
 
 /** fieldName names a refused field the way the screen names it, in the reader's language. */
@@ -3526,7 +3528,7 @@ const TRANSLATIONS = {
     'tour.stats.title': 'Deine eigenen Zahlen',
     'tour.stats.text': 'Stunden pro Tag und pro Projekt, über einen Zeitraum deiner Wahl. Nur deine eigenen – und niemand sonst sieht sie.',
     'tour.overtime.title': 'Dein Überstundensaldo',
-    'tour.overtime.text': 'Gebuchte Stunden gegen dein Tagesziel. Nur Tage mit Buchungen zählen, damit Wochenenden und freie Tage sich nicht stillschweigend als Minus aufsummieren.',
+    'tour.overtime.text': 'Gebuchte Stunden gegen das, was der Tag von dir verlangt: deinen Wochenplan, oder ohne einen dein Tagesziel von Montag bis Freitag. Nur Tage mit Buchungen zählen, damit Wochenenden und freie Tage sich nicht stillschweigend als Minus aufsummieren.',
     'tour.projects.title': 'Deine Projekte',
     'tour.projects.text': 'Ein Platz für deine Stunden, und zwar nur deiner: Nur du siehst sie und nur du buchst darauf. Zwei Menschen an derselben Sache haben jeweils ein eigenes Projekt.',
     'tour.report.title': 'Auswertungen',
@@ -3770,6 +3772,15 @@ const TRANSLATIONS = {
     'install.text': 'Installiert öffnet sich die Zeiterfassung vom Startbildschirm oder aus dem Startmenü wie eine eigene App, ohne den Browser drumherum. Ein langer Druck auf ihr Symbol führt direkt zu den Zeiteinträgen, zum Kalender oder zu den Überstunden.',
     'install.manual': 'Wo hier keine Schaltfläche erscheint, hat der Browser das Angebot in seinem Menü, als „App installieren“ oder „Zum Startbildschirm hinzufügen“.',
     'install.now': 'Installieren',
+    'schedule.title': 'Meine Woche',
+    'schedule.hint': 'Wie viele Stunden jeder Wochentag von dir verlangt, für den Überstundensaldo. Ein Plan gilt ab dem Tag, den du wählst; die Wochen davor behalten den Plan, der damals galt.',
+    'schedule.validFrom': 'Gilt ab',
+    'schedule.save': 'Plan speichern',
+    'schedule.saved': 'Plan gespeichert',
+    'schedule.before': 'Vor dem ersten Plan und ohne einen: {0} Std. von Montag bis Freitag, am Wochenende nichts.',
+    'schedule.label': 'Der Plan ab {0}',
+    'schedule.removed': 'Plan entfernt',
+    'schedule.empty': 'Noch kein Plan – von Montag bis Freitag gilt das Tagessoll.',
     'timer.title': 'Stoppuhr',
     'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in deiner eigenen Zeitzone.',
     'timer.start': 'Starten',
@@ -3852,6 +3863,7 @@ const TRANSLATIONS = {
     'entity.passkey': 'Passkey',
     'entity.project': 'Projekt',
     'entity.role': 'Rolle',
+    'entity.schedule': 'Wochenplan',
     'entity.session': 'Sitzung',
     'entity.timesheet': 'Zeiteintrag',
     'entity.token': 'Token',
@@ -4083,6 +4095,7 @@ const TRANSLATIONS = {
     'field.syncSchedule': 'Zeitplan',
     'field.theme': 'Erscheinungsbild',
     'field.timezone': 'Zeitzone',
+    'field.validFrom': 'Gilt ab',
     'field.tabTitle': 'Browser-Tab',
     'field.title': 'Titel',
     'field.traceExporter': 'Trace-Exporter',
@@ -4276,7 +4289,7 @@ const TRANSLATIONS = {
     'settings.newPassword': 'Neues Passwort',
     'settings.targetHours': 'Soll-Stunden pro Tag',
     'settings.workingTimes': 'Meine Arbeitszeiten',
-    'settings.workingTimesHint': 'Das Tagessoll ist die Grundlage der Überstunden. Das Tagesmaximum begrenzt, wie viel an einem Tag gebucht werden darf.',
+    'settings.workingTimesHint': 'Das Tagessoll ist die Grundlage der Überstunden, von Montag bis Freitag, solange kein Wochenplan unten etwas anderes sagt. Das Tagesmaximum begrenzt, wie viel an einem Tag gebucht werden darf.',
     'sync.aborted': 'Abgebrochen',
     'sync.confirm': 'ACHTUNG: {n} Konto/Konten und {h} Zeiteinträge werden unwiderruflich gelöscht. Fortfahren?',
     'sync.created': 'Angelegt',
@@ -6014,6 +6027,99 @@ function fillSettingsForm() {
 }
 
 // --------------------------------------------------------------- API tokens
+
+// ---------------------------------------------------------------- the week
+
+/** The weekday names the calendar uses, Monday first, in the reader's language. */
+function weekdayNames() {
+  return t('cal.weekdays', 'Mon,Tue,Wed,Thu,Fri,Sat,Sun').split(',');
+}
+
+/**
+ * Draws the plan form's seven fields and the table's weekday headings.
+ *
+ * Written by the script rather than into the markup so the names are the
+ * calendar's own - one list of seven words rather than a second set of keys that
+ * could come to call a day something else. Drawn again on a language change, and
+ * only the names: the fields keep what was typed into them.
+ */
+function drawScheduleDays() {
+  const names = weekdayNames();
+  const days = $('#schedule-days');
+
+  if (days && !days.children.length) {
+    const most = longestEntryHours();
+
+    for (let i = 0; i < 7; i += 1) {
+      days.append(el('label', { 'data-weekday': String(i) },
+        el('span', { class: 'weekday-name' }),
+        el('input', {
+          type: 'number', name: `day${i}`, step: 'any', min: '0', max: String(most), required: '',
+        })));
+    }
+  }
+
+  for (const label of $$('#schedule-days label[data-weekday]')) {
+    label.querySelector('.weekday-name').textContent = names[Number(label.dataset.weekday)] ?? '';
+  }
+
+  for (const head of $$('#table-schedules th[data-weekday]')) {
+    head.textContent = names[Number(head.dataset.weekday)] ?? '';
+  }
+}
+
+/** The week a plan form would save, read from its seven fields. */
+function scheduleHours(form) {
+  return Array.from({ length: 7 }, (_, i) => Number(form.elements[`day${i}`].value || 0));
+}
+
+/**
+ * Loads the planned weeks and the week before the first.
+ *
+ * The form is filled with the week in force today - what somebody changing their
+ * plan most likely starts from - unless it is being edited, and its first day
+ * with today: a plan made now applies from now.
+ */
+async function loadSchedules() {
+  if (!can('settings:write:own')) return;
+
+  const answer = await api('/me/schedules');
+  const items = answer?.items ?? [];
+  const before = answer?.before ?? [8, 8, 8, 8, 8, 0, 0];
+
+  redrawable('scheduleDays', drawScheduleDays);
+
+  const form = $('#form-schedule');
+
+  if (form && !beingEdited(form)) {
+    const today = todayISO();
+    const current = items.filter((item) => item.validFrom <= today).at(-1);
+    const week = current?.hours ?? before;
+
+    week.forEach((hours, i) => { form.elements[`day${i}`].value = String(hours); });
+    setDateField(form.elements.validFrom, today);
+  }
+
+  redrawable('scheduleBefore', () => {
+    $('#schedule-before').textContent = fillIn(t('schedule.before',
+      'Before the first plan, and without one: {0} h from Monday to Friday, nothing at the weekend.'),
+    [fmtShare(before[0])]);
+  });
+
+  const rows = items.map((item) => el('tr', {},
+    el('td', { text: fmtDate(item.validFrom) }),
+    ...item.hours.map((hours) => el('td', { class: 'num', text: fmtShare(hours) })),
+    el('td', { class: 'actions' }, deleteButton({
+      label: fillIn(t('schedule.label', 'The plan from {0}'), [fmtDate(item.validFrom)]),
+      path: `/me/schedules/${item.validFrom}`,
+      message: t('schedule.removed', 'Plan removed'),
+      after: loadSchedules,
+    })),
+  ));
+
+  fillTable($('#table-schedules tbody'), rows, 9,
+    t('schedule.empty', 'No plan yet - the daily target applies from Monday to Friday.'));
+}
 
 async function loadTokens() {
   const tokens = (await api('/me/tokens'))?.items ?? [];
@@ -8420,7 +8526,8 @@ const TOUR_STEPS = [
     permission: 'timesheets:read:own',
     title: () => t('tour.overtime.title', 'Your overtime balance'),
     text: () => t('tour.overtime.text',
-      'Booked hours against your daily target. Only days with bookings count, so weekends '
+      'Booked hours against what the day asks of you: your weekly plan, or without one '
+      + 'your daily target from Monday to Friday. Only days with bookings count, so weekends '
       + 'and time off do not quietly pile up as a deficit.'),
   },
   {
@@ -14713,6 +14820,7 @@ async function refreshAll() {
   await loadAdmin();
   await loadTokens();
   await loadPasskeys();
+  await loadSchedules();
   fillSettingsForm();
 
   document.documentElement.dataset.loaded = 'yes';
@@ -14953,6 +15061,18 @@ function wireForms() {
     saveForm(form, () => api(`/users/${me.user.id}/working-times`,
       { method: 'PUT', body: JSON.stringify(body) }),
       t('msg.workingTimesSaved', 'Working hours saved'),
+      refreshAll);
+  });
+
+  $('#form-schedule').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const body = { validFrom: form.elements.validFrom.value, hours: scheduleHours(form) };
+
+    saveForm(form, () => api('/me/schedules', { method: 'POST', body: JSON.stringify(body) }),
+      t('schedule.saved', 'Plan saved'),
+      // Everything, because the balance and everything measured against it has
+      // just changed.
       refreshAll);
   });
 

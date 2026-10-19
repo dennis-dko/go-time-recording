@@ -393,7 +393,10 @@ func TestOvertimeCountsOnlyDaysWithBookings(t *testing.T) {
 	worker.must(worker.api(http.MethodPut, path("/users/", meResult.User.ID, "/working-times"),
 		map[string]any{"dailyTargetHours": 8}), http.StatusOK)
 
-	day := time.Now().Format("2006-01-02")
+	// A Tuesday rather than today. Without a plan of their own somebody's week
+	// asks nothing of a Saturday or a Sunday, so on a weekend this case would
+	// have measured ten hours against no target at all.
+	day := "2026-08-04"
 	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
 		"date": day, "durationHours": 10,
 	}), http.StatusCreated, http.StatusOK)

@@ -791,6 +791,15 @@ bookings**. Days without bookings deliberately do not count: without a holiday
 and leave calendar — which this application does not have — weekends and time
 off would otherwise accumulate as a growing deficit.
 
+What a day asks is the **week planned** for it. Under *My account* a week is
+planned as seven figures, Monday first, from a day on: a later plan takes over
+from its own day, and the weeks before it keep the plan that was in force then,
+so going part time does not rewrite last month. Without a plan the daily target
+applies from Monday to Friday and the weekend asks nothing - so hours worked on a
+Saturday count as overtime. Every booked day used to be measured against the full
+daily target whichever day it was, which stood a Saturday's work in the balance as
+a shortfall.
+
 It is your own balance. Somebody else's is their recorded time, totalled, so it
 takes the same right as reading their entries — and the team-wide overview that used
 to sit beside it is gone, because comparing colleagues is the one thing this

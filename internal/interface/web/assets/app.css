@@ -701,6 +701,14 @@ button.danger:not(.link) {
 .timer-form { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px; }
 .timer-form h3 { font-size: 14px; margin: 0 0 10px; }
 
+/* Seven narrow figures in a row, as a week reads; four to a row on a telephone,
+   where seven would not fit. */
+.schedule-days { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+
+@media (max-width: 600px) {
+  .schedule-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
 /* --- asking before something is destroyed ---
  *
  * Above the sign-in screen (30) so a question is never painted behind it, and

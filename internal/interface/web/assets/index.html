@@ -1048,7 +1048,7 @@
            is exactly the right this screen writes. -->
       <form method="post" id="form-working-times" class="card form" data-perm="settings:write:own">
         <h2 data-i18n="settings.workingTimes">My working hours</h2>
-        <p class="muted" data-i18n="settings.workingTimesHint">The daily target is the basis for overtime. The daily maximum limits how much may be booked on a single day.</p>
+        <p class="muted" data-i18n="settings.workingTimesHint">The daily target is the basis for overtime, from Monday to Friday unless a weekly plan below says otherwise. The daily maximum limits how much may be booked on a single day.</p>
         <div class="grid">
           <label data-i18n="settings.targetHours">Target hours per day<input type="number" name="dailyTargetHours" step="0.5" min="0" max="24" placeholder="8">
           </label>
@@ -1057,6 +1057,43 @@
         </div>
         <button type="submit" data-i18n="action.save">Save</button>
       </form>
+
+      <!-- The week the balance is measured against, a figure per weekday. A plan
+           starts on a day and leaves the weeks before it alone, so going part
+           time does not rewrite last month. Without one, the daily target above
+           applies from Monday to Friday and the weekend asks nothing. The seven
+           fields are drawn by the script, in the weekday names the calendar uses,
+           so the two cannot name a day differently. -->
+      <div class="card" id="schedule-card" data-perm="settings:write:own">
+        <h2 data-i18n="schedule.title">My week</h2>
+        <p class="muted" data-i18n="schedule.hint">How many hours each weekday asks of you, for the overtime balance. A plan applies from the day you choose; the weeks before it keep the plan that was in force then.</p>
+        <form method="post" id="form-schedule" class="form">
+          <div class="grid schedule-days" id="schedule-days"></div>
+          <div class="grid">
+            <label data-i18n="schedule.validFrom">Applies from<input type="date" name="validFrom" required></label>
+          </div>
+          <button type="submit" data-i18n="schedule.save">Save the plan</button>
+        </form>
+        <p class="muted" id="schedule-before"></p>
+        <div class="table-wrap">
+          <table id="table-schedules">
+            <thead>
+              <tr>
+                <th data-i18n="schedule.validFrom">Applies from</th>
+                <th class="num" data-weekday="0"></th>
+                <th class="num" data-weekday="1"></th>
+                <th class="num" data-weekday="2"></th>
+                <th class="num" data-weekday="3"></th>
+                <th class="num" data-weekday="4"></th>
+                <th class="num" data-weekday="5"></th>
+                <th class="num" data-weekday="6"></th>
+                <th class="actions" data-i18n="field.action">Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
 
       <div class="card" id="passkey-card" hidden>
         <h2 data-i18n="passkey.title">Passkeys</h2>

@@ -555,6 +555,7 @@ func main() {
 	settingsRepo := sqldb.NewSettingsRepository(db, cfg.Dialect)
 
 	timerRepo := sqldb.NewTimerRepository(db, cfg.Dialect)
+	scheduleRepo := sqldb.NewWorkScheduleRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
@@ -632,7 +633,8 @@ func main() {
 		timesheetRepo, userRepo, projectRepo, cfg.MaxDailyHours).
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
-	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo)
+	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo)
+	workWeeks := appservice.NewWorkScheduleService(scheduleRepo, userRepo)
 
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
@@ -966,6 +968,7 @@ func main() {
 			WithImageUpdater(imageupdate.New(os.Getenv("GTR_UPDATE_REQUESTS"))).
 			WithConnection(ds),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
+		Schedules:  rest.NewScheduleHandler(workWeeks, authorizer),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),
