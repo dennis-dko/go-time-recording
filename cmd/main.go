@@ -635,10 +635,14 @@ func main() {
 		timesheetRepo, userRepo, projectRepo, cfg.MaxDailyHours).
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
-	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo, absenceRepo)
+	// The installation's public holidays, read per call like its zone, so a state
+	// chosen on the Settings screen holds from the next answer on.
+	regions := appservice.RegionSource(settingsService.HolidayRegion)
+
+	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo, absenceRepo, regions)
 	workWeeks := appservice.NewWorkScheduleService(scheduleRepo, userRepo)
 	templates := appservice.NewTemplateService(templateRepo, projectRepo)
-	absences := appservice.NewAbsenceService(absenceRepo, userRepo, scheduleRepo)
+	absences := appservice.NewAbsenceService(absenceRepo, userRepo, scheduleRepo, regions)
 
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
@@ -975,6 +979,7 @@ func main() {
 		Schedules:  rest.NewScheduleHandler(workWeeks, authorizer),
 		Templates:  rest.NewTemplateHandler(templates, authorizer),
 		Absences:   rest.NewAbsenceHandler(absences, authorizer, instanceTimezone),
+		Holidays:   rest.NewHolidayHandler(sessions, settingsService, authorizer),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),

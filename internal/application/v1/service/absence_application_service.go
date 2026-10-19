@@ -17,16 +17,19 @@ type AbsenceService struct {
 	absences  repository.AbsenceRepository
 	users     repository.UserRepository
 	schedules repository.WorkScheduleRepository
+	regions   RegionSource
 }
 
-// NewAbsenceService needs the accounts and their planned weeks as well, because
-// an absence is only recorded on a day somebody's week asks something of.
+// NewAbsenceService needs the accounts, their planned weeks and the
+// installation's holidays as well, because an absence is only recorded on a day
+// that would otherwise be worked.
 func NewAbsenceService(
 	absences repository.AbsenceRepository,
 	users repository.UserRepository,
 	schedules repository.WorkScheduleRepository,
+	regions RegionSource,
 ) *AbsenceService {
-	return &AbsenceService{absences: absences, users: users, schedules: schedules}
+	return &AbsenceService{absences: absences, users: users, schedules: schedules, regions: regions}
 }
 
 // Absences returns somebody's absences from one day to another, earliest first.
@@ -42,8 +45,9 @@ func (s *AbsenceService) Absences(ctx context.Context, userID uint, from, to tim
 // Record marks the working days from one day to another as away, for one reason,
 // replacing whatever reason any of them had.
 //
-// Only the days somebody's week asks something of: leave from a Monday to the
-// Friday after next is ten days of it, not the twelve the calendar counts, and a
+// Only the days somebody's week asks something of and that are no public holiday
+// where they work: leave from a Monday to the Friday after next is ten days of
+// it, not the twelve the calendar counts - and nine with Whit Monday in it - and a
 // weekend recorded as illness is one more thing to read past. A range with no
 // such day in it is refused by name rather than answered with nothing done.
 func (s *AbsenceService) Record(
@@ -85,12 +89,17 @@ func (s *AbsenceService) Record(
 		return nil, err
 	}
 
+	holidays, err := holidaysOf(ctx, s.regions, user, first, last)
+	if err != nil {
+		return nil, err
+	}
+
 	before := model.DefaultWeek(user.EffectiveDailyTarget())
 
 	var absences []model.Absence
 
 	for day := first; !day.After(last); day = day.AddDate(0, 0, 1) {
-		if model.TargetOn(day, schedules, before) <= 0 {
+		if _, holiday := holidays[day]; holiday || model.TargetOn(day, schedules, before) <= 0 {
 			continue
 		}
 

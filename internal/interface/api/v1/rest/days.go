@@ -9,12 +9,13 @@ import (
 )
 
 // DayResponse is one day: what was booked on it and what it asked, and why it
-// asks less where somebody is away.
+// may ask less - somebody away, or a public holiday.
 type DayResponse struct {
 	Date    Date    `json:"date"`
 	Booked  float64 `json:"booked"`
 	Target  float64 `json:"target"`
 	Absence string  `json:"absence,omitempty"`
+	Holiday string  `json:"holiday,omitempty"`
 }
 
 // DaysResponse is every day of a range, and what they add up to.
@@ -55,7 +56,8 @@ func (h *MeHandler) Days(c *gofr.Context) (any, error) {
 
 	for _, day := range days {
 		answer.Days = append(answer.Days, DayResponse{
-			Date: Date{Time: day.Date}, Booked: day.Booked, Target: day.Target, Absence: day.Absence,
+			Date: Date{Time: day.Date}, Booked: day.Booked, Target: day.Target,
+			Absence: day.Absence, Holiday: day.Holiday,
 		})
 
 		answer.TotalBooked += day.Booked

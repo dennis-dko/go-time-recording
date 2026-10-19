@@ -61,3 +61,15 @@ func (s *SessionService) SetTimezone(ctx context.Context, userID uint, timezone 
 
 	return err
 }
+
+// SetHolidayRegion stores the state whose public holidays this person keeps:
+// empty to follow the installation, model.NoHolidays for none.
+func (s *SessionService) SetHolidayRegion(ctx context.Context, userID uint, region string) error {
+	region = strings.TrimSpace(region)
+
+	if !model.ValidPersonalHolidayRegion(region) {
+		return apperror.InvalidFields("region")
+	}
+
+	return s.users.SetPreference(ctx, userID, repository.PreferenceHolidayRegion, region)
+}

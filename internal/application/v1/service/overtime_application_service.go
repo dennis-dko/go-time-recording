@@ -41,6 +41,9 @@ type Day struct {
 
 	// Absence is the kind of absence recorded on the day, or empty.
 	Absence string
+
+	// Holiday is the public holiday the day is where this person works, or empty.
+	Holiday string
 }
 
 // MaxDays is the longest range Days answers: fifty-three weeks, which is what a
@@ -70,17 +73,22 @@ type OvertimeService struct {
 	users      repository.UserRepository
 	schedules  repository.WorkScheduleRepository
 	absences   repository.AbsenceRepository
+	regions    RegionSource
 }
 
-// NewOvertimeService needs the accounts, their planned weeks and their absences as
-// well as their hours, because what a day asks is each account's own.
+// NewOvertimeService needs the accounts, their planned weeks, their absences and
+// the installation's holidays as well as their hours, because what a day asks is
+// each account's own.
 func NewOvertimeService(
 	timesheets repository.TimesheetRepository,
 	users repository.UserRepository,
 	schedules repository.WorkScheduleRepository,
 	absences repository.AbsenceRepository,
+	regions RegionSource,
 ) *OvertimeService {
-	return &OvertimeService{timesheets: timesheets, users: users, schedules: schedules, absences: absences}
+	return &OvertimeService{
+		timesheets: timesheets, users: users, schedules: schedules, absences: absences, regions: regions,
+	}
 }
 
 // Balance computes the overtime balance for one user over a date range.
@@ -239,6 +247,11 @@ func (s *OvertimeService) Days(ctx context.Context, userID uint, from, to time.T
 		absent[absence.Day] = absence.Kind
 	}
 
+	holidays, err := holidaysOf(ctx, s.regions, user, first, last)
+	if err != nil {
+		return nil, err
+	}
+
 	before := model.DefaultWeek(user.EffectiveDailyTarget())
 
 	var days []Day
@@ -249,6 +262,7 @@ func (s *OvertimeService) Days(ctx context.Context, userID uint, from, to time.T
 			Booked:  settled(booked[d]),
 			Target:  model.TargetOn(d, schedules, before),
 			Absence: absent[d],
+			Holiday: holidays[d].Name,
 		})
 	}
 

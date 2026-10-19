@@ -117,6 +117,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261019030000: {UP: func(d migration.Datasource) error {
 			return recordAbsences(d, dialect)
 		}},
+		20261019040000: {UP: func(d migration.Datasource) error {
+			return letEachPersonKeepTheirStatesHolidays(d, dialect)
+		}},
 	}
 }
 
@@ -1648,4 +1651,16 @@ func recordAbsences(d migration.Datasource, dialect string) error {
 		kind VARCHAR(16) NOT NULL,
 		UNIQUE (user_id, day)
 	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
+}
+
+// letEachPersonKeepTheirStatesHolidays records which state's public holidays a
+// person keeps, for somebody who works in another state than the installation's.
+//
+// Empty is what every existing account gets - follow the installation, which is
+// what nobody having chosen anything means.
+func letEachPersonKeepTheirStatesHolidays(d migration.Datasource, dialect string) error {
+	_ = dialect
+
+	return execAll(d,
+		"ALTER TABLE users ADD COLUMN holiday_region VARCHAR(8) NOT NULL DEFAULT ''")
 }

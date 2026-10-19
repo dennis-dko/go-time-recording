@@ -26,6 +26,7 @@ type Handlers struct {
 	Schedules  *rest.ScheduleHandler
 	Templates  *rest.TemplateHandler
 	Absences   *rest.AbsenceHandler
+	Holidays   *rest.HolidayHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -85,6 +86,8 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/settings/operational", h.Settings.SaveOperational)
 	app.GET(base+"/settings/timezone", h.Settings.Timezone)
 	app.PUT(base+"/settings/timezone", h.Settings.SaveTimezone)
+	app.GET(base+"/settings/holidays", h.Holidays.Installation)
+	app.PUT(base+"/settings/holidays", h.Holidays.SetInstallation)
 	app.GET(base+"/settings/datasource", h.Settings.Datasource)
 	app.PUT(base+"/settings/datasource", h.Settings.SaveDatasource)
 	app.POST(base+"/settings/datasource/test", h.Settings.TestDatasource)
@@ -114,6 +117,8 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/me/language", h.Auth.SetLanguage)
 	app.PUT(base+"/me/theme", h.Auth.SetTheme)
 	app.PUT(base+"/me/timezone", h.Auth.SetTimezone)
+	app.GET(base+"/me/holidays", h.Holidays.Mine)
+	app.PUT(base+"/me/holidays", h.Holidays.SetMine)
 	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
 	// The clock, always the caller's own: starting somebody else's would record
 	// time nobody asked them about, so there is no user id in these routes and no

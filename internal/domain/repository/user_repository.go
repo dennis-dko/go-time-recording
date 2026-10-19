@@ -73,4 +73,8 @@ const (
 
 	// PreferenceTheme is light or dark, empty meaning the time of day decides.
 	PreferenceTheme
+
+	// PreferenceHolidayRegion is the state whose public holidays this person
+	// keeps, empty meaning they follow the installation.
+	PreferenceHolidayRegion
 )

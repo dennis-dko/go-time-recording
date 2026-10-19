@@ -358,6 +358,35 @@ func (s *SettingsService) SaveTimezone(ctx context.Context, name string) error {
 	return s.settings.Set(ctx, model.SettingTimezone, name)
 }
 
+// HolidayRegion returns the state whose public holidays everybody keeps who has
+// not chosen their own, or empty for none.
+//
+// A stored value this build does not know reads as none rather than failing,
+// for the reason Timezone gives: it is read under every balance.
+func (s *SettingsService) HolidayRegion(ctx context.Context) (string, error) {
+	stored, err := s.settings.Get(ctx, model.SettingHolidayRegion)
+	if err != nil {
+		return "", err
+	}
+
+	if !model.ValidHolidayRegion(stored) {
+		return "", nil
+	}
+
+	return stored, nil
+}
+
+// SaveHolidayRegion stores the installation's state, or empty for none.
+func (s *SettingsService) SaveHolidayRegion(ctx context.Context, region string) error {
+	region = strings.TrimSpace(region)
+
+	if !model.ValidHolidayRegion(region) {
+		return apperror.InvalidFields("region")
+	}
+
+	return s.settings.Set(ctx, model.SettingHolidayRegion, region)
+}
+
 // LDAP returns the stored directory configuration, or the defaults.
 func (s *SettingsService) LDAP(ctx context.Context) (model.LDAPConfig, error) {
 	raw, err := s.settings.Get(ctx, model.SettingLDAPSettings)

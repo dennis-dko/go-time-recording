@@ -174,3 +174,19 @@ func TestEveryRegionOfferedHasItsHolidays(t *testing.T) {
 		t.Error("changing the list handed out changed the regions themselves")
 	}
 }
+
+// A person's region is their own choice, the installation's where they made none,
+// and nothing where they chose none.
+func TestAPersonsHolidayRegionFollowsTheirChoice(t *testing.T) {
+	for personal, want := range map[string]string{"": "BY", model.NoHolidays: "", "HH": "HH"} {
+		user := model.User{HolidayRegion: personal}
+
+		if got := user.HolidayRegionOf("BY"); got != want {
+			t.Errorf("a choice of %q in a Bavarian installation keeps %q, want %q", personal, got, want)
+		}
+	}
+
+	if !model.ValidPersonalHolidayRegion(model.NoHolidays) || model.ValidHolidayRegion(model.NoHolidays) {
+		t.Error("none is a choice for a person and not for the installation")
+	}
+}

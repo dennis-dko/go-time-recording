@@ -69,6 +69,12 @@ type User struct {
 	// moves hours between days rather than merely displaying them oddly.
 	Timezone string
 
+	// HolidayRegion is the state whose public holidays this person keeps: empty
+	// follows the installation, NoHolidays keeps none, and anything else is one
+	// of the HolidayRegions - for somebody who works in another state than the
+	// installation's, or outside Germany.
+	HolidayRegion string
+
 	// IsExternal marks an account whose password lives in LDAP, so the local
 	// password fields are not used for it.
 	IsExternal bool

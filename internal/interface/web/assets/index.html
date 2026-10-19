@@ -1295,6 +1295,19 @@
         <button type="submit" data-i18n="action.save">Save</button>
       </form>
 
+      <!-- Whose public holidays this person keeps, beside the zone because it is
+           the same arrangement: the installation's, unless they choose their own. -->
+      <form method="post" id="form-my-holidays" class="card form">
+        <h2 data-i18n="holiday.myTitle">My public holidays</h2>
+        <p class="muted" data-i18n="holiday.myHint">The public holidays of the state you work in are marked in the calendar and on the week, and leave you record is not counted on them. Leave it on following the installation unless you work in another state, or outside Germany.</p>
+        <div class="grid">
+          <label class="wide" data-i18n="holiday.region">State
+            <select name="region" id="my-holidays"></select>
+          </label>
+        </div>
+        <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
       <div class="card" id="totp-card">
         <h2 data-i18n="totp.title">Two-factor authentication</h2>
         <p class="muted" id="totp-state"></p>
@@ -1554,6 +1567,17 @@
           </label>
         </div>
         <p class="muted" id="instance-timezone-now"></p>
+        <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
+      <form method="post" id="form-holidays" class="card form">
+        <h2 data-i18n="holiday.title">Public holidays</h2>
+        <p class="muted" data-i18n="holiday.hint">The state whose public holidays everybody keeps who has not chosen their own under "My account". Without one, nobody keeps any.</p>
+        <div class="grid">
+          <label class="wide" data-i18n="holiday.region">State
+            <select name="region" id="instance-holidays"></select>
+          </label>
+        </div>
         <button type="submit" data-i18n="action.save">Save</button>
       </form>
 

@@ -298,6 +298,7 @@ exactly those checksums.
 | Calendar | Month view of where hours were booked |
 | Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
 | Days away | Leave, half a day of it, sick days, days taken against overtime and holidays that hold only where somebody works, recorded over a range - but only on the days the planned week asks something of, so a fortnight of leave is its ten working days - and named in the calendar and on the week grid |
+| Public holidays | The public holidays of every German state, worked out in the binary rather than fetched from anywhere. The installation chooses a state under *Settings*, and anybody can choose another - or none - under *My account*. They are named in the calendar and on the week, and leave is not recorded on them |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
 | Installable | A manifest and icons per installation - its own name and logo - so the page installs as an app on a telephone or a desktop, with shortcuts to the time entries, the calendar and the overtime. Browsers offer this over HTTPS or on localhost only |
 | Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |

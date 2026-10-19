@@ -36,6 +36,29 @@ func ValidHolidayRegion(region string) bool {
 	return region == "" || slices.Contains(holidayRegions, region)
 }
 
+// NoHolidays is a person's choice to keep no public holidays at all, which an
+// empty choice cannot say: empty follows the installation.
+const NoHolidays = "none"
+
+// ValidPersonalHolidayRegion reports whether a region is one a person may choose:
+// one of the HolidayRegions, NoHolidays, or empty for following the installation.
+func ValidPersonalHolidayRegion(region string) bool {
+	return region == NoHolidays || ValidHolidayRegion(region)
+}
+
+// HolidayRegionOf returns the state whose public holidays this person keeps: their
+// own choice, or the installation's where they made none.
+func (u *User) HolidayRegionOf(instanceRegion string) string {
+	switch u.HolidayRegion {
+	case "":
+		return instanceRegion
+	case NoHolidays:
+		return ""
+	default:
+		return u.HolidayRegion
+	}
+}
+
 // holidayRule is one holiday and where and when it holds.
 type holidayRule struct {
 	name string

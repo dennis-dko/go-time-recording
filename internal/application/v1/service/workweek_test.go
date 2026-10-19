@@ -22,21 +22,25 @@ type plannedFixture struct {
 	weeks    *service.WorkScheduleService
 	overtime *service.OvertimeService
 	away     *service.AbsenceService
+
+	// region is the state the installation keeps the holidays of, empty for none.
+	region string
 }
 
 func newPlannedFixture(t *testing.T) *plannedFixture {
 	t.Helper()
 
-	f := newFixture(t)
 	schedules := memory.NewWorkScheduleRepository()
 	absences := memory.NewAbsenceRepository()
 
-	return &plannedFixture{
-		fixture:  f,
-		weeks:    service.NewWorkScheduleService(schedules, f.userRepo),
-		overtime: service.NewOvertimeService(f.timesheetRepo, f.userRepo, schedules, absences),
-		away:     service.NewAbsenceService(absences, f.userRepo, schedules),
-	}
+	f := &plannedFixture{fixture: newFixture(t)}
+	regions := service.RegionSource(func(context.Context) (string, error) { return f.region, nil })
+
+	f.weeks = service.NewWorkScheduleService(schedules, f.userRepo)
+	f.overtime = service.NewOvertimeService(f.timesheetRepo, f.userRepo, schedules, absences, regions)
+	f.away = service.NewAbsenceService(absences, f.userRepo, schedules, regions)
+
+	return f
 }
 
 func (f *plannedFixture) plan(t *testing.T, from time.Time, hours model.WeekHours) {

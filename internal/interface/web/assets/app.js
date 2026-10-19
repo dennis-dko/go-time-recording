@@ -472,6 +472,7 @@ const FIELD_NAMES = {
   port: 'Port',
   projectId: 'Project',
   q: 'Search',
+  region: 'State',
   rateLimit: 'Rate limit',
   rateLimitWindowSeconds: 'Rate limit window (seconds)',
   role: 'Role',
@@ -4225,6 +4226,7 @@ const TRANSLATIONS = {
     'field.description': 'Beschreibung',
     'field.day': 'Tag',
     'field.kind': 'Grund',
+    'field.region': 'Bundesland',
     'field.email': 'E-Mail',
     'field.end': 'Ende',
     'field.from': 'Von',
@@ -4480,6 +4482,51 @@ const TRANSLATIONS = {
     'tpl.one': 'Vorlage',
     'tpl.deleted': 'Vorlage gelöscht',
     'tpl.empty': 'Noch keine Vorlagen.',
+    'holiday.myTitle': 'Meine Feiertage',
+    'holiday.myHint': 'Die gesetzlichen Feiertage des Bundeslands, in dem du arbeitest, sind im Kalender und in der Woche markiert, und Urlaub, den du erfasst, wird an ihnen nicht gezählt. Lass es auf „der Installation folgen“, außer du arbeitest in einem anderen Bundesland oder außerhalb Deutschlands.',
+    'holiday.region': 'Bundesland',
+    'holiday.title': 'Gesetzliche Feiertage',
+    'holiday.hint': 'Das Bundesland, dessen gesetzliche Feiertage für alle gelten, die unter „Mein Konto“ kein eigenes gewählt haben. Ohne eines gelten für niemanden Feiertage.',
+    'holiday.inherit': 'Der Installation folgen ({0})',
+    'holiday.noneKept': 'keine',
+    'holiday.noRegion': 'Keine Feiertage',
+    'holiday.saved': 'Feiertage gespeichert',
+    'region.BW': 'Baden-Württemberg',
+    'region.BY': 'Bayern',
+    'region.BE': 'Berlin',
+    'region.BB': 'Brandenburg',
+    'region.HB': 'Bremen',
+    'region.HH': 'Hamburg',
+    'region.HE': 'Hessen',
+    'region.MV': 'Mecklenburg-Vorpommern',
+    'region.NI': 'Niedersachsen',
+    'region.NW': 'Nordrhein-Westfalen',
+    'region.RP': 'Rheinland-Pfalz',
+    'region.SL': 'Saarland',
+    'region.SN': 'Sachsen',
+    'region.ST': 'Sachsen-Anhalt',
+    'region.SH': 'Schleswig-Holstein',
+    'region.TH': 'Thüringen',
+    'holiday.newYear': 'Neujahr',
+    'holiday.epiphany': 'Heilige Drei Könige',
+    'holiday.womensDay': 'Internationaler Frauentag',
+    'holiday.goodFriday': 'Karfreitag',
+    'holiday.easterSunday': 'Ostersonntag',
+    'holiday.easterMonday': 'Ostermontag',
+    'holiday.labourDay': 'Tag der Arbeit',
+    'holiday.liberationDay': 'Tag der Befreiung',
+    'holiday.ascension': 'Christi Himmelfahrt',
+    'holiday.whitSunday': 'Pfingstsonntag',
+    'holiday.whitMonday': 'Pfingstmontag',
+    'holiday.corpusChristi': 'Fronleichnam',
+    'holiday.assumption': 'Mariä Himmelfahrt',
+    'holiday.childrensDay': 'Weltkindertag',
+    'holiday.germanUnity': 'Tag der Deutschen Einheit',
+    'holiday.reformationDay': 'Reformationstag',
+    'holiday.allSaints': 'Allerheiligen',
+    'holiday.repentanceDay': 'Buß- und Bettag',
+    'holiday.christmasDay': '1. Weihnachtstag',
+    'holiday.stStephensDay': '2. Weihnachtstag',
     'absence.title': 'Abwesenheiten',
     'absence.hint': 'Urlaub, Krankheit und Tage, die vom Überstundenkonto genommen werden. Erfasst werden nur die Tage, an denen deine Woche etwas verlangt – zwei Wochen Urlaub sind also seine zehn Arbeitstage.',
     'absence.vacation': 'Urlaub',
@@ -6135,9 +6182,10 @@ function drawWeekGrid() {
     const i = Number(head.dataset.day);
     head.textContent = `${names[i] ?? ''} ${dayLabel.format(new Date(`${dates[i]}T00:00:00Z`))}`;
 
-    // And what else the day is: an absence somebody recorded on it.
-    const away = days.find((day) => day.date === dates[i])?.absence;
-    if (away) head.append(el('span', { class: 'week-tag', text: absenceName(away) }));
+    // And what else the day is: a public holiday, an absence somebody recorded.
+    const day = days.find((d) => d.date === dates[i]);
+    if (day?.holiday) head.append(el('span', { class: 'week-tag', text: holidayName(day.holiday) }));
+    if (day?.absence) head.append(el('span', { class: 'week-tag', text: absenceName(day.absence) }));
   }
 
   // The field being typed into, so the redraw can hand it back.
@@ -6670,17 +6718,19 @@ function renderCalendarGrid(first, last, byDay, marks) {
     monthTotal += hours;
 
     const away = marks.get(iso)?.absence;
+    const holiday = marks.get(iso)?.holiday;
 
     const classes = ['cal-day'];
     if (dayEntries.length) classes.push('has-entries');
     if (iso === todayIso) classes.push('today');
-    if (away) classes.push('away');
+    if (away || holiday) classes.push('away');
 
     const cell = el(dayEntries.length ? 'button' : 'div', {
       class: classes.join(' '),
       ...(dayEntries.length ? { type: 'button' } : {}),
     }, el('span', { class: 'cal-daynum', text: String(d) }));
 
+    if (holiday) cell.append(el('span', { class: 'cal-away', text: holidayName(holiday) }));
     if (away) cell.append(el('span', { class: 'cal-away', text: absenceName(away) }));
 
     if (hours > 0) {
@@ -6784,6 +6834,108 @@ function absenceName(kind) {
   };
 
   return names[kind]?.() ?? kind;
+}
+
+/**
+ * What each German state is called, in words - written out for the reason
+ * absenceName gives.
+ */
+function regionName(code) {
+  const names = {
+    BW: () => t('region.BW', 'Baden-Wuerttemberg'),
+    BY: () => t('region.BY', 'Bavaria'),
+    BE: () => t('region.BE', 'Berlin'),
+    BB: () => t('region.BB', 'Brandenburg'),
+    HB: () => t('region.HB', 'Bremen'),
+    HH: () => t('region.HH', 'Hamburg'),
+    HE: () => t('region.HE', 'Hesse'),
+    MV: () => t('region.MV', 'Mecklenburg-Western Pomerania'),
+    NI: () => t('region.NI', 'Lower Saxony'),
+    NW: () => t('region.NW', 'North Rhine-Westphalia'),
+    RP: () => t('region.RP', 'Rhineland-Palatinate'),
+    SL: () => t('region.SL', 'Saarland'),
+    SN: () => t('region.SN', 'Saxony'),
+    ST: () => t('region.ST', 'Saxony-Anhalt'),
+    SH: () => t('region.SH', 'Schleswig-Holstein'),
+    TH: () => t('region.TH', 'Thuringia'),
+  };
+
+  return names[code]?.() ?? code;
+}
+
+/** What each public holiday is called, in words, written out for the same reason. */
+function holidayName(name) {
+  const names = {
+    newYear: () => t('holiday.newYear', 'New Year’s Day'),
+    epiphany: () => t('holiday.epiphany', 'Epiphany'),
+    womensDay: () => t('holiday.womensDay', 'International Women’s Day'),
+    goodFriday: () => t('holiday.goodFriday', 'Good Friday'),
+    easterSunday: () => t('holiday.easterSunday', 'Easter Sunday'),
+    easterMonday: () => t('holiday.easterMonday', 'Easter Monday'),
+    labourDay: () => t('holiday.labourDay', 'Labour Day'),
+    liberationDay: () => t('holiday.liberationDay', 'Liberation Day'),
+    ascension: () => t('holiday.ascension', 'Ascension Day'),
+    whitSunday: () => t('holiday.whitSunday', 'Whit Sunday'),
+    whitMonday: () => t('holiday.whitMonday', 'Whit Monday'),
+    corpusChristi: () => t('holiday.corpusChristi', 'Corpus Christi'),
+    assumption: () => t('holiday.assumption', 'Assumption Day'),
+    childrensDay: () => t('holiday.childrensDay', 'World Children’s Day'),
+    germanUnity: () => t('holiday.germanUnity', 'German Unity Day'),
+    reformationDay: () => t('holiday.reformationDay', 'Reformation Day'),
+    allSaints: () => t('holiday.allSaints', 'All Saints’ Day'),
+    repentanceDay: () => t('holiday.repentanceDay', 'Day of Prayer and Repentance'),
+    christmasDay: () => t('holiday.christmasDay', 'Christmas Day'),
+    stStephensDay: () => t('holiday.stStephensDay', 'Boxing Day'),
+  };
+
+  return names[name]?.() ?? name;
+}
+
+/** Whose public holidays this account keeps, and the states it could choose, as last loaded. */
+let myHolidays = null;
+
+/** Loads the state whose public holidays this account keeps into "My account". */
+async function loadMyHolidays() {
+  myHolidays = await api('/me/holidays');
+
+  redrawable('myHolidays', fillMyHolidays);
+}
+
+/** Fills a state picker: the choices before the states, then every state the server offers. */
+function fillRegionSelect(select, regions, chosen, ...before) {
+  select.replaceChildren(...before,
+    ...(regions ?? []).map((code) => el('option', { value: code, text: regionName(code) })));
+  select.value = chosen ?? '';
+}
+
+function fillMyHolidays() {
+  const form = $('#form-my-holidays');
+
+  // Not over a choice somebody has made and not yet saved.
+  if (!form || !myHolidays || beingEdited(form)) return;
+
+  const instance = myHolidays.instanceRegion;
+
+  fillRegionSelect($('#my-holidays'), myHolidays.regions, myHolidays.region,
+    el('option', {
+      value: '',
+      text: fillIn(t('holiday.inherit', 'Follow the installation ({0})'),
+        [instance ? regionName(instance) : t('holiday.noneKept', 'none')]),
+    }),
+    el('option', { value: 'none', text: t('holiday.noRegion', 'No public holidays') }));
+}
+
+function wireHolidays() {
+  for (const [form, endpoint] of [['#form-my-holidays', '/me/holidays'], ['#form-holidays', '/settings/holidays']]) {
+    $(form)?.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      saveForm(event.target,
+        () => api(endpoint, { method: 'PUT', body: JSON.stringify({ region: event.target.elements.region.value }) }),
+        t('holiday.saved', 'Public holidays saved'),
+        refreshAll);
+    });
+  }
 }
 
 /** Loads this year's absences into their card. */
@@ -7493,6 +7645,13 @@ async function loadAdmin() {
   // The clock beside it either way: it follows whatever the picker shows, and
   // what time it is somewhere does not depend on anybody having saved.
   showTimeIn(instanceSelect, $('#instance-timezone-now'), 'UTC');
+
+  const holidays = await api('/settings/holidays');
+
+  if (!beingEdited($('#form-holidays'))) {
+    fillRegionSelect($('#instance-holidays'), holidays.regions, holidays.region,
+      el('option', { value: '', text: t('holiday.noRegion', 'No public holidays') }));
+  }
 
   const ds = await api('/settings/datasource');
   const dsForm = $('#form-datasource');
@@ -15772,6 +15931,7 @@ async function refreshAll() {
   await loadSchedules();
   await loadTemplates();
   await loadAbsences();
+  await loadMyHolidays();
   fillSettingsForm();
 
   document.documentElement.dataset.loaded = 'yes';
@@ -16190,6 +16350,7 @@ async function init() {
     wireTOTP();
     wireCalendar();
     wireAbsences();
+    wireHolidays();
     wireAdmin();
     wireTokens();
     wireDirectorySync();

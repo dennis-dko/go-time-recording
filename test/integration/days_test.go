@@ -18,6 +18,7 @@ type daysOnTheWire struct {
 		Booked  float64 `json:"booked"`
 		Target  float64 `json:"target"`
 		Absence string  `json:"absence"`
+		Holiday string  `json:"holiday"`
 	} `json:"days"`
 }
 

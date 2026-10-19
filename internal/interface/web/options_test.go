@@ -169,3 +169,37 @@ func TestTheAbsencesOfferedAreTheKindsTheServerRecords(t *testing.T) {
 		}
 	}
 }
+
+// Every state the server offers has a name on screen, and so does every public
+// holiday its rules can produce - a picker or a calendar would otherwise show a
+// code or a key. The holidays are collected from the rules themselves, across
+// the years their exceptions hold in, rather than from a second list.
+func TestEveryStateAndEveryHolidayHasAName(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	for _, region := range model.HolidayRegions() {
+		if !strings.Contains(js, "t('region."+region+"', ") {
+			t.Errorf("app.js names no state %q, so a picker offers its code", region)
+		}
+	}
+
+	names := map[string]bool{}
+
+	for _, region := range model.HolidayRegions() {
+		for _, year := range []int{1994, 2017, 2020, 2026} {
+			for _, holiday := range model.HolidaysIn(region, year) {
+				names[holiday.Name] = true
+			}
+		}
+	}
+
+	if len(names) < 20 {
+		t.Fatalf("the rules produced %d holidays, fewer than the twenty they know; this case is not reading them all", len(names))
+	}
+
+	for name := range names {
+		if !strings.Contains(js, "t('holiday."+name+"', ") {
+			t.Errorf("app.js names no holiday %q, so the calendar shows its key", name)
+		}
+	}
+}

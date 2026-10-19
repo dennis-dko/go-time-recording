@@ -18,7 +18,7 @@ const userSelect = `SELECT u.id, u.name, u.email, u.role_id, COALESCE(r.name, ''
 	u.password_hash, u.must_change_password, u.is_system,
 	u.daily_target_hours, u.max_daily_hours,
 	u.totp_secret, u.totp_enabled, u.language, u.is_external, u.external_id, u.timezone,
-	u.tour_seen, u.theme
+	u.tour_seen, u.theme, u.holiday_region
 	FROM users u LEFT JOIN roles r ON r.id = u.role_id`
 
 // UserRepository stores users in a SQL database.
@@ -207,7 +207,7 @@ func (r *UserRepository) scanUser(s scanner) (*model.User, error) {
 		&user.PasswordHash, &user.MustChangePassword, &user.IsSystem,
 		&user.DailyTargetHours, &user.MaxDailyHours,
 		&user.TOTPSecret, &user.TOTPEnabled, &user.Language, &user.IsExternal, &user.ExternalID,
-		&user.Timezone, &user.TourSeen, &user.Theme)
+		&user.Timezone, &user.TourSeen, &user.Theme, &user.HolidayRegion)
 	if err != nil {
 		return nil, err
 	}
@@ -269,6 +269,8 @@ func (r *UserRepository) SetPreference(
 		query = "UPDATE users SET timezone = ? WHERE id = ?"
 	case repository.PreferenceTheme:
 		query = "UPDATE users SET theme = ? WHERE id = ?"
+	case repository.PreferenceHolidayRegion:
+		query = "UPDATE users SET holiday_region = ? WHERE id = ?"
 	default:
 		return fmt.Errorf("unknown user preference %d", field)
 	}
