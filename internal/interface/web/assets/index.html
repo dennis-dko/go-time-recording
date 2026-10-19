@@ -296,6 +296,15 @@
         <button type="button" id="rights-reload" class="secondary" data-i18n="action.reload">Reload</button>
       </div>
     </div>
+
+    <!-- A stopwatch past what one entry can hold, which is almost always one
+         somebody forgot. A banner because it is a state: it stays true on every
+         screen until the clock is booked or discarded. It points at the
+         stopwatch rather than booking from here - one place to read it, one
+         place to act. Filled by drawTimerBanner. -->
+    <div id="timer-banner" class="banner" hidden>
+      <span id="timer-banner-text"></span>
+    </div>
   </div>
 
   <!-- The instance's own announcement, set under Settings. -->
@@ -532,6 +541,13 @@
           <span class="timer-elapsed" id="timer-elapsed" aria-live="off"></span>
         </div>
         <p class="muted" data-i18n="timer.hint">Records the time actually measured, to the second — the entry lands on the day the clock was started, in your own timezone.</p>
+        <!-- When the running clock started, in the reader's zone, with the way to
+             correct it beside it: the clock somebody started late is the one
+             most often wrong, and the start is the thing that is wrong. -->
+        <p class="muted timer-since" id="timer-since" hidden>
+          <span id="timer-since-text"></span>
+          <button type="button" class="link" id="timer-adjust-open" data-i18n="timer.adjustOpen">correct the start</button>
+        </p>
         <div class="grid">
           <label data-i18n="field.projectOptional">Project (optional)
             <select name="timerProjectId" id="timer-project" data-keep></select>
@@ -544,7 +560,39 @@
           <button type="button" id="timer-start" data-i18n="timer.start">Start</button>
           <button type="button" id="timer-stop" hidden data-i18n="timer.stop">Stop and book</button>
           <button type="button" class="secondary" id="timer-discard" hidden data-i18n="timer.discard">Discard</button>
+          <button type="button" class="link" id="timer-end-open" hidden data-i18n="timer.endOpen">stopped earlier?</button>
         </div>
+
+        <!-- Two small forms, one per correction, each shown on its own. Forms
+             rather than buttons because each asks for something before it acts,
+             and Enter in a field should do what the button beside it does. -->
+        <form method="post" id="form-timer-start" class="form timer-form" hidden>
+          <h3 data-i18n="timer.adjustTitle">When did the work start?</h3>
+          <div class="grid">
+            <label data-i18n="field.date">Date<input type="date" name="date" required></label>
+            <label data-i18n="timer.time">Time<input type="time" name="time" required></label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" data-i18n="timer.adjustSave">Correct the start</button>
+            <button type="button" class="link" id="timer-start-cancel" data-i18n="action.cancel">Cancel</button>
+          </div>
+        </form>
+
+        <form method="post" id="form-timer-end" class="form timer-form" hidden>
+          <h3 data-i18n="timer.endTitle">When did the work end?</h3>
+          <!-- Only for a clock past what one entry can hold, which is almost
+               always one somebody forgot: then this form is the only way to book
+               it, and it says why it is open. -->
+          <p class="muted" id="timer-end-forgotten" hidden data-i18n="timer.endForgotten">The clock has been running for longer than one entry can hold - probably since it was forgotten. Say when the work ended and it is booked up to then, on the day it started.</p>
+          <div class="grid">
+            <label data-i18n="field.date">Date<input type="date" name="date" required></label>
+            <label data-i18n="timer.time">Time<input type="time" name="time" required></label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" data-i18n="timer.endSave">Book up to then</button>
+            <button type="button" class="link" id="timer-end-cancel" data-i18n="action.cancel">Cancel</button>
+          </div>
+        </form>
       </div>
 
       <form method="post" id="form-timesheet" class="card form" data-perm="timesheets:write:own">

@@ -1488,6 +1488,18 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Correct when the running clock started",
+        "description": "Body: {\"startedAt\": \"2026-10-19T08:52:00Z\"} for a moment with its offset, or {\"startedAt\": \"2026-10-19T08:52\"} for a time on the wall clock, which is read in the caller's own timezone. For somebody who started work before pressing the button. Earlier or later, but never after now (timerStartInFuture). A start more than a day back makes a clock that can only be stopped with an end time, like any forgotten one; moving it across midnight moves the day the entry will land on. Refused with noTimerRunning when nothing runs.",
+        "responses": {
+          "200": {
+            "description": "The clock with its corrected start"
+          }
+        }
+      },
       "delete": {
         "tags": [
           "me"
@@ -1507,7 +1519,7 @@
           "me"
         ],
         "summary": "Stop the clock and book what it measured",
-        "description": "Creates an ordinary time entry through the same service a typed booking goes through, so it meets the same rules: the daily cap, the project having to exist, be active and be visible, the description length. The duration is the measured one, to the second and rounded to nothing. The entry lands on the day the clock was *started*, in the caller's own timezone - somebody who starts at half past eleven at night and stops after midnight worked that evening.\n\nRefused when the clock has run for less than the smallest bookable duration (discard it instead) or for more than one entry can hold, which is almost always a clock somebody forgot; the measured hours are in that message so it can be booked by hand. A refusal leaves the clock running, so the time is not lost to it.",
+        "description": "Creates an ordinary time entry through the same service a typed booking goes through, so it meets the same rules: the daily cap, the project having to exist, be active and be visible, the description length. The duration is the measured one, to the second and rounded to nothing. The entry lands on the day the clock was *started*, in the caller's own timezone - somebody who starts at half past eleven at night and stops after midnight worked that evening.\n\nBody is optional. Without one the clock is stopped now. {\"endedAt\": \"2026-10-19T17:30\"} books it up to the time the work ended instead - for the clock somebody forgot - read like startedAt on PUT /me/timer: with its offset as given, without one in the caller's timezone. The end may not lie in the future (timerEndInFuture) or before the start (timerEndBeforeStart).\n\nRefused when what was measured is less than the smallest bookable duration (discard it instead) or more than one entry can hold (timerTooLong, with the hours measured); a forgotten clock is booked by saying when the work ended. A refusal leaves the clock running, so the time is not lost to it.",
         "responses": {
           "200": {
             "description": "The entry that was created"

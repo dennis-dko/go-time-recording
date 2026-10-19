@@ -327,6 +327,21 @@ func (r *TimerRepository) Start(_ context.Context, timer *model.RunningTimer) er
 	return nil
 }
 
+func (r *TimerRepository) MoveStart(_ context.Context, userID uint, startedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	timer, running := r.timers[userID]
+	if !running {
+		return nil
+	}
+
+	timer.StartedAt = startedAt
+	r.timers[userID] = timer
+
+	return nil
+}
+
 func (r *TimerRepository) Clear(_ context.Context, userID uint) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

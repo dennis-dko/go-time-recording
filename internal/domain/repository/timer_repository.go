@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
@@ -17,6 +18,11 @@ type TimerRepository interface {
 
 	// Start records a clock, replacing any the user already had.
 	Start(ctx context.Context, timer *model.RunningTimer) error
+
+	// MoveStart changes when the user's clock started, and does nothing when no
+	// clock is running. Never an insert: a clock stopped while its start was being
+	// corrected must stay stopped, or its time would be booked twice.
+	MoveStart(ctx context.Context, userID uint, startedAt time.Time) error
 
 	// Clear removes it, whether it was booked or discarded.
 	Clear(ctx context.Context, userID uint) error

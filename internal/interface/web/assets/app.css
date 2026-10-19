@@ -693,6 +693,14 @@ button.danger:not(.link) {
   font-weight: 600;
 }
 
+/* When the running clock started, with the way to correct it on the same line. */
+.timer-since { align-items: baseline; display: flex; flex-wrap: wrap; gap: 4px 8px; }
+
+/* The clock's corrections sit under its buttons, set apart by a rule: they ask
+   something before they act, and read as a step of their own. */
+.timer-form { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px; }
+.timer-form h3 { font-size: 14px; margin: 0 0 10px; }
+
 /* --- asking before something is destroyed ---
  *
  * Above the sign-in screen (30) so a question is never painted behind it, and

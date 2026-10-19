@@ -1,12 +1,14 @@
 package rest
 
 import (
+	"strings"
 	"time"
 
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // TimerHandler starts and stops the clock for the caller's own day.
@@ -107,6 +109,44 @@ func (h *TimerHandler) Start(c *gofr.Context) (any, error) {
 	return newTimerResponse(timer), nil
 }
 
+// TimerAdjustment corrects when the running clock started.
+type TimerAdjustment struct {
+	// StartedAt is a moment as parseMoment reads it.
+	StartedAt string `json:"startedAt"`
+}
+
+// TimerStopRequest is what stopping may say: when the work ended, or nothing,
+// which means now.
+type TimerStopRequest struct {
+	// EndedAt is a moment as parseMoment reads it.
+	EndedAt string `json:"endedAt"`
+}
+
+// Adjust handles PUT /api/v1/me/timer, which corrects when the clock started.
+func (h *TimerHandler) Adjust(c *gofr.Context) (any, error) {
+	principal, err := h.authz.Require(c, model.PermTimesheetWriteOwn)
+	if err != nil {
+		return nil, err
+	}
+
+	var req TimerAdjustment
+	if err := bind(c, &req); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	startedAt, ok := parseMoment(req.StartedAt, principal.User.TimezoneOf(h.timezone.resolve(c)))
+	if !ok {
+		return nil, toHTTPError(apperror.InvalidFields("startedAt"))
+	}
+
+	timer, err := h.timers.AdjustStart(c, principal.User.ID, startedAt)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return newTimerResponse(timer), nil
+}
+
 // Stop handles POST /api/v1/me/timer/stop, and answers with the entry it created.
 func (h *TimerHandler) Stop(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermTimesheetWriteOwn)
@@ -115,15 +155,64 @@ func (h *TimerHandler) Stop(c *gofr.Context) (any, error) {
 	}
 
 	// The caller's own zone decides the calendar day, so a clock started late in
-	// the evening books on the evening it was started.
+	// the evening books on the evening it was started - and it is the clock an
+	// end time without an offset was read from.
 	zone := principal.User.TimezoneOf(h.timezone.resolve(c))
 
-	created, err := h.timers.Stop(c, principal.User.ID, zone)
+	// No body is the ordinary stop, now. A body that is there has to say
+	// something readable: stopping at the current moment because a written end
+	// time could not be read would book a different duration from the one asked
+	// for, with nothing to show it happened.
+	var endedAt *time.Time
+
+	if raw := requestOf(c); raw != nil && raw.ContentLength != 0 {
+		var req TimerStopRequest
+		if err := bind(c, &req); err != nil {
+			return nil, toHTTPError(err)
+		}
+
+		if strings.TrimSpace(req.EndedAt) != "" {
+			ended, ok := parseMoment(req.EndedAt, zone)
+			if !ok {
+				return nil, toHTTPError(apperror.InvalidFields("endedAt"))
+			}
+
+			endedAt = &ended
+		}
+	}
+
+	created, err := h.timers.Stop(c, principal.User.ID, zone, endedAt)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
 	return newTimesheetResponse(created.Result), nil
+}
+
+// parseMoment reads a moment that a person typed or a program sent.
+//
+// RFC 3339 with its offset is unambiguous and taken as it is. Without an offset it
+// is a time on a wall clock, read in zone - the caller's own - because that is the
+// clock the person typing it was looking at, and a browser cannot turn a time in an
+// arbitrary named zone into an instant by itself.
+func parseMoment(raw string, zone *time.Location) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+
+	if moment, err := time.Parse(time.RFC3339, raw); err == nil {
+		return moment, true
+	}
+
+	if zone == nil {
+		zone = time.UTC
+	}
+
+	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02T15:04"} {
+		if moment, err := time.ParseInLocation(layout, raw, zone); err == nil {
+			return moment, true
+		}
+	}
+
+	return time.Time{}, false
 }
 
 // Discard handles DELETE /api/v1/me/timer.

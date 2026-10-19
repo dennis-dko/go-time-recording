@@ -454,6 +454,7 @@ const FIELD_NAMES = {
   durationHours: 'Hours',
   email: 'Email',
   endDate: 'End',
+  endedAt: 'Ended at',
   expiresInDays: 'Valid for (days)',
   footerText: 'Footer',
   host: 'Host',
@@ -472,6 +473,7 @@ const FIELD_NAMES = {
   sessionIdleMinutes: 'Sign out after inactivity (minutes)',
   sessionLifetimeHours: 'Session lifetime (hours)',
   startDate: 'Start',
+  startedAt: 'Started at',
   status: 'Status',
   syncSchedule: 'Schedule',
   tabTitle: 'Browser tab',
@@ -3772,6 +3774,17 @@ const TRANSLATIONS = {
     'timer.discarded': 'Die Uhr wurde verworfen',
     'timer.discardTitle': 'Gemessene Zeit verwerfen?',
     'timer.discardText': 'Die Uhr wird angehalten und nichts erfasst. Das kann nicht rückgängig gemacht werden.',
+    'timer.since': 'Läuft seit {0}',
+    'timer.time': 'Uhrzeit',
+    'timer.adjustOpen': 'Start korrigieren',
+    'timer.adjustTitle': 'Wann hast du angefangen?',
+    'timer.adjustSave': 'Diesen Start übernehmen',
+    'timer.adjusted': 'Start korrigiert',
+    'timer.endOpen': 'früher aufgehört?',
+    'timer.endTitle': 'Wann hast du aufgehört?',
+    'timer.endForgotten': 'Die Uhr läuft länger, als ein Eintrag fassen kann – vermutlich wurde sie vergessen. Gib an, wann du aufgehört hast, dann wird bis dahin gebucht, auf den Tag, an dem sie gestartet wurde.',
+    'timer.endSave': 'Bis dahin buchen',
+    'timer.banner': 'Eine Stoppuhr läuft seit {0} und damit länger, als ein Eintrag fassen kann. Unter {1} lässt sie sich mit der richtigen Endzeit buchen.',
     'confirm.deleteTitle': 'Endgültig löschen?',
     'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
     'sync.confirmTitle': 'Abgleich ausführen?',
@@ -3942,8 +3955,11 @@ const TRANSLATIONS = {
     'err.systemRoleRightsFixed': 'Die Rechte der Systemrolle „{0}“ lassen sich nicht ändern – weder entziehen noch hinzufügen. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'err.roleGrantsNothing': 'Eine Rolle muss mindestens ein Recht gewähren.',
     'err.targetOverMaximum': 'Das Tagesziel ({0} Std.) darf das Tagesmaximum ({1} Std.) nicht überschreiten.',
-    'err.timerTooLong': 'Die Stoppuhr läuft seit {0} Stunden, mehr als ein Eintrag aufnehmen kann. Bitte von Hand buchen und die Stoppuhr verwerfen.',
+    'err.timerTooLong': 'Die Stoppuhr misst {0} Stunden, mehr als ein Eintrag aufnehmen kann. Gib an, wann du aufgehört hast, oder verwirf die Stoppuhr.',
     'err.timerTooShort': 'Die Stoppuhr läuft kürzer als die kleinste buchbare Dauer. Bitte stattdessen verwerfen.',
+    'err.timerEndBeforeStart': 'Die Endzeit liegt vor dem Start der Stoppuhr. Bitte die Uhrzeit prüfen.',
+    'err.timerEndInFuture': 'Die Endzeit liegt in der Zukunft. Eine Stoppuhr lässt sich nur bis jetzt buchen.',
+    'err.timerStartInFuture': 'Eine Stoppuhr kann nicht in der Zukunft beginnen.',
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
@@ -4035,6 +4051,7 @@ const TRANSLATIONS = {
     'field.defaultRole': 'Standardrolle',
     'field.durationHours': 'Stunden',
     'field.endDate': 'Ende',
+    'field.endedAt': 'Beendet um',
     'field.footerText': 'Fußzeile',
     'field.expiresInDays': 'Läuft ab in (Tagen)',
     'field.host': 'Host',
@@ -4051,6 +4068,7 @@ const TRANSLATIONS = {
     'field.sessionIdleMinutes': 'Abmelden nach Untätigkeit (Minuten)',
     'field.sessionLifetimeHours': 'Sitzungsdauer (Stunden)',
     'field.startDate': 'Start',
+    'field.startedAt': 'Begonnen um',
     'field.syncSchedule': 'Zeitplan',
     'field.theme': 'Erscheinungsbild',
     'field.timezone': 'Zeitzone',
@@ -12450,6 +12468,192 @@ let runningTimer = null;
 let timerTick = null;
 
 /**
+ * Whether the running clock is past what one entry can hold, as last drawn - or
+ * null when that has not been worked out for the clock in hand yet. Kept so the
+ * once-a-second paint acts on the moment it changes rather than on every tick.
+ */
+let timerForgotten = null;
+
+/**
+ * The longest one entry may be, in hours.
+ *
+ * Read from the booking form's own limit rather than written down here again: that
+ * limit is the one TestTheFormLimitsAreTheOnesTheServerEnforces holds to the
+ * server's, so a clock past it is exactly one the server books only with an end.
+ */
+function longestEntryHours() {
+  const max = Number($('#form-timesheet [name=durationHours]')?.max);
+
+  return Number.isFinite(max) && max > 0 ? max : 24;
+}
+
+/**
+ * A moment as the day and the time on the reader's own wall clock - the values a
+ * date field and a time field take.
+ *
+ * In the account's zone rather than the browser's, because a time sent without an
+ * offset is read by the server in that zone, and the two differ for anybody whose
+ * laptop is set to somewhere else.
+ */
+function wallClock(iso) {
+  const at = new Date(iso);
+  const options = {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  };
+
+  let parts;
+
+  try {
+    parts = new Intl.DateTimeFormat('en-CA', {
+      ...options, timeZone: me.user?.effectiveTimezone || undefined,
+    }).formatToParts(at);
+  } catch {
+    // A zone the browser does not know falls back to its own, as todayISO does.
+    parts = new Intl.DateTimeFormat('en-CA', options).formatToParts(at);
+  }
+
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? '';
+
+  return {
+    date: `${part('year')}-${part('month')}-${part('day')}`,
+    time: `${part('hour')}:${part('minute')}`,
+  };
+}
+
+/** The two corrections a running clock offers, one form each. */
+const TIMER_FORMS = ['start', 'end'];
+
+/**
+ * Opens one of the clock's corrections and closes the others, filled from the
+ * clock it corrects.
+ *
+ * focus is off when the form opens by itself - the end form, for a clock found to
+ * be forgotten - because moving somebody's cursor into a form they did not ask for
+ * takes it out of whatever they were typing.
+ */
+function openTimerForm(which, { focus = true } = {}) {
+  for (const name of TIMER_FORMS) {
+    const form = $(`#form-timer-${name}`);
+    if (form) form.hidden = name !== which;
+  }
+
+  const form = $(`#form-timer-${which}`);
+  if (!form || !runningTimer) return;
+
+  if (which === 'start') {
+    const { date, time } = wallClock(runningTimer.startedAt);
+
+    setDateField(form.elements.date, date);
+    form.elements.time.value = time;
+  }
+
+  if (which === 'end') {
+    // A forgotten clock most likely ended on the day it started; one stopped a
+    // little late ended today.
+    setDateField(form.elements.date,
+      timerForgotten ? wallClock(runningTimer.startedAt).date : todayISO());
+    form.elements.time.value = '';
+  }
+
+  if (focus) {
+    form.elements.time.focus();
+  }
+}
+
+function closeTimerForms() {
+  for (const name of TIMER_FORMS) {
+    const form = $(`#form-timer-${name}`);
+    if (form) form.hidden = true;
+  }
+}
+
+/**
+ * The words the clock carries, drawn again whenever the language changes: when it
+ * started, and - for one past what an entry can hold - the banner.
+ */
+function drawTimerWords() {
+  const since = $('#timer-since-text');
+
+  if (since && runningTimer) {
+    since.textContent = fillIn(t('timer.since', 'Running since {0}'),
+      [fmtMoment(runningTimer.startedAt)]);
+  }
+
+  drawTimerBanner();
+}
+
+/**
+ * The notice that a clock has been forgotten.
+ *
+ * A banner, because it is a state that stays true on every screen until the clock
+ * is booked or discarded - and somebody looking at the calendar is the one who
+ * most needs to hear it. It books nothing itself: the time entries named in the
+ * sentence are where that happens, one place to read it and one place to act.
+ */
+function drawTimerBanner() {
+  const banner = $('#timer-banner');
+  if (!banner) return;
+
+  const show = runningTimer !== null && timerForgotten === true;
+  banner.hidden = !show;
+
+  if (!show) return;
+
+  const text = $('#timer-banner-text');
+  text.textContent = '';
+
+  // Split on the placeholder, so where the link falls is the translator's
+  // business - as with the restart banner.
+  const since = fmtMoment(runningTimer.startedAt);
+  const [before, after] = t('timer.banner',
+    'A stopwatch has been running since {0}, longer than one entry can hold. '
+    + 'Under {1} it can be booked up to the time the work really ended.').split('{1}');
+
+  text.append(fillIn(before ?? '', [since]));
+
+  const link = el('button', {
+    type: 'button',
+    class: 'link-button',
+    id: 'timer-banner-open',
+    text: t('nav.timesheets', 'Time entries'),
+  });
+
+  link.addEventListener('click', openTheStopwatch);
+  text.append(link);
+
+  text.append(fillIn(after ?? '', [since]));
+}
+
+/** Takes whoever pressed the banner's link to the clock it is about. */
+function openTheStopwatch() {
+  switchView('timesheets');
+
+  const card = $('#timer-card');
+  if (card) card.scrollIntoView({ block: 'center' });
+}
+
+/**
+ * Acts on the clock having crossed into, or out of, being longer than an entry.
+ *
+ * Past it, stopping now is taken away - the server would refuse it - and the
+ * end form opens by itself, saying why. It is only opened when it
+ * is not already open, so a reload while somebody is typing an end time leaves
+ * what they typed alone.
+ */
+function applyTimerForgotten() {
+  const running = runningTimer !== null;
+  const forgotten = running && timerForgotten === true;
+
+  $('#timer-stop').hidden = !running || forgotten;
+  $('#timer-end-forgotten').hidden = !forgotten;
+
+  if (forgotten && $('#form-timer-end').hidden) openTimerForm('end', { focus: false });
+
+  drawTimerBanner();
+}
+
+/**
  * Renders the clock's state.
  *
  * The elapsed time is counted here rather than polled, because a request per
@@ -12471,6 +12675,8 @@ function renderTimer() {
   $('#timer-start').hidden = running;
   $('#timer-stop').hidden = !running;
   $('#timer-discard').hidden = !running;
+  $('#timer-end-open').hidden = !running;
+  $('#timer-since').hidden = !running;
   $('#timer-project').disabled = running;
   $('#timer-description').disabled = running;
 
@@ -12482,11 +12688,19 @@ function renderTimer() {
       timerTick = null;
     }
 
+    timerForgotten = null;
+    closeTimerForms();
+    stopRedrawing('timerWords');
+    applyTimerForgotten();
+
     return;
   }
 
+  redrawable('timerWords', drawTimerWords);
+
   const started = new Date(runningTimer.startedAt).getTime();
   const offset = runningTimer.clockOffset ?? 0;
+  const longest = longestEntryHours() * 3600;
 
   const paint = () => {
     const seconds = Math.max(0, Math.floor((Date.now() + offset - started) / 1000));
@@ -12495,6 +12709,15 @@ function renderTimer() {
     const ss = String(seconds % 60).padStart(2, '0');
 
     $('#timer-elapsed').textContent = `${hh}:${mm}:${ss}`;
+
+    // Acted on when it changes, which is once: on the first paint of a clock,
+    // and again if one runs on past the limit while the page is open.
+    const forgotten = seconds > longest;
+
+    if (forgotten !== timerForgotten) {
+      timerForgotten = forgotten;
+      applyTimerForgotten();
+    }
   };
 
   paint();
@@ -12515,6 +12738,10 @@ async function loadTimer() {
         - Date.now(),
     }
     : null;
+
+  // Worked out again for the clock just read: a correction or a switch can have
+  // moved it to either side of the limit.
+  timerForgotten = null;
 
   // The project it was started with, so stopping books what was chosen - the
   // select is disabled while it runs, and this is what it shows.
@@ -12569,6 +12796,39 @@ function wireTimer() {
       () => api('/me/timer', { method: 'DELETE' }),
       t('timer.discarded', 'The clock was discarded'),
       loadTimer);
+  });
+
+  $('#timer-adjust-open').addEventListener('click', () => openTimerForm('start'));
+  $('#timer-end-open').addEventListener('click', () => openTimerForm('end'));
+
+  for (const name of TIMER_FORMS) {
+    $(`#timer-${name}-cancel`).addEventListener('click', closeTimerForms);
+  }
+
+  // A time without an offset, read by the server in this account's zone - the one
+  // the fields were filled in.
+  const moment = (form) => `${form.elements.date.value}T${form.elements.time.value}`;
+
+  $('#form-timer-start').addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    const startedAt = moment(event.currentTarget);
+
+    mutate(
+      () => api('/me/timer', { method: 'PUT', body: JSON.stringify({ startedAt }) }),
+      t('timer.adjusted', 'Start corrected'),
+      async () => { closeTimerForms(); await loadTimer(); });
+  });
+
+  $('#form-timer-end').addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    const endedAt = moment(event.currentTarget);
+
+    mutate(
+      () => api('/me/timer/stop', { method: 'POST', body: JSON.stringify({ endedAt }) }),
+      t('msg.booked', 'Time booked'),
+      async () => { closeTimerForms(); await loadTimer(); await reloadTimeViews(); });
   });
 }
 
