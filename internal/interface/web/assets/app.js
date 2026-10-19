@@ -4941,7 +4941,7 @@ async function loadUsers() {
     }
 
     return el('tr', { class: me.user && u.id === me.user.id ? 'self' : '' },
-      el('td', { text: u.name }),
+      el('td', { class: 'text', text: u.name }),
       el('td', {}, ...foldableAddress(u.email)),
       roleCell,
       // Where the account is kept. It decides what may be done to it here, and
@@ -5129,11 +5129,11 @@ async function loadRoles() {
       // The title, and the identifier under it for the three that have both: the
       // identifier is what the API takes and what the directory configuration stores,
       // so the screen that administers roles is the one place it has to stay visible.
-      el('td', {}, el('span', { text: roleTitle(role.name) }),
+      el('td', { class: 'text' }, el('span', { text: roleTitle(role.name) }),
         ...(roleTitle(role.name) === role.name
           ? []
           : [el('span', { class: 'muted', text: ` ${role.name}` })])),
-      el('td', { text: roleDescription(role) || '–' }),
+      el('td', { class: 'text', text: roleDescription(role) || '–' }),
       el('td', { class: 'num', text: String(role.permissions.length) }),
       actions,
     );
@@ -5403,7 +5403,7 @@ async function loadProjects() {
 
     const period = `${fmtDate(p.startDate)} – ${p.endDate ? fmtDate(p.endDate) : t('project.open', 'open')}`;
 
-    const name = el('td', { text: p.name });
+    const name = el('td', { class: 'text', text: p.name });
     // No "this one is yours" shade: they all are, and a table shaded from top to
     // bottom says nothing that an unshaded one does not.
     return el('tr', {},
@@ -5411,7 +5411,7 @@ async function loadProjects() {
       // A project needs no period, so the column stays quiet when there is none:
       // it is one person's way of organising their hours, not a plan.
       el('td', { class: p.startDate ? '' : 'empty', text: p.startDate ? period : '–' }),
-      el('td', { text: p.description || '–' }),
+      el('td', { class: 'text', text: p.description || '–' }),
       el('td', {}, statusBadge(p.status)),
       actions,
     );
@@ -5675,11 +5675,11 @@ async function loadTimesheets(more = false) {
     return el('tr', {},
       el('td', { text: fmtDate(entry.date) }),
       el('td', {
-        class: entry.projectId ? '' : 'empty',
+        class: entry.projectId ? 'text' : 'text empty',
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project'),
       }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description || '–' }),
+      el('td', { class: 'text', text: entry.description || '–' }),
       actions,
     );
   });
@@ -5907,9 +5907,9 @@ function showCalendarDay(iso, entries) {
 
   const rows = entries.map((entry) => {
     const row = el('tr', {},
-      el('td', { text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
+      el('td', { class: 'text', text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { text: entry.description || '–' }),
+      el('td', { class: 'text', text: entry.description || '–' }),
       timesheetActions(entry),
     );
 
@@ -5993,7 +5993,7 @@ async function loadTokens() {
   if (shown && !tokens.some((token) => String(token.id) === shown)) forgetTheTokenValue();
 
   const rows = tokens.map((token) => el('tr', { class: token.expired ? 'empty' : '' },
-    el('td', { text: token.name }),
+    el('td', { class: 'text', text: token.name }),
     el('td', {}, el('code', { text: `${token.prefix}…` })),
     el('td', { text: fmtMoment(token.createdAt) }),
     el('td', { text: token.expiresAt ? fmtMoment(token.expiresAt) : t('token.never', 'unlimited') }),
@@ -7047,7 +7047,7 @@ function wireDirectorySync() {
 
   const draw = (report) => {
     const rows = report.candidates.map((c) => el('tr', {},
-      el('td', { text: c.name }),
+      el('td', { class: 'text', text: c.name }),
       el('td', { text: c.email }),
       el('td', { class: `num ${c.timesheets > 0 ? 'minus' : ''}`, text: String(c.timesheets) }),
     ));
@@ -11540,10 +11540,10 @@ function renderWorkbookPreview(result) {
   const rows = (result?.rows ?? []).map((row) => el('tr', { class: row.problem ? 'rejected' : '' },
     el('td', { class: 'num', text: String(row.row) }),
     el('td', { text: row.date ? fmtDate(row.date) : '–' }),
-    el('td', { text: row.user || '–' }),
-    el('td', { text: row.project || t('ts.noProject', 'No project') }),
+    el('td', { class: 'text', text: row.user || '–' }),
+    el('td', { class: 'text', text: row.project || t('ts.noProject', 'No project') }),
     el('td', { class: 'num', text: row.hours ? fmtNumber(row.hours) : '–' }),
-    el('td', { text: row.description || '–' }),
+    el('td', { class: 'text', text: row.description || '–' }),
     el('td', { class: row.problem ? 'minus' : 'muted', text: rowProblem(row) || '✓' }),
   ));
 
@@ -13045,7 +13045,7 @@ async function loadPasskeys() {
   const passkeys = (await api('/me/passkeys'))?.items ?? [];
 
   const rows = passkeys.map((passkey) => el('tr', {},
-    el('td', { text: passkey.name }),
+    el('td', { class: 'text', text: passkey.name }),
     el('td', { text: fmtMoment(passkey.createdAt) }),
     el('td', {
       text: passkey.lastUsedAt ? fmtMoment(passkey.lastUsedAt) : t('passkey.never', 'never'),

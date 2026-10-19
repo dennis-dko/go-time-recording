@@ -769,6 +769,28 @@ td.num, td.pick { white-space: nowrap; }
    zurücksetzen" broken over two lines reads as two buttons. */
 td.actions > * { white-space: nowrap; }
 
+/* The row's actions stay at the card's right-hand edge while a table too wide for
+   it scrolls, and the other columns pass beneath them. On a telephone every
+   table with actions was that wide, and edit, delete and reset a password lay
+   past the edge, reached by a swipe nothing announced. Opaque, in the card's own
+   colour, so nothing passing beneath shows through - and in the row's tint where
+   the row has one, mixed into the card's colour for the same reason. Where the
+   table fits, sticking changes nothing. */
+td.actions,
+th.actions {
+  background: var(--surface);
+  position: sticky;
+  right: 0;
+}
+
+tbody tr.clickable:hover td.actions { background: var(--bg); }
+tr.self td.actions { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+
+/* Text keeps a width of its own while the table around it scrolls. Folded to its
+   longest word, a long name stood as a column of seven single words - beside
+   actions that were out of sight anyway. */
+td.text { min-width: 10em; }
+
 th { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; }
 
 td.num, th.num { text-align: right; }
