@@ -1108,11 +1108,12 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   white-space: nowrap;
 }
 
-/* Where the bar has room to spare - measured from 1,440 pixels, a long name and a
-   one-word title kept the bar at one row at 18em - an ordinary account is no
-   longer cut: at 12em "Erika · Benutzer & Administrator" lost its last letters
-   even at 2,560 pixels. */
-@media (min-width: 1440px) {
+/* Where the bar has room to spare an ordinary account is no longer cut: at 12em
+   "Erika · Benutzer & Administrator" lost its last letters even at 2,560 pixels.
+   From 1,800 rather than from 1,440, where the bar had room in this machine's
+   face: in the CI runner's wider one the right-hand column then needed more than
+   its half at 1,600, and the title stood 25 pixels left of the middle. */
+@media (min-width: 1800px) {
   .who { max-width: 20em; }
 }
 .who strong { color: var(--text); font-weight: 600; }

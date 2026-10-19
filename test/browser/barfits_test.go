@@ -264,8 +264,9 @@ func TestTheAccountStaysOneLineOnTheBar(t *testing.T) {
 // The account is held to one line and cut short where the bar has no room for it
 // - at 12em, which is what keeps a laptop's bar from growing. Held to 12em
 // everywhere, it was cut on a wide screen as well, where the room was plainly
-// there: "Erika · Benutzer & Admini…" at 1,920 and at 2,560 pixels. From 1,440
-// pixels, where a measured bar has room to spare, it may take 20em.
+// there: "Erika · Benutzer & Admini…" at 1,920 and at 2,560 pixels. From 1,800
+// pixels it may take 20em - not from 1,440, where the room was there in this
+// machine's face and not in the CI runner's, and the title left the middle.
 func TestWhereTheBarHasRoomTheAccountIsShownWhole(t *testing.T) {
 	t.Parallel()
 
@@ -280,7 +281,7 @@ func TestWhereTheBarHasRoomTheAccountIsShownWhole(t *testing.T) {
 	p.settleWelcome()
 	p.chooseLanguage("de")
 
-	for _, width := range []int64{1920, 1600, 1440} {
+	for _, width := range []int64{2560, 1920} {
 		p.run(fmt.Sprintf("%dpx", width), chromedp.EmulateViewport(width, 900))
 
 		var who struct {
