@@ -791,6 +791,15 @@ tr.self td.actions { background: color-mix(in srgb, var(--accent) 7%, var(--surf
    actions that were out of sight anyway. */
 td.text { min-width: 10em; }
 
+/* Where tables scroll beneath the pinned actions, their edge is drawn. Without
+   it a name passing underneath ended mid-letter - "Alexandra vo" - and read as a
+   typing error rather than as text that goes on. Narrow windows only: a wide
+   one's tables fit, and keep the plain column they had. */
+@media (max-width: 900px) {
+  td.actions,
+  th.actions { box-shadow: -10px 0 8px -8px rgb(16 24 40 / 22%); }
+}
+
 th { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; }
 
 td.num, th.num { text-align: right; }

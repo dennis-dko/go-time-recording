@@ -241,4 +241,22 @@ func TestOnAPhoneATableKeepsItsActionsInSight(t *testing.T) {
 			}
 		}
 	}
+
+	// And the edge of the pinned actions is drawn where tables scroll beneath them.
+	// Without it a name passing underneath ended mid-letter - "Alexandra vo" - and
+	// read as a typing error rather than as text that goes on. A wide screen, where
+	// the tables fit, keeps the plain column it had.
+	for _, edge := range []struct {
+		w, h  int64
+		drawn bool
+	}{{390, 844, true}, {1600, 900, false}} {
+		var shadow string
+
+		p.run(fmt.Sprintf("%dx%d", edge.w, edge.h), chromedp.EmulateViewport(edge.w, edge.h),
+			chromedp.Evaluate(`getComputedStyle(document.querySelector('#table-users tbody td.actions')).boxShadow`, &shadow))
+
+		if drawn := shadow != "none"; drawn != edge.drawn {
+			t.Errorf("at %dx%d the pinned actions' edge is %q, where it should be drawn: %t", edge.w, edge.h, shadow, edge.drawn)
+		}
+	}
 }
