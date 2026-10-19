@@ -102,9 +102,9 @@ func TestTheWeekIsBookedOnTheGrid(t *testing.T) {
 		return len(hours) == 1 && hours[0] == 3
 	})
 
-	if booked := p.text("#table-week tfoot tr:first-child"); !strings.Contains(booked, "3") {
-		t.Errorf("the booked row reads %q, want the three hours", booked)
-	}
+	// Waited for rather than read once: the server holding the number is not the
+	// grid having been drawn from it, which is a request later.
+	p.waitForText("#table-week tfoot tr:first-child", "3")
 
 	// A second entry on the same day: the cell can no longer say which of the two
 	// a new number would mean, so it becomes the way to them.

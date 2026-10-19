@@ -4,7 +4,6 @@ package browser
 
 import (
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -108,7 +107,7 @@ func TestEntriesWithoutAProjectAreAssignedTogether(t *testing.T) {
 		t.Errorf("the project holds %d entries, want the three assigned and the one booked on it", onThePortal)
 	}
 
-	if news := p.text(".toast-note"); !strings.Contains(news, "3 assigned to Portal") {
-		t.Errorf("the notice reads %q, want how many were assigned and to what", news)
-	}
+	// Waited for: the server holding the last transfer comes a moment before the
+	// page has its answer and says so.
+	p.waitForText(".toast-note", "3 assigned to Portal")
 }
