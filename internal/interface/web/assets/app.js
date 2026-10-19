@@ -5665,11 +5665,14 @@ function timesheetActions(entry) {
  * which is what booking an entry and switching to the calendar used to do.
  */
 async function reloadTimeViews() {
+  // The grid first and only while it is on screen - it is drawn again on arrival
+  // anyway. First, because it is usually what was just typed into: until it is
+  // drawn again, a cell just booked has no entry behind it, and a number typed
+  // into it in the meantime would book a second one.
+  if (!$('#view-week')?.hidden) await loadWeekGrid();
+
   await loadTimesheets();
   await loadCalendar();
-
-  // The grid only while it is on screen: it is drawn again on arrival anyway.
-  if (!$('#view-week')?.hidden) await loadWeekGrid();
 }
 
 /**
@@ -5869,6 +5872,12 @@ function drawWeekGrid() {
     ? { cell: focused.dataset.cell, value: focused.value }
     : (focused ? { cell: focused.dataset.cell } : null);
 
+  // And put back to what the server holds before it goes. Taken off the page with
+  // the focus in it, it fires its change on the way out, and booked what had been
+  // typed so far - while the field drawn in its place carried the same digits on
+  // and booked the whole number beside it: 1 and 1.5, for 1.5 typed once.
+  if (typing?.value !== undefined) focused.value = focused.dataset.value;
+
   // The rows: every project with something booked this week, every row added by
   // hand, the hours without a project last.
   const rows = new Map();
@@ -5992,8 +6001,21 @@ function drawWeekGrid() {
     const again = $(`#table-week input[data-cell="${CSS.escape(typing.cell)}"]`);
 
     if (again) {
-      if (typing.value !== undefined) again.value = typing.value;
+      // Focused first and filled after, because a field takes the focus with the
+      // caret in front of what it holds, and the next digit typed went first. A
+      // field nobody had typed into yet is selected whole, as the Tab that
+      // reached it left it.
       again.focus();
+
+      if (typing.value !== undefined) {
+        again.value = typing.value;
+        // A number the page put there is not one the browser reports a change
+        // for when the field is left, so it was shown and never booked - see the
+        // focusout in wireWeekGrid.
+        again.dataset.carried = '';
+      } else {
+        again.select();
+      }
     }
   }
 }
@@ -6017,11 +6039,8 @@ function showTheDaysEntries(date, key) {
 }
 
 /**
- * Saves one cell: books a new entry, corrects the one behind it, or takes it back.
- *
- * Whatever happens, the grid is drawn again from the server afterwards - after a
- * refusal as well, so a number the server did not take does not stay on screen
- * looking accepted.
+ * Saves one cell: books a new entry, corrects the one behind it, or takes it back,
+ * and draws the grid again whatever the server answered - see saveWeekCell.
  */
 async function commitWeekCell(input) {
   const typed = input.value.trim();
@@ -6048,9 +6067,8 @@ async function commitWeekCell(input) {
       return;
     }
 
-    await mutate(() => api(`/timesheets/${id}`, { method: 'DELETE' }),
-      t('week.removed', 'Entry taken back'), reloadTimeViews);
-    await loadWeekGrid();
+    await saveWeekCell(() => api(`/timesheets/${id}`, { method: 'DELETE' }),
+      t('week.removed', 'Entry taken back'));
 
     return;
   }
@@ -6070,8 +6088,26 @@ async function commitWeekCell(input) {
       }),
     });
 
-  await mutate(call, t('msg.booked', 'Time booked'), reloadTimeViews);
-  await loadWeekGrid();
+  await saveWeekCell(call, t('msg.booked', 'Time booked'));
+}
+
+/**
+ * Makes one cell's change and draws the grid again once, from the server: with
+ * everything else after a save, and on its own after a refusal, so a number the
+ * server did not take does not stay on screen looking accepted.
+ *
+ * Once. It was drawn after the save and then again, and the second redraw landed
+ * under whatever was being typed into the next cell by then.
+ */
+async function saveWeekCell(call, message) {
+  let saved = false;
+
+  await mutate(call, message, async () => {
+    saved = true;
+    await reloadTimeViews();
+  });
+
+  if (!saved) await loadWeekGrid();
 }
 
 /** Forgets the week the grid showed, for an account that has signed out. */
@@ -6092,7 +6128,21 @@ function wireWeekGrid() {
   // not on every keystroke, which would book "1" on the way to typing "1.5".
   table.addEventListener('change', (event) => {
     const input = event.target.closest('input[data-cell]');
-    if (input) commitWeekCell(input);
+    if (!input) return;
+
+    delete input.dataset.carried;
+    commitWeekCell(input);
+  });
+
+  // Leaving a field the grid was drawn again under books what it carries. More
+  // typed after the redraw fires the change above first, which takes the mark
+  // off, so the number is booked once either way.
+  table.addEventListener('focusout', (event) => {
+    const input = event.target.closest('input[data-cell][data-carried]');
+    if (!input) return;
+
+    delete input.dataset.carried;
+    commitWeekCell(input);
   });
 
   const step = (weeks) => {
