@@ -2776,6 +2776,49 @@ input[readonly]:focus, textarea[readonly]:focus {
 
 .welcome-recent-list { list-style: none; margin: 8px 0 0; padding: 0; }
 
+/* This week, in the card above the entries. A meter for today, and a bar per day
+   in which the pale track is what the day asks and the fill what was booked - all
+   seven on one scale, so a day can be compared with the next. */
+.welcome-week-today { font-weight: 500; margin: 10px 0 6px; }
+
+.meter {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.meter .seg { background: var(--accent); display: block; height: 100%; width: 0; }
+
+.week-bars {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.week-day { display: grid; gap: 4px; justify-items: center; }
+
+.week-column { height: 56px; position: relative; width: 100%; }
+
+.week-track,
+.week-fill {
+  border-radius: 3px 3px 0 0;
+  bottom: 0;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  width: 18px;
+}
+
+.week-track { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); min-height: 2px; }
+.week-fill { background: var(--accent); }
+
+.week-name { color: var(--muted); font-size: 12px; }
+.week-day.today .week-name { color: var(--text); font-weight: 600; }
+
 /* Three columns: when, what, how long. The date and the hours are given fixed
    room so five rows line up on both edges and can be read down rather than
    across - and the middle takes whatever is left, because a project name is the

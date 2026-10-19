@@ -451,6 +451,11 @@ and 80px on a 360px one, on every screen in the application. Behind the burger
 they are a list, one per line, which says how many there are. It closes on
 choosing a point, on Escape, and on a press anywhere else.
 
+**The greeting shows this week** to somebody who books time: today's hours
+against today's target with a running clock counted in, the week's total, and a
+bar per day drawn against that day's own target - the days come from
+`/me/days`, which answers every day of a range, the empty ones included.
+
 **The greeting shows the last few entries** to somebody who books time — a
 bounded ninety-day window rather than a whole history, because a greeting has no
 business downloading three years of a working life to show five lines of it. The

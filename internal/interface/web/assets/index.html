@@ -516,6 +516,23 @@
         </div>
       </div>
 
+      <!-- This week against what it asks, for somebody who books time here:
+           today with the running clock counted in, the week's total, and a bar
+           per day drawn against that day's own target. The question somebody
+           opening the application has most often, which the sentence about
+           today above only half answered. Hidden for an account that records
+           no time, like the entries below. -->
+      <section class="card welcome-week" id="welcome-week" hidden
+               aria-labelledby="welcome-week-title">
+        <div class="welcome-recent-head">
+          <h3 id="welcome-week-title" data-i18n="welcome.week">This week</h3>
+          <span class="muted" id="welcome-week-total"></span>
+        </div>
+        <p class="welcome-week-today" id="welcome-week-today"></p>
+        <div class="meter" id="welcome-today-meter"><span class="seg taken"></span></div>
+        <ol class="week-bars" id="welcome-week-bars"></ol>
+      </section>
+
       <!-- The last few entries, for somebody who books time here. A greeting
            that says nothing about the work is a greeting nobody reads twice;
            this is the one thing the person in front of it already knows the

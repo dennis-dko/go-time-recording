@@ -3968,6 +3968,7 @@ const TRANSLATIONS = {
     'err.projectHasEntries': 'Das Projekt hat noch {0} Zeiteinträge und kann nicht gelöscht werden.',
     'err.pageSizeTooLarge': 'Eine Seite darf höchstens {0} Einträge enthalten.',
     'err.rangeInverted': '„bis“ darf nicht vor „von“ liegen.',
+    'err.rangeTooLong': 'Ein Zeitraum darf höchstens {0} Tage umfassen.',
     'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',
     'err.roleStillAssigned': 'Rolle „{0}“ ist noch {1} Benutzer(n) zugewiesen.',
     'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
@@ -4059,6 +4060,11 @@ const TRANSLATIONS = {
     'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Unter „Zeiteinträge“ stoppen, um die Zeit zu buchen.',
     'welcome.todayHours': 'Heute bislang {0} gebucht.',
     'welcome.todayNothing': 'Heute noch nichts gebucht.',
+    'welcome.week': 'Diese Woche',
+    'welcome.weekTotal': '{0} von {1}',
+    'welcome.weekToday': 'Heute {0} von {1}',
+    'welcome.weekRemaining': 'noch {0}',
+    'welcome.weekDay': '{0}: {1} von {2}',
     'welcome.recent': 'Deine letzten Einträge',
     'welcome.recentAll': 'Alle Zeiteinträge',
     'welcome.recentNone': 'In den letzten 90 Tagen wurde nichts erfasst.',
@@ -9186,7 +9192,111 @@ async function renderWelcome() {
 
   // Not awaited with the rest: the greeting is readable without it, and holding
   // the screen for a list of five lines would be holding it for a courtesy.
+  renderWeekAtAGlance();
   renderRecentEntries();
+}
+
+/**
+ * This week on the greeting: today's hours against today's target, the week's
+ * against the week's, and a bar per day.
+ *
+ * Today counts the running clock in, measured to now, if it started today - that
+ * is time being worked rather than time not yet booked, and leaving it out makes
+ * the morning look idle to the person in the middle of it. A clock started on
+ * another day belongs to that day, as its booking will.
+ *
+ * Only for somebody who records time, like the entries beside it.
+ */
+async function renderWeekAtAGlance() {
+  const card = $('#welcome-week');
+  if (!card) return;
+
+  if (!can('timesheets:read:own')) {
+    card.hidden = true;
+
+    return;
+  }
+
+  let answer;
+  let clock = null;
+
+  try {
+    answer = await api('/me/days');
+
+    if (can('timesheets:write:own')) {
+      const timer = await api('/me/timer');
+      if (timer?.running) clock = timer;
+    }
+  } catch {
+    // A courtesy, like the rest of the greeting: the screens behind it report
+    // anything that is really wrong.
+    card.hidden = true;
+
+    return;
+  }
+
+  const today = todayISO();
+  const days = (answer?.days ?? []).map((daily) => ({ ...daily }));
+
+  if (clock && wallClock(clock.startedAt).date === today) {
+    const running = days.find((daily) => daily.date === today);
+    if (running) running.booked += clock.elapsedHours ?? 0;
+  }
+
+  card.hidden = false;
+  redrawable('welcomeWeek', () => drawWeekAtAGlance(days, today));
+}
+
+/** Draws the week, in the language now in force. */
+function drawWeekAtAGlance(days, today) {
+  const booked = days.reduce((sum, daily) => sum + daily.booked, 0);
+  const target = days.reduce((sum, daily) => sum + daily.target, 0);
+
+  $('#welcome-week-total').textContent = fillIn(t('welcome.weekTotal', '{0} of {1}'),
+    [fmtHours(booked), fmtHours(target)]);
+
+  const now = days.find((daily) => daily.date === today);
+  const line = $('#welcome-week-today');
+  const meter = $('#welcome-today-meter');
+
+  if (now) {
+    const left = now.target - now.booked;
+
+    line.textContent = fillIn(t('welcome.weekToday', 'Today {0} of {1}'),
+      [fmtHours(now.booked), fmtHours(now.target)])
+      + (left > 0.005 ? ` - ${fillIn(t('welcome.weekRemaining', '{0} still to go'), [fmtHours(left)])}` : '');
+
+    meter.hidden = !(now.target > 0);
+    meter.querySelector('.seg').style.width = `${Math.min(100, (now.booked / (now.target || 1)) * 100)}%`;
+  } else {
+    line.textContent = '';
+    meter.hidden = true;
+  }
+
+  // One scale for the seven, so a day's bar can be compared with the next one:
+  // the longest day there is, booked or asked, and never less than eight hours.
+  const tallest = Math.max(8, ...days.map((daily) => Math.max(daily.booked, daily.target)));
+  const names = weekdayNames();
+
+  const bars = days.map((daily, i) => {
+    const track = el('span', { class: 'week-track' });
+    const fill = el('span', { class: 'week-fill' });
+
+    track.style.height = `${(daily.target / tallest) * 100}%`;
+    fill.style.height = `${(Math.min(daily.booked, tallest) / tallest) * 100}%`;
+
+    const name = names[i] ?? '';
+
+    return el('li', {
+      class: daily.date === today ? 'week-day today' : 'week-day',
+      'aria-label': fillIn(t('welcome.weekDay', '{0}: {1} of {2}'),
+        [name, fmtHours(daily.booked), fmtHours(daily.target)]),
+    },
+    el('span', { class: 'week-column' }, track, fill),
+    el('span', { class: 'week-name', text: name, 'aria-hidden': 'true' }));
+  });
+
+  $('#welcome-week-bars').replaceChildren(...bars);
 }
 
 /** How many entries the greeting shows, and how far back it looks for them. */

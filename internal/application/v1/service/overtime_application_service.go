@@ -33,6 +33,17 @@ type OvertimeBalance struct {
 	TotalBalance float64
 }
 
+// Day is one calendar day of somebody's: what was booked on it and what it asked.
+type Day struct {
+	Date   time.Time
+	Booked float64
+	Target float64
+}
+
+// MaxDays is the longest range Days answers: fifty-three weeks, which is what a
+// year drawn as whole weeks from Monday to Sunday can span.
+const MaxDays = 371
+
 // OvertimeService computes overtime balances.
 type OvertimeService struct {
 	timesheets repository.TimesheetRepository
@@ -152,4 +163,67 @@ func (s *OvertimeService) Balance(
 	balance.TotalBalance = settled(balance.TotalBalance)
 
 	return balance, nil
+}
+
+// Days returns every day of a range with what was booked on it and what it asked.
+//
+// Every day, the empty ones included, which is the difference from Balance: the
+// balance counts only the days somebody worked, so that a day off does not stand
+// as a shortfall, while a picture of a week has to show the Tuesday nobody booked
+// on as well. What a day asks is the week in force on it, as in the balance.
+//
+// Bounded to MaxDays, so the range is a picture's worth and not a history's.
+func (s *OvertimeService) Days(ctx context.Context, userID uint, from, to time.Time) ([]Day, error) {
+	if userID == 0 {
+		return nil, apperror.InvalidFields("userId")
+	}
+
+	first, last := model.CalendarDay(from), model.CalendarDay(to)
+
+	if last.Before(first) {
+		return nil, apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted")
+	}
+
+	if span := int(last.Sub(first).Hours()/24) + 1; span > MaxDays {
+		return nil, apperror.Invalidf("a range of days may span at most %d days", MaxDays).
+			WithCode("rangeTooLong", MaxDays)
+	}
+
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	schedules, err := s.schedules.ForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := s.timesheets.GetByFilter(ctx, repository.TimesheetFilter{
+		UserID:    userID,
+		StartDate: &first,
+		EndDate:   &last,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	booked := make(map[time.Time]float64)
+	for _, entry := range entries {
+		booked[model.CalendarDay(entry.Date)] += entry.DurationHours
+	}
+
+	before := model.DefaultWeek(user.EffectiveDailyTarget())
+
+	var days []Day
+
+	for d := first; !d.After(last); d = d.AddDate(0, 0, 1) {
+		days = append(days, Day{
+			Date:   d,
+			Booked: settled(booked[d]),
+			Target: model.TargetOn(d, schedules, before),
+		})
+	}
+
+	return days, nil
 }
