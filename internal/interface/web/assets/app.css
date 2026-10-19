@@ -2561,6 +2561,18 @@ a.tab:hover {
 
   .topbar.nav-open #tabs { display: flex; }
 
+  /* Never taller than the window while it is open, and what does not fit scrolls
+     inside it. The bar stays at the top of the window, so an open menu taller
+     than the window stood still while the page passed underneath, and its last
+     points came up only at the very end of the page. dvh where it is known, so a
+     telephone's own toolbar is not counted as room. */
+  .topbar.nav-open {
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
   .topbar.nav-open .tab {
     justify-content: flex-start;
     padding: 10px 12px;
