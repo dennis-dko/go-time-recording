@@ -787,9 +787,10 @@ tbody tr.clickable:hover td.actions { background: var(--bg); }
 tr.self td.actions { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
 
 /* Text keeps a width of its own while the table around it scrolls. Folded to its
-   longest word, a long name stood as a column of seven single words - beside
-   actions that were out of sight anyway. */
-td.text { min-width: 10em; }
+   longest word, a long name stood as a column of single words - beside actions
+   that were out of sight anyway. 9em rather than 10: in the CI runner's wider
+   face 10em made the accounts table four pixels wider than a desktop's card. */
+td.text { min-width: 9em; }
 
 /* Where tables scroll beneath the pinned actions, their edge is drawn. Without
    it a name passing underneath ended mid-letter - "Alexandra vo" - and read as a
