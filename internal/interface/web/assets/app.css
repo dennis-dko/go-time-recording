@@ -769,6 +769,38 @@ td.num, td.pick { white-space: nowrap; }
    zurücksetzen" broken over two lines reads as two buttons. */
 td.actions > * { white-space: nowrap; }
 
+/* The row's actions stay at the card's right-hand edge while a table too wide for
+   it scrolls, and the other columns pass beneath them. On a telephone every
+   table with actions was that wide, and edit, delete and reset a password lay
+   past the edge, reached by a swipe nothing announced. Opaque, in the card's own
+   colour, so nothing passing beneath shows through - and in the row's tint where
+   the row has one, mixed into the card's colour for the same reason. Where the
+   table fits, sticking changes nothing. */
+td.actions,
+th.actions {
+  background: var(--surface);
+  position: sticky;
+  right: 0;
+}
+
+tbody tr.clickable:hover td.actions { background: var(--bg); }
+tr.self td.actions { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+
+/* Text keeps a width of its own while the table around it scrolls. Folded to its
+   longest word, a long name stood as a column of single words - beside actions
+   that were out of sight anyway. 9em rather than 10: in the CI runner's wider
+   face 10em made the accounts table four pixels wider than a desktop's card. */
+td.text { min-width: 9em; }
+
+/* Where tables scroll beneath the pinned actions, their edge is drawn. Without
+   it a name passing underneath ended mid-letter - "Alexandra vo" - and read as a
+   typing error rather than as text that goes on. Narrow windows only: a wide
+   one's tables fit, and keep the plain column they had. */
+@media (max-width: 900px) {
+  td.actions,
+  th.actions { box-shadow: -10px 0 8px -8px rgb(16 24 40 / 22%); }
+}
+
 th { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; }
 
 td.num, th.num { text-align: right; }
@@ -1076,6 +1108,15 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Where the bar has room to spare an ordinary account is no longer cut: at 12em
+   "Erika · Benutzer & Administrator" lost its last letters even at 2,560 pixels.
+   From 1,800 rather than from 1,440, where the bar had room in this machine's
+   face: in the CI runner's wider one the right-hand column then needed more than
+   its half at 1,600, and the title stood 25 pixels left of the middle. */
+@media (min-width: 1800px) {
+  .who { max-width: 20em; }
+}
 .who strong { color: var(--text); font-weight: 600; }
 
 .muted { color: var(--muted); font-size: 13px; }
@@ -1145,6 +1186,19 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   position: sticky;
   top: var(--topbar-height, 0);
   z-index: 4;
+}
+
+/* On a short window - a telephone held sideways - the bar goes with the page
+   instead of staying at the top of it. Staying, it took half the height: at
+   932x430 the wide layout's two rows came to 216 pixels on every screen, and what
+   was left for the screen itself was two lines of a form. What kept room for it
+   follows it out: the scroll padding, and the notices stuck beneath it. */
+@media (max-height: 500px) {
+  .topbar { position: static; }
+
+  html { scroll-padding-top: 0; }
+
+  #standing-notices { top: 0; }
 }
 
 #restart-banner p { margin: 6px 0; }
@@ -1234,7 +1288,10 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    * because this screen scrolls: a footer laid over its bottom edge would put the
    * last thing on it - the submit button, on a short window - underneath. */
   inset: 0 0 var(--footer-height, 56px);
-  justify-content: center;
+  /* Centred while it fits, and from the top when it does not: a centred column
+     that overflows does so at both ends, and the end above the top cannot be
+     scrolled to. */
+  justify-content: safe center;
   padding: 20px;
   position: fixed;
   z-index: 30;
@@ -1270,11 +1327,17 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .session-check { display: none; }
 .login-screen.checking .session-check { display: block; }
 
+/* Never shorter than what it holds. overflow: hidden keeps the band inside the
+   rounded corners, and it also lets a flex item shrink below its contents - so
+   on a short window the card shrank to the screen and cut its own submit button
+   off, and the screen around it, which scrolls for exactly this, had nothing to
+   scroll. Nobody could sign in on a telephone held sideways. */
 .login-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 10px 30px rgb(16 24 40 / 14%);
+  flex-shrink: 0;
   max-width: 680px;
   overflow: hidden;
   width: 100%;
@@ -2551,6 +2614,18 @@ a.tab:hover {
   }
 
   .topbar.nav-open #tabs { display: flex; }
+
+  /* Never taller than the window while it is open, and what does not fit scrolls
+     inside it. The bar stays at the top of the window, so an open menu taller
+     than the window stood still while the page passed underneath, and its last
+     points came up only at the very end of the page. dvh where it is known, so a
+     telephone's own toolbar is not counted as room. */
+  .topbar.nav-open {
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 
   .topbar.nav-open .tab {
     justify-content: flex-start;

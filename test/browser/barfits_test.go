@@ -258,3 +258,45 @@ func TestTheAccountStaysOneLineOnTheBar(t *testing.T) {
 		}
 	}
 }
+
+// Where the bar has room, the account is shown whole.
+//
+// The account is held to one line and cut short where the bar has no room for it
+// - at 12em, which is what keeps a laptop's bar from growing. Held to 12em
+// everywhere, it was cut on a wide screen as well, where the room was plainly
+// there: "Erika · Benutzer & Admini…" at 1,920 and at 2,560 pixels. From 1,800
+// pixels it may take 20em - not from 1,440, where the room was there in this
+// machine's face and not in the CI runner's, and the title left the middle.
+func TestWhereTheBarHasRoomTheAccountIsShownWhole(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.createAccount(t, "erika@example.com", "a-long-enough-password", "user-admin")
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+	p.signIn("erika@example.com", "a-long-enough-password")
+	p.waitGone("#login-screen")
+	p.settleWelcome()
+	p.chooseLanguage("de")
+
+	for _, width := range []int64{2560, 1920} {
+		p.run(fmt.Sprintf("%dpx", width), chromedp.EmulateViewport(width, 900))
+
+		var who struct {
+			Cut  bool   `json:"cut"`
+			Said string `json:"said"`
+		}
+
+		p.evalJSON(`JSON.stringify((() => {
+			const who = document.querySelector('#who');
+
+			return { cut: who.scrollWidth > who.clientWidth + 1, said: who.textContent };
+		})())`, &who)
+
+		if who.Cut {
+			t.Errorf("at %dpx the bar cuts the account short although it has room: %q", width, who.Said)
+		}
+	}
+}

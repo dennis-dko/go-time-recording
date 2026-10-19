@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -143,5 +144,68 @@ func TestTheAccountControlsFoldIntoTheBurgerOnAPhone(t *testing.T) {
 
 	if !p.visible("#form-login") {
 		t.Error("signing out from the folded menu did not reach the sign-in screen")
+	}
+}
+
+// The open menu fits in the window and scrolls inside itself.
+//
+// The menu unfolds inside the bar, and the bar stays at the top of the window -
+// so on a telephone held sideways the open bar was taller than the window, 601
+// pixels in 390, and the points at the bottom of the list lay below its edge.
+// Scrolling did reach them, eventually: the bar stood still while the whole page
+// passed underneath, and only at the very end did the last points come up -
+// 1,382 pixels of scrolling with nothing on screen moving, which is a menu that
+// looks as if it ends at the edge. Now the open bar is never taller than the
+// window, and what does not fit scrolls inside it.
+func TestTheOpenMenuFitsTheWindowAndScrollsInIt(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	for _, size := range []struct{ w, h int64 }{{844, 390}, {568, 320}} {
+		p.run(fmt.Sprintf("a %dx%d telephone held sideways", size.w, size.h),
+			chromedp.EmulateViewport(size.w, size.h),
+			chromedp.Evaluate(`window.scrollTo(0, 0)`, nil))
+
+		p.run("open the menu", p.click("#nav-toggle"))
+
+		var reading struct {
+			Bar      float64 `json:"bar"`
+			Window   float64 `json:"window"`
+			Last     string  `json:"last"`
+			Reached  bool    `json:"reached"`
+			PageMove float64 `json:"pageMove"`
+		}
+
+		p.evalJSON(`JSON.stringify((() => {
+			const bar = document.querySelector('header.topbar');
+			const last = [...document.querySelectorAll('#tabs .tab')].filter((tab) => !tab.hidden).pop();
+
+			// Scrolled the way a finger on the menu scrolls it: the bar, not the page.
+			bar.scrollTop = bar.scrollHeight;
+
+			const r = last.getBoundingClientRect();
+			const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+
+			return {
+				bar: bar.getBoundingClientRect().height,
+				window: window.innerHeight,
+				last: last.textContent.trim(),
+				reached: r.bottom <= window.innerHeight && (hit === last || last.contains(hit)),
+				pageMove: window.scrollY,
+			};
+		})())`, &reading)
+
+		if reading.Bar > reading.Window+1 {
+			t.Errorf("at %dx%d the open bar is %.0fpx tall in a %.0fpx window", size.w, size.h, reading.Bar, reading.Window)
+		}
+
+		if !reading.Reached {
+			t.Errorf("at %dx%d the menu's last point, %q, cannot be scrolled into view inside the open bar",
+				size.w, size.h, reading.Last)
+		}
+
+		p.run("close the menu", p.click("#nav-toggle"))
 	}
 }

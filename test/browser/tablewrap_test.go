@@ -143,3 +143,120 @@ func TestATableWithOrdinaryDataFitsItsCard(t *testing.T) {
 		check(fmt.Sprintf("the entries at %dpx", width), "#table-timesheets")
 	}
 }
+
+// On a telephone a table keeps its row's actions in sight, and its text readable.
+//
+// A table too wide for a telephone scrolls inside its card, and every table with
+// actions was: edit, delete and reset a password lay past the right-hand edge of
+// the timesheets, the projects, the accounts and the roles at 360 and 430 pixels,
+// and of the accounts on a tablet held upright, reached only by a swipe nothing
+// announced. The actions now stay at the card's right-hand edge while the other
+// columns pass beneath them, and text keeps a width of its own rather than
+// folding to its longest word - a name had stood as a column of single words
+// beside actions that were out of sight anyway. Decided on 2026-10-19.
+func TestOnAPhoneATableKeepsItsActionsInSight(t *testing.T) {
+	t.Parallel()
+
+	const long = "Maximiliane Alexandra von Hohenstein-Wittgenstein"
+
+	p := open(t)
+	p.readyAdmin()
+
+	var status string
+
+	p.run("create an account with a long name", chromedp.Evaluate(`(async () => {
+		const csrf = document.cookie.split(';').map(c => c.trim())
+			.find(c => c.startsWith('gtr_csrf='))?.slice('gtr_csrf='.length) ?? '';
+		const r = await fetch('/api/v1/users', { method: 'POST', credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+			body: JSON.stringify({ name: '`+long+`', email: 'lang@example.com', role: 'user', password: 'a-long-enough-password' }) });
+		return String(r.status);
+	})()`, &status, awaitPromise))
+
+	if status != "201" {
+		t.Fatalf("could not create the account: HTTP %s", status)
+	}
+
+	p.chooseLanguage("de")
+
+	for _, size := range []struct{ w, h int64 }{{360, 780}, {430, 932}, {768, 1024}} {
+		p.run(fmt.Sprintf("%dx%d", size.w, size.h), chromedp.EmulateViewport(size.w, size.h))
+
+		for _, view := range []string{"users", "roles"} {
+			p.run("open "+view, chromedp.Evaluate(`switchView('`+view+`'); refreshAll()`, nil, awaitPromise))
+			p.atRest()
+
+			var reading struct {
+				Missing string   `json:"missing"`
+				Hidden  []string `json:"hidden"`
+				Lines   float64  `json:"lines"`
+			}
+
+			p.evalJSON(`JSON.stringify((() => {
+				const table = document.querySelector('#view-`+view+` table');
+				const wrap = table?.closest('.table-wrap');
+				if (!wrap) return { missing: 'no table' };
+
+				const hidden = [...table.querySelectorAll('tbody td.actions button')].filter((button) => {
+					// Brought up the window, and only up it: scrolling the table sideways
+					// would bring a hidden action into view by itself.
+					const before = button.getBoundingClientRect();
+					window.scrollTo(0, window.scrollY + before.top - window.innerHeight / 2);
+
+					const seen = wrap.getBoundingClientRect();
+					const r = button.getBoundingClientRect();
+					const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+
+					return r.height > 0 && (r.right > seen.right + 1 || r.left < seen.left - 1 || !(hit === button || button.contains(hit)));
+				}).map((button) => button.textContent.trim());
+
+				// The lines of the name itself: a cell is as tall as its row, and the
+				// row is as tall as its tallest cell.
+				const name = [...table.querySelectorAll('tbody td')].find((cell) => cell.textContent.trim() === '`+long+`');
+				let lines = 0;
+
+				if (name) {
+					const range = document.createRange();
+					range.selectNodeContents(name);
+					lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+				}
+
+				return { missing: '', hidden, lines };
+			})())`, &reading)
+
+			if reading.Missing != "" {
+				t.Fatalf("%dx%d, %s: %s", size.w, size.h, view, reading.Missing)
+			}
+
+			if len(reading.Hidden) > 0 {
+				t.Errorf("at %dx%d the %s table hides actions past its edge or under its cells: %q",
+					size.w, size.h, view, reading.Hidden)
+			}
+
+			// One word to a line is the column the name used to stand as; it has five
+			// places to fold - four spaces and a hyphen - and so five words.
+			if view == "users" && reading.Lines >= 5 {
+				t.Errorf("at %dx%d the name stands one word to a line, %.0f lines, in the accounts table",
+					size.w, size.h, reading.Lines)
+			}
+		}
+	}
+
+	// And the edge of the pinned actions is drawn where tables scroll beneath them.
+	// Without it a name passing underneath ended mid-letter - "Alexandra vo" - and
+	// read as a typing error rather than as text that goes on. A wide screen, where
+	// the tables fit, keeps the plain column it had.
+	for _, edge := range []struct {
+		w, h  int64
+		drawn bool
+	}{{390, 844, true}, {1600, 900, false}} {
+		var shadow string
+
+		p.run(fmt.Sprintf("%dx%d", edge.w, edge.h), chromedp.EmulateViewport(edge.w, edge.h),
+			chromedp.Evaluate(`getComputedStyle(document.querySelector('#table-users tbody td.actions')).boxShadow`, &shadow))
+
+		if drawn := shadow != "none"; drawn != edge.drawn {
+			t.Errorf("at %dx%d the pinned actions' edge is %q, where it should be drawn: %t", edge.w, edge.h, shadow, edge.drawn)
+		}
+	}
+}
