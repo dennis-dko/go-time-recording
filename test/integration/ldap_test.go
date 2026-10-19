@@ -319,7 +319,7 @@ func TestADirectorySignInIsRefusedTheAccountOfAnotherEntry(t *testing.T) {
 			got, predecessor)
 	}
 
-	if !strings.Contains(a.Log(), predecessor) || !strings.Contains(a.Log(), "alice@example.com") {
+	if !a.logShows(10*time.Second, predecessor, "alice@example.com") {
 		t.Errorf("nothing in the log names the account and the entry it records:\n%s", a.Log())
 	}
 }
