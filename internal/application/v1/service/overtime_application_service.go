@@ -172,7 +172,7 @@ func (s *OvertimeService) rulesFor(ctx context.Context, user *model.User, first,
 
 	return dayRules{
 		from:      user.EveryDayCountsFrom,
-		today:     s.todayFor(ctx, user),
+		today:     todayOf(ctx, s.today, user),
 		schedules: schedules,
 		before:    model.DefaultWeek(user.EffectiveDailyTarget()),
 		holidays:  holidays,
@@ -180,14 +180,14 @@ func (s *OvertimeService) rulesFor(ctx context.Context, user *model.User, first,
 	}, nil
 }
 
-// todayFor is today in somebody's own zone, or in UTC for a service built without
+// todayOf is today in somebody's own zone, or in UTC for a service built without
 // a clock.
-func (s *OvertimeService) todayFor(ctx context.Context, user *model.User) time.Time {
-	if s.today == nil {
+func todayOf(ctx context.Context, clock Today, user *model.User) time.Time {
+	if clock == nil {
 		return model.CalendarDay(time.Now().UTC())
 	}
 
-	return model.CalendarDay(s.today(ctx, user))
+	return model.CalendarDay(clock(ctx, user))
 }
 
 // Balance computes the overtime balance for one user over a date range.

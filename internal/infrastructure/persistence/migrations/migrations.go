@@ -123,6 +123,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261019050000: {UP: func(d migration.Datasource) error {
 			return letEachPersonCountEveryWorkingDay(d, dialect)
 		}},
+		20261019060000: {UP: func(d migration.Datasource) error {
+			return keepTheYearlyLeave(d, dialect)
+		}},
 	}
 }
 
@@ -1677,4 +1680,21 @@ func letEachPersonKeepTheirStatesHolidays(d migration.Datasource, dialect string
 func letEachPersonCountEveryWorkingDay(d migration.Datasource, dialect string) error {
 	return execAll(d, fmt.Sprintf(
 		"ALTER TABLE users ADD COLUMN every_day_counts_from %s", timestamp(dialect)))
+}
+
+// keepTheYearlyLeave keeps how many days of leave a year gives somebody, from a
+// year on until the next entitlement's.
+//
+// A row per change rather than one figure on the account, because an allowance
+// changes and the years before keep what they gave - which is what they carried
+// into the next. The person and the year are unique together, and that is also
+// the index every read goes through.
+func keepTheYearlyLeave(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE vacation_entitlements (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		from_year INTEGER NOT NULL,
+		days %s NOT NULL,
+		UNIQUE (user_id, from_year)
+	)`, primaryKey(dialect), foreignKeyID(dialect), float(dialect)))
 }

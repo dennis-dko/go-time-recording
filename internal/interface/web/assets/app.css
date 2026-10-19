@@ -1683,6 +1683,9 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 /* A day somebody is away, said in words and tinted, so a fortnight of leave
  * reads as one stretch rather than as ten days with nothing on them. */
 .cal-day.away { background: color-mix(in srgb, var(--muted) 10%, var(--bg)); }
+
+/* What is left of the year's leave, read first: the figure the card is for. */
+.vacation-left { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
 .cal-away { color: var(--muted); font-size: 11px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* --- branding: logo and footer --- */

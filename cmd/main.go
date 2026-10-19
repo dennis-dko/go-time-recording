@@ -558,6 +558,7 @@ func main() {
 	scheduleRepo := sqldb.NewWorkScheduleRepository(db, cfg.Dialect)
 	templateRepo := sqldb.NewTemplateRepository(db, cfg.Dialect)
 	absenceRepo := sqldb.NewAbsenceRepository(db, cfg.Dialect)
+	vacationRepo := sqldb.NewVacationRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
@@ -656,6 +657,7 @@ func main() {
 	workWeeks := appservice.NewWorkScheduleService(scheduleRepo, userRepo)
 	templates := appservice.NewTemplateService(templateRepo, projectRepo)
 	absences := appservice.NewAbsenceService(absenceRepo, userRepo, scheduleRepo, regions)
+	leave := appservice.NewVacationService(vacationRepo, absenceRepo, userRepo, scheduleRepo, regions, today)
 
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
@@ -993,6 +995,7 @@ func main() {
 		Templates:  rest.NewTemplateHandler(templates, authorizer),
 		Absences:   rest.NewAbsenceHandler(absences, authorizer, instanceTimezone),
 		Holidays:   rest.NewHolidayHandler(sessions, settingsService, authorizer),
+		Vacation:   rest.NewVacationHandler(leave, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),

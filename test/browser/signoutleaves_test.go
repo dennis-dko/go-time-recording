@@ -263,7 +263,7 @@ func TestASignOutTakesTheCalendarAndTheGreetingWithIt(t *testing.T) {
 			if (document.querySelector(holder).childElementCount) left.push(holder + ' still holds what it drew');
 		}
 
-		for (const said of ['#calendar-summary', '#welcome-title', '#welcome-today']) {
+		for (const said of ['#calendar-summary', '#welcome-title', '#welcome-today', '#vacation-title', '#vacation-left']) {
 			if (document.querySelector(said).textContent.trim()) left.push(said + ' says ' + document.querySelector(said).textContent);
 		}
 

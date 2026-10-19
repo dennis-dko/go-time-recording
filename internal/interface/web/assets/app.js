@@ -450,6 +450,7 @@ const FIELD_NAMES = {
   dailyTargetHours: 'Target h/day',
   date: 'Date',
   day: 'Day',
+  days: 'Days of leave a year',
   defaultRole: 'Default role',
   description: 'Description',
   durationHours: 'Hours',
@@ -460,6 +461,7 @@ const FIELD_NAMES = {
   expiresInDays: 'Valid for (days)',
   footerText: 'Footer',
   from: 'From',
+  fromYear: 'From the year',
   host: 'Host',
   hours: 'Hours',
   id: 'ID',
@@ -494,6 +496,7 @@ const FIELD_NAMES = {
   userFilter: 'User filter',
   userId: 'User',
   validFrom: 'Applies from',
+  year: 'Year',
 };
 
 /** fieldName names a refused field the way the screen names it, in the reader's language. */
@@ -3970,6 +3973,7 @@ const TRANSLATIONS = {
     'entity.schedule': 'Wochenplan',
     'entity.template': 'Vorlage',
     'entity.absence': 'Abwesenheit',
+    'entity.entitlement': 'Urlaubsanspruch',
     'entity.session': 'Sitzung',
     'entity.timesheet': 'Zeiteintrag',
     'entity.token': 'Token',
@@ -4229,6 +4233,9 @@ const TRANSLATIONS = {
     'field.kind': 'Grund',
     'field.region': 'Bundesland',
     'field.everyDayCountsFrom': 'Jeder Arbeitstag zählt ab',
+    'field.days': 'Urlaubstage pro Jahr',
+    'field.fromYear': 'Ab dem Jahr',
+    'field.year': 'Jahr',
     'field.email': 'E-Mail',
     'field.end': 'Ende',
     'field.from': 'Von',
@@ -4534,6 +4541,16 @@ const TRANSLATIONS = {
     'holiday.repentanceDay': 'Buß- und Bettag',
     'holiday.christmasDay': '1. Weihnachtstag',
     'holiday.stStephensDay': '2. Weihnachtstag',
+    'vacation.title': 'Urlaub {0}',
+    'vacation.left': 'Resttage: {0}',
+    'vacation.detail': 'Anspruch: {0} · übertragen: {1} · genommen: {2} · geplant: {3}',
+    'vacation.none': 'Für dieses Jahr ist noch kein Urlaub eingetragen: Trag unten ein, wie viele Tage ein Jahr gibt.',
+    'vacation.days': 'Urlaubstage pro Jahr',
+    'vacation.fromYear': 'Ab dem Jahr',
+    'vacation.from': 'ab {0}',
+    'vacation.withdrawn': 'Urlaubsanspruch zurückgenommen',
+    'vacation.noEntitlements': 'Noch keine Urlaubstage eingetragen.',
+    'vacation.saved': 'Urlaubsanspruch gespeichert',
     'absence.title': 'Abwesenheiten',
     'absence.hint': 'Urlaub, Krankheit und Tage, die vom Überstundenkonto genommen werden. Erfasst werden nur die Tage, an denen deine Woche etwas verlangt – zwei Wochen Urlaub sind also seine zehn Arbeitstage.',
     'absence.vacation': 'Urlaub',
@@ -6971,7 +6988,98 @@ async function loadAbsences() {
 /** Everything that shows somebody's absences, drawn again after one changed. */
 async function reloadAbsences() {
   await loadAbsences();
+  await loadVacation();
   await reloadTimeViews();
+}
+
+/** The year the leave card shows, or null before it was first drawn. */
+let vacationYear = null;
+
+/** What the leave card was last drawn from, kept so a language change can redraw it. */
+let vacationAccount = null;
+
+/** Loads a year of this account's leave into its card. */
+async function loadVacation() {
+  if (!can('timesheets:read:own')) return;
+
+  // This person's year, which is not the browser's for part of the last day of it.
+  if (!vacationYear) vacationYear = Number(todayISO().slice(0, 4));
+
+  const year = vacationYear;
+  const account = await api(`/me/vacation?year=${year}`);
+
+  // Overtaken by a step to another year while this was on its way.
+  if (year !== vacationYear) return;
+
+  vacationAccount = account;
+
+  redrawable('vacation', drawVacation);
+}
+
+function drawVacation() {
+  const account = vacationAccount;
+  if (!account) return;
+
+  $('#vacation-title').textContent = fillIn(t('vacation.title', 'Leave {0}'), [account.year]);
+
+  const given = account.entitlements.length > 0 && account.year >= account.entitlements[0].fromYear;
+
+  $('#vacation-left').textContent = given
+    ? fillIn(t('vacation.left', 'Days left: {0}'), [account.remaining])
+    : t('vacation.none', 'No leave given for this year yet: say below how many days a year give.');
+
+  $('#vacation-detail').textContent = given
+    ? fillIn(t('vacation.detail', 'Given: {0} · carried over: {1} · taken: {2} · planned: {3}'),
+      [account.entitlement, account.carriedOver, account.taken, account.planned])
+    : '';
+
+  const rows = account.entitlements.map((entitlement) => el('tr', {},
+    el('td', { text: String(entitlement.fromYear) }),
+    el('td', { class: 'num', text: fmtNumber(entitlement.days) }),
+    el('td', { class: 'actions' }, can('settings:write:own') ? deleteButton({
+      label: fillIn(t('vacation.from', 'from {0}'), [entitlement.fromYear]),
+      path: `/me/vacation/${entitlement.fromYear}`,
+      message: t('vacation.withdrawn', 'Entitlement taken back'),
+      after: loadVacation,
+    }) : null),
+  ));
+
+  fillTable($('#table-vacation tbody'), rows, 3, t('vacation.noEntitlements', 'No days of leave given yet.'));
+}
+
+/** Forgets the leave the card showed, for an account that has signed out. */
+function forgetTheVacation() {
+  vacationYear = null;
+  vacationAccount = null;
+
+  for (const said of ['#vacation-title', '#vacation-left', '#vacation-detail']) {
+    const node = $(said);
+    if (node) node.textContent = '';
+  }
+}
+
+function wireVacation() {
+  const step = (years) => {
+    vacationYear = (vacationYear ?? Number(todayISO().slice(0, 4))) + years;
+    mutate(loadVacation, null, null);
+  };
+
+  $('#vacation-prev')?.addEventListener('click', () => step(-1));
+  $('#vacation-next')?.addEventListener('click', () => step(1));
+
+  $('#form-vacation')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    const form = event.target;
+    const body = { fromYear: Number(form.elements.fromYear.value), days: Number(form.elements.days.value) };
+
+    saveForm(form, () => api('/me/vacation', { method: 'PUT', body: JSON.stringify(body) }),
+      t('vacation.saved', 'Leave saved'),
+      async () => {
+        form.reset();
+        await loadVacation();
+      });
+  });
 }
 
 function wireAbsences() {
@@ -9137,6 +9245,10 @@ function forgetTheLastAccount() {
   // And how many of the last account's entries were waiting for a project.
   unassignedEntries = 0;
   drawUnassigned();
+
+  // And their leave, whose figures are theirs.
+  forgetTheVacation();
+
 
   // And each form's own reset, which resetting the form does not reach: a hidden
   // field keeps its value through one, so a form left correcting a record kept
@@ -15943,6 +16055,7 @@ async function refreshAll() {
   await loadSchedules();
   await loadTemplates();
   await loadAbsences();
+  await loadVacation();
   await loadMyHolidays();
   fillSettingsForm();
 
@@ -16371,6 +16484,7 @@ async function init() {
     wireTOTP();
     wireCalendar();
     wireAbsences();
+    wireVacation();
     wireHolidays();
     wireAdmin();
     wireTokens();

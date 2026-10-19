@@ -864,6 +864,40 @@
         <p class="muted" data-i18n="cal.clickToEdit">Click an entry to edit it.</p>
       </div>
 
+      <!-- A year's leave: what it gives, what the year before left over, what is
+           taken and what is planned - counted from the days of leave recorded
+           below. The script owns the heading, which names the year. -->
+      <div class="card" id="vacation-card" data-perm="timesheets:read:own">
+        <div class="card-head">
+          <h2 id="vacation-title">Leave</h2>
+          <div class="filters">
+            <button type="button" class="secondary" id="vacation-prev" aria-label="&#8592;">&#8592;</button>
+            <button type="button" class="secondary" id="vacation-next" aria-label="&#8594;">&#8594;</button>
+          </div>
+        </div>
+        <p class="vacation-left" id="vacation-left"></p>
+        <p class="muted" id="vacation-detail"></p>
+        <form method="post" id="form-vacation" class="form" data-perm="settings:write:own">
+          <div class="grid">
+            <label data-i18n="vacation.days">Days of leave a year<input type="number" name="days" min="0" max="366" step="0.5" required></label>
+            <label data-i18n="vacation.fromYear">From the year<input type="number" name="fromYear" min="1900" max="9999" step="1" required></label>
+          </div>
+          <button type="submit" data-i18n="action.save">Save</button>
+        </form>
+        <div class="table-wrap">
+          <table id="table-vacation">
+            <thead>
+              <tr>
+                <th data-i18n="vacation.fromYear">From the year</th>
+                <th class="num" data-i18n="vacation.days">Days of leave a year</th>
+                <th class="actions" data-i18n="field.action">Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- The days somebody is away, and why. Recorded over a range, but only on
            the days their week asks something of; the calendar above marks them. -->
       <div class="card" id="absence-card" data-perm="timesheets:write:own">

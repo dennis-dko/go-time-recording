@@ -22,6 +22,7 @@ type plannedFixture struct {
 	weeks    *service.WorkScheduleService
 	overtime *service.OvertimeService
 	away     *service.AbsenceService
+	leave    *service.VacationService
 
 	// region is the state the installation keeps the holidays of, empty for none.
 	region string
@@ -45,6 +46,7 @@ func newPlannedFixture(t *testing.T) *plannedFixture {
 
 	f.overtime = service.NewOvertimeService(f.timesheetRepo, f.userRepo, schedules, absences, regions, clock)
 	f.away = service.NewAbsenceService(absences, f.userRepo, schedules, regions)
+	f.leave = service.NewVacationService(memory.NewVacationRepository(), absences, f.userRepo, schedules, regions, clock)
 
 	return f
 }

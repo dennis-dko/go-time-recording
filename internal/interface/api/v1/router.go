@@ -27,6 +27,7 @@ type Handlers struct {
 	Templates  *rest.TemplateHandler
 	Absences   *rest.AbsenceHandler
 	Holidays   *rest.HolidayHandler
+	Vacation   *rest.VacationHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -154,6 +155,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/absences", h.Absences.List)
 	app.POST(base+"/me/absences", h.Absences.Save)
 	app.DELETE(base+"/me/absences/{day}", h.Absences.Delete)
+
+	// A year's leave: what it gives, what was carried, taken and planned.
+	app.GET(base+"/me/vacation", h.Vacation.Year)
+	app.PUT(base+"/me/vacation", h.Vacation.Entitle)
+	app.DELETE(base+"/me/vacation/{fromYear}", h.Vacation.Withdraw)
 
 	app.GET(base+"/me/passkeys", h.Passkeys.List)
 	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)

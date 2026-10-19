@@ -1769,6 +1769,56 @@
         }
       }
     },
+    "/me/vacation": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "A year of your leave",
+        "description": "Answers {\"year\": 2026, \"entitlement\": 30, \"carriedOver\": 2, \"taken\": 18.5, \"planned\": 4, \"remaining\": 9.5, \"entitlements\": [{\"fromYear\": 2025, \"days\": 30}]}. ?year=YYYY, by default the year today falls in, in your own timezone. entitlement is what the year gives: the latest entitlement from that year or before. carriedOver is what the year before left - more than it gave where leave was not taken, less than nothing where it was overdrawn - back to the first year an entitlement was recorded for, before which there is no account. A day of leave (see /me/absences) uses a day and half a day of it a half, counted only on a day that is worked: one the week planned for it asks something of, and no public holiday. taken is leave up to today, planned is leave after it, and remaining is what is left once everything planned is taken.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Give yourself days of leave a year from a year on",
+        "description": "Body: {\"fromYear\": 2026, \"days\": 30} - between 0 and 366 days, in force from that year until the next entitlement's. Replaces an entitlement from the same year; the years before keep what they gave, so what they carried stays what it was. Answers with the account of fromYear, in the shape GET answers.",
+        "responses": {
+          "200": {
+            "description": "The year's account"
+          }
+        }
+      }
+    },
+    "/me/vacation/{fromYear}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take back an entitlement",
+        "description": "Its years go back to the entitlement before it, or to none. A year no entitlement starts in answers 404.",
+        "parameters": [
+          {
+            "name": "fromYear",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
     "/me/days": {
       "get": {
         "tags": [

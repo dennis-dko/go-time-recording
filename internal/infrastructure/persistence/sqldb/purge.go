@@ -59,6 +59,7 @@ func (r *UserRepository) PurgeUser(ctx context.Context, userID uint) error {
 			{"planned weeks", "DELETE FROM work_schedules WHERE user_id = ?"},
 			{"entry templates", "DELETE FROM entry_templates WHERE user_id = ?"},
 			{"absences", "DELETE FROM absences WHERE user_id = ?"},
+			{"vacation entitlements", "DELETE FROM vacation_entitlements WHERE user_id = ?"},
 		}
 
 		for _, step := range steps {
