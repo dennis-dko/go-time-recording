@@ -111,6 +111,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261019010000: {UP: func(d migration.Datasource) error {
 			return planTheWorkingWeek(d, dialect)
 		}},
+		20261019020000: {UP: func(d migration.Datasource) error {
+			return keepEntryTemplates(d, dialect)
+		}},
 	}
 }
 
@@ -1606,4 +1609,23 @@ func planTheWorkingWeek(d migration.Datasource, dialect string) error {
 	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect),
 		float(dialect), float(dialect), float(dialect), float(dialect),
 		float(dialect), float(dialect), float(dialect)))
+}
+
+// keepEntryTemplates keeps the bookings people make often, to fill the booking
+// form with: a project, hours and a description, each of them optional.
+//
+// The project is a plain number rather than a foreign key, deliberately. A
+// template is a convenience that may outlive its project, and a key would turn it
+// into an obstacle - to deleting the project, to handing it to somebody else, and
+// to purging the person it then belongs to while somebody else's template still
+// names it. Whether the project can still be booked is asked where that matters:
+// when the form is filled from the template, and again when the booking is made.
+func keepEntryTemplates(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE entry_templates (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		project_id %s,
+		duration_hours %s,
+		description TEXT
+	)`, primaryKey(dialect), foreignKeyID(dialect), foreignKeyID(dialect), float(dialect)))
 }

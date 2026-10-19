@@ -41,6 +41,7 @@ type fixture struct {
 	// repositories, so a test can build a service the fixture does not wire
 	userRepo      *memory.UserRepository
 	roleRepo      *memory.RoleRepository
+	projectRepo   *memory.ProjectRepository
 	timesheetRepo *memory.TimesheetRepository
 
 	userID    uint
@@ -98,6 +99,7 @@ func newFixture(t *testing.T) *fixture {
 		userDomain:    domainservice.NewUserDomainService(userRepo, roleRepo),
 		userRepo:      userRepo,
 		roleRepo:      roleRepo,
+		projectRepo:   projectRepo,
 		timesheetRepo: timesheetRepo,
 	}
 

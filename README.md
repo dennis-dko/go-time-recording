@@ -291,6 +291,7 @@ exactly those checksums.
 | API access | Personal tokens, scoped by the owner's current role |
 | Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second. A start pressed late can be corrected, a clock left running is booked up to the time the work ended, and switching to the next project books the clock and carries on from the same second |
 | Finding entries | The list narrows by project, by period and by text in the description, and the export follows the same filters |
+| Templates | A booking made often - a project, hours, a description - is kept from the form and fills it in again when chosen. Nothing is booked from a template on its own, and one whose project has closed can no longer be chosen |
 | Own statistics | Hours per day and per project, drawn as charts, for everybody rather than administrators |
 | Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
 | Overtime | Balance per day and per period against a personal daily target |

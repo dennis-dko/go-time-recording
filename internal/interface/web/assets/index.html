@@ -644,6 +644,12 @@
       <form method="post" id="form-timesheet" class="card form" data-perm="timesheets:write:own">
         <h2 id="timesheet-form-title" data-i18n="ts.book">Book time</h2>
         <input type="hidden" name="id">
+        <!-- Shown once somebody has kept a template. Choosing one fills the
+             fields below and books nothing - that is still the button. Unnamed,
+             so it is never part of what the form sends or of its draft. -->
+        <div class="grid" id="ts-template-row" hidden>
+          <label class="wide" data-i18n="tpl.fill">Fill in from a template<select id="ts-template"></select></label>
+        </div>
         <div class="grid">
           <label data-i18n="field.projectOptional">Project (optional)<select name="projectId"></select>
           </label>
@@ -661,6 +667,7 @@
         </div>
         <div class="form-actions">
           <button type="submit" id="timesheet-submit" data-i18n="action.book">Book</button>
+          <button type="button" class="secondary" id="ts-template-save" data-i18n="tpl.save">Save as template</button>
           <button type="button" class="link" id="timesheet-cancel" data-i18n="action.cancelEdit" hidden>cancel editing</button>
         </div>
       </form>
@@ -726,6 +733,25 @@
                 <th class="num" data-i18n="field.hours">Hours</th>
                 <th data-i18n="field.description">Description</th>
                 <th data-i18n="wb.problem">Problem</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- The templates kept from the booking form, listed to take them back.
+           Shown once there is one, like the picker in the form. -->
+      <div class="card" id="templates-card" data-perm="timesheets:write:own" hidden>
+        <h2 data-i18n="tpl.title">Templates</h2>
+        <p class="muted" data-i18n="tpl.hint">Bookings you make often, kept with "Save as template" in the form above. A template only fills the form in: nothing is booked until you press Book.</p>
+        <div class="table-wrap">
+          <table id="table-templates">
+            <thead>
+              <tr>
+                <th data-i18n="field.project">Project</th>
+                <th class="num" data-i18n="field.hours">Hours</th>
+                <th data-i18n="field.description">Description</th>
+                <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
             <tbody></tbody>

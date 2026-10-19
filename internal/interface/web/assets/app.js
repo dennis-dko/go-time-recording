@@ -3887,6 +3887,7 @@ const TRANSLATIONS = {
     'entity.project': 'Projekt',
     'entity.role': 'Rolle',
     'entity.schedule': 'Wochenplan',
+    'entity.template': 'Vorlage',
     'entity.session': 'Sitzung',
     'entity.timesheet': 'Zeiteintrag',
     'entity.token': 'Token',
@@ -4008,6 +4009,8 @@ const TRANSLATIONS = {
     'err.timerEndInFuture': 'Die Endzeit liegt in der Zukunft. Eine Stoppuhr lässt sich nur bis jetzt buchen.',
     'err.timerStartInFuture': 'Eine Stoppuhr kann nicht in der Zukunft beginnen.',
     'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
+    'err.tooManyTemplates': 'Höchstens {0} Vorlagen pro Person. Lösch zuerst eine.',
+    'err.templateEmpty': 'Eine Vorlage muss etwas ausfüllen: ein Projekt, Stunden oder eine Beschreibung.',
     'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
     'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
     'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warte auf den nächsten.',
@@ -4383,6 +4386,16 @@ const TRANSLATIONS = {
     'totp.on': 'Zwei-Faktor-Authentifizierung ist aktiviert.',
     'totp.title': 'Zwei-Faktor-Authentifizierung',
     'ts.book': 'Zeit buchen',
+    'tpl.fill': 'Aus einer Vorlage ausfüllen',
+    'tpl.choose': 'Vorlage wählen …',
+    'tpl.closed': 'ihr Projekt nimmt keine Buchungen an',
+    'tpl.save': 'Als Vorlage speichern',
+    'tpl.saved': 'Als Vorlage gespeichert',
+    'tpl.title': 'Vorlagen',
+    'tpl.hint': 'Buchungen, die du oft machst, gespeichert mit „Als Vorlage speichern“ im Formular oben. Eine Vorlage füllt das Formular nur aus: Gebucht wird erst, wenn du auf „Buchen“ drückst.',
+    'tpl.one': 'Vorlage',
+    'tpl.deleted': 'Vorlage gelöscht',
+    'tpl.empty': 'Noch keine Vorlagen.',
     'ts.empty': 'Keine Einträge für diesen Filter.',
     'ts.more': 'Mehr anzeigen',
     'ts.showing': '{0} von {1} Einträgen',
@@ -5495,6 +5508,10 @@ async function loadProjects() {
   });
 
   fillTable($('#table-projects tbody'), rows, 5, t('project.empty', 'No projects yet.'));
+
+  // The templates name projects by number, and whether one can still be chosen
+  // depends on its project being open - which is what just changed.
+  if (entryTemplates.length) drawTemplates();
 }
 
 /** Opens an existing project in the form above the table. */
@@ -5629,6 +5646,124 @@ function resetTimesheetForm() {
   swapTheLabel($('#timesheet-form-title'), 'ts.book', 'Book time');
   swapTheLabel($('#timesheet-submit'), 'action.book', 'Book');
   $('#timesheet-cancel').hidden = true;
+}
+
+/** The templates this account has kept, as they were last loaded. */
+let entryTemplates = [];
+
+/** Loads the account's templates into the booking form's picker and their card. */
+async function loadTemplates() {
+  if (!can('timesheets:write:own')) return;
+
+  entryTemplates = (await api('/me/templates'))?.items ?? [];
+
+  redrawable('templates', drawTemplates);
+}
+
+/** What a template fills in, in one line: its project, its hours, its description. */
+function templateLabel(template) {
+  return [
+    template.projectId ? projectName(template.projectId) : t('ts.noProject', 'No project'),
+    template.durationHours ? fmtHours(template.durationHours) : null,
+    template.description,
+  ].filter(Boolean).join(' · ');
+}
+
+/**
+ * Whether a template can still fill the form: the project it names, if it names
+ * one, is still among those the form offers.
+ *
+ * A template keeps its project by number, and the project can be finished, handed
+ * on or deleted after it was saved. Filling the form with one of those would set
+ * the project field to a choice it does not have - which a select answers by
+ * quietly showing "No project" - so the template is offered but cannot be chosen.
+ */
+function templateUsable(template) {
+  return !template.projectId
+    || cache.projects.some((project) => project.id === template.projectId && project.status === 'active');
+}
+
+/** Draws the picker in the booking form and the card listing the templates. */
+function drawTemplates() {
+  const picker = $('#ts-template');
+
+  if (picker) {
+    // Marked as filled by a loader, so signing out empties it with the others.
+    picker.dataset.filled = '';
+    picker.replaceChildren(
+      el('option', { value: '', text: t('tpl.choose', 'Choose a template …') }),
+      ...entryTemplates.map((template) => el('option', {
+        value: String(template.id),
+        text: templateUsable(template)
+          ? templateLabel(template)
+          : `${templateLabel(template)} (${t('tpl.closed', 'its project takes no bookings')})`,
+        disabled: !templateUsable(template),
+      })),
+    );
+  }
+
+  $('#ts-template-row').hidden = entryTemplates.length === 0;
+  $('#templates-card').hidden = entryTemplates.length === 0;
+
+  const rows = entryTemplates.map((template) => el('tr', {},
+    el('td', {
+      class: template.projectId ? 'text' : 'text empty',
+      text: template.projectId ? projectName(template.projectId) : t('ts.noProject', 'No project'),
+    }),
+    el('td', { class: 'num', text: template.durationHours ? fmtShare(template.durationHours) : '–' }),
+    el('td', { class: 'text', text: template.description ?? '' }),
+    el('td', { class: 'actions' }, deleteButton({
+      label: `${t('tpl.one', 'Template')} "${templateLabel(template)}"`,
+      path: `/me/templates/${template.id}`,
+      message: t('tpl.deleted', 'Template deleted'),
+      after: loadTemplates,
+    })),
+  ));
+
+  fillTable($('#table-templates tbody'), rows, 4, t('tpl.empty', 'No templates yet.'));
+}
+
+/**
+ * Fills the booking form from a template: the project, the hours and the
+ * description, each emptied where the template has none, so the form reads as it
+ * did when the template was saved. The date stays - a template has none - and
+ * nothing is booked: that is still the button.
+ */
+function fillFromTemplate(template) {
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  form.elements.projectId.value = template.projectId ? String(template.projectId) : '';
+  form.elements.durationHours.value = template.durationHours ? String(template.durationHours) : '';
+  form.elements.description.value = template.description ?? '';
+
+  // The hours, which are what is usually checked or typed next.
+  form.elements.durationHours.focus();
+}
+
+/** Keeps what the booking form holds - all but the date - as a template. */
+function saveAsTemplate() {
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  const { projectId, durationHours, description } = form.elements;
+
+  const body = {
+    projectId: projectId.value ? Number(projectId.value) : null,
+    durationHours: durationHours.value === '' ? null : Number(durationHours.value),
+    description: description.value.trim() || null,
+  };
+
+  mutate(() => api('/me/templates', { method: 'POST', body: JSON.stringify(body) }),
+    t('tpl.saved', 'Saved as a template'), loadTemplates);
+}
+
+/** Forgets the templates the picker and the card showed, for an account that has signed out. */
+function forgetTheTemplates() {
+  entryTemplates = [];
+
+  $('#ts-template-row').hidden = true;
+  $('#templates-card').hidden = true;
 }
 
 /**
@@ -8614,6 +8749,10 @@ function forgetTheLastAccount() {
   $('#welcome-week-bars').replaceChildren();
   $('#welcome-week').hidden = true;
   forgetTheWeek();
+
+  // And the templates: the sweeps above empty the picker and the card's rows, and
+  // this hides the two, which would otherwise stand empty for the next account.
+  forgetTheTemplates();
 
   // And each form's own reset, which resetting the form does not reach: a hidden
   // field keeps its value through one, so a form left correcting a record kept
@@ -15417,6 +15556,7 @@ async function refreshAll() {
   await loadTokens();
   await loadPasskeys();
   await loadSchedules();
+  await loadTemplates();
   fillSettingsForm();
 
   document.documentElement.dataset.loaded = 'yes';
@@ -15561,6 +15701,19 @@ function wireForms() {
   });
 
   $('#timesheet-cancel').addEventListener('click', resetTimesheetForm);
+
+  // Back to the placeholder once it has filled the form: left showing the
+  // template, it would go on claiming the form says what the template says after
+  // somebody had changed the hours.
+  $('#ts-template').addEventListener('change', (event) => {
+    const template = entryTemplates.find((kept) => String(kept.id) === event.target.value);
+
+    event.target.value = '';
+
+    if (template) fillFromTemplate(template);
+  });
+
+  $('#ts-template-save').addEventListener('click', saveAsTemplate);
 
   // One row, because the total covers the reader's own hours and nobody else's.
   // The column used to name the person, which is now always the same person.

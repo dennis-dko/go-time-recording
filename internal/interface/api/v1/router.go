@@ -24,6 +24,7 @@ type Handlers struct {
 	Update     *rest.UpdateHandler
 	Timers     *rest.TimerHandler
 	Schedules  *rest.ScheduleHandler
+	Templates  *rest.TemplateHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -137,6 +138,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/schedules", h.Schedules.List)
 	app.POST(base+"/me/schedules", h.Schedules.Save)
 	app.DELETE(base+"/me/schedules/{validFrom}", h.Schedules.Delete)
+
+	// The bookings somebody makes often, kept to fill the form with.
+	app.GET(base+"/me/templates", h.Templates.List)
+	app.POST(base+"/me/templates", h.Templates.Save)
+	app.DELETE(base+"/me/templates/{id}", h.Templates.Delete)
 
 	app.GET(base+"/me/passkeys", h.Passkeys.List)
 	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)

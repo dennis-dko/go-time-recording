@@ -556,6 +556,7 @@ func main() {
 
 	timerRepo := sqldb.NewTimerRepository(db, cfg.Dialect)
 	scheduleRepo := sqldb.NewWorkScheduleRepository(db, cfg.Dialect)
+	templateRepo := sqldb.NewTemplateRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
@@ -635,6 +636,7 @@ func main() {
 		WithMetrics(app.Metrics())
 	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo)
 	workWeeks := appservice.NewWorkScheduleService(scheduleRepo, userRepo)
+	templates := appservice.NewTemplateService(templateRepo, projectRepo)
 
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
@@ -969,6 +971,7 @@ func main() {
 			WithConnection(ds),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
 		Schedules:  rest.NewScheduleHandler(workWeeks, authorizer),
+		Templates:  rest.NewTemplateHandler(templates, authorizer),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),

@@ -1610,6 +1610,59 @@
         }
       }
     },
+    "/me/templates": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Your templates",
+        "description": "Answers {\"items\": [{\"id\": 3, \"projectId\": 7, \"durationHours\": 0.25, \"description\": \"Daily\"}], \"totalCount\": 1}, in the order they were saved. Each part is null where the template fills nothing in. A template only fills the booking form - nothing is ever booked from one on its own - so it needs the right to book your own time, and its project is asked about again when the booking is made: one that has closed since is refused there, as any booking on it is.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Keep a booking you make often as a template",
+        "description": "Body: {\"projectId\": 7, \"durationHours\": 0.25, \"description\": \"Daily\"} - any of the three, at least one (templateEmpty). Held to what a booking is held to: hours between 0.01 and 24, a description no longer than one, and a project you can book on (projectClosedForBooking; one you cannot see answers 404). Saving one that fills the form exactly like a template you already have answers with that one rather than keeping a second. At most 50 per person (tooManyTemplates).",
+        "responses": {
+          "200": {
+            "description": "The template"
+          },
+          "201": {
+            "description": "The template"
+          }
+        }
+      }
+    },
+    "/me/templates/{id}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Delete one of your templates",
+        "description": "Somebody else's template answers 404, the same as one that does not exist.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
     "/me/days": {
       "get": {
         "tags": [
