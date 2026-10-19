@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/imaging"
 )
 
 // Branding is what an installation calls itself, as far as the served document
@@ -26,6 +28,11 @@ type Branding struct {
 	// Icon is that logo already at icon size, derived when it was saved: square,
 	// small, and the same bytes after a restart.
 	Icon string
+
+	// IconCrop is the part of the logo chosen for the tab. The installed app's
+	// icons are fitted from the original through it, at sizes the tab's 64
+	// pixels could only be stretched to.
+	IconCrop imaging.Crop
 }
 
 // BrandingFunc answers what this installation is called right now.
@@ -88,6 +95,11 @@ func Handler(branding BrandingFunc) func(http.Handler) http.Handler {
 	shipped := shippedIcon(sub)
 	converted := &icons{}
 
+	// The page's own dictionary, read once, so what the installed app's shortcuts
+	// are called in German is what the page calls those screens.
+	script, _ := fs.ReadFile(sub, "app.js")
+	install := newInstallable(string(script))
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !servesUI(r) {
@@ -107,6 +119,24 @@ func Handler(branding BrandingFunc) func(http.Handler) http.Handler {
 			// request for the tab icon was answered with the page.
 			if path(r) == iconPath {
 				serveIcon(w, r, branding, shipped, converted)
+
+				return
+			}
+
+			// What makes the page installable, before the fallback for the same
+			// reason as the icon: neither is a file, and both would otherwise be
+			// answered with the page.
+			if p := path(r); p == manifestPath || strings.HasPrefix(p, appIconPath) {
+				var current Branding
+				if branding != nil {
+					current = branding(r.Context())
+				}
+
+				if p == manifestPath {
+					install.serveManifest(w, r, current)
+				} else {
+					install.serveAppIcon(w, r, current)
+				}
 
 				return
 			}

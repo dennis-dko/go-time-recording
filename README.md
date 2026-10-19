@@ -296,6 +296,7 @@ exactly those checksums.
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
+| Installable | A manifest and icons per installation - its own name and logo - so the page installs as an app on a telephone or a desktop, with shortcuts to the time entries, the calendar and the overtime. Browsers offer this over HTTPS or on localhost only |
 | Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |
 
 ## Access control

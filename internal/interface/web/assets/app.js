@@ -3766,6 +3766,10 @@ const TRANSLATIONS = {
     'stats.noProject': 'Kein Projekt',
     'stats.deletedProject': 'gelöschtes Projekt',
     'stats.empty': 'In diesem Zeitraum wurde nichts erfasst.',
+    'install.title': 'Als App installieren',
+    'install.text': 'Installiert öffnet sich die Zeiterfassung vom Startbildschirm oder aus dem Startmenü wie eine eigene App, ohne den Browser drumherum. Ein langer Druck auf ihr Symbol führt direkt zu den Zeiteinträgen, zum Kalender oder zu den Überstunden.',
+    'install.manual': 'Wo hier keine Schaltfläche erscheint, hat der Browser das Angebot in seinem Menü, als „App installieren“ oder „Zum Startbildschirm hinzufügen“.',
+    'install.now': 'Installieren',
     'timer.title': 'Stoppuhr',
     'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in deiner eigenen Zeitzone.',
     'timer.start': 'Starten',
@@ -12882,6 +12886,64 @@ function wireTimer() {
   });
 }
 
+// ------------------------------------------------------------- installing
+
+/**
+ * The browser's offer to install the page as an app, kept until it is used.
+ *
+ * Chromium makes the offer as an event, once per page, and only the page can act
+ * on it - so it is held here for the button on My account. Firefox and Safari make
+ * no such offer; there the card's sentence says where their menus keep it, and the
+ * button never appears.
+ */
+let installOffer = null;
+
+function wireInstall() {
+  // Running as the installed app already: there is nothing to offer, and a card
+  // offering it would read as though the installation had not worked.
+  if (window.matchMedia?.('(display-mode: standalone)').matches) {
+    const card = $('#install-card');
+    if (card) card.hidden = true;
+
+    return;
+  }
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    // Held rather than shown at once: a page that asks before anybody has done
+    // anything is asking at the wrong moment.
+    event.preventDefault();
+    installOffer = event;
+    showInstallOffer();
+  });
+
+  // Installed - from here or from the browser's own menu - and nothing is left
+  // to offer.
+  window.addEventListener('appinstalled', () => {
+    installOffer = null;
+    showInstallOffer();
+  });
+
+  $('#install-now')?.addEventListener('click', async () => {
+    if (!installOffer) return;
+
+    // The offer can be made once; whatever the answer, it is spent.
+    const offer = installOffer;
+    installOffer = null;
+    showInstallOffer();
+
+    await offer.prompt();
+  });
+}
+
+/** Shows the button where the browser made an offer, and the sentence where not. */
+function showInstallOffer() {
+  const button = $('#install-now');
+  if (button) button.hidden = !installOffer;
+
+  const manual = $('#install-manual');
+  if (manual) manual.hidden = Boolean(installOffer);
+}
+
 // ------------------------------------------------------- metrics and tracing
 
 /**
@@ -15058,6 +15120,7 @@ async function init() {
     trackHeight('.topbar', '--topbar-height');
     trackHeight('#site-footer', '--footer-height');
     wireTimer();
+    wireInstall();
     wireStatistics();
     wireDocumentExports();
     wireReportChart();

@@ -8,10 +8,10 @@
 // that could not change, and went on showing a picture nobody had chosen. This
 // is the answer for the Windows side of the same problem.
 //
-// The geometry below is the same as favicon.svg's, in the same 32-unit box.
-// Changing one means changing the other; there is no renderer here that could
-// read the SVG, and adding one to rasterise nine paths would be a dependency
-// that does more than this needs.
+// The mark is drawn by imaging.Mark, from favicon.svg's geometry in the same
+// 32-unit box - the same drawing the server uses for an installed app's icons,
+// so the two cannot come to show different pictures. Changing the SVG means
+// changing that function.
 //
 //	go run ./build/icon > build/icon.ico
 //

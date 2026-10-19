@@ -44,6 +44,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
 	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
+	"github.com/dennis-dko/go-time-recording/internal/support/imaging"
 	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
@@ -1183,6 +1184,10 @@ func brandingFor(settings *appservice.SettingsService) web.BrandingFunc {
 			Title: branding.TabName(),
 			Logo:  branding.LogoDataURI,
 			Icon:  branding.LogoIcon,
+			IconCrop: imaging.Crop{
+				X: branding.IconCrop.X, Y: branding.IconCrop.Y,
+				W: branding.IconCrop.W, H: branding.IconCrop.H,
+			},
 		}
 	}
 }

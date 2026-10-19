@@ -42,9 +42,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		contains string
 	}{
 		{
-			reference: "internal/interface/web/web.go:82",
+			reference: "internal/interface/web/web.go:89",
 			resolved:  "internal/interface/web/web.go",
-			line:      82,
+			line:      89,
 			contains:  "panic(",
 		},
 		// The two Must... sites beside it. They are panics the word `panic(`

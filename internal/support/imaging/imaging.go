@@ -172,6 +172,16 @@ func ToIcon(body []byte) ([]byte, error) {
 	return fitInto(body, Crop{}, iconSize, iconSize, true)
 }
 
+// FitSquare is ToIcon at a size the caller names: the part of the logo the crop
+// picks, fitted and padded out to the square, never enlarged.
+//
+// For an installed app, whose home screen asks for 192 and whose install dialog
+// asks for 512 - sizes the 64 a tab is kept at cannot be stretched to without
+// becoming the blur the conversion exists to avoid.
+func FitSquare(body []byte, crop Crop, size int) ([]byte, error) {
+	return fitInto(body, crop, size, size, true)
+}
+
 // MaxPixels bounds what a logo may decode to, in pixels.
 //
 // The size limit on a logo is 256 KB, and until this was added that was the only

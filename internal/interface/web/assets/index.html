@@ -13,6 +13,12 @@
        platform and a hollow box where the font is missing. -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="alternate icon" href="/favicon.ico">
+  <!-- What makes the page installable as an app. Its name, its icons and the
+       screens a long press leads to are in the manifest, which the server writes
+       per installation; the colour is what a device paints around the app
+       before the page has. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#2f6feb">
   <!-- Blocking on purpose: it has to pick the theme before the first paint,
        or the page flashes in the wrong colours. -->
   <script src="/theme.js"></script>
@@ -1082,6 +1088,18 @@
         <h2 data-i18n="tour.card.title">Guided tour</h2>
         <p class="muted" data-i18n="tour.card.text">A short walk through the areas of the application. Shown once on your first sign-in; start it again whenever you like.</p>
         <button type="button" class="secondary" id="tour-restart" data-i18n="tour.card.start">Show the tour</button>
+      </div>
+
+      <!-- The page as an app of its own, on a telephone's home screen or in a
+           desktop's start menu. The button is the browser's own offer, so it
+           appears only where the browser makes one; elsewhere the sentence says
+           where its menu keeps it. Taken away entirely once the page is running
+           as the installed app, where there is nothing left to offer. -->
+      <div class="card" id="install-card">
+        <h2 data-i18n="install.title">Install as an app</h2>
+        <p class="muted" data-i18n="install.text">Installed, the time recording opens from the home screen or the start menu like an app of its own, without the browser around it. A long press on its icon leads straight to the time entries, the calendar or the overtime.</p>
+        <p class="muted" id="install-manual" data-i18n="install.manual">Where no button appears here, the browser keeps the offer in its menu, as "Install app" or "Add to Home screen".</p>
+        <button type="button" class="secondary" id="install-now" hidden data-i18n="install.now">Install</button>
       </div>
 
       <form method="post" id="form-my-timezone" class="card form">

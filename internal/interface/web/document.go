@@ -89,7 +89,12 @@ func (d document) serve(w http.ResponseWriter, r *http.Request, branding Brandin
 	// changed icon is a changed URL. Without it a browser that cached the old one
 	// keeps showing it for as long as it feels like, which is the whole difficulty
 	// with tab icons.
-	icon := `<link rel="icon" href="` + iconPath + `?v=` + iconVersion(branding) + `">`
+	//
+	// And the installed app's icon for the devices that read no manifest - Safari
+	// adding the page to a home screen asks for this link and nothing else.
+	icon := `<link rel="icon" href="` + iconPath + `?v=` + iconVersion(branding) + `">` +
+		"\n  " + `<link rel="apple-touch-icon" href="` + appIconPath + `192?v=` +
+		appIconVersion(branding) + `">`
 
 	page := d.before + "<title>" + escape(title) + "</title>" + d.middle + icon + d.after
 

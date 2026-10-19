@@ -4,34 +4,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"image"
-	"image/color"
 	"image/png"
 	"os"
 
-	"golang.org/x/image/vector"
+	"github.com/dennis-dko/go-time-recording/internal/support/imaging"
 )
 
-// The mark, in the 32-unit box favicon.svg uses.
-const (
-	box = 32.0
-
-	tileX, tileY, tileSide, tileRadius = 3.0, 3.0, 26.0, 7.6
-
-	glassLeft, glassRight = 9.6, 22.4
-	glassTop, glassBottom = 8.6, 23.4
-	glassWaist            = 16.0
-)
-
-// The two inks. The lower half of the glass is the sand that has already
-// fallen, so it is the same white held back to a little over half.
-var (
-	tile       = color.NRGBA{R: 0x2f, G: 0x6f, B: 0xeb, A: 0xff}
-	sand       = color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
-	fallenTo   = 0.55
-	icoSizes   = []int{16, 32, 48, 256}
-	cubicKappa = float32(0.55228)
-)
+// icoSizes are the frames Windows asks for.
+var icoSizes = []int{16, 32, 48, 256}
 
 func main() {
 	if err := run(os.Stdout); err != nil {
@@ -46,7 +26,7 @@ func run(out *os.File) error {
 	for _, size := range icoSizes {
 		var encoded bytes.Buffer
 
-		if err := png.Encode(&encoded, draw(size)); err != nil {
+		if err := png.Encode(&encoded, imaging.Mark(size)); err != nil {
 			return fmt.Errorf("encoding %dpx: %w", size, err)
 		}
 
@@ -54,94 +34,6 @@ func run(out *os.File) error {
 	}
 
 	return writeICO(out, icoSizes, frames)
-}
-
-// draw renders the mark at one size.
-func draw(size int) image.Image {
-	scale := float32(size) / box
-
-	tileMask := fill(size, func(r *vector.Rasterizer) {
-		roundedRect(r, tileX*scale, tileY*scale, tileSide*scale, tileSide*scale, tileRadius*scale)
-	})
-
-	upper := fill(size, func(r *vector.Rasterizer) {
-		triangle(r, scale, glassTop)
-	})
-
-	lower := fill(size, func(r *vector.Rasterizer) {
-		triangle(r, scale, glassBottom)
-	})
-
-	out := image.NewNRGBA(image.Rect(0, 0, size, size))
-
-	for y := range size {
-		for x := range size {
-			at := image.Pt(x, y)
-
-			covered := float64(tileMask.AlphaAt(x, y).A) / 255
-			if covered == 0 {
-				continue
-			}
-
-			// The tile carries the colour; the glass is knocked into it. Both
-			// halves are the same white, the lower one held back - so the two are
-			// one shape read as an hourglass rather than two separate marks.
-			shade := blend(tile, sand, float64(upper.AlphaAt(x, y).A)/255)
-			shade = blend(shade, sand, float64(lower.AlphaAt(x, y).A)/255*fallenTo)
-			shade.A = uint8(covered*255 + 0.5)
-
-			out.SetNRGBA(at.X, at.Y, shade)
-		}
-	}
-
-	return out
-}
-
-// fill rasterises one path into a coverage mask, anti-aliased.
-func fill(size int, path func(*vector.Rasterizer)) *image.Alpha {
-	r := vector.NewRasterizer(size, size)
-	path(r)
-
-	mask := image.NewAlpha(image.Rect(0, 0, size, size))
-	r.Draw(mask, mask.Bounds(), image.Opaque, image.Point{})
-
-	return mask
-}
-
-// triangle is one half of the glass: a horizontal edge and the point it meets in
-// the middle. Which half is decided by where the edge is.
-func triangle(r *vector.Rasterizer, scale float32, edge float64) {
-	r.MoveTo(float32(glassLeft)*scale, float32(edge)*scale)
-	r.LineTo(float32(glassRight)*scale, float32(edge)*scale)
-	r.LineTo(float32(glassWaist)*scale, float32(glassWaist)*scale)
-	r.ClosePath()
-}
-
-// roundedRect traces the tile. The corners are cubics rather than arcs, which
-// the rasteriser has no notion of; the constant is the usual approximation of a
-// quarter circle and is exact enough at 256 pixels, let alone 16.
-func roundedRect(r *vector.Rasterizer, x, y, w, h, radius float32) {
-	k := radius * cubicKappa
-
-	r.MoveTo(x+radius, y)
-	r.LineTo(x+w-radius, y)
-	r.CubeTo(x+w-radius+k, y, x+w, y+radius-k, x+w, y+radius)
-	r.LineTo(x+w, y+h-radius)
-	r.CubeTo(x+w, y+h-radius+k, x+w-radius+k, y+h, x+w-radius, y+h)
-	r.LineTo(x+radius, y+h)
-	r.CubeTo(x+radius-k, y+h, x, y+h-radius+k, x, y+h-radius)
-	r.LineTo(x, y+radius)
-	r.CubeTo(x, y+radius-k, x+radius-k, y, x+radius, y)
-	r.ClosePath()
-}
-
-// blend mixes towards a colour by a fraction of it.
-func blend(base, over color.NRGBA, amount float64) color.NRGBA {
-	mix := func(a, b uint8) uint8 {
-		return uint8(float64(a)*(1-amount) + float64(b)*amount + 0.5)
-	}
-
-	return color.NRGBA{R: mix(base.R, over.R), G: mix(base.G, over.G), B: mix(base.B, over.B), A: base.A}
 }
 
 // writeICO packs the frames into the container Windows reads.
