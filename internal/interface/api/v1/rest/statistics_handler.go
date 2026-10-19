@@ -44,6 +44,12 @@ type ProjectTotalResponse struct {
 	Hours     float64 `json:"hours"`
 }
 
+// TagTotalResponse is the hours of the entries that name one activity.
+type TagTotalResponse struct {
+	Tag   string  `json:"tag"`
+	Hours float64 `json:"hours"`
+}
+
 // StatisticsResponse is everything a chart of your own time needs, in one request.
 type StatisticsResponse struct {
 	From Date `json:"from"`
@@ -57,6 +63,11 @@ type StatisticsResponse struct {
 	Days []DayTotalResponse `json:"days"`
 
 	Projects []ProjectTotalResponse `json:"projects"`
+
+	// Tags are the activities the descriptions name, most hours first; an entry
+	// naming two counts towards both. UntaggedHours is what names none.
+	Tags          []TagTotalResponse `json:"tags"`
+	UntaggedHours float64            `json:"untaggedHours"`
 }
 
 // Own handles GET /api/v1/me/statistics.
@@ -93,6 +104,13 @@ func (h *StatisticsHandler) Own(c *gofr.Context) (any, error) {
 		TotalHours: stats.TotalHours,
 		Days:       make([]DayTotalResponse, 0, len(stats.Days)),
 		Projects:   make([]ProjectTotalResponse, 0, len(stats.Projects)),
+
+		Tags:          make([]TagTotalResponse, 0, len(stats.Tags)),
+		UntaggedHours: stats.UntaggedHours,
+	}
+
+	for _, tag := range stats.Tags {
+		response.Tags = append(response.Tags, TagTotalResponse{Tag: tag.Tag, Hours: tag.Hours})
 	}
 
 	for _, day := range stats.Days {

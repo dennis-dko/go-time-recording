@@ -3849,6 +3849,9 @@ const TRANSLATIONS = {
     'stats.title': 'Meine Stunden',
     'stats.perDay': 'Stunden pro Tag',
     'stats.perProject': 'Stunden pro Projekt',
+    'stats.perActivity': 'Stunden pro Tätigkeit',
+    'stats.activityHint': 'Schreib eine Tätigkeit mit # in eine Beschreibung – #besprechung, #review – und ihre Stunden werden hier zusammengezählt. Ein Eintrag mit zweien zählt für beide, deshalb kann die Summe größer sein als die Gesamtzeit.',
+    'stats.noActivity': 'Keine Tätigkeit',
     'stats.total': 'Gesamt',
     'stats.filename': 'statistik',
     'stats.noProject': 'Kein Projekt',
@@ -12154,8 +12157,9 @@ function chartColourFor(key) {
   if (key === undefined || key === null || key === '') return '';
 
   // The hours that belong to no project are not a project, and a colour of their
-  // own would put them among them. They keep the neutral one.
-  if (key === NO_PROJECT_KEY) return 'chart-colour-none';
+  // own would put them among them. They keep the neutral one - and so do the hours
+  // that name no activity, for the same reason.
+  if (key === NO_PROJECT_KEY || key === NO_ACTIVITY_KEY) return 'chart-colour-none';
 
   let hash = 0;
 
@@ -12168,6 +12172,19 @@ function chartColourFor(key) {
 
 /** What the bucket for unassigned hours is called, in every chart. */
 const NO_PROJECT_KEY = 'no-project';
+
+/** What the bucket for hours that name no activity is called. */
+const NO_ACTIVITY_KEY = 'no-activity';
+
+/** One bar per activity, keyed by the tag so each keeps its colour, and the hours naming none last. */
+function activityBars(tags, untagged) {
+  return [
+    ...tags.map((tag) => ({ label: `#${tag.tag}`, value: tag.hours, key: `#${tag.tag}` })),
+    ...(untagged > 0
+      ? [{ label: t('stats.noActivity', 'No activity'), value: untagged, key: NO_ACTIVITY_KEY }]
+      : []),
+  ];
+}
 
 /** One bar per project, each carrying the identity its colour comes from. */
 function projectBars(projects) {
@@ -12718,6 +12735,7 @@ async function loadStatistics() {
     fmtHours);
 
   drawBarChart($('#chart-projects'), projectBars(projects), fmtHours);
+  drawBarChart($('#chart-activities'), activityBars(stats.tags ?? [], stats.untaggedHours ?? 0), fmtHours);
 
   $('#statistics-empty').hidden = (stats.totalHours ?? 0) > 0;
 }
@@ -13379,6 +13397,10 @@ async function statisticsDocument() {
         heading: t('stats.perProject', 'Hours per project'),
         chart: await chartAsPicture($('#chart-projects')),
       },
+      {
+        heading: t('stats.perActivity', 'Hours per activity'),
+        chart: await chartAsPicture($('#chart-activities')),
+      },
     ],
     summary: [{
       label: t('stats.total', 'Total'),
@@ -13734,7 +13756,9 @@ function forgetEveryEvaluation() {
     if (node) node.textContent = '';
   }
 
-  for (const picture of ['#report-chart', '#chart-days', '#chart-projects']) $(picture)?.replaceChildren();
+  for (const picture of ['#report-chart', '#chart-days', '#chart-projects', '#chart-activities']) {
+    $(picture)?.replaceChildren();
+  }
 
   reportChart.projects = [];
   reportChart.days = [];
