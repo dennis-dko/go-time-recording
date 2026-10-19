@@ -530,6 +530,15 @@
             }
           },
           {
+            "name": "q",
+            "in": "query",
+            "description": "Only the entries whose description contains this text, whatever its case. Matched as written: a percent sign or an underscore is a character, not a wildcard. On SQLite only ASCII letters are folded, so there `Ä` does not find `ä`. Longer than a description can be (2000 characters) is refused.",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "Entries per page. Default 100, maximum 500; above that the request is refused.",
@@ -1605,7 +1614,7 @@
           "timesheets"
         ],
         "summary": "Export time entries as .xlsx",
-        "description": "Takes the same filters as the list, with the same scoping: whoever may read only their own entries exports their own, whatever they ask for.",
+        "description": "Takes the same filters as the list - projectId, from, to and q - with the same scoping: whoever may read only their own entries exports their own, whatever they ask for.",
         "parameters": [
           {
             "name": "lang",

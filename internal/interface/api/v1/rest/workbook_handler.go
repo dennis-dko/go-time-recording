@@ -76,6 +76,7 @@ func (h *WorkbookHandler) timesheetFilter(
 		UserID:         scope.UserID,
 		ProjectID:      scope.ProjectID,
 		WithoutProject: scope.WithoutProject,
+		Search:         scope.Search,
 		StartDate:      scope.From,
 		EndDate:        scope.To,
 	}, nil

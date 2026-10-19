@@ -124,6 +124,7 @@ func (s *TimesheetApplicationService) ListTimesheets(
 		UserID:         q.UserID,
 		ProjectID:      q.ProjectID,
 		WithoutProject: q.WithoutProject,
+		Search:         q.Search,
 		StartDate:      q.StartDate,
 		EndDate:        q.EndDate,
 		Limit:          q.Limit,

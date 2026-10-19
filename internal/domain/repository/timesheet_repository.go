@@ -18,6 +18,14 @@ type TimesheetFilter struct {
 	// ask for the uncategorised ones.
 	WithoutProject bool
 
+	// Search keeps the entries whose description contains this text, whatever
+	// its case; empty is no restriction. The text is matched as written - a
+	// percent sign or an underscore in it is a character, not a wildcard.
+	//
+	// The case is folded by the database, and SQLite folds ASCII only: there "Ä"
+	// does not find "ä". PostgreSQL and MySQL fold every letter.
+	Search string
+
 	// Limit is how many entries to return and Offset how many to skip first.
 	//
 	// Zero Limit means no bound, which is what every caller that totals or exports

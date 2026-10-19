@@ -591,6 +591,9 @@ func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool 
 		return false
 	case filter.EndDate != nil && ts.Date.After(*filter.EndDate):
 		return false
+	case filter.Search != "" && (ts.Description == nil ||
+		!strings.Contains(strings.ToLower(*ts.Description), strings.ToLower(filter.Search))):
+		return false
 	default:
 		return true
 	}

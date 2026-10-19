@@ -19,6 +19,10 @@ type ListTimesheetsQuery struct {
 	// project are exactly the ones somebody goes looking for.
 	WithoutProject bool
 
+	// Search keeps the entries whose description contains this text, ignoring
+	// case. Empty is every entry.
+	Search string
+
 	// Limit is the page size and Offset how many matching entries to skip. A zero
 	// Limit reads everything, which is what the exports and the evaluations want;
 	// the listing that answers a screen always names one.

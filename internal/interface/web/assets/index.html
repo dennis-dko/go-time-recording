@@ -644,6 +644,16 @@
             <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">All projects</option></select>
           </div>
         </div>
+        <!-- The listing narrowed by when and by what was written. A form so that
+             signing out resets it with every other form: a search term is what
+             somebody was looking for, and none of the next person's business.
+             Searched on the server, so the count and the export agree with what
+             is found. -->
+        <form method="post" id="form-ts-filters" class="grid ts-filters">
+          <label data-i18n="field.from">From<input type="date" id="filter-ts-from" name="from"></label>
+          <label data-i18n="field.to">To<input type="date" id="filter-ts-to" name="to"></label>
+          <label class="wide" data-i18n="filter.search">Search in descriptions<input type="search" id="filter-ts-q" name="q" data-i18n-placeholder="filter.searchPlaceholder" placeholder="a word, a ticket number, #meeting"></label>
+        </form>
         <div class="table-wrap">
           <table id="table-timesheets">
             <thead>

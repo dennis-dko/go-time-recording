@@ -299,5 +299,21 @@ func timesheetConditions(filter repository.TimesheetFilter) ([]string, []any) {
 		args = append(args, *filter.EndDate)
 	}
 
+	if filter.Search != "" {
+		conditions = append(conditions, "LOWER(description) LIKE ? ESCAPE '!'")
+		args = append(args, "%"+likeLiteral(strings.ToLower(filter.Search))+"%")
+	}
+
 	return conditions, args
+}
+
+// likeLiteral makes text match itself inside a LIKE pattern.
+//
+// The escape is '!' rather than the backslash two of the engines default to:
+// SQLite has no default escape at all, and a backslash written into the ESCAPE
+// clause is a different string to MySQL than to PostgreSQL. A character none of
+// them treats specially inside a string literal gives one clause that means the
+// same thing on all three.
+func likeLiteral(text string) string {
+	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(text)
 }

@@ -467,6 +467,7 @@ const FIELD_NAMES = {
   name: 'Name',
   port: 'Port',
   projectId: 'Project',
+  q: 'Search',
   rateLimit: 'Rate limit',
   rateLimitWindowSeconds: 'Rate limit window (seconds)',
   role: 'Role',
@@ -4068,6 +4069,7 @@ const TRANSLATIONS = {
     'field.maxDailyHours': 'Max/Tag',
     'field.port': 'Port',
     'field.projectId': 'Projekt',
+    'field.q': 'Suche',
     'field.rateLimit': 'Anfragegrenze',
     'field.rateLimitWindowSeconds': 'Zeitfenster der Anfragegrenze (Sekunden)',
     'field.sessionIdleMinutes': 'Abmelden nach Untätigkeit (Minuten)',
@@ -4105,6 +4107,8 @@ const TRANSLATIONS = {
     'field.to': 'Bis',
     'field.user': 'Benutzer',
     'filter.allProjects': 'Alle Projekte',
+    'filter.search': 'In Beschreibungen suchen',
+    'filter.searchPlaceholder': 'ein Wort, eine Ticketnummer, #besprechung',
     'footer.source': 'Quellcode auf GitHub',
     'footer.versionTitle': 'Laufende Version dieser Installation',
     'log.clear': 'Ansicht leeren',
@@ -5666,9 +5670,7 @@ let timesheetLoads = 0;
 async function loadTimesheets(more = false) {
   if (!can('timesheets:read:own')) return;
 
-  const params = new URLSearchParams();
-  const projectId = $('#filter-ts-project').value;
-  if (projectId) params.set('projectId', projectId);
+  const params = timesheetFilterParams();
 
   const before = more ? timesheetEntries : [];
 
@@ -11388,13 +11390,32 @@ async function loadStatistics() {
 // their file would do - which rows would be written, which would not, and why -
 // before anything is.
 
-/** The filters the entry list is showing, so the export matches the screen. */
-function timesheetFilterQuery() {
+/**
+ * The filters the entry list is showing, as the parameters both the list and the
+ * export send.
+ *
+ * One builder for both, so the file can never hold more than the screen it was
+ * started from - two that agreed today would be two that could disagree tomorrow.
+ */
+function timesheetFilterParams() {
   const params = new URLSearchParams();
 
   const projectId = $('#filter-ts-project')?.value;
+  const from = $('#filter-ts-from')?.value;
+  const to = $('#filter-ts-to')?.value;
+  const search = $('#filter-ts-q')?.value.trim();
 
   if (projectId) params.set('projectId', projectId);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  if (search) params.set('q', search);
+
+  return params;
+}
+
+/** The same filters as a query string for the export, or nothing. */
+function timesheetFilterQuery() {
+  const params = timesheetFilterParams();
 
   return params.toString() ? `?${params}` : '';
 }
@@ -14898,6 +14919,29 @@ function wireForms() {
 
   $('#filter-ts-project').addEventListener('change',
     () => mutate(loadTimesheets, null, null));
+
+  // A day is taken once it is complete - picked, or typed and left - and the
+  // search once the typing pauses: asked on every keystroke it would be a request
+  // per letter, each overtaking the one before.
+  const filters = $('#form-ts-filters');
+
+  filters.addEventListener('change', (event) => {
+    if (event.target.id !== 'filter-ts-q') mutate(loadTimesheets, null, null);
+  });
+
+  let searchPause = null;
+
+  $('#filter-ts-q').addEventListener('input', () => {
+    clearTimeout(searchPause);
+    searchPause = setTimeout(() => mutate(loadTimesheets, null, null), 300);
+  });
+
+  // Enter asks at once rather than waiting out the pause.
+  filters.addEventListener('submit', (event) => {
+    event.preventDefault();
+    clearTimeout(searchPause);
+    mutate(loadTimesheets, null, null);
+  });
 
   // Through mutate like every other loader, so a half-filled booking form is left
   // alone while the table grows underneath it.

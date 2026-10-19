@@ -65,6 +65,7 @@ func (h *TimesheetHandler) List(c *gofr.Context) (any, error) {
 		UserID:         scope.UserID,
 		ProjectID:      scope.ProjectID,
 		WithoutProject: scope.WithoutProject,
+		Search:         scope.Search,
 		StartDate:      scope.From,
 		EndDate:        scope.To,
 		Limit:          limit,
@@ -558,6 +559,7 @@ type timesheetScope struct {
 	UserID         uint
 	ProjectID      uint
 	WithoutProject bool
+	Search         string
 
 	From *time.Time
 	To   *time.Time
@@ -602,10 +604,18 @@ func timesheetScopeOf(
 		return empty, toHTTPError(err)
 	}
 
+	// Bounded by what it is searched in: a text longer than any description can
+	// be finds nothing, and is refused rather than sent to the database.
+	search := strings.TrimSpace(c.Param("q"))
+	if model.TooLong(search, model.MaxDescriptionLength) {
+		return empty, toHTTPError(apperror.InvalidFields("q"))
+	}
+
 	return timesheetScope{
 		UserID:         userID,
 		ProjectID:      projectID,
 		WithoutProject: withoutProject,
+		Search:         search,
 		From:           from,
 		To:             to,
 	}, nil
