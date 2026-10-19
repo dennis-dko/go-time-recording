@@ -63,17 +63,21 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			line:      150,
 			contains:  "netip.MustParsePrefix(",
 		},
+		// The statement's own words rather than "fmt.Sprintf(", which some thirty
+		// lines of that file satisfy - so the reference slid from the statement
+		// formatting model.RoleUser onto one formatting a column type, and stayed
+		// green the whole way.
 		{
-			reference: "internal/infrastructure/persistence/migrations/migrations.go:1337",
+			reference: "internal/infrastructure/persistence/migrations/migrations.go:1363",
 			resolved:  "internal/infrastructure/persistence/migrations/migrations.go",
-			line:      1337,
-			contains:  "fmt.Sprintf(",
+			line:      1363,
+			contains:  "WHERE name = '%s') WHERE role_id IS NULL",
 		},
 		{
 			reference: "internal/infrastructure/config/datasource.go:122",
 			resolved:  "internal/infrastructure/config/datasource.go",
 			line:      122,
-			contains:  "configLocation",
+			contains:  "const configLocation",
 		},
 		{
 			reference: "restart_handler.go:488",
