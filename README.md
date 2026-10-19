@@ -832,7 +832,10 @@ own.
 ## Projects
 
 Projects are optional on a time entry: hours can be recorded first and
-categorised later, or left uncategorised.
+categorised later, or left uncategorised. The entry list counts the ones still
+waiting for a project and leads to them, and several are given a project at once
+from the bar that appears when rows are ticked - each through the same check a
+single entry's transfer makes.
 
 **A project belongs to one person.** Only its owner sees it, only its owner books
 on it, and that includes the administrator — whose own projects are equally its own

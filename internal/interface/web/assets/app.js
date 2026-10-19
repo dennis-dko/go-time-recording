@@ -2252,6 +2252,16 @@ function ensureBulkBar(table) {
       onclick: () => runBulkDelete(table),
     }));
 
+  // Time entries can be given a project together as well - the other half of
+  // recording hours first and categorising them later, which was otherwise one
+  // entry at a time. Their words are written by refreshBulkBar, like the
+  // delete button's.
+  if (table.dataset.assigns !== undefined && can('timesheets:transfer')) {
+    bar.append(
+      el('select', { class: 'bulk-project' }),
+      el('button', { type: 'button', class: 'secondary bulk-assign', onclick: () => runBulkAssign(table) }));
+  }
+
   // Above the table rather than below it: in a long table the bar would be off
   // the screen, and the rows being ticked start at the top.
   wrap.parentElement.insertBefore(bar, wrap);
@@ -2269,7 +2279,18 @@ function refreshBulkBar(table) {
   bar.classList.toggle('shown', picked.length > 0);
   bar.querySelector('.bulk-count').textContent = t('bulk.count', '{n} selected')
     .replace('{n}', String(picked.length));
-  bar.querySelector('button').textContent = t('bulk.delete', 'Delete selected');
+  bar.querySelector('button.danger').textContent = t('bulk.delete', 'Delete selected');
+
+  const assign = bar.querySelector('.bulk-assign');
+
+  if (assign) {
+    const choice = bar.querySelector('.bulk-project');
+
+    fillSelect(choice, cache.projects.filter((project) => project.status === 'active'),
+      { placeholder: t('bulk.assignTo', 'Assign to a project …') });
+    choice.setAttribute('aria-label', t('bulk.assignTo', 'Assign to a project …'));
+    assign.textContent = t('bulk.assign', 'Assign');
+  }
 
   const all = table.querySelector('thead .pick-all');
   if (all) {
@@ -2334,6 +2355,58 @@ async function runBulkDelete(table) {
   // One reload for the batch, along the row's own reload path: whatever a single
   // deletion refreshes is what a batch of them refreshes.
   if (picked[0].after) await picked[0].after();
+}
+
+/**
+ * Gives every ticked time entry the project chosen in the bar, one after another.
+ *
+ * Through the single entry's own transfer, for the reason the batch deletion uses
+ * the single deletion: each entry is held to the rules one is held to alone - that
+ * it is the reader's, and that the project is theirs and open - so a batch can do
+ * nothing a press on one row could not. A refusal partway does not undo the rest;
+ * it is named, as the deletion names its own.
+ *
+ * Nothing is asked first. Unlike a deletion, an entry given the wrong project is
+ * given the right one the same way.
+ */
+async function runBulkAssign(table) {
+  const choice = bulkBarOf(table)?.querySelector('.bulk-project');
+  const projectId = Number(choice?.value);
+
+  // The row's own address, which is what a deletion is sent to and what its
+  // transfer hangs off.
+  const picked = [...table.querySelectorAll('tbody .row-pick')]
+    .filter((box) => box.checked)
+    .map((box) => box.deletes);
+
+  if (picked.length === 0) return;
+
+  if (!projectId) {
+    choice?.focus();
+
+    return;
+  }
+
+  const refused = [];
+  let done = 0;
+
+  for (const item of picked) {
+    try {
+      await api(`${item.path}/transfer`, { method: 'POST', body: JSON.stringify({ projectId }) });
+      done += 1;
+    } catch (err) {
+      refused.push(`${item.label}: ${err.message}`);
+    }
+  }
+
+  if (refused.length > 0) {
+    toast(`${fillIn(t('bulk.assignRefused', '{0} could not be assigned'), [refused.length])}`
+      + ` – ${refused[0]}`, 'error');
+  } else {
+    toast(fillIn(t('bulk.assigned', '{0} assigned to {1}'), [done, projectName(projectId)]), 'ok');
+  }
+
+  await reloadTimeViews();
 }
 
 /**
@@ -3732,6 +3805,10 @@ const TRANSLATIONS = {
     'bulk.text': 'Das lässt sich nicht rückgängig machen.',
     'bulk.done': '{n} gelöscht',
     'bulk.refused': '{n} konnten nicht gelöscht werden',
+    'bulk.assignTo': 'Einem Projekt zuordnen …',
+    'bulk.assign': 'Zuordnen',
+    'bulk.assigned': '{0} dem Projekt {1} zugeordnet',
+    'bulk.assignRefused': '{0} konnten nicht zugeordnet werden',
     'sheet.projects.text': 'Exportiert deine Projekte. Ein Import '
       + 'ordnet Zeilen über den Namen zu: ein vorhandener Name wird aktualisiert, ein neuer '
       + 'angelegt. Eine leere '
@@ -4386,6 +4463,7 @@ const TRANSLATIONS = {
     'totp.on': 'Zwei-Faktor-Authentifizierung ist aktiviert.',
     'totp.title': 'Zwei-Faktor-Authentifizierung',
     'ts.book': 'Zeit buchen',
+    'ts.unassigned': '{0} ohne Projekt',
     'tpl.fill': 'Aus einer Vorlage ausfüllen',
     'tpl.choose': 'Vorlage wählen …',
     'tpl.closed': 'ihr Projekt nimmt keine Buchungen an',
@@ -5903,6 +5981,36 @@ async function loadTimesheets(more = false) {
   fillTable($('#table-timesheets tbody'), rows, 5, t('ts.empty', 'No entries for this filter.'));
 
   showTimesheetTally();
+
+  await countUnassigned();
+}
+
+/** How many entries are waiting for a project, as last counted. */
+let unassignedEntries = 0;
+
+/**
+ * Counts the entries still waiting for a project, for the link above the list.
+ *
+ * Hours can be recorded first and given a project later, and those are the ones
+ * this collects. Counted whatever the list is narrowed to - a period, a search -
+ * because the question is how many are waiting at all, not how many the filter
+ * happens to show.
+ */
+async function countUnassigned() {
+  const answer = await api('/timesheets?projectId=none&limit=1');
+
+  unassignedEntries = answer?.totalCount ?? 0;
+
+  redrawable('unassigned', drawUnassigned);
+}
+
+/** Writes the link: hidden while nothing waits, and while the list already shows what does. */
+function drawUnassigned() {
+  const link = $('#ts-unassigned');
+  if (!link) return;
+
+  link.hidden = unassignedEntries === 0 || $('#filter-ts-project')?.value === 'none';
+  link.textContent = fillIn(t('ts.unassigned', '{0} without a project'), [unassignedEntries]);
 }
 
 /**
@@ -8753,6 +8861,10 @@ function forgetTheLastAccount() {
   // And the templates: the sweeps above empty the picker and the card's rows, and
   // this hides the two, which would otherwise stand empty for the next account.
   forgetTheTemplates();
+
+  // And how many of the last account's entries were waiting for a project.
+  unassignedEntries = 0;
+  drawUnassigned();
 
   // And each form's own reset, which resetting the form does not reach: a hidden
   // field keeps its value through one, so a form left correcting a record kept
@@ -15850,6 +15962,13 @@ function wireForms() {
 
   $('#filter-ts-project').addEventListener('change',
     () => mutate(loadTimesheets, null, null));
+
+  // Into the entries still waiting for a project, which is the project filter's
+  // own "No project" - this only makes it findable.
+  $('#ts-unassigned').addEventListener('click', () => {
+    $('#filter-ts-project').value = 'none';
+    mutate(loadTimesheets, null, null);
+  });
 
   // A day is taken once it is complete - picked, or typed and left - and the
   // search once the typing pauses: asked on every keystroke it would be a request

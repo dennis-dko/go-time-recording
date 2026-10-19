@@ -867,9 +867,13 @@ td.pick input, th.pick input { cursor: pointer; margin: 0; }
  * Kept out of the flow when hidden rather than merely invisible: a permanently
  * reserved strip above every table is a lot of empty space for something that is
  * usually not happening. */
+/* Folds rather than squeezing. The entry list's bar holds a project list and a
+ * second button as well, and kept on one line on a telephone the list shrank to
+ * its arrow while both buttons broke their words in two. */
 .bulk-bar {
   align-items: center;
   display: none;
+  flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
   padding-bottom: 10px;

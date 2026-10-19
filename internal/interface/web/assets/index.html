@@ -676,6 +676,11 @@
         <div class="card-head">
           <h2 data-i18n="ts.entries">Entries</h2>
           <div class="filters">
+            <!-- The entries still waiting for a project: hours recorded first
+                 and given a project later. No data-i18n, because the script
+                 writes the count into it. Hidden while there are none, and
+                 while the list is already narrowed to them. -->
+            <button type="button" class="link" id="ts-unassigned" hidden></button>
             <select id="filter-ts-project"><option value="" data-i18n="filter.allProjects">All projects</option></select>
           </div>
         </div>
@@ -690,7 +695,9 @@
           <label class="wide" data-i18n="filter.search">Search in descriptions<input type="search" id="filter-ts-q" name="q" data-i18n-placeholder="filter.searchPlaceholder" placeholder="a word, a ticket number, #meeting"></label>
         </form>
         <div class="table-wrap">
-          <table id="table-timesheets">
+          <!-- data-assigns: the selection bar also offers to give the ticked
+               entries a project. -->
+          <table id="table-timesheets" data-assigns>
             <thead>
               <tr>
                 <th data-i18n="field.date">Date</th>
