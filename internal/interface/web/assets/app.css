@@ -1076,6 +1076,14 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Where the bar has room to spare - measured from 1,440 pixels, a long name and a
+   one-word title kept the bar at one row at 18em - an ordinary account is no
+   longer cut: at 12em "Erika · Benutzer & Administrator" lost its last letters
+   even at 2,560 pixels. */
+@media (min-width: 1440px) {
+  .who { max-width: 20em; }
+}
 .who strong { color: var(--text); font-weight: 600; }
 
 .muted { color: var(--muted); font-size: 13px; }
