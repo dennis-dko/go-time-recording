@@ -186,6 +186,42 @@ func TestTypingSurvivesTheGridBeingDrawnAgain(t *testing.T) {
 	})
 }
 
+// Last week is copied from the grid, after asking: its hours land on the same
+// days of this one, and the grid and the notice both say so.
+func TestLastWeekIsCopiedFromTheGrid(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	var monday string
+
+	p.awaitJSON(`mondayOf(todayISO())`, &monday)
+
+	lastMonday := addISODays(t, monday, -7)
+
+	p.awaitJSON(`api('/timesheets', {
+		method: 'POST', body: JSON.stringify({ date: '`+lastMonday+`', durationHours: 2.5 }),
+	}).then(() => true)`, nil)
+
+	p.run("open the week", p.click(`.tab[data-view="week"]`),
+		chromedp.WaitVisible("#table-week", chromedp.ByID))
+
+	p.run("copy last week", p.click("#week-copy"),
+		chromedp.WaitVisible(".confirm-card", chromedp.ByQuery),
+		p.click(".confirm-card button.confirm-proceed"))
+
+	p.waitFor("last Monday's hours on this Monday", func() bool {
+		return slices.Equal(p.entriesOn(monday), []float64{2.5})
+	})
+
+	p.waitForNode(`#table-week input[data-cell="none|` + monday + `"][data-value="2.5"]`)
+
+	if news := p.text(".toast-note"); !strings.Contains(news, "Entries copied: 1") {
+		t.Errorf("the notice reads %q, want how many entries were copied", news)
+	}
+}
+
 // addISODays moves a calendar day written as YYYY-MM-DD.
 func addISODays(t *testing.T, day string, days int) string {
 	t.Helper()

@@ -23,6 +23,7 @@ type TimesheetService interface {
 	ListTimesheets(ctx context.Context, q query.ListTimesheetsQuery) (*query.ListTimesheetsQueryResult, error)
 	UpdateTimesheet(ctx context.Context, cmd command.UpdateTimesheetCommand) (*command.UpdateTimesheetCommandResult, error)
 	DeleteTimesheet(ctx context.Context, cmd command.DeleteTimesheetCommand) error
+	CopyWeek(ctx context.Context, userID uint, from, to time.Time) (*WeekCopy, error)
 }
 
 // TimesheetApplicationService is the TimesheetService the application runs

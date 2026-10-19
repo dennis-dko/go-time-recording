@@ -123,6 +123,8 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// The same, a day at a time and with what each day asked - the empty days
 	// included, because a picture of a week has to show them.
 	app.GET(base+"/me/days", h.Me.Days)
+	// A week booked like another, into the days of it that have nothing on them.
+	app.POST(base+"/me/weeks/copy", h.Timesheets.CopyWeek)
 
 	app.GET(base+"/me/timer", h.Timers.Running)
 	app.POST(base+"/me/timer", h.Timers.Start)

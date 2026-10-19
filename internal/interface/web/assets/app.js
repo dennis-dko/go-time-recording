@@ -457,6 +457,7 @@ const FIELD_NAMES = {
   endedAt: 'Ended at',
   expiresInDays: 'Valid for (days)',
   footerText: 'Footer',
+  from: 'From',
   host: 'Host',
   hours: 'Hours',
   id: 'ID',
@@ -482,6 +483,7 @@ const FIELD_NAMES = {
   theme: 'Appearance',
   timezone: 'Timezone',
   title: 'Title',
+  to: 'To',
   traceExporter: 'Trace exporter',
   tracerRatio: 'Share of traces recorded',
   tracerUrl: 'Collector',
@@ -3795,6 +3797,13 @@ const TRANSLATIONS = {
     'week.removeTitle': 'Diesen Eintrag zurücknehmen?',
     'week.removeText': 'Die am {1} gebuchten {0} werden gelöscht.',
     'week.removed': 'Eintrag zurückgenommen',
+    'week.copyLast': 'Vorwoche kopieren',
+    'week.copyTitle': 'Vorwoche kopieren?',
+    'week.copyText': 'Die Einträge der Woche ab {0} werden an denselben Wochentagen dieser Woche noch einmal gebucht – nur an Tagen, an denen noch nichts gebucht ist.',
+    'week.copyConfirm': 'Kopieren',
+    'week.copied': 'Kopierte Einträge: {0} ({1}).',
+    'week.copyKept': 'Schon gebuchte Tage, so gelassen, wie sie waren: {0}.',
+    'week.copyClosed': 'Ausgelassen, weil ihr Projekt keine Buchungen mehr annimmt: {0}.',
     'timer.title': 'Stoppuhr',
     'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in deiner eigenen Zeitzone.',
     'timer.start': 'Starten',
@@ -3983,6 +3992,7 @@ const TRANSLATIONS = {
     'err.pageSizeTooLarge': 'Eine Seite darf höchstens {0} Einträge enthalten.',
     'err.rangeInverted': '„bis“ darf nicht vor „von“ liegen.',
     'err.rangeTooLong': 'Ein Zeitraum darf höchstens {0} Tage umfassen.',
+    'err.nothingToCopy': 'In der Woche, aus der kopiert werden soll, ist nichts gebucht.',
     'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',
     'err.roleStillAssigned': 'Rolle „{0}“ ist noch {1} Benutzer(n) zugewiesen.',
     'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
@@ -6110,6 +6120,55 @@ async function saveWeekCell(call, message) {
   if (!saved) await loadWeekGrid();
 }
 
+/**
+ * Books the week before the one shown into the days of it that have nothing on
+ * them yet.
+ *
+ * Asked first, because this books entries rather than filling a form. The answer
+ * is shown whole, the left-out part included: a day that was already booked, or an
+ * entry whose project has closed since, would otherwise look like something the
+ * copy had missed.
+ */
+async function copyLastWeek() {
+  const into = weekShown ?? mondayOf(todayISO());
+  const from = addDays(into, -7);
+
+  const proceed = await confirmDialog({
+    title: t('week.copyTitle', 'Copy last week?'),
+    text: fillIn(t('week.copyText',
+      'The entries of the week from {0} are booked again on the same weekdays of this one - only on days with nothing booked yet.'),
+    [fmtDate(from)]),
+    confirmLabel: t('week.copyConfirm', 'Copy'),
+    danger: false,
+  });
+
+  if (!proceed) return;
+
+  await mutate(() => api('/me/weeks/copy', { method: 'POST', body: JSON.stringify({ from, to: into }) }),
+    null,
+    async (copied) => {
+      toast(weekCopyNews(copied), 'ok');
+      await reloadTimeViews();
+    });
+}
+
+/** What a copy did, as one sentence per part of it that happened. */
+function weekCopyNews(copied) {
+  const news = [fillIn(t('week.copied', 'Entries copied: {0} ({1}).'),
+    [copied.copied, fmtHours(copied.hours)])];
+
+  if (copied.kept) {
+    news.push(fillIn(t('week.copyKept', 'Days already booked, left as they were: {0}.'), [copied.kept]));
+  }
+
+  if (copied.closed) {
+    news.push(fillIn(t('week.copyClosed', 'Left out because their project no longer takes bookings: {0}.'),
+      [copied.closed]));
+  }
+
+  return news.join(' ');
+}
+
 /** Forgets the week the grid showed, for an account that has signed out. */
 function forgetTheWeek() {
   weekShown = null;
@@ -6156,6 +6215,8 @@ function wireWeekGrid() {
     weekShown = mondayOf(todayISO());
     mutate(loadWeekGrid, null, null);
   });
+
+  $('#week-copy').addEventListener('click', copyLastWeek);
 
   $('#week-add-project').addEventListener('change', (event) => {
     const key = event.target.value;

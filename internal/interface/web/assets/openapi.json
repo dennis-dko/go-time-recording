@@ -1624,6 +1624,23 @@
         }
       }
     },
+    "/me/weeks/copy": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Book one of your weeks like another",
+        "description": "Body: {\"from\": \"2026-10-12\", \"to\": \"2026-10-19\"} - two Mondays, the week to copy and the week to copy it into. Each entry of the first is booked on the same weekday of the second, with its project, hours and description, but only on days of the second week that have nothing booked yet: a day you have booked is left as it is. An entry whose project no longer takes bookings is left out. Everything else is held to the rules a booking is - the floor, the description, the daily maximum counting what the copy itself puts on a day - and written all at once or not at all. Answers {\"copied\": 9, \"hours\": 38.5, \"kept\": 1, \"closed\": 2}: the entries written and their hours, the days left as they were, and the entries left out. A first week with nothing in it is refused (nothingToCopy).",
+        "responses": {
+          "200": {
+            "description": "What the copy did"
+          },
+          "201": {
+            "description": "What the copy did"
+          }
+        }
+      }
+    },
     "/me/statistics": {
       "get": {
         "tags": [
