@@ -1234,7 +1234,10 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
    * because this screen scrolls: a footer laid over its bottom edge would put the
    * last thing on it - the submit button, on a short window - underneath. */
   inset: 0 0 var(--footer-height, 56px);
-  justify-content: center;
+  /* Centred while it fits, and from the top when it does not: a centred column
+     that overflows does so at both ends, and the end above the top cannot be
+     scrolled to. */
+  justify-content: safe center;
   padding: 20px;
   position: fixed;
   z-index: 30;
@@ -1270,11 +1273,17 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .session-check { display: none; }
 .login-screen.checking .session-check { display: block; }
 
+/* Never shorter than what it holds. overflow: hidden keeps the band inside the
+   rounded corners, and it also lets a flex item shrink below its contents - so
+   on a short window the card shrank to the screen and cut its own submit button
+   off, and the screen around it, which scrolls for exactly this, had nothing to
+   scroll. Nobody could sign in on a telephone held sideways. */
 .login-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 10px 30px rgb(16 24 40 / 14%);
+  flex-shrink: 0;
   max-width: 680px;
   overflow: hidden;
   width: 100%;

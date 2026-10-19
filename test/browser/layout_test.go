@@ -406,51 +406,61 @@ func TestEveryControlIsBigEnoughToPressOnAPhone(t *testing.T) {
 // stopped working.
 //
 // No sign-in needed - open(t) lands here, which is the state this is about.
+//
+// Asked of what can be pressed rather than of whether the screen overflows. It
+// used to skip when the screen did not overflow, reading that as "it fits" - and
+// once the card clipped its own contents (overflow: hidden, for the band's
+// corners) the screen never overflowed again: the card shrank to the window and
+// cut the submit button off inside itself. For three weeks this case skipped
+// while nobody could sign in on a telephone held sideways.
 func TestTheSignInScreenIsUsableOnAShortWindow(t *testing.T) {
 	t.Parallel()
 
 	p := open(t)
 
 	// Shorter than the screen's own contents, so this asks about the property
-	// rather than about one machine's idea of a window.
-	p.run("a short window", chromedp.EmulateViewport(1000, 320),
-		chromedp.Sleep(400*time.Millisecond))
+	// rather than about one machine's idea of a window: a laptop with a toolbar,
+	// three telephones held sideways, and the smallest held upright.
+	for _, size := range []struct{ w, h int64 }{{1000, 320}, {667, 375}, {568, 320}, {844, 390}, {320, 568}} {
+		p.run(fmt.Sprintf("a %dx%d window", size.w, size.h), chromedp.EmulateViewport(size.w, size.h),
+			chromedp.Sleep(400*time.Millisecond))
 
-	var out struct {
-		Overflows    bool    `json:"overflows"`
-		Scrolled     float64 `json:"scrolled"`
-		ButtonBottom float64 `json:"buttonBottom"`
-		Viewport     float64 `json:"viewport"`
-	}
+		var missed []string
 
-	p.evalJSON(`JSON.stringify((() => {
-		const screen = document.querySelector('#login-screen');
-		const button = document.querySelector('#form-login button[type="submit"]');
+		p.run("press both ends", chromedp.Evaluate(`(async () => {
+			const screen = document.querySelector('#login-screen');
+			const settle = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+			const missed = [];
 
-		// What a person does when a form runs off the edge, and what they cannot
-		// do if the overlay does not scroll.
-		screen.scrollTop = screen.scrollHeight;
+			// What a person does when a form runs off the edge, at both ends of it.
+			const reach = (selector) => {
+				const el = document.querySelector(selector);
+				if (!el || !el.checkVisibility()) return;
 
-		return {
-			overflows: screen.scrollHeight > screen.clientHeight + 1,
-			scrolled: screen.scrollTop,
-			buttonBottom: button.getBoundingClientRect().bottom,
-			viewport: window.innerHeight,
-		};
-	})())`, &out)
+				const r = el.getBoundingClientRect();
+				const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
 
-	if !out.Overflows {
-		t.Skip("the sign-in screen fits in 320px, so there is nothing to scroll here")
-	}
+				if (!(hit === el || el.contains(hit))) missed.push(selector);
+			};
 
-	if out.Scrolled == 0 {
-		t.Fatal("the sign-in screen is taller than the window and will not scroll, " +
-			"so whatever is past the edge cannot be reached at all")
-	}
+			screen.scrollTop = 0;
+			await settle();
+			reach('#login-welcome');
 
-	if out.ButtonBottom > out.Viewport {
-		t.Errorf("the submit button ends at %.0fpx in a %.0fpx window even after "+
-			"scrolling to the bottom", out.ButtonBottom, out.Viewport)
+			screen.scrollTop = screen.scrollHeight;
+			await settle();
+			reach('#form-login button[type="submit"]');
+			reach('#login-passkey');
+
+			screen.scrollTop = 0;
+
+			return missed;
+		})()`, &missed, awaitPromise))
+
+		for _, selector := range missed {
+			t.Errorf("in a %dx%d window %s cannot be reached on the sign-in screen, at whichever "+
+				"end of it it is", size.w, size.h, selector)
+		}
 	}
 }
 
