@@ -518,3 +518,55 @@ func TestTabsSwitchTheVisiblePanel(t *testing.T) {
 		p.waitShown(view.panel)
 	}
 }
+
+// On a short window the bar scrolls away with the page; on any other it stays.
+//
+// The bar stays at the top of the window so the way to every screen is always
+// there, and the stylesheet weighs every line of its height against that. On a
+// telephone held sideways the weighing came out the other way: at 932x430 the
+// wide layout's two rows took 216 of the window's 430 pixels on every screen, and
+// what was left for the screen itself was two lines of a form. Below 500 pixels of
+// height the bar now goes with the page, and the scroll padding and the notices
+// stuck beneath it stop keeping room for a bar that has gone.
+func TestOnAShortWindowTheBarScrollsAwayWithThePage(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	p.run("open a long screen", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#form-timesheet", chromedp.ByID))
+
+	for _, window := range []struct {
+		w, h  int64
+		stays bool
+	}{{932, 430, false}, {844, 390, false}, {1280, 800, true}} {
+		p.run(fmt.Sprintf("a %dx%d window", window.w, window.h),
+			chromedp.EmulateViewport(window.w, window.h),
+			chromedp.Evaluate(`window.scrollTo(0, 400)`, nil),
+			chromedp.Sleep(200*time.Millisecond))
+
+		var bar struct {
+			Top     float64 `json:"top"`
+			Bottom  float64 `json:"bottom"`
+			Padding string  `json:"padding"`
+		}
+
+		p.evalJSON(`JSON.stringify((() => {
+			const r = document.querySelector('header.topbar').getBoundingClientRect();
+
+			return { top: r.top, bottom: r.bottom, padding: getComputedStyle(document.documentElement).scrollPaddingTop };
+		})())`, &bar)
+
+		switch {
+		case window.stays && bar.Top != 0:
+			t.Errorf("at %dx%d the bar did not stay at the top of the window: it is at %.0fpx", window.w, window.h, bar.Top)
+		case !window.stays && bar.Bottom > 0:
+			t.Errorf("at %dx%d the bar stays over the page, %.0fpx of a %dpx window", window.w, window.h, bar.Bottom, window.h)
+		case !window.stays && bar.Padding != "0px":
+			t.Errorf("at %dx%d the page still keeps %s clear for a bar that has gone", window.w, window.h, bar.Padding)
+		}
+
+		p.run("back to the top", chromedp.Evaluate(`window.scrollTo(0, 0)`, nil))
+	}
+}

@@ -1147,6 +1147,19 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   z-index: 4;
 }
 
+/* On a short window - a telephone held sideways - the bar goes with the page
+   instead of staying at the top of it. Staying, it took half the height: at
+   932x430 the wide layout's two rows came to 216 pixels on every screen, and what
+   was left for the screen itself was two lines of a form. What kept room for it
+   follows it out: the scroll padding, and the notices stuck beneath it. */
+@media (max-height: 500px) {
+  .topbar { position: static; }
+
+  html { scroll-padding-top: 0; }
+
+  #standing-notices { top: 0; }
+}
+
 #restart-banner p { margin: 6px 0; }
 
 /* The list of waiting settings, centred with the rest of the notice.
