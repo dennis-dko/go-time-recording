@@ -559,11 +559,12 @@
         <div class="row">
           <button type="button" id="timer-start" data-i18n="timer.start">Start</button>
           <button type="button" id="timer-stop" hidden data-i18n="timer.stop">Stop and book</button>
+          <button type="button" class="secondary" id="timer-switch-open" hidden data-i18n="timer.switchOpen">Switch to …</button>
           <button type="button" class="secondary" id="timer-discard" hidden data-i18n="timer.discard">Discard</button>
           <button type="button" class="link" id="timer-end-open" hidden data-i18n="timer.endOpen">stopped earlier?</button>
         </div>
 
-        <!-- Two small forms, one per correction, each shown on its own. Forms
+        <!-- Three small forms, one per correction, each shown on its own. Forms
              rather than buttons because each asks for something before it acts,
              and Enter in a field should do what the button beside it does. -->
         <form method="post" id="form-timer-start" class="form timer-form" hidden>
@@ -591,6 +592,23 @@
           <div class="form-actions">
             <button type="submit" data-i18n="timer.endSave">Book up to then</button>
             <button type="button" class="link" id="timer-end-cancel" data-i18n="action.cancel">Cancel</button>
+          </div>
+        </form>
+
+        <form method="post" id="form-timer-switch" class="form timer-form" hidden>
+          <h3 data-i18n="timer.switchTitle">Carry on with something else</h3>
+          <p class="muted" data-i18n="timer.switchHint">Books what has been measured so far, and keeps measuring from the same second for what comes next.</p>
+          <div class="grid">
+            <label data-i18n="field.projectOptional">Project (optional)
+              <select name="projectId" id="timer-switch-project"></select>
+            </label>
+            <label class="wide" data-i18n="field.description">Description
+              <input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional">
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" data-i18n="timer.switchSave">Book and carry on</button>
+            <button type="button" class="link" id="timer-switch-cancel" data-i18n="action.cancel">Cancel</button>
           </div>
         </form>
       </div>

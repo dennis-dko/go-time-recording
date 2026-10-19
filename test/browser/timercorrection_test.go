@@ -4,6 +4,7 @@ package browser
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -11,8 +12,9 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// The stopwatch's corrections, on screen: moving the start, and booking a forgotten
-// clock up to the time the work ended. The API cases hold the rules; these hold that a person can reach
+// The stopwatch's three corrections, on screen: moving the start, booking a
+// forgotten clock up to the time the work ended, and switching to the next project
+// without a gap. The API cases hold the rules; these hold that a person can reach
 // them, in their own zone, and that a forgotten clock is said out loud on every
 // screen until it is dealt with.
 
@@ -150,6 +152,81 @@ func TestAForgottenStopwatchIsAnnouncedAndBookedUpToItsEnd(t *testing.T) {
 	// Eight hours, less the seconds a time field cannot say.
 	if hours < 7.97 || hours > 8.001 {
 		t.Errorf("the booking holds %v h, want eight", hours)
+	}
+}
+
+// Switching from the card books the clock on its project and carries on with the
+// next one, which the card then shows as running.
+func TestTheStopwatchSwitchesToTheNextProjectOnScreen(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	var ids []int
+
+	p.awaitJSON(`(async () => {
+		const today = todayISO();
+		const made = [];
+		for (const name of ['Portal', 'Support']) {
+			made.push((await api('/projects', {
+				method: 'POST', body: JSON.stringify({ name, startDate: today }),
+			})).id);
+		}
+		await loadProjects();
+		return made;
+	})()`, &ids)
+
+	if len(ids) != 2 {
+		t.Fatalf("creating the two projects answered %v", ids)
+	}
+
+	portal, support := strconv.Itoa(ids[0]), strconv.Itoa(ids[1])
+
+	p.run("start on the first project", p.click(`.tab[data-view="timesheets"]`),
+		chromedp.WaitVisible("#timer-card", chromedp.ByID),
+		p.chooseOption("#timer-project", portal),
+		p.click("#timer-start"),
+		chromedp.WaitVisible("#timer-switch-open", chromedp.ByID))
+
+	// An hour back, so there is something to book.
+	p.awaitJSON(`(async () => {
+		const startedAt = new Date(Date.now() - 3600e3).toISOString().replace(/\.\d+Z$/, 'Z');
+		await api('/me/timer', { method: 'PUT', body: JSON.stringify({ startedAt }) });
+		await loadTimer();
+		return true;
+	})()`, nil)
+
+	p.run("switch to the second", p.click("#timer-switch-open"),
+		chromedp.WaitVisible("#form-timer-switch", chromedp.ByID),
+		p.chooseOption("#timer-switch-project", support),
+		chromedp.SendKeys(`#form-timer-switch input[name="description"]`, "Ticket 4711", chromedp.ByQuery),
+		p.click(`#form-timer-switch button[type="submit"]`),
+		chromedp.WaitNotVisible("#form-timer-switch", chromedp.ByID))
+
+	if _, running := p.serverTimer(); strconv.Itoa(running) != support {
+		t.Errorf("the clock now runs on project %d, want %s", running, support)
+	}
+
+	p.waitForValue("#timer-project")
+
+	if shown := p.value("#timer-project"); shown != support {
+		t.Errorf("the card shows project %q as running, want %s", shown, support)
+	}
+
+	if shown := p.value("#timer-description"); shown != "Ticket 4711" {
+		t.Errorf("the card shows the description %q, want the one given to the switch", shown)
+	}
+
+	var booked struct {
+		ProjectID     int     `json:"projectId"`
+		DurationHours float64 `json:"durationHours"`
+	}
+
+	p.awaitJSON(`api('/timesheets').then((list) => list.items[0])`, &booked)
+
+	if strconv.Itoa(booked.ProjectID) != portal || booked.DurationHours < 0.99 {
+		t.Errorf("the booking is %+v, want about an hour on project %s", booked, portal)
 	}
 }
 

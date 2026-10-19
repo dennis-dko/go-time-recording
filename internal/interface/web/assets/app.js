@@ -3784,6 +3784,11 @@ const TRANSLATIONS = {
     'timer.endTitle': 'Wann hast du aufgehört?',
     'timer.endForgotten': 'Die Uhr läuft länger, als ein Eintrag fassen kann – vermutlich wurde sie vergessen. Gib an, wann du aufgehört hast, dann wird bis dahin gebucht, auf den Tag, an dem sie gestartet wurde.',
     'timer.endSave': 'Bis dahin buchen',
+    'timer.switchOpen': 'Wechseln zu …',
+    'timer.switchTitle': 'Mit etwas anderem weitermachen',
+    'timer.switchHint': 'Bucht die bisher gemessene Zeit und misst ab derselben Sekunde weiter, für das, was jetzt kommt.',
+    'timer.switchSave': 'Buchen und weiter',
+    'timer.switched': 'Gebucht – die Uhr läuft weiter',
     'timer.banner': 'Eine Stoppuhr läuft seit {0} und damit länger, als ein Eintrag fassen kann. Unter {1} lässt sie sich mit der richtigen Endzeit buchen.',
     'confirm.deleteTitle': 'Endgültig löschen?',
     'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
@@ -5335,6 +5340,8 @@ async function loadProjects() {
   // (optional)" while the form beside it called it "No project" - two names for
   // the same choice, on one screen.
   fillSelect($('#timer-project'), bookable,
+    { placeholder: t('ts.noProject', 'No project') });
+  fillSelect($('#timer-switch-project'), bookable,
     { placeholder: t('ts.noProject', 'No project') });
   fillSelect($('#form-timesheet select[name=projectId]'), bookable,
     { placeholder: t('ts.noProject', 'No project') });
@@ -12521,8 +12528,8 @@ function wallClock(iso) {
   };
 }
 
-/** The two corrections a running clock offers, one form each. */
-const TIMER_FORMS = ['start', 'end'];
+/** The three corrections a running clock offers, one form each. */
+const TIMER_FORMS = ['start', 'end', 'switch'];
 
 /**
  * Opens one of the clock's corrections and closes the others, filled from the
@@ -12556,8 +12563,12 @@ function openTimerForm(which, { focus = true } = {}) {
     form.elements.time.value = '';
   }
 
+  if (which === 'switch') {
+    form.reset();
+  }
+
   if (focus) {
-    form.elements.time.focus();
+    (which === 'switch' ? form.elements.projectId : form.elements.time).focus();
   }
 }
 
@@ -12636,8 +12647,8 @@ function openTheStopwatch() {
 /**
  * Acts on the clock having crossed into, or out of, being longer than an entry.
  *
- * Past it, stopping now is taken away - the server would refuse it - and the
- * end form opens by itself, saying why. It is only opened when it
+ * Past it, stopping now and switching are taken away - the server would refuse
+ * both - and the end form opens by itself, saying why. It is only opened when it
  * is not already open, so a reload while somebody is typing an end time leaves
  * what they typed alone.
  */
@@ -12646,6 +12657,7 @@ function applyTimerForgotten() {
   const forgotten = running && timerForgotten === true;
 
   $('#timer-stop').hidden = !running || forgotten;
+  $('#timer-switch-open').hidden = !running || forgotten;
   $('#timer-end-forgotten').hidden = !forgotten;
 
   if (forgotten && $('#form-timer-end').hidden) openTimerForm('end', { focus: false });
@@ -12674,6 +12686,7 @@ function renderTimer() {
 
   $('#timer-start').hidden = running;
   $('#timer-stop').hidden = !running;
+  $('#timer-switch-open').hidden = !running;
   $('#timer-discard').hidden = !running;
   $('#timer-end-open').hidden = !running;
   $('#timer-since').hidden = !running;
@@ -12743,14 +12756,13 @@ async function loadTimer() {
   // moved it to either side of the limit.
   timerForgotten = null;
 
-  // The project it was started with, so stopping books what was chosen - the
-  // select is disabled while it runs, and this is what it shows.
-  if (runningTimer?.projectId) {
-    $('#timer-project').value = String(runningTimer.projectId);
-  }
-
-  if (runningTimer?.description) {
-    $('#timer-description').value = runningTimer.description;
+  // What it was started with, so stopping books what was chosen - the fields
+  // are disabled while it runs, and this is what they show. Written whether or
+  // not there is a project, because a switch can leave a clock running on none
+  // after one that had one.
+  if (runningTimer) {
+    $('#timer-project').value = runningTimer.projectId ? String(runningTimer.projectId) : '';
+    $('#timer-description').value = runningTimer.description ?? '';
   }
 
   renderTimer();
@@ -12800,6 +12812,7 @@ function wireTimer() {
 
   $('#timer-adjust-open').addEventListener('click', () => openTimerForm('start'));
   $('#timer-end-open').addEventListener('click', () => openTimerForm('end'));
+  $('#timer-switch-open').addEventListener('click', () => openTimerForm('switch'));
 
   for (const name of TIMER_FORMS) {
     $(`#timer-${name}-cancel`).addEventListener('click', closeTimerForms);
@@ -12828,6 +12841,22 @@ function wireTimer() {
     mutate(
       () => api('/me/timer/stop', { method: 'POST', body: JSON.stringify({ endedAt }) }),
       t('msg.booked', 'Time booked'),
+      async () => { closeTimerForms(); await loadTimer(); await reloadTimeViews(); });
+  });
+
+  $('#form-timer-switch').addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+    const body = {};
+    const description = form.elements.description.value.trim();
+
+    if (form.elements.projectId.value) body.projectId = Number(form.elements.projectId.value);
+    if (description) body.description = description;
+
+    mutate(
+      () => api('/me/timer/switch', { method: 'POST', body: JSON.stringify(body) }),
+      t('timer.switched', 'Booked - the clock carries on'),
       async () => { closeTimerForms(); await loadTimer(); await reloadTimeViews(); });
   });
 }

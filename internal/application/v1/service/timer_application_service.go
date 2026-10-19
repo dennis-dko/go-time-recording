@@ -117,7 +117,9 @@ func (s *TimerService) startAt(
 // readClock is the moment a clock is read at, truncated to the second.
 //
 // Nothing here needs more, and a stored nanosecond would come back from the three
-// engines with three different amounts of precision.
+// engines with three different amounts of precision. Read once per operation and
+// passed along, so a switch ends one clock and starts the next at the same second
+// rather than at two readings a few microseconds apart.
 func readClock() time.Time {
 	return time.Now().UTC().Truncate(time.Second)
 }
@@ -164,6 +166,57 @@ func (s *TimerService) AdjustStart(
 	timer.StartedAt = startedAt
 
 	return timer, nil
+}
+
+// SwitchResult is what a switch did: the entry it booked and the clock it started.
+type SwitchResult struct {
+	Booked *command.CreateTimesheetCommandResult
+	Timer  *model.RunningTimer
+}
+
+// Switch books the running clock and starts the next one at the same second.
+//
+// Changing what one works on was three presses - stop, choose, start - with no
+// clock running between them, and through the API a second start replaced the
+// running clock without booking it at all. This books what was measured up to now
+// and starts the next clock at exactly that second, so the two entries meet
+// without a gap.
+//
+// Checked before anything is written: the next project is held to the rules a
+// start is, and a booking that would be refused - a full day, a project closed
+// while the clock ran - leaves the clock running and starts nothing. What cannot
+// be checked in advance is the write of the new clock after the booking; should
+// that fail, the entry exists and the error says so, which is where a stop
+// followed by a failed start would have left things too.
+func (s *TimerService) Switch(
+	ctx context.Context,
+	userID uint,
+	zone *time.Location,
+	projectID *uint,
+	description *string,
+) (*SwitchResult, error) {
+	timer, err := s.running(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.requireStartable(ctx, userID, projectID, description); err != nil {
+		return nil, err
+	}
+
+	at := readClock()
+
+	booked, err := s.book(ctx, timer, zone, at)
+	if err != nil {
+		return nil, err
+	}
+
+	next, err := s.startAt(ctx, userID, projectID, description, at)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SwitchResult{Booked: booked, Timer: next}, nil
 }
 
 // Stop turns the running clock into a time entry.

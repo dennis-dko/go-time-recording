@@ -1478,7 +1478,7 @@
           "me"
         ],
         "summary": "Start the clock",
-        "description": "Body is optional: {\"projectId\": 3, \"description\": \"...\"}, both of which may be left out and settled later. Starting again replaces a clock already running - somebody who does that has changed their mind about what they are doing, and refusing would leave them to stop a clock measuring the wrong thing. Always the caller's own clock; there is no route for anybody else's.",
+        "description": "Body is optional: {\"projectId\": 3, \"description\": \"...\"}, both of which may be left out and settled later. Starting again replaces a clock already running - somebody who does that has changed their mind about what they are doing, and refusing would leave them to stop a clock measuring the wrong thing. To book the running clock first and carry on with something else, use /me/timer/switch. Always the caller's own clock; there is no route for anybody else's.",
         "responses": {
           "200": {
             "description": "Running"
@@ -1526,6 +1526,23 @@
           },
           "201": {
             "description": "The entry that was created"
+          }
+        }
+      }
+    },
+    "/me/timer/switch": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Book the running clock and carry on with something else",
+        "description": "Body as when starting: {\"projectId\": 4, \"description\": \"...\"}, both optional. Books what the running clock measured up to now, exactly as a stop would, and starts the next clock at that same second, so the two entries meet without a gap. Checked before anything is written: the next project is held to the rules a start is, and a booking that would be refused leaves the running clock as it was and starts nothing. Answers {\"booked\": <the entry>, \"timer\": <the clock now running>}. Refused with noTimerRunning when nothing runs.",
+        "responses": {
+          "200": {
+            "description": "The entry booked and the clock now running"
+          },
+          "201": {
+            "description": "The entry booked and the clock now running"
           }
         }
       }

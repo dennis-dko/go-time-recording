@@ -124,6 +124,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/me/timer", h.Timers.Start)
 	app.PUT(base+"/me/timer", h.Timers.Adjust)
 	app.POST(base+"/me/timer/stop", h.Timers.Stop)
+	app.POST(base+"/me/timer/switch", h.Timers.Switch)
 	app.DELETE(base+"/me/timer", h.Timers.Discard)
 
 	app.GET(base+"/me/passkeys", h.Passkeys.List)

@@ -9,8 +9,9 @@ import (
 	"time"
 )
 
-// Correcting a clock: moving its start, and booking it up to the time the work
-// ended. The unit tests hold the rules; these hold the wire - how a moment is written, which zone a time without
+// Correcting a clock: moving its start, booking it up to the time the work ended,
+// and handing it on to the next project without a gap. The unit tests hold the
+// rules; these hold the wire - how a moment is written, which zone a time without
 // an offset is read in, and what a refusal leaves behind.
 
 // startedAt reads the running clock's start.
@@ -180,5 +181,61 @@ func TestAnUnreadableEndTimeIsRefusedRatherThanStoppingNow(t *testing.T) {
 
 	if timer := runningTimer(t, worker); !timer.Running {
 		t.Error("the refused stop threw the clock away")
+	}
+}
+
+// Switching books the clock on the project it ran on and carries on with the next,
+// answering with both.
+func TestSwitchingCarriesOnWithTheNextProject(t *testing.T) {
+	t.Parallel()
+
+	_, _, worker := startWithWorker(t)
+
+	var first, second projectResponse
+
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Portal", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &first)
+
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Support", "startDate": "2026-08-01",
+	}), http.StatusCreated, http.StatusOK).Data(t, &second)
+
+	worker.must(worker.api(http.MethodPost, "/me/timer",
+		map[string]any{"projectId": first.ID}), http.StatusCreated, http.StatusOK)
+
+	worker.must(worker.api(http.MethodPut, "/me/timer", map[string]string{
+		"startedAt": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
+	}), http.StatusOK)
+
+	var switched struct {
+		Booked timesheetResponse `json:"booked"`
+		Timer  TimerOnTheWire    `json:"timer"`
+	}
+
+	worker.must(worker.api(http.MethodPost, "/me/timer/switch", map[string]any{
+		"projectId": second.ID, "description": "Ticket 4711",
+	}), http.StatusCreated, http.StatusOK).Data(t, &switched)
+
+	if switched.Booked.ProjectID == nil || *switched.Booked.ProjectID != first.ID {
+		t.Errorf("the booking went to %v, want the project the clock ran on, %d",
+			switched.Booked.ProjectID, first.ID)
+	}
+
+	if hours := switched.Booked.DurationHours; hours < 0.99 || hours > 1.01 {
+		t.Errorf("the booking holds %.4f h, want the hour measured", hours)
+	}
+
+	timer := runningTimer(t, worker)
+	if !timer.Running || timer.ProjectID == nil || *timer.ProjectID != second.ID {
+		t.Fatalf("the clock now running is %+v, want one on project %d", timer, second.ID)
+	}
+
+	if timer.Description == nil || *timer.Description != "Ticket 4711" {
+		t.Errorf("the new clock carries %v, want the description it was given", timer.Description)
+	}
+
+	if !switched.Timer.Running {
+		t.Error("the answer does not report the new clock as running")
 	}
 }

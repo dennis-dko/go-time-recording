@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
 	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
@@ -221,4 +223,119 @@ func TestAnEndTimeStillMeetsTheCeilingOfOneEntry(t *testing.T) {
 	_, err := f.clock.Stop(context.Background(), f.userID, time.UTC, &ended)
 
 	requireCode(t, err, "timerTooLong")
+}
+
+// Switching books what was measured and starts the next clock at the same instant,
+// so not a second falls between the two - which is what three separate presses
+// could not promise.
+func TestSwitchingBooksTheClockAndStartsTheNextWithoutAGap(t *testing.T) {
+	f := newTimerFixture(t)
+	ctx := context.Background()
+
+	next, err := f.projects.CreateProject(ctx, command.CreateProjectCommand{
+		Name: "Support", StartDate: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), OwnerID: &f.userID,
+	})
+	if err != nil {
+		t.Fatalf("seed the second project: %v", err)
+	}
+
+	f.runSince(t, time.Now().Add(-2*time.Hour))
+
+	nextID := next.Result.ID
+	description := "Customer call"
+
+	switched, err := f.clock.Switch(ctx, f.userID, time.UTC, &nextID, &description)
+	if err != nil {
+		t.Fatalf("switching was refused: %v", err)
+	}
+
+	if switched == nil || switched.Booked == nil || switched.Timer == nil {
+		t.Fatalf("the switch answered with %+v, want a booking and a running clock", switched)
+	}
+
+	booked := switched.Booked.Result
+	if booked.ProjectID == nil || *booked.ProjectID != f.projectID {
+		t.Errorf("the booking went to %v, want the project the clock ran on, %d", booked.ProjectID, f.projectID)
+	}
+
+	if booked.DurationHours < 1.99 || booked.DurationHours > 2.01 {
+		t.Errorf("the booking holds %.4f h, want the two hours measured", booked.DurationHours)
+	}
+
+	timer := f.running(t)
+	if timer == nil || timer.ProjectID == nil || *timer.ProjectID != nextID {
+		t.Fatalf("the clock now running is %+v, want one on project %d", timer, nextID)
+	}
+
+	if timer.Description == nil || *timer.Description != description {
+		t.Errorf("the new clock carries %v, want the description it was given", timer.Description)
+	}
+
+	// The second clock starts where the first one's measurement ended.
+	firstStart := time.Now().Add(-2 * time.Hour)
+	measuredUntil := firstStart.Add(time.Duration(booked.DurationHours * float64(time.Hour)))
+
+	if gap := timer.StartedAt.Sub(measuredUntil); gap < -2*time.Second || gap > 2*time.Second {
+		t.Errorf("the new clock starts %v away from the end of the booked one", gap)
+	}
+}
+
+// A switch that cannot book leaves everything as it was: the clock keeps running
+// and no second one starts. Booking and then failing to start, or starting and
+// then failing to book, would each lose somebody time.
+func TestASwitchThatCannotBookKeepsTheClockAndStartsNothing(t *testing.T) {
+	f := newTimerFixture(t)
+	ctx := context.Background()
+
+	started := time.Now().Add(-time.Hour)
+	f.runSince(t, started)
+
+	// The day the clock books on is already full.
+	f.book(t, model.CalendarDay(started.UTC()), maxDailyHours)
+
+	_, err := f.clock.Switch(ctx, f.userID, time.UTC, nil, nil)
+
+	requireCode(t, err, "overDailyLimit")
+
+	timer := f.running(t)
+	if timer == nil || timer.ProjectID == nil || *timer.ProjectID != f.projectID ||
+		!timer.StartedAt.Equal(started.UTC().Truncate(time.Second)) {
+		t.Errorf("the refused switch changed the clock to %+v", timer)
+	}
+}
+
+// A switch to a project that would refuse the next booking is refused before
+// anything is booked, so the measured time is not split for nothing.
+func TestASwitchToAProjectThatTakesNoTimeBooksNothing(t *testing.T) {
+	f := newTimerFixture(t)
+	ctx := context.Background()
+
+	closed, err := f.projects.CreateProject(ctx, command.CreateProjectCommand{
+		Name: "Done", StartDate: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), OwnerID: &f.userID,
+		Status: model.ProjectStatusCompleted,
+	})
+	if err != nil {
+		t.Fatalf("seed the project: %v", err)
+	}
+
+	f.runSince(t, time.Now().Add(-time.Hour))
+
+	closedID := closed.Result.ID
+
+	_, err = f.clock.Switch(ctx, f.userID, time.UTC, &closedID, nil)
+
+	requireCode(t, err, "projectClosedForBooking")
+
+	entries, err := f.timesheetRepo.GetByFilter(ctx, repository.TimesheetFilter{UserID: f.userID})
+	if err != nil {
+		t.Fatalf("read the entries: %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Errorf("the refused switch booked %d entr(y/ies)", len(entries))
+	}
+
+	if timer := f.running(t); timer == nil || *timer.ProjectID != f.projectID {
+		t.Errorf("the refused switch changed the clock to %+v", timer)
+	}
 }

@@ -122,6 +122,13 @@ type TimerStopRequest struct {
 	EndedAt string `json:"endedAt"`
 }
 
+// TimerSwitchResponse is a switch's outcome: the entry it booked, and the clock
+// that has been running since the same second.
+type TimerSwitchResponse struct {
+	Booked TimesheetResponse `json:"booked"`
+	Timer  TimerResponse     `json:"timer"`
+}
+
 // Adjust handles PUT /api/v1/me/timer, which corrects when the clock started.
 func (h *TimerHandler) Adjust(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermTimesheetWriteOwn)
@@ -187,6 +194,32 @@ func (h *TimerHandler) Stop(c *gofr.Context) (any, error) {
 	}
 
 	return newTimesheetResponse(created.Result), nil
+}
+
+// Switch handles POST /api/v1/me/timer/switch: the running clock is booked and the
+// next one starts at the same second.
+func (h *TimerHandler) Switch(c *gofr.Context) (any, error) {
+	principal, err := h.authz.Require(c, model.PermTimesheetWriteOwn)
+	if err != nil {
+		return nil, err
+	}
+
+	// Empty is a fine answer here too: carry on without a project, and say what
+	// it was later.
+	var req TimerRequest
+	_ = bind(c, &req)
+
+	zone := principal.User.TimezoneOf(h.timezone.resolve(c))
+
+	switched, err := h.timers.Switch(c, principal.User.ID, zone, req.ProjectID, req.Description)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return TimerSwitchResponse{
+		Booked: newTimesheetResponse(switched.Booked.Result),
+		Timer:  newTimerResponse(switched.Timer),
+	}, nil
 }
 
 // parseMoment reads a moment that a person typed or a program sent.
