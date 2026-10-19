@@ -3781,6 +3781,20 @@ const TRANSLATIONS = {
     'schedule.label': 'Der Plan ab {0}',
     'schedule.removed': 'Plan entfernt',
     'schedule.empty': 'Noch kein Plan – von Montag bis Freitag gilt das Tagessoll.',
+    'week.thisWeek': 'Diese Woche',
+    'week.hint': 'Trag die Stunden direkt in die Zellen ein: Eine Zahl in einer leeren Zelle bucht sie, eine geänderte Zahl korrigiert den Eintrag dahinter. Wo mehrere Einträge eine Zelle ergeben, führt sie stattdessen zu ihnen.',
+    'week.sum': 'Summe',
+    'week.addRow': 'Zeile hinzufügen für',
+    'week.title': 'Woche {0} · {1} – {2}',
+    'week.several': '{0} Einträge – anzeigen',
+    'week.empty': 'Diese Woche ist noch nichts gebucht.',
+    'week.booked': 'Ist',
+    'week.target': 'Soll',
+    'week.balance': 'Saldo',
+    'week.choose': 'Auswählen …',
+    'week.removeTitle': 'Diesen Eintrag zurücknehmen?',
+    'week.removeText': 'Die am {1} gebuchten {0} werden gelöscht.',
+    'week.removed': 'Eintrag zurückgenommen',
     'timer.title': 'Stoppuhr',
     'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in deiner eigenen Zeitzone.',
     'timer.start': 'Starten',
@@ -4201,6 +4215,7 @@ const TRANSLATIONS = {
     'msg.workingTimesSaved': 'Arbeitszeiten gespeichert',
     'nav.admin': 'Einstellungen',
     'nav.calendar': 'Kalender',
+    'nav.week': 'Woche',
     'nav.logout': 'Abmelden',
     'nav.menu': 'Menü',
     'nav.overtime': 'Überstunden',
@@ -5652,6 +5667,9 @@ function timesheetActions(entry) {
 async function reloadTimeViews() {
   await loadTimesheets();
   await loadCalendar();
+
+  // The grid only while it is on screen: it is drawn again on arrival anyway.
+  if (!$('#view-week')?.hidden) await loadWeekGrid();
 }
 
 /**
@@ -5755,6 +5773,354 @@ function showTimesheetTally() {
     ? fillIn(t('ts.showing', 'Showing {0} of {1} entries'),
       [timesheetEntries.length, timesheetTotal])
     : '';
+}
+
+// --------------------------------------------------------------- week grid
+
+/** A YYYY-MM-DD day moved by a number of days, counted on the calendar. */
+function addDays(iso, days) {
+  return new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+}
+
+/** The Monday of the week a YYYY-MM-DD day falls in. */
+function mondayOf(iso) {
+  const weekday = new Date(`${iso}T00:00:00Z`).getUTCDay();
+
+  return addDays(iso, -((weekday + 6) % 7));
+}
+
+/** The ISO 8601 number of the week that begins on a Monday. */
+function isoWeekNumber(monday) {
+  // The week's Thursday decides its year, and the week is counted from the week
+  // holding that year's first Thursday.
+  const thursday = new Date(Date.parse(`${addDays(monday, 3)}T00:00:00Z`));
+  const yearStart = Date.UTC(thursday.getUTCFullYear(), 0, 1);
+
+  return Math.floor((thursday.getTime() - yearStart) / (7 * 86400000)) + 1;
+}
+
+/** The Monday of the week the grid shows, or null before it was first opened. */
+let weekShown = null;
+
+/** What the grid was last drawn from, kept so a language change can redraw it. */
+let weekData = null;
+
+/**
+ * The rows somebody added by hand that have nothing booked on them yet, per week.
+ *
+ * Kept on the page only: a row with no entry is not a fact about anything, and it
+ * is gone with the week it was added to, which is when it stops being useful.
+ */
+const weekExtraRows = new Map();
+
+/** What a row is keyed by: a project's id, or "none" for the hours without one. */
+const weekRowKey = (projectId) => (projectId ? String(projectId) : 'none');
+
+/**
+ * Loads the week the grid shows: its entries, and what each of its days asks.
+ *
+ * A field somebody is typing into survives the redraw that follows - the redraw
+ * after one cell's save can land while the next one is being filled in, and
+ * throwing that away is what a background load must never do.
+ */
+async function loadWeekGrid() {
+  if (!can('timesheets:read:own')) return;
+
+  if (!weekShown) weekShown = mondayOf(todayISO());
+
+  const from = weekShown;
+  const to = addDays(from, 6);
+
+  const [entries, answer] = await Promise.all([
+    everyTimesheet({ from, to }),
+    api(`/me/days?${new URLSearchParams({ from, to })}`),
+  ]);
+
+  // Overtaken by a step to another week while this was on its way.
+  if (from !== weekShown) return;
+
+  weekData = { from, entries, days: answer?.days ?? [] };
+
+  redrawable('weekGrid', drawWeekGrid);
+}
+
+/** Draws the grid from what was last loaded, in the language now in force. */
+function drawWeekGrid() {
+  if (!weekData) return;
+
+  const { from, entries, days } = weekData;
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(from, i));
+  const names = weekdayNames();
+  const dayLabel = new Intl.DateTimeFormat(activeLocale(), {
+    day: '2-digit', month: '2-digit', timeZone: 'UTC',
+  });
+
+  $('#week-title').textContent = fillIn(t('week.title', 'Week {0} · {1} – {2}'),
+    [isoWeekNumber(from), fmtDate(from), fmtDate(dates[6])]);
+
+  for (const head of $$('#table-week th[data-day]')) {
+    const i = Number(head.dataset.day);
+    head.textContent = `${names[i] ?? ''} ${dayLabel.format(new Date(`${dates[i]}T00:00:00Z`))}`;
+  }
+
+  // The field being typed into, so the redraw can hand it back.
+  const focused = document.activeElement?.closest?.('#table-week input[data-cell]');
+  const typing = focused && focused.value !== focused.dataset.value
+    ? { cell: focused.dataset.cell, value: focused.value }
+    : (focused ? { cell: focused.dataset.cell } : null);
+
+  // The rows: every project with something booked this week, every row added by
+  // hand, the hours without a project last.
+  const rows = new Map();
+
+  for (const entry of entries) {
+    const key = weekRowKey(entry.projectId);
+    if (!rows.has(key)) rows.set(key, entries.filter((e) => weekRowKey(e.projectId) === key));
+  }
+
+  for (const key of weekExtraRows.get(from) ?? []) {
+    if (!rows.has(key)) rows.set(key, []);
+  }
+
+  const order = [...rows.keys()].sort((a, b) => {
+    if (a === 'none') return 1;
+    if (b === 'none') return -1;
+
+    return projectName(Number(a)).localeCompare(projectName(Number(b)));
+  });
+
+  const writable = can('timesheets:write:own');
+
+  const body = order.map((key) => {
+    const own = rows.get(key);
+    const project = key === 'none' ? null : cache.projects.find((p) => String(p.id) === key);
+    // A closed project takes no new hours, so its cells only show what it has.
+    const open = key === 'none' || project?.status === 'active';
+    const label = key === 'none' ? t('ts.noProject', 'No project') : projectName(Number(key));
+
+    const cells = dates.map((date) => {
+      const there = own.filter((entry) => entry.date === date);
+      const sum = there.reduce((total, entry) => total + entry.durationHours, 0);
+      const cellKey = `${key}|${date}`;
+
+      if (there.length > 1) {
+        // Several entries make this sum, and a new number could mean any of them.
+        const lead = el('button', {
+          type: 'button',
+          class: 'link week-several',
+          text: fmtShare(sum),
+          'aria-label': fillIn(t('week.several', '{0} entries - show them'), [there.length]),
+        });
+
+        lead.addEventListener('click', () => showTheDaysEntries(date, key));
+
+        return el('td', { class: 'num' }, lead);
+      }
+
+      if (!writable || !open) {
+        return el('td', { class: 'num', text: sum ? fmtShare(sum) : '–' });
+      }
+
+      return el('td', { class: 'num' }, el('input', {
+        type: 'number',
+        step: 'any',
+        min: '0',
+        inputmode: 'decimal',
+        class: 'week-cell',
+        'data-cell': cellKey,
+        'data-value': sum ? String(sum) : '',
+        'data-id': there.length === 1 ? String(there[0].id) : '',
+        'data-project': key === 'none' ? '' : key,
+        'data-date': date,
+        'aria-label': `${label}, ${fmtDate(date)}`,
+        value: sum ? String(sum) : '',
+      }));
+    });
+
+    const total = own.reduce((sum, entry) => sum + entry.durationHours, 0);
+
+    return el('tr', {},
+      el('th', { scope: 'row', class: key === 'none' ? 'text empty' : 'text', text: label }),
+      ...cells,
+      el('td', { class: 'num sum', text: fmtShare(total) }));
+  });
+
+  $('#table-week tbody').replaceChildren(...(body.length ? body : [
+    el('tr', {}, el('td', {
+      colspan: '9', class: 'empty', text: t('week.empty', 'Nothing booked this week yet.'),
+    })),
+  ]));
+
+  // What the week came to, day by day, against what each day asked.
+  const booked = dates.map((date) => entries
+    .filter((entry) => entry.date === date)
+    .reduce((sum, entry) => sum + entry.durationHours, 0));
+  const target = dates.map((date) => days.find((d) => d.date === date)?.target ?? 0);
+
+  const sumOf = (values) => values.reduce((a, b) => a + b, 0);
+  const signed = (n) => (Math.abs(n) < 0.005 ? '±0' : `${n > 0 ? '+' : '−'}${fmtShare(Math.abs(n))}`);
+
+  // The balance counts only the days somebody booked on, so a day with nothing
+  // on it has none here either, rather than one the balance does not have.
+  const balance = dates.map((_, i) => (booked[i] > 0 ? booked[i] - target[i] : null));
+  const counted = balance.filter((value) => value !== null);
+
+  const footRow = (label, values, total, format) => el('tr', {},
+    el('th', { scope: 'row', text: label }),
+    ...values.map((value) => el('td', { class: 'num', text: value === null ? '–' : format(value) })),
+    el('td', { class: 'num sum', text: format(total) }));
+
+  $('#table-week tfoot').replaceChildren(
+    footRow(t('week.booked', 'Booked'), booked, sumOf(booked), fmtShare),
+    footRow(t('week.target', 'Target'), target, sumOf(target), fmtShare),
+    footRow(t('week.balance', 'Balance'), balance, sumOf(counted), signed));
+
+  // The projects a row can still be added for: the open ones not on the grid.
+  const add = $('#week-add-project');
+
+  if (add) {
+    const bookable = cache.projects.filter((p) => p.status === 'active' && !rows.has(String(p.id)));
+
+    add.replaceChildren(
+      el('option', { value: '', text: t('week.choose', 'Choose …') }),
+      ...bookable.map((p) => el('option', { value: String(p.id), text: p.name })),
+      ...(rows.has('none') ? [] : [el('option', { value: 'none', text: t('ts.noProject', 'No project') })]),
+    );
+  }
+
+  if (typing) {
+    const again = $(`#table-week input[data-cell="${CSS.escape(typing.cell)}"]`);
+
+    if (again) {
+      if (typing.value !== undefined) again.value = typing.value;
+      again.focus();
+    }
+  }
+}
+
+/**
+ * Takes the reader to the entries a cell sums up: the entries screen, narrowed to
+ * that day and that project with the filters it already has.
+ */
+function showTheDaysEntries(date, key) {
+  const project = $('#filter-ts-project');
+  if (project) project.value = key === 'none' ? 'none' : key;
+
+  setDateField($('#filter-ts-from'), date);
+  setDateField($('#filter-ts-to'), date);
+
+  const search = $('#filter-ts-q');
+  if (search) search.value = '';
+
+  switchView('timesheets');
+  mutate(loadTimesheets, null, null);
+}
+
+/**
+ * Saves one cell: books a new entry, corrects the one behind it, or takes it back.
+ *
+ * Whatever happens, the grid is drawn again from the server afterwards - after a
+ * refusal as well, so a number the server did not take does not stay on screen
+ * looking accepted.
+ */
+async function commitWeekCell(input) {
+  const typed = input.value.trim();
+  const before = input.dataset.value;
+
+  if (typed === before) return;
+
+  const { id, project, date } = input.dataset;
+  const hours = Number(typed);
+
+  if (typed === '') {
+    if (!id) return;
+
+    const proceed = await confirmDialog({
+      title: t('week.removeTitle', 'Take this entry back?'),
+      text: fillIn(t('week.removeText', 'The {0} booked on {1} are deleted.'),
+        [fmtHours(Number(before)), fmtDate(date)]),
+      confirmLabel: t('action.delete', 'delete'),
+    });
+
+    if (!proceed) {
+      input.value = before;
+
+      return;
+    }
+
+    await mutate(() => api(`/timesheets/${id}`, { method: 'DELETE' }),
+      t('week.removed', 'Entry taken back'), reloadTimeViews);
+    await loadWeekGrid();
+
+    return;
+  }
+
+  if (!(hours > 0)) {
+    input.value = before;
+
+    return;
+  }
+
+  const call = id
+    ? () => api(`/timesheets/${id}`, { method: 'PUT', body: JSON.stringify({ durationHours: hours }) })
+    : () => api('/timesheets', {
+      method: 'POST',
+      body: JSON.stringify({
+        date, durationHours: hours, ...(project ? { projectId: Number(project) } : {}),
+      }),
+    });
+
+  await mutate(call, t('msg.booked', 'Time booked'), reloadTimeViews);
+  await loadWeekGrid();
+}
+
+/** Forgets the week the grid showed, for an account that has signed out. */
+function forgetTheWeek() {
+  weekShown = null;
+  weekData = null;
+  weekExtraRows.clear();
+
+  $('#table-week tbody')?.replaceChildren();
+  $('#table-week tfoot')?.replaceChildren();
+}
+
+function wireWeekGrid() {
+  const table = $('#table-week');
+  if (!table) return;
+
+  // On change, which a number field fires when it is left or Enter is pressed -
+  // not on every keystroke, which would book "1" on the way to typing "1.5".
+  table.addEventListener('change', (event) => {
+    const input = event.target.closest('input[data-cell]');
+    if (input) commitWeekCell(input);
+  });
+
+  const step = (weeks) => {
+    weekShown = addDays(weekShown ?? mondayOf(todayISO()), weeks * 7);
+    mutate(loadWeekGrid, null, null);
+  };
+
+  $('#week-prev').addEventListener('click', () => step(-1));
+  $('#week-next').addEventListener('click', () => step(1));
+  $('#week-today').addEventListener('click', () => {
+    weekShown = mondayOf(todayISO());
+    mutate(loadWeekGrid, null, null);
+  });
+
+  $('#week-add-project').addEventListener('change', (event) => {
+    const key = event.target.value;
+    if (!key || !weekShown) return;
+
+    const added = weekExtraRows.get(weekShown) ?? new Set();
+    added.add(key);
+    weekExtraRows.set(weekShown, added);
+
+    drawWeekGrid();
+
+    // Straight into the row's first day, which is where somebody adding a row
+    // starts typing.
+    $(`#table-week input[data-cell^="${CSS.escape(key)}|"]`)?.focus();
+  });
 }
 
 // ----------------------------------------------------------------- calendar
@@ -8131,6 +8497,12 @@ function forgetTheLastAccount() {
   $('#welcome-today').textContent = '';
   $('#welcome-recent-list').replaceChildren();
   $('#welcome-recent').hidden = true;
+
+  // The week beside them, and the week on the grid: this account's hours, which
+  // must not wait behind the sign-in screen for whoever comes next.
+  $('#welcome-week-bars').replaceChildren();
+  $('#welcome-week').hidden = true;
+  forgetTheWeek();
 
   // And each form's own reset, which resetting the form does not reach: a hidden
   // field keeps its value through one, so a form left correcting a record kept
@@ -14643,6 +15015,9 @@ function switchView(name) {
   // requests, and the screen reads correctly while they are in flight.
   if (name === 'welcome') renderWelcome();
 
+  // The week, likewise: what it shows is the server's, and may have moved since.
+  if (name === 'week') mutate(loadWeekGrid, null, null);
+
   // The log viewer polls, so it follows the screen it lives on rather than
   // running for as long as the tab is open.
   if (logViewerActive()) schedulePoll({ immediate: true });
@@ -15350,6 +15725,7 @@ async function init() {
     trackHeight('.topbar', '--topbar-height');
     trackHeight('#site-footer', '--footer-height');
     wireTimer();
+    wireWeekGrid();
     wireInstall();
     wireStatistics();
     wireDocumentExports();

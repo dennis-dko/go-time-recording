@@ -54,6 +54,10 @@
         <path d="M3 6h10M3 12h6.5M3 18h4.5"/>
         <circle cx="16.5" cy="15.5" r="5.2"/><path d="M16.5 12.6v2.9l2 1.3"/>
       </symbol>
+      <symbol id="icon-week" viewBox="0 0 24 24">
+        <rect x="3" y="5" width="18" height="14.5" rx="2.5"/>
+        <path d="M3 10.2h18M9 10.2v9.3M15 10.2v9.3"/>
+      </symbol>
       <symbol id="icon-calendar" viewBox="0 0 24 24">
         <rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/>
         <path d="M3.5 10h17M8 3v4M16 3v4"/>
@@ -194,6 +198,7 @@
 
     <nav id="tabs">
       <button class="tab" data-view="timesheets" data-perm="timesheets:read:own" data-i18n="nav.timesheets">Time entries<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-timesheets"/></svg></button>
+      <button class="tab" data-view="week" data-perm="timesheets:read:own" data-i18n="nav.week">Week<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-week"/></svg></button>
       <button class="tab" data-view="calendar" data-perm="timesheets:read:own" data-i18n="nav.calendar">Calendar<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-calendar"/></svg></button>
       <button class="tab" data-view="overtime" data-perm="timesheets:read:own" data-i18n="nav.overtime">Overtime<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-overtime"/></svg></button>
       <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-projects"/></svg></button>
@@ -725,6 +730,58 @@
             </thead>
             <tbody></tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- The week -->
+    <section id="view-week" class="view" hidden>
+      <!-- A week on one surface: the projects as rows, the days as columns, the
+           hours typed straight into the cells. For the day that has already
+           happened - five of them, usually, on a Friday afternoon - which the
+           booking form makes one entry at a time.
+
+           A cell is the sum of the entries of its project and day. A number in
+           an empty one books it; in one with a single entry behind it, changes
+           that entry; emptied, takes the entry back after asking. Where several
+           entries make up the sum the cell is not a field, because there is no
+           way to tell which of them a new number means - it leads to that day's
+           entries instead. -->
+      <div class="card" id="week-card">
+        <div class="card-head">
+          <!-- No data-i18n: the script owns this text, as the calendar's, and
+               writes the week and its days into it. -->
+          <h2 id="week-title">Week</h2>
+          <div class="filters">
+            <button type="button" class="secondary" id="week-prev" aria-label="&#8592;">&#8592;</button>
+            <button type="button" class="secondary" id="week-today" data-i18n="week.thisWeek">This week</button>
+            <button type="button" class="secondary" id="week-next" aria-label="&#8594;">&#8594;</button>
+          </div>
+        </div>
+        <p class="muted" data-i18n="week.hint">Type the hours into the cells: a number in an empty cell books it, and a changed number corrects the entry behind it. Where several entries make up a cell, it leads to them instead.</p>
+        <div class="table-wrap">
+          <table id="table-week" class="week-grid">
+            <thead>
+              <tr>
+                <th data-i18n="field.project">Project</th>
+                <th class="num" data-day="0"></th>
+                <th class="num" data-day="1"></th>
+                <th class="num" data-day="2"></th>
+                <th class="num" data-day="3"></th>
+                <th class="num" data-day="4"></th>
+                <th class="num" data-day="5"></th>
+                <th class="num" data-day="6"></th>
+                <th class="num" data-i18n="week.sum">Total</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+        <div class="row row-apart" data-perm="timesheets:write:own">
+          <label class="week-add" data-i18n="week.addRow">Add a row for
+            <select id="week-add-project"></select>
+          </label>
         </div>
       </div>
     </section>

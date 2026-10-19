@@ -701,6 +701,16 @@ button.danger:not(.link) {
 .timer-form { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px; }
 .timer-form h3 { font-size: 14px; margin: 0 0 10px; }
 
+/* The week grid: a cell is a field the width of a figure, and what the week came
+   to underneath reads as a total rather than as one more project. */
+.week-grid input.week-cell { text-align: right; width: 5.5em; }
+.week-grid .sum,
+.week-grid tfoot th,
+.week-grid tfoot td { font-weight: 600; }
+.week-grid tfoot tr:first-child th,
+.week-grid tfoot tr:first-child td { border-top: 2px solid var(--border); }
+.week-add select { min-width: 12em; }
+
 /* Seven narrow figures in a row, as a week reads; four to a row on a telephone,
    where seven would not fit. */
 .schedule-days { grid-template-columns: repeat(7, minmax(0, 1fr)); }
