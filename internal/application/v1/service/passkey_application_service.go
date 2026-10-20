@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -34,14 +33,10 @@ type PasskeyService struct {
 	passkeys repository.PasskeyRepository
 	users    repository.UserRepository
 
-	// pending holds challenges between the two halves of a ceremony. In memory
-	// on purpose: a challenge is worthless after five minutes, and putting it
-	// in the database would mean writing a row for every sign-in attempt
-	// including the abandoned ones.
-	//
-	// The cost is that a restart, or a second instance behind a load balancer,
-	// loses them - the user retries and it works. Passwords are unaffected.
-	pending challenges
+	// pending holds challenges between the two halves of a ceremony, for
+	// challengeLifetime and in this process's memory - see pendingStore for why.
+	// Passwords are unaffected by a restart losing them.
+	pending pendingStore[webauthn.SessionData]
 }
 
 // NewPasskeyService starts with no ceremony in flight. Challenges live in this
@@ -50,7 +45,10 @@ func NewPasskeyService(
 	passkeys repository.PasskeyRepository,
 	users repository.UserRepository,
 ) *PasskeyService {
-	return &PasskeyService{passkeys: passkeys, users: users}
+	return &PasskeyService{
+		passkeys: passkeys, users: users,
+		pending: pendingStore[webauthn.SessionData]{lifetime: challengeLifetime},
+	}
 }
 
 // RelyingParty is what the browser binds a credential to.
@@ -69,12 +67,6 @@ type RelyingParty struct {
 
 	// DisplayName is what the prompt calls this installation.
 	DisplayName string
-}
-
-// pendingSession is a challenge waiting for its second half.
-type pendingSession struct {
-	data    webauthn.SessionData
-	expires time.Time
 }
 
 // Available reports whether passkeys can be used at all on this connection.
@@ -370,71 +362,6 @@ func (s *PasskeyService) Delete(ctx context.Context, id, userID uint) error {
 }
 
 // ------------------------------------------------------------------ pending
-
-// challengeSweepInterval is how often the abandoned challenges are looked for,
-// which is most of them: every sign-in somebody thinks better of leaves one.
-//
-// Not on every start, which is how it began: every start then visited every
-// challenge still waiting, so the cost of a start grew with the number started -
-// measured, 158 microseconds a start with 10,000 waiting and 11.6 milliseconds
-// with 60,000, and the start of a sign-in needs no session. At most once a
-// minute, an abandoned challenge outlives its lifetime by a minute at most and
-// the visit is paid once rather than by every start.
-const challengeSweepInterval = time.Minute
-
-// challenges is the store PasskeyService.pending describes: a map behind a lock,
-// swept of what has expired at most once a challengeSweepInterval.
-//
-// A plain map rather than a sync.Map, because when the last sweep was has to be
-// kept with the map it describes, which is the case the sync package's own
-// documentation sends to a map and a lock.
-type challenges struct {
-	mu        sync.Mutex
-	byToken   map[string]pendingSession
-	lastSweep time.Time
-}
-
-// put keeps a challenge until its second half takes it or it expires.
-func (c *challenges) put(token string, data webauthn.SessionData, now time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if now.Sub(c.lastSweep) >= challengeSweepInterval {
-		c.lastSweep = now
-
-		for key, session := range c.byToken {
-			if now.After(session.expires) {
-				delete(c.byToken, key)
-			}
-		}
-	}
-
-	if c.byToken == nil {
-		c.byToken = map[string]pendingSession{}
-	}
-
-	c.byToken[token] = pendingSession{data: data, expires: now.Add(challengeLifetime)}
-}
-
-// take returns a challenge and removes it, so one can never be used twice. One
-// past its lifetime is refused whether or not a sweep has reached it yet.
-func (c *challenges) take(token string, now time.Time) (webauthn.SessionData, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	session, ok := c.byToken[token]
-	if !ok {
-		return webauthn.SessionData{}, false
-	}
-
-	delete(c.byToken, token)
-
-	if now.After(session.expires) {
-		return webauthn.SessionData{}, false
-	}
-
-	return session.data, true
-}
 
 // storePending keeps a challenge and returns the handle for its second half.
 //
