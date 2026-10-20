@@ -280,6 +280,10 @@ func main() {
 	// see QuietRequestsTo. The route is the one RegisterRoutes gives the viewer.
 	logs.QuietRequestsTo("/api/v1/admin/logs")
 
+	// And no line carries a calendar feed's key, which is the whole of the address
+	// a reading of it is logged under; see Conceal.
+	logs.Conceal(appservice.CalendarFeedKeyPrefix)
+
 	if terminal {
 		// Interception makes the output a pipe, and GoFr prints JSON when its
 		// output is not a terminal. On a terminal that would be a regression in
@@ -559,6 +563,7 @@ func main() {
 	templateRepo := sqldb.NewTemplateRepository(db, cfg.Dialect)
 	absenceRepo := sqldb.NewAbsenceRepository(db, cfg.Dialect)
 	vacationRepo := sqldb.NewVacationRepository(db, cfg.Dialect)
+	calendarFeedRepo := sqldb.NewCalendarFeedRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
@@ -658,6 +663,30 @@ func main() {
 	templates := appservice.NewTemplateService(templateRepo, projectRepo)
 	absences := appservice.NewAbsenceService(absenceRepo, userRepo, scheduleRepo, regions)
 	leave := appservice.NewVacationService(vacationRepo, absenceRepo, userRepo, scheduleRepo, regions, today)
+
+	// What this installation is called in a language, wherever it has to name
+	// itself: the prompt a passkey device shows, the foot of an exported document,
+	// and the calendar somebody subscribes to.
+	//
+	// The administered title if there is one, so a person sees the name they
+	// know rather than the default the process was started with. One function
+	// rather than one per caller - it was written inline for the first of them,
+	// and the second would have been the same six lines again.
+	instanceNameIn := func(ctx context.Context, language string) string {
+		branding, err := settingsService.Branding(ctx)
+		if err != nil {
+			return cfg.AppName
+		}
+
+		if title := branding.TitleIn(language); title != "" {
+			return title
+		}
+
+		return cfg.AppName
+	}
+
+	calendarFeeds := appservice.NewCalendarFeedService(calendarFeedRepo, userRepo, timesheetRepo,
+		absenceRepo, projectRepo, auth, today, instanceNameIn)
 
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
@@ -926,27 +955,11 @@ func main() {
 		return name
 	})
 
-	// What this installation is called, wherever it has to name itself: the
-	// prompt a passkey device shows, and the foot of an exported document.
-	//
-	// The administered title if there is one, so a person sees the name they
-	// know rather than the default the process was started with. One function
-	// rather than one per caller - it was written inline for the first of them,
-	// and the second would have been the same six lines again.
+	// In the language that asked, where there is one. An installation that has
+	// named itself in German and is read in German should not be signed off in
+	// English at the foot of its own evaluation.
 	instanceName := func(ctx *gofr.Context) string {
-		branding, err := settingsService.Branding(ctx)
-		if err != nil {
-			return cfg.AppName
-		}
-
-		// In the language that asked, where there is one. An installation that
-		// has named itself in German and is read in German should not be signed
-		// off in English at the foot of its own evaluation.
-		if title := branding.TitleIn(strings.TrimSpace(ctx.Param("lang"))); title != "" {
-			return title
-		}
-
-		return cfg.AppName
+		return instanceNameIn(ctx, strings.TrimSpace(ctx.Param("lang")))
 	}
 
 	setupHandler := rest.NewSetupHandler(setup, authorizer)
@@ -996,6 +1009,7 @@ func main() {
 		Absences:   rest.NewAbsenceHandler(absences, authorizer, instanceTimezone),
 		Holidays:   rest.NewHolidayHandler(sessions, settingsService, authorizer),
 		Vacation:   rest.NewVacationHandler(leave, authorizer, instanceTimezone),
+		Calendar:   rest.NewCalendarFeedHandler(calendarFeeds, authorizer),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),

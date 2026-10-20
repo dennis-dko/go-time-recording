@@ -1420,6 +1420,24 @@
         </div>
       </div>
 
+      <!-- The address a calendar program reads this person's recorded days from.
+           Its key is the address, so it is shown once, in the answer that made it,
+           as a token's value is - and taken off the screen the same way. -->
+      <div class="card" id="feed-card" data-perm="timesheets:read:own">
+        <h2 data-i18n="feed.title">Calendar subscription</h2>
+        <p class="muted" data-i18n="feed.hint">Your booked hours a day at a time, and the days you are away, in Outlook, Google or on your phone – beside your appointments. The address is a key to them: anybody who has it can read them. So it is shown only once, and a new address takes the old one back.</p>
+        <p class="muted" data-i18n="feed.reach">Google and Outlook on the web read the address from their own servers, so for them this installation has to be reachable from the internet. A calendar on your phone or computer reads it from wherever that device is.</p>
+        <p id="feed-state"></p>
+        <div id="feed-address" hidden>
+          <p class="muted plus" data-i18n="feed.copyNow">Add it to your calendar now – this address is never shown again:</p>
+          <pre class="secret" id="feed-address-value"></pre>
+        </div>
+        <div class="row">
+          <button type="button" id="feed-create" data-i18n="feed.create">Create address</button>
+          <button type="button" id="feed-remove" class="secondary" hidden data-i18n="feed.remove">Remove address</button>
+        </div>
+      </div>
+
       <div class="card" id="token-card">
         <div class="card-head">
           <h2 data-i18n="token.title">API tokens</h2>

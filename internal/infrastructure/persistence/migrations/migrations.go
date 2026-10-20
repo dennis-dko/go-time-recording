@@ -129,6 +129,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261020010000: {UP: func(d migration.Datasource) error {
 			return giveProjectsAnHourBudget(d, dialect)
 		}},
+		20261020020000: {UP: func(d migration.Datasource) error {
+			return keepCalendarFeeds(d, dialect)
+		}},
 	}
 }
 
@@ -1706,4 +1709,21 @@ func keepTheYearlyLeave(d migration.Datasource, dialect string) error {
 // spend on it. Null for every project there is, which is no budget at all.
 func giveProjectsAnHourBudget(d migration.Datasource, dialect string) error {
 	return execAll(d, fmt.Sprintf("ALTER TABLE projects ADD COLUMN budget_hours %s", float(dialect)))
+}
+
+// keepCalendarFeeds keeps the address each person's calendar program reads their
+// recorded days from - only a hash of its key, as an API token's.
+//
+// The person is unique, because one address is all anybody has, and the hash is
+// unique because it is what every reading of a feed is looked up by: both are the
+// indexes the table needs, declared as constraints so that one statement makes it.
+func keepCalendarFeeds(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE calendar_feeds (
+		%s,
+		user_id %s NOT NULL UNIQUE REFERENCES users(id),
+		key_hash VARCHAR(64) NOT NULL UNIQUE,
+		prefix VARCHAR(32) NOT NULL,
+		created_at %s NOT NULL,
+		last_read_at %s
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect), timestamp(dialect)))
 }

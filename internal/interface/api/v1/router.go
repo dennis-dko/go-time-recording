@@ -28,6 +28,7 @@ type Handlers struct {
 	Absences   *rest.AbsenceHandler
 	Holidays   *rest.HolidayHandler
 	Vacation   *rest.VacationHandler
+	Calendar   *rest.CalendarFeedHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -160,6 +161,14 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/vacation", h.Vacation.Year)
 	app.PUT(base+"/me/vacation", h.Vacation.Entitle)
 	app.DELETE(base+"/me/vacation/{fromYear}", h.Vacation.Withdraw)
+
+	// The address somebody's calendar program reads their recorded days from: theirs
+	// to make, see and take back, and read with the key in the path and nothing else,
+	// because a calendar program has nothing else to send.
+	app.GET(base+"/me/calendar-feed", h.Calendar.Get)
+	app.POST(base+"/me/calendar-feed", h.Calendar.Create)
+	app.DELETE(base+"/me/calendar-feed", h.Calendar.Remove)
+	app.GET(base+"/calendar-feed/{key}", h.Calendar.Read)
 
 	app.GET(base+"/me/passkeys", h.Passkeys.List)
 	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)

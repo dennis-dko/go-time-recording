@@ -1819,6 +1819,79 @@
         }
       }
     },
+    "/me/calendar-feed": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Your calendar feed, without its key",
+        "description": "Answers {\"active\": true, \"prefix\": \"gtrcal_AbC123\", \"createdAt\": \"2026-10-20T09:30:00Z\", \"lastReadAt\": \"2026-10-20T10:00:00Z\"}, or {\"active\": false} without one. prefix is the start of the key, to recognise which address your calendar was given; lastReadAt says whether anything is reading it. Needs the right to read your own entries, which is what the feed hands out.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Make a calendar feed, in place of the one you had",
+        "description": "No body. Answers as GET does, with path added: the address the feed is read at, key included, relative to this installation - the only time the key is ever shown, because only a hash of it is kept. The address you had before reads nothing from this moment on, which is how a key somebody has seen is taken back.",
+        "responses": {
+          "201": {
+            "description": "The new feed, with its address"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take your calendar feed back",
+        "description": "Its address reads nothing from then on. Asks for nothing beyond being signed in. Answers 404 when there is no feed.",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/calendar-feed/{key}": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Read a calendar feed",
+        "description": "What a calendar program subscribes to - Outlook, Google, a telephone - with nothing but this address: no session and no token, the key in the path, with or without .ics after it. An iCalendar (RFC 5545) of whole days in the year either side of today, in the owner's language: every day they booked on, saying how many hours, with each entry written under it - its hours, its project unless it is one the owner cannot see, and its description - and every day they recorded themselves away, saying why. Every event is transparent, so booked hours never make anybody look busy. The key opens no more than its owner could read on their own screen: not when their role stops letting them read their own entries, nor while their password waits to be chosen. A key that opens nothing answers 404, whatever the reason. The key is hidden in the process log, under which the reading is still written.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The calendar",
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A key that opens nothing"
+          }
+        }
+      }
+    },
     "/me/days": {
       "get": {
         "tags": [

@@ -24,6 +24,9 @@ type plannedFixture struct {
 	away     *service.AbsenceService
 	leave    *service.VacationService
 
+	// absenceRepo is what away records into, for a service the fixture does not wire.
+	absenceRepo *memory.AbsenceRepository
+
 	// region is the state the installation keeps the holidays of, empty for none.
 	region string
 
@@ -38,7 +41,7 @@ func newPlannedFixture(t *testing.T) *plannedFixture {
 	absences := memory.NewAbsenceRepository()
 
 	// A Friday at the end of July, after every day the fixture books on.
-	f := &plannedFixture{fixture: newFixture(t), today: day(31)}
+	f := &plannedFixture{fixture: newFixture(t), today: day(31), absenceRepo: absences}
 	regions := service.RegionSource(func(context.Context) (string, error) { return f.region, nil })
 
 	f.weeks = service.NewWorkScheduleService(schedules, f.userRepo)

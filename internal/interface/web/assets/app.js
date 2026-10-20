@@ -3977,6 +3977,7 @@ const TRANSLATIONS = {
     'entity.schedule': 'Wochenplan',
     'entity.template': 'Vorlage',
     'entity.absence': 'Abwesenheit',
+    'entity.feed': 'Kalender-Abo',
     'entity.entitlement': 'Urlaubsanspruch',
     'entity.session': 'Sitzung',
     'entity.timesheet': 'Zeiteintrag',
@@ -4495,6 +4496,21 @@ const TRANSLATIONS = {
     'project.budgetReached': '{0} hat sein ganzes Kontingent von {1} aufgebraucht.',
     'project.budgetNear': '{0} hat vier Fünftel seines Kontingents von {1} aufgebraucht.',
     'report.budget': 'Alle Stunden zusammen: {0} von seinem Kontingent von {1} ({2} %).',
+    'feed.title': 'Kalender-Abo',
+    'feed.hint': 'Deine gebuchten Stunden Tag für Tag und die Tage, an denen du abwesend bist, in Outlook, Google oder auf dem Telefon – neben deinen Terminen. Die Adresse ist ein Schlüssel dazu: Wer sie hat, kann sie lesen. Deshalb wird sie nur einmal angezeigt, und eine neue Adresse nimmt die alte zurück.',
+    'feed.reach': 'Google und Outlook im Web lesen die Adresse von ihren eigenen Servern aus, dafür muss diese Installation aus dem Internet erreichbar sein. Ein Kalender auf dem Telefon oder Rechner liest sie von dort, wo das Gerät gerade ist.',
+    'feed.copyNow': 'Jetzt in den Kalender übernehmen – diese Adresse wird nicht wieder angezeigt:',
+    'feed.create': 'Adresse erstellen',
+    'feed.replace': 'Neue Adresse',
+    'feed.remove': 'Adresse entfernen',
+    'feed.active': 'Adresse {0}… seit {1}, zuletzt gelesen: {2}.',
+    'feed.unread': 'noch nie',
+    'feed.none': 'Noch keine Adresse.',
+    'feed.replaceTitle': 'Neue Adresse erstellen?',
+    'feed.replaceText': 'Jeder Kalender mit der bisherigen Adresse zeigt deine Tage danach nicht mehr. Das ist richtig, wenn jemand sie gesehen haben könnte.',
+    'feed.removeTitle': 'Adresse entfernen?',
+    'feed.removeText': 'Jeder Kalender mit dieser Adresse zeigt deine Tage danach nicht mehr.',
+    'feed.removed': 'Adresse entfernt',
     'tpl.fill': 'Aus einer Vorlage ausfüllen',
     'tpl.choose': 'Vorlage wählen …',
     'tpl.closed': 'ihr Projekt nimmt keine Buchungen an',
@@ -7508,6 +7524,121 @@ function wireTokens() {
   });
 }
 
+// ------------------------------------------------------------ calendar feed
+
+/** Whether this person has a calendar feed, as last read. */
+let calendarFeed = null;
+
+/**
+ * Says whether this person has a calendar feed, since when, and when it was last
+ * read - which is how somebody finds out whether their calendar is reading the
+ * address at all, since a calendar that cannot reach it says nothing.
+ */
+async function loadCalendarFeed() {
+  if (!can('timesheets:read:own')) return;
+
+  calendarFeed = await api('/me/calendar-feed');
+
+  // An address on the card that is no longer this person's - replaced or removed
+  // in another tab - reads nothing, and the card went on saying "add it now".
+  const shown = $('#feed-address')?.dataset.prefix;
+  if (shown && shown !== calendarFeed?.prefix) forgetTheFeedAddress();
+
+  const active = Boolean(calendarFeed?.active);
+
+  $('#feed-state').textContent = active
+    ? fillIn(t('feed.active', 'Address {0}… since {1}, last read: {2}.'), [
+      calendarFeed.prefix,
+      fmtMoment(calendarFeed.createdAt),
+      calendarFeed.lastReadAt ? fmtMoment(calendarFeed.lastReadAt) : t('feed.unread', 'not yet'),
+    ])
+    : t('feed.none', 'No address yet.');
+
+  if (active) swapTheLabel($('#feed-create'), 'feed.replace', 'New address');
+  else swapTheLabel($('#feed-create'), 'feed.create', 'Create address');
+  $('#feed-remove').hidden = !active;
+}
+
+/**
+ * Takes a feed's address off the screen.
+ *
+ * It is a key to somebody's recorded days, working until it is replaced, and it
+ * exists once, in the answer that made it - so it goes when the screen is left or
+ * the session ends, as a token's value does, rather than staying for whoever sits
+ * down next.
+ */
+function forgetTheFeedAddress() {
+  const panel = $('#feed-address');
+  if (!panel) return;
+
+  panel.hidden = true;
+  delete panel.dataset.prefix;
+  $('#feed-address-value').textContent = '';
+}
+
+/**
+ * Takes the card back to knowing nothing about an account's feed, for the next
+ * account: the address, and what the card said about it - the start of its key,
+ * when it was made and last read. The next sign-in loads its own, but only for an
+ * account whose role shows the card, and what the last one left in it stayed for
+ * every other.
+ */
+function forgetTheCalendarFeed() {
+  calendarFeed = null;
+  forgetTheFeedAddress();
+
+  const state = $('#feed-state');
+  if (state) state.textContent = '';
+
+  swapTheLabel($('#feed-create'), 'feed.create', 'Create address');
+
+  const remove = $('#feed-remove');
+  if (remove) remove.hidden = true;
+}
+
+function wireCalendarFeed() {
+  $('#feed-create').addEventListener('click', async () => {
+    // Replacing one stops every calendar that was given it, which is what replacing
+    // it is for - and worth saying before it happens, not after.
+    if (calendarFeed?.active) {
+      const replace = await confirmDialog({
+        title: t('feed.replaceTitle', 'Create a new address?'),
+        text: t('feed.replaceText', 'Every calendar given the current address stops showing your days. That is what you want if somebody may have seen it.'),
+        confirmLabel: t('feed.replace', 'New address'),
+      });
+      if (!replace) return;
+    }
+
+    mutate(async () => {
+      const feed = await api('/me/calendar-feed', { method: 'POST' });
+
+      // The answer says where the feed is read relative to this installation, and
+      // the address a calendar needs is the one this page was reached at.
+      $('#feed-address-value').textContent = `${location.origin}${feed.path}`;
+      $('#feed-address').dataset.prefix = feed.prefix;
+      $('#feed-address').hidden = false;
+
+      await loadCalendarFeed();
+    }, null, null);
+  });
+
+  $('#feed-remove').addEventListener('click', async () => {
+    const remove = await confirmDialog({
+      title: t('feed.removeTitle', 'Remove the address?'),
+      text: t('feed.removeText', 'Every calendar given this address stops showing your days.'),
+      confirmLabel: t('feed.remove', 'Remove address'),
+    });
+    if (!remove) return;
+
+    mutate(() => api('/me/calendar-feed', { method: 'DELETE' }),
+      t('feed.removed', 'Address removed'),
+      async () => {
+        forgetTheFeedAddress();
+        await loadCalendarFeed();
+      });
+  });
+}
+
 // ------------------------------------------------------------ administration
 
 /**
@@ -9413,6 +9544,10 @@ function forgetTheLastAccount() {
   // And a token's value, for the same reason and with more at stake: this one is
   // a working credential rather than an enrolment nobody finished.
   forgetTheTokenValue();
+
+  // And a calendar feed's address, which is one too - a key to somebody's days -
+  // with what the card said about it.
+  forgetTheCalendarFeed();
 
   // And any password left showing. The forms are reset on the way out, which
   // takes the value and leaves the box a text field - so the next person types
@@ -16027,6 +16162,7 @@ function switchView(name) {
     if ($('#totp-setup') && !$('#totp-setup').hidden) renderTOTPState();
 
     forgetTheTokenValue();
+    forgetTheFeedAddress();
   }
 }
 
@@ -16293,6 +16429,7 @@ async function refreshAll() {
   await loadStatistics();
   await loadAdmin();
   await loadTokens();
+  await loadCalendarFeed();
   await loadPasskeys();
   await loadSchedules();
   await loadTemplates();
@@ -16752,6 +16889,7 @@ async function init() {
     wireHolidays();
     wireAdmin();
     wireTokens();
+    wireCalendarFeed();
     wireDirectorySync();
     wireTimezones();
     wireOperational();

@@ -298,6 +298,7 @@ exactly those checksums.
 | Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
+| Calendar subscription | An address of your own, made under *My account*, that Outlook, Google or a telephone subscribes to: every day you booked on - how many hours, and what on - and every day you are away, in the year either side of today. Read-only, shown once, and taken back by making a new one |
 | The year | Every day of a year as a tile, as dark as the hours booked on it, with the public holidays and the days away outlined rather than told by colour alone - beside the year before up to the same day, and both month by month as figures |
 | Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
 | Days away | Leave, half a day of it, sick days, days taken against overtime and holidays that hold only where somebody works, recorded over a range - but only on the days the planned week asks something of, so a fortnight of leave is its ten working days - and named in the calendar and on the week grid. From the day every working day counts from, each takes its part off what the day asks |
@@ -540,6 +541,41 @@ can be revoked at any time.
 Interactive documentation is at **`/api-docs`**, and the OpenAPI specification
 it renders is at `/openapi.json` — load that into Swagger UI, Postman or
 Insomnia if you prefer those.
+
+## Your days in your own calendar
+
+Under **My account**, *Calendar subscription* makes an address a calendar
+program subscribes to - Outlook, Google Calendar, the calendar on a telephone.
+Every day you booked hours on is a whole day there saying how many, with each
+entry written under it, and every day you recorded yourself away is one saying
+why: the year either side of today, in the language you read the application
+in. Every event is marked free, so booked hours never make you look busy to
+whoever reads your free time.
+
+A calendar program can send nothing but the address, so the key is in the
+address, and that decides the rest:
+
+- **It is a key of its own, not an API token.** It reads your days and nothing
+  else, and never more than you could read on your own screen: it stops
+  answering when your role no longer lets you read your own entries, and while a
+  reset password waits to be chosen. Whatever the reason, it answers 404 and
+  says nothing more.
+- **It is shown once.** Only a hash of it is kept, as with a token. Making a new
+  address takes the old one back at once, and so does removing it - which is
+  what to do if anybody may have seen it. The card says when the address was
+  last read, which is how to tell whether a calendar is reading it at all.
+- **It is hidden in the log.** Every reading is logged under its address, so the
+  process log writes `gtrcal_[hidden]` in place of the key - on the console as
+  well as in the log viewer - and whoever reads the log learns that a calendar
+  was read, not how to read it. Traces and metrics name the route, never the
+  address.
+
+Google Calendar and Outlook on the web fetch the address from their own
+servers, so for them the installation has to be reachable from the internet; a
+calendar on a telephone or a computer fetches it from wherever that device is,
+over a VPN for example. How often it is fetched again is the calendar program's
+choice: the feed asks for every hour, and Google takes up to a day whatever it
+is asked.
 
 ## Security
 
