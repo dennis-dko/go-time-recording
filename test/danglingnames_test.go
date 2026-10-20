@@ -81,6 +81,7 @@ var namedOnPurpose = map[string]string{
 	"userAccountControl": "Active Directory's attribute, which a sign-in asks for by name",
 	"accountExpires":     "Active Directory's attribute, which a sign-in asks for by name",
 	"userPrincipalName":  "Active Directory's, the name@realm a Kerberos sign-in is also looked up by",
+	"iCalendar":          "the format's own name (RFC 5545), which the calendar feed is written in",
 
 	// Gone on purpose, and the comment says so where it stood.
 	"mayShare":                  "retired with the shared project",
