@@ -972,6 +972,45 @@
         </div>
       </div>
 
+      <!-- The year as tiles: a column a week, a row a weekday, each day as dark as
+           the hours booked on it, the public holidays and the days away told by
+           their outline rather than by colour alone. Beside it, the year before up
+           to the same day, and both month by month as figures. The script owns the
+           heading and the two year columns, which name the years. -->
+      <div class="card" id="year-card" data-perm="timesheets:read:own">
+        <div class="card-head">
+          <h2 id="year-title">Year</h2>
+          <div class="filters">
+            <button type="button" class="secondary" id="year-prev" aria-label="&#8592;">&#8592;</button>
+            <button type="button" class="secondary" id="year-next" aria-label="&#8594;">&#8594;</button>
+          </div>
+        </div>
+        <p class="muted" id="year-summary"></p>
+        <div class="year-wrap">
+          <div class="year-months" id="year-months" aria-hidden="true"></div>
+          <div class="year-tiles" id="year-tiles" role="img"></div>
+        </div>
+        <p class="year-legend" aria-hidden="true">
+          <span data-i18n="year.less">Less</span>
+          <span class="year-tile level-0"></span><span class="year-tile level-1"></span><span class="year-tile level-2"></span><span class="year-tile level-3"></span><span class="year-tile level-4"></span><span class="year-tile level-5"></span>
+          <span data-i18n="year.more">More</span>
+          <span class="year-tile level-0 holiday"></span><span data-i18n="year.holiday">Public holiday</span>
+          <span class="year-tile level-0 away"></span><span data-i18n="year.away">Away</span>
+        </p>
+        <div class="table-wrap">
+          <table id="table-year">
+            <thead>
+              <tr>
+                <th data-i18n="year.month">Month</th>
+                <th class="num" id="year-this"></th>
+                <th class="num" id="year-before"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
       <form method="post" id="form-overtime" class="card form">
         <h2 data-i18n="nav.overtime">Overtime</h2>
         <div class="grid">

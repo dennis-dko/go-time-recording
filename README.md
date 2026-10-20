@@ -297,6 +297,7 @@ exactly those checksums.
 | Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
+| The year | Every day of a year as a tile, as dark as the hours booked on it, with the public holidays and the days away outlined rather than told by colour alone - beside the year before up to the same day, and both month by month as figures |
 | Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
 | Days away | Leave, half a day of it, sick days, days taken against overtime and holidays that hold only where somebody works, recorded over a range - but only on the days the planned week asks something of, so a fortnight of leave is its ten working days - and named in the calendar and on the week grid. From the day every working day counts from, each takes its part off what the day asks |
 | Leave | Days of leave a year, from a year on, and for each year what is left of them: what the year gives, what the year before left over - carried in, or owed where it was overdrawn - and what is taken and still planned, counted from the days of leave recorded on working days |

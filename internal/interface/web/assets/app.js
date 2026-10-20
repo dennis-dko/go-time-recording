@@ -4544,6 +4544,14 @@ const TRANSLATIONS = {
     'holiday.repentanceDay': 'Buß- und Bettag',
     'holiday.christmasDay': '1. Weihnachtstag',
     'holiday.stStephensDay': '2. Weihnachtstag',
+    'year.title': 'Das Jahr {0}',
+    'year.booked': 'Gebucht: {0} · Tage mit Stunden: {1}',
+    'year.compare': '{0} bis zum selben Tag: {1}',
+    'year.less': 'Weniger',
+    'year.more': 'Mehr',
+    'year.holiday': 'Feiertag',
+    'year.away': 'Abwesend',
+    'year.month': 'Monat',
     'vacation.title': 'Urlaub {0}',
     'vacation.left': 'Resttage: {0}',
     'vacation.detail': 'Anspruch: {0} · übertragen: {1} · genommen: {2} · geplant: {3}',
@@ -7128,6 +7136,151 @@ function fillSettingsForm() {
   setDateField(form.elements.everyDayCountsFrom, me.user.everyDayCountsFrom ?? '');
 }
 
+// ------------------------------------------------------------------ the year
+
+/** The year the tiles show, or null before they were first drawn. */
+let yearShown = null;
+
+/** What the tiles were last drawn from, kept so a language change can redraw them. */
+let yearData = null;
+
+/** Loads a year of days, and the year before it to compare with. */
+async function loadYearMap() {
+  if (!can('timesheets:read:own')) return;
+
+  // This person's year, which is not the browser's for part of the last day of it.
+  if (!yearShown) yearShown = Number(todayISO().slice(0, 4));
+
+  const year = yearShown;
+  const span = (y) => new URLSearchParams({ from: `${y}-01-01`, to: `${y}-12-31` });
+
+  const [shown, before] = await Promise.all([
+    api(`/me/days?${span(year)}`),
+    api(`/me/days?${span(year - 1)}`),
+  ]);
+
+  // Overtaken by a step to another year while this was on its way.
+  if (year !== yearShown) return;
+
+  yearData = { year, days: shown?.days ?? [], before: before?.days ?? [] };
+
+  redrawable('yearMap', drawYearMap);
+}
+
+/** How dark a day's tile is: by the hours booked on it, two hours a step. */
+function yearLevel(hours) {
+  if (!(hours > 0)) return 0;
+
+  return Math.min(5, Math.ceil(hours / 2));
+}
+
+function drawYearMap() {
+  if (!yearData) return;
+
+  const { year, days, before } = yearData;
+  const today = todayISO();
+
+  $('#year-title').textContent = fillIn(t('year.title', 'The year {0}'), [year]);
+
+  // The two years compared up to the same day: today, in the year that is running,
+  // and the whole of a year gone by. Comparing a year half done with a whole one
+  // would always say less.
+  const upTo = String(year) === today.slice(0, 4) ? today.slice(5) : '12-31';
+  const bookedUpTo = (list) => list
+    .filter((daily) => daily.date.slice(5) <= upTo)
+    .reduce((total, daily) => total + daily.booked, 0);
+
+  const summary = [
+    fillIn(t('year.booked', 'Booked: {0} · days with hours: {1}'),
+      [fmtHours(bookedUpTo(days)), days.filter((daily) => daily.booked > 0).length]),
+    fillIn(t('year.compare', '{0} to the same day: {1}'), [year - 1, fmtHours(bookedUpTo(before))]),
+  ].join(' · ');
+
+  $('#year-summary').textContent = summary;
+
+  // A column a week, Monday first: the first column starts with the days before
+  // the first of January, drawn but not shown, so every row is one weekday.
+  const first = new Date(Date.UTC(year, 0, 1));
+  const lead = (first.getUTCDay() + 6) % 7;
+
+  const tiles = Array.from({ length: lead }, () => el('span', { class: 'year-tile outside' }));
+
+  for (const daily of days) {
+    const classes = ['year-tile', `level-${yearLevel(daily.booked)}`];
+
+    if (daily.holiday) classes.push('holiday');
+    else if (daily.absence) classes.push('away');
+
+    if (daily.date === today) classes.push('today');
+
+    const why = daily.holiday ? holidayName(daily.holiday) : (daily.absence ? absenceName(daily.absence) : '');
+
+    tiles.push(el('span', {
+      class: classes.join(' '),
+      title: [fmtDate(daily.date), fmtHours(daily.booked), why].filter(Boolean).join(' · '),
+    }));
+  }
+
+  const grid = $('#year-tiles');
+  grid.replaceChildren(...tiles);
+  grid.setAttribute('aria-label', `${$('#year-title').textContent}: ${summary}`);
+
+  // Each month's name above the column its first day falls in.
+  const months = t('cal.months',
+    'January,February,March,April,May,June,July,August,September,October,November,December').split(',');
+
+  $('#year-months').replaceChildren(...months.map((name, m) => {
+    const offset = lead + Math.round((Date.UTC(year, m, 1) - first.getTime()) / 86400000);
+    const label = el('span', { text: name.slice(0, 3) });
+
+    label.style.gridColumnStart = String(Math.floor(offset / 7) + 1);
+
+    return label;
+  }));
+
+  // The same two years as figures, month by month - what the tiles say, for
+  // somebody who cannot see them and for anybody who wants the numbers.
+  $('#year-this').textContent = String(year);
+  $('#year-before').textContent = String(year - 1);
+
+  const perMonth = (list) => months.map((_, m) => list
+    .filter((daily) => Number(daily.date.slice(5, 7)) === m + 1)
+    .reduce((total, daily) => total + daily.booked, 0));
+
+  const shown = perMonth(days);
+  const earlier = perMonth(before);
+
+  fillTable($('#table-year tbody'), months.map((name, m) => el('tr', {},
+    el('td', { class: 'text', text: name }),
+    el('td', { class: 'num', text: fmtHours(shown[m]) }),
+    el('td', { class: 'num', text: fmtHours(earlier[m]) }),
+  )), 3, '');
+}
+
+/** Forgets the year the tiles showed, for an account that has signed out. */
+function forgetTheYearMap() {
+  yearShown = null;
+  yearData = null;
+
+  for (const said of ['#year-title', '#year-summary', '#year-this', '#year-before']) {
+    const node = $(said);
+    if (node) node.textContent = '';
+  }
+
+  $('#year-tiles')?.replaceChildren();
+  $('#year-months')?.replaceChildren();
+}
+
+function wireYearMap() {
+  const step = (years) => {
+    yearShown = (yearShown ?? Number(todayISO().slice(0, 4))) + years;
+    mutate(loadYearMap, null, null);
+  };
+
+  $('#year-prev')?.addEventListener('click', () => step(-1));
+  $('#year-next')?.addEventListener('click', () => step(1));
+}
+
 // --------------------------------------------------------------- API tokens
 
 // ---------------------------------------------------------------- the week
@@ -9251,6 +9404,10 @@ function forgetTheLastAccount() {
 
   // And their leave, whose figures are theirs.
   forgetTheVacation();
+
+  // And their year, tile by tile.
+  forgetTheYearMap();
+
 
 
   // And each form's own reset, which resetting the form does not reach: a hidden
@@ -15789,6 +15946,10 @@ function switchView(name) {
   // The week, likewise: what it shows is the server's, and may have moved since.
   if (name === 'week') mutate(loadWeekGrid, null, null);
 
+  // And the year beside the evaluations, which is two requests and loaded only
+  // where it is looked at.
+  if (name === 'overtime') mutate(loadYearMap, null, null);
+
   // The log viewer polls, so it follows the screen it lives on rather than
   // running for as long as the tab is open.
   if (logViewerActive()) schedulePoll({ immediate: true });
@@ -16509,6 +16670,7 @@ async function init() {
     wireCalendar();
     wireAbsences();
     wireVacation();
+    wireYearMap();
     wireHolidays();
     wireAdmin();
     wireTokens();

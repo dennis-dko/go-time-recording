@@ -1686,6 +1686,28 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 /* What is left of the year's leave, read first: the figure the card is for. */
 .vacation-left { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+
+/* The year as tiles: a column a week and a row a weekday, scrolled sideways on a
+ * telephone rather than squeezed. One hue, light to dark, by the hours booked; a
+ * public holiday is outlined and a day away outlined in dashes, so neither rests
+ * on colour alone. */
+.year-wrap { overflow-x: auto; padding-bottom: 4px; }
+.year-months,
+.year-tiles { display: grid; gap: 2px; grid-auto-columns: 12px; grid-auto-flow: column; }
+.year-months { color: var(--muted); font-size: 11px; grid-template-rows: 14px; white-space: nowrap; }
+.year-tiles { grid-template-rows: repeat(7, 12px); }
+.year-tile { border-radius: 2px; display: inline-block; height: 12px; width: 12px; }
+.year-tile.level-0 { background: color-mix(in srgb, var(--border) 70%, transparent); }
+.year-tile.level-1 { background: color-mix(in srgb, var(--accent) 30%, var(--bg)); }
+.year-tile.level-2 { background: color-mix(in srgb, var(--accent) 48%, var(--bg)); }
+.year-tile.level-3 { background: color-mix(in srgb, var(--accent) 64%, var(--bg)); }
+.year-tile.level-4 { background: color-mix(in srgb, var(--accent) 82%, var(--bg)); }
+.year-tile.level-5 { background: var(--accent); }
+.year-tile.outside { visibility: hidden; }
+.year-tile.holiday { outline: 1px solid var(--text); outline-offset: -1px; }
+.year-tile.away { outline: 1px dashed var(--text); outline-offset: -1px; }
+.year-tile.today { outline: 2px solid var(--accent); outline-offset: 1px; }
+.year-legend { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 12px; gap: 4px; }
 .cal-away { color: var(--muted); font-size: 11px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* --- branding: logo and footer --- */

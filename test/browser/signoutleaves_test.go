@@ -138,11 +138,11 @@ func TestASignOutTakesTheLastEvaluationWithIt(t *testing.T) {
 			if (!document.querySelector(card).hidden) left.push(card + ' is up');
 		}
 
-		for (const text of ['#report-total', '#overtime-total', '#overtime-meta', '#overtime-rule', '#report-chart-caption', '#statistics-total']) {
+		for (const text of ['#report-total', '#overtime-total', '#overtime-meta', '#overtime-rule', '#report-chart-caption', '#statistics-total', '#year-summary']) {
 			if (document.querySelector(text).textContent.trim()) left.push(text + ' says ' + document.querySelector(text).textContent);
 		}
 
-		for (const holder of ['#table-report tbody', '#table-overtime tbody', '#report-chart', '#chart-days', '#chart-projects']) {
+		for (const holder of ['#table-report tbody', '#table-overtime tbody', '#report-chart', '#chart-days', '#chart-projects', '#year-tiles']) {
 			if (document.querySelector(holder).childElementCount) left.push(holder + ' holds a drawing');
 		}
 
