@@ -42,9 +42,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		contains string
 	}{
 		{
-			reference: "internal/interface/web/web.go:82",
+			reference: "internal/interface/web/web.go:89",
 			resolved:  "internal/interface/web/web.go",
-			line:      82,
+			line:      89,
 			contains:  "panic(",
 		},
 		// The two Must... sites beside it. They are panics the word `panic(`
@@ -63,17 +63,21 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			line:      150,
 			contains:  "netip.MustParsePrefix(",
 		},
+		// The statement's own words rather than "fmt.Sprintf(", which some thirty
+		// lines of that file satisfy - so the reference slid from the statement
+		// formatting model.RoleUser onto one formatting a column type, and stayed
+		// green the whole way.
 		{
-			reference: "internal/infrastructure/persistence/migrations/migrations.go:1334",
+			reference: "internal/infrastructure/persistence/migrations/migrations.go:1396",
 			resolved:  "internal/infrastructure/persistence/migrations/migrations.go",
-			line:      1334,
-			contains:  "fmt.Sprintf(",
+			line:      1396,
+			contains:  "WHERE name = '%s') WHERE role_id IS NULL",
 		},
 		{
 			reference: "internal/infrastructure/config/datasource.go:122",
 			resolved:  "internal/infrastructure/config/datasource.go",
 			line:      122,
-			contains:  "configLocation",
+			contains:  "const configLocation",
 		},
 		{
 			reference: "restart_handler.go:488",
@@ -82,9 +86,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "time.Sleep(",
 		},
 		{
-			reference: "project_application_service.go:147",
+			reference: "project_application_service.go:156",
 			resolved:  "internal/application/v1/service/project_application_service.go",
-			line:      147,
+			line:      156,
 			contains:  "VisibleTo(",
 		},
 		{
@@ -94,9 +98,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "VisibleTo(",
 		},
 		{
-			reference: "timesheet_application_service.go:277",
+			reference: "timesheet_application_service.go:303",
 			resolved:  "internal/application/v1/service/timesheet_application_service.go",
-			line:      277,
+			line:      303,
 			contains:  "VisibleTo(",
 		},
 	}

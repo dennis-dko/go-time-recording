@@ -18,9 +18,9 @@
 // because that is the one place the process's output can be edited before
 // anybody sees it: a line below the administered level is not written
 // (SetLevel), a statement is written without the values it ran with
-// (withoutValues), the framework's complaint about a .env this binary was never
-// meant to need is dropped (isAbsentEnvFile), and a line longer than
-// maxLineBytes is cut.
+// (withoutValues), a calendar feed's key is written without the key (Conceal),
+// the framework's complaint about a .env this binary was never meant to need is
+// dropped (isAbsentEnvFile), and a line longer than maxLineBytes is cut.
 //
 // # What this costs
 //

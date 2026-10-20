@@ -23,6 +23,14 @@ type Handlers struct {
 	Restart    *rest.RestartHandler
 	Update     *rest.UpdateHandler
 	Timers     *rest.TimerHandler
+	Schedules  *rest.ScheduleHandler
+	Templates  *rest.TemplateHandler
+	Absences   *rest.AbsenceHandler
+	Holidays   *rest.HolidayHandler
+	Vacation   *rest.VacationHandler
+	Calendar   *rest.CalendarFeedHandler
+	OpenID     *rest.OpenIDHandler
+	WorkDays   *rest.WorkDayHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -53,6 +61,18 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/auth/passkey/login", h.Passkeys.BeginLogin)
 	app.PUT(base+"/auth/passkey/login", h.Passkeys.FinishLogin)
 	app.POST(base+"/auth/logout", h.Auth.Logout)
+
+	// Signing in through the provider the installation configured: whether it is
+	// offered, going there, and finishing with the code it sends the browser back
+	// with - all before there is a session, as a passkey sign-in is.
+	app.GET(base+"/auth/openid", h.OpenID.Offer)
+	app.POST(base+"/auth/openid", h.OpenID.BeginSignIn)
+	app.POST(base+"/auth/openid/finish", h.OpenID.Finish)
+
+	// And the caller's own link to their identity there.
+	app.GET(base+"/me/openid", h.OpenID.Linked)
+	app.POST(base+"/me/openid", h.OpenID.BeginLink)
+	app.DELETE(base+"/me/openid", h.OpenID.Unlink)
 	app.GET(base+"/auth/kerberos", h.Auth.KerberosSupport)
 	app.POST(base+"/auth/kerberos", h.Auth.KerberosLogin)
 	app.GET(base+"/languages", h.Auth.Languages)
@@ -70,6 +90,9 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/settings/ldap", h.Settings.LDAP)
 	app.PUT(base+"/settings/ldap", h.Settings.SaveLDAP)
 	app.POST(base+"/settings/ldap/test", h.Settings.TestLDAP)
+	app.GET(base+"/settings/openid", h.Settings.OpenID)
+	app.PUT(base+"/settings/openid", h.Settings.SaveOpenID)
+	app.POST(base+"/settings/openid/test", h.Settings.TestOpenID)
 	app.POST(base+"/settings/ldap/sync/preview", h.LDAPSync.Preview)
 	app.POST(base+"/settings/ldap/sync", h.LDAPSync.Run)
 	app.GET(base+"/settings/ldap/sync/runs", h.LDAPSync.Runs)
@@ -82,6 +105,8 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/settings/operational", h.Settings.SaveOperational)
 	app.GET(base+"/settings/timezone", h.Settings.Timezone)
 	app.PUT(base+"/settings/timezone", h.Settings.SaveTimezone)
+	app.GET(base+"/settings/holidays", h.Holidays.Installation)
+	app.PUT(base+"/settings/holidays", h.Holidays.SetInstallation)
 	app.GET(base+"/settings/datasource", h.Settings.Datasource)
 	app.PUT(base+"/settings/datasource", h.Settings.SaveDatasource)
 	app.POST(base+"/settings/datasource/test", h.Settings.TestDatasource)
@@ -111,6 +136,8 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/me/language", h.Auth.SetLanguage)
 	app.PUT(base+"/me/theme", h.Auth.SetTheme)
 	app.PUT(base+"/me/timezone", h.Auth.SetTimezone)
+	app.GET(base+"/me/holidays", h.Holidays.Mine)
+	app.PUT(base+"/me/holidays", h.Holidays.SetMine)
 	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
 	// The clock, always the caller's own: starting somebody else's would record
 	// time nobody asked them about, so there is no user id in these routes and no
@@ -119,11 +146,51 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// needs nothing beyond reading your own entries - unlike the project report,
 	// which needs reports:read and is the built-in administrator's alone.
 	app.GET(base+"/me/statistics", h.Statistics.Own)
+	// The same, a day at a time and with what each day asked - the empty days
+	// included, because a picture of a week has to show them.
+	app.GET(base+"/me/days", h.Me.Days)
+	// A week booked like another, into the days of it that have nothing on them.
+	app.POST(base+"/me/weeks/copy", h.Timesheets.CopyWeek)
 
 	app.GET(base+"/me/timer", h.Timers.Running)
 	app.POST(base+"/me/timer", h.Timers.Start)
+	app.PUT(base+"/me/timer", h.Timers.Adjust)
 	app.POST(base+"/me/timer/stop", h.Timers.Stop)
+	app.POST(base+"/me/timer/switch", h.Timers.Switch)
 	app.DELETE(base+"/me/timer", h.Timers.Discard)
+
+	// The weeks a balance is measured against, the caller's own like the clock.
+	app.GET(base+"/me/schedules", h.Schedules.List)
+	app.POST(base+"/me/schedules", h.Schedules.Save)
+	app.DELETE(base+"/me/schedules/{validFrom}", h.Schedules.Delete)
+
+	// The bookings somebody makes often, kept to fill the form with.
+	app.GET(base+"/me/templates", h.Templates.List)
+	app.POST(base+"/me/templates", h.Templates.Save)
+	app.DELETE(base+"/me/templates/{id}", h.Templates.Delete)
+
+	// The days somebody is away, and why - the caller's own, like their entries.
+	app.GET(base+"/me/absences", h.Absences.List)
+	app.POST(base+"/me/absences", h.Absences.Save)
+	app.DELETE(base+"/me/absences/{day}", h.Absences.Delete)
+
+	// When somebody worked, a day at a time - theirs, like their entries.
+	app.GET(base+"/me/workdays", h.WorkDays.List)
+	app.PUT(base+"/me/workdays/{date}", h.WorkDays.Record)
+	app.DELETE(base+"/me/workdays/{date}", h.WorkDays.Remove)
+
+	// A year's leave: what it gives, what was carried, taken and planned.
+	app.GET(base+"/me/vacation", h.Vacation.Year)
+	app.PUT(base+"/me/vacation", h.Vacation.Entitle)
+	app.DELETE(base+"/me/vacation/{fromYear}", h.Vacation.Withdraw)
+
+	// The address somebody's calendar program reads their recorded days from: theirs
+	// to make, see and take back, and read with the key in the path and nothing else,
+	// because a calendar program has nothing else to send.
+	app.GET(base+"/me/calendar-feed", h.Calendar.Get)
+	app.POST(base+"/me/calendar-feed", h.Calendar.Create)
+	app.DELETE(base+"/me/calendar-feed", h.Calendar.Remove)
+	app.GET(base+"/calendar-feed/{key}", h.Calendar.Read)
 
 	app.GET(base+"/me/passkeys", h.Passkeys.List)
 	app.POST(base+"/me/passkeys/register", h.Passkeys.BeginRegistration)
@@ -193,6 +260,9 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 
 	app.GET(base+"/timesheets", h.Timesheets.List)
 	app.GET(base+"/timesheets/{id}", h.Timesheets.Get)
+
+	// What an entry said before each correction - its owner's to read, like the entry.
+	app.GET(base+"/timesheets/{id}/revisions", h.Timesheets.Revisions)
 	app.POST(base+"/timesheets", h.Timesheets.Create)
 	app.PUT(base+"/timesheets/{id}", h.Timesheets.Update)
 	app.DELETE(base+"/timesheets/{id}", h.Timesheets.Delete)

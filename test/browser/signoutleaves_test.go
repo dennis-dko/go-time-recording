@@ -138,11 +138,11 @@ func TestASignOutTakesTheLastEvaluationWithIt(t *testing.T) {
 			if (!document.querySelector(card).hidden) left.push(card + ' is up');
 		}
 
-		for (const text of ['#report-total', '#overtime-total', '#overtime-meta', '#report-chart-caption', '#statistics-total']) {
+		for (const text of ['#report-total', '#overtime-total', '#overtime-meta', '#overtime-rule', '#report-chart-caption', '#statistics-total', '#year-summary', '#report-budget']) {
 			if (document.querySelector(text).textContent.trim()) left.push(text + ' says ' + document.querySelector(text).textContent);
 		}
 
-		for (const holder of ['#table-report tbody', '#table-overtime tbody', '#report-chart', '#chart-days', '#chart-projects']) {
+		for (const holder of ['#table-report tbody', '#table-overtime tbody', '#report-chart', '#chart-days', '#chart-projects', '#year-tiles']) {
 			if (document.querySelector(holder).childElementCount) left.push(holder + ' holds a drawing');
 		}
 
@@ -263,7 +263,7 @@ func TestASignOutTakesTheCalendarAndTheGreetingWithIt(t *testing.T) {
 			if (document.querySelector(holder).childElementCount) left.push(holder + ' still holds what it drew');
 		}
 
-		for (const said of ['#calendar-summary', '#welcome-title', '#welcome-today']) {
+		for (const said of ['#calendar-summary', '#welcome-title', '#welcome-today', '#vacation-title', '#vacation-left']) {
 			if (document.querySelector(said).textContent.trim()) left.push(said + ' says ' + document.querySelector(said).textContent);
 		}
 

@@ -244,6 +244,8 @@ func (r *UserRepository) SetPreference(
 		current.Language = value
 	case repository.PreferenceTimezone:
 		current.Timezone = value
+	case repository.PreferenceHolidayRegion:
+		current.HolidayRegion = value
 	default:
 		return fmt.Errorf("unknown user preference %d", field)
 	}
@@ -269,21 +271,6 @@ func (r *UserRepository) SetTOTP(_ context.Context, id uint, secret string, enab
 
 func (r *UserRepository) Delete(_ context.Context, id uint) error {
 	return r.store.delete(id)
-}
-
-// SaveMany writes several entries.
-//
-// Not atomic, and it cannot be: this store has no transaction to roll back to.
-// The guarantee belongs to the SQL repository, and the integration tests are where
-// it is checked - a unit test against this would be checking nothing.
-func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Timesheet) error {
-	for _, entry := range entries {
-		if _, err := r.Save(ctx, entry); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // TimerRepository is an in-memory repository.TimerRepository.
@@ -323,6 +310,21 @@ func (r *TimerRepository) Start(_ context.Context, timer *model.RunningTimer) er
 	defer r.mu.Unlock()
 
 	r.timers[timer.UserID] = *timer
+
+	return nil
+}
+
+func (r *TimerRepository) MoveStart(_ context.Context, userID uint, startedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	timer, running := r.timers[userID]
+	if !running {
+		return nil
+	}
+
+	timer.StartedAt = startedAt
+	r.timers[userID] = timer
 
 	return nil
 }
@@ -456,149 +458,6 @@ func (r *ProjectRepository) Update(_ context.Context, project *model.Project) (*
 }
 
 func (r *ProjectRepository) Delete(_ context.Context, id uint) error {
-	return r.store.delete(id)
-}
-
-// TimesheetRepository is an in-memory repository.TimesheetRepository.
-type TimesheetRepository struct{ store *store[model.Timesheet] }
-
-// NewTimesheetRepository creates an empty in-memory timesheet repository.
-func NewTimesheetRepository() *TimesheetRepository {
-	return &TimesheetRepository{store: newStore[model.Timesheet]("timesheet")}
-}
-
-var _ repository.TimesheetRepository = (*TimesheetRepository)(nil)
-
-// Save stamps the recording moment the same way the SQL repository does.
-//
-// Not a detail the in-memory store may skip: a service test that checks an entry
-// knows when it was booked would pass here and fail against a database, or the
-// reverse, and either way the suite would be proving something about a store
-// nobody deploys.
-func (r *TimesheetRepository) Save(_ context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	// Truncated the way the SQL repository truncates, and for its reason: a store
-	// whose stamps are finer than any database's would let a test pass here that
-	// cannot pass against PostgreSQL.
-	now := time.Now().UTC().Truncate(time.Second)
-
-	return r.store.add(timesheet, func(t *model.Timesheet, id uint) {
-		t.ID = id
-		t.CreatedAt, t.UpdatedAt = now, now
-	}), nil
-}
-
-func (r *TimesheetRepository) GetByID(_ context.Context, id uint) (*model.Timesheet, error) {
-	return r.store.get(id)
-}
-
-func (r *TimesheetRepository) GetAll(_ context.Context) ([]*model.Timesheet, error) {
-	return r.store.all(), nil
-}
-
-func (r *TimesheetRepository) GetByFilter(
-	_ context.Context,
-	filter repository.TimesheetFilter,
-) ([]*model.Timesheet, error) {
-	// The same narrowing the SQL repository applies, for the same reason: a range
-	// is a range of days. Two repositories that disagree about which entries a
-	// month contains would be worse than either answer alone.
-	filter = filter.OverWholeDays()
-
-	out := make([]*model.Timesheet, 0)
-
-	for _, ts := range r.store.all() {
-		if !matchesFilter(ts, filter) {
-			continue
-		}
-
-		out = append(out, ts)
-	}
-
-	// The same order the SQL repository gives, because paging is defined in terms
-	// of it: newest day first, and an entry booked later on the same day ahead of
-	// one booked earlier. The in-memory store hands rows back in insertion order,
-	// which agrees with neither.
-	sort.SliceStable(out, func(i, j int) bool {
-		if !out[i].Date.Equal(out[j].Date) {
-			return out[i].Date.After(out[j].Date)
-		}
-
-		return out[i].ID > out[j].ID
-	})
-
-	return page(out, filter.Limit, filter.Offset), nil
-}
-
-// CountByFilter counts the matching entries, ignoring Limit and Offset.
-func (r *TimesheetRepository) CountByFilter(
-	_ context.Context,
-	filter repository.TimesheetFilter,
-) (uint, error) {
-	filter = filter.OverWholeDays()
-
-	var total uint
-
-	for _, ts := range r.store.all() {
-		if matchesFilter(ts, filter) {
-			total++
-		}
-	}
-
-	return total, nil
-}
-
-// page applies a limit and an offset the way a SQL LIMIT/OFFSET would, including
-// answering with nothing for an offset past the end rather than with the last
-// page, which is what a hand-rolled slice usually gets wrong.
-func page[T any](all []T, limit, offset uint) []T {
-	if limit == 0 {
-		return all
-	}
-
-	if offset >= uint(len(all)) {
-		return all[:0]
-	}
-
-	end := min(offset+limit, uint(len(all)))
-
-	return all[offset:end]
-}
-
-func matchesFilter(ts *model.Timesheet, filter repository.TimesheetFilter) bool {
-	switch {
-	case filter.UserID != 0 && ts.UserID != filter.UserID:
-		return false
-	case filter.ProjectID != 0 && (!ts.HasProject() || *ts.ProjectID != filter.ProjectID):
-		return false
-	case filter.WithoutProject && ts.HasProject():
-		return false
-	case filter.StartDate != nil && ts.Date.Before(*filter.StartDate):
-		return false
-	case filter.EndDate != nil && ts.Date.After(*filter.EndDate):
-		return false
-	default:
-		return true
-	}
-}
-
-// Update moves the correction moment and keeps the recording one.
-//
-// The caller hands over a whole entry, and the one it was given may have travelled
-// through a DTO that never carried created_at - so the stored value is read back
-// rather than trusted, which is what the SQL repository gets for free by leaving
-// the column out of its UPDATE.
-func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
-	corrected := *timesheet
-	corrected.UpdatedAt = time.Now().UTC().Truncate(time.Second)
-
-	if existing, err := r.store.get(timesheet.ID); err == nil {
-		corrected.CreatedAt = existing.CreatedAt
-	}
-
-	return r.store.update(timesheet.ID, &corrected)
-}
-
-func (r *TimesheetRepository) Delete(_ context.Context, id uint) error {
 	return r.store.delete(id)
 }
 

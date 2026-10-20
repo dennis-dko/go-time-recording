@@ -52,6 +52,41 @@ func start(t *testing.T, env ...string) *app {
 
 func (a *app) log() string { return a.Log() }
 
+// logShows waits for the log to carry every one of the given words, and reports
+// whether it came to.
+//
+// A line the application writes before it answers still reaches this copy of the
+// log through two pipes - the application's own log sink and the harness's capture
+// of its output - and can arrive after the answer has. Read once, a case asserting
+// on such a line races the copy: it failed on CI holding every line of the log but
+// the one it was looking for. Asked again until the deadline, it does not.
+func (a *app) logShows(within time.Duration, words ...string) bool {
+	deadline := time.Now().Add(within)
+
+	for {
+		written := a.Log()
+		all := true
+
+		for _, word := range words {
+			if !strings.Contains(written, word) {
+				all = false
+
+				break
+			}
+		}
+
+		if all {
+			return true
+		}
+
+		if time.Now().After(deadline) {
+			return false
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // ------------------------------------------------------------------ client
 
 // client is one browser session: its own cookie jar, and the CSRF handling a
@@ -498,6 +533,7 @@ type userResponse struct {
 	TourSeen           bool    `json:"tourSeen"`
 	DailyTargetHours   float64 `json:"dailyTargetHours"`
 	MaxDailyHours      float64 `json:"maxDailyHours"`
+	EveryDayCountsFrom *string `json:"everyDayCountsFrom"`
 }
 
 type timesheetResponse struct {

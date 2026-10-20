@@ -18,6 +18,14 @@ type TimesheetFilter struct {
 	// ask for the uncategorised ones.
 	WithoutProject bool
 
+	// Search keeps the entries whose description contains this text, whatever
+	// its case; empty is no restriction. The text is matched as written - a
+	// percent sign or an underscore in it is a character, not a wildcard.
+	//
+	// The case is folded by the database, and SQLite folds ASCII only: there "Ä"
+	// does not find "ä". PostgreSQL and MySQL fold every letter.
+	Search string
+
 	// Limit is how many entries to return and Offset how many to skip first.
 	//
 	// Zero Limit means no bound, which is what every caller that totals or exports
@@ -94,6 +102,11 @@ type TimesheetRepository interface {
 	// came from it and which were already there.
 	SaveMany(ctx context.Context, entries []*model.Timesheet) error
 
+	// HoursByProject totals somebody's hours on each project they booked on, keyed
+	// by the project; a user of zero totals everybody's, which is what a viewer of
+	// zero - enforcement switched off - is shown everywhere else.
+	HoursByProject(ctx context.Context, userID uint) (map[uint]float64, error)
+
 	GetByID(ctx context.Context, id uint) (*model.Timesheet, error)
 
 	GetByFilter(ctx context.Context, filter TimesheetFilter) ([]*model.Timesheet, error)
@@ -108,7 +121,20 @@ type TimesheetRepository interface {
 
 	GetAll(ctx context.Context) ([]*model.Timesheet, error)
 
+	// Update writes the corrected entry, and keeps what it said before as a
+	// revision in the same change - where it says something else now.
+	//
+	// Here rather than in whoever corrects it, for the reason the repository
+	// stamps when an entry was booked and corrected: an entry is corrected by the
+	// form, by a transfer to another project, by the week grid and by a whole
+	// selection at once, and every one of them gets its history without
+	// remembering to.
 	Update(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error)
 
+	// Delete removes an entry, and its revisions with it.
 	Delete(ctx context.Context, id uint) error
+
+	// Revisions returns what an entry said before each correction, the most
+	// recently replaced first.
+	Revisions(ctx context.Context, timesheetID uint) ([]model.TimesheetRevision, error)
 }

@@ -108,6 +108,42 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261009010000: {UP: func(d migration.Datasource) error {
 			return recordWhatEachDirectoryRunChanged(d, dialect)
 		}},
+		20261019010000: {UP: func(d migration.Datasource) error {
+			return planTheWorkingWeek(d, dialect)
+		}},
+		20261019020000: {UP: func(d migration.Datasource) error {
+			return keepEntryTemplates(d, dialect)
+		}},
+		20261019030000: {UP: func(d migration.Datasource) error {
+			return recordAbsences(d, dialect)
+		}},
+		20261019040000: {UP: func(d migration.Datasource) error {
+			return letEachPersonKeepTheirStatesHolidays(d, dialect)
+		}},
+		20261019050000: {UP: func(d migration.Datasource) error {
+			return letEachPersonCountEveryWorkingDay(d, dialect)
+		}},
+		20261019060000: {UP: func(d migration.Datasource) error {
+			return keepTheYearlyLeave(d, dialect)
+		}},
+		20261020010000: {UP: func(d migration.Datasource) error {
+			return giveProjectsAnHourBudget(d, dialect)
+		}},
+		20261020020000: {UP: func(d migration.Datasource) error {
+			return keepCalendarFeeds(d, dialect)
+		}},
+		20261020030000: {UP: func(d migration.Datasource) error {
+			return linkOpenIDIdentities(d, dialect)
+		}},
+		20261020040000: {UP: func(d migration.Datasource) error {
+			return recordWorkingTimes(d, dialect)
+		}},
+		20261020050000: {UP: func(d migration.Datasource) error {
+			return keepWhatEntriesSaidBefore(d, dialect)
+		}},
+		20261020060000: {UP: func(d migration.Datasource) error {
+			return findAnEntrysHistoryByTheEntry(d)
+		}},
 	}
 }
 
@@ -1574,4 +1610,195 @@ func moveTheAppearanceOntoTheAccount(d migration.Datasource, dialect string) err
 
 	return execAll(d,
 		"ALTER TABLE users ADD COLUMN theme VARCHAR(8) NOT NULL DEFAULT ''")
+}
+
+// planTheWorkingWeek keeps the weeks people plan their hours in: seven figures,
+// Monday first, in force from a day until the next plan's.
+//
+// A row per plan rather than seven columns on the account, because a plan
+// changes - to part time and back - and the months before a change have to go on
+// being measured against the week that was planned then.
+//
+// The person and the first day are unique together, so two plans can never claim
+// one day, and that constraint is also the index every read goes through. Part of
+// the table rather than an index made after it, so this stays the one schema
+// statement a migration here carries.
+func planTheWorkingWeek(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE work_schedules (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		valid_from %s NOT NULL,
+		monday %s NOT NULL,
+		tuesday %s NOT NULL,
+		wednesday %s NOT NULL,
+		thursday %s NOT NULL,
+		friday %s NOT NULL,
+		saturday %s NOT NULL,
+		sunday %s NOT NULL,
+		UNIQUE (user_id, valid_from)
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect),
+		float(dialect), float(dialect), float(dialect), float(dialect),
+		float(dialect), float(dialect), float(dialect)))
+}
+
+// keepEntryTemplates keeps the bookings people make often, to fill the booking
+// form with: a project, hours and a description, each of them optional.
+//
+// The project is a plain number rather than a foreign key, deliberately. A
+// template is a convenience that may outlive its project, and a key would turn it
+// into an obstacle - to deleting the project, to handing it to somebody else, and
+// to purging the person it then belongs to while somebody else's template still
+// names it. Whether the project can still be booked is asked where that matters:
+// when the form is filled from the template, and again when the booking is made.
+func keepEntryTemplates(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE entry_templates (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		project_id %s,
+		duration_hours %s,
+		description TEXT
+	)`, primaryKey(dialect), foreignKeyID(dialect), foreignKeyID(dialect), float(dialect)))
+}
+
+// recordAbsences keeps the days people record themselves as away, and why: leave,
+// half a day of it, illness, a day taken against overtime, a local holiday.
+//
+// A row per day rather than per stretch, because a day is what a balance and an
+// allowance count, and a fortnight's leave that is cut short is one day removed
+// rather than a stretch rewritten. The person and the day are unique together, so
+// one day has one reason, and that is also the index every read goes through.
+func recordAbsences(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE absences (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		day %s NOT NULL,
+		kind VARCHAR(16) NOT NULL,
+		UNIQUE (user_id, day)
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
+}
+
+// letEachPersonKeepTheirStatesHolidays records which state's public holidays a
+// person keeps, for somebody who works in another state than the installation's.
+//
+// Empty is what every existing account gets - follow the installation, which is
+// what nobody having chosen anything means.
+func letEachPersonKeepTheirStatesHolidays(d migration.Datasource, dialect string) error {
+	_ = dialect
+
+	return execAll(d,
+		"ALTER TABLE users ADD COLUMN holiday_region VARCHAR(8) NOT NULL DEFAULT ''")
+}
+
+// letEachPersonCountEveryWorkingDay records the day from which every working day
+// counts towards somebody's overtime balance, booked or not.
+//
+// Null for every existing account, which keeps the rule they had - only the days
+// booked on count - because a month already behind somebody must not turn into a
+// deficit the moment holidays and absences are known.
+func letEachPersonCountEveryWorkingDay(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(
+		"ALTER TABLE users ADD COLUMN every_day_counts_from %s", timestamp(dialect)))
+}
+
+// keepTheYearlyLeave keeps how many days of leave a year gives somebody, from a
+// year on until the next entitlement's.
+//
+// A row per change rather than one figure on the account, because an allowance
+// changes and the years before keep what they gave - which is what they carried
+// into the next. The person and the year are unique together, and that is also
+// the index every read goes through.
+func keepTheYearlyLeave(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE vacation_entitlements (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		from_year INTEGER NOT NULL,
+		days %s NOT NULL,
+		UNIQUE (user_id, from_year)
+	)`, primaryKey(dialect), foreignKeyID(dialect), float(dialect)))
+}
+
+// giveProjectsAnHourBudget lets a project's owner say how many hours they mean to
+// spend on it. Null for every project there is, which is no budget at all.
+func giveProjectsAnHourBudget(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE projects ADD COLUMN budget_hours %s", float(dialect)))
+}
+
+// keepCalendarFeeds keeps the address each person's calendar program reads their
+// recorded days from - only a hash of its key, as an API token's.
+//
+// The person is unique, because one address is all anybody has, and the hash is
+// unique because it is what every reading of a feed is looked up by: both are the
+// indexes the table needs, declared as constraints so that one statement makes it.
+func keepCalendarFeeds(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE calendar_feeds (
+		%s,
+		user_id %s NOT NULL UNIQUE REFERENCES users(id),
+		key_hash VARCHAR(64) NOT NULL UNIQUE,
+		prefix VARCHAR(32) NOT NULL,
+		created_at %s NOT NULL,
+		last_read_at %s
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect), timestamp(dialect)))
+}
+
+// linkOpenIDIdentities keeps which account each identity at a sign-in provider is
+// linked to: the provider's issuer and the subject it gives that person.
+//
+// One identity an account, and one account an identity - both unique, so the
+// table's two lookups have their indexes from the constraints and one statement
+// makes it. The issuer is bounded at 255 like the subject the specification
+// bounds, so that the pair stays inside MySQL's index key length in four-byte
+// characters.
+func linkOpenIDIdentities(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE openid_identities (
+		%s,
+		user_id %s NOT NULL UNIQUE REFERENCES users(id),
+		issuer VARCHAR(255) NOT NULL,
+		subject VARCHAR(255) NOT NULL,
+		created_at %s NOT NULL,
+		UNIQUE (issuer, subject)
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
+}
+
+// recordWorkingTimes keeps when people worked, a day at a time: when they began,
+// when they finished and how long their breaks were, in minutes on the clock.
+//
+// The person and the day are unique together, so a day has one record, and that
+// is also the index every read goes through.
+func recordWorkingTimes(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE work_days (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		day %s NOT NULL,
+		start_minute INTEGER NOT NULL,
+		end_minute INTEGER NOT NULL,
+		break_minutes INTEGER NOT NULL,
+		UNIQUE (user_id, day)
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
+}
+
+// keepWhatEntriesSaidBefore keeps every version of an entry a correction replaced:
+// its day, hours, project and description, and when it was replaced.
+//
+// The project is a number and not a reference: a version can name a project the
+// entry has since been moved off and its owner has since deleted, and a reference
+// would forbid the deletion for the sake of a history nobody asked to keep it.
+func keepWhatEntriesSaidBefore(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE timesheet_revisions (
+		%s,
+		timesheet_id %s NOT NULL REFERENCES timesheets(id),
+		user_id %s NOT NULL REFERENCES users(id),
+		date %s NOT NULL,
+		duration_hours %s NOT NULL,
+		project_id %s,
+		description TEXT,
+		replaced_at %s NOT NULL
+	)`, primaryKey(dialect), foreignKeyID(dialect), foreignKeyID(dialect), timestamp(dialect),
+		float(dialect), foreignKeyID(dialect), timestamp(dialect)))
+}
+
+// findAnEntrysHistoryByTheEntry indexes the history by the entry it belongs to,
+// which is how every read of it asks - in a migration of its own, as each schema
+// statement is.
+func findAnEntrysHistoryByTheEntry(d migration.Datasource) error {
+	return execAll(d, "CREATE INDEX idx_timesheet_revisions_entry ON timesheet_revisions (timesheet_id)")
 }

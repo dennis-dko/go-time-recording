@@ -322,11 +322,22 @@ func (h *UserHandler) UpdateWorkingTimes(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	result, err := h.users.UpdateWorkingTimes(c, command.UpdateWorkingTimesCommand{
+	cmd := command.UpdateWorkingTimesCommand{
 		ID:               id,
 		DailyTargetHours: req.DailyTargetHours,
 		MaxDailyHours:    req.MaxDailyHours,
-	})
+	}
+
+	if req.EveryDayCountsFrom != nil {
+		if req.EveryDayCountsFrom.IsZero() {
+			cmd.ClearEveryDayCountsFrom = true
+		} else {
+			day := req.EveryDayCountsFrom.Time
+			cmd.EveryDayCountsFrom = &day
+		}
+	}
+
+	result, err := h.users.UpdateWorkingTimes(c, cmd)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

@@ -45,7 +45,16 @@ type Project struct {
 	// to fix it. deploy/OPERATIONS.md says so under "Things that will surprise
 	// you"; it is the reason that mode is documented as a throwaway trial.
 	OwnerID *uint
+
+	// BudgetHours is how many hours its owner means to spend on it, nil for no
+	// such figure. Theirs alone and nobody's sign-off: a project is still somebody's
+	// way of sorting their own hours, and this is them saying how many they expect.
+	BudgetHours *float64
 }
+
+// MaxBudgetHours bounds a budget: far beyond anything one person books on one
+// project, near enough that a mistyped figure is refused rather than kept.
+const MaxBudgetHours = 100000
 
 // VisibleTo reports whether the user may see the project, which is to say whether
 // it is theirs.

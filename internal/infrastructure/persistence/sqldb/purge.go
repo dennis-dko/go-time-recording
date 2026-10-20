@@ -49,6 +49,8 @@ func (r *UserRepository) PurgeUser(ctx context.Context, userID uint) error {
 			// references both, and it is not recorded time - nobody is losing
 			// anything they booked by having it go with the account.
 			{"running timers", "DELETE FROM running_timers WHERE user_id = ?"},
+			// Before the entries, which the history points at.
+			{"entry revisions", "DELETE FROM timesheet_revisions WHERE user_id = ?"},
 			{"time entries", "DELETE FROM timesheets WHERE user_id = ?"},
 			// Only private projects go. A shared project has no owner and belongs
 			// to the installation, not to the person who happened to create it.
@@ -56,6 +58,13 @@ func (r *UserRepository) PurgeUser(ctx context.Context, userID uint) error {
 			{"api tokens", "DELETE FROM api_tokens WHERE user_id = ?"},
 			{"passkeys", "DELETE FROM passkeys WHERE user_id = ?"},
 			{"sessions", "DELETE FROM sessions WHERE user_id = ?"},
+			{"planned weeks", "DELETE FROM work_schedules WHERE user_id = ?"},
+			{"entry templates", "DELETE FROM entry_templates WHERE user_id = ?"},
+			{"absences", "DELETE FROM absences WHERE user_id = ?"},
+			{"vacation entitlements", "DELETE FROM vacation_entitlements WHERE user_id = ?"},
+			{"calendar feeds", "DELETE FROM calendar_feeds WHERE user_id = ?"},
+			{"openid identities", "DELETE FROM openid_identities WHERE user_id = ?"},
+			{"working days", "DELETE FROM work_days WHERE user_id = ?"},
 		}
 
 		for _, step := range steps {

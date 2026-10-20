@@ -265,6 +265,18 @@ func (s *UserApplicationService) UpdateWorkingTimes(
 		user.MaxDailyHours = *cmd.MaxDailyHours
 	}
 
+	switch {
+	case cmd.ClearEveryDayCountsFrom:
+		user.EveryDayCountsFrom = nil
+	case cmd.EveryDayCountsFrom != nil:
+		if !model.OnTheCalendar(*cmd.EveryDayCountsFrom) {
+			return nil, apperror.InvalidFields("everyDayCountsFrom")
+		}
+
+		day := model.CalendarDay(*cmd.EveryDayCountsFrom)
+		user.EveryDayCountsFrom = &day
+	}
+
 	if err := validateWorkingTimes(user.DailyTargetHours, user.MaxDailyHours); err != nil {
 		return nil, err
 	}

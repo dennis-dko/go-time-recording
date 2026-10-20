@@ -1,6 +1,10 @@
 package command
 
-import "github.com/dennis-dko/go-time-recording/internal/application/v1/common"
+import (
+	"time"
+
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
+)
 
 // UpdateUserCommand command to update existing user
 type UpdateUserCommand struct {
@@ -24,4 +28,12 @@ type UpdateWorkingTimesCommand struct {
 	ID               uint
 	DailyTargetHours *float64
 	MaxDailyHours    *float64
+
+	// EveryDayCountsFrom sets the day from which every working day counts; nil
+	// leaves it as it is.
+	EveryDayCountsFrom *time.Time
+
+	// ClearEveryDayCountsFrom goes back to counting only the days booked on -
+	// said out loud, because nil already means "leave it alone".
+	ClearEveryDayCountsFrom bool
 }

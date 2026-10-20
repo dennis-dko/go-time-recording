@@ -23,6 +23,8 @@ type TimesheetService interface {
 	ListTimesheets(ctx context.Context, q query.ListTimesheetsQuery) (*query.ListTimesheetsQueryResult, error)
 	UpdateTimesheet(ctx context.Context, cmd command.UpdateTimesheetCommand) (*command.UpdateTimesheetCommandResult, error)
 	DeleteTimesheet(ctx context.Context, cmd command.DeleteTimesheetCommand) error
+	CopyWeek(ctx context.Context, userID uint, from, to time.Time) (*WeekCopy, error)
+	Revisions(ctx context.Context, id uint) (*EntryHistory, error)
 }
 
 // TimesheetApplicationService is the TimesheetService the application runs
@@ -124,6 +126,7 @@ func (s *TimesheetApplicationService) ListTimesheets(
 		UserID:         q.UserID,
 		ProjectID:      q.ProjectID,
 		WithoutProject: q.WithoutProject,
+		Search:         q.Search,
 		StartDate:      q.StartDate,
 		EndDate:        q.EndDate,
 		Limit:          q.Limit,
@@ -254,6 +257,29 @@ func (s *TimesheetApplicationService) DeleteTimesheet(ctx context.Context, cmd c
 	}
 
 	return s.timesheetRepository.Delete(ctx, cmd.ID)
+}
+
+// EntryHistory is what an entry said before each correction, with whose entry it
+// is - which the caller checks before showing it, as it checks before showing the
+// entry itself.
+type EntryHistory struct {
+	OwnerID   uint
+	Revisions []model.TimesheetRevision
+}
+
+// Revisions returns an entry's history, the most recently replaced version first.
+func (s *TimesheetApplicationService) Revisions(ctx context.Context, id uint) (*EntryHistory, error) {
+	entry, err := s.timesheetRepository.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	revisions, err := s.timesheetRepository.Revisions(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EntryHistory{OwnerID: entry.UserID, Revisions: revisions}, nil
 }
 
 // requireUserAndProject validates the booking target. The project is optional:

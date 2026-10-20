@@ -3,6 +3,7 @@ package web_test
 import (
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -138,6 +139,67 @@ func TestTheTraceExportersOfferedAreTheOnesTheServerAccepts(t *testing.T) {
 	for _, state := range []string{followTheFile, switchedOff} {
 		if !contains(offered, state) {
 			t.Errorf("the exporter select has no %q option", state)
+		}
+	}
+}
+
+// The reasons offered for an absence are the kinds the server records, in both
+// directions, and the script has a name for each of them - the list of
+// absences shows the kind the server sent, and a kind with no name there would
+// be shown as its identifier.
+func TestTheAbsencesOfferedAreTheKindsTheServerRecords(t *testing.T) {
+	offered := optionValues(t, asset(t, "/"), "kind")
+	supported := model.AbsenceKinds()
+
+	if absent := missing(supported, offered); len(absent) > 0 {
+		t.Errorf("the absence card offers no option for %v, so that kind cannot be recorded", absent)
+	}
+
+	for _, value := range offered {
+		if !contains(supported, value) {
+			t.Errorf("the absence card offers %q, which the server refuses on save", value)
+		}
+	}
+
+	js := asset(t, "/app.js")
+
+	for _, kind := range supported {
+		if !strings.Contains(js, "t('absence."+kind+"', ") {
+			t.Errorf("app.js names no absence of the kind %q, so the list shows its identifier", kind)
+		}
+	}
+}
+
+// Every state the server offers has a name on screen, and so does every public
+// holiday its rules can produce - a picker or a calendar would otherwise show a
+// code or a key. The holidays are collected from the rules themselves, across
+// the years their exceptions hold in, rather than from a second list.
+func TestEveryStateAndEveryHolidayHasAName(t *testing.T) {
+	js := asset(t, "/app.js")
+
+	for _, region := range model.HolidayRegions() {
+		if !strings.Contains(js, "t('region."+region+"', ") {
+			t.Errorf("app.js names no state %q, so a picker offers its code", region)
+		}
+	}
+
+	names := map[string]bool{}
+
+	for _, region := range model.HolidayRegions() {
+		for _, year := range []int{1994, 2017, 2020, 2026} {
+			for _, holiday := range model.HolidaysIn(region, year) {
+				names[holiday.Name] = true
+			}
+		}
+	}
+
+	if len(names) < 20 {
+		t.Fatalf("the rules produced %d holidays, fewer than the twenty they know; this case is not reading them all", len(names))
+	}
+
+	for name := range names {
+		if !strings.Contains(js, "t('holiday."+name+"', ") {
+			t.Errorf("app.js names no holiday %q, so the calendar shows its key", name)
 		}
 	}
 }

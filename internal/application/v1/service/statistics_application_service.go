@@ -1,10 +1,14 @@
 package service
 
 import (
+	"cmp"
 	"context"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
@@ -51,6 +55,12 @@ type ProjectTotal struct {
 	Hours     float64
 }
 
+// TagTotal is the hours of the entries that name one activity.
+type TagTotal struct {
+	Tag   string
+	Hours float64
+}
+
 // OwnStatistics is what somebody's own recorded time adds up to.
 type OwnStatistics struct {
 	From time.Time
@@ -64,6 +74,13 @@ type OwnStatistics struct {
 	Days []DayTotal
 
 	Projects []ProjectTotal
+
+	// Tags are the activities the descriptions name, most hours first. An entry
+	// naming two counts towards both, so these add up to more than the total
+	// wherever that happens - which is what "how long went on meetings" and "how
+	// long went on reviews" each mean. UntaggedHours is what names none.
+	Tags          []TagTotal
+	UntaggedHours float64
 }
 
 // scopeOfStatistics narrows an answer to one project, or to the entries
@@ -113,6 +130,8 @@ func (s *StatisticsService) Own(
 	perDay := map[string]float64{}
 	perProject := map[uint]float64{}
 
+	perTag := map[string]float64{}
+
 	var withoutProject float64
 
 	for _, entry := range entries {
@@ -124,9 +143,24 @@ func (s *StatisticsService) Own(
 		} else {
 			withoutProject += entry.DurationHours
 		}
+
+		var tags []string
+		if entry.Description != nil {
+			tags = model.Tags(*entry.Description)
+		}
+
+		if len(tags) == 0 {
+			stats.UntaggedHours += entry.DurationHours
+		}
+
+		for _, tag := range tags {
+			perTag[tag] += entry.DurationHours
+		}
 	}
 
 	stats.Days = everyDayInRange(from, to, perDay)
+	stats.Tags = tagTotals(perTag)
+	stats.UntaggedHours = settled(stats.UntaggedHours)
 
 	projects, err := s.projectTotals(ctx, perProject, withoutProject)
 	if err != nil {
@@ -136,6 +170,21 @@ func (s *StatisticsService) Own(
 	stats.Projects = projects
 
 	return stats, nil
+}
+
+// tagTotals orders the activities by their hours, most first, and by name where
+// two are level, so the order does not change between two asks.
+func tagTotals(perTag map[string]float64) []TagTotal {
+	totals := make([]TagTotal, 0, len(perTag))
+	for tag, hours := range perTag {
+		totals = append(totals, TagTotal{Tag: tag, Hours: settled(hours)})
+	}
+
+	slices.SortFunc(totals, func(a, b TagTotal) int {
+		return cmp.Or(cmp.Compare(b.Hours, a.Hours), strings.Compare(a.Tag, b.Tag))
+	})
+
+	return totals
 }
 
 // dayKey is the format the day totals are keyed by, which is also how a date

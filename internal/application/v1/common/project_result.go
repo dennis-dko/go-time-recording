@@ -18,6 +18,11 @@ type ProjectResult struct {
 	// OwnerID is set for a private project, which acts as a personal
 	// category for its owner only.
 	OwnerID *uint
+
+	// BudgetHours is how many hours its owner means to spend on it, nil for none,
+	// and BookedHours how many of their own they have booked on it so far.
+	BudgetHours *float64
+	BookedHours float64
 }
 
 func NewProjectResultFromModel(projectModels ...*model.Project) []*ProjectResult {
@@ -33,6 +38,8 @@ func NewProjectResultFromModel(projectModels ...*model.Project) []*ProjectResult
 			EndDate:   projectModel.EndDate,
 			Status:    projectModel.Status,
 			OwnerID:   projectModel.OwnerID,
+
+			BudgetHours: projectModel.BudgetHours,
 		}
 		if projectModel.Description != nil {
 			projectData.Description = projectModel.Description

@@ -2,6 +2,8 @@ package sqldb
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -183,12 +185,48 @@ func (r *TimesheetRepository) GetAll(ctx context.Context) ([]*model.Timesheet, e
 func (r *TimesheetRepository) Update(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error) {
 	now := recordedNow()
 
-	found, err := r.update(ctx, "timesheets",
-		"UPDATE timesheets SET user_id = ?, project_id = ?, date = ?, duration_hours = ?, "+
-			"description = ?, updated_at = ? WHERE id = ?",
-		timesheet.ID,
-		timesheet.UserID, timesheet.ProjectID, timesheet.Date, timesheet.DurationHours,
-		timesheet.Description, now, timesheet.ID)
+	found := true
+
+	// What the entry said, read in the same transaction as the correction and -
+	// where the engine can - locked by it, so that two corrections at once cannot
+	// both keep the same earlier version and lose the one between.
+	err := r.withTx(ctx, func(tx base) error {
+		read := "SELECT " + timesheetColumns + " FROM timesheets WHERE id = ?"
+		if r.dialect != DialectSQLite {
+			read += " FOR UPDATE"
+		}
+
+		before, err := scanTimesheet(tx.db.QueryRowContext(ctx, tx.rebind(read), timesheet.ID))
+		if errors.Is(err, sql.ErrNoRows) {
+			found = false
+
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if !before.Says(timesheet) {
+			kept := model.RevisionOf(before, now)
+
+			if _, err := tx.exec(ctx,
+				"INSERT INTO timesheet_revisions (timesheet_id, user_id, date, duration_hours, project_id, "+
+					"description, replaced_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				kept.TimesheetID, kept.UserID, kept.Date, kept.DurationHours, kept.ProjectID,
+				kept.Description, kept.ReplacedAt); err != nil {
+				return err
+			}
+		}
+
+		_, err = tx.exec(ctx,
+			"UPDATE timesheets SET user_id = ?, project_id = ?, date = ?, duration_hours = ?, "+
+				"description = ?, updated_at = ? WHERE id = ?",
+			timesheet.UserID, timesheet.ProjectID, timesheet.Date, timesheet.DurationHours,
+			timesheet.Description, now, timesheet.ID)
+
+		return err
+	})
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -203,8 +241,21 @@ func (r *TimesheetRepository) Update(ctx context.Context, timesheet *model.Times
 	return &updated, nil
 }
 
+// Delete removes the entry and its history in one change: the history points at
+// the entry, so it goes first, and an entry that could not be deleted keeps it.
 func (r *TimesheetRepository) Delete(ctx context.Context, id uint) error {
-	affected, err := r.exec(ctx, "DELETE FROM timesheets WHERE id = ?", id)
+	var affected int64
+
+	err := r.withTx(ctx, func(tx base) error {
+		if _, err := tx.exec(ctx, "DELETE FROM timesheet_revisions WHERE timesheet_id = ?", id); err != nil {
+			return err
+		}
+
+		var err error
+		affected, err = tx.exec(ctx, "DELETE FROM timesheets WHERE id = ?", id)
+
+		return err
+	})
 	if err != nil {
 		return apperror.Internal(err)
 	}
@@ -214,6 +265,42 @@ func (r *TimesheetRepository) Delete(ctx context.Context, id uint) error {
 	}
 
 	return nil
+}
+
+// Revisions returns what an entry said before each correction, the most recently
+// replaced first - by when, and by which was kept last for two in the same second.
+func (r *TimesheetRepository) Revisions(ctx context.Context, timesheetID uint) ([]model.TimesheetRevision, error) {
+	rows, err := r.db.QueryContext(ctx, r.rebind(
+		"SELECT id, timesheet_id, user_id, date, duration_hours, project_id, description, replaced_at "+
+			"FROM timesheet_revisions WHERE timesheet_id = ? ORDER BY replaced_at DESC, id DESC"), timesheetID)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var history []model.TimesheetRevision
+
+	for rows.Next() {
+		var (
+			revision         model.TimesheetRevision
+			date, replacedAt dateTime
+		)
+
+		if err := rows.Scan(&revision.ID, &revision.TimesheetID, &revision.UserID, &date,
+			&revision.DurationHours, &revision.ProjectID, &revision.Description, &replacedAt); err != nil {
+			return nil, apperror.Internal(err)
+		}
+
+		revision.Date, revision.ReplacedAt = date.Time, replacedAt.Time
+		history = append(history, revision)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	return history, nil
 }
 
 func (r *TimesheetRepository) query(ctx context.Context, query string, args ...any) ([]*model.Timesheet, error) {
@@ -299,5 +386,62 @@ func timesheetConditions(filter repository.TimesheetFilter) ([]string, []any) {
 		args = append(args, *filter.EndDate)
 	}
 
+	if filter.Search != "" {
+		conditions = append(conditions, "LOWER(description) LIKE ? ESCAPE '!'")
+		args = append(args, "%"+likeLiteral(strings.ToLower(filter.Search))+"%")
+	}
+
 	return conditions, args
+}
+
+// likeLiteral makes text match itself inside a LIKE pattern.
+//
+// The escape is '!' rather than the backslash two of the engines default to:
+// SQLite has no default escape at all, and a backslash written into the ESCAPE
+// clause is a different string to MySQL than to PostgreSQL. A character none of
+// them treats specially inside a string literal gives one clause that means the
+// same thing on all three.
+func likeLiteral(text string) string {
+	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(text)
+}
+
+// HoursByProject totals somebody's hours on each project they booked on, in one
+// grouped query rather than a listing per project.
+func (r *TimesheetRepository) HoursByProject(ctx context.Context, userID uint) (map[uint]float64, error) {
+	query := "SELECT project_id, SUM(duration_hours) FROM timesheets WHERE project_id IS NOT NULL"
+
+	var args []any
+
+	if userID != 0 {
+		query += " AND user_id = ?"
+		args = append(args, userID)
+	}
+
+	rows, err := r.db.QueryContext(ctx, r.rebind(query+" GROUP BY project_id"), args...)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	totals := map[uint]float64{}
+
+	for rows.Next() {
+		var (
+			projectID uint
+			hours     float64
+		)
+
+		if err := rows.Scan(&projectID, &hours); err != nil {
+			return nil, apperror.Internal(err)
+		}
+
+		totals[projectID] = hours
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	return totals, nil
 }

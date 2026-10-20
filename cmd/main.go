@@ -35,6 +35,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/kerberos"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/openid"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
@@ -44,6 +45,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
 	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
+	"github.com/dennis-dko/go-time-recording/internal/support/imaging"
 	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
 
@@ -278,6 +280,10 @@ func main() {
 	// The log viewer's own polls go to the console and not into what it shows;
 	// see QuietRequestsTo. The route is the one RegisterRoutes gives the viewer.
 	logs.QuietRequestsTo("/api/v1/admin/logs")
+
+	// And no line carries a calendar feed's key, which is the whole of the address
+	// a reading of it is logged under; see Conceal.
+	logs.Conceal(appservice.CalendarFeedKeyPrefix)
 
 	if terminal {
 		// Interception makes the output a pipe, and GoFr prints JSON when its
@@ -554,6 +560,13 @@ func main() {
 	settingsRepo := sqldb.NewSettingsRepository(db, cfg.Dialect)
 
 	timerRepo := sqldb.NewTimerRepository(db, cfg.Dialect)
+	scheduleRepo := sqldb.NewWorkScheduleRepository(db, cfg.Dialect)
+	templateRepo := sqldb.NewTemplateRepository(db, cfg.Dialect)
+	absenceRepo := sqldb.NewAbsenceRepository(db, cfg.Dialect)
+	vacationRepo := sqldb.NewVacationRepository(db, cfg.Dialect)
+	calendarFeedRepo := sqldb.NewCalendarFeedRepository(db, cfg.Dialect)
+	identityRepo := sqldb.NewOpenIDIdentityRepository(db, cfg.Dialect)
+	workDayRepo := sqldb.NewWorkDayRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
@@ -631,7 +644,60 @@ func main() {
 		timesheetRepo, userRepo, projectRepo, cfg.MaxDailyHours).
 		WithLimits(limits).
 		WithMetrics(app.Metrics())
-	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo)
+	// The installation's public holidays, read per call like its zone, so a state
+	// chosen on the Settings screen holds from the next answer on.
+	regions := appservice.RegionSource(settingsService.HolidayRegion)
+
+	// Which day it is for somebody, in their own zone: a working day nobody booked
+	// counts once it has been, and for somebody in Auckland that is a day earlier
+	// than for the server. The installation's zone where they have none, and its
+	// default where it cannot be read, as every page decides it.
+	today := appservice.Today(func(ctx context.Context, user *model.User) time.Time {
+		zone, err := settingsService.Timezone(ctx)
+		if err != nil {
+			zone = model.DefaultTimezone
+		}
+
+		return time.Now().In(user.TimezoneOf(zone))
+	})
+
+	overtime := appservice.NewOvertimeService(timesheetRepo, userRepo, scheduleRepo, absenceRepo, regions, today)
+	workWeeks := appservice.NewWorkScheduleService(scheduleRepo, userRepo)
+	templates := appservice.NewTemplateService(templateRepo, projectRepo)
+	absences := appservice.NewAbsenceService(absenceRepo, userRepo, scheduleRepo, regions)
+	leave := appservice.NewVacationService(vacationRepo, absenceRepo, userRepo, scheduleRepo, regions, today)
+	workDays := appservice.NewWorkDayService(workDayRepo, timesheetRepo)
+
+	// What this installation is called in a language, wherever it has to name
+	// itself: the prompt a passkey device shows, the foot of an exported document,
+	// and the calendar somebody subscribes to.
+	//
+	// The administered title if there is one, so a person sees the name they
+	// know rather than the default the process was started with. One function
+	// rather than one per caller - it was written inline for the first of them,
+	// and the second would have been the same six lines again.
+	instanceNameIn := func(ctx context.Context, language string) string {
+		branding, err := settingsService.Branding(ctx)
+		if err != nil {
+			return cfg.AppName
+		}
+
+		if title := branding.TitleIn(language); title != "" {
+			return title
+		}
+
+		return cfg.AppName
+	}
+
+	calendarFeeds := appservice.NewCalendarFeedService(calendarFeedRepo, userRepo, timesheetRepo,
+		absenceRepo, projectRepo, auth, today, instanceNameIn)
+
+	// Signing in through the provider configured under Settings, read per sign-in
+	// so a change there holds from the next one. Ten seconds for every request to
+	// the provider: a sign-in waits on them, and one that has stopped answering
+	// should cost a person that long and no longer.
+	openIDSignIn := appservice.NewOpenIDService(identityRepo, userRepo, settingsService.OpenID,
+		openid.New(10*time.Second))
 
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
@@ -900,27 +966,11 @@ func main() {
 		return name
 	})
 
-	// What this installation is called, wherever it has to name itself: the
-	// prompt a passkey device shows, and the foot of an exported document.
-	//
-	// The administered title if there is one, so a person sees the name they
-	// know rather than the default the process was started with. One function
-	// rather than one per caller - it was written inline for the first of them,
-	// and the second would have been the same six lines again.
+	// In the language that asked, where there is one. An installation that has
+	// named itself in German and is read in German should not be signed off in
+	// English at the foot of its own evaluation.
 	instanceName := func(ctx *gofr.Context) string {
-		branding, err := settingsService.Branding(ctx)
-		if err != nil {
-			return cfg.AppName
-		}
-
-		// In the language that asked, where there is one. An installation that
-		// has named itself in German and is read in German should not be signed
-		// off in English at the foot of its own evaluation.
-		if title := branding.TitleIn(strings.TrimSpace(ctx.Param("lang"))); title != "" {
-			return title
-		}
-
-		return cfg.AppName
+		return instanceNameIn(ctx, strings.TrimSpace(ctx.Param("lang")))
 	}
 
 	setupHandler := rest.NewSetupHandler(setup, authorizer)
@@ -965,10 +1015,20 @@ func main() {
 			WithImageUpdater(imageupdate.New(os.Getenv("GTR_UPDATE_REQUESTS"))).
 			WithConnection(ds),
 		Timers:     rest.NewTimerHandler(timers, authorizer, instanceTimezone),
+		Schedules:  rest.NewScheduleHandler(workWeeks, authorizer),
+		Templates:  rest.NewTemplateHandler(templates, authorizer),
+		Absences:   rest.NewAbsenceHandler(absences, authorizer, instanceTimezone),
+		Holidays:   rest.NewHolidayHandler(sessions, settingsService, authorizer),
+		Vacation:   rest.NewVacationHandler(leave, authorizer, instanceTimezone),
+		Calendar:   rest.NewCalendarFeedHandler(calendarFeeds, authorizer),
+		WorkDays:   rest.NewWorkDayHandler(workDays, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
+			WithMaintenance(maintenanceState).
+			WithTimezone(instanceTimezone),
+		OpenID: rest.NewOpenIDHandler(openIDSignIn, sessions, authorizer).
 			WithMaintenance(maintenanceState).
 			WithTimezone(instanceTimezone),
 		Documents: rest.NewDocumentHandler(authorizer, instanceName).WithTimezone(instanceTimezone),
@@ -981,7 +1041,8 @@ func main() {
 			WithAnnouncements(hub).
 			WithLiveLogLevel(applyLogLevel, logs.Level).
 			WithRunningConnection(ds).
-			WithFileTelemetry(fileTelemetry),
+			WithFileTelemetry(fileTelemetry).
+			WithOpenIDCheck(openIDSignIn.Check),
 	})
 
 	// Expired sessions would otherwise accumulate forever.
@@ -1183,6 +1244,10 @@ func brandingFor(settings *appservice.SettingsService) web.BrandingFunc {
 			Title: branding.TabName(),
 			Logo:  branding.LogoDataURI,
 			Icon:  branding.LogoIcon,
+			IconCrop: imaging.Crop{
+				X: branding.IconCrop.X, Y: branding.IconCrop.Y,
+				W: branding.IconCrop.W, H: branding.IconCrop.H,
+			},
 		}
 	}
 }

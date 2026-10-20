@@ -40,12 +40,19 @@ func SealStoredSecrets(
 		return moved, err
 	}
 
-	sealedLDAP, err := sealLDAPPassword(ctx, db, dialect, secrets)
+	sealedLDAP, err := sealSettingSecret(ctx, db, dialect, secrets, model.SettingLDAPSettings,
+		func(config *model.LDAPConfig) *string { return &config.BindPassword })
 	if err != nil {
 		return moved, err
 	}
 
-	return moved + sealedLDAP, nil
+	sealedOpenID, err := sealSettingSecret(ctx, db, dialect, secrets, model.SettingOpenID,
+		func(config *model.OpenIDConfig) *string { return &config.ClientSecret })
+	if err != nil {
+		return moved + sealedLDAP, err
+	}
+
+	return moved + sealedLDAP + sealedOpenID, nil
 }
 
 // sealTOTPSecrets encrypts the second factors that are still in the clear.
@@ -106,46 +113,48 @@ func sealTOTPSecrets(
 	return len(plain), nil
 }
 
-// sealLDAPPassword encrypts the directory's bind password if it is still in the
-// clear.
+// sealSettingSecret encrypts the credential inside a setting stored as JSON, if it
+// is still in the clear - the directory's bind password, a sign-in provider's
+// client secret.
 //
 // Only that field. The rest of the configuration is a setting rather than a
 // credential, and a stored setting is worth being able to read when something is
 // wrong with it.
-func sealLDAPPassword(
+func sealSettingSecret[C any](
 	ctx context.Context,
 	db DB,
 	dialect string,
 	secrets *security.Sealer,
+	key string,
+	secretOf func(*C) *string,
 ) (int, error) {
 	var raw string
 
 	err := db.QueryRowContext(ctx,
-		Rebind(dialect, "SELECT value FROM settings WHERE key_name = ?"),
-		model.SettingLDAPSettings).Scan(&raw)
+		Rebind(dialect, "SELECT value FROM settings WHERE key_name = ?"), key).Scan(&raw)
 	if err != nil || raw == "" {
-		// No directory configured is the ordinary case, and sql.ErrNoRows says
-		// exactly that. Nothing else here can fail in a way worth stopping a
-		// start-up over.
+		// Nothing configured is the ordinary case, and sql.ErrNoRows says exactly
+		// that. Nothing else here can fail in a way worth stopping a start-up over.
 		return 0, nil
 	}
 
-	var config model.LDAPConfig
+	var config C
 	if err := json.Unmarshal([]byte(raw), &config); err != nil {
 		// A corrupt entry is the settings screen's problem, not this one's.
 		return 0, nil
 	}
 
-	if config.BindPassword == "" || security.IsSealed(config.BindPassword) {
+	secret := secretOf(&config)
+	if *secret == "" || security.IsSealed(*secret) {
 		return 0, nil
 	}
 
-	sealed, err := secrets.Seal(config.BindPassword)
+	sealed, err := secrets.Seal(*secret)
 	if err != nil {
 		return 0, err
 	}
 
-	config.BindPassword = sealed
+	*secret = sealed
 
 	encoded, err := json.Marshal(config)
 	if err != nil {
@@ -153,9 +162,8 @@ func sealLDAPPassword(
 	}
 
 	if _, err := db.ExecContext(ctx,
-		Rebind(dialect, "UPDATE settings SET value = ? WHERE key_name = ?"),
-		string(encoded), model.SettingLDAPSettings); err != nil {
-		return 0, fmt.Errorf("encrypting the directory password: %w", err)
+		Rebind(dialect, "UPDATE settings SET value = ? WHERE key_name = ?"), string(encoded), key); err != nil {
+		return 0, fmt.Errorf("encrypting the credential in %s: %w", key, err)
 	}
 
 	return 1, nil

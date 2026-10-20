@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
@@ -68,6 +69,16 @@ func (r *TimerRepository) Start(ctx context.Context, timer *model.RunningTimer) 
 
 	if _, err := r.exec(ctx, query,
 		timer.UserID, timer.ProjectID, timer.Description, timer.StartedAt); err != nil {
+		return apperror.Internal(err)
+	}
+
+	return nil
+}
+
+// MoveStart changes when the clock started, and only ever updates.
+func (r *TimerRepository) MoveStart(ctx context.Context, userID uint, startedAt time.Time) error {
+	if _, err := r.exec(ctx, "UPDATE running_timers SET started_at = ? WHERE user_id = ?",
+		startedAt, userID); err != nil {
 		return apperror.Internal(err)
 	}
 

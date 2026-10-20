@@ -15,6 +15,11 @@ type UpdateProjectCommand struct {
 	EndDate     *time.Time
 	Status      *string
 
+	// BudgetHours sets the budget, and zero takes it off: no budget and a budget of
+	// nothing are the same thing, so the third state needs no flag of its own. Nil
+	// leaves it alone.
+	BudgetHours *float64
+
 	// ClearEndDate takes the end date off, which no pointer above can say.
 	//
 	// A nil EndDate means "leave it alone", which is what a partial update needs

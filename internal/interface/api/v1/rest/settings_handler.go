@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"context"
+
 	"gofr.dev/pkg/gofr"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
@@ -63,6 +65,10 @@ type SettingsHandler struct {
 	// fileTelemetry is what the configuration file says, which is what the next
 	// start uses for every telemetry setting nobody has stored.
 	fileTelemetry appconfig.Telemetry
+
+	// openidCheck reads a sign-in provider's discovery document; see
+	// WithOpenIDCheck. Nil where nothing can, which the test answers as a fault.
+	openidCheck func(ctx context.Context, issuer string) error
 }
 
 // WithFileTelemetry attaches what the configuration file says about telemetry.

@@ -190,16 +190,21 @@ func newOvertimeResponse(b *service.OvertimeBalance) OvertimeResponse {
 			Booked:  day.Booked,
 			Target:  day.Target,
 			Balance: day.Balance,
+			Absence: day.Absence,
+			Holiday: day.Holiday,
 		})
 	}
 
 	return OvertimeResponse{
-		UserID:       b.UserID,
-		UserName:     b.UserName,
-		From:         Date{Time: b.From},
-		To:           Date{Time: b.To},
-		DailyTarget:  b.DailyTarget,
-		Days:         days,
+		UserID:      b.UserID,
+		UserName:    b.UserName,
+		From:        Date{Time: b.From},
+		To:          Date{Time: b.To},
+		DailyTarget: b.DailyTarget,
+		Days:        days,
+
+		EveryDayCountsFrom: optionalDate(b.EveryDayCountsFrom),
+
 		TotalBooked:  b.TotalBooked,
 		TotalTarget:  b.TotalTarget,
 		TotalBalance: b.TotalBalance,

@@ -203,6 +203,55 @@
         }
       }
     },
+    "/auth/openid": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Whether signing in through a provider is offered",
+        "description": "Answers {\"offered\": true, \"label\": \"Keycloak\"} when a provider is configured and switched on under Settings, {\"offered\": false} otherwise. Reachable without a session: the sign-in form asks it before there is anybody to ask for.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start signing in through the provider",
+        "description": "No body. Answers {\"address\": \"https://...\"}, the provider's own sign-in to send the browser to, and sets a cookie holding the round's state, so that only this browser can finish it. The provider sends the browser back to /sign-in/openid, which is a page of the interface rather than a route of this API: the page hands the code and the state it came back with to POST /auth/openid/finish. openidOff when no provider is configured, openidUnreachable when its discovery document cannot be read.",
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "Where to send the browser"
+          }
+        }
+      }
+    },
+    "/auth/openid/finish": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish a round through the provider",
+        "description": "Body: {\"state\": \"...\", \"code\": \"...\"}, as the browser came back with them. Only the browser holding the round's cookie can finish it, once, within ten minutes, and with the provider that was configured when it began (attemptExpired otherwise). The code is traded with the PKCE verifier the round was begun with, and the identity token is believed only when it is signed with the provider's published key, for this installation's client, not expired and carrying the round's nonce (openidRefused otherwise). A round begun by POST /me/openid links the account whose session began it and answers in the shape GET /me/openid does; any other signs in the account the identity is linked to and answers as POST /auth/login does, setting the session cookie. An identity nobody linked opens nothing (openidNotLinked): no account is ever matched on an address or made for an identity. The built-in administrator and an account the directory holds are never signed in this way (adminHasNoOpenID, directoryAccountHasNoOpenID).",
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "Signed in, or the account linked"
+          },
+          "400": {
+            "description": "attemptExpired"
+          },
+          "409": {
+            "description": "The provider refused, or the identity opens no account here"
+          }
+        }
+      }
+    },
     "/auth/logout": {
       "post": {
         "tags": [
@@ -278,6 +327,32 @@
           },
           "400": {
             "description": "Unknown appearance"
+          }
+        }
+      }
+    },
+    "/me/holidays": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Whose public holidays you keep",
+        "description": "Answers {\"region\": \"\", \"instanceRegion\": \"BY\", \"effectiveRegion\": \"BY\", \"regions\": [\"BW\", ...]}. region is your own choice: empty follows the installation, \"none\" keeps no holidays at all, and a German state by its ISO 3166-2 code without the country (BW, BY, BE, BB, HB, HH, HE, MV, NI, NW, RP, SL, SN, ST, SH, TH) keeps that state's. effectiveRegion is what applies, empty for none. A state's holidays are those that hold in the whole of it; one that holds only where you work is recorded as an absence of the kind localHoliday.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Choose whose public holidays you keep",
+        "description": "Body: {\"region\": \"HH\"} - a state, \"none\", or empty to follow the installation again.",
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }
@@ -530,6 +605,15 @@
             }
           },
           {
+            "name": "q",
+            "in": "query",
+            "description": "Only the entries whose description contains this text, whatever its case. Matched as written: a percent sign or an underscore is a character, not a wildcard. On SQLite only ASCII letters are folded, so there `Ä` does not find `ä`. Longer than a description can be (2000 characters) is refused.",
+            "schema": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "Entries per page. Default 100, maximum 500; above that the request is refused.",
@@ -661,7 +745,7 @@
           "projects"
         ],
         "summary": "List projects",
-        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Needs `projects:read`.",
+        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Each carries budgetHours - how many hours you mean to spend on it, null for none - and bookedHours, how many of your own are booked on it. Needs `projects:read`.",
         "parameters": [
           {
             "name": "status",
@@ -682,7 +766,7 @@
           "projects"
         ],
         "summary": "Create a project",
-        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. Needs `projects:write`.",
+        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. `budgetHours` is optional too: how many hours you mean to spend on it, between 0 and 100000, which nobody but you sees or signs off. Needs `projects:write`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -733,7 +817,7 @@
           "projects"
         ],
         "summary": "Update a project",
-        "description": "Changes a project of your own. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, and an empty `description` empties it.",
+        "description": "Changes a project of your own. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, an empty `description` empties it, and a `budgetHours` of 0 takes the budget off.",
         "responses": {
           "200": {
             "description": "Updated"
@@ -876,7 +960,7 @@
           "reports"
         ],
         "summary": "Overtime balance for one user",
-        "description": "Your own balance, which needs `reports:read:own`. Anyone else’s is refused outright: a balance is their recorded time, totalled, and nobody reads that. Only days with bookings count.",
+        "description": "Your own balance, which needs `reports:read:own`. Anyone else’s is refused outright: a balance is their recorded time, totalled, and nobody reads that. Which days count depends on everyDayCountsFrom (see /users/{id}/working-times). Without it, and before it, only days with bookings count, each measured against the week in force on it (see /me/schedules) - without a plan, the daily target from Monday to Friday and nothing at the weekend. From it on, every working day up to today counts, booked or not, and asks what its week plans less what a public holiday (see /me/holidays) or an absence (see /me/absences) takes off it: nothing on a holiday, a day of leave, a sick day or a local holiday, half on half a day of leave, the whole day on a day off against overtime. A day after today counts once something is booked on it. Each day says why it asks less where something does, as absence or holiday, and the answer carries everyDayCountsFrom, null while only booked days count.",
         "parameters": [
           {
             "name": "id",
@@ -1106,7 +1190,7 @@
             "description": "Somebody else's account, or the right is not held"
           }
         },
-        "description": "Yours alone. Needs `settings:write:own`, and the id has to be your own: there is no wider permission that reaches somebody else’s, because a daily target is a time figure and everything to do with time belongs to the person it is about. An empty value, sent as 0, means \"follow the instance default\" under Settings. The account that administers this installation cannot set these for anybody, which is deliberate - it cannot read the entries, the balance or the figures the numbers produce."
+        "description": "Yours alone. Needs `settings:write:own`, and the id has to be your own: there is no wider permission that reaches somebody else’s, because a daily target is a time figure and everything to do with time belongs to the person it is about. An empty value, sent as 0, means \"follow the instance default\" under Settings. everyDayCountsFrom (YYYY-MM-DD) is the day from which every working day counts towards your balance, booked or not; absent leaves it alone, and an empty string takes it off again, so only booked days count, as they did before you chose one. The account that administers this installation cannot set these for anybody, which is deliberate - it cannot read the entries, the balance or the figures the numbers produce."
       }
     },
     "/roles": {
@@ -1333,6 +1417,32 @@
         }
       }
     },
+    "/settings/holidays": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The installation's public holidays",
+        "description": "Answers {\"region\": \"BY\", \"regions\": [\"BW\", ...]}: the German state whose public holidays everybody keeps who has not chosen their own, or empty for none - which is what an installation that never chose one keeps. For whoever administers the installation.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Choose the installation's public holidays",
+        "description": "Body: {\"region\": \"BY\"} - a state by its ISO 3166-2 code without the country (BW, BY, BE, BB, HB, HH, HE, MV, NI, NW, RP, SL, SN, ST, SH, TH), or empty for none.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/settings/timezone": {
       "get": {
         "tags": [
@@ -1447,6 +1557,46 @@
         }
       }
     },
+    "/settings/openid": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The provider people sign in through",
+        "description": "Answers {\"enabled\", \"issuer\", \"clientId\", \"label\", \"hasSecret\", \"redirectUri\"}. The client secret is never sent back; hasSecret says whether one is stored. redirectUri is the address to register at the provider: this installation as the browser asking reached it, followed by /sign-in/openid.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Configure the provider people sign in through",
+        "description": "Body: {\"enabled\", \"issuer\", \"clientId\", \"clientSecret\", \"label\"}. An empty clientSecret keeps the stored one. The issuer is the provider's address exactly as its tokens name it - Keycloak's realm address, an Entra ID tenant's v2.0 address, https://accounts.google.com - and has to be reached over HTTPS unless it is on this machine (openidNeedsHttps). The secret is sealed with SECRET_KEY where it is stored. Applies from the next sign-in.",
+        "responses": {
+          "200": {
+            "description": "The stored provider, as GET answers"
+          }
+        }
+      }
+    },
+    "/settings/openid/test": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read a provider's discovery document without saving anything",
+        "description": "Body: {\"issuer\": \"...\"}. Answers {\"ok\": true}, or {\"ok\": false, \"error\": {\"code\", \"message\", \"detail\"}} with what the provider said in detail.",
+        "responses": {
+          "201": {
+            "description": "Result; the `ok` field tells success from failure"
+          }
+        }
+      }
+    },
     "/settings/ldap/test": {
       "post": {
         "tags": [
@@ -1478,13 +1628,25 @@
           "me"
         ],
         "summary": "Start the clock",
-        "description": "Body is optional: {\"projectId\": 3, \"description\": \"...\"}, both of which may be left out and settled later. Starting again replaces a clock already running - somebody who does that has changed their mind about what they are doing, and refusing would leave them to stop a clock measuring the wrong thing. Always the caller's own clock; there is no route for anybody else's.",
+        "description": "Body is optional: {\"projectId\": 3, \"description\": \"...\"}, both of which may be left out and settled later. Starting again replaces a clock already running - somebody who does that has changed their mind about what they are doing, and refusing would leave them to stop a clock measuring the wrong thing. To book the running clock first and carry on with something else, use /me/timer/switch. Always the caller's own clock; there is no route for anybody else's.",
         "responses": {
           "200": {
             "description": "Running"
           },
           "201": {
             "description": "Running"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Correct when the running clock started",
+        "description": "Body: {\"startedAt\": \"2026-10-19T08:52:00Z\"} for a moment with its offset, or {\"startedAt\": \"2026-10-19T08:52\"} for a time on the wall clock, which is read in the caller's own timezone. For somebody who started work before pressing the button. Earlier or later, but never after now (timerStartInFuture). A start more than a day back makes a clock that can only be stopped with an end time, like any forgotten one; moving it across midnight moves the day the entry will land on. Refused with noTimerRunning when nothing runs.",
+        "responses": {
+          "200": {
+            "description": "The clock with its corrected start"
           }
         }
       },
@@ -1507,7 +1669,7 @@
           "me"
         ],
         "summary": "Stop the clock and book what it measured",
-        "description": "Creates an ordinary time entry through the same service a typed booking goes through, so it meets the same rules: the daily cap, the project having to exist, be active and be visible, the description length. The duration is the measured one, to the second and rounded to nothing. The entry lands on the day the clock was *started*, in the caller's own timezone - somebody who starts at half past eleven at night and stops after midnight worked that evening.\n\nRefused when the clock has run for less than the smallest bookable duration (discard it instead) or for more than one entry can hold, which is almost always a clock somebody forgot; the measured hours are in that message so it can be booked by hand. A refusal leaves the clock running, so the time is not lost to it.",
+        "description": "Creates an ordinary time entry through the same service a typed booking goes through, so it meets the same rules: the daily cap, the project having to exist, be active and be visible, the description length. The duration is the measured one, to the second and rounded to nothing. The entry lands on the day the clock was *started*, in the caller's own timezone - somebody who starts at half past eleven at night and stops after midnight worked that evening.\n\nBody is optional. Without one the clock is stopped now. {\"endedAt\": \"2026-10-19T17:30\"} books it up to the time the work ended instead - for the clock somebody forgot - read like startedAt on PUT /me/timer: with its offset as given, without one in the caller's timezone. The end may not lie in the future (timerEndInFuture) or before the start (timerEndBeforeStart).\n\nRefused when what was measured is less than the smallest bookable duration (discard it instead) or more than one entry can hold (timerTooLong, with the hours measured); a forgotten clock is booked by saying when the work ended. A refusal leaves the clock running, so the time is not lost to it.",
         "responses": {
           "200": {
             "description": "The entry that was created"
@@ -1518,13 +1680,472 @@
         }
       }
     },
+    "/me/timer/switch": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Book the running clock and carry on with something else",
+        "description": "Body as when starting: {\"projectId\": 4, \"description\": \"...\"}, both optional. Books what the running clock measured up to now, exactly as a stop would, and starts the next clock at that same second, so the two entries meet without a gap. Checked before anything is written: the next project is held to the rules a start is, and a booking that would be refused leaves the running clock as it was and starts nothing. Answers {\"booked\": <the entry>, \"timer\": <the clock now running>}. Refused with noTimerRunning when nothing runs.",
+        "responses": {
+          "200": {
+            "description": "The entry booked and the clock now running"
+          },
+          "201": {
+            "description": "The entry booked and the clock now running"
+          }
+        }
+      }
+    },
+    "/me/schedules": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Your planned weeks",
+        "description": "Answers {\"items\": [{\"validFrom\": \"2026-10-19\", \"hours\": [8, 8, 8, 8, 6, 0, 0]}], \"before\": [8, 8, 8, 8, 8, 0, 0]}. Each item is a week, Monday first, in force from its day until the next item's; items are earliest first. `before` is the week for the days before the first plan, and for everybody who has none: the daily target from Monday to Friday and nothing at the weekend. The overtime balance measures each booked day against the week in force on it, so a day the week leaves free counts every hour booked on it as overtime.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Plan a week from a day on",
+        "description": "Body: {\"validFrom\": \"2026-10-19\", \"hours\": [8, 8, 8, 8, 6, 0, 0]} - exactly seven figures, Monday first. Replaces a plan starting on the same day; the days before keep the plan that was in force then, so going part time does not rewrite last month. Each figure is between 0 and 24, and none may exceed your own daily maximum (targetOverMaximum).",
+        "responses": {
+          "200": {
+            "description": "The planned week"
+          },
+          "201": {
+            "description": "The planned week"
+          }
+        }
+      }
+    },
+    "/me/schedules/{validFrom}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take back the plan that starts on a day",
+        "description": "Its days go back to the plan before it, or to the daily target where there is none. A day no plan starts on answers 404.",
+        "parameters": [
+          {
+            "name": "validFrom",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          }
+        }
+      }
+    },
+    "/me/templates": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Your templates",
+        "description": "Answers {\"items\": [{\"id\": 3, \"projectId\": 7, \"durationHours\": 0.25, \"description\": \"Daily\"}], \"totalCount\": 1}, in the order they were saved. Each part is null where the template fills nothing in. A template only fills the booking form - nothing is ever booked from one on its own - so it needs the right to book your own time, and its project is asked about again when the booking is made: one that has closed since is refused there, as any booking on it is.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Keep a booking you make often as a template",
+        "description": "Body: {\"projectId\": 7, \"durationHours\": 0.25, \"description\": \"Daily\"} - any of the three, at least one (templateEmpty). Held to what a booking is held to: hours between 0.01 and 24, a description no longer than one, and a project you can book on (projectClosedForBooking; one you cannot see answers 404). Saving one that fills the form exactly like a template you already have answers with that one rather than keeping a second. At most 50 per person (tooManyTemplates).",
+        "responses": {
+          "200": {
+            "description": "The template"
+          },
+          "201": {
+            "description": "The template"
+          }
+        }
+      }
+    },
+    "/me/templates/{id}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Delete one of your templates",
+        "description": "Somebody else's template answers 404, the same as one that does not exist.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/me/absences": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The days you are away",
+        "description": "Answers {\"items\": [{\"day\": \"2026-10-14\", \"kind\": \"halfVacation\"}], \"totalCount\": 1}, earliest first. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD; the default is the calendar year today falls in, in your own timezone. At most 371 days (rangeTooLong). A kind is one of vacation, halfVacation, sick, flexDay (a day off taken from the overtime balance, which keeps what the day asks) and localHoliday (a holiday where you work that your state does not keep as a whole).",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Record the working days of a range as away",
+        "description": "Body: {\"from\": \"2026-10-12\", \"to\": \"2026-10-23\", \"kind\": \"vacation\"}. Only the days your planned week asks something of are recorded - a fortnight of leave is its ten working days - and a day already recorded takes the new kind. A range with no working day in it is refused (noWorkingDays). Answers with the days recorded, in the shape GET answers.",
+        "responses": {
+          "200": {
+            "description": "The days recorded"
+          },
+          "201": {
+            "description": "The days recorded"
+          }
+        }
+      }
+    },
+    "/me/absences/{day}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take back the absence on a day",
+        "description": "A day with no absence recorded answers 404.",
+        "parameters": [
+          {
+            "name": "day",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/me/vacation": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "A year of your leave",
+        "description": "Answers {\"year\": 2026, \"entitlement\": 30, \"carriedOver\": 2, \"taken\": 18.5, \"planned\": 4, \"remaining\": 9.5, \"entitlements\": [{\"fromYear\": 2025, \"days\": 30}]}. ?year=YYYY, by default the year today falls in, in your own timezone. entitlement is what the year gives: the latest entitlement from that year or before. carriedOver is what the year before left - more than it gave where leave was not taken, less than nothing where it was overdrawn - back to the first year an entitlement was recorded for, before which there is no account. A day of leave (see /me/absences) uses a day and half a day of it a half, counted only on a day that is worked: one the week planned for it asks something of, and no public holiday. taken is leave up to today, planned is leave after it, and remaining is what is left once everything planned is taken.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Give yourself days of leave a year from a year on",
+        "description": "Body: {\"fromYear\": 2026, \"days\": 30} - between 0 and 366 days, in force from that year until the next entitlement's. Replaces an entitlement from the same year; the years before keep what they gave, so what they carried stays what it was. Answers with the account of fromYear, in the shape GET answers.",
+        "responses": {
+          "200": {
+            "description": "The year's account"
+          }
+        }
+      }
+    },
+    "/me/vacation/{fromYear}": {
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take back an entitlement",
+        "description": "Its years go back to the entitlement before it, or to none. A year no entitlement starts in answers 404.",
+        "parameters": [
+          {
+            "name": "fromYear",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/me/openid": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Your link to an identity at the provider",
+        "description": "Answers {\"linked\": true, \"issuer\": \"https://id.example.com\", \"linkedAt\": \"2026-10-20T09:30:00Z\"}, or {\"linked\": false}.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Start linking your account to your identity at the provider",
+        "description": "No body. Answers as POST /auth/openid does; the round, finished by the same browser in the same session, links this account to whoever signs in at the provider. From then on that identity signs this account in without its password and without its second factor - the provider asks its own. Refused for the built-in administrator and for an account the directory holds, and for an identity already linked to another account (openidLinkedElsewhere).",
+        "responses": {
+          "201": {
+            "description": "Where to send the browser"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Unlink your account from the provider",
+        "description": "The provider signs this account in no more. 404 when it is linked to nothing.",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/timesheets/{id}/revisions": {
+      "get": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "What an entry said before each correction",
+        "description": "Answers {\"items\": [{\"date\", \"durationHours\", \"projectId\", \"description\", \"replacedAt\"}], \"totalCount\"}, the most recently replaced version first. Every correction that changes the day, the hours, the project or the description keeps the version it replaced - through the form, a transfer to another project, the week grid or a whole selection at once; a save that changes none of them keeps nothing. The entry's owner's only: anybody else is answered 404, as about the entry itself. Deleting the entry deletes its history with it. projectId names the project as it was, which may since have been deleted.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "No such entry of yours"
+          }
+        }
+      }
+    },
+    "/me/workdays": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "When you worked, a day at a time",
+        "description": "Answers {\"from\", \"to\", \"days\": [{\"date\": \"2026-10-19\", \"recorded\": true, \"start\": \"08:00\", \"end\": \"16:30\", \"breakMinutes\": 30, \"workedHours\": 8, \"bookedHours\": 7.5}], \"totalWorked\", \"totalBooked\"}. Every day of the range you recorded or booked on, earliest first: a day only booked on comes with recorded false and no times, so a record with a day missing shows which. workedHours is the time between start and end less the breaks; bookedHours what you booked on projects that day, which says what the time went on where this says when it was spent. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD, by default the month today falls in, in your own timezone; at most 371 days (rangeTooLong). Your own and nobody else's: there is no view of anybody's working time but their own.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/me/workdays/{date}": {
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Record when you worked on a day",
+        "description": "Body: {\"start\": \"08:00\", \"end\": \"16:30\", \"breakMinutes\": 30} - times as the clock showed them, \"24:00\" for a day that ends at midnight. The start comes before the end within the day (a night past midnight is the two days it falls on), and the breaks are shorter than the time between. Replaces what the day had.",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take back what you recorded for a day",
+        "description": "404 when nothing was recorded for it. The hours booked on it stay as they are.",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/me/calendar-feed": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Your calendar feed, without its key",
+        "description": "Answers {\"active\": true, \"prefix\": \"gtrcal_AbC123\", \"createdAt\": \"2026-10-20T09:30:00Z\", \"lastReadAt\": \"2026-10-20T10:00:00Z\"}, or {\"active\": false} without one. prefix is the start of the key, to recognise which address your calendar was given; lastReadAt says whether anything is reading it. Needs the right to read your own entries, which is what the feed hands out.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Make a calendar feed, in place of the one you had",
+        "description": "No body. Answers as GET does, with path added: the address the feed is read at, key included, relative to this installation - the only time the key is ever shown, because only a hash of it is kept. The address you had before reads nothing from this moment on, which is how a key somebody has seen is taken back.",
+        "responses": {
+          "201": {
+            "description": "The new feed, with its address"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Take your calendar feed back",
+        "description": "Its address reads nothing from then on. Asks for nothing beyond being signed in. Answers 404 when there is no feed.",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/calendar-feed/{key}": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Read a calendar feed",
+        "description": "What a calendar program subscribes to - Outlook, Google, a telephone - with nothing but this address: no session and no token, the key in the path, with or without .ics after it. An iCalendar (RFC 5545) of whole days in the year either side of today, in the owner's language: every day they booked on, saying how many hours, with each entry written under it - its hours, its project unless it is one the owner cannot see, and its description - and every day they recorded themselves away, saying why. Every event is transparent, so booked hours never make anybody look busy. The key opens no more than its owner could read on their own screen: not when their role stops letting them read their own entries, nor while their password waits to be chosen. A key that opens nothing answers 404, whatever the reason. The key is hidden in the process log, under which the reading is still written.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The calendar",
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A key that opens nothing"
+          }
+        }
+      }
+    },
+    "/me/days": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Every day of a range: what was booked and what it asked",
+        "description": "Answers {\"from\", \"to\", \"days\": [{\"date\": \"2026-10-19\", \"booked\": 6.5, \"target\": 8, \"absence\": \"sick\", \"holiday\": \"whitMonday\"}], \"totalBooked\", \"totalTarget\"} - absence only on a day one is recorded (see /me/absences), holiday only on a public holiday of the state you keep (see /me/holidays). counts says whether the day counts towards the overtime balance, by the rule the balance keeps, so a week drawn from these comes to its figure. Every day of the range is there, the ones with nothing booked included - unlike the overtime balance, which counts only the days somebody worked. What a day asks is the week in force on it (see /me/schedules). Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD; the default is the week, Monday to Sunday, that today falls in, in your own timezone. At most 371 days (rangeTooLong), which is a year drawn as whole weeks.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/me/weeks/copy": {
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Book one of your weeks like another",
+        "description": "Body: {\"from\": \"2026-10-12\", \"to\": \"2026-10-19\"} - two Mondays, the week to copy and the week to copy it into. Each entry of the first is booked on the same weekday of the second, with its project, hours and description, but only on days of the second week that have nothing booked yet: a day you have booked is left as it is. An entry whose project no longer takes bookings is left out. Everything else is held to the rules a booking is - the floor, the description, the daily maximum counting what the copy itself puts on a day - and written all at once or not at all. Answers {\"copied\": 9, \"hours\": 38.5, \"kept\": 1, \"closed\": 2}: the entries written and their hours, the days left as they were, and the entries left out. A first week with nothing in it is refused (nothingToCopy).",
+        "responses": {
+          "200": {
+            "description": "What the copy did"
+          },
+          "201": {
+            "description": "What the copy did"
+          }
+        }
+      }
+    },
     "/me/statistics": {
       "get": {
         "tags": [
           "me"
         ],
         "summary": "What your own recorded time adds up to",
-        "description": "Totals the caller's own entries: per day, per project, and per workflow state, with the overall total. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD, inclusive at both ends; the default is the first of the current month to today, worked out in the caller's own timezone.\n\nDeliberately not the project report. That one is keyed on a project id, needs reports:read - which both default roles are without, so only the built-in administrator can see what other people total up to - and cannot express \"every project\" or \"no project\". This one is keyed on the caller and needs only timesheets:read:own.\n\nTwo details a chart depends on. Every day in the range is present, including the ones with nothing on them: a chart drawn only from the days that have entries shows a full week where there were two working days. And the entries with no project are their own row with projectId null, because \"not categorised\" is an answer worth seeing the size of rather than a gap. Rejected entries are left out, the same reading the overtime balance takes.",
+        "description": "Totals the caller's own entries: per day, per project and per activity, with the overall total. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD, inclusive at both ends; the default is the first of the current month to today, worked out in the caller's own timezone.\n\nDeliberately not the project report. That one is keyed on a project id, so it cannot express \"every project\" or \"no project\"; this one is keyed on the caller and needs only timesheets:read:own. Neither answers with anybody's hours but the caller's.\n\nTwo details a chart depends on. Every day in the range is present, including the ones with nothing on them: a chart drawn only from the days that have entries shows a full week where there were two working days. And the entries with no project are their own row with projectId null, because \"not categorised\" is an answer worth seeing the size of rather than a gap. The activities the descriptions name with a # - #meeting, #review - are totalled as tags, [{\"tag\": \"meeting\", \"hours\": 3.5}], most hours first, beside untaggedHours for what names none. An entry naming two counts towards both, so the tags can add up to more than the total. A tag starts where a word does and runs over letters, digits, - and _; one of digits alone, #123, is a ticket number and not an activity.",
         "responses": {
           "200": {
             "description": "OK"
@@ -1576,7 +2197,7 @@
           "timesheets"
         ],
         "summary": "Export time entries as .xlsx",
-        "description": "Takes the same filters as the list, with the same scoping: whoever may read only their own entries exports their own, whatever they ask for.",
+        "description": "Takes the same filters as the list - projectId, from, to and q - with the same scoping: whoever may read only their own entries exports their own, whatever they ask for.",
         "parameters": [
           {
             "name": "lang",

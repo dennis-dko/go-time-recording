@@ -1,6 +1,9 @@
 package model
 
-import "slices"
+import (
+	"slices"
+	"time"
+)
 
 // DefaultDailyTargetHours is the target applied to a user who has not chosen
 // their own.
@@ -68,6 +71,19 @@ type User struct {
 	// It decides which calendar day a booking falls on, so getting it wrong
 	// moves hours between days rather than merely displaying them oddly.
 	Timezone string
+
+	// HolidayRegion is the state whose public holidays this person keeps: empty
+	// follows the installation, NoHolidays keeps none, and anything else is one
+	// of the HolidayRegions - for somebody who works in another state than the
+	// installation's, or outside Germany.
+	HolidayRegion string
+
+	// EveryDayCountsFrom is the day from which every working day counts towards
+	// this person's overtime balance, booked or not, with what a holiday or an
+	// absence takes off it. Nil keeps the rule every account had before there was
+	// a holiday calendar - only the days booked on count - so a month already
+	// behind somebody does not change under them until they choose a day.
+	EveryDayCountsFrom *time.Time
 
 	// IsExternal marks an account whose password lives in LDAP, so the local
 	// password fields are not used for it.

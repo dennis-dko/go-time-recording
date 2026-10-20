@@ -23,6 +23,9 @@ type CreateProjectCommand struct {
 	// that zone: the server's clock put a project created in the evening west of
 	// UTC on the next day.
 	Today time.Time
+
+	// BudgetHours is how many hours the owner means to spend on it, nil for none.
+	BudgetHours *float64
 }
 
 // CreateProjectCommandResult command to get create result of new project

@@ -114,6 +114,7 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 		StartDate:   req.StartDate.Time,
 		Status:      req.Status,
 		Today:       time.Now().In(principal.User.TimezoneOf(h.timezone.resolve(c))),
+		BudgetHours: req.BudgetHours,
 	}
 
 	// Whoever is asking. Zero means enforcement is switched off, and then there is no
@@ -162,6 +163,7 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 		Name:        req.Name,
 		Description: req.Description,
 		Status:      req.Status,
+		BudgetHours: req.BudgetHours,
 	}
 
 	if req.StartDate != nil {

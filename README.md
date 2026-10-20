@@ -285,16 +285,29 @@ exactly those checksums.
 | API | REST under `/api/v1`, documented at `/api-docs` |
 | Web interface | Embedded via `go:embed`, vanilla JS with no build step |
 | Access control | RBAC with roles administered at run time; bcrypt password hashes |
-| Sign-in | Session cookies, optional passkeys and TOTP two-factor per user, and a browser's Kerberos ticket where a keytab and a directory are configured |
+| Sign-in | Session cookies, optional passkeys and TOTP two-factor per user, a browser's Kerberos ticket where a keytab and a directory are configured, and an OpenID Connect provider - Keycloak, Authentik, Entra ID, Google - for the accounts their owners linked to it |
 | Live log | The process log, filterable and searchable, for the built-in administrator |
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
-| Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second |
-| Own statistics | Hours per day and per project, drawn as charts, for everybody rather than administrators |
+| Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second. A start pressed late can be corrected, a clock left running is booked up to the time the work ended, and switching to the next project books the clock and carries on from the same second |
+| Finding entries | The list narrows by project, by period and by text in the description, and the export follows the same filters |
+| Entry history | Every correction of an entry keeps the version it replaced - its day, hours, project and description, and when it was replaced - whether it was made in the form, by moving the entry to another project, on the week grid or for a whole selection at once. The entry's owner opens it from the entry; deleting the entry deletes its history |
+| Hour budgets | A project may carry the hours its owner means to spend on it; the list shows how much of that is booked, marked from four fifths and past the whole, and the booking that crosses either says so |
+| Templates | A booking made often - a project, hours, a description - is kept from the form and fills it in again when chosen. Nothing is booked from a template on its own, and one whose project has closed can no longer be chosen |
+| Own statistics | Hours per day, per project and per activity, drawn as charts, for everybody rather than administrators |
+| Activities | A second way of sorting the same hours beside the project, written into the description with a # - #meeting, #review - and totalled under *Own statistics*. Nothing to set up first, and every description already written counts; an entry naming two counts towards both |
 | Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
+| Working time | When each day began and finished and how long its breaks were, beside the hours booked on it, under the calendar - a day booked on with no times recorded is shown as the gap it is, the running stopwatch's start is offered as the day's, and the month leaves as a PDF. Kept by each person for themselves; nobody else sees it |
+| Calendar subscription | An address of your own, made under *My account*, that Outlook, Google or a telephone subscribes to: every day you booked on - how many hours, and what on - and every day you are away, in the year either side of today. Read-only, shown once, and taken back by making a new one |
+| The year | Every day of a year as a tile, as dark as the hours booked on it, with the public holidays and the days away outlined rather than told by colour alone - beside the year before up to the same day, and both month by month as figures |
+| Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
+| Days away | Leave, half a day of it, sick days, days taken against overtime and holidays that hold only where somebody works, recorded over a range - but only on the days the planned week asks something of, so a fortnight of leave is its ten working days - and named in the calendar and on the week grid. From the day every working day counts from, each takes its part off what the day asks |
+| Leave | Days of leave a year, from a year on, and for each year what is left of them: what the year gives, what the year before left over - carried in, or owed where it was overdrawn - and what is taken and still planned, counted from the days of leave recorded on working days |
+| Public holidays | The public holidays of every German state, worked out in the binary rather than fetched from anywhere. The installation chooses a state under *Settings*, and anybody can choose another - or none - under *My account*. They are named in the calendar and on the week, leave is not recorded on them, and from the day every working day counts from they ask nothing |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
+| Installable | A manifest and icons per installation - its own name and logo - so the page installs as an app on a telephone or a desktop, with shortcuts to the time entries, the calendar and the overtime. Browsers offer this over HTTPS or on localhost only |
 | Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |
 
 ## Access control
@@ -449,6 +462,11 @@ and 80px on a 360px one, on every screen in the application. Behind the burger
 they are a list, one per line, which says how many there are. It closes on
 choosing a point, on Escape, and on a press anywhere else.
 
+**The greeting shows this week** to somebody who books time: today's hours
+against today's target with a running clock counted in, the week's total, and a
+bar per day drawn against that day's own target - the days come from
+`/me/days`, which answers every day of a range, the empty ones included.
+
 **The greeting shows the last few entries** to somebody who books time — a
 bounded ninety-day window rather than a whole history, because a greeting has no
 business downloading three years of a working life to show five lines of it. The
@@ -525,6 +543,58 @@ can be revoked at any time.
 Interactive documentation is at **`/api-docs`**, and the OpenAPI specification
 it renders is at `/openapi.json` — load that into Swagger UI, Postman or
 Insomnia if you prefer those.
+
+## Your own record of your working time
+
+Hours booked on projects say what the time went on; they do not say when it was
+spent, and since the Federal Labour Court's decision of 13 September 2022 (1 ABR
+22/21) a record of working time in Germany has to show when each day began and
+ended. Under the calendar, *Working time* keeps that: for each day, when it began,
+when it finished and how long its breaks were, as the clock showed them, with what
+that comes to and the hours booked on projects beside it. A day booked
+on with nothing recorded is listed too, so a month with a gap in it shows the gap.
+A stopwatch running on the day offers its start as the day's, and the month leaves
+as a PDF.
+
+It is each person's own record, kept for themselves. There is no view of anybody
+else's working time, for the reason there is none of anybody else's hours, so this
+documents one's own time rather than serving as an employer's time-keeping system.
+A night that runs past midnight is recorded as the two days it falls on.
+
+## Your days in your own calendar
+
+Under **My account**, *Calendar subscription* makes an address a calendar
+program subscribes to - Outlook, Google Calendar, the calendar on a telephone.
+Every day you booked hours on is a whole day there saying how many, with each
+entry written under it, and every day you recorded yourself away is one saying
+why: the year either side of today, in the language you read the application
+in. Every event is marked free, so booked hours never make you look busy to
+whoever reads your free time.
+
+A calendar program can send nothing but the address, so the key is in the
+address, and that decides the rest:
+
+- **It is a key of its own, not an API token.** It reads your days and nothing
+  else, and never more than you could read on your own screen: it stops
+  answering when your role no longer lets you read your own entries, and while a
+  reset password waits to be chosen. Whatever the reason, it answers 404 and
+  says nothing more.
+- **It is shown once.** Only a hash of it is kept, as with a token. Making a new
+  address takes the old one back at once, and so does removing it - which is
+  what to do if anybody may have seen it. The card says when the address was
+  last read, which is how to tell whether a calendar is reading it at all.
+- **It is hidden in the log.** Every reading is logged under its address, so the
+  process log writes `gtrcal_[hidden]` in place of the key - on the console as
+  well as in the log viewer - and whoever reads the log learns that a calendar
+  was read, not how to read it. Traces and metrics name the route, never the
+  address.
+
+Google Calendar and Outlook on the web fetch the address from their own
+servers, so for them the installation has to be reachable from the internet; a
+calendar on a telephone or a computer fetches it from wherever that device is,
+over a VPN for example. How often it is fetched again is the calendar program's
+choice: the feed asks for every hour, and Google takes up to a day whatever it
+is asked.
 
 ## Security
 
@@ -772,6 +842,45 @@ many accounts and time entries it took or brought. It names nobody — the peopl
 a run removed are the people the deletion erased — and the log, which does name
 them, can be switched off by its level; this list cannot.
 
+## Signing in through your organisation's provider
+
+Under **Settings**, *Sign-in provider (OpenID Connect)* points the installation
+at a provider - Keycloak, Authentik, Entra ID, Google - by its issuer address,
+the client ID and secret it registered this installation as, and the name the
+sign-in form calls it by. The card shows the address to register at the
+provider for sending people back: this installation, followed by
+`/sign-in/openid`. *Test the provider* reads its discovery document before
+anybody depends on it.
+
+**Nobody is signed in by an address.** An identity at the provider opens an
+account only once that account's owner has linked it, under **My account**,
+while signed in - with their password and its second factor. No account is
+matched on the address a provider reports, and none is ever made for somebody
+the provider knows: an installation whose accounts its administrator makes
+should not have them made by whoever can sign in at Google. From then on the
+provider's sign-in is theirs to use instead of the password, with the
+provider's own second factor; the password keeps working beside it, and
+*Unlink* takes the link away.
+
+What holds the round trip together:
+
+- **The browser that left is the one that comes back.** The round's state is
+  kept in a cookie only this installation can set, so a code the provider sent
+  one browser back with cannot sign another one in - which would otherwise let
+  somebody have another person's browser signed in as them.
+- **Only what the provider signed is believed.** The code is traded with the PKCE
+  verifier the round was begun with, and the identity token counts only when it
+  carries the provider's published signature, this installation's client, a
+  time that has not passed and the round's own nonce.
+- **The built-in administrator and directory accounts stay on their passwords**,
+  for the reasons a passkey is refused them: the first is the guaranteed way
+  back in, and the second has to go through the directory, which is where an
+  organisation ends somebody's access.
+- **A provider is reached over HTTPS**, unless it runs on this machine: over plain
+  HTTP anybody on the way could answer for it and sign anybody in as anybody.
+  The client secret is sealed with `SECRET_KEY` like the directory's bind
+  password.
+
 ## Overtime
 
 Every user has a **daily target** (the basis for overtime) and a **daily maximum**
@@ -784,10 +893,27 @@ own day shorter than the installation allows, because that is your time; you can
 raise it past what the installation allows, because that ceiling is configuration and
 configuration is the administrator's.
 
-The balance is the sum of `booked − target` over the days that **have
-bookings**. Days without bookings deliberately do not count: without a holiday
-and leave calendar — which this application does not have — weekends and time
-off would otherwise accumulate as a growing deficit.
+The balance is the sum of `booked − target` over the days that count, and which
+days count is each person's choice of a day under *My account*. Until one is
+chosen, only the days that **have bookings** count — the rule from before there
+was a holiday and leave calendar, kept so that a month already behind somebody
+does not turn into a deficit the moment holidays and absences become known.
+From the chosen day on, **every working day** up to today counts, booked or not,
+and asks what its week plans less what a public holiday or an absence takes off
+it: nothing on a public holiday, a day of leave, a sick day or a holiday that
+holds only where somebody works; half on half a day of leave; the whole day on
+a day off against overtime, which is what takes it off the balance. A day after
+today counts once something is booked on it. The overtime table names the
+holiday or the absence on each day that asks less, and says which rule counted.
+
+What a day asks is the **week planned** for it. Under *My account* a week is
+planned as seven figures, Monday first, from a day on: a later plan takes over
+from its own day, and the weeks before it keep the plan that was in force then,
+so going part time does not rewrite last month. Without a plan the daily target
+applies from Monday to Friday and the weekend asks nothing - so hours worked on a
+Saturday count as overtime. Every booked day used to be measured against the full
+daily target whichever day it was, which stood a Saturday's work in the balance as
+a shortfall.
 
 It is your own balance. Somebody else's is their recorded time, totalled, so it
 takes the same right as reading their entries — and the team-wide overview that used
@@ -814,7 +940,10 @@ own.
 ## Projects
 
 Projects are optional on a time entry: hours can be recorded first and
-categorised later, or left uncategorised.
+categorised later, or left uncategorised. The entry list counts the ones still
+waiting for a project and leads to them, and several are given a project at once
+from the bar that appears when rows are ticked - each through the same check a
+single entry's transfer makes.
 
 **A project belongs to one person.** Only its owner sees it, only its owner books
 on it, and that includes the administrator — whose own projects are equally its own
@@ -830,6 +959,13 @@ held the old one holds `projects:write`, which an upgrade takes care of.
 
 A start date is optional, for the same reason: a project is one person's way of
 organising their hours, not a plan somebody signed off.
+
+That stays true of an **hour budget**, which a project may carry: how many hours
+its owner means to spend on it, set by them, seen by nobody else and signed off by
+nobody. The project list says how much of it the hours booked so far use, and marks
+it from four fifths and again past the whole; the booking that takes a project past
+either says so once, and the evaluation of one project names its budget beside its
+total. A budget of nothing takes it off.
 
 ## Spreadsheets
 
@@ -1422,6 +1558,10 @@ The server enforces these; the interface merely also hides what is not allowed:
 - A role still assigned to someone cannot be deleted.
 - A project is invisible to everyone but its owner, and asking for one that is not
   yours answers `404` rather than `403`.
+- A correction keeps what the entry said before it, every time something in it
+  changes, and only the entry's owner can read that history - anybody else is told
+  the entry is not there. A save that changes nothing keeps nothing, and deleting an
+  entry deletes its history with it.
 
 ## Development
 

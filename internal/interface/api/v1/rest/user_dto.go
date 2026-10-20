@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/common"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -22,6 +23,10 @@ type UserResponse struct {
 	// Configured values; 0 means "instance default".
 	DailyTargetHours float64 `json:"dailyTargetHours"`
 	MaxDailyHours    float64 `json:"maxDailyHours"`
+
+	// EveryDayCountsFrom is the day from which every working day counts towards
+	// the overtime balance, null while only the days booked on do.
+	EveryDayCountsFrom *Date `json:"everyDayCountsFrom"`
 
 	TOTPEnabled bool `json:"totpEnabled"`
 
@@ -112,6 +117,11 @@ type SetPasswordRequest struct {
 type WorkingTimesRequest struct {
 	DailyTargetHours *float64 `json:"dailyTargetHours"`
 	MaxDailyHours    *float64 `json:"maxDailyHours"`
+
+	// EveryDayCountsFrom is the day from which every working day counts. Absent
+	// leaves it alone and present but empty takes it off again, which is how a
+	// date field that has been cleared arrives.
+	EveryDayCountsFrom *Date `json:"everyDayCountsFrom"`
 }
 
 // ChangePasswordRequest changes the caller's own password.
@@ -155,7 +165,18 @@ func newUserResponse(r *common.UserResult, instanceTimezone string) UserResponse
 		InstanceTimezone:   model.EffectiveTimezoneName("", instanceTimezone),
 		DailyTargetHours:   r.DailyTargetHours,
 		MaxDailyHours:      r.MaxDailyHours,
+		EveryDayCountsFrom: optionalDate(r.EveryDayCountsFrom),
 	}
+}
+
+// optionalDate is a day that may be absent, as the wire carries one: null rather
+// than the zero date.
+func optionalDate(day *time.Time) *Date {
+	if day == nil {
+		return nil
+	}
+
+	return &Date{Time: *day}
 }
 
 // InstanceTimezoneFunc reports the instance-wide zone.
@@ -197,6 +218,7 @@ func newUserResponseFromModel(u *model.User, instanceTimezone string) UserRespon
 		TourSeen:           u.TourSeen,
 		EffectiveTimezone:  model.EffectiveTimezoneName(u.Timezone, instanceTimezone),
 		InstanceTimezone:   model.EffectiveTimezoneName("", instanceTimezone),
+		EveryDayCountsFrom: optionalDate(u.EveryDayCountsFrom),
 	}
 }
 
@@ -253,6 +275,11 @@ type OvertimeDayResponse struct {
 	Booked  float64 `json:"booked"`
 	Target  float64 `json:"target"`
 	Balance float64 `json:"balance"`
+
+	// Absence and Holiday say why the day asks less than its week plans, where
+	// something does.
+	Absence string `json:"absence,omitempty"`
+	Holiday string `json:"holiday,omitempty"`
 }
 
 // OvertimeResponse is a user's overtime balance over a period.
@@ -264,6 +291,10 @@ type OvertimeResponse struct {
 
 	DailyTarget float64               `json:"dailyTarget"`
 	Days        []OvertimeDayResponse `json:"days"`
+
+	// EveryDayCountsFrom is the day from which every working day counts, null
+	// while only the days booked on do.
+	EveryDayCountsFrom *Date `json:"everyDayCountsFrom"`
 
 	TotalBooked  float64 `json:"totalBooked"`
 	TotalTarget  float64 `json:"totalTarget"`

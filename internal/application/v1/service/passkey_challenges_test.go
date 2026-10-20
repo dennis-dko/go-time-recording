@@ -14,7 +14,7 @@ import (
 // expired challenge left where it is by a start that came too soon after the
 // last sweep, and taken away by the first start after the interval.
 func TestAStartSweepsTheExpiredChallengesOnlyWhenASweepIsDue(t *testing.T) {
-	var store challenges
+	store := pendingStore[webauthn.SessionData]{lifetime: challengeLifetime}
 
 	start := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
 
