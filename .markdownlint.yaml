@@ -49,3 +49,15 @@ MD029: false
 # counts nesting levels and has no way to say "align with the ordered item above",
 # so what it reports here is the document being right.
 MD007: false
+
+# MD033 is inline HTML, and the README needs a little of it.
+#
+# The README shows the application rather than describing it, and GitHub's
+# Markdown has no syntax for three things that takes: a picture that follows the
+# reader's light or dark theme, pictures side by side with a caption under each,
+# and a centred heading with the mark above it. <picture>, a table of cells and
+# an aligned paragraph are how GitHub offers them, and its sanitiser keeps these
+# elements. Everything else is still reported, so a page reaching for HTML where
+# Markdown has an answer still hears about it.
+MD033:
+  allowed_elements: [a, b, br, code, h1, i, img, p, picture, source, table, td, tr]
