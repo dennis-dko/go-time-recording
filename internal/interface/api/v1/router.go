@@ -30,6 +30,7 @@ type Handlers struct {
 	Vacation   *rest.VacationHandler
 	Calendar   *rest.CalendarFeedHandler
 	OpenID     *rest.OpenIDHandler
+	WorkDays   *rest.WorkDayHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -172,6 +173,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/absences", h.Absences.List)
 	app.POST(base+"/me/absences", h.Absences.Save)
 	app.DELETE(base+"/me/absences/{day}", h.Absences.Delete)
+
+	// When somebody worked, a day at a time - theirs, like their entries.
+	app.GET(base+"/me/workdays", h.WorkDays.List)
+	app.PUT(base+"/me/workdays/{date}", h.WorkDays.Record)
+	app.DELETE(base+"/me/workdays/{date}", h.WorkDays.Remove)
 
 	// A year's leave: what it gives, what was carried, taken and planned.
 	app.GET(base+"/me/vacation", h.Vacation.Year)

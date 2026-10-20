@@ -566,6 +566,7 @@ func main() {
 	vacationRepo := sqldb.NewVacationRepository(db, cfg.Dialect)
 	calendarFeedRepo := sqldb.NewCalendarFeedRepository(db, cfg.Dialect)
 	identityRepo := sqldb.NewOpenIDIdentityRepository(db, cfg.Dialect)
+	workDayRepo := sqldb.NewWorkDayRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
@@ -665,6 +666,7 @@ func main() {
 	templates := appservice.NewTemplateService(templateRepo, projectRepo)
 	absences := appservice.NewAbsenceService(absenceRepo, userRepo, scheduleRepo, regions)
 	leave := appservice.NewVacationService(vacationRepo, absenceRepo, userRepo, scheduleRepo, regions, today)
+	workDays := appservice.NewWorkDayService(workDayRepo, timesheetRepo)
 
 	// What this installation is called in a language, wherever it has to name
 	// itself: the prompt a passkey device shows, the foot of an exported document,
@@ -1019,6 +1021,7 @@ func main() {
 		Holidays:   rest.NewHolidayHandler(sessions, settingsService, authorizer),
 		Vacation:   rest.NewVacationHandler(leave, authorizer, instanceTimezone),
 		Calendar:   rest.NewCalendarFeedHandler(calendarFeeds, authorizer),
+		WorkDays:   rest.NewWorkDayHandler(workDays, authorizer, instanceTimezone),
 		Statistics: rest.NewStatisticsHandler(statistics, authorizer, instanceTimezone),
 		Workbook:   rest.NewWorkbookHandler(workbook, authorizer),
 		Sheets:     rest.NewSheetHandler(projectSheets, userSheets, roleSheets, authorizer).WithTimezone(instanceTimezone),

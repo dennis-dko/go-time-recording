@@ -135,6 +135,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261020030000: {UP: func(d migration.Datasource) error {
 			return linkOpenIDIdentities(d, dialect)
 		}},
+		20261020040000: {UP: func(d migration.Datasource) error {
+			return recordWorkingTimes(d, dialect)
+		}},
 	}
 }
 
@@ -1747,5 +1750,22 @@ func linkOpenIDIdentities(d migration.Datasource, dialect string) error {
 		subject VARCHAR(255) NOT NULL,
 		created_at %s NOT NULL,
 		UNIQUE (issuer, subject)
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
+}
+
+// recordWorkingTimes keeps when people worked, a day at a time: when they began,
+// when they finished and how long their breaks were, in minutes on the clock.
+//
+// The person and the day are unique together, so a day has one record, and that
+// is also the index every read goes through.
+func recordWorkingTimes(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE work_days (
+		%s,
+		user_id %s NOT NULL REFERENCES users(id),
+		day %s NOT NULL,
+		start_minute INTEGER NOT NULL,
+		end_minute INTEGER NOT NULL,
+		break_minutes INTEGER NOT NULL,
+		UNIQUE (user_id, day)
 	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
 }

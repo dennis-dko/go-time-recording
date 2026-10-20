@@ -453,6 +453,9 @@ const FIELD_NAMES = {
   clientId: 'Client ID',
   issuer: 'Issuer address',
   label: 'Name on the sign-in form',
+  start: 'Start',
+  end: 'End',
+  breakMinutes: 'Breaks (minutes)',
   day: 'Day',
   days: 'Days of leave a year',
   defaultRole: 'Default role',
@@ -3982,6 +3985,7 @@ const TRANSLATIONS = {
     'entity.absence': 'Abwesenheit',
     'entity.feed': 'Kalender-Abo',
     'entity.identity': 'Verknüpfung',
+    'entity.workday': 'Arbeitstag',
     'entity.entitlement': 'Urlaubsanspruch',
     'entity.session': 'Sitzung',
     'entity.timesheet': 'Zeiteintrag',
@@ -4253,6 +4257,7 @@ const TRANSLATIONS = {
     'field.issuer': 'Adresse des Ausstellers',
     'field.clientId': 'Client-ID',
     'field.label': 'Name im Anmeldeformular',
+    'field.breakMinutes': 'Pausen (Minuten)',
     'field.everyDayCountsFrom': 'Jeder Arbeitstag zählt ab',
     'field.days': 'Urlaubstage pro Jahr',
     'field.fromYear': 'Ab dem Jahr',
@@ -4536,6 +4541,16 @@ const TRANSLATIONS = {
     'admin.openidLabel': 'Name im Anmeldeformular',
     'admin.openidRedirect': 'Rücksprungadresse',
     'admin.openidTest': 'Anbieter prüfen',
+    'work.title': 'Arbeitszeit',
+    'work.hint': 'Wann du begonnen und aufgehört hast und wie lang deine Pausen waren, Tag für Tag – deine eigene Aufzeichnung deiner Arbeitszeit, neben den Stunden, die du auf Projekte gebucht hast. Niemand sonst sieht sie.',
+    'work.worked': 'Gearbeitet',
+    'work.booked': 'Gebucht',
+    'work.empty': 'In diesem Monat ist nichts erfasst oder gebucht.',
+    'work.total': 'Gearbeitet {0}, gebucht {1}',
+    'work.removed': 'Arbeitszeit zurückgenommen',
+    'work.saved': 'Arbeitszeit erfasst',
+    'work.filename': 'arbeitszeit',
+    'work.documentCaption': 'Eine Aufzeichnung, die ihre Inhaberin oder ihr Inhaber für sich selbst führt: wann jeder Tag begann und endete, seine Pausen und die darauf gebuchten Stunden.',
     'feed.title': 'Kalender-Abo',
     'feed.hint': 'Deine gebuchten Stunden Tag für Tag und die Tage, an denen du abwesend bist, in Outlook, Google oder auf dem Telefon – neben deinen Terminen. Die Adresse ist ein Schlüssel dazu: Wer sie hat, kann sie lesen. Deshalb wird sie nur einmal angezeigt, und eine neue Adresse nimmt die alte zurück.',
     'feed.reach': 'Google und Outlook im Web lesen die Adresse von ihren eigenen Servern aus, dafür muss diese Installation aus dem Internet erreichbar sein. Ein Kalender auf dem Telefon oder Rechner liest sie von dort, wo das Gerät gerade ist.',
@@ -6838,6 +6853,9 @@ async function loadCalendar() {
   const marks = new Map((month?.days ?? []).map((day) => [day.date, day]));
 
   renderCalendarGrid(first, last, byDay, marks);
+
+  // And the month's working time, which follows the arrows the calendar does.
+  await loadWorkDays();
 }
 
 function renderCalendarGrid(first, last, byDay, marks) {
@@ -7774,6 +7792,146 @@ function wireOpenID() {
   $('#openid-test').addEventListener('click', () => {
     runConnectionTest($('#openid-test-result'), () => api('/settings/openid/test',
       { method: 'POST', body: JSON.stringify({ issuer: openIDPayload().issuer }) }));
+  });
+}
+
+// ------------------------------------------------------------ working time
+
+/** The month of working days last loaded, which the document is made from. */
+let workDays = null;
+
+/**
+ * When the days of the calendar's month began and finished, beside the hours
+ * booked on them. A day booked on with no times recorded is among them, so the
+ * record shows where it has a gap.
+ */
+async function loadWorkDays() {
+  if (!can('timesheets:read:own')) return;
+
+  const first = currentCalendarMonth();
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+  const span = { from: ISO_DAY(first), to: ISO_DAY(last) };
+
+  const month = await api(`/me/workdays?${new URLSearchParams(span)}`);
+
+  // Not drawn for a month the arrows have already left, as the calendar is not.
+  if (calendarMonth !== first) return;
+
+  workDays = month;
+  redrawable('workdays', drawWorkDays);
+
+  const form = $('#form-workday');
+  if (form && !beingEdited(form)) {
+    if (!form.elements.date.value) setDateField(form.elements.date, todayISO());
+
+    proposeTheClocksStart(form);
+  }
+}
+
+function drawWorkDays() {
+  const days = workDays?.days ?? [];
+  const writes = can('timesheets:write:own');
+
+  const rows = days.map((day) => el('tr', { class: day.recorded ? '' : 'unrecorded' },
+    el('td', { text: fmtDate(day.date) }),
+    el('td', { text: day.recorded ? day.start : '–' }),
+    el('td', { text: day.recorded ? day.end : '–' }),
+    el('td', { class: 'num', text: day.recorded ? String(day.breakMinutes) : '–' }),
+    el('td', { class: 'num', text: day.recorded ? fmtHours(day.workedHours) : '–' }),
+    el('td', { class: 'num', text: fmtHours(day.bookedHours) }),
+    el('td', { class: 'actions' }, ...(writes ? workDayActions(day) : [])),
+  ));
+
+  fillTable($('#table-workdays tbody'), rows, 7,
+    t('work.empty', 'Nothing recorded or booked this month.'));
+
+  $('#workday-total').textContent = days.length
+    ? fillIn(t('work.total', 'Worked {0}, booked {1}'),
+      [fmtHours(workDays.totalWorked), fmtHours(workDays.totalBooked)])
+    : '';
+}
+
+/** What can be done with a day: correct it, and take back what was recorded. */
+function workDayActions(day) {
+  const correct = el('button', { type: 'button', class: 'link', text: t('action.edit', 'edit') });
+  correct.addEventListener('click', () => fillTheWorkDayForm(day));
+
+  if (!day.recorded) return [correct];
+
+  return [correct, deleteButton({
+    label: fmtDate(day.date),
+    path: `/me/workdays/${day.date}`,
+    message: t('work.removed', 'Working time taken back'),
+    after: loadWorkDays,
+  })];
+}
+
+/** Puts a day into the form, to be corrected or recorded at last. */
+function fillTheWorkDayForm(day) {
+  const form = $('#form-workday');
+
+  setDateField(form.elements.date, day.date);
+  form.elements.start.value = day.start ?? '';
+  form.elements.end.value = day.end ?? '';
+  form.elements.breakMinutes.value = String(day.breakMinutes ?? 0);
+
+  if (!day.recorded) proposeTheClocksStart(form);
+
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.start.focus();
+}
+
+/**
+ * Offers the running stopwatch's start as the day's, where the form shows that
+ * day with no start yet: the clock already knows when the work began, and
+ * somebody who started it on arriving should not have to type it again.
+ * Offered, not recorded - nothing is kept until the form is saved.
+ */
+function proposeTheClocksStart(form) {
+  if (!runningTimer || form.elements.start.value) return;
+
+  const started = wallClock(runningTimer.startedAt);
+  if (started.date === form.elements.date.value) form.elements.start.value = started.time;
+}
+
+/** The working time as the screen shows it, for the document. */
+async function workDayDocument() {
+  return {
+    title: t('work.title', 'Working time'),
+    colours: screenColours(),
+    subtitle: $('#calendar-title').textContent.trim(),
+    sections: [{
+      heading: t('work.title', 'Working time'),
+      caption: t('work.documentCaption',
+        'A record kept by its owner for themselves: when each day began and finished, its breaks, and the hours booked on it.'),
+      table: tableAsFigures($('#table-workdays')),
+    }],
+    summary: [
+      { label: t('work.worked', 'Worked'), value: fmtHours(workDays?.totalWorked ?? 0) },
+      { label: t('work.booked', 'Booked'), value: fmtHours(workDays?.totalBooked ?? 0) },
+    ],
+  };
+}
+
+function wireWorkDays() {
+  const form = $('#form-workday');
+  if (!form) return;
+
+  form.elements.date.addEventListener('change', () => proposeTheClocksStart(form));
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    const date = form.elements.date.value;
+    const body = {
+      start: form.elements.start.value,
+      end: form.elements.end.value,
+      breakMinutes: Number(form.elements.breakMinutes.value || 0),
+    };
+
+    saveForm(form, () => api(`/me/workdays/${date}`, { method: 'PUT', body: JSON.stringify(body) }),
+      t('work.saved', 'Working time recorded'),
+      loadWorkDays);
   });
 }
 
@@ -14054,7 +14212,7 @@ function wireDocumentExport(selector, name, build) {
 }
 
 /**
- * Wires all three.
+ * Wires each of them.
  *
  * The keys are written out at each call rather than gathered into a table above
  * it. A table would read better and would put every one of them beyond the
@@ -14066,6 +14224,7 @@ function wireDocumentExports() {
   wireDocumentExport('#statistics-pdf', () => t('stats.filename', 'statistics'),
     statisticsDocument);
   wireDocumentExport('#overtime-pdf', () => t('ot.filename', 'overtime'), overtimeDocument);
+  wireDocumentExport('#workday-pdf', () => t('work.filename', 'working-time'), workDayDocument);
 }
 
 // ------------------------------------------- export and import, table by table
@@ -14363,7 +14522,7 @@ function forgetEveryEvaluation() {
   }
 
   for (const said of ['#report-total', '#report-chart-caption', '#overtime-total', '#overtime-meta',
-    '#overtime-rule', '#statistics-total', '#report-budget']) {
+    '#overtime-rule', '#statistics-total', '#report-budget', '#workday-total']) {
     const node = $(said);
     if (node) node.textContent = '';
   }
@@ -16405,6 +16564,13 @@ function switchView(name) {
   // where it is looked at.
   if (name === 'overtime') mutate(loadYearMap, null, null);
 
+  // The stopwatch's start as the day's, for a clock started since the calendar
+  // was last drawn - which costs no request, the clock being in hand already.
+  if (name === 'calendar') {
+    const workday = $('#form-workday');
+    if (workday && !beingEdited(workday)) proposeTheClocksStart(workday);
+  }
+
   // The log viewer polls, so it follows the screen it lives on rather than
   // running for as long as the tab is open.
   if (logViewerActive()) schedulePoll({ immediate: true });
@@ -17187,6 +17353,7 @@ async function init() {
     wireWelcome();
     wirePasskeys();
     wireOpenID();
+    wireWorkDays();
     wireLogViewer();
     wireMaintenance();
     $('#logout').addEventListener('click', doLogout);

@@ -846,6 +846,45 @@
         <p class="muted" id="calendar-summary"></p>
       </div>
 
+      <!-- When the days of the month shown above began and finished, and how long
+           their breaks were: the person's own record of their working time, beside
+           the hours they booked. Nobody else's screen shows it. -->
+      <div class="card" id="workday-card" data-perm="timesheets:read:own">
+        <div class="card-head">
+          <h2 data-i18n="work.title">Working time</h2>
+          <div class="filters">
+            <button type="button" class="secondary" id="workday-pdf" data-i18n="action.exportPdf">Export as PDF</button>
+          </div>
+        </div>
+        <p class="muted" data-i18n="work.hint">When you began, when you finished and how long your breaks were, day by day – your own record of your working time, beside the hours you booked on projects. Nobody else sees it.</p>
+        <form method="post" id="form-workday" class="form" data-perm="timesheets:write:own">
+          <div class="grid">
+            <label data-i18n="field.date">Date<input type="date" name="date" required></label>
+            <label data-i18n="field.start">Start<input type="time" name="start" required></label>
+            <label data-i18n="field.end">End<input type="time" name="end" required></label>
+            <label data-i18n="field.breakMinutes">Breaks (minutes)<input type="number" name="breakMinutes" min="0" max="1439" step="1" value="0" required></label>
+          </div>
+          <button type="submit" data-i18n="action.save">Save</button>
+        </form>
+        <div class="table-wrap">
+          <table id="table-workdays">
+            <thead>
+              <tr>
+                <th data-i18n="field.date">Date</th>
+                <th data-i18n="field.start">Start</th>
+                <th data-i18n="field.end">End</th>
+                <th class="num" data-i18n="field.breakMinutes">Breaks (minutes)</th>
+                <th class="num" data-i18n="work.worked">Worked</th>
+                <th class="num" data-i18n="work.booked">Booked</th>
+                <th class="actions" data-i18n="field.action">Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="muted" id="workday-total"></p>
+      </div>
+
       <div class="card" id="calendar-day-card" hidden>
         <div class="card-head">
           <h2 id="calendar-day-title"></h2>

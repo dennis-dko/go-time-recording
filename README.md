@@ -298,6 +298,7 @@ exactly those checksums.
 | Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
+| Working time | When each day began and finished and how long its breaks were, beside the hours booked on it, under the calendar - a day booked on with no times recorded is shown as the gap it is, the running stopwatch's start is offered as the day's, and the month leaves as a PDF. Kept by each person for themselves; nobody else sees it |
 | Calendar subscription | An address of your own, made under *My account*, that Outlook, Google or a telephone subscribes to: every day you booked on - how many hours, and what on - and every day you are away, in the year either side of today. Read-only, shown once, and taken back by making a new one |
 | The year | Every day of a year as a tile, as dark as the hours booked on it, with the public holidays and the days away outlined rather than told by colour alone - beside the year before up to the same day, and both month by month as figures |
 | Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
@@ -541,6 +542,23 @@ can be revoked at any time.
 Interactive documentation is at **`/api-docs`**, and the OpenAPI specification
 it renders is at `/openapi.json` — load that into Swagger UI, Postman or
 Insomnia if you prefer those.
+
+## Your own record of your working time
+
+Hours booked on projects say what the time went on; they do not say when it was
+spent, and since the Federal Labour Court's decision of 13 September 2022 (1 ABR
+22/21) a record of working time in Germany has to show when each day began and
+ended. Under the calendar, *Working time* keeps that: for each day, when it began,
+when it finished and how long its breaks were, as the clock showed them, with what
+that comes to and the hours booked on projects beside it. A day booked
+on with nothing recorded is listed too, so a month with a gap in it shows the gap.
+A stopwatch running on the day offers its start as the day's, and the month leaves
+as a PDF.
+
+It is each person's own record, kept for themselves. There is no view of anybody
+else's working time, for the reason there is none of anybody else's hours, so this
+documents one's own time rather than serving as an employer's time-keeping system.
+A night that runs past midnight is recorded as the two days it falls on.
 
 ## Your days in your own calendar
 
