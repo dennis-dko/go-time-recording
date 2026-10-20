@@ -90,7 +90,10 @@ func launch(language string, more ...chromedp.ExecAllocatorOption) []chromedp.Ex
 		chromedp.WSURLReadTimeout(browserStart),
 
 		// No name resolves but localhost, which is where every case finds the
-		// application; an IP literal needs no lookup and is not affected.
+		// application - and no IP literal either, whatever one would expect: sent to
+		// a server on 127.0.0.1, Chrome answered DNS_PROBE_FINISHED_NXDOMAIN under
+		// this rule, so anything a case serves to the browser is addressed as
+		// localhost, as test/oidctest's provider is.
 		// Everything else a browser here looks up is Chrome's own business, a
 		// dozen names for each of the hundreds a run starts, and answering it
 		// inside the browser keeps all of it off the network - see
