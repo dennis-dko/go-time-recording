@@ -2,8 +2,9 @@
 
 For whoever deploys and operates the application. It assumes nothing about the
 source tree — everything here needs the files in this folder and a downloaded
-artifact. If you are changing the code, [`../README.md`](../README.md) is the
-longer document and explains why things are the way they are.
+artifact. If you are changing the code, the pages the
+[`../README.md`](../README.md#documentation) lists are the longer documentation
+and explain why things are the way they are.
 
 ## What you are deploying
 
@@ -146,9 +147,10 @@ Unblock-File .\go-time-recording_v1.2.3_windows_amd64.exe
 ```
 
 Rolling this out to more than a handful of machines is the point at which a
-certificate is worth its yearly cost — the README weighs the kinds under
-*Windows says "unknown publisher"*. A Windows service installed with `sc create`
-or NSSM does not show the dialog at all, because nobody double-clicks it.
+certificate is worth its yearly cost — the kinds are weighed under
+[*Windows says "unknown publisher"*](../doc/getting-started.md#windows-says-unknown-publisher).
+A Windows service installed with `sc create` or NSSM does not show the dialog at
+all, because nobody double-clicks it.
 
 A systemd unit that gets that right:
 
