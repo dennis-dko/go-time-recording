@@ -78,6 +78,9 @@ type Sink struct {
 	// quietPath is the route whose successful GET requests go to the console and
 	// not into the ring. See QuietRequestsTo.
 	quietPath string
+
+	// hidden are the prefixes whose following key no line carries. See Conceal.
+	hidden []string
 }
 
 // severity ranks the levels GoFr emits. Anything not in here is unranked, and
@@ -214,6 +217,74 @@ func (s *Sink) quiet(r Record) bool {
 	asked, _, _ := strings.Cut(r.request.uri, "?")
 
 	return path != "" && r.request.method == "GET" && asked == path && r.request.status < 400
+}
+
+// Conceal keeps the key that follows prefix out of every line, the console's and
+// the ring's alike.
+//
+// For a calendar feed's key, which is the whole of the address a calendar program
+// asks for. The framework writes the address of every request into the log, so
+// each reading of a feed put the key to somebody's recorded days in front of
+// whoever reads the log - the administrator in the viewer among them, who may not
+// see anybody's hours. The prefix stays and the key is replaced, so the line
+// still says that a feed was read without being the way to read it.
+func (s *Sink) Conceal(prefix string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.hidden = append(s.hidden, prefix)
+}
+
+// concealed is a line without the keys Conceal names.
+func (s *Sink) concealed(line string) string {
+	s.mu.RLock()
+	prefixes := s.hidden
+	s.mu.RUnlock()
+
+	for _, prefix := range prefixes {
+		line = withoutKeysAfter(line, prefix)
+	}
+
+	return line
+}
+
+// withoutKeysAfter replaces what follows each occurrence of prefix, as far as the
+// characters a key is written in - URL-safe base64 - reach.
+func withoutKeysAfter(line, prefix string) string {
+	if !strings.Contains(line, prefix) {
+		return line
+	}
+
+	var out strings.Builder
+
+	for {
+		at := strings.Index(line, prefix)
+		if at < 0 {
+			out.WriteString(line)
+
+			return out.String()
+		}
+
+		out.WriteString(line[:at+len(prefix)])
+		line = line[at+len(prefix):]
+
+		end := strings.IndexFunc(line, func(r rune) bool { return !keyCharacter(r) })
+		if end < 0 {
+			end = len(line)
+		}
+
+		if end > 0 {
+			out.WriteString("[hidden]")
+		}
+
+		line = line[end:]
+	}
+}
+
+// keyCharacter reports whether r can be part of a key, which is written in
+// URL-safe base64.
+func keyCharacter(r rune) bool {
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9' || r == '-' || r == '_'
 }
 
 // SetPassthroughRenderer changes what is written to the real console.
@@ -542,6 +613,10 @@ func (s *Sink) drain(from io.Reader, console io.Writer) {
 		if line == "" && err != nil {
 			return
 		}
+
+		// Before anything else reads the line, so that the record, the console and
+		// a renderer are all given it without the keys Conceal names.
+		line = s.concealed(line)
 
 		record := parse(line)
 
