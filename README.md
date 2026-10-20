@@ -291,6 +291,7 @@ exactly those checksums.
 | API access | Personal tokens, scoped by the owner's current role |
 | Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second. A start pressed late can be corrected, a clock left running is booked up to the time the work ended, and switching to the next project books the clock and carries on from the same second |
 | Finding entries | The list narrows by project, by period and by text in the description, and the export follows the same filters |
+| Hour budgets | A project may carry the hours its owner means to spend on it; the list shows how much of that is booked, marked from four fifths and past the whole, and the booking that crosses either says so |
 | Templates | A booking made often - a project, hours, a description - is kept from the form and fills it in again when chosen. Nothing is booked from a template on its own, and one whose project has closed can no longer be chosen |
 | Own statistics | Hours per day, per project and per activity, drawn as charts, for everybody rather than administrators |
 | Activities | A second way of sorting the same hours beside the project, written into the description with a # - #meeting, #review - and totalled under *Own statistics*. Nothing to set up first, and every description already written counts; an entry naming two counts towards both |
@@ -864,6 +865,13 @@ held the old one holds `projects:write`, which an upgrade takes care of.
 
 A start date is optional, for the same reason: a project is one person's way of
 organising their hours, not a plan somebody signed off.
+
+That stays true of an **hour budget**, which a project may carry: how many hours
+its owner means to spend on it, set by them, seen by nobody else and signed off by
+nobody. The project list says how much of it the hours booked so far use, and marks
+it from four fifths and again past the whole; the booking that takes a project past
+either says so once, and the evaluation of one project names its budget beside its
+total. A budget of nothing takes it off.
 
 ## Spreadsheets
 

@@ -317,3 +317,44 @@ func timesheetConditions(filter repository.TimesheetFilter) ([]string, []any) {
 func likeLiteral(text string) string {
 	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(text)
 }
+
+// HoursByProject totals somebody's hours on each project they booked on, in one
+// grouped query rather than a listing per project.
+func (r *TimesheetRepository) HoursByProject(ctx context.Context, userID uint) (map[uint]float64, error) {
+	query := "SELECT project_id, SUM(duration_hours) FROM timesheets WHERE project_id IS NOT NULL"
+
+	var args []any
+
+	if userID != 0 {
+		query += " AND user_id = ?"
+		args = append(args, userID)
+	}
+
+	rows, err := r.db.QueryContext(ctx, r.rebind(query+" GROUP BY project_id"), args...)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	totals := map[uint]float64{}
+
+	for rows.Next() {
+		var (
+			projectID uint
+			hours     float64
+		)
+
+		if err := rows.Scan(&projectID, &hours); err != nil {
+			return nil, apperror.Internal(err)
+		}
+
+		totals[projectID] = hours
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	return totals, nil
+}

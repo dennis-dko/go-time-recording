@@ -126,6 +126,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261019060000: {UP: func(d migration.Datasource) error {
 			return keepTheYearlyLeave(d, dialect)
 		}},
+		20261020010000: {UP: func(d migration.Datasource) error {
+			return giveProjectsAnHourBudget(d, dialect)
+		}},
 	}
 }
 
@@ -1697,4 +1700,10 @@ func keepTheYearlyLeave(d migration.Datasource, dialect string) error {
 		days %s NOT NULL,
 		UNIQUE (user_id, from_year)
 	)`, primaryKey(dialect), foreignKeyID(dialect), float(dialect)))
+}
+
+// giveProjectsAnHourBudget lets a project's owner say how many hours they mean to
+// spend on it. Null for every project there is, which is no budget at all.
+func giveProjectsAnHourBudget(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE projects ADD COLUMN budget_hours %s", float(dialect)))
 }

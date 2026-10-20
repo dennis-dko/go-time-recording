@@ -696,7 +696,7 @@
           "projects"
         ],
         "summary": "List projects",
-        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Needs `projects:read`.",
+        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Each carries budgetHours - how many hours you mean to spend on it, null for none - and bookedHours, how many of your own are booked on it. Needs `projects:read`.",
         "parameters": [
           {
             "name": "status",
@@ -717,7 +717,7 @@
           "projects"
         ],
         "summary": "Create a project",
-        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. Needs `projects:write`.",
+        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. `budgetHours` is optional too: how many hours you mean to spend on it, between 0 and 100000, which nobody but you sees or signs off. Needs `projects:write`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -768,7 +768,7 @@
           "projects"
         ],
         "summary": "Update a project",
-        "description": "Changes a project of your own. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, and an empty `description` empties it.",
+        "description": "Changes a project of your own. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, an empty `description` empties it, and a `budgetHours` of 0 takes the budget off.",
         "responses": {
           "200": {
             "description": "Updated"

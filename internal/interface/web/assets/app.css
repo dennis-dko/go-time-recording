@@ -1687,6 +1687,12 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 /* What is left of the year's leave, read first: the figure the card is for. */
 .vacation-left { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
 
+/* How much of a project's budget is booked, under its name: quiet until four
+ * fifths, marked from there, and in the danger colour past the whole. */
+.budget-line { color: var(--muted); display: block; font-size: 12px; }
+.budget-line.near { color: var(--text); font-weight: 600; }
+.budget-line.over { color: var(--danger); font-weight: 600; }
+
 /* The year as tiles: a column a week and a row a weekday, scrolled sideways on a
  * telephone rather than squeezed. One hue, light to dark, by the hours booked; a
  * public holiday is outlined and a day away outlined in dashes, so neither rests

@@ -102,6 +102,11 @@ type TimesheetRepository interface {
 	// came from it and which were already there.
 	SaveMany(ctx context.Context, entries []*model.Timesheet) error
 
+	// HoursByProject totals somebody's hours on each project they booked on, keyed
+	// by the project; a user of zero totals everybody's, which is what a viewer of
+	// zero - enforcement switched off - is shown everywhere else.
+	HoursByProject(ctx context.Context, userID uint) (map[uint]float64, error)
+
 	GetByID(ctx context.Context, id uint) (*model.Timesheet, error)
 
 	GetByFilter(ctx context.Context, filter TimesheetFilter) ([]*model.Timesheet, error)

@@ -564,6 +564,19 @@ func (r *TimesheetRepository) CountByFilter(
 	return total, nil
 }
 
+// HoursByProject totals somebody's hours on each project they booked on.
+func (r *TimesheetRepository) HoursByProject(_ context.Context, userID uint) (map[uint]float64, error) {
+	totals := map[uint]float64{}
+
+	for _, ts := range r.store.all() {
+		if ts.ProjectID != nil && (userID == 0 || ts.UserID == userID) {
+			totals[*ts.ProjectID] += ts.DurationHours
+		}
+	}
+
+	return totals, nil
+}
+
 // page applies a limit and an offset the way a SQL LIMIT/OFFSET would, including
 // answering with nothing for an offset past the end rather than with the last
 // page, which is what a hand-rolled slice usually gets wrong.

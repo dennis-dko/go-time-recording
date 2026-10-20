@@ -449,6 +449,7 @@ const FIELD_NAMES = {
   confirmed: 'Confirmed accounts',
   dailyTargetHours: 'Target h/day',
   date: 'Date',
+  budgetHours: 'Hour budget',
   day: 'Day',
   days: 'Days of leave a year',
   defaultRole: 'Default role',
@@ -4235,6 +4236,7 @@ const TRANSLATIONS = {
     'field.day': 'Tag',
     'field.kind': 'Grund',
     'field.region': 'Bundesland',
+    'field.budgetHours': 'Stundenkontingent',
     'field.everyDayCountsFrom': 'Jeder Arbeitstag zählt ab',
     'field.days': 'Urlaubstage pro Jahr',
     'field.fromYear': 'Ab dem Jahr',
@@ -4489,6 +4491,10 @@ const TRANSLATIONS = {
     'totp.title': 'Zwei-Faktor-Authentifizierung',
     'ts.book': 'Zeit buchen',
     'ts.unassigned': '{0} ohne Projekt',
+    'project.budgetUsed': '{0} von {1} gebucht · {2} %',
+    'project.budgetReached': '{0} hat sein ganzes Kontingent von {1} aufgebraucht.',
+    'project.budgetNear': '{0} hat vier Fünftel seines Kontingents von {1} aufgebraucht.',
+    'report.budget': 'Alle Stunden zusammen: {0} von seinem Kontingent von {1} ({2} %).',
     'tpl.fill': 'Aus einer Vorlage ausfüllen',
     'tpl.choose': 'Vorlage wählen …',
     'tpl.closed': 'ihr Projekt nimmt keine Buchungen an',
@@ -5671,6 +5677,7 @@ async function loadProjects() {
     const period = `${fmtDate(p.startDate)} – ${p.endDate ? fmtDate(p.endDate) : t('project.open', 'open')}`;
 
     const name = el('td', { class: 'text', text: p.name });
+    if (p.budgetHours) name.append(budgetLine(p));
     // No "this one is yours" shade: they all are, and a table shaded from top to
     // bottom says nothing that an unshaded one does not.
     return el('tr', {},
@@ -5705,6 +5712,7 @@ function editProject(project) {
   // nobody looks at and leaves the one everybody does reading the old date.
   setDateField(form.elements.startDate, project.startDate ?? '');
   setDateField(form.elements.endDate, project.endDate ?? '');
+  form.elements.budgetHours.value = project.budgetHours ?? '';
 
   swapTheLabel($('#project-form-title'), 'project.edit', 'Edit project');
   swapTheLabel($('#project-submit'), 'action.save', 'Save');
@@ -5713,6 +5721,52 @@ function editProject(project) {
   switchView('projects');
   form.scrollIntoView({ block: 'nearest' });
   form.elements.name.focus();
+}
+
+/**
+ * How much of a project's budget is booked, as a line under its name: marked from
+ * four fifths and again past the whole, with the share written out so the mark is
+ * never the only thing saying it.
+ */
+function budgetLine(project) {
+  const share = project.bookedHours / project.budgetHours;
+
+  return el('span', {
+    class: `budget-line ${share >= 1 ? 'over' : share >= 0.8 ? 'near' : ''}`,
+    text: fillIn(t('project.budgetUsed', '{0} of {1} booked · {2} %'),
+      [fmtHours(project.bookedHours), fmtHours(project.budgetHours), Math.round(share * 100)]),
+  });
+}
+
+/**
+ * Says so when the hours booked take a project past four fifths of its budget or
+ * past the whole of it. News, so a notice: the line in the project list says it
+ * for as long as it stays true.
+ *
+ * Measured against the hours the screen last had, which is what the person was
+ * last shown. With no budget anywhere this costs not even the request.
+ */
+async function noticeBudgets() {
+  const before = new Map(cache.projects.filter((p) => p.budgetHours).map((p) => [p.id, p.bookedHours]));
+  if (before.size === 0) return;
+
+  await loadProjects();
+
+  for (const project of cache.projects) {
+    const was = before.get(project.id);
+    if (was === undefined || !project.budgetHours) continue;
+
+    const crossed = [1, 0.8].find((share) => was < project.budgetHours * share
+      && project.bookedHours >= project.budgetHours * share);
+
+    if (crossed === 1) {
+      toast(fillIn(t('project.budgetReached', '{0} has used its whole budget of {1}.'),
+        [project.name, fmtHours(project.budgetHours)]), 'ok');
+    } else if (crossed) {
+      toast(fillIn(t('project.budgetNear', '{0} has used four fifths of its budget of {1}.'),
+        [project.name, fmtHours(project.budgetHours)]), 'ok');
+    }
+  }
 }
 
 /** Puts the form back to making one. */
@@ -5995,6 +6049,9 @@ async function reloadTimeViews() {
 
   await loadTimesheets();
   await loadCalendar();
+
+  // And the budgets the hours just booked count towards.
+  await noticeBudgets();
 }
 
 /**
@@ -13908,7 +13965,7 @@ function forgetEveryEvaluation() {
   }
 
   for (const said of ['#report-total', '#report-chart-caption', '#overtime-total', '#overtime-meta',
-    '#overtime-rule', '#statistics-total']) {
+    '#overtime-rule', '#statistics-total', '#report-budget']) {
     const node = $(said);
     if (node) node.textContent = '';
   }
@@ -16334,6 +16391,11 @@ function wireForms() {
       // it was.
       const changes = correctionFrom(form, ['description', 'endDate']);
 
+      // A number, and an emptied box as 0, which is how the server is told to take
+      // the budget off - a budget of nothing is no budget.
+      const budget = form.elements.budgetHours.value;
+      changes.budgetHours = budget === '' ? 0 : Number(budget);
+
       mutate(() => api(`/projects/${id}`,
         { method: 'PUT', body: JSON.stringify(changes) }),
       t('msg.projectSaved', 'Project saved'),
@@ -16343,6 +16405,8 @@ function wireForms() {
     }
 
     const body = formData(form);
+
+    if (body.budgetHours !== undefined) body.budgetHours = Number(body.budgetHours);
 
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.projectCreated', 'Project created'),
@@ -16413,6 +16477,20 @@ function wireForms() {
     fillTable($('#table-report tbody'), rows, 2, t('ot.empty', 'No bookings in this period.'));
     $('#report-total').textContent = t('report.total', '{0} in total')
       .replace('{0}', fmtHours(report.totalHours));
+
+    // One project with a budget: how much of it everything booked so far uses -
+    // every hour there is, not only the period's, because that is what a budget
+    // is spent by.
+    const project = projectId && projectId !== 'none'
+      ? cache.projects.find((p) => String(p.id) === String(projectId))
+      : null;
+
+    $('#report-budget').textContent = project?.budgetHours
+      ? fillIn(t('report.budget', 'All its hours together: {0} of its budget of {1} ({2} %).'),
+        [fmtHours(project.bookedHours), fmtHours(project.budgetHours),
+          Math.round((project.bookedHours / project.budgetHours) * 100)])
+      : '';
+
     $('#report-result').hidden = false;
   }
 

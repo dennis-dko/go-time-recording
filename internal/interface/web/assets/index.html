@@ -1074,6 +1074,9 @@
           <label data-i18n="field.start">Start<input type="date" name="startDate"></label>
           <label data-i18n="field.end">End<input type="date" name="endDate" data-i18n-placeholder="field.optional" placeholder="optional"></label>
           <label class="wide" data-i18n="field.description">Description<input type="text" name="description" maxlength="2000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <!-- How many hours its owner means to spend on it: theirs to set, and
+               nobody's to sign off. Emptied, it takes the budget off again. -->
+          <label data-i18n="field.budgetHours">Hour budget<input type="number" name="budgetHours" step="any" min="0" max="100000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
         </div>
         <div class="row">
           <button type="submit" id="project-submit" data-i18n="action.create">Create</button>
@@ -1232,6 +1235,7 @@
 
       <div class="card" id="report-result" hidden>
         <h2><span data-i18n="report.result">Result</span> <span id="report-total" class="pill"></span></h2>
+        <p class="muted" id="report-budget"></p>
 
         <!-- The same figures as the table below, as a picture. Which shape reads
              best depends on the question: a share of a whole wants a pie, a

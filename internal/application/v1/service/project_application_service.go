@@ -87,6 +87,10 @@ func (s *ProjectApplicationService) CreateProject(
 		return nil, err
 	}
 
+	if err := validateBudget(cmd.BudgetHours); err != nil {
+		return nil, err
+	}
+
 	createdProject, err := s.projectRepository.Save(ctx, &model.Project{
 		Name:        cmd.Name,
 		Description: cmd.Description,
@@ -94,6 +98,7 @@ func (s *ProjectApplicationService) CreateProject(
 		EndDate:     cmd.EndDate,
 		Status:      status,
 		OwnerID:     cmd.OwnerID,
+		BudgetHours: budgetOrNone(cmd.BudgetHours),
 	})
 	if err != nil {
 		return nil, err
@@ -122,9 +127,13 @@ func (s *ProjectApplicationService) GetProject(
 		return nil, err
 	}
 
-	return &query.GetProjectQueryResult{
-		Result: common.NewProjectResultFromModel(project)[0],
-	}, nil
+	result := common.NewProjectResultFromModel(project)
+
+	if err := s.withBookedHours(ctx, q.ViewerID, result); err != nil {
+		return nil, err
+	}
+
+	return &query.GetProjectQueryResult{Result: result[0]}, nil
 }
 
 // ListProjects processes the query to get all projects, optionally filtered
@@ -155,8 +164,14 @@ func (s *ProjectApplicationService) ListProjects(
 		matching = append(matching, project)
 	}
 
+	results := common.NewProjectResultFromModel(matching...)
+
+	if err := s.withBookedHours(ctx, q.ViewerID, results); err != nil {
+		return nil, err
+	}
+
 	return &query.ListProjectsQueryResult{
-		Result:     common.NewProjectResultFromModel(matching...),
+		Result:     results,
 		TotalCount: uint(len(matching)),
 	}, nil
 }
@@ -216,6 +231,14 @@ func (s *ProjectApplicationService) UpdateProject(
 		existingProject.Status = *cmd.Status
 	}
 
+	if cmd.BudgetHours != nil {
+		if err := validateBudget(cmd.BudgetHours); err != nil {
+			return nil, err
+		}
+
+		existingProject.BudgetHours = budgetOrNone(cmd.BudgetHours)
+	}
+
 	err = validateProject(existingProject.Name, existingProject.Status, existingProject.Description,
 		existingProject.StartDate, existingProject.EndDate)
 	if err != nil {
@@ -227,9 +250,53 @@ func (s *ProjectApplicationService) UpdateProject(
 		return nil, err
 	}
 
-	return &command.UpdateProjectCommandResult{
-		Result: common.NewProjectResultFromModel(updatedProject)[0],
-	}, nil
+	result := common.NewProjectResultFromModel(updatedProject)
+
+	if err := s.withBookedHours(ctx, cmd.ActorID, result); err != nil {
+		return nil, err
+	}
+
+	return &command.UpdateProjectCommandResult{Result: result[0]}, nil
+}
+
+// validateBudget refuses a budget that is no number of hours one person spends on
+// a project. Inside the range rather than outside it, so NaN is refused: see
+// validateTimesheet.
+func validateBudget(hours *float64) error {
+	if hours != nil && !(*hours >= 0 && *hours <= model.MaxBudgetHours) {
+		return apperror.InvalidFields("budgetHours")
+	}
+
+	return nil
+}
+
+// budgetOrNone stores a budget of nothing as no budget, which is what it means.
+func budgetOrNone(hours *float64) *float64 {
+	if hours == nil || *hours == 0 {
+		return nil
+	}
+
+	return hours
+}
+
+// withBookedHours fills in how many of the viewer's own hours are booked on each
+// project - theirs alone, for the reason the project report gives: nobody sees
+// what anybody else has.
+func (s *ProjectApplicationService) withBookedHours(
+	ctx context.Context,
+	viewerID uint,
+	results []*common.ProjectResult,
+) error {
+	totals, err := s.timesheetRepository.HoursByProject(ctx, viewerID)
+	if err != nil {
+		return err
+	}
+
+	for _, result := range results {
+		result.BookedHours = settled(totals[result.ID])
+	}
+
+	return nil
 }
 
 // validateStatusTransition mirrors the archiving rule enforced by the domain
