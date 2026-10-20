@@ -17,4 +17,7 @@
 //
 // Needs Chrome, Chromium or Edge. chromedp finds it; set CHROME_PATH if it is
 // somewhere unusual.
+//
+// One case is a camera rather than a check: it takes the README's pictures, and
+// only when asked - task readme:pictures.
 package browser
