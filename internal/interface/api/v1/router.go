@@ -260,6 +260,9 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 
 	app.GET(base+"/timesheets", h.Timesheets.List)
 	app.GET(base+"/timesheets/{id}", h.Timesheets.Get)
+
+	// What an entry said before each correction - its owner's to read, like the entry.
+	app.GET(base+"/timesheets/{id}/revisions", h.Timesheets.Revisions)
 	app.POST(base+"/timesheets", h.Timesheets.Create)
 	app.PUT(base+"/timesheets/{id}", h.Timesheets.Update)
 	app.DELETE(base+"/timesheets/{id}", h.Timesheets.Delete)

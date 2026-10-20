@@ -121,7 +121,20 @@ type TimesheetRepository interface {
 
 	GetAll(ctx context.Context) ([]*model.Timesheet, error)
 
+	// Update writes the corrected entry, and keeps what it said before as a
+	// revision in the same change - where it says something else now.
+	//
+	// Here rather than in whoever corrects it, for the reason the repository
+	// stamps when an entry was booked and corrected: an entry is corrected by the
+	// form, by a transfer to another project, by the week grid and by a whole
+	// selection at once, and every one of them gets its history without
+	// remembering to.
 	Update(ctx context.Context, timesheet *model.Timesheet) (*model.Timesheet, error)
 
+	// Delete removes an entry, and its revisions with it.
 	Delete(ctx context.Context, id uint) error
+
+	// Revisions returns what an entry said before each correction, the most
+	// recently replaced first.
+	Revisions(ctx context.Context, timesheetID uint) ([]model.TimesheetRevision, error)
 }

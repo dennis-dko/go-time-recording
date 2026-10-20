@@ -68,9 +68,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 		// formatting model.RoleUser onto one formatting a column type, and stayed
 		// green the whole way.
 		{
-			reference: "internal/infrastructure/persistence/migrations/migrations.go:1390",
+			reference: "internal/infrastructure/persistence/migrations/migrations.go:1396",
 			resolved:  "internal/infrastructure/persistence/migrations/migrations.go",
-			line:      1390,
+			line:      1396,
 			contains:  "WHERE name = '%s') WHERE role_id IS NULL",
 		},
 		{
@@ -98,9 +98,9 @@ func TestCLAUDEmdStillPointsAtWhatItSaysItDoes(t *testing.T) {
 			contains:  "VisibleTo(",
 		},
 		{
-			reference: "timesheet_application_service.go:279",
+			reference: "timesheet_application_service.go:303",
 			resolved:  "internal/application/v1/service/timesheet_application_service.go",
-			line:      279,
+			line:      303,
 			contains:  "VisibleTo(",
 		},
 	}

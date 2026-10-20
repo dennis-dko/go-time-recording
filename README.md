@@ -291,6 +291,7 @@ exactly those checksums.
 | API access | Personal tokens, scoped by the owner's current role |
 | Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second. A start pressed late can be corrected, a clock left running is booked up to the time the work ended, and switching to the next project books the clock and carries on from the same second |
 | Finding entries | The list narrows by project, by period and by text in the description, and the export follows the same filters |
+| Entry history | Every correction of an entry keeps the version it replaced - its day, hours, project and description, and when it was replaced - whether it was made in the form, by moving the entry to another project, on the week grid or for a whole selection at once. The entry's owner opens it from the entry; deleting the entry deletes its history |
 | Hour budgets | A project may carry the hours its owner means to spend on it; the list shows how much of that is booked, marked from four fifths and past the whole, and the booking that crosses either says so |
 | Templates | A booking made often - a project, hours, a description - is kept from the form and fills it in again when chosen. Nothing is booked from a template on its own, and one whose project has closed can no longer be chosen |
 | Own statistics | Hours per day, per project and per activity, drawn as charts, for everybody rather than administrators |
@@ -1557,6 +1558,10 @@ The server enforces these; the interface merely also hides what is not allowed:
 - A role still assigned to someone cannot be deleted.
 - A project is invisible to everyone but its owner, and asking for one that is not
   yours answers `404` rather than `403`.
+- A correction keeps what the entry said before it, every time something in it
+  changes, and only the entry's owner can read that history - anybody else is told
+  the entry is not there. A save that changes nothing keeps nothing, and deleting an
+  entry deletes its history with it.
 
 ## Development
 

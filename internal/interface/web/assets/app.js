@@ -4541,6 +4541,12 @@ const TRANSLATIONS = {
     'admin.openidLabel': 'Name im Anmeldeformular',
     'admin.openidRedirect': 'Rücksprungadresse',
     'admin.openidTest': 'Anbieter prüfen',
+    'history.open': 'Verlauf',
+    'history.title': 'Frühere Fassungen des Eintrags vom {0}',
+    'history.replaced': 'Ersetzt',
+    'history.none': 'Nach dem Buchen erneut gespeichert, ohne dass sich darin etwas geändert hat.',
+    'history.unlistedProject': 'ein Projekt, das nicht mehr geführt wird',
+    'history.close': 'Schließen',
     'work.title': 'Arbeitszeit',
     'work.hint': 'Wann du begonnen und aufgehört hast und wie lang deine Pausen waren, Tag für Tag – deine eigene Aufzeichnung deiner Arbeitszeit, neben den Stunden, die du auf Projekte gebucht hast. Niemand sonst sieht sie.',
     'work.worked': 'Gearbeitet',
@@ -6101,7 +6107,79 @@ function timesheetActions(entry) {
     }));
   }
 
+  // What it said before, for one of the reader's own entries saved again since it
+  // was booked - the only ones with a history to show, and the only ones whose
+  // history the server will show them.
+  if (entry.userId === me.user?.id && entry.updatedAt && entry.updatedAt !== entry.createdAt) {
+    actions.append(el('button', {
+      class: 'link',
+      'data-action': 'history',
+      text: t('history.open', 'history'),
+      onclick: () => mutate(() => showEntryHistory(entry), null, null),
+    }));
+  }
+
   return actions;
+}
+
+/**
+ * Shows what an entry said before each correction, the most recently replaced
+ * first: when it was replaced, and its day, project, hours and description then.
+ *
+ * A dialog over the screen rather than a card on one, because the entry is offered
+ * in two places - the list and the calendar's day - and its history belongs to
+ * neither. Read only: nothing in a history is put back by pressing it.
+ */
+async function showEntryHistory(entry) {
+  const history = (await api(`/timesheets/${entry.id}/revisions`))?.items ?? [];
+  const previous = document.activeElement;
+
+  const projectOf = (id) => (id == null
+    ? t('ts.noProject', 'No project')
+    : cache.projects.find((p) => p.id === id)?.name ?? t('history.unlistedProject', 'a project no longer listed'));
+
+  const body = history.length
+    ? el('div', { class: 'table-wrap' }, el('table', { class: 'history-table' },
+      el('thead', {}, el('tr', {},
+        el('th', { text: t('history.replaced', 'Replaced') }),
+        el('th', { text: t('field.date', 'Date') }),
+        el('th', { text: t('field.project', 'Project') }),
+        el('th', { class: 'num', text: t('field.hours', 'Hours') }),
+        el('th', { text: t('field.description', 'Description') }))),
+      el('tbody', {}, ...history.map((version) => el('tr', {},
+        el('td', { text: fmtMoment(version.replacedAt) }),
+        el('td', { text: fmtDate(version.date) }),
+        el('td', { class: 'text', text: projectOf(version.projectId) }),
+        el('td', { class: 'num', text: fmtHours(version.durationHours) }),
+        el('td', { class: 'text', text: version.description ?? '' }))))))
+    : el('p', { class: 'muted', text: t('history.none', 'Saved again since it was booked, without anything in it changing.') });
+
+  const card = el('div', { class: 'overlay-card history-card', role: 'dialog', 'aria-modal': 'true' },
+    el('h2', { text: fillIn(t('history.title', 'Earlier versions of the entry from {0}'), [fmtDate(entry.date)]) }),
+    body);
+
+  const overlay = el('div', { class: 'overlay history-overlay' }, card);
+
+  const onKey = (event) => {
+    if (event.key === 'Escape') close();
+  };
+
+  function close() {
+    document.removeEventListener('keydown', onKey);
+    overlay.remove();
+
+    if (previous instanceof HTMLElement) previous.focus();
+  }
+
+  const done = el('button', {
+    class: 'secondary', type: 'button', text: t('history.close', 'Close'), onclick: close,
+  });
+
+  card.append(el('div', { class: 'row confirm-actions' }, done));
+
+  document.addEventListener('keydown', onKey);
+  document.body.append(overlay);
+  done.focus();
 }
 
 /**
@@ -10133,6 +10211,7 @@ function handBackTheScreen(message) {
   // is up. If anything ever did, the session would be genuinely gone and putting
   // the sign-in screen within reach is the right answer anyway.
   for (const overlay of $$('.overlay')) overlay.hidden = true;
+  for (const history of $$('.history-overlay')) history.remove();
 
   // And the notices in the corner, which belong to the session they were raised
   // in. One lingers for up to twenty seconds and the stack sits above the sign-in

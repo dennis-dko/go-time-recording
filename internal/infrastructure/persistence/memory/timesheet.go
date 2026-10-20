@@ -2,8 +2,10 @@ package memory
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -11,7 +13,15 @@ import (
 )
 
 // TimesheetRepository is an in-memory repository.TimesheetRepository.
-type TimesheetRepository struct{ store *store[model.Timesheet] }
+type TimesheetRepository struct {
+	store *store[model.Timesheet]
+
+	// revisions is every entry's history, under its own lock: the store's guards
+	// the entries, and a correction reads one before the history is written.
+	mu           sync.Mutex
+	revisions    []model.TimesheetRevision
+	nextRevision uint
+}
 
 // NewTimesheetRepository creates an empty in-memory timesheet repository.
 func NewTimesheetRepository() *TimesheetRepository {
@@ -158,15 +168,67 @@ func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timeshe
 	corrected := *timesheet
 	corrected.UpdatedAt = time.Now().UTC().Truncate(time.Second)
 
-	if existing, err := r.store.get(timesheet.ID); err == nil {
-		corrected.CreatedAt = existing.CreatedAt
+	before, err := r.store.get(timesheet.ID)
+	if err == nil {
+		corrected.CreatedAt = before.CreatedAt
 	}
 
-	return r.store.update(timesheet.ID, &corrected)
+	updated, err := r.store.update(timesheet.ID, &corrected)
+	if err != nil {
+		return nil, err
+	}
+
+	if !before.Says(timesheet) {
+		r.mu.Lock()
+		r.nextRevision++
+
+		kept := model.RevisionOf(before, corrected.UpdatedAt)
+		kept.ID = r.nextRevision
+		r.revisions = append(r.revisions, kept)
+		r.mu.Unlock()
+	}
+
+	return updated, nil
 }
 
 func (r *TimesheetRepository) Delete(_ context.Context, id uint) error {
-	return r.store.delete(id)
+	if err := r.store.delete(id); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.revisions = slices.DeleteFunc(r.revisions, func(revision model.TimesheetRevision) bool {
+		return revision.TimesheetID == id
+	})
+
+	return nil
+}
+
+func (r *TimesheetRepository) Revisions(_ context.Context, timesheetID uint) ([]model.TimesheetRevision, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var history []model.TimesheetRevision
+
+	for _, revision := range r.revisions {
+		if revision.TimesheetID == timesheetID {
+			history = append(history, revision)
+		}
+	}
+
+	// The most recently replaced first, as the SQL repository's ORDER BY returns
+	// them - by when, and by which was kept last for two in the same second.
+	slices.SortStableFunc(history, func(a, b model.TimesheetRevision) int {
+		if order := b.ReplacedAt.Compare(a.ReplacedAt); order != 0 {
+			return order
+		}
+
+		return int(b.ID) - int(a.ID)
+	})
+
+	return history, nil
 }
 
 // SaveMany writes several entries.

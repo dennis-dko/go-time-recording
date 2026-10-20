@@ -1946,6 +1946,33 @@
         }
       }
     },
+    "/timesheets/{id}/revisions": {
+      "get": {
+        "tags": [
+          "timesheets"
+        ],
+        "summary": "What an entry said before each correction",
+        "description": "Answers {\"items\": [{\"date\", \"durationHours\", \"projectId\", \"description\", \"replacedAt\"}], \"totalCount\"}, the most recently replaced version first. Every correction that changes the day, the hours, the project or the description keeps the version it replaced - through the form, a transfer to another project, the week grid or a whole selection at once; a save that changes none of them keeps nothing. The entry's owner's only: anybody else is answered 404, as about the entry itself. Deleting the entry deletes its history with it. projectId names the project as it was, which may since have been deleted.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "No such entry of yours"
+          }
+        }
+      }
+    },
     "/me/workdays": {
       "get": {
         "tags": [

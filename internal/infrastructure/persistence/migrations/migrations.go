@@ -138,6 +138,12 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261020040000: {UP: func(d migration.Datasource) error {
 			return recordWorkingTimes(d, dialect)
 		}},
+		20261020050000: {UP: func(d migration.Datasource) error {
+			return keepWhatEntriesSaidBefore(d, dialect)
+		}},
+		20261020060000: {UP: func(d migration.Datasource) error {
+			return findAnEntrysHistoryByTheEntry(d)
+		}},
 	}
 }
 
@@ -1768,4 +1774,31 @@ func recordWorkingTimes(d migration.Datasource, dialect string) error {
 		break_minutes INTEGER NOT NULL,
 		UNIQUE (user_id, day)
 	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
+}
+
+// keepWhatEntriesSaidBefore keeps every version of an entry a correction replaced:
+// its day, hours, project and description, and when it was replaced.
+//
+// The project is a number and not a reference: a version can name a project the
+// entry has since been moved off and its owner has since deleted, and a reference
+// would forbid the deletion for the sake of a history nobody asked to keep it.
+func keepWhatEntriesSaidBefore(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE timesheet_revisions (
+		%s,
+		timesheet_id %s NOT NULL REFERENCES timesheets(id),
+		user_id %s NOT NULL REFERENCES users(id),
+		date %s NOT NULL,
+		duration_hours %s NOT NULL,
+		project_id %s,
+		description TEXT,
+		replaced_at %s NOT NULL
+	)`, primaryKey(dialect), foreignKeyID(dialect), foreignKeyID(dialect), timestamp(dialect),
+		float(dialect), foreignKeyID(dialect), timestamp(dialect)))
+}
+
+// findAnEntrysHistoryByTheEntry indexes the history by the entry it belongs to,
+// which is how every read of it asks - in a migration of its own, as each schema
+// statement is.
+func findAnEntrysHistoryByTheEntry(d migration.Datasource) error {
+	return execAll(d, "CREATE INDEX idx_timesheet_revisions_entry ON timesheet_revisions (timesheet_id)")
 }

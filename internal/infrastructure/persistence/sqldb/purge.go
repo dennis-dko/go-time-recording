@@ -49,6 +49,8 @@ func (r *UserRepository) PurgeUser(ctx context.Context, userID uint) error {
 			// references both, and it is not recorded time - nobody is losing
 			// anything they booked by having it go with the account.
 			{"running timers", "DELETE FROM running_timers WHERE user_id = ?"},
+			// Before the entries, which the history points at.
+			{"entry revisions", "DELETE FROM timesheet_revisions WHERE user_id = ?"},
 			{"time entries", "DELETE FROM timesheets WHERE user_id = ?"},
 			// Only private projects go. A shared project has no owner and belongs
 			// to the installation, not to the person who happened to create it.

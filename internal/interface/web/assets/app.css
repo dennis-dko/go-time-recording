@@ -729,6 +729,9 @@ button.danger:not(.link) {
 
 .confirm-card { max-width: 460px; }
 
+/* An entry's history: a table rather than a sentence, so wider than a question. */
+.history-card { max-width: min(760px, 100%); }
+
 /* The greeting.
  *
  * It has no layer at all any more. It used to be a modal over everything, which is
