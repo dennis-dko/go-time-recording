@@ -165,6 +165,8 @@ func maintenanceExempt(r *http.Request) bool {
 		return true
 	case base + "/auth/passkey", base + "/auth/passkey/login":
 		return true
+	case base + "/auth/openid", base + "/auth/openid/finish":
+		return true
 	case base + "/auth/kerberos":
 		return true
 	case base + "/me", base + "/maintenance":

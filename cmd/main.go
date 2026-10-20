@@ -35,6 +35,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/imageupdate"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/kerberos"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/openid"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
@@ -564,6 +565,7 @@ func main() {
 	absenceRepo := sqldb.NewAbsenceRepository(db, cfg.Dialect)
 	vacationRepo := sqldb.NewVacationRepository(db, cfg.Dialect)
 	calendarFeedRepo := sqldb.NewCalendarFeedRepository(db, cfg.Dialect)
+	identityRepo := sqldb.NewOpenIDIdentityRepository(db, cfg.Dialect)
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
@@ -687,6 +689,13 @@ func main() {
 
 	calendarFeeds := appservice.NewCalendarFeedService(calendarFeedRepo, userRepo, timesheetRepo,
 		absenceRepo, projectRepo, auth, today, instanceNameIn)
+
+	// Signing in through the provider configured under Settings, read per sign-in
+	// so a change there holds from the next one. Ten seconds for every request to
+	// the provider: a sign-in waits on them, and one that has stopped answering
+	// should cost a person that long and no longer.
+	openIDSignIn := appservice.NewOpenIDService(identityRepo, userRepo, settingsService.OpenID,
+		openid.New(10*time.Second))
 
 	// Through the timesheet service rather than the repository, so a timer
 	// booking meets exactly the rules a typed one meets.
@@ -1016,6 +1025,9 @@ func main() {
 		Passkeys: rest.NewPasskeyHandler(passkeys, sessions, authorizer, instanceName).
 			WithMaintenance(maintenanceState).
 			WithTimezone(instanceTimezone),
+		OpenID: rest.NewOpenIDHandler(openIDSignIn, sessions, authorizer).
+			WithMaintenance(maintenanceState).
+			WithTimezone(instanceTimezone),
 		Documents: rest.NewDocumentHandler(authorizer, instanceName).WithTimezone(instanceTimezone),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
@@ -1026,7 +1038,8 @@ func main() {
 			WithAnnouncements(hub).
 			WithLiveLogLevel(applyLogLevel, logs.Level).
 			WithRunningConnection(ds).
-			WithFileTelemetry(fileTelemetry),
+			WithFileTelemetry(fileTelemetry).
+			WithOpenIDCheck(openIDSignIn.Check),
 	})
 
 	// Expired sessions would otherwise accumulate forever.

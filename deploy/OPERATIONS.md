@@ -1066,6 +1066,35 @@ addresses is compared with the address the request arrives from, which is the
 proxy's. Active Directory issues tickets without addresses, so this only
 concerns a KDC configured to add them.
 
+## Signing in through an OpenID Connect provider
+
+Nothing here is configured in the environment: the provider is set under
+**Settings** by whoever administers the installation, and read at every sign-in.
+What the operator decides is whether the two can reach each other.
+
+- **Register a confidential client** at the provider, for the authorization code
+  flow, with the address the Settings card shows as the one to send people back
+  to - `https://<this installation>/sign-in/openid`, as the browser reaches it.
+  Behind a reverse proxy that is the proxy's address, taken from the
+  `X-Forwarded-Host` and `X-Forwarded-Proto` it sends - so it has to send both
+  (see *Behind a reverse proxy*). A request that claims another host gets an
+  address the provider was never given, and the provider refuses it.
+- **The server has to reach the provider**, not only the browser: the code is
+  traded and the provider's keys are fetched from here, each request given ten
+  seconds. A provider reachable from people's machines but not from this one
+  sends them to its sign-in and back to an error.
+- **The issuer is written exactly as the provider's tokens name it**, trailing
+  slash included where it has one - Keycloak's realm address, an Entra ID tenant's
+  `https://login.microsoftonline.com/<tenant>/v2.0`, Authentik's
+  `https://<host>/application/o/<slug>/`, `https://accounts.google.com`. Entra
+  ID's multi-tenant `common` address names no single issuer and cannot be used.
+  *Test the provider* reads the discovery document from that address and says
+  what failed.
+
+A refused round is written to the log as a warning, prefixed `signing in through
+the provider:`, with the provider's own reason - the sign-in screen says only
+that the provider did not confirm it.
+
 ## Updating from the interface
 
 *Settings* carries a **Version** card. It says what is running, what the newest

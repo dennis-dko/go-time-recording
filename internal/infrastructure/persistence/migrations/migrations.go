@@ -132,6 +132,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261020020000: {UP: func(d migration.Datasource) error {
 			return keepCalendarFeeds(d, dialect)
 		}},
+		20261020030000: {UP: func(d migration.Datasource) error {
+			return linkOpenIDIdentities(d, dialect)
+		}},
 	}
 }
 
@@ -1726,4 +1729,23 @@ func keepCalendarFeeds(d migration.Datasource, dialect string) error {
 		created_at %s NOT NULL,
 		last_read_at %s
 	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect), timestamp(dialect)))
+}
+
+// linkOpenIDIdentities keeps which account each identity at a sign-in provider is
+// linked to: the provider's issuer and the subject it gives that person.
+//
+// One identity an account, and one account an identity - both unique, so the
+// table's two lookups have their indexes from the constraints and one statement
+// makes it. The issuer is bounded at 255 like the subject the specification
+// bounds, so that the pair stays inside MySQL's index key length in four-byte
+// characters.
+func linkOpenIDIdentities(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE openid_identities (
+		%s,
+		user_id %s NOT NULL UNIQUE REFERENCES users(id),
+		issuer VARCHAR(255) NOT NULL,
+		subject VARCHAR(255) NOT NULL,
+		created_at %s NOT NULL,
+		UNIQUE (issuer, subject)
+	)`, primaryKey(dialect), foreignKeyID(dialect), timestamp(dialect)))
 }

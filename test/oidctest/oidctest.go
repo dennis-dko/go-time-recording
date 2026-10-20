@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -85,7 +86,10 @@ func Start(t testing.TB) *Provider {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	p.URL = server.URL
+	// By name rather than by the address it listens on: the browser suite lets
+	// Chrome resolve nothing but localhost, and that rule turns 127.0.0.1 away as
+	// well, so a provider the browser is sent to has to be called localhost.
+	p.URL = strings.Replace(server.URL, "127.0.0.1", "localhost", 1)
 
 	return p
 }

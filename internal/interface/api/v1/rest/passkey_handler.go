@@ -77,13 +77,7 @@ func (h *PasskeyHandler) relyingParty(c *gofr.Context) service.RelyingParty {
 	}
 
 	host := requestHost(req)
-
-	scheme := "http"
-	if isTLS(req) {
-		scheme = "https"
-	}
-
-	origin := scheme + "://" + host
+	origin := requestOrigin(req)
 
 	// The RP ID is the domain alone. A port in it is rejected by every browser,
 	// even though the origin must keep one.

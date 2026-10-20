@@ -450,6 +450,9 @@ const FIELD_NAMES = {
   dailyTargetHours: 'Target h/day',
   date: 'Date',
   budgetHours: 'Hour budget',
+  clientId: 'Client ID',
+  issuer: 'Issuer address',
+  label: 'Name on the sign-in form',
   day: 'Day',
   days: 'Days of leave a year',
   defaultRole: 'Default role',
@@ -3978,6 +3981,7 @@ const TRANSLATIONS = {
     'entity.template': 'Vorlage',
     'entity.absence': 'Abwesenheit',
     'entity.feed': 'Kalender-Abo',
+    'entity.identity': 'Verknüpfung',
     'entity.entitlement': 'Urlaubsanspruch',
     'entity.session': 'Sitzung',
     'entity.timesheet': 'Zeiteintrag',
@@ -4014,6 +4018,14 @@ const TRANSLATIONS = {
     'err.accountOfAnotherEntry': 'Das Konto unter „{0}“ gehört zu einem anderen Verzeichniseintrag, in der Regel zu jemandem, der die Adresse vorher hatte. Wem es gehört, muss die Administration klären.',
     'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
     'err.directoryAccountHasNoPasskey': 'Ein Konto aus dem Verzeichnis meldet sich mit dem Kennwort des Verzeichnisses an, damit das Verzeichnis es beenden kann.',
+    'err.adminHasNoOpenID': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit eine Installation nie von einem Anbieter abhängt.',
+    'err.directoryAccountHasNoOpenID': 'Ein Konto aus dem Verzeichnis meldet sich mit dem Kennwort des Verzeichnisses an, damit das Verzeichnis es beenden kann.',
+    'err.openidOff': 'Die Anmeldung über einen Anbieter ist ausgeschaltet.',
+    'err.openidUnreachable': 'Der Anmeldeanbieter war nicht erreichbar.',
+    'err.openidRefused': 'Der Anmeldeanbieter hat die Anmeldung nicht bestätigt.',
+    'err.openidNotLinked': 'Diese Identität ist mit keinem Konto hier verknüpft. Melde dich mit deinem Kennwort an und verknüpfe sie unter „Mein Konto“.',
+    'err.openidLinkedElsewhere': 'Diese Identität ist schon mit einem anderen Konto verknüpft.',
+    'err.openidNeedsHttps': 'Ein Anmeldeanbieter muss über HTTPS erreichbar sein.',
     'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',
     'err.adminUndeletable': 'Der eingebaute Administrator kann nicht gelöscht werden.',
     'err.archiveNeedsCompleted': 'Ein Projekt kann erst archiviert werden, wenn sein Status „{0}“ ist.',
@@ -4238,6 +4250,9 @@ const TRANSLATIONS = {
     'field.kind': 'Grund',
     'field.region': 'Bundesland',
     'field.budgetHours': 'Stundenkontingent',
+    'field.issuer': 'Adresse des Ausstellers',
+    'field.clientId': 'Client-ID',
+    'field.label': 'Name im Anmeldeformular',
     'field.everyDayCountsFrom': 'Jeder Arbeitstag zählt ab',
     'field.days': 'Urlaubstage pro Jahr',
     'field.fromYear': 'Ab dem Jahr',
@@ -4496,6 +4511,31 @@ const TRANSLATIONS = {
     'project.budgetReached': '{0} hat sein ganzes Kontingent von {1} aufgebraucht.',
     'project.budgetNear': '{0} hat vier Fünftel seines Kontingents von {1} aufgebraucht.',
     'report.budget': 'Alle Stunden zusammen: {0} von seinem Kontingent von {1} ({2} %).',
+    'openid.signIn': 'Mit {0} anmelden',
+    'openid.signInUnnamed': 'Über deine Organisation anmelden',
+    'openid.notConfirmed': 'Der Anmeldeanbieter hat die Anmeldung nicht bestätigt.',
+    'openid.linkedNow': 'Dein Konto ist verknüpft. Ab jetzt kannst du dich über deine Organisation anmelden.',
+    'openid.title': 'Anmeldung über deine Organisation',
+    'openid.hint': 'Verknüpfe dein Konto mit deiner Identität beim Anmeldeanbieter deiner Organisation und melde dich dort an statt mit deinem Kennwort – mit dem zweiten Faktor des Anbieters. Dein Kennwort funktioniert weiterhin.',
+    'openid.adminBarred': 'Der eingebaute Administrator meldet sich mit seinem Kennwort an, damit diese Installation nie von einem Anbieter abhängt, um hereinzukommen.',
+    'openid.directoryBarred': 'Dein Konto stammt aus dem Verzeichnis und meldet sich dort mit seinem Kennwort an, damit das Verzeichnis es beenden kann.',
+    'openid.linked': 'Verknüpft seit {0}.',
+    'openid.notLinked': 'Noch nicht verknüpft.',
+    'openid.link': 'Mit {0} verknüpfen',
+    'openid.linkUnnamed': 'Mit dem Konto deiner Organisation verknüpfen',
+    'openid.unlink': 'Verknüpfung lösen',
+    'openid.unlinkTitle': 'Verknüpfung lösen?',
+    'openid.unlinkText': 'Der Anbieter meldet dich danach nicht mehr an. Dein Kennwort funktioniert weiterhin.',
+    'openid.unlinked': 'Verknüpfung gelöst',
+    'admin.openid': 'Anmeldeanbieter (OpenID Connect)',
+    'admin.openidHint': 'Die Leute können sich über den Anbieter deiner Organisation anmelden – Keycloak, Authentik, Entra ID, Google – statt mit einem Kennwort, sobald jede und jeder ihr Konto unter „Mein Konto“ damit verknüpft hat. Niemand wird allein über eine Adresse angemeldet, und für niemanden, den der Anbieter kennt, wird je ein Konto angelegt. Trage diese Installation beim Anbieter mit der Rücksprungadresse unten ein.',
+    'admin.openidEnabled': 'Im Anmeldeformular anbieten',
+    'admin.openidIssuer': 'Adresse des Ausstellers',
+    'admin.openidClientId': 'Client-ID',
+    'admin.openidClientSecret': 'Client-Secret',
+    'admin.openidLabel': 'Name im Anmeldeformular',
+    'admin.openidRedirect': 'Rücksprungadresse',
+    'admin.openidTest': 'Anbieter prüfen',
     'feed.title': 'Kalender-Abo',
     'feed.hint': 'Deine gebuchten Stunden Tag für Tag und die Tage, an denen du abwesend bist, in Outlook, Google oder auf dem Telefon – neben deinen Terminen. Die Adresse ist ein Schlüssel dazu: Wer sie hat, kann sie lesen. Deshalb wird sie nur einmal angezeigt, und eine neue Adresse nimmt die alte zurück.',
     'feed.reach': 'Google und Outlook im Web lesen die Adresse von ihren eigenen Servern aus, dafür muss diese Installation aus dem Internet erreichbar sein. Ein Kalender auf dem Telefon oder Rechner liest sie von dort, wo das Gerät gerade ist.',
@@ -7524,6 +7564,219 @@ function wireTokens() {
   });
 }
 
+// ------------------------------------------------------- sign-in provider
+
+/**
+ * Where a provider sends the browser back to: a page of this interface rather
+ * than a route of the API, because it is the page that hands the code to the
+ * server - with the session cookie and the round's own cookie that a request
+ * from this page carries and an address followed from another site would not.
+ */
+const OPENID_CALLBACK = '/sign-in/openid';
+
+/** What the sign-in form offers of a provider, as the server last said. */
+let openIDOffer = { offered: false };
+
+/** Asks whether a provider is offered, and labels the sign-in form's button. */
+async function loadOpenIDOffer() {
+  try {
+    openIDOffer = (await api('/auth/openid')) ?? { offered: false };
+  } catch {
+    openIDOffer = { offered: false };
+  }
+
+  // The installation's, like its name on the same form: kept across a sign-out,
+  // and written again in a language chosen there.
+  redrawable('openid-offer', drawOpenIDOffer, { installation: true });
+}
+
+function drawOpenIDOffer() {
+  const button = $('#login-openid');
+  if (!button) return;
+
+  button.hidden = !openIDOffer.offered;
+  button.textContent = openIDOffer.label
+    ? fillIn(t('openid.signIn', 'Sign in with {0}'), [openIDOffer.label])
+    : t('openid.signInUnnamed', 'Sign in through your organisation');
+}
+
+/** Sends the browser to the provider, for a sign-in or for linking the account. */
+async function goToTheProvider(path) {
+  const { address } = await api(path, { method: 'POST' });
+
+  window.location.assign(address);
+}
+
+/**
+ * Finishes the round a provider sent the browser back from, before anything else
+ * loads, and answers what the page should say once it has.
+ *
+ * The code and the state are taken off the address at once, so that a reload,
+ * the history or a bookmark never holds them. A provider that sent the browser
+ * back without a code - the person turned back there, or it refused them - is
+ * reported in the same words as one whose code was refused here, because to the
+ * person it is the same thing.
+ */
+async function finishTheProviderRound() {
+  if (window.location.pathname !== OPENID_CALLBACK) return null;
+
+  const back = new URLSearchParams(window.location.search);
+  window.history.replaceState(null, '', '/');
+
+  const code = back.get('code');
+  const state = back.get('state');
+  const notConfirmed = t('openid.notConfirmed', 'The sign-in provider did not confirm the sign-in.');
+
+  if (!code || !state) return { problem: notConfirmed };
+
+  try {
+    const answer = await api('/auth/openid/finish', {
+      method: 'POST', body: JSON.stringify({ state, code }),
+    });
+
+    return { linked: Boolean(answer?.linked) };
+  } catch (err) {
+    return { problem: err.message || notConfirmed };
+  }
+}
+
+/**
+ * Says what the round came to, once the page has loaded: a link on the screen it
+ * was made from, and a problem in a notice over whatever screen is showing. A
+ * problem on the sign-in form is said there instead, by init.
+ */
+function sayWhatTheProviderRoundCameTo(returned) {
+  if (returned?.linked) {
+    switchView('settings');
+    toast(t('openid.linkedNow', 'Your account is linked. From now on you can sign in through your organisation.'), 'ok');
+  } else if (returned?.problem) {
+    toast(returned.problem, 'error');
+  }
+}
+
+/**
+ * Whether this account is linked to its identity at the provider.
+ *
+ * Not offered at all where no provider is configured. For the two accounts a
+ * provider never signs in - the built-in administrator and an account the
+ * directory holds - the card says why in place of its button, because a card that
+ * is simply absent cannot be told from a feature that has been taken away.
+ */
+async function loadOpenIDLink() {
+  const card = $('#openid-card');
+  if (!card) return;
+
+  // Asked again with everything else on a reload, for the reason the sign-in form
+  // asks again: the provider can have been configured since the page opened.
+  await loadOpenIDOffer();
+
+  card.hidden = !openIDOffer.offered || !me.user;
+  if (card.hidden) return;
+
+  let barred = '';
+
+  if (me.user.isSystem) {
+    barred = t('openid.adminBarred',
+      'The built-in administrator signs in with its password, so that this installation never depends on a provider to be let in.');
+  } else if (me.user.isExternal) {
+    barred = t('openid.directoryBarred',
+      'Your account comes from the directory and signs in with its password there, so that the directory can end it.');
+  }
+
+  const link = barred ? null : await api('/me/openid');
+
+  $('#openid-state').textContent = barred || (link?.linked
+    ? fillIn(t('openid.linked', 'Linked since {0}.'), [fmtMoment(link.linkedAt)])
+    : t('openid.notLinked', 'Not linked yet.'));
+
+  const button = $('#openid-link');
+  button.hidden = Boolean(barred) || Boolean(link?.linked);
+  button.textContent = openIDOffer.label
+    ? fillIn(t('openid.link', 'Link with {0}'), [openIDOffer.label])
+    : t('openid.linkUnnamed', 'Link your organisation’s account');
+
+  $('#openid-unlink').hidden = Boolean(barred) || !link?.linked;
+}
+
+/** Takes the provider card back to saying nothing about anybody's link. */
+function forgetTheOpenIDLink() {
+  const card = $('#openid-card');
+  if (!card) return;
+
+  card.hidden = true;
+  $('#openid-state').textContent = '';
+  $('#openid-link').hidden = true;
+  $('#openid-unlink').hidden = true;
+}
+
+/** Fills the settings card from the provider as stored. */
+async function loadOpenIDSettings() {
+  const form = $('#form-openid');
+  if (!form) return;
+
+  const config = await api('/settings/openid');
+
+  // What the provider has to be told, which is this installation as this browser
+  // reached it - written whatever is being typed below, since nobody types it.
+  $('#openid-redirect').value = config.redirectUri ?? '';
+
+  if (beingEdited(form)) return;
+
+  form.elements.enabled.checked = Boolean(config.enabled);
+  form.elements.issuer.value = config.issuer ?? '';
+  form.elements.clientId.value = config.clientId ?? '';
+  form.elements.label.value = config.label ?? '';
+  form.elements.clientSecret.value = '';
+}
+
+function openIDPayload() {
+  const form = $('#form-openid');
+
+  return {
+    enabled: form.elements.enabled.checked,
+    issuer: form.elements.issuer.value.trim(),
+    clientId: form.elements.clientId.value.trim(),
+    clientSecret: form.elements.clientSecret.value,
+    label: form.elements.label.value.trim(),
+  };
+}
+
+function wireOpenID() {
+  $('#login-openid').addEventListener('click', () => {
+    goToTheProvider('/auth/openid').catch((err) => showLogin(err.message));
+  });
+
+  $('#openid-link').addEventListener('click', () => {
+    mutate(() => goToTheProvider('/me/openid'), null, null);
+  });
+
+  $('#openid-unlink').addEventListener('click', async () => {
+    const unlink = await confirmDialog({
+      title: t('openid.unlinkTitle', 'Unlink your account?'),
+      text: t('openid.unlinkText', 'The provider will no longer sign you in. Your password keeps working.'),
+      confirmLabel: t('openid.unlink', 'Unlink'),
+    });
+    if (!unlink) return;
+
+    mutate(() => api('/me/openid', { method: 'DELETE' }),
+      t('openid.unlinked', 'Unlinked'),
+      loadOpenIDLink);
+  });
+
+  $('#form-openid').addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveForm(e.target,
+      () => api('/settings/openid', { method: 'PUT', body: JSON.stringify(openIDPayload()) }),
+      t('admin.saved', 'Settings saved'),
+      async () => { await loadAdmin(); await loadOpenIDOffer(); });
+  });
+
+  $('#openid-test').addEventListener('click', () => {
+    runConnectionTest($('#openid-test-result'), () => api('/settings/openid/test',
+      { method: 'POST', body: JSON.stringify({ issuer: openIDPayload().issuer }) }));
+  });
+}
+
 // ------------------------------------------------------------ calendar feed
 
 /** Whether this person has a calendar feed, as last read. */
@@ -8223,6 +8476,8 @@ async function loadAdmin() {
   if (!picker.value) picker.value = ORDINARY_ROLE;
 
   if (!picker.value) picker.selectedIndex = 0;
+
+  await loadOpenIDSettings();
 
   // The directory run belongs to the built-in administrator, because it deletes
   // the accounts the directory no longer holds along with everything they
@@ -9549,6 +9804,9 @@ function forgetTheLastAccount() {
   // with what the card said about it.
   forgetTheCalendarFeed();
 
+  // And what the provider card said about the account's link.
+  forgetTheOpenIDLink();
+
   // And any password left showing. The forms are reset on the way out, which
   // takes the value and leaves the box a text field - so the next person types
   // theirs into one that shows it.
@@ -9814,6 +10072,11 @@ function handBackTheScreen(message) {
   // last one's name.
   $('#form-login').reset();
   $('#login-totp-field').hidden = true;
+
+  // Asked again rather than kept from when the page opened: a provider an
+  // administrator configured since is otherwise missing from the form until
+  // somebody reloads it. Not awaited - the button appears when the answer does.
+  loadOpenIDOffer();
 
   showLogin(message);
 }
@@ -16431,6 +16694,7 @@ async function refreshAll() {
   await loadTokens();
   await loadCalendarFeed();
   await loadPasskeys();
+  await loadOpenIDLink();
   await loadSchedules();
   await loadTemplates();
   await loadAbsences();
@@ -16877,6 +17141,7 @@ async function init() {
   // answer decides whether a ticket is tried at all below.
   await loadPasskeySupport();
   await loadTicketSupport();
+  await loadOpenIDOffer();
   await loadMaintenance();
 
   try {
@@ -16921,6 +17186,7 @@ async function init() {
     wireTour();
     wireWelcome();
     wirePasskeys();
+    wireOpenID();
     wireLogViewer();
     wireMaintenance();
     $('#logout').addEventListener('click', doLogout);
@@ -16933,6 +17199,9 @@ async function init() {
   } catch (err) {
     toastFailure(err, t('msg.initFailed', 'Initialisation failed'));
   }
+
+  // Before the first load, which then finds the session the round opened.
+  const returned = await finishTheProviderRound();
 
   try {
     await refreshAll();
@@ -16954,8 +17223,19 @@ async function init() {
     // finishes by throwing the page away, so the answer to the button somebody
     // pressed arrives here rather than there.
     saySoAfterTheReload();
+
+    // And what a round through the provider came to, if this page is its way back.
+    sayWhatTheProviderRoundCameTo(returned);
   } catch (err) {
     afterAFailedFirstLoad(err);
+
+    // A round that signed nobody in says why on the form it leaves the person at,
+    // rather than having a ticket tried over it.
+    if (returned?.problem && !$('#login-screen').hidden) {
+      showLogin(returned.problem);
+
+      return;
+    }
 
     // Then the ticket, where the installation offers one and this tab has not
     // been told otherwise - after the form is up, so a browser without a ticket

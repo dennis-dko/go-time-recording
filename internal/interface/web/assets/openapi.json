@@ -203,6 +203,55 @@
         }
       }
     },
+    "/auth/openid": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Whether signing in through a provider is offered",
+        "description": "Answers {\"offered\": true, \"label\": \"Keycloak\"} when a provider is configured and switched on under Settings, {\"offered\": false} otherwise. Reachable without a session: the sign-in form asks it before there is anybody to ask for.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Start signing in through the provider",
+        "description": "No body. Answers {\"address\": \"https://...\"}, the provider's own sign-in to send the browser to, and sets a cookie holding the round's state, so that only this browser can finish it. The provider sends the browser back to /sign-in/openid, which is a page of the interface rather than a route of this API: the page hands the code and the state it came back with to POST /auth/openid/finish. openidOff when no provider is configured, openidUnreachable when its discovery document cannot be read.",
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "Where to send the browser"
+          }
+        }
+      }
+    },
+    "/auth/openid/finish": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Finish a round through the provider",
+        "description": "Body: {\"state\": \"...\", \"code\": \"...\"}, as the browser came back with them. Only the browser holding the round's cookie can finish it, once, within ten minutes, and with the provider that was configured when it began (attemptExpired otherwise). The code is traded with the PKCE verifier the round was begun with, and the identity token is believed only when it is signed with the provider's published key, for this installation's client, not expired and carrying the round's nonce (openidRefused otherwise). A round begun by POST /me/openid links the account whose session began it and answers in the shape GET /me/openid does; any other signs in the account the identity is linked to and answers as POST /auth/login does, setting the session cookie. An identity nobody linked opens nothing (openidNotLinked): no account is ever matched on an address or made for an identity. The built-in administrator and an account the directory holds are never signed in this way (adminHasNoOpenID, directoryAccountHasNoOpenID).",
+        "security": [],
+        "responses": {
+          "201": {
+            "description": "Signed in, or the account linked"
+          },
+          "400": {
+            "description": "attemptExpired"
+          },
+          "409": {
+            "description": "The provider refused, or the identity opens no account here"
+          }
+        }
+      }
+    },
     "/auth/logout": {
       "post": {
         "tags": [
@@ -1508,6 +1557,46 @@
         }
       }
     },
+    "/settings/openid": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "The provider people sign in through",
+        "description": "Answers {\"enabled\", \"issuer\", \"clientId\", \"label\", \"hasSecret\", \"redirectUri\"}. The client secret is never sent back; hasSecret says whether one is stored. redirectUri is the address to register at the provider: this installation as the browser asking reached it, followed by /sign-in/openid.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Configure the provider people sign in through",
+        "description": "Body: {\"enabled\", \"issuer\", \"clientId\", \"clientSecret\", \"label\"}. An empty clientSecret keeps the stored one. The issuer is the provider's address exactly as its tokens name it - Keycloak's realm address, an Entra ID tenant's v2.0 address, https://accounts.google.com - and has to be reached over HTTPS unless it is on this machine (openidNeedsHttps). The secret is sealed with SECRET_KEY where it is stored. Applies from the next sign-in.",
+        "responses": {
+          "200": {
+            "description": "The stored provider, as GET answers"
+          }
+        }
+      }
+    },
+    "/settings/openid/test": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read a provider's discovery document without saving anything",
+        "description": "Body: {\"issuer\": \"...\"}. Answers {\"ok\": true}, or {\"ok\": false, \"error\": {\"code\", \"message\", \"detail\"}} with what the provider said in detail.",
+        "responses": {
+          "201": {
+            "description": "Result; the `ok` field tells success from failure"
+          }
+        }
+      }
+    },
     "/settings/ldap/test": {
       "post": {
         "tags": [
@@ -1812,6 +1901,44 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/me/openid": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Your link to an identity at the provider",
+        "description": "Answers {\"linked\": true, \"issuer\": \"https://id.example.com\", \"linkedAt\": \"2026-10-20T09:30:00Z\"}, or {\"linked\": false}.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Start linking your account to your identity at the provider",
+        "description": "No body. Answers as POST /auth/openid does; the round, finished by the same browser in the same session, links this account to whoever signs in at the provider. From then on that identity signs this account in without its password and without its second factor - the provider asks its own. Refused for the built-in administrator and for an account the directory holds, and for an identity already linked to another account (openidLinkedElsewhere).",
+        "responses": {
+          "201": {
+            "description": "Where to send the browser"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Unlink your account from the provider",
+        "description": "The provider signs this account in no more. 404 when it is linked to nothing.",
         "responses": {
           "200": {
             "description": "Deleted"

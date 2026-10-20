@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
@@ -150,6 +152,65 @@ func TestASecondPassMovesNothing(t *testing.T) {
 	if after := storedSecret(t, db, saved.ID); after != before {
 		t.Error("an already-encrypted secret was rewritten, so every start would " +
 			"churn every row")
+	}
+}
+
+// The credentials kept inside the settings are brought under the key as well: the
+// directory's bind password, and the client secret of the provider people sign in
+// through. Each is one field of a setting stored as JSON, and only that field is
+// sealed - the rest is a setting worth being able to read when something is wrong
+// with it.
+func TestTheCredentialsInTheSettingsAreBroughtUnderTheKey(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	settings := sqldb.NewSettingsRepository(db, sqldb.DialectSQLite)
+
+	for key, value := range map[string]any{
+		model.SettingLDAPSettings: model.LDAPConfig{Host: "ldap.example.com", BindPassword: "the-bind-password"},
+		model.SettingOpenID:       model.OpenIDConfig{Issuer: "https://id.example.com", ClientSecret: "the-client-secret"},
+	} {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatalf("encode %s: %v", key, err)
+		}
+
+		if err := settings.Set(ctx, key, string(raw)); err != nil {
+			t.Fatalf("store %s in the clear: %v", key, err)
+		}
+	}
+
+	sealer := aSealer(t)
+
+	moved, err := sqldb.SealStoredSecrets(ctx, db, sqldb.DialectSQLite, sealer)
+	if err != nil {
+		t.Fatalf("bring under the key: %v", err)
+	}
+
+	if moved != 2 {
+		t.Errorf("moved %d values, want the bind password and the client secret", moved)
+	}
+
+	for key, secret := range map[string]string{
+		model.SettingLDAPSettings: "the-bind-password",
+		model.SettingOpenID:       "the-client-secret",
+	} {
+		raw, err := settings.Get(ctx, key)
+		if err != nil {
+			t.Fatalf("read %s: %v", key, err)
+		}
+
+		if strings.Contains(raw, secret) {
+			t.Errorf("%s still holds its credential in the clear: %s", key, raw)
+		}
+
+		if !strings.Contains(raw, "https://id.example.com") && !strings.Contains(raw, "ldap.example.com") {
+			t.Errorf("%s lost the rest of the setting: %s", key, raw)
+		}
+	}
+
+	if again, err := sqldb.SealStoredSecrets(ctx, db, sqldb.DialectSQLite, sealer); err != nil || again != 0 {
+		t.Errorf("a second pass moved %d, %v - want nothing", again, err)
 	}
 }
 

@@ -285,7 +285,7 @@ exactly those checksums.
 | API | REST under `/api/v1`, documented at `/api-docs` |
 | Web interface | Embedded via `go:embed`, vanilla JS with no build step |
 | Access control | RBAC with roles administered at run time; bcrypt password hashes |
-| Sign-in | Session cookies, optional passkeys and TOTP two-factor per user, and a browser's Kerberos ticket where a keytab and a directory are configured |
+| Sign-in | Session cookies, optional passkeys and TOTP two-factor per user, a browser's Kerberos ticket where a keytab and a directory are configured, and an OpenID Connect provider - Keycloak, Authentik, Entra ID, Google - for the accounts their owners linked to it |
 | Live log | The process log, filterable and searchable, for the built-in administrator |
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
@@ -822,6 +822,45 @@ the card: when it ran, whether somebody confirmed it against a preview, and how
 many accounts and time entries it took or brought. It names nobody — the people
 a run removed are the people the deletion erased — and the log, which does name
 them, can be switched off by its level; this list cannot.
+
+## Signing in through your organisation's provider
+
+Under **Settings**, *Sign-in provider (OpenID Connect)* points the installation
+at a provider - Keycloak, Authentik, Entra ID, Google - by its issuer address,
+the client ID and secret it registered this installation as, and the name the
+sign-in form calls it by. The card shows the address to register at the
+provider for sending people back: this installation, followed by
+`/sign-in/openid`. *Test the provider* reads its discovery document before
+anybody depends on it.
+
+**Nobody is signed in by an address.** An identity at the provider opens an
+account only once that account's owner has linked it, under **My account**,
+while signed in - with their password and its second factor. No account is
+matched on the address a provider reports, and none is ever made for somebody
+the provider knows: an installation whose accounts its administrator makes
+should not have them made by whoever can sign in at Google. From then on the
+provider's sign-in is theirs to use instead of the password, with the
+provider's own second factor; the password keeps working beside it, and
+*Unlink* takes the link away.
+
+What holds the round trip together:
+
+- **The browser that left is the one that comes back.** The round's state is
+  kept in a cookie only this installation can set, so a code the provider sent
+  one browser back with cannot sign another one in - which would otherwise let
+  somebody have another person's browser signed in as them.
+- **Only what the provider signed is believed.** The code is traded with the PKCE
+  verifier the round was begun with, and the identity token counts only when it
+  carries the provider's published signature, this installation's client, a
+  time that has not passed and the round's own nonce.
+- **The built-in administrator and directory accounts stay on their passwords**,
+  for the reasons a passkey is refused them: the first is the guaranteed way
+  back in, and the second has to go through the directory, which is where an
+  organisation ends somebody's access.
+- **A provider is reached over HTTPS**, unless it runs on this machine: over plain
+  HTTP anybody on the way could answer for it and sign anybody in as anybody.
+  The client secret is sealed with `SECRET_KEY` like the directory's bind
+  password.
 
 ## Overtime
 

@@ -29,6 +29,7 @@ type Handlers struct {
 	Holidays   *rest.HolidayHandler
 	Vacation   *rest.VacationHandler
 	Calendar   *rest.CalendarFeedHandler
+	OpenID     *rest.OpenIDHandler
 	Statistics *rest.StatisticsHandler
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
@@ -59,6 +60,18 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/auth/passkey/login", h.Passkeys.BeginLogin)
 	app.PUT(base+"/auth/passkey/login", h.Passkeys.FinishLogin)
 	app.POST(base+"/auth/logout", h.Auth.Logout)
+
+	// Signing in through the provider the installation configured: whether it is
+	// offered, going there, and finishing with the code it sends the browser back
+	// with - all before there is a session, as a passkey sign-in is.
+	app.GET(base+"/auth/openid", h.OpenID.Offer)
+	app.POST(base+"/auth/openid", h.OpenID.BeginSignIn)
+	app.POST(base+"/auth/openid/finish", h.OpenID.Finish)
+
+	// And the caller's own link to their identity there.
+	app.GET(base+"/me/openid", h.OpenID.Linked)
+	app.POST(base+"/me/openid", h.OpenID.BeginLink)
+	app.DELETE(base+"/me/openid", h.OpenID.Unlink)
 	app.GET(base+"/auth/kerberos", h.Auth.KerberosSupport)
 	app.POST(base+"/auth/kerberos", h.Auth.KerberosLogin)
 	app.GET(base+"/languages", h.Auth.Languages)
@@ -76,6 +89,9 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/settings/ldap", h.Settings.LDAP)
 	app.PUT(base+"/settings/ldap", h.Settings.SaveLDAP)
 	app.POST(base+"/settings/ldap/test", h.Settings.TestLDAP)
+	app.GET(base+"/settings/openid", h.Settings.OpenID)
+	app.PUT(base+"/settings/openid", h.Settings.SaveOpenID)
+	app.POST(base+"/settings/openid/test", h.Settings.TestOpenID)
 	app.POST(base+"/settings/ldap/sync/preview", h.LDAPSync.Preview)
 	app.POST(base+"/settings/ldap/sync", h.LDAPSync.Run)
 	app.GET(base+"/settings/ldap/sync/runs", h.LDAPSync.Runs)
