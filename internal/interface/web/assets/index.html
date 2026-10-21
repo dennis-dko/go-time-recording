@@ -1875,29 +1875,6 @@
         <p class="muted" id="ldap-test-result"></p>
       </form>
 
-      <!-- The provider people may sign in through instead of with a password.
-           Read at every sign-in, so a change here holds from the next one. -->
-      <form method="post" id="form-openid" class="card form">
-        <h2 data-i18n="admin.openid">Sign-in provider (OpenID Connect)</h2>
-        <p class="muted" data-i18n="admin.openidHint">People can sign in through your organisation’s provider – Keycloak, Authentik, Entra ID, Google – instead of with a password, once each of them has linked their account to it under My account. Nobody is signed in by an address alone, and no account is ever made for somebody the provider knows. Register this installation at the provider with the address below to send people back to.</p>
-        <div class="perm-grid switch-row">
-          <label class="switch"><input type="checkbox" name="enabled"><span class="switch-track"></span><span class="switch-label" data-i18n="admin.openidEnabled">Offer it on the sign-in form</span></label>
-        </div>
-        <div class="grid">
-          <label class="wide" data-i18n="admin.openidIssuer">Issuer address<input type="url" name="issuer" maxlength="255" placeholder="https://id.example.com/realms/acme"></label>
-          <label data-i18n="admin.openidClientId">Client ID<input type="text" name="clientId" maxlength="255"></label>
-          <label data-i18n="admin.openidClientSecret">Client secret<input type="password" name="clientSecret" data-i18n-placeholder="admin.keepStored" placeholder="leave unchanged">
-          </label>
-          <label data-i18n="admin.openidLabel">Name on the sign-in form<input type="text" name="label" maxlength="60" placeholder="Keycloak"></label>
-          <label class="wide" data-i18n="admin.openidRedirect">Address to send people back to<input type="text" id="openid-redirect" readonly></label>
-        </div>
-        <div class="row">
-          <button type="submit" data-i18n="action.save">Save</button>
-          <button type="button" class="secondary" id="openid-test" data-i18n="admin.openidTest">Test the provider</button>
-        </div>
-        <p class="muted" id="openid-test-result"></p>
-      </form>
-
       <!-- In place of the card below, for an account that administers and also
            records time. The run is not theirs, and a card that is simply not
            there cannot be told from a feature that has been removed - which is
@@ -1964,6 +1941,29 @@
           </table>
         </div>
       </div>
+
+      <!-- The provider people may sign in through instead of with a password.
+           Read at every sign-in, so a change here holds from the next one. -->
+      <form method="post" id="form-openid" class="card form">
+        <h2 data-i18n="admin.openid">Sign-in provider (OpenID Connect)</h2>
+        <p class="muted" data-i18n="admin.openidHint">People can sign in through your organisation’s provider – Keycloak, Authentik, Entra ID, Google – instead of with a password, once each of them has linked their account to it under My account. Nobody is signed in by an address alone, and no account is ever made for somebody the provider knows. Register this installation at the provider with the address below to send people back to.</p>
+        <div class="perm-grid switch-row">
+          <label class="switch"><input type="checkbox" name="enabled"><span class="switch-track"></span><span class="switch-label" data-i18n="admin.openidEnabled">Offer it on the sign-in form</span></label>
+        </div>
+        <div class="grid">
+          <label class="wide" data-i18n="admin.openidIssuer">Issuer address<input type="url" name="issuer" maxlength="255" placeholder="https://id.example.com/realms/acme"></label>
+          <label data-i18n="admin.openidClientId">Client ID<input type="text" name="clientId" maxlength="255"></label>
+          <label data-i18n="admin.openidClientSecret">Client secret<input type="password" name="clientSecret" data-i18n-placeholder="admin.keepStored" placeholder="leave unchanged">
+          </label>
+          <label data-i18n="admin.openidLabel">Name on the sign-in form<input type="text" name="label" maxlength="60" placeholder="Keycloak"></label>
+          <label class="wide" data-i18n="admin.openidRedirect">Address to send people back to<input type="text" id="openid-redirect" readonly></label>
+        </div>
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="openid-test" data-i18n="admin.openidTest">Test the provider</button>
+        </div>
+        <p class="muted" id="openid-test-result"></p>
+      </form>
 
       <!-- The process log. Last in the administration screen because it is
            what you scroll to when something already went wrong. -->
