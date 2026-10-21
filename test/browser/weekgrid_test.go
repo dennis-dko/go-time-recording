@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -249,4 +250,74 @@ func (p *page) waitFor(what string, holds func() bool) {
 	}
 
 	p.t.Fatalf("waited for %s and it never came; the log says:\n%s", what, p.app.Log())
+}
+
+// From a tablet's width on, the whole week is in view on the grid.
+//
+// A day's field was 5.5em at every width, so the seven of them came to about 880
+// pixels before a project's name had any room, and an iPad held upright gives the
+// card 690. Saturday, Sunday and the week's total lay past the card's edge,
+// reached by a swipe nothing announced - a touch screen draws no scroll bar - so
+// the week looked as though it ended on Friday. A telephone still scrolls the
+// grid, as it has to; from 768 pixels there is room for all seven days once the
+// fields stop holding width their figures do not need.
+//
+// Four projects, one with a long name, and a day away whose name is written under
+// its date, in both languages.
+func TestTheWholeWeekIsInViewOnATablet(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	p.awaitJSON(`(async () => {
+		const monday = mondayOf(todayISO());
+		const day = (n) => {
+			const d = new Date(monday + 'T12:00:00Z');
+			d.setUTCDate(d.getUTCDate() + n);
+			return d.toISOString().slice(0, 10);
+		};
+
+		for (const [name, hours] of [['Customer support and escalations', 2.25], ['Website relaunch', 3.75],
+			['Internal tooling', 1.5], ['Training', 0.5]]) {
+			const made = await api('/projects', {method: 'POST', body: JSON.stringify({name, startDate: '2026-01-01'})});
+
+			for (const n of [0, 1, 2]) {
+				await api('/timesheets', {method: 'POST', body: JSON.stringify({projectId: made.id, date: day(n), durationHours: hours})});
+			}
+		}
+
+		await api('/me/absences', {method: 'POST', body: JSON.stringify({from: day(4), to: day(4), kind: 'vacation'})});
+		await loadProjects();
+
+		return true;
+	})()`, nil)
+
+	p.run("open the week", p.click(`.tab[data-view="week"]`),
+		chromedp.WaitVisible("#table-week", chromedp.ByID))
+	p.waitForRows("#table-week tbody tr", 4)
+
+	for _, language := range []string{"de", "en"} {
+		p.run("a desktop", chromedp.EmulateViewport(1280, 900))
+		p.chooseLanguage(language)
+
+		for _, size := range []struct{ w, h int64 }{{768, 1024}, {820, 1180}, {1024, 768}} {
+			p.run(fmt.Sprintf("%dx%d", size.w, size.h), chromedp.EmulateViewport(size.w, size.h))
+
+			var fit struct {
+				Wide float64 `json:"wide"`
+				Room float64 `json:"room"`
+			}
+
+			p.evalJSON(`(() => {
+				const wrap = document.querySelector('#week-card .table-wrap');
+				return JSON.stringify({wide: wrap.scrollWidth, room: wrap.clientWidth});
+			})()`, &fit)
+
+			if fit.Wide > fit.Room+1 {
+				t.Errorf("in %s at %dx%d the week is %.0fpx wide in %.0fpx, so its end is out of view",
+					language, size.w, size.h, fit.Wide, fit.Room)
+			}
+		}
+	}
 }

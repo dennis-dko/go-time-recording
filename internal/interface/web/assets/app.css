@@ -710,8 +710,17 @@ button.danger:not(.link) {
 .timer-form h3 { font-size: 14px; margin: 0 0 10px; }
 
 /* The week grid: a cell is a field the width of a figure, and what the week came
-   to underneath reads as a total rather than as one more project. */
-.week-grid input.week-cell { text-align: right; width: 5.5em; }
+   to underneath reads as a total rather than as one more project.
+
+   As wide as the cell it is in, between what a figure needs and the 5.5em it had
+   everywhere: held at 5.5em the seven fields came to some 880 pixels before a
+   project had a name, and an iPad held upright gives the card 690 - Saturday,
+   Sunday and the total lay past its edge, behind a swipe a touch screen draws no
+   scroll bar for. A project's name and what a day is besides its date fold for
+   the same reason, rather than standing as one long line each. */
+.week-grid input.week-cell { max-width: 5.5em; min-width: 3.6em; text-align: right; width: 100%; }
+.week-grid tbody th { min-width: 8em; white-space: normal; }
+.week-grid .week-tag { white-space: normal; }
 .week-grid .sum,
 .week-grid tfoot th,
 .week-grid tfoot td { font-weight: 600; }
