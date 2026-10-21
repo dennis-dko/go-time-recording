@@ -3,10 +3,15 @@
 package browser
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
+
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // What a finger presses on a telephone is at least 24 pixels square.
@@ -115,5 +120,63 @@ func TestEveryControlIsBigEnoughToPressOnATabletHeldSideways(t *testing.T) {
 					size.w, size.h, view, small)
 			}
 		}
+	}
+}
+
+// The installer is as easy to press on a telephone as the application is.
+//
+// It is a page of its own with a stylesheet of its own, because it runs before
+// there is a database and loads nothing of the application - so the rule that
+// gives a finger 44 pixels never reached it. Its fields were 40 pixels tall and
+// its buttons 43, on the first screen a new installation shows, which is as often
+// opened on whatever is to hand as on a desktop. Asked with every field shown: a
+// server's connection, password and all.
+func TestTheInstallerIsBigEnoughToPressOnATelephone(t *testing.T) {
+	t.Parallel()
+
+	app := harness.StartUnconfigured(t)
+
+	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), launch("en-US")...)
+	defer cancelAlloc()
+
+	ctx, cancel := chromedp.NewContext(alloc)
+	defer cancel()
+
+	ctx, cancelTimeout := context.WithTimeout(ctx, 90*time.Second)
+	defer cancelTimeout()
+
+	var raw string
+
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 844, chromedp.EmulateMobile, chromedp.EmulateTouch),
+		chromedp.Navigate(app.BaseURL()),
+		chromedp.WaitVisible("#heading", chromedp.ByID),
+		chromedp.Evaluate(`(() => {
+			const dialect = document.querySelector('#dialect');
+			dialect.value = 'postgres';
+			dialect.dispatchEvent(new Event('change', { bubbles: true }));
+		})()`, nil),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`JSON.stringify([...document.querySelectorAll('input, select, button')]
+			.filter((el) => el.offsetParent !== null && el.type !== 'hidden')
+			.filter((el) => {
+				const box = el.getBoundingClientRect();
+
+				return box.height < 44 || (el.matches('.password-toggle') && box.width < 44);
+			})
+			.map((el) => (el.id || el.className || el.tagName) + ':' +
+				Math.round(el.getBoundingClientRect().width) + 'x' + Math.round(el.getBoundingClientRect().height)))`, &raw),
+	); err != nil {
+		t.Fatalf("driving the installer: %v", err)
+	}
+
+	var small []string
+
+	if err := json.Unmarshal([]byte(raw), &small); err != nil {
+		t.Fatalf("reading the measurement %q: %v", raw, err)
+	}
+
+	if len(small) > 0 {
+		t.Errorf("on a telephone the installer has these too small to press with a thumb: %v", small)
 	}
 }
