@@ -17,6 +17,10 @@ type workDays struct {
 		BreakMinutes int     `json:"breakMinutes"`
 		WorkedHours  float64 `json:"workedHours"`
 		BookedHours  float64 `json:"bookedHours"`
+		Notices      []struct {
+			Rule    string `json:"rule"`
+			Minutes int    `json:"minutes"`
+		} `json:"notices"`
 	} `json:"days"`
 	TotalWorked float64 `json:"totalWorked"`
 	TotalBooked float64 `json:"totalBooked"`
@@ -104,5 +108,45 @@ func TestDeletingAnAccountTakesItsWorkingDaysWithIt(t *testing.T) {
 
 	if left := a.Rows(t, "work_days", "user_id = ?", me.User.ID); left != 0 {
 		t.Errorf("%d working day(s) outlived the account they belonged to", left)
+	}
+}
+
+// What the Working Hours Act says about a day travels with it: a day of thirteen
+// hours, and the eight hours of rest before the next one, each under the day the
+// shift began - and nothing under a day inside every limit.
+func TestWhatTheWorkingHoursActSaysTravelsWithTheDay(t *testing.T) {
+	t.Parallel()
+
+	_, _, worker := startWithWorker(t)
+
+	for day, times := range map[string]map[string]any{
+		"2026-08-10": {"start": "09:00", "end": "23:00", "breakMinutes": 60},
+		"2026-08-11": {"start": "07:00", "end": "15:00", "breakMinutes": 30},
+		"2026-08-13": {"start": "08:00", "end": "16:30", "breakMinutes": 30},
+	} {
+		worker.must(worker.api(http.MethodPut, "/me/workdays/"+day, times), http.StatusOK)
+	}
+
+	var month workDays
+
+	worker.must(worker.api(http.MethodGet, "/me/workdays?from=2026-08-01&to=2026-08-31", nil),
+		http.StatusOK).Data(t, &month)
+
+	if len(month.Days) != 3 {
+		t.Fatalf("August reads %+v, want the three recorded days", month.Days)
+	}
+
+	long, short, ordinary := month.Days[0], month.Days[1], month.Days[2]
+
+	if len(long.Notices) != 1 || long.Notices[0].Rule != "longDay" || long.Notices[0].Minutes != 780 {
+		t.Errorf("the 10th says %+v, want thirteen hours worked", long.Notices)
+	}
+
+	if len(short.Notices) != 1 || short.Notices[0].Rule != "shortRest" || short.Notices[0].Minutes != 480 {
+		t.Errorf("the 11th says %+v, want eight hours of rest", short.Notices)
+	}
+
+	if ordinary.Notices == nil || len(ordinary.Notices) != 0 {
+		t.Errorf("the 13th says %+v, want an empty list rather than none", ordinary.Notices)
 	}
 }

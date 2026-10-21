@@ -89,3 +89,52 @@ func TestAWorkingDayIsRecordedBesideTheHoursBookedOnIt(t *testing.T) {
 		t.Errorf("after the sign-out the card still says %q", left)
 	}
 }
+
+// A day past a limit of the Working Hours Act says which, in the row of the day
+// the shift began and in the reader's language: thirteen hours on the first of
+// the month, and only eight hours of rest before the second.
+func TestADayPastALimitOfTheWorkingHoursActSaysWhich(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	var recorded bool
+
+	p.awaitJSON(`(async () => {
+		const first = currentCalendarMonth();
+		const second = new Date(first.getFullYear(), first.getMonth(), 2);
+		await api('/me/workdays/' + ISO_DAY(first), {
+			method: 'PUT', body: JSON.stringify({ start: '09:00', end: '23:00', breakMinutes: 60 }),
+		});
+		await api('/me/workdays/' + ISO_DAY(second), {
+			method: 'PUT', body: JSON.stringify({ start: '07:00', end: '15:00', breakMinutes: 30 }),
+		});
+		await loadWorkDays();
+		return true;
+	})()`, &recorded)
+
+	p.run("open the calendar", p.click(`.tab[data-view="calendar"]`),
+		chromedp.WaitVisible("#workday-card", chromedp.ByID))
+
+	p.waitForText("#table-workdays tbody", "More than ten hours")
+
+	rows := p.text("#table-workdays tbody")
+	for _, want := range []string{
+		"More than ten hours (Working Hours Act § 3)",
+		"Only 8.00 h of rest since the day before (Working Hours Act § 5)",
+	} {
+		if !strings.Contains(rows, want) {
+			t.Errorf("the month reads %q, want %q in it", rows, want)
+		}
+	}
+
+	p.waitForText("#workday-total", "2 days past a limit of the Working Hours Act.")
+
+	p.chooseLanguage("de")
+	p.waitForText("#table-workdays tbody", "Mehr als zehn Stunden (§ 3 ArbZG)")
+
+	if rows := p.text("#table-workdays tbody"); !strings.Contains(rows, "Nur 8,00 Std. Ruhe seit dem Vortag (§ 5 ArbZG)") {
+		t.Errorf("the month in German reads %q", rows)
+	}
+}

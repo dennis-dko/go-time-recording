@@ -4553,6 +4553,12 @@ const TRANSLATIONS = {
     'work.booked': 'Gebucht',
     'work.empty': 'In diesem Monat ist nichts erfasst oder gebucht.',
     'work.total': 'Gearbeitet {0}, gebucht {1}',
+    'work.act': 'Arbeitszeitgesetz',
+    'work.actHint': 'Tage über einer Grenze des Arbeitszeitgesetzes werden markiert: mehr als zehn Stunden, eine zu kurze Pause oder weniger als elf Stunden Ruhe seit dem Vortag. Es sind Hinweise; erfasst wird, was war.',
+    'work.longDay': 'Mehr als zehn Stunden (§ 3 ArbZG)',
+    'work.shortBreak': '{0} Minuten Pause nötig (§ 4 ArbZG)',
+    'work.shortRest': 'Nur {0} Ruhe seit dem Vortag (§ 5 ArbZG)',
+    'work.noticeCount': '{0} Tage über einer Grenze des Arbeitszeitgesetzes.',
     'work.removed': 'Arbeitszeit zurückgenommen',
     'work.saved': 'Arbeitszeit erfasst',
     'work.filename': 'arbeitszeit',
@@ -7922,16 +7928,37 @@ function drawWorkDays() {
     el('td', { class: 'num', text: day.recorded ? String(day.breakMinutes) : '–' }),
     el('td', { class: 'num', text: day.recorded ? fmtHours(day.workedHours) : '–' }),
     el('td', { class: 'num', text: fmtHours(day.bookedHours) }),
+    el('td', { class: 'act' }, ...(day.notices ?? []).map(actNotice)),
     el('td', { class: 'actions' }, ...(writes ? workDayActions(day) : [])),
   ));
 
-  fillTable($('#table-workdays tbody'), rows, 7,
+  fillTable($('#table-workdays tbody'), rows, 8,
     t('work.empty', 'Nothing recorded or booked this month.'));
 
-  $('#workday-total').textContent = days.length
-    ? fillIn(t('work.total', 'Worked {0}, booked {1}'),
-      [fmtHours(workDays.totalWorked), fmtHours(workDays.totalBooked)])
-    : '';
+  const past = days.filter((day) => day.notices?.length).length;
+
+  $('#workday-total').textContent = [
+    days.length ? fillIn(t('work.total', 'Worked {0}, booked {1}'),
+      [fmtHours(workDays.totalWorked), fmtHours(workDays.totalBooked)]) : '',
+    past ? fillIn(t('work.noticeCount', '{0} days past a limit of the Working Hours Act.'), [past]) : '',
+  ].filter(Boolean).join(' · ');
+}
+
+/**
+ * One limit of the Working Hours Act a shift went past, as the server read it.
+ * Written as a sentence rather than a mark, because the PDF is made from this
+ * table and a mark alone would mean nothing on paper.
+ */
+function actNotice(notice) {
+  const said = {
+    longDay: () => t('work.longDay', 'More than ten hours (Working Hours Act § 3)'),
+    shortBreak: () => fillIn(t('work.shortBreak', '{0} minutes of breaks needed (Working Hours Act § 4)'),
+      [notice.minutes]),
+    shortRest: () => fillIn(t('work.shortRest', 'Only {0} of rest since the day before (Working Hours Act § 5)'),
+      [fmtHours(notice.minutes / 60)]),
+  }[notice.rule];
+
+  return el('span', { class: 'act-notice', text: said ? said() : notice.rule });
 }
 
 /** What can be done with a day: correct it, and take back what was recorded. */

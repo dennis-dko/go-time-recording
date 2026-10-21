@@ -171,3 +171,29 @@ func TestWorkingDaysAreReadForABoundedRange(t *testing.T) {
 		t.Errorf("a range of fourteen months answered %v, want rangeTooLong", err)
 	}
 }
+
+// What the Working Hours Act says about a day stands beside it, and the rest
+// before the first day of a range is counted from the day before it, which the
+// range itself does not hold: the first of a month after a late last of the month
+// before is as short a night as any other.
+func TestTheActStandsBesideTheDayAndLooksBackPastTheRange(t *testing.T) {
+	f := newWorkFixture(t)
+
+	f.record(t, f.userID, day(14), clock(9, 0), clock(23, 0), 60)
+	f.record(t, f.userID, day(15), clock(7, 0), clock(15, 0), 30)
+	f.book(t, day(16), 2)
+
+	days := f.days(t, f.userID, day(15), day(21))
+	if len(days) != 2 {
+		t.Fatalf("the week reads %d days, want the one recorded and the one booked: %+v", len(days), days)
+	}
+
+	want := []model.WorkingTimeNotice{{Rule: model.NoticeShortRest, Minutes: 480}}
+	if got := days[0].Notices; len(got) != 1 || got[0] != want[0] {
+		t.Errorf("the 15th says %+v, want eight hours of rest since the 14th", got)
+	}
+
+	if got := days[1].Notices; len(got) != 0 {
+		t.Errorf("a day only booked on says %+v, want nothing: no times were recorded for it", got)
+	}
+}

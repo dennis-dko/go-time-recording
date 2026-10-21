@@ -26,7 +26,7 @@ What the application does, and the rules it keeps while doing it.
 | Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
 | Overtime | Balance per day and per period against a personal daily target |
 | Calendar | Month view of where hours were booked |
-| Working time | When each day began and finished and how long its breaks were, beside the hours booked on it, under the calendar - a day booked on with no times recorded is shown as the gap it is, the running stopwatch's start is offered as the day's, and the month leaves as a PDF. Kept by each person for themselves; nobody else sees it |
+| Working time | When each day began and finished and how long its breaks were, beside the hours booked on it, under the calendar - a day booked on with no times recorded is shown as the gap it is, the running stopwatch's start is offered as the day's, a day past a limit of the Working Hours Act says which, and the month leaves as a PDF. Kept by each person for themselves; nobody else sees it |
 | Calendar subscription | An address of your own, made under *My account*, that Outlook, Google or a telephone subscribes to: every day you booked on - how many hours, and what on - and every day you are away, in the year either side of today. Read-only, shown once, and taken back by making a new one |
 | The year | Every day of a year as a tile, as dark as the hours booked on it, with the public holidays and the days away outlined rather than told by colour alone - beside the year before up to the same day, and both month by month as figures |
 | Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
@@ -139,6 +139,22 @@ It is each person's own record, kept for themselves. There is no view of anybody
 else's working time, for the reason there is none of anybody else's hours, so this
 documents one's own time rather than serving as an employer's time-keeping system.
 A night that runs past midnight is recorded as the two days it falls on.
+
+Each day is read against the three limits of the Working Hours Act
+(Arbeitszeitgesetz) that a record of start, end and breaks can show, and a day past
+one says which, in its own column and in the PDF:
+
+| Limit | Section | Marked when |
+| --- | --- | --- |
+| Ten hours a day | § 3 | more than ten hours were worked |
+| Breaks | § 4 | the breaks were shorter than 30 minutes past six hours of work, or 45 past nine |
+| Rest | § 5 | fewer than eleven hours lay between the end of one shift and the start of the next |
+
+A night recorded as the two days it falls on counts as one shift, so eight hours
+from ten at night are a shift that needed a break rather than two short days with
+no rest between them. The marks are notices and never refusals: the act has
+exceptions - a hospital, a harvest, a collective agreement - that this application
+cannot know about, and a record that refused the truth would be a worse record.
 
 ## Your days in your own calendar
 

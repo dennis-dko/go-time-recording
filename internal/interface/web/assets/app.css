@@ -1736,6 +1736,21 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .budget-line.near { color: var(--text); font-weight: 600; }
 .budget-line.over { color: var(--danger); font-weight: 600; }
 
+/* What the Working Hours Act says about a day in the working-time table: in the
+   banner's colour, because it is the same kind of thing - something that is true
+   and worth knowing, not a refusal - and one sentence a line, so a day past two
+   limits reads as two. */
+#table-workdays td.act { min-width: 12em; white-space: normal; }
+.act-notice {
+  background: color-mix(in srgb, #d68910 18%, var(--surface));
+  border-radius: 6px;
+  display: block;
+  font-size: 12.5px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+.act-notice + .act-notice { margin-top: 4px; }
+
 /* A day booked on with no working time recorded: there, so the record shows its
  * gap, and quieter than the days that are complete. */
 #table-workdays tr.unrecorded td { color: var(--muted); }
