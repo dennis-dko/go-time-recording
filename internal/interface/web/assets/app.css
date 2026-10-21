@@ -1360,12 +1360,14 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   width: 100%;
 }
 
-/* While the session is still being checked the cover is up but empty.
+/* While the session is still being checked the cover is up but empty, the footer
+ * apart: it is on screen from the first paint, raised, and moves into the cover
+ * as soon as the script runs - hidden there, it would blink out and back.
  *
  * Without this the sign-in form is what the markup shows on load, so a user who
  * is already signed in sees it for as long as the first few requests take and
  * then has it taken away - a flash that reads as having been signed out. */
-.login-screen.checking > *:not(.session-check) { display: none; }
+.login-screen.checking > *:not(.session-check, .site-footer) { display: none; }
 
 .session-check { display: none; }
 .login-screen.checking .session-check { display: block; }
@@ -2084,14 +2086,33 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
  * :has rather than a class the script sets, because the screen ships in the
  * markup already up: there is no moment at which the script could say so first.
  * The sign-in screen stops at --footer-height, which the script keeps equal to
- * this footer's height. */
-body:has(#login-screen:not([hidden])) .site-footer {
+ * this footer's height.
+ *
+ * Only until the script runs, which then moves the footer into the screen - see
+ * placeFooter, and the rules after this one. Raised for as long as the screen is
+ * up, the footer took a short window's bottom third from the form for good. */
+body:has(#login-screen:not([hidden])) > .site-footer {
   background: var(--bg);
   inset: auto 0 0;
   margin-top: 0;
   position: fixed;
   z-index: 31;
 }
+
+/* Inside the sign-in screen, after the form: across the screen's whole width, the
+ * screen's padding taken back at the sides and the bottom. The screen then covers
+ * the window, and the footer scrolls with what it holds. */
+.login-screen:has(> .site-footer) { inset: 0; }
+
+.login-screen > .site-footer {
+  align-self: stretch;
+  margin: 0 -20px -20px;
+}
+
+/* Centred in the room above the footer, which is what pushes the footer to the
+ * bottom of a window with room to spare. */
+.login-screen > .login-card,
+.login-screen > .session-check { margin-block: auto; }
 
 /* Nothing of the application under the sign-in screen.
  *

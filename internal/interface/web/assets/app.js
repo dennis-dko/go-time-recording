@@ -9608,6 +9608,7 @@ function showLogin(message) {
 
   const screen = $('#login-screen');
   screen.hidden = false;
+  placeFooter();
   // The check is over, whatever it concluded: show the form rather than the
   // spinner that stood in for it.
   screen.classList.remove('checking');
@@ -9631,9 +9632,38 @@ function hideLogin() {
 
   $('#login-screen').classList.remove('checking');
   $('#login-screen').hidden = true;
+  placeFooter();
   $('#login-error').hidden = true;
   backToThePasswordForm();
   $('#form-login').reset();
+}
+
+/**
+ * Puts the footer inside the sign-in screen while that screen is up, after the
+ * form, and back at the end of the page when it is not.
+ *
+ * It used to be raised over the bottom of the window instead, with the screen
+ * stopping where it began - which on a short window gave the footer the window.
+ * With a legal notice configured that was 135 of a sideways telephone's 320
+ * pixels and 204 of an upright one's 568, the form scrolling in what was left
+ * with its buttons below the fold of it. Inside the screen the footer is where it
+ * was on a window with room, the bottom edge, and after the last button on one
+ * without, reached by scrolling the form rather than taking room from it.
+ *
+ * Moved rather than copied: one footer, and one place the version, the source
+ * link and the installation's legal notice are written to. Until the script
+ * runs, the stylesheet raises it as before - see .site-footer.
+ */
+function placeFooter() {
+  const footer = $('#site-footer');
+  const screen = $('#login-screen');
+  if (!footer || !screen) return;
+
+  if (!screen.hidden) {
+    if (footer.parentElement !== screen) screen.append(footer);
+  } else if (footer.parentElement === screen) {
+    $('main').after(footer);
+  }
 }
 
 async function submitLogin(e) {
@@ -17419,6 +17449,7 @@ async function init() {
     wireNavigationMenu();
     trackHeight('.topbar', '--topbar-height');
     trackHeight('#site-footer', '--footer-height');
+    placeFooter();
     wireTimer();
     wireWeekGrid();
     wireInstall();
