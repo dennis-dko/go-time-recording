@@ -11,6 +11,30 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+// linesOfWords is a script function counting the lines an element's words are
+// laid out on: one per distinct line box, read off the words themselves. Not
+// the element's height over its line height, which a padded button or a cell as
+// tall as its row turns into a wrong answer.
+const linesOfWords = `(element) => {
+	const tops = [];
+	const words = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+
+	for (let node = words.nextNode(); node; node = words.nextNode()) {
+		if (!node.textContent.trim()) continue;
+
+		const range = document.createRange();
+		range.selectNodeContents(node);
+
+		for (const line of range.getClientRects()) {
+			if (line.width > 0 && !tops.some((top) => Math.abs(top - line.top) < line.height / 2)) {
+				tops.push(line.top);
+			}
+		}
+	}
+
+	return tops.length;
+}`
+
 func truncateText(s string, max int) string {
 	if len(s) <= max {
 		return s

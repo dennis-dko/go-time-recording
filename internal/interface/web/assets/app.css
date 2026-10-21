@@ -1458,9 +1458,23 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .login-actions {
   display: flex;
   flex-direction: row-reverse;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
 }
+
+/* Never narrower than its words on one line: a way to sign in that does not fit
+ * beside the others takes a row of its own, and fills whatever row it ends up in
+ * so the rows line up with the fields above them. The row was made for two, and a
+ * provider to sign in through made three - which squeezed both buttons beside
+ * the submit button until their words ran to three lines each. Capped at the
+ * row, so words longer than the whole row still wrap rather than spill out. */
+.login-actions > button {
+  flex: 1 0 auto;
+  max-width: 100%;
+}
+
+.login-actions > .login-submit { flex-grow: 0; }
 
 /* The tick in a box of its own at the start of the button, with an empty third
  * column the same width so the words stay centred on the button rather than on
