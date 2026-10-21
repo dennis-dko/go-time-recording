@@ -173,7 +173,9 @@
   // same remedy `task test` applies, pointed at a directory of its own rather
   // than at the Taskfile's bin/gotmp: that one is deleted by a `defer` at the
   // end of every task run and by `task clean`, and a GOTMPDIR that has just
-  // been removed fails every test in the editor.
+  // been removed fails every test in the editor. Nothing removes .gotmp; it is
+  // local, like bin/, and "dev: make the workspace's GOTMPDIR" in tasks.json
+  // makes it when the folder is opened.
   "go.testEnvVars": {
     "GOTMPDIR": "${workspaceFolder}/.gotmp"
   },
