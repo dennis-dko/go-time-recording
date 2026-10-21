@@ -362,35 +362,44 @@ func TestEveryControlIsBigEnoughToPressOnAPhone(t *testing.T) {
 		p.run("open "+view, chromedp.Evaluate(
 			fmt.Sprintf("switchView(%q)", view), nil))
 
-		var small []string
-
-		// What a thumb actually lands on, which is not always the element itself.
-		// A switch's checkbox is invisible and 22px; the thing being pressed is
-		// the label drawn around it. A checkbox in a table is small on purpose;
-		// what is pressed is the cell holding it, header cells included - the one
-		// that selects every row lives in a th. A file field is drawn by the
-		// browser and hardly restylable; its label is what can be given room.
-		p.evalJSON(`JSON.stringify(
-			[...document.querySelectorAll('button, select, .tab, input:not([type=hidden])')]
-				.filter((el) => !el.hidden && el.offsetParent !== null)
-				.map((el) => (['checkbox', 'radio', 'file'].includes(el.type)
-					? (el.closest('label, td, th') ?? el)
-					: el))
-				.filter((el) => {
-					const box = el.getBoundingClientRect();
-
-					return box.height > 0 && box.height < 44;
-				})
-				.map((el) => (el.id || el.className || el.tagName) + ':' +
-					Math.round(el.getBoundingClientRect().height))
-				.filter((v, i, a) => a.indexOf(v) === i)
-				.slice(0, 8))`, &small)
-
-		if len(small) > 0 {
+		if small := p.tooSmallToPress(); len(small) > 0 {
 			t.Errorf("on the %s screen these are too small to press with a thumb: %v",
 				view, small)
 		}
 	}
+}
+
+// tooSmallToPress answers what on the screen as it stands is shorter than a
+// finger needs, at most eight of them.
+//
+// What a thumb actually lands on, which is not always the element itself. A
+// switch's checkbox is invisible and 22px; the thing being pressed is the label
+// drawn around it. A checkbox in a table is small on purpose; what is pressed is
+// the cell holding it, header cells included - the one that selects every row
+// lives in a th. A file field is drawn by the browser and hardly restylable; its
+// label is what can be given room. A summary is pressed to open what it heads.
+func (p *page) tooSmallToPress() []string {
+	p.t.Helper()
+
+	var small []string
+
+	p.evalJSON(`JSON.stringify(
+		[...document.querySelectorAll('button, select, .tab, summary, input:not([type=hidden])')]
+			.filter((el) => !el.hidden && el.offsetParent !== null)
+			.map((el) => (['checkbox', 'radio', 'file'].includes(el.type)
+				? (el.closest('label, td, th') ?? el)
+				: el))
+			.filter((el) => {
+				const box = el.getBoundingClientRect();
+
+				return box.height > 0 && box.height < 44;
+			})
+			.map((el) => (el.id || el.className || el.tagName) + ':' +
+				Math.round(el.getBoundingClientRect().height))
+			.filter((v, i, a) => a.indexOf(v) === i)
+			.slice(0, 8))`, &small)
+
+	return small
 }
 
 // The sign-in screen can be used on a short window.

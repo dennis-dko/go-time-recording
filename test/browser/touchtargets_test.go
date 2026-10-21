@@ -78,3 +78,42 @@ func TestWhatAFingerPressesIsBigEnough(t *testing.T) {
 		t.Error("a tap inside the room around a row's box did not tick it")
 	}
 }
+
+// Everything pressed on a touch screen is big enough to press, however wide the
+// screen is.
+//
+// The rule that gives a finger 44 pixels applied below 900 pixels of width, on
+// the reasoning that a small screen is a touch screen. What it missed is the
+// other way round: an iPad held sideways is 1,024 to 1,366 pixels wide and still
+// pressed with a finger, and there the tabs were 37 pixels tall, the appearance
+// and language pickers and the way out 40. Asked of a touch screen, which is
+// what the stylesheet can ask about too.
+func TestEveryControlIsBigEnoughToPressOnATabletHeldSideways(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	for _, size := range []struct{ w, h int64 }{{1024, 768}, {1180, 820}, {1366, 1024}} {
+		p.run(fmt.Sprintf("a tablet, %dx%d", size.w, size.h),
+			chromedp.EmulateViewport(size.w, size.h, chromedp.EmulateMobile, chromedp.EmulateTouch))
+
+		var coarse bool
+
+		p.run("is it a touch screen", chromedp.Evaluate(`matchMedia('(pointer: coarse)').matches`, &coarse))
+
+		if !coarse {
+			t.Fatalf("at %dx%d the stylesheet is not told it is a touch screen, so this proves nothing",
+				size.w, size.h)
+		}
+
+		for _, view := range []string{"welcome", "users", "roles", "settings", "admin"} {
+			p.run("open "+view, chromedp.Evaluate(fmt.Sprintf("switchView(%q)", view), nil))
+
+			if small := p.tooSmallToPress(); len(small) > 0 {
+				t.Errorf("at %dx%d on the %s screen these are too small to press with a finger: %v",
+					size.w, size.h, view, small)
+			}
+		}
+	}
+}

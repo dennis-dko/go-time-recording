@@ -2992,14 +2992,24 @@ input[readonly]:focus, textarea[readonly]:focus {
 
    Forty-four, which is the size a finger actually needs and the number both
    platform guidelines settled on. Height rather than font size: nothing gets
-   bigger to read, there is simply more of it to hit. */
-@media (max-width: 900px) {
+   bigger to read, there is simply more of it to hit.
+
+   And on any touch screen, however wide. A small screen is a touch screen, but
+   a touch screen is not always small: an iPad held sideways is 1,024 to 1,366
+   pixels wide, and there the tabs were 37 pixels tall, the pickers 40 and the
+   cross on a notice 18. */
+@media (max-width: 900px), (pointer: coarse) {
   button,
   select,
   .tab,
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
     min-height: 44px;
   }
+
+  /* A summary is pressed to open what it heads, and was 20 pixels of text. A
+     line height and room around it rather than a flex box, which would take
+     away the triangle that says it opens. */
+  summary { line-height: 20px; padding-block: 12px; }
 
   /* A file field is drawn by the browser and barely restylable; what can be
      given room is the label around it, which is what a thumb aims at. */
