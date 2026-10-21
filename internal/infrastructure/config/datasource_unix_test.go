@@ -26,6 +26,13 @@ import (
 // on the SIGXFSZ that comes with it, as os/signal documents. Unix only, because
 // the limit is. It is the whole process's limit, so this test does not run in
 // parallel and puts it back before it asserts anything.
+//
+// A megabyte rather than a kilobyte, for the same reason: the limit covers the
+// test binary's own files too, and whenever Go may cache a run - a coverage run
+// included - the binary appends to a log of every file the package's tests have
+// opened. Once the tests before this one had opened enough files, that log was
+// past a kilobyte, its next line was refused, and the package failed after every
+// test in it had passed. The save is made bigger than the limit instead.
 func TestASaveThatCannotFinishLeavesTheWorkingConnection(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "configs")
 	path := filepath.Join(dir, "datasource.json")
@@ -41,14 +48,14 @@ func TestASaveThatCannotFinishLeavesTheWorkingConnection(t *testing.T) {
 	}
 
 	limited := before
-	limited.Cur = 1024
+	limited.Cur = 1 << 20
 
 	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limited); err != nil {
 		t.Skipf("cannot set a file size limit here: %v", err)
 	}
 
 	bigger := working
-	bigger.Password = strings.Repeat("x", 4096)
+	bigger.Password = strings.Repeat("x", 2<<20)
 
 	err := config.SaveDatasource(path, bigger)
 
