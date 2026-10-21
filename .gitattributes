@@ -75,6 +75,11 @@ go.sum      text eol=lf
 # so costs one line.
 *.ico       binary
 
+# The README's pictures, for the same reason: git tells a PNG from text by its
+# bytes and would leave it alone, but a picture that went through a line-ending
+# conversion is a broken picture on the front page rather than a noisy diff.
+*.png       binary
+
 # Git's own two files, pinned for the sake of the check rather than for anything
 # that reads them. `git ls-files --eol` is how a wrong line ending gets found
 # here, and it is only worth running while every row reads w/lf: two permanent

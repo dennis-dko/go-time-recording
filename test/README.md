@@ -86,7 +86,7 @@ go run ./test/probe --ldap ldaps://dc.corp.example \
 
 Usually there is nothing to do: `task dev` starts these services and connects
 the application to them in one step, and `task stage` does the same with the
-real deployment image. Both are described in the [main README](../README.md#development).
+real deployment image. Both are described in [the development guide](../doc/development.md).
 
 The settings, for running it some other way:
 

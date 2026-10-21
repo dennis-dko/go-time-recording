@@ -615,6 +615,31 @@ tasks:
         fi
         echo "Done. Base images are on ${want} too."
 
+  readme:pictures:
+    desc: 'Upkeep: take the README''s pictures again, from the running application.'
+    summary: |
+      Books a year of somebody's working time into a fresh instance and
+      photographs the screens that show it, into doc/images - the pictures the
+      README shows. Run it after changing a screen one of them shows, and look
+      at what it took before committing it: nothing checks how a picture looks,
+      only that the README shows what the camera takes.
+
+      A case in the browser suite does the work, because it needs what that
+      suite already has - an instance per case and a browser to drive it - and
+      it skips everywhere else, CI included, so the pictures change only when
+      somebody asks.
+
+      The letters are this machine's own fonts, so Windows and Linux take the
+      same screen in different faces. Neither is wrong; one run takes them all,
+      so the README does not mix them.
+    env:
+      GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
+      GTR_README_PICTURES: '{{.ROOT_DIR}}/doc/images'
+    cmds:
+      - mkdir -p {{.TMP_DIR}}
+      - defer: rm -rf {{.TMP_DIR}}
+      - go test -tags browser -count=1 -timeout 10m -v -run TestTheReadmePicturesAreTakenFromTheApplication ./test/browser/
+
   clean:
     desc: 'Upkeep: remove everything testing and building leave behind.'
     summary: |

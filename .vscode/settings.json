@@ -289,8 +289,8 @@
   },
   "[markdown]": {
     "editor.formatOnSave": false,
-    // Two trailing spaces are a line break in Markdown, and CLAUDE.md and
-    // README.md are 73 KB and 103 KB of it.
+    // Two trailing spaces are a line break in Markdown, and CLAUDE.md and the
+    // pages under doc/ are a few hundred kilobytes of it.
     "files.trimTrailingWhitespace": false
   },
   "[yaml]": {
