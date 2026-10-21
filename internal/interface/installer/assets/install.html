@@ -76,6 +76,15 @@
     .note.good { border-color: var(--ok); color: var(--ok); }
     [hidden] { display: none !important; }
     code { background: var(--bg); border-radius: 4px; font-size: 12px; padding: 1px 5px; }
+    /* Big enough to press with a finger, as the application's own controls are:
+       44 pixels, on a narrow window or any touch screen. This page loads none of
+       the application, so its rule never reached here - the fields were 40
+       pixels tall, the buttons 43 and the eye that shows the password 26. */
+    @media (max-width: 900px), (pointer: coarse) {
+      input, select, button { min-height: 44px; }
+      .password-field input { padding-right: 52px; }
+      .password-toggle { justify-content: center; min-height: 44px; min-width: 44px; right: 2px; }
+    }
   </style>
 </head>
 <body>

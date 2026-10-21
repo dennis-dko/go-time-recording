@@ -259,6 +259,46 @@ func TestTheAccountStaysOneLineOnTheBar(t *testing.T) {
 	}
 }
 
+// Nothing on the bar that is pressed breaks its words over two lines.
+//
+// The account gives way where the bar is short of room - it is cut short, with
+// the whole of it in its tooltip. The way out did not: allowed to shrink like the
+// account, it shrank to its longest word, and from 932 to 1,366 pixels the
+// administrator's bar ended in "Sign" with "out" under it - on a laptop's
+// window, where the room was taken by the appearance picker's longest option.
+// Asked of the built-in administrator, whose role is the longest of the names
+// the bar holds, in both languages.
+func TestNothingPressedOnTheBarBreaksItsWords(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	for _, language := range []string{"en", "de"} {
+		p.run("a desktop", chromedp.EmulateViewport(1600, 900))
+		p.chooseLanguage(language)
+
+		for _, width := range []int64{1440, 1366, 1280, 1100, 1024, 960, 901} {
+			p.run(fmt.Sprintf("%dpx", width), chromedp.EmulateViewport(width, 800))
+
+			var broken []string
+
+			p.evalJSON(`(() => {
+				const linesOf = `+linesOfWords+`;
+
+				return JSON.stringify([...document.querySelectorAll('#topbar-controls button, #tabs .tab')]
+					.filter((control) => control.getBoundingClientRect().width > 0)
+					.filter((control) => linesOf(control) > 1)
+					.map((control) => control.textContent.trim()));
+			})()`, &broken)
+
+			for _, words := range broken {
+				t.Errorf("%s, %dpx: %q runs to more than one line", language, width, words)
+			}
+		}
+	}
+}
+
 // Where the bar has room, the account is shown whole.
 //
 // The account is held to one line and cut short where the bar has no room for it

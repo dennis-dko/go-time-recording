@@ -260,6 +260,14 @@ body {
   gap: 16px;
 }
 
+/* The way out on one line. The automatic minimum above is the widest the
+   selects' longest options and the button's longest word make it, so the button
+   could still shrink to "Sign" with "out" under it - which it did from 932 to
+   1,366 pixels, on a laptop's window. Held to its words, it leaves the squeeze to
+   the account beside it, which is cut short with the whole of it in its
+   tooltip. */
+.topbar-controls > button { white-space: nowrap; }
+
 .topbar h1 { font-size: 18px; margin: 0; }
 
 /* The title is the way back to the greeting, so it has to look like something
@@ -702,8 +710,24 @@ button.danger:not(.link) {
 .timer-form h3 { font-size: 14px; margin: 0 0 10px; }
 
 /* The week grid: a cell is a field the width of a figure, and what the week came
-   to underneath reads as a total rather than as one more project. */
-.week-grid input.week-cell { text-align: right; width: 5.5em; }
+   to underneath reads as a total rather than as one more project.
+
+   As wide as the cell it is in, between what a figure needs and the 5.5em it had
+   everywhere: held at 5.5em the seven fields came to some 880 pixels before a
+   project had a name, and an iPad held upright gives the card 690 - Saturday,
+   Sunday and the total lay past its edge, behind a swipe a touch screen draws no
+   scroll bar for. A project's name and what a day is besides its date fold for
+   the same reason, rather than standing as one long line each. */
+.week-grid input.week-cell { max-width: 5.5em; min-width: 3.6em; text-align: right; width: 100%; }
+.week-grid tbody th { min-width: 8em; white-space: normal; }
+.week-grid .week-tag { white-space: normal; }
+
+/* The date under the day's name on a narrow window, in every column alike. Left
+   to fold where it had to, the heading did so in the columns the table had made
+   a pixel narrower and not in the others - "MON / 10/19" beside "TUE 10/20". */
+@media (max-width: 900px) {
+  .week-grid .week-date { display: block; }
+}
 .week-grid .sum,
 .week-grid tfoot th,
 .week-grid tfoot td { font-weight: 600; }
@@ -1352,12 +1376,14 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   width: 100%;
 }
 
-/* While the session is still being checked the cover is up but empty.
+/* While the session is still being checked the cover is up but empty, the footer
+ * apart: it is on screen from the first paint, raised, and moves into the cover
+ * as soon as the script runs - hidden there, it would blink out and back.
  *
  * Without this the sign-in form is what the markup shows on load, so a user who
  * is already signed in sees it for as long as the first few requests take and
  * then has it taken away - a flash that reads as having been signed out. */
-.login-screen.checking > *:not(.session-check) { display: none; }
+.login-screen.checking > *:not(.session-check, .site-footer) { display: none; }
 
 .session-check { display: none; }
 .login-screen.checking .session-check { display: block; }
@@ -1458,9 +1484,23 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .login-actions {
   display: flex;
   flex-direction: row-reverse;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
 }
+
+/* Never narrower than its words on one line: a way to sign in that does not fit
+ * beside the others takes a row of its own, and fills whatever row it ends up in
+ * so the rows line up with the fields above them. The row was made for two, and a
+ * provider to sign in through made three - which squeezed both buttons beside
+ * the submit button until their words ran to three lines each. Capped at the
+ * row, so words longer than the whole row still wrap rather than spill out. */
+.login-actions > button {
+  flex: 1 0 auto;
+  max-width: 100%;
+}
+
+.login-actions > .login-submit { flex-grow: 0; }
 
 /* The tick in a box of its own at the start of the button, with an empty third
  * column the same width so the words stay centred on the button rather than on
@@ -1720,6 +1760,17 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .year-tile.holiday { outline: 1px solid var(--text); outline-offset: -1px; }
 .year-tile.away { outline: 1px dashed var(--text); outline-offset: -1px; }
 .year-tile.today { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Ten pixels a tile on a narrow window, which a tablet held upright is: at twelve
+   the fifty-three weeks came to 742 pixels and the card has 690 there, so the end
+   of December was past its edge behind a swipe nothing announced. At ten they are
+   636, and a telephone still scrolls them. */
+@media (max-width: 900px) {
+  .year-months,
+  .year-tiles { grid-auto-columns: 10px; }
+  .year-tiles { grid-template-rows: repeat(7, 10px); }
+  .year-tile { height: 10px; width: 10px; }
+}
 .year-legend { align-items: center; color: var(--muted); display: flex; flex-wrap: wrap; font-size: 12px; gap: 4px; }
 .cal-away { color: var(--muted); font-size: 11px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -2062,14 +2113,33 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
  * :has rather than a class the script sets, because the screen ships in the
  * markup already up: there is no moment at which the script could say so first.
  * The sign-in screen stops at --footer-height, which the script keeps equal to
- * this footer's height. */
-body:has(#login-screen:not([hidden])) .site-footer {
+ * this footer's height.
+ *
+ * Only until the script runs, which then moves the footer into the screen - see
+ * placeFooter, and the rules after this one. Raised for as long as the screen is
+ * up, the footer took a short window's bottom third from the form for good. */
+body:has(#login-screen:not([hidden])) > .site-footer {
   background: var(--bg);
   inset: auto 0 0;
   margin-top: 0;
   position: fixed;
   z-index: 31;
 }
+
+/* Inside the sign-in screen, after the form: across the screen's whole width, the
+ * screen's padding taken back at the sides and the bottom. The screen then covers
+ * the window, and the footer scrolls with what it holds. */
+.login-screen:has(> .site-footer) { inset: 0; }
+
+.login-screen > .site-footer {
+  align-self: stretch;
+  margin: 0 -20px -20px;
+}
+
+/* Centred in the room above the footer, which is what pushes the footer to the
+ * bottom of a window with room to spare. */
+.login-screen > .login-card,
+.login-screen > .session-check { margin-block: auto; }
 
 /* Nothing of the application under the sign-in screen.
  *
@@ -2929,14 +2999,24 @@ input[readonly]:focus, textarea[readonly]:focus {
 
    Forty-four, which is the size a finger actually needs and the number both
    platform guidelines settled on. Height rather than font size: nothing gets
-   bigger to read, there is simply more of it to hit. */
-@media (max-width: 900px) {
+   bigger to read, there is simply more of it to hit.
+
+   And on any touch screen, however wide. A small screen is a touch screen, but
+   a touch screen is not always small: an iPad held sideways is 1,024 to 1,366
+   pixels wide, and there the tabs were 37 pixels tall, the pickers 40 and the
+   cross on a notice 18. */
+@media (max-width: 900px), (pointer: coarse) {
   button,
   select,
   .tab,
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
     min-height: 44px;
   }
+
+  /* A summary is pressed to open what it heads, and was 20 pixels of text. A
+     line height and room around it rather than a flex box, which would take
+     away the triangle that says it opens. */
+  summary { line-height: 20px; padding-block: 12px; }
 
   /* A file field is drawn by the browser and barely restylable; what can be
      given room is the label around it, which is what a thumb aims at. */

@@ -3,10 +3,15 @@
 package browser
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
+
+	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
 // What a finger presses on a telephone is at least 24 pixels square.
@@ -76,5 +81,102 @@ func TestWhatAFingerPressesIsBigEnough(t *testing.T) {
 
 	if !ticked {
 		t.Error("a tap inside the room around a row's box did not tick it")
+	}
+}
+
+// Everything pressed on a touch screen is big enough to press, however wide the
+// screen is.
+//
+// The rule that gives a finger 44 pixels applied below 900 pixels of width, on
+// the reasoning that a small screen is a touch screen. What it missed is the
+// other way round: an iPad held sideways is 1,024 to 1,366 pixels wide and still
+// pressed with a finger, and there the tabs were 37 pixels tall, the appearance
+// and language pickers and the way out 40. Asked of a touch screen, which is
+// what the stylesheet can ask about too.
+func TestEveryControlIsBigEnoughToPressOnATabletHeldSideways(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+
+	for _, size := range []struct{ w, h int64 }{{1024, 768}, {1180, 820}, {1366, 1024}} {
+		p.run(fmt.Sprintf("a tablet, %dx%d", size.w, size.h),
+			chromedp.EmulateViewport(size.w, size.h, chromedp.EmulateMobile, chromedp.EmulateTouch))
+
+		var coarse bool
+
+		p.run("is it a touch screen", chromedp.Evaluate(`matchMedia('(pointer: coarse)').matches`, &coarse))
+
+		if !coarse {
+			t.Fatalf("at %dx%d the stylesheet is not told it is a touch screen, so this proves nothing",
+				size.w, size.h)
+		}
+
+		for _, view := range []string{"welcome", "users", "roles", "settings", "admin"} {
+			p.run("open "+view, chromedp.Evaluate(fmt.Sprintf("switchView(%q)", view), nil))
+
+			if small := p.tooSmallToPress(); len(small) > 0 {
+				t.Errorf("at %dx%d on the %s screen these are too small to press with a finger: %v",
+					size.w, size.h, view, small)
+			}
+		}
+	}
+}
+
+// The installer is as easy to press on a telephone as the application is.
+//
+// It is a page of its own with a stylesheet of its own, because it runs before
+// there is a database and loads nothing of the application - so the rule that
+// gives a finger 44 pixels never reached it. Its fields were 40 pixels tall and
+// its buttons 43, on the first screen a new installation shows, which is as often
+// opened on whatever is to hand as on a desktop. Asked with every field shown: a
+// server's connection, password and all.
+func TestTheInstallerIsBigEnoughToPressOnATelephone(t *testing.T) {
+	t.Parallel()
+
+	app := harness.StartUnconfigured(t)
+
+	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), launch("en-US")...)
+	defer cancelAlloc()
+
+	ctx, cancel := chromedp.NewContext(alloc)
+	defer cancel()
+
+	ctx, cancelTimeout := context.WithTimeout(ctx, 90*time.Second)
+	defer cancelTimeout()
+
+	var raw string
+
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 844, chromedp.EmulateMobile, chromedp.EmulateTouch),
+		chromedp.Navigate(app.BaseURL()),
+		chromedp.WaitVisible("#heading", chromedp.ByID),
+		chromedp.Evaluate(`(() => {
+			const dialect = document.querySelector('#dialect');
+			dialect.value = 'postgres';
+			dialect.dispatchEvent(new Event('change', { bubbles: true }));
+		})()`, nil),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`JSON.stringify([...document.querySelectorAll('input, select, button')]
+			.filter((el) => el.offsetParent !== null && el.type !== 'hidden')
+			.filter((el) => {
+				const box = el.getBoundingClientRect();
+
+				return box.height < 44 || (el.matches('.password-toggle') && box.width < 44);
+			})
+			.map((el) => (el.id || el.className || el.tagName) + ':' +
+				Math.round(el.getBoundingClientRect().width) + 'x' + Math.round(el.getBoundingClientRect().height)))`, &raw),
+	); err != nil {
+		t.Fatalf("driving the installer: %v", err)
+	}
+
+	var small []string
+
+	if err := json.Unmarshal([]byte(raw), &small); err != nil {
+		t.Fatalf("reading the measurement %q: %v", raw, err)
+	}
+
+	if len(small) > 0 {
+		t.Errorf("on a telephone the installer has these too small to press with a thumb: %v", small)
 	}
 }

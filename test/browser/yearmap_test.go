@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -55,5 +56,51 @@ func TestTheYearIsDrawnATileADay(t *testing.T) {
 
 	if summary := p.text("#year-summary"); !strings.Contains(summary, "Booked:") || !strings.Contains(summary, "to the same day") {
 		t.Errorf("the year is summed up as %q, want what was booked and the year before to the same day", summary)
+	}
+}
+
+// The year fits a tablet's window, and scrolls only on a telephone.
+//
+// A tile was twelve pixels at every width, so the year's fifty-three weeks came
+// to 742 pixels and an iPad held upright gives the card 690 - the last weeks of
+// December lay past its edge on a screen with no scroll bar to say so. A
+// telephone scrolls the year sideways, as the card says it should rather than
+// squeeze it; from a tablet's width on the whole year is in view. Asked at 768
+// with a desktop's scroll bar as well as a tablet's overlay one.
+func TestTheYearFitsATablet(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyWorker()
+
+	p.run("open the overtime", p.click(`.tab[data-view="overtime"]`),
+		chromedp.WaitVisible("#year-card", chromedp.ByID))
+	p.waitForNode("#year-tiles .year-tile")
+
+	for _, size := range []struct {
+		w, h   int64
+		mobile bool
+	}{{768, 1024, true}, {768, 1024, false}, {820, 1180, true}, {1024, 768, true}} {
+		opts := []chromedp.EmulateViewportOption{}
+		if size.mobile {
+			opts = append(opts, chromedp.EmulateMobile, chromedp.EmulateTouch)
+		}
+
+		p.run(fmt.Sprintf("%dx%d", size.w, size.h), chromedp.EmulateViewport(size.w, size.h, opts...))
+
+		var fit struct {
+			Wide float64 `json:"wide"`
+			Room float64 `json:"room"`
+		}
+
+		p.evalJSON(`(() => {
+			const wrap = document.querySelector('#year-card .year-wrap');
+			return JSON.stringify({wide: wrap.scrollWidth, room: wrap.clientWidth});
+		})()`, &fit)
+
+		if fit.Wide > fit.Room+1 {
+			t.Errorf("at %dx%d (mobile: %v) the year is %.0fpx wide in %.0fpx, so December is out of view",
+				size.w, size.h, size.mobile, fit.Wide, fit.Room)
+		}
 	}
 }

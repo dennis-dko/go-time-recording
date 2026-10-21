@@ -235,23 +235,23 @@ func TestTheSignInScreenShowsTheFooter(t *testing.T) {
 		}
 	}
 
-	// And the sign-in screen stops where the footer starts. It scrolls on a short
-	// window so the submit button stays reachable; a footer laid over its bottom
-	// edge would put that button underneath it instead.
+	// And the card ends where the footer starts, or above it. The screen scrolls on
+	// a short window so the submit button stays reachable; a footer laid over the
+	// card would put that button underneath it instead. The footer is inside the
+	// screen now, after the card, so it is the card's edge that is asked about.
 	var edges struct {
-		Screen float64 `json:"screen"`
+		Card   float64 `json:"card"`
 		Footer float64 `json:"footer"`
 	}
 
 	p.evalJSON(`JSON.stringify({
-		screen: document.querySelector('#login-screen').getBoundingClientRect().bottom,
+		card: document.querySelector('#form-login').getBoundingClientRect().bottom,
 		footer: document.querySelector('#site-footer').getBoundingClientRect().top,
 	})`, &edges)
 
-	if edges.Screen > edges.Footer+1 {
-		t.Errorf("the sign-in screen reaches %.0fpx and the footer starts at %.0fpx, "+
-			"so the bottom of the card can scroll behind the footer",
-			edges.Screen, edges.Footer)
+	if edges.Card > edges.Footer+1 {
+		t.Errorf("the sign-in card reaches %.0fpx and the footer starts at %.0fpx, "+
+			"so the bottom of the card is behind the footer", edges.Card, edges.Footer)
 	}
 }
 
@@ -299,5 +299,111 @@ func TestOnAPhoneTheSourceMarkKeepsOffTheFooterText(t *testing.T) {
 	if drawn.Overlap > 0 {
 		t.Errorf("on a telephone the source mark (%s) lies %.0fpx over the footer's text (%s)",
 			drawn.Mark, drawn.Overlap, drawn.Text)
+	}
+}
+
+// On a short window the footer comes after the sign-in form rather than over the
+// window's bottom.
+//
+// The footer was raised above the sign-in screen at the bottom of the window,
+// and the screen stopped where the footer began. With a legal notice in it, the
+// footer was 135 pixels of a telephone held sideways: 185 of its 320 were left
+// for the form, which scrolled in what remained and began below them - the
+// installation's name and the first field in view, the password and every button
+// to be found by scrolling a strip a third of the window high. On a 320 by 568
+// telephone held upright the notice ran to four lines and the third way to sign in
+// sat under the fold of what the footer left.
+//
+// The installation is given a footer line and a legal notice, because the
+// harness configures none, and a footer of one short line hid this everywhere.
+func TestOnAShortWindowTheFooterComesAfterTheSignInForm(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+	p.readyAdmin()
+	p.awaitJSON(`api('/settings/branding', {method: 'PUT', body: JSON.stringify({
+		footerText: 'Example Ltd · Main Street 1 · 12345 Sample Town',
+		legalNotice: 'Example Ltd, Main Street 1, 12345 Sample Town. Registered at the district court of Sample Town, HRB 12345.',
+	})}).then(() => true)`, nil)
+
+	p.run("sign out", chromedp.Click("#logout", chromedp.ByID),
+		chromedp.WaitVisible("#form-login", chromedp.ByID))
+
+	// Loaded again, as the next person to arrive finds it: the page read the
+	// branding when it opened, before the notice was configured.
+	p.reloadSignedOut()
+	p.waitEvaluates("the legal notice in the footer",
+		`String(document.querySelector('#footer-legal').textContent.trim() !== '')`, "true")
+
+	type reading struct {
+		Window      float64 `json:"window"`
+		FooterTop   float64 `json:"footerTop"`
+		CardBottom  float64 `json:"cardBottom"`
+		VersionSeen bool    `json:"versionSeen"`
+	}
+
+	read := func(where string) reading {
+		var r reading
+
+		p.evalJSON(`(() => {
+			const screen = document.querySelector('#login-screen');
+			screen.scrollTop = `+where+`;
+			const footer = document.querySelector('#site-footer').getBoundingClientRect();
+			const version = document.querySelector('#footer-version').getBoundingClientRect();
+			const hit = document.elementFromPoint(version.left + version.width / 2, version.top + version.height / 2);
+
+			return JSON.stringify({
+				window: window.innerHeight,
+				footerTop: footer.top,
+				cardBottom: document.querySelector('#form-login').getBoundingClientRect().bottom,
+				versionSeen: hit !== null && hit.closest('#footer-version') !== null,
+			});
+		})()`, &r)
+
+		return r
+	}
+
+	for _, size := range []struct{ w, h int64 }{{568, 320}, {667, 375}, {844, 390}, {320, 568}} {
+		p.run(fmt.Sprintf("%dx%d", size.w, size.h), chromedp.EmulateViewport(size.w, size.h))
+		p.run("let the page draw", chromedp.Evaluate(
+			`new Promise((drawn) => requestAnimationFrame(() => requestAnimationFrame(() => drawn(true))))`,
+			nil, awaitPromise))
+
+		top := read("0")
+
+		// Cut where the footer begins: what is left of the form is under it.
+		if top.CardBottom > top.FooterTop+1 {
+			t.Errorf("at %dx%d the form is cut off %.0fpx from the top, where the footer takes "+
+				"the window's bottom %.0fpx", size.w, size.h, top.FooterTop, top.Window-top.FooterTop)
+		}
+
+		end := read("1e6")
+
+		if !end.VersionSeen {
+			t.Errorf("at %dx%d the footer cannot be reached by scrolling to the end of the screen",
+				size.w, size.h)
+		}
+
+		if end.CardBottom > end.FooterTop+1 {
+			t.Errorf("at %dx%d the form ends at %.0fpx and the footer begins at %.0fpx, over it",
+				size.w, size.h, end.CardBottom, end.FooterTop)
+		}
+	}
+
+	// And a window with room keeps the footer at its bottom edge, where it was.
+	p.run("a laptop", chromedp.EmulateViewport(1280, 800))
+
+	var bottom struct {
+		Footer float64 `json:"footer"`
+		Window float64 `json:"window"`
+	}
+
+	p.evalJSON(`JSON.stringify({
+		footer: document.querySelector('#site-footer').getBoundingClientRect().bottom,
+		window: window.innerHeight,
+	})`, &bottom)
+
+	if math.Abs(bottom.Footer-bottom.Window) > 1 {
+		t.Errorf("on a laptop the footer ends at %.0fpx of a %.0fpx window", bottom.Footer, bottom.Window)
 	}
 }
