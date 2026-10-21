@@ -56,7 +56,7 @@ test/browser/*.png
 AUDIT_REPORT.md
 
 # The workspace's GOTMPDIR; .vscode/settings.json says why it is not bin/gotmp.
-# Go refuses to start when that directory is missing, so the directory comes with
-# the repository as an empty .gitkeep, and nothing the tests write into it does.
-.gotmp/*
-!.gotmp/.gitkeep
+# Local, like bin/: Go refuses to start without the directory, so the workspace
+# makes it where it is used - a task in .vscode/tasks.json - rather than the
+# repository carrying it as an empty .gitkeep.
+.gotmp/

@@ -55,6 +55,7 @@
       "type": "shell",
       "command": "go test ./internal/interface/web/",
       "options": { "env": { "GOTMPDIR": "${workspaceFolder}/.gotmp" } },
+      "dependsOn": "dev: make the workspace's GOTMPDIR",
       "group": "test",
       "problemMatcher": ["$go"],
       "presentation": { "panel": "dedicated", "clear": true }
@@ -317,6 +318,31 @@
       "options": {
         "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
       },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared", "close": true }
+    },
+    {
+      // Makes the directory the editor hands Go as GOTMPDIR. It is local, like
+      // bin/ - git-ignored whole rather than carried by the repository - and
+      // Go refuses to start without it.
+      //
+      // It runs when the folder is opened, because the tests the Go extension
+      // starts run nothing first. VS Code asks before it runs a task on its
+      // own, once per workspace, and the answer holds for every workspace; so
+      // this is also the preLaunchTask of every launch and a dependency of
+      // every task that hands Go the directory. After a refusal, running it
+      // once by hand is enough, because nothing deletes the directory again.
+      // test/workspace_test.go holds the wiring together.
+      "label": "dev: make the workspace's GOTMPDIR",
+      "type": "shell",
+      "command": "mkdir -p .gotmp",
+      "windows": {
+        "command": "New-Item -ItemType Directory -Force '.gotmp' | Out-Null",
+        "options": {
+          "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
+        }
+      },
+      "runOptions": { "runOn": "folderOpen" },
       "problemMatcher": [],
       "presentation": { "reveal": "silent", "panel": "shared", "close": true }
     }

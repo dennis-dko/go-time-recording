@@ -118,6 +118,7 @@
       "mode": "test",
       "program": "${fileDirname}",
       "args": ["-test.v"],
+      "preLaunchTask": "dev: make the workspace's GOTMPDIR",
       "env": {
         "GOTMPDIR": "${workspaceFolder}/.gotmp"
       }
@@ -131,6 +132,7 @@
       "mode": "test",
       "program": "${fileDirname}",
       "args": ["-test.run", "^${input:testName}$", "-test.v"],
+      "preLaunchTask": "dev: make the workspace's GOTMPDIR",
       "env": {
         "GOTMPDIR": "${workspaceFolder}/.gotmp"
       }
@@ -147,6 +149,7 @@
       "mode": "test",
       "program": "${workspaceFolder}/internal/interface/web",
       "args": ["-test.v"],
+      "preLaunchTask": "dev: make the workspace's GOTMPDIR",
       "env": {
         "GOTMPDIR": "${workspaceFolder}/.gotmp"
       }
@@ -176,6 +179,7 @@
         "-test.timeout",
         "15m"
       ],
+      "preLaunchTask": "dev: make the workspace's GOTMPDIR",
       "env": {
         "GOTMPDIR": "${workspaceFolder}/.gotmp",
         // Empty means SQLite, and the harness then gives the instance its own
@@ -208,6 +212,7 @@
         "-test.timeout",
         "20m"
       ],
+      "preLaunchTask": "dev: make the workspace's GOTMPDIR",
       "env": {
         "GOTMPDIR": "${workspaceFolder}/.gotmp"
         // "CHROME_PATH": "C:/Program Files/Google/Chrome/Application/chrome.exe"
@@ -231,6 +236,7 @@
         "-test.timeout",
         "20m"
       ],
+      "preLaunchTask": "dev: make the workspace's GOTMPDIR",
       "env": {
         "GOTMPDIR": "${workspaceFolder}/.gotmp"
         // "FIREFOX_PATH": "C:/Program Files/Mozilla Firefox/firefox.exe"
@@ -259,6 +265,7 @@
         "-test.timeout",
         "10m"
       ],
+      "preLaunchTask": "dev: make the workspace's GOTMPDIR",
       "env": {
         "GOTMPDIR": "${workspaceFolder}/.gotmp",
         "GTR_TEST_LDAP": "localhost:5389"
