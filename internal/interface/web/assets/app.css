@@ -260,6 +260,14 @@ body {
   gap: 16px;
 }
 
+/* The way out on one line. The automatic minimum above is the widest the
+   selects' longest options and the button's longest word make it, so the button
+   could still shrink to "Sign" with "out" under it - which it did from 932 to
+   1,366 pixels, on a laptop's window. Held to its words, it leaves the squeeze to
+   the account beside it, which is cut short with the whole of it in its
+   tooltip. */
+.topbar-controls > button { white-space: nowrap; }
+
 .topbar h1 { font-size: 18px; margin: 0; }
 
 /* The title is the way back to the greeting, so it has to look like something
