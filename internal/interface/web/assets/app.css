@@ -721,6 +721,13 @@ button.danger:not(.link) {
 .week-grid input.week-cell { max-width: 5.5em; min-width: 3.6em; text-align: right; width: 100%; }
 .week-grid tbody th { min-width: 8em; white-space: normal; }
 .week-grid .week-tag { white-space: normal; }
+
+/* The date under the day's name on a narrow window, in every column alike. Left
+   to fold where it had to, the heading did so in the columns the table had made
+   a pixel narrower and not in the others - "MON / 10/19" beside "TUE 10/20". */
+@media (max-width: 900px) {
+  .week-grid .week-date { display: block; }
+}
 .week-grid .sum,
 .week-grid tfoot th,
 .week-grid tfoot td { font-weight: 600; }

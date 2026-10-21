@@ -6421,7 +6421,12 @@ function drawWeekGrid() {
 
   for (const head of $$('#table-week th[data-day]')) {
     const i = Number(head.dataset.day);
-    head.textContent = `${names[i] ?? ''} ${dayLabel.format(new Date(`${dates[i]}T00:00:00Z`))}`;
+    // Two parts, so a narrow window can set the date under the day's name in
+    // every column alike - see .week-date.
+    head.replaceChildren(
+      el('span', { text: names[i] ?? '' }),
+      ' ',
+      el('span', { class: 'week-date', text: dayLabel.format(new Date(`${dates[i]}T00:00:00Z`)) }));
 
     // And what else the day is: a public holiday, an absence somebody recorded.
     const day = days.find((d) => d.date === dates[i]);
