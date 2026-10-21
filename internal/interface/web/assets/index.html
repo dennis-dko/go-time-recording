@@ -1497,7 +1497,11 @@
       <div class="card" id="token-card">
         <div class="card-head">
           <h2 data-i18n="token.title">API tokens</h2>
-          <a class="tab" href="/api-docs" target="_blank" rel="noopener" data-i18n="token.docs">API documentation ↗</a>
+          <!-- rel="opener", which a new tab no longer gets by default: the
+               reference is this application's own page, and with this tab as its
+               opener its "Back to the application" returns here by closing
+               itself, rather than loading the application a second time. -->
+          <a class="tab" href="/api-docs" target="_blank" rel="opener" data-i18n="token.docs">API documentation ↗</a>
         </div>
         <p class="muted" data-i18n="token.hint">A token replaces your password for API calls and always carries exactly the permissions of your current role. The value is shown only once.</p>
         <form method="post" id="form-token" class="form">

@@ -220,6 +220,51 @@ function securityCard(spec) {
   return card;
 }
 
+/**
+ * Back to the application, in the tab this reference was opened from.
+ *
+ * The reference opens in a tab of its own from the token card, and "Back to the
+ * application" loaded the application again in that tab - two of it open, the one
+ * somebody came from still waiting where they had left it. Opened from there, this
+ * tab has the application as its opener, which the link keeps on purpose, so going
+ * back closes this tab and the browser returns to that one as it was.
+ *
+ * Anything else is the link it always was: a reference opened from a bookmark or
+ * a typed address, an opener since closed or on another site, a browser that will
+ * not close the tab, and a press that asks for a new tab or window.
+ */
+function wireBackLink() {
+  const back = $('#doc-back');
+  if (!back) return;
+
+  back.addEventListener('click', (event) => {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+
+    let opener = null;
+
+    try {
+      if (window.opener && !window.opener.closed
+        && window.opener.location.origin === window.location.origin) {
+        opener = window.opener;
+      }
+    } catch {
+      // A page of another origin now, which is not the application.
+    }
+
+    if (!opener) return;
+
+    event.preventDefault();
+    opener.focus();
+    window.close();
+
+    if (!window.closed) window.location.assign(back.href);
+  });
+}
+
+// At once rather than on DOMContentLoaded: the link is above this script in the
+// page, and a press before the reference has rendered still means the same thing.
+wireBackLink();
+
 document.addEventListener('DOMContentLoaded', () => {
   render().catch((err) => {
     $('#doc-body').append(el('div', { class: 'card' },
