@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -150,13 +149,15 @@ func matchLogged(routes []loggedRoute, r *http.Request) (loggedRoute, uint, bool
 
 		var target uint
 
+		// Read by the package's own reader, at the destination's width - see
+		// parseUint for what reading at sixty-four bits does to a uint.
 		if len(found) > 1 {
-			id, err := strconv.ParseUint(found[1], 10, 64)
+			id, err := parseUint(found[1], "id")
 			if err != nil {
 				return route, 0, false
 			}
 
-			target = uint(id)
+			target = id
 		}
 
 		return route, target, true
