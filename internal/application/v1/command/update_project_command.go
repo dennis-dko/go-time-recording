@@ -20,6 +20,13 @@ type UpdateProjectCommand struct {
 	// leaves it alone.
 	BudgetHours *float64
 
+	// Billable and Currency change what they say when given, an empty Currency
+	// being the default one. HourlyRate sets the rate and zero takes it off, for
+	// the reason a budget's zero does.
+	Billable   *bool
+	HourlyRate *float64
+	Currency   *string
+
 	// ClearEndDate takes the end date off, which no pointer above can say.
 	//
 	// A nil EndDate means "leave it alone", which is what a partial update needs

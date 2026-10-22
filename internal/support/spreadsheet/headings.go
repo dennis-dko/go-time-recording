@@ -24,6 +24,8 @@ var translations = map[string]map[string]string{
 		"Users":        "Benutzer",
 		"Roles":        "Rollen",
 
+		"Statement of work": "Leistungsnachweis",
+
 		// Columns.
 		"Date":          "Datum",
 		"User":          "Benutzer",
@@ -41,6 +43,10 @@ var translations = map[string]map[string]string{
 		"Time zone":     "Zeitzone",
 		"Directory":     "Verzeichnis",
 		"System":        "System",
+		"Rate":          "Satz",
+		"Currency":      "Währung",
+		"Amount":        "Betrag",
+		"Total":         "Summe",
 
 		// Values.
 		"active":    "aktiv",

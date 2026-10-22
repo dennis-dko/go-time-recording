@@ -38,6 +38,7 @@ type Handlers struct {
 	Exports    *rest.ExportHandler
 	AdminLog   *rest.AdminLogHandler
 	Team       *rest.TeamHandler
+	Statements *rest.StatementHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -273,6 +274,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// the hours that belong to none. Neither can be said with an id in a path, which
 	// is why it is a route of its own rather than a parameter on the one above.
 	app.GET(base+"/reports", h.Timesheets.OwnReport)
+
+	// What the billable hours of a period come to, project by project - a statement
+	// of work rather than an invoice - and the same as a workbook.
+	app.GET(base+"/reports/statement", h.Statements.Statement)
+	app.GET(base+"/reports/statement/export", h.Statements.Export)
 
 	// The evaluations as a document, which is a POST because the charts travel
 	// with it: they are drawn in the browser, and what leaves the screen is the

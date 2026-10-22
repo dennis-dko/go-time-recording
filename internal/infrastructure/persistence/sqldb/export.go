@@ -35,8 +35,8 @@ var accountExport = []struct {
 	{"time-entries", "SELECT id, project_id, date, duration_hours, description, created_at, updated_at, " +
 		"recorded_by, updated_by " +
 		"FROM timesheets WHERE user_id = ? ORDER BY date, id"},
-	{"projects", "SELECT id, name, description, start_date, end_date, status, budget_hours " +
-		"FROM projects WHERE owner_id = ? ORDER BY id"},
+	{"projects", "SELECT id, name, description, start_date, end_date, status, budget_hours, " +
+		"billable, hourly_rate, currency FROM projects WHERE owner_id = ? ORDER BY id"},
 	{"api-tokens", "SELECT id, name, prefix, created_at, expires_at, last_used_at " +
 		"FROM api_tokens WHERE user_id = ? ORDER BY id"},
 	{"passkeys", "SELECT id, name, attestation_type, transports, sign_count, backup_eligible, backed_up, " +

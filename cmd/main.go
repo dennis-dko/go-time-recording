@@ -843,6 +843,8 @@ func main() {
 
 	authorizer := rest.NewAuthorizer(cfg.AuthEnabled()).WithTeam(team)
 
+	statements := appservice.NewStatementService(timesheetRepo, projectRepo)
+
 	// Built here rather than inline, because both the middleware that reads it and
 	// the handler that clears it need the same instance - two would mean the
 	// switch takes effect for one of them and not the other.
@@ -1012,6 +1014,7 @@ func main() {
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),
 		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone).WithTeam(team),
 		Team:       rest.NewTeamHandler(team, authorizer),
+		Statements: rest.NewStatementHandler(statements, authorizer, instanceTimezone),
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      setupHandler,

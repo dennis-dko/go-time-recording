@@ -174,6 +174,15 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261022060000: {UP: func(d migration.Datasource) error {
 			return shipTheManagerRole(d, dialect)
 		}},
+		20261022070000: {UP: func(d migration.Datasource) error {
+			return letAProjectBeBillable(d, dialect)
+		}},
+		20261022080000: {UP: func(d migration.Datasource) error {
+			return giveAProjectAnHourlyRate(d)
+		}},
+		20261022090000: {UP: func(d migration.Datasource) error {
+			return giveAProjectACurrency(d)
+		}},
 	}
 }
 
@@ -1952,4 +1961,25 @@ func shipTheManagerRole(d migration.Datasource, dialect string) error {
 	}
 
 	return seedRole(d, dialect, shippedRole(model.RoleManager))
+}
+
+// letAProjectBeBillable marks whether a project's hours are charged to somebody.
+// False for every project there is: nothing was billed before there was a way to
+// say so, and a statement listing all of somebody's projects at once would be a
+// guess about which of them they charge for.
+func letAProjectBeBillable(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE projects ADD COLUMN billable %s NOT NULL DEFAULT %s",
+		boolean(dialect), falseLiteral(dialect)))
+}
+
+// giveAProjectAnHourlyRate keeps what an hour on a project is charged at, in
+// hundredths of its currency; null until its owner sets one.
+func giveAProjectAnHourlyRate(d migration.Datasource) error {
+	return execAll(d, "ALTER TABLE projects ADD COLUMN hourly_rate BIGINT")
+}
+
+// giveAProjectACurrency keeps what a project's rate is in, euros until its owner
+// says otherwise - which is what this application's own users charge in.
+func giveAProjectACurrency(d migration.Datasource) error {
+	return execAll(d, "ALTER TABLE projects ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'EUR'")
 }

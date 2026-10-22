@@ -147,6 +147,9 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 		Status:      req.Status,
 		Today:       time.Now().In(account.TimezoneOf(h.timezone.resolve(c))),
 		BudgetHours: req.BudgetHours,
+		Billable:    req.Billable,
+		HourlyRate:  req.HourlyRate,
+		Currency:    req.Currency,
 	}
 
 	// Whose it becomes. Zero means enforcement is switched off, and then there is no
@@ -203,6 +206,9 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 		Description: req.Description,
 		Status:      req.Status,
 		BudgetHours: req.BudgetHours,
+		Billable:    req.Billable,
+		HourlyRate:  req.HourlyRate,
+		Currency:    req.Currency,
 	}
 
 	if req.StartDate != nil {

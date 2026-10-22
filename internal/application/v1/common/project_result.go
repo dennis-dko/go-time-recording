@@ -23,6 +23,24 @@ type ProjectResult struct {
 	// and BookedHours how many of their own they have booked on it so far.
 	BudgetHours *float64
 	BookedHours float64
+
+	// Billable, HourlyRate and Currency are what its hours are charged at, the
+	// rate in whole units of the currency and nil where there is none yet.
+	Billable   bool
+	HourlyRate *float64
+	Currency   string
+}
+
+// UnitsOf is money kept in hundredths of its currency - a rate, an amount - in
+// whole units, nil for none.
+func UnitsOf(hundredths *int64) *float64 {
+	if hundredths == nil {
+		return nil
+	}
+
+	rate := float64(*hundredths) / 100
+
+	return &rate
 }
 
 func NewProjectResultFromModel(projectModels ...*model.Project) []*ProjectResult {
@@ -40,6 +58,10 @@ func NewProjectResultFromModel(projectModels ...*model.Project) []*ProjectResult
 			OwnerID:   projectModel.OwnerID,
 
 			BudgetHours: projectModel.BudgetHours,
+
+			Billable:   projectModel.Billable,
+			HourlyRate: UnitsOf(projectModel.HourlyRate),
+			Currency:   projectModel.Currency,
 		}
 		if projectModel.Description != nil {
 			projectData.Description = projectModel.Description

@@ -764,7 +764,7 @@
           "projects"
         ],
         "summary": "List projects",
-        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Each carries budgetHours - how many hours you mean to spend on it, null for none - and bookedHours, how many of your own are booked on it. Needs `projects:read`. `ownerId` names an account you look after as a manager, with any of the team rights, while the installation has managers switched on (see /settings/managers): the list is then that account's projects, which is where booking for it, reading its time and keeping its projects all start. Any other account is refused (onlyOwnProjects).",
+        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Each carries budgetHours - how many hours you mean to spend on it, null for none - and bookedHours, how many of your own are booked on it. Needs `projects:read`. `ownerId` names an account you look after as a manager, with any of the team rights, while the installation has managers switched on (see /settings/managers): the list is then that account's projects, which is where booking for it, reading its time and keeping its projects all start. Any other account is refused (onlyOwnProjects). Each also carries billable, hourlyRate - in whole units of currency, null for none - and currency, which are what its hours are charged at in GET /reports/statement.",
         "parameters": [
           {
             "name": "status",
@@ -793,7 +793,7 @@
           "projects"
         ],
         "summary": "Create a project",
-        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. `budgetHours` is optional too: how many hours you mean to spend on it, between 0 and 100000, which nobody but you sees or signs off. Needs `projects:write`. `ownerId` names an account you look after with `projects:write:team`, while the installation has managers switched on (see /settings/managers): the project is then that account's. Any other account is refused (onlyOwnProjects).",
+        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. `budgetHours` is optional too: how many hours you mean to spend on it, between 0 and 100000, which nobody but you sees or signs off. Needs `projects:write`. `ownerId` names an account you look after with `projects:write:team`, while the installation has managers switched on (see /settings/managers): the project is then that account's. Any other account is refused (onlyOwnProjects). `billable`, `hourlyRate` and `currency` say what its hours are charged at, for GET /reports/statement: a rate in whole units of the currency, kept to the hundredth and between 0 and 100000, and a currency of three letters, EUR where left out.",
         "requestBody": {
           "required": true,
           "content": {
@@ -845,7 +845,7 @@
           "projects"
         ],
         "summary": "Update a project",
-        "description": "Changes a project of your own, or with `projects:write:team` one of an account you look after as a manager; any other answers 404. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, an empty `description` empties it, and a `budgetHours` of 0 takes the budget off.",
+        "description": "Changes a project of your own, or with `projects:write:team` one of an account you look after as a manager; any other answers 404. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, an empty `description` empties it, a `budgetHours` of 0 takes the budget off, an `hourlyRate` of 0 takes the rate off, and an empty `currency` is EUR again. A rate below 0 or above 100000 is refused (invalidFields hourlyRate), and a currency that is not three letters (invalidFields currency).",
         "responses": {
           "200": {
             "description": "Updated"
@@ -3083,6 +3083,107 @@
           }
         }
       }
+    },
+    "/reports/statement": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "What your billable hours come to over a period",
+        "description": "A statement of work rather than an invoice: no number, no tax and no customer, which are rules about your books this application cannot know. Answers {\"from\", \"to\", \"lines\": [{\"projectId\", \"name\", \"hours\", \"currency\", \"hourlyRate\", \"amount\"}], \"totals\": [{\"currency\", \"hours\", \"amount\"}]} - a line for each of your billable projects with hours in the period, ordered by name, its rate and amount in whole units of its currency and null where it has no rate yet; and a total for each currency over the lines that have one, never one total across two currencies. An amount is the rate times the line's hours, rounded once to the hundredth. Hours on a project that is not billable, and hours on no project, are not in it. The period is the month so far in your own timezone unless from and to say otherwise (rangeInverted where to is before from). Needs `reports:read:own`; with `userId` a manager reads that of an account they look after with `timesheets:read:team`, and any other account is refused (onlyOwnEntriesRead).",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First day of the period; the first of the month so far where left out.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last day of the period; today where left out.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "description": "An account you look after with timesheets:read:team.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statement"
+          },
+          "400": {
+            "description": "A range that ends before it starts"
+          },
+          "403": {
+            "description": "Missing permission, or somebody else's"
+          }
+        }
+      }
+    },
+    "/reports/statement/export": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "The statement of work as a workbook",
+        "description": "The same statement as GET /reports/statement, as an .xlsx of one sheet: a row per line with the project, its hours, rate, currency and amount, and a total row for each currency under them. Rate and amount are numbers, and empty where there is no rate. The words - the sheet, the headings and the total rows - are in the language `lang` names, and in English where it names none.",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "First day of the period; the first of the month so far where left out.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Last day of the period; today where left out.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "description": "An account you look after with timesheets:read:team.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "description": "The language the sheet is written in.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workbook"
+          },
+          "403": {
+            "description": "Missing permission, or somebody else's"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3171,6 +3272,34 @@
               "completed",
               "archived"
             ]
+          },
+          "budgetHours": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "How many hours you mean to spend on it; none where left out."
+          },
+          "billable": {
+            "type": "boolean",
+            "description": "Whether its hours are charged to somebody: what GET /reports/statement lists."
+          },
+          "hourlyRate": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "What an hour is charged at, in whole units of the currency, kept to the hundredth."
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3,
+            "description": "The ISO 4217 code the rate is in, three letters; EUR where left out or empty."
+          },
+          "ownerId": {
+            "type": "integer",
+            "description": "Whose project it becomes: you, or an account you look after with projects:write:team."
           }
         }
       },

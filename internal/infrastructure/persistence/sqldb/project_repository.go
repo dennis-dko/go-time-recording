@@ -9,7 +9,8 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
-const projectColumns = "id, name, description, start_date, end_date, status, owner_id, budget_hours"
+const projectColumns = "id, name, description, start_date, end_date, status, owner_id, budget_hours, " +
+	"billable, hourly_rate, currency"
 
 // ProjectRepository stores projects in a SQL database.
 type ProjectRepository struct {
@@ -25,10 +26,11 @@ var _ repository.ProjectRepository = (*ProjectRepository)(nil)
 
 func (r *ProjectRepository) Save(ctx context.Context, project *model.Project) (*model.Project, error) {
 	id, err := r.insert(ctx,
-		"INSERT INTO projects (name, description, start_date, end_date, status, owner_id, budget_hours) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO projects (name, description, start_date, end_date, status, owner_id, budget_hours, "+
+			"billable, hourly_rate, currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		project.Name, project.Description, project.StartDate, project.EndDate,
-		project.Status, project.OwnerID, project.BudgetHours)
+		project.Status, project.OwnerID, project.BudgetHours,
+		project.Billable, project.HourlyRate, project.Currency)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -78,10 +80,12 @@ func (r *ProjectRepository) GetAll(ctx context.Context) ([]*model.Project, error
 func (r *ProjectRepository) Update(ctx context.Context, project *model.Project) (*model.Project, error) {
 	found, err := r.update(ctx, "projects",
 		"UPDATE projects SET name = ?, description = ?, start_date = ?, end_date = ?, "+
-			"status = ?, owner_id = ?, budget_hours = ? WHERE id = ?",
+			"status = ?, owner_id = ?, budget_hours = ?, billable = ?, hourly_rate = ?, currency = ? "+
+			"WHERE id = ?",
 		project.ID,
 		project.Name, project.Description, project.StartDate, project.EndDate,
-		project.Status, project.OwnerID, project.BudgetHours, project.ID)
+		project.Status, project.OwnerID, project.BudgetHours,
+		project.Billable, project.HourlyRate, project.Currency, project.ID)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -116,7 +120,8 @@ func scanProject(s scanner) (*model.Project, error) {
 	)
 
 	err := s.Scan(&project.ID, &project.Name, &project.Description, &startDate, &endDate,
-		&project.Status, &project.OwnerID, &project.BudgetHours)
+		&project.Status, &project.OwnerID, &project.BudgetHours,
+		&project.Billable, &project.HourlyRate, &project.Currency)
 	if err != nil {
 		return nil, err
 	}

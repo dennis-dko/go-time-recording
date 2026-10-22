@@ -26,6 +26,13 @@ type CreateProjectCommand struct {
 
 	// BudgetHours is how many hours the owner means to spend on it, nil for none.
 	BudgetHours *float64
+
+	// Billable says whether its hours are charged to somebody; HourlyRate is what
+	// an hour is charged at, in whole units of Currency, nil or zero for none yet;
+	// and an empty Currency is the default one.
+	Billable   bool
+	HourlyRate *float64
+	Currency   string
 }
 
 // CreateProjectCommandResult command to get create result of new project

@@ -20,6 +20,12 @@ type ProjectResponse struct {
 	// and BookedHours how many of the caller's own are booked on it.
 	BudgetHours *float64 `json:"budgetHours"`
 	BookedHours float64  `json:"bookedHours"`
+
+	// Billable, HourlyRate and Currency are what its hours are charged at: the
+	// rate in whole units of the currency, null where there is none yet.
+	Billable   bool     `json:"billable"`
+	HourlyRate *float64 `json:"hourlyRate"`
+	Currency   string   `json:"currency"`
 }
 
 // CreateProjectRequest is the payload for creating a project.
@@ -34,6 +40,10 @@ type CreateProjectRequest struct {
 	// OwnerID is whose project it becomes: absent or the caller's own id for the
 	// caller, or an account the caller looks after as a manager.
 	OwnerID uint `json:"ownerId"`
+
+	Billable   bool     `json:"billable"`
+	HourlyRate *float64 `json:"hourlyRate"`
+	Currency   string   `json:"currency"`
 }
 
 // UpdateProjectRequest is the payload for a partial update.
@@ -46,6 +56,12 @@ type UpdateProjectRequest struct {
 
 	// BudgetHours sets the budget, and 0 takes it off; absent leaves it alone.
 	BudgetHours *float64 `json:"budgetHours"`
+
+	// HourlyRate sets the rate, and 0 takes it off; an empty Currency is the
+	// default one. Absent, each is left alone.
+	Billable   *bool    `json:"billable"`
+	HourlyRate *float64 `json:"hourlyRate"`
+	Currency   *string  `json:"currency"`
 }
 
 func newProjectResponse(r *common.ProjectResult) ProjectResponse {
@@ -58,6 +74,9 @@ func newProjectResponse(r *common.ProjectResult) ProjectResponse {
 		OwnerID:     r.OwnerID,
 		BudgetHours: r.BudgetHours,
 		BookedHours: r.BookedHours,
+		Billable:    r.Billable,
+		HourlyRate:  r.HourlyRate,
+		Currency:    r.Currency,
 	}
 
 	if r.EndDate != nil {
