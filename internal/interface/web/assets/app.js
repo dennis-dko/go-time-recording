@@ -6700,6 +6700,11 @@ async function loadTimesheets(more = false) {
 
   showTimesheetTally();
 
+  // The link answers to the filter as soon as the list does, from the count it
+  // already has: the new count comes back a request later, and until then a list
+  // of the waiting entries stood under the link that leads to it.
+  redrawable('unassigned', drawUnassigned);
+
   await countUnassigned();
 }
 
