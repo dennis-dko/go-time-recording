@@ -23,5 +23,6 @@
 // There is no separate sharing flag because there used to be one, and it was
 // the exception that swallowed the rule. Two people working on the same thing
 // have a project each, with the same name if they like, and nothing adds them
-// together: there are no teams here and no view across accounts.
+// together: there are no teams here, and the one view across accounts is a
+// manager's, of the accounts an administrator assigned to them.
 package model

@@ -20,7 +20,8 @@ const (
 //
 // Two people working on the same thing therefore have a project each, with the same
 // name if they like. Nothing adds them together, because nothing is meant to: there
-// are no teams here and no view across accounts.
+// are no teams here. A manager keeps the projects of the accounts assigned to them,
+// and does it as those accounts - the project is still the owner's.
 type Project struct {
 	ID          uint
 	Name        string

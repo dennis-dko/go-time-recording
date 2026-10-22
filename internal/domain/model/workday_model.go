@@ -14,9 +14,9 @@ const MinutesPerDay = 24 * 60
 // Beside the hours booked on projects rather than in place of them: those say
 // what the time went on, and this says when it was spent, which is what a record
 // of working time has to show (BAG, 13 September 2022, 1 ABR 22/21). Each person's
-// own, kept for themselves: there is no view of anybody else's, as there is none
-// of anybody else's hours, so this is self-documentation and not an employer's
-// record.
+// own, kept for themselves: there is no view of anybody else's - not even a
+// manager's, who looks after somebody's hours and never their start, end and
+// breaks - so this is self-documentation and not an employer's record.
 //
 // Minutes on the clock rather than moments, for the reason a stored date has no
 // zone: "I began at eight" is true wherever it is read. The one day it is not the
