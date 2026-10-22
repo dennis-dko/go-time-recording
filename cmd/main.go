@@ -42,6 +42,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/tlsserver"
 	v1 "github.com/dennis-dko/go-time-recording/internal/interface/api/v1"
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
+	"github.com/dennis-dko/go-time-recording/internal/interface/cli"
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
 	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
@@ -269,6 +270,18 @@ func main() {
 
 		fmt.Println("the previous version is back in place; start it again")
 		os.Exit(0)
+	}
+
+	// The binary as a client of an installation rather than as one: track books
+	// from a terminal through the API with a personal token. Here, before the log
+	// is captured and before anything else starts, because it serves nothing -
+	// see the cli package. Ctrl-C cancels the request it is waiting on.
+	if len(os.Args) > 1 && os.Args[1] == "track" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		status := cli.Run(ctx, os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
+
+		stop()
+		os.Exit(status)
 	}
 
 	// Capture the process output before anything writes to it. GoFr's logger

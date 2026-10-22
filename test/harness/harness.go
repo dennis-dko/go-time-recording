@@ -202,6 +202,17 @@ func Build() (cleanup func(), err error) {
 	return func() { _ = os.RemoveAll(dir) }, nil
 }
 
+// Binary is the application Build compiled, for a case that runs it with
+// arguments of its own - as a client of an instance rather than as one. Empty
+// before Build has run.
+func Binary() string {
+	if path := binaryPath.Load(); path != nil {
+		return *path
+	}
+
+	return ""
+}
+
 func exeSuffix() string {
 	if os.PathSeparator == '\\' {
 		return ".exe"

@@ -1284,6 +1284,15 @@ It moves two files: the version that would not serve becomes
 name back. No database, no configuration, nothing else touched. Start it as you
 normally would.
 
+### The same file as a client
+
+`go-time-recording track` does not serve anything: it books against an
+installation, through its API, as the owner of a personal token - see
+[doc/api.md](../doc/api.md#from-a-terminal). It reads `GTR_URL` and `GTR_TOKEN`
+from the environment, opens no port and touches no database, so the binary that
+runs an installation is also the one people can hand out to book from a
+terminal.
+
 Under systemd, `systemctl stop`, roll back, `systemctl start` - the unit file
 still points at the same path.
 

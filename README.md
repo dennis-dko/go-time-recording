@@ -237,7 +237,7 @@ Running it for real — behind a proxy, with HTTPS, as a service — is
 | **Calendar subscription** | Booked days and days away in Outlook, Google or a telephone's calendar | [Calendar](doc/features.md#your-days-in-your-own-calendar) |
 | **Accounts and roles** | Roles and their rights administered at run time; an administrator who runs the installation without keeping hours in it; managers for the accounts assigned to them, where an installation switches them on | [Access](doc/access.md) |
 | **Sign-in** | Passwords with TOTP, passkeys, LDAP and Active Directory with synchronisation, Kerberos, OpenID Connect | [Sign-in](doc/access.md#ldap) |
-| **API** | REST under `/api/v1`, described at `/api-docs`, reached with personal tokens that never outrank their owner | [API](doc/api.md) |
+| **API** | REST under `/api/v1`, described at `/api-docs`, reached with personal tokens that never outrank their owner - and `go-time-recording track` books through it from a terminal | [API](doc/api.md) |
 | **Operations** | Health, metrics, traces, live log, maintenance mode, updates, restart, HTTPS with Let's Encrypt, the installation's own name and logo | [Configuration](doc/configuration.md) |
 
 ## Documentation
