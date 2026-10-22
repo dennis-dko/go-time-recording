@@ -384,15 +384,18 @@ screen rather than to the top of it.
 
 The server enforces these; the interface merely also hides what is not allowed:
 
-- A time entry belongs to whoever recorded it. Reading, editing, deleting,
-  transferring and totalling it are refused to everybody else, with no exception and
-  no right that grants one — including the account that administers the installation
-  and including the combined role. There is no state to travel through and nobody to
-  approve anything: entries were once `open → submitted → approved`, and the role that
-  approved them is gone.
-- No screen asks which person. The booking form, the entry filter, the calendar and
+- A time entry belongs to the account it was booked for. Reading, editing, deleting,
+  transferring and totalling it are refused to everybody else — including the account
+  that administers the installation and the combined role — except a manager that
+  account was assigned to, while the installation has managers, and then in the open:
+  the entry names the manager who booked or last changed it. There is no state to
+  travel through and nobody to approve anything: entries were once
+  `open → submitted → approved`, and the role that approved them is gone.
+- No form asks which person. The booking form, the entry filter, the calendar and
   the overtime form each had a dropdown of colleagues; every one of them held a single
-  name by the end, and a question with one answer is not a question.
+  name by the end, and a question with one answer is not a question. A manager has
+  one choice instead, under *Whose time*, which turns every screen at once and lists
+  only the accounts assigned to them.
 - Hours are booked only onto **active** projects, whichever way they get there:
   booking, transferring, or editing an entry onto one.
 - The personal daily maximum applies, falling back to `MAX_DAILY_HOURS`.

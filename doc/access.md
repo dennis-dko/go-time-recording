@@ -223,8 +223,9 @@ still a right — whoever could read everybody's time can read their own.
 
 An installation can have managers: accounts that look after the time of the
 people an administrator assigns to them. It is switched off as shipped, and only
-whoever holds `settings:manage` switches it on. Until then every assignment
-waits, kept, and the team rights reach nobody.
+whoever holds `settings:manage` switches it on, in the *Managers* card under
+**Settings**. Until then every assignment waits, kept, the team rights reach
+nobody, and the role editor does not offer them.
 
 | Right | What it gives over an account assigned to its holder |
 | --- | --- |
@@ -240,6 +241,12 @@ with only the rights it should have. A team right carries further what the
 matching own right already does and never stands in for it: a role holding
 `timesheets:read:team` without `timesheets:read:own` reaches nobody.
 
+A manager works for somebody by choosing them under *Whose time*, at the end of
+the navigation. Every screen of time then shows that account's — its entries,
+calendar, overtime, evaluations and projects — and a banner says whose, until
+*Mine* is chosen again. What is always one's own is put away meanwhile: the
+stopwatch, templates, an import, the week grid, working time, leave and days away.
+
 A manager does everything as the account they are working for. A booking goes on
 that account's own projects and counts against its daily maximum; a report covers
 that account's projects; a project made for it is its own. Nothing a manager does
@@ -247,14 +254,16 @@ widens what the account itself could have done.
 
 Three things hold whatever an installation configures:
 
-- **Only an administrator assigns**, holding `users:write`, and only an account
+- **Only an administrator assigns**, holding `users:write`: under **Users**, each
+  account's row offers *managers* while the installation has them. Only an account
   whose role holds a team right can be assigned — never to itself. A manager
   cannot assign anybody: choosing whose time you see would be deciding what you
   are allowed to know.
-- **Nothing is hidden from the person looked after.** Every account can read who
-  may see its time and what each of them may do with it. An entry a manager booked
-  or last changed names them, and so does every version a manager's correction
-  replaced in its history.
+- **Nothing is hidden from the person looked after.** *Who may see your time*,
+  under **My account**, names each of them and what they may do with it. An entry
+  a manager booked or last changed says *booked by* or *changed by* under its
+  description, and every version a manager's correction replaced names them in
+  its history.
 - **Some things stay the person's own.** A manager learns that a day was away and
   never why — a day off sick reads exactly like a day of leave — and has no view of
   anybody's working times, the start, end and breaks of a day, at all. There is no

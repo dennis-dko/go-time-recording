@@ -40,6 +40,14 @@ let loadedVersion = null;
 /** The signed-in user, their permissions, and whether auth is on at all. */
 let me = { user: null, permissions: [], authEnabled: false };
 
+/**
+ * The account whose time the screens show while it is not one's own: one of the
+ * accounts a manager looks after, chosen in the picker under the tabs. null is
+ * one's own, which is what every page starts on - a reload is not the moment to
+ * find oneself looking at somebody else's time without having chosen to.
+ */
+let viewingFor = null;
+
 // ---------------------------------------------------------------- transport
 
 /**
@@ -673,10 +681,18 @@ function fillIn(text, values) {
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-/** Whether the signed-in user holds at least one of the given permissions. */
+/**
+ * Whether the signed-in user holds at least one of the given permissions.
+ *
+ * While the screens show an account a manager looks after, an own right counts only
+ * where the manager may do the same for that account - see TEAM_COUNTERPARTS - so
+ * the screens offer for somebody else exactly what the server takes.
+ */
 function can(...permissions) {
   if (!me.authEnabled) return true;
-  return permissions.some((p) => me.permissions.includes(p));
+
+  return permissions.some((p) => me.permissions.includes(p)
+    && (!viewingFor || !(p in TEAM_COUNTERPARTS) || viewingFor.rights.includes(TEAM_COUNTERPARTS[p])));
 }
 
 /**
@@ -4742,6 +4758,26 @@ const TRANSLATIONS = {
     'absence.sick': 'Krank',
     'absence.flexDay': 'Gleittag (vom Überstundenkonto)',
     'absence.localHoliday': 'Feiertag am Arbeitsort',
+    'team.viewingFor': 'Wessen Zeiten',
+    'team.mine': 'Meine',
+    'team.viewingText': 'Du siehst die Zeiten von {0}. Was du hier buchst oder änderst, steht mit deinem Namen beim Eintrag, und {0} sieht es.',
+    'team.recordedBy': 'gebucht von {0}',
+    'team.updatedBy': 'geändert von {0}',
+    'team.replacedBy': 'von {0}',
+    'team.assign': 'Manager',
+    'team.assignTitle': 'Manager',
+    'team.assignText': 'Wer kümmert sich um die Zeiten von {0}? Diese Konten sehen sie, und {0} sieht, wer sie sind.',
+    'team.noCandidates': 'Noch hat niemand eine Rolle, die sich um andere Konten kümmert. Gib zuerst jemandem die Rolle „Manager“.',
+    'team.assigned': 'Manager zugewiesen',
+    'team.mineTitle': 'Wer deine Zeiten sehen darf',
+    'team.nobody': 'Niemand außer dir. Ein Administrator kann dir Manager zuweisen, sobald die Installation welche hat; sie stünden dann hier.',
+    'team.switchTitle': 'Manager',
+    'team.switchHint': 'Manager kümmern sich neben den eigenen um die Zeiten und Projekte der Konten, die ein Administrator ihnen unter Benutzer zuweist. Wer betreut wird, sieht unter Mein Konto, von wem, und was ein Manager bucht oder ändert, steht mit Namen beim Eintrag. Manager erfahren, dass jemand abwesend war, nie warum, und sehen niemandes Arbeitszeiten.',
+    'team.switchEnabled': 'Diese Installation hat Manager',
+    'team.switchConfirm': 'Manager einschalten? Wer Manager ist, sieht dann die Zeiten der Konten, die ein Administrator zugewiesen hat – und diese Personen sehen, wer.',
+    'team.switchOn': 'Einschalten',
+    'team.switchSaved': 'Manager gespeichert',
+    'absence.away': 'Abwesend',
     'absence.save': 'Erfassen',
     'absence.recorded': 'Erfasste Tage: {0}',
     'absence.removed': 'Abwesenheit zurückgenommen',
@@ -5242,6 +5278,265 @@ function foldableAddress(address) {
   return [address.slice(0, at + 1), el('wbr'), address.slice(at + 1)];
 }
 
+// ------------------------------------------------------------------ managers
+
+/**
+ * The accounts this account looks after as a manager, from /me/team: each with its
+ * id, its name and the team rights the manager's role gives over it. Empty for
+ * everybody else, and for everybody while the installation has no managers.
+ */
+let myTeam = [];
+
+/** The three team rights, which only ever reach an account a manager was assigned. */
+const TEAM_RIGHTS = ['timesheets:read:team', 'timesheets:write:team', 'projects:write:team'];
+
+/**
+ * The team right that carries an own right over to an account a manager looks
+ * after.
+ *
+ * While the screens show such an account, an own right counts only where the
+ * manager's role gives its counterpart over that account - see can - so a control
+ * is offered exactly where the server would take it. projects:read has none: any
+ * team right lists the account's projects, and the account is only in the team
+ * because the manager holds one.
+ */
+const TEAM_COUNTERPARTS = {
+  'timesheets:read:own': 'timesheets:read:team',
+  'reports:read:own': 'timesheets:read:team',
+  'timesheets:write:own': 'timesheets:write:team',
+  'timesheets:transfer': 'timesheets:write:team',
+  'projects:write': 'projects:write:team',
+  'projects:archive': 'projects:write:team',
+  'projects:delete': 'projects:write:team',
+};
+
+/** The account the time on screen belongs to: the one being looked after, or one's own. */
+function subjectID() {
+  return viewingFor?.id ?? me.user?.id;
+}
+
+/**
+ * A read of time, with userId while the screens show somebody a manager looks
+ * after - so every screen asks the server about the same account, and none of
+ * them about the manager by accident.
+ */
+function forSubject(params = {}) {
+  const query = new URLSearchParams(params);
+
+  if (viewingFor) query.set('userId', String(viewingFor.id));
+
+  return query;
+}
+
+/** Somebody who acted in another's name: their name, or their number once they are gone. */
+function actorName(actor) {
+  return actor.name || `#${actor.id}`;
+}
+
+/**
+ * Who booked or last changed an entry in its owner's name, as lines under what it
+ * says - shown to the owner and to the manager alike, which is why it is kept.
+ */
+function actedByLines(entry) {
+  return [
+    entry.recordedBy ? el('span', {
+      class: 'acted-by',
+      text: fillIn(t('team.recordedBy', 'booked by {0}'), [actorName(entry.recordedBy)]),
+    }) : null,
+    entry.updatedBy ? el('span', {
+      class: 'acted-by',
+      text: fillIn(t('team.updatedBy', 'changed by {0}'), [actorName(entry.updatedBy)]),
+    }) : null,
+  ];
+}
+
+/**
+ * Reads whom this account looks after, and draws the picker under the tabs.
+ *
+ * The account on screen goes back to one's own once it is no longer in the list -
+ * an assignment taken back, managers switched off - rather than going on asking
+ * the server about an account it now refuses.
+ */
+async function loadTeam() {
+  myTeam = me.authEnabled && me.user && !me.user.mustChangePassword
+    ? (await api('/me/team'))?.items ?? []
+    : [];
+
+  if (viewingFor) viewingFor = myTeam.find((member) => member.id === viewingFor.id) ?? null;
+
+  const picker = $('#viewing-for-picker');
+  if (picker) {
+    picker.replaceChildren(
+      el('option', { value: '', text: t('team.mine', 'Mine') }),
+      ...myTeam.map((member) => el('option', { value: String(member.id), text: member.name })),
+    );
+    picker.value = viewingFor ? String(viewingFor.id) : '';
+  }
+
+  const holder = $('#viewing-for');
+  if (holder) holder.hidden = myTeam.length === 0;
+
+  showViewingFor();
+}
+
+/**
+ * Lets every screen follow whose time is on it: the banner that says so, the cards
+ * that are always one's own, and the rights each control is offered by.
+ */
+function showViewingFor() {
+  if (viewingFor) document.documentElement.dataset.viewingFor = String(viewingFor.id);
+  else delete document.documentElement.dataset.viewingFor;
+
+  const banner = $('#viewing-banner');
+  if (banner) banner.hidden = !viewingFor;
+
+  if (viewingFor) {
+    redrawable('viewingFor', () => {
+      $('#viewing-text').textContent = fillIn(t('team.viewingText',
+        'You are looking at the time of {0}. What you book or change here carries your name '
+        + 'beside the entry, and {0} sees it.'), [viewingFor.name]);
+    });
+  } else {
+    stopRedrawing('viewingFor');
+  }
+
+  applyPermissionVisibility();
+
+  // A screen that is always one's own is no place to be looking at somebody else's from.
+  const current = $('.tab[aria-current="true"]');
+  if (viewingFor && current?.hasAttribute('data-own-only')) switchView('timesheets');
+}
+
+/** Turns every screen to the time of an account this one looks after, or back to its own. */
+async function viewTimeOf(id) {
+  viewingFor = myTeam.find((member) => String(member.id) === String(id)) ?? null;
+
+  // What was evaluated a moment ago was another account's period.
+  for (const result of ['#overtime-result', '#report-result']) {
+    const card = $(result);
+    if (card) card.hidden = true;
+  }
+
+  showViewingFor();
+  await refreshAll();
+}
+
+/**
+ * Asks which accounts look after somebody, and saves the answer.
+ *
+ * Offered only the accounts whose role gives a team right, because the server
+ * refuses anybody else as a manager - and never the account itself. Without the
+ * roles to tell, everybody else is offered and the server is the one to say no.
+ */
+async function assignManagers(user) {
+  const assigned = (await api(`/users/${user.id}/managers`))?.managerIds ?? [];
+
+  const looksAfter = (roleName) => {
+    const role = cache.roles.find((known) => known.name === roleName);
+
+    return !role || (role.permissions ?? []).some((right) => TEAM_RIGHTS.includes(right));
+  };
+
+  const candidates = cache.users.filter((other) => other.id !== user.id && !other.isSystem
+    && looksAfter(other.role));
+
+  const chosen = await confirmDialog({
+    title: t('team.assignTitle', 'Managers'),
+    text: fillIn(t('team.assignText',
+      'Who looks after the time of {0}? They will see it, and {0} sees who they are.'), [user.name]),
+    confirmLabel: t('action.save', 'Save'),
+    danger: false,
+    choices: candidates.map((candidate) => ({
+      value: candidate.id,
+      label: candidate.name,
+      checked: assigned.includes(candidate.id),
+    })),
+    empty: t('team.noCandidates',
+      'Nobody holds a role that looks after other accounts yet. Give somebody the role "Manager" first.'),
+  });
+
+  if (!chosen) return;
+
+  await patch(`/users/${user.id}/managers`, { managerIds: chosen.map(Number) },
+    t('team.assigned', 'Managers assigned'), refreshAll);
+}
+
+/**
+ * Whether a right belongs on the roles screen: every right, except the team rights
+ * while the installation has no managers - they would reach nobody, and a switch
+ * that does nothing is worse than none. A role holding one anyway shows it, so
+ * what a role grants is never hidden from whoever is reading it.
+ */
+function offeredRight(permission, held = []) {
+  return me.managersEnabled || !TEAM_RIGHTS.includes(permission) || held.includes(permission);
+}
+
+/** Says who may see this account's time, and what each of them may do with it. */
+async function loadMyManagers() {
+  const card = $('#managers-card');
+  if (!card) return;
+
+  card.hidden = !me.authEnabled;
+  if (!me.authEnabled || me.user?.mustChangePassword) return;
+
+  const managers = (await api('/me/managers'))?.items ?? [];
+
+  redrawable('myManagers', () => {
+    $('#managers-list').replaceChildren(...managers.map((manager) => el('li', {},
+      el('strong', { text: manager.name }),
+      el('span', { class: 'muted', text: manager.rights.map(permissionTitle).join(' · ') }))));
+    $('#managers-list').hidden = managers.length === 0;
+    $('#managers-nobody').hidden = managers.length > 0;
+  });
+}
+
+/** The installation's switch, as the server last said it - unless it is being changed. */
+async function loadManagersSwitch() {
+  const form = $('#form-managers');
+  if (!form || beingEdited(form)) return;
+
+  const state = await api('/settings/managers');
+
+  form.elements.enabled.checked = Boolean(state.enabled);
+  form.elements.enabled.defaultChecked = Boolean(state.enabled);
+}
+
+function wireManagers() {
+  const form = $('#form-managers');
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const enabled = form.elements.enabled.checked;
+
+    // Asked about only when switching them on, which is the direction in which
+    // somebody starts seeing a colleague's time. Off needs no question.
+    if (enabled && !form.elements.enabled.defaultChecked) {
+      const proceed = await confirmDialog({
+        title: t('team.switchTitle', 'Managers'),
+        text: t('team.switchConfirm',
+          'Switch managers on? Whoever is a manager then sees the time of the accounts an '
+          + 'administrator assigned to them - and those people see who.'),
+        confirmLabel: t('team.switchOn', 'Switch on'),
+        danger: false,
+      });
+
+      if (!proceed) {
+        form.elements.enabled.checked = false;
+
+        return;
+      }
+    }
+
+    saveForm(form, () => api('/settings/managers', {
+      method: 'PUT', body: JSON.stringify({ enabled }),
+    }), t('team.switchSaved', 'Managers saved'), refreshAll);
+  });
+
+  $('#viewing-for-picker')?.addEventListener('change', (event) => mutate(
+    () => viewTimeOf(event.target.value), null, null));
+}
+
 async function loadUsers() {
   // Listing accounts is a permission, and administering them is the only thing this
   // list is for now.
@@ -5258,7 +5553,8 @@ async function loadUsers() {
   //
   // A dropdown holding a single name is a question with one answer, so all four are
   // gone, and with them the two rights they existed to use. Whose time it is is not a
-  // choice any more, it is who is signed in.
+  // choice any more, it is who is signed in - except for a manager, whose one picker
+  // under the tabs lists only the accounts an administrator assigned to them.
   //
   // Emptied rather than left alone on the way out: a session that loses the right -
   // its role changed while it was signed in - must not go on showing the accounts it
@@ -5310,6 +5606,18 @@ async function loadUsers() {
         'data-action': 'reset-password',
         text: t('user.resetPassword', 'reset password'),
         onclick: () => resetPassword(u),
+      }));
+    }
+
+    // Who looks after this account, while the installation has managers - an
+    // assignment then reaches nothing, and a control that does nothing is worse
+    // than none. Not the built-in administrator, which keeps no time to look after.
+    if (can('users:write') && me.managersEnabled && !u.isSystem) {
+      actions.append(el('button', {
+        class: 'link',
+        'data-action': 'managers',
+        text: t('team.assign', 'managers'),
+        onclick: () => mutate(() => assignManagers(u), null, null),
       }));
     }
 
@@ -5602,6 +5910,8 @@ function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
   let group = '';
 
   for (const permission of cache.permissions) {
+    if (!offeredRight(permission, selected)) continue;
+
     const area = permissionGroup(permission);
 
     if (area.key !== group) {
@@ -5650,7 +5960,7 @@ function renderPermissionLegend() {
 
   for (const permission of cache.permissions) {
     const detail = permissionDetail(permission);
-    if (!detail) continue;
+    if (!detail || !offeredRight(permission)) continue;
 
     list.append(el('dt', {},
       el('span', { text: permissionTitle(permission) }),
@@ -5747,7 +6057,10 @@ function resetRoleForm() {
 async function loadProjects() {
   if (!can('projects:read')) return;
 
-  cache.projects = (await api('/projects'))?.items ?? [];
+  // A manager books on the projects of the account on screen and keeps them, so
+  // every list below is that account's while it is there.
+  const owner = viewingFor ? `?ownerId=${viewingFor.id}` : '';
+  cache.projects = (await api(`/projects${owner}`))?.items ?? [];
 
   const bookable = cache.projects.filter((p) => p.status === 'active');
   // A blank first option is what lets time be booked without a project, and it
@@ -5801,7 +6114,7 @@ async function loadProjects() {
     // their own - so this is true of every row here. It stays because it is the
     // question the delete button is really asking: you may remove your own way of
     // organising your hours whatever your project permissions say.
-    const mine = me.user && p.ownerId === me.user.id;
+    const mine = me.user && p.ownerId === subjectID();
 
     // Offered whatever the status. An archived project is a closed record and a
     // name typed wrongly is still typed wrongly in it - and the server does not
@@ -5968,7 +6281,7 @@ function resetProjectForm() {
  * disagree about it.
  */
 function mayEditTimesheet(entry) {
-  const mine = me.user && entry.userId === me.user.id;
+  const mine = me.user && entry.userId === subjectID();
 
   return Boolean(mine) && can('timesheets:write:own');
 }
@@ -6200,7 +6513,7 @@ function timesheetActions(entry) {
   // What it said before, for one of the reader's own entries saved again since it
   // was booked - the only ones with a history to show, and the only ones whose
   // history the server will show them.
-  if (entry.userId === me.user?.id && entry.updatedAt && entry.updatedAt !== entry.createdAt) {
+  if (entry.userId === subjectID() && entry.updatedAt && entry.updatedAt !== entry.createdAt) {
     actions.append(el('button', {
       class: 'link',
       'data-action': 'history',
@@ -6237,7 +6550,10 @@ async function showEntryHistory(entry) {
         el('th', { class: 'num', text: t('field.hours', 'Hours') }),
         el('th', { text: t('field.description', 'Description') }))),
       el('tbody', {}, ...history.map((version) => el('tr', {},
-        el('td', { text: fmtMoment(version.replacedAt) }),
+        el('td', {}, fmtMoment(version.replacedAt), version.replacedBy ? el('span', {
+          class: 'acted-by',
+          text: fillIn(t('team.replacedBy', 'by {0}'), [actorName(version.replacedBy)]),
+        }) : null),
         el('td', { text: fmtDate(version.date) }),
         el('td', { class: 'text', text: projectOf(version.projectId) }),
         el('td', { class: 'num', text: fmtHours(version.durationHours) }),
@@ -6371,7 +6687,7 @@ async function loadTimesheets(more = false) {
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project'),
       }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { class: 'text', text: entry.description || '–' }),
+      el('td', { class: 'text' }, entry.description || '–', ...actedByLines(entry)),
       actions,
     );
   });
@@ -6395,7 +6711,7 @@ let unassignedEntries = 0;
  * happens to show.
  */
 async function countUnassigned() {
-  const answer = await api('/timesheets?projectId=none&limit=1');
+  const answer = await api(`/timesheets?${forSubject({ projectId: 'none', limit: '1' })}`);
 
   unassignedEntries = answer?.totalCount ?? 0;
 
@@ -7011,8 +7327,8 @@ async function loadCalendar() {
   // The month's days beside its entries, for what each day is besides worked on:
   // a day somebody is away.
   const [entries, month] = await Promise.all([
-    everyTimesheet(span),
-    api(`/me/days?${new URLSearchParams(span)}`),
+    everyTimesheet(forSubject(span)),
+    api(`/me/days?${forSubject(span)}`),
   ]);
 
   // Not drawn if the arrows have moved on while it was on its way. Two quick
@@ -7109,7 +7425,7 @@ function showCalendarDay(iso, entries) {
     const row = el('tr', {},
       el('td', { class: 'text', text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { class: 'text', text: entry.description || '–' }),
+      el('td', { class: 'text' }, entry.description || '–', ...actedByLines(entry)),
       timesheetActions(entry),
     );
 
@@ -7176,6 +7492,7 @@ function absenceName(kind) {
     sick: () => t('absence.sick', 'Sick'),
     flexDay: () => t('absence.flexDay', 'Day off against overtime'),
     localHoliday: () => t('absence.localHoliday', 'Holiday where I work'),
+    away: () => t('absence.away', 'Away'),
   };
 
   return names[kind]?.() ?? kind;
@@ -7466,8 +7783,8 @@ async function loadYearMap() {
   const span = (y) => new URLSearchParams({ from: `${y}-01-01`, to: `${y}-12-31` });
 
   const [shown, before] = await Promise.all([
-    api(`/me/days?${span(year)}`),
-    api(`/me/days?${span(year - 1)}`),
+    api(`/me/days?${forSubject(span(year))}`),
+    api(`/me/days?${forSubject(span(year - 1))}`),
   ]);
 
   // Overtaken by a step to another year while this was on its way.
@@ -8653,6 +8970,7 @@ async function loadAdmin() {
   if (!can('settings:manage')) return;
 
   await loadMaintenance();
+  await loadManagersSwitch();
 
   const branding = await api('/branding');
   const form = $('#form-branding');
@@ -9552,7 +9870,9 @@ const remove = (path, msg, after) => mutate(
  * differs only in its words - and reusing .overlay and .overlay-card means this
  * needs no new styling at all.
  */
-function confirmDialog({ title, text, detail, confirmLabel, danger = true, field = null }) {
+function confirmDialog({
+  title, text, detail, confirmLabel, danger = true, field = null, choices = null, empty = '',
+}) {
   return new Promise((resolve) => {
     // What had focus before, so it can be given back: a dialog that leaves
     // focus on nothing strands anybody using a keyboard.
@@ -9587,6 +9907,23 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true, field
         spellcheck: 'false',
       })
       : null;
+
+    // A choice of several rather than a yes: switches, and what it resolves to is
+    // the values switched on - an empty list too, which is an answer ("nobody")
+    // where a cancel is not. empty is said instead where there is nothing to choose.
+    const ticks = (choices ?? []).map((choice) => el('input', {
+      type: 'checkbox',
+      value: String(choice.value),
+      checked: Boolean(choice.checked),
+    }));
+
+    if (choices?.length) {
+      card.append(el('div', { class: 'choice-list' }, ...choices.map((choice, i) => el('label',
+        { class: 'switch' }, ticks[i], el('span', { class: 'switch-track' }),
+        el('span', { class: 'switch-label', text: choice.label })))));
+    } else if (choices && empty) {
+      card.append(el('p', { class: 'muted', text: empty }));
+    }
 
     if (field) {
       const controls = el('span', { class: 'row' }, input);
@@ -9646,7 +9983,11 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true, field
       class: `confirm-proceed${danger ? ' danger' : ''}`,
       type: 'button',
       text: confirmLabel,
-      onclick: () => close(field ? input.value : true),
+      onclick: () => {
+        if (field) close(input.value);
+        else if (choices) close(ticks.filter((tick) => tick.checked).map((tick) => tick.value));
+        else close(true);
+      },
     });
 
     card.append(el('div', { class: 'row confirm-actions' }, cancel, proceed));
@@ -9664,6 +10005,7 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true, field
     // instead - there is nothing to protect anybody from until it holds a value,
     // and a dialog that opens with the cursor somewhere else is one more click.
     if (input) input.focus();
+    else if (ticks.length) ticks[0].focus();
     else cancel.focus();
   });
 }
@@ -10212,6 +10554,14 @@ function forgetTheLastAccount() {
   cache.projects = [];
   cache.roles = [];
   cache.permissions = [];
+
+  // Whose time was on screen, and whom this account looked after: the next
+  // account to sign in starts on its own.
+  viewingFor = null;
+  myTeam = [];
+  delete document.documentElement.dataset.viewingFor;
+  $('#viewing-banner').hidden = true;
+  $('#viewing-for').hidden = true;
 
   // Emptied rather than left to the next render, which may never come: a table
   // whose loader returns early keeps whatever it last held.
@@ -13799,7 +14149,7 @@ async function loadStatistics() {
   if (!$('#statistics-from').value) setDateField($('#statistics-from'), range.from);
   if (!$('#statistics-to').value) setDateField($('#statistics-to'), range.to);
 
-  const params = new URLSearchParams({
+  const params = forSubject({
     from: $('#statistics-from').value,
     to: $('#statistics-to').value,
   });
@@ -13857,6 +14207,9 @@ function timesheetFilterParams() {
   if (from) params.set('from', from);
   if (to) params.set('to', to);
   if (search) params.set('q', search);
+
+  // The list and the export alike, so the file is what the screen showed.
+  if (viewingFor) params.set('userId', String(viewingFor.id));
 
   return params;
 }
@@ -14871,7 +15224,7 @@ async function loadReportChart(from, to, projectId) {
   // Scoped the way the evaluation was. The endpoint answers for every project
   // unless told otherwise, so an unscoped chart beside a table totalling one
   // project is two different numbers on one screen, both offered as the answer.
-  const params = new URLSearchParams({ from, to });
+  const params = forSubject({ from, to });
   if (projectId) params.set('projectId', projectId);
 
   const stats = await api(`/me/statistics?${params}`);
@@ -17375,6 +17728,9 @@ async function refreshAll() {
     return;
   }
 
+  // Whose time the screens show, before any of them is filled.
+  await loadTeam();
+
   // Roles first: the user table renders a role picker from them.
   await loadRoles();
   await Promise.all([loadUsers(), loadProjects()]);
@@ -17394,6 +17750,7 @@ async function refreshAll() {
   await loadVacation();
   await loadMyHolidays();
   await loadNotices();
+  await loadMyManagers();
   fillSettingsForm();
 
   document.documentElement.dataset.loaded = 'yes';
@@ -17503,6 +17860,9 @@ function wireForms() {
 
     if (body.budgetHours !== undefined) body.budgetHours = Number(body.budgetHours);
 
+    // A project made while looking after somebody is theirs.
+    if (viewingFor) body.ownerId = viewingFor.id;
+
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.projectCreated', 'Project created'),
       async () => { resetProjectForm(); await refreshAll(); });
@@ -17531,6 +17891,11 @@ function wireForms() {
       projectId: Number(raw.projectId),
       durationHours: Number(raw.durationHours),
     };
+
+    // Booked for the account on screen. A correction needs no name: the entry
+    // already says whose it is.
+    if (!editing && viewingFor) body.userId = viewingFor.id;
+
     const path = editing ? `/timesheets/${id}` : '/timesheets';
     const method = editing ? 'PUT' : 'POST';
 
@@ -17592,7 +17957,7 @@ function wireForms() {
   $('#form-report').addEventListener('submit', (e) => {
     e.preventDefault();
     const { projectId, from, to } = formData(e.target);
-    const params = new URLSearchParams();
+    const params = forSubject();
     if (projectId) params.set('projectId', projectId);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
@@ -17655,9 +18020,9 @@ function wireForms() {
     const suffix = params.toString() ? `?${params}` : '';
 
     mutate(async () => {
-      // Your own balance. The id is still in the path because the endpoint takes
-      // one, and any other id is refused rather than answered.
-      const balance = await api(`/users/${me.user.id}/overtime${suffix}`);
+      // The balance of the account on screen: your own, or one you look after as a
+      // manager. Any other id is refused rather than answered.
+      const balance = await api(`/users/${subjectID()}/overtime${suffix}`);
 
       redrawable('overtime', () => renderOvertime(balance));
     }, null, null);
@@ -17921,6 +18286,7 @@ async function init() {
     wireWorkDays();
     wireLogViewer();
     wireMaintenance();
+    wireManagers();
     $('#logout').addEventListener('click', doLogout);
     $('#language-picker').addEventListener('change', (e) => mutate(
       () => api('/me/language', { method: 'PUT', body: JSON.stringify({ language: e.target.value }) }),
