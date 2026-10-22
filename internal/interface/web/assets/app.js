@@ -2104,6 +2104,19 @@ function fmtNumber(n) {
 }
 
 /**
+ * An amount of money in its own currency, written the way the reader writes it:
+ * 1.068,75 € on a German screen, €1,068.75 on an English one. A code the runtime
+ * does not know is still written, as the figure beside the code. Display only.
+ */
+function fmtMoney(amount, currency) {
+  try {
+    return new Intl.NumberFormat(activeLocale(), { style: 'currency', currency }).format(amount);
+  } catch {
+    return `${fmtNumber(amount)} ${currency}`;
+  }
+}
+
+/**
  * A share between none and all, written the way the reader writes a number and
  * in full.
  *
@@ -4408,7 +4421,18 @@ const TRANSLATIONS = {
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
     'project.edit': 'Projekt bearbeiten',
-    'project.hint': 'Deine Projekte sind deine: nur du siehst sie, und nur du buchst darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
+    'project.hint': 'Deine Projekte sind deine: nur du siehst sie und buchst darauf – und ein Manager, dem du zugewiesen bist, wo diese Installation Manager hat. Zwei Personen an derselben Sache haben je ein eigenes.',
+    'project.billable': 'Abrechenbar',
+    'project.ratePerHour': 'abrechenbar zu {0} die Stunde',
+    'project.noRate': 'abrechenbar, noch ohne Satz',
+    'statement.title': 'Leistungsnachweis',
+    'statement.hint': 'Die Stunden deiner abrechenbaren Projekte in einem Zeitraum, mit ihrem Satz und was sie ergeben, je Währung summiert. Keine Rechnung: keine Nummer, keine Steuer, kein Kunde – das schreibst du auf deine Weise.',
+    'statement.create': 'Ausrechnen',
+    'statement.amount': 'Betrag',
+    'statement.noRate': 'noch ohne Satz',
+    'statement.empty': 'Keine abrechenbaren Stunden in diesem Zeitraum.',
+    'statement.total': 'Summe in {0}',
+    'statement.filename': 'leistungsnachweis',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
     'report.result': 'Ergebnis',
@@ -6162,6 +6186,7 @@ async function loadProjects() {
 
     const name = el('td', { class: 'text', text: p.name });
     if (p.budgetHours) name.append(budgetLine(p));
+    if (p.billable) name.append(rateLine(p));
     // No "this one is yours" shade: they all are, and a table shaded from top to
     // bottom says nothing that an unshaded one does not.
     return el('tr', {},
@@ -6197,6 +6222,9 @@ function editProject(project) {
   setDateField(form.elements.startDate, project.startDate ?? '');
   setDateField(form.elements.endDate, project.endDate ?? '');
   form.elements.budgetHours.value = project.budgetHours ?? '';
+  form.elements.billable.checked = Boolean(project.billable);
+  form.elements.hourlyRate.value = project.hourlyRate ?? '';
+  form.elements.currency.value = project.currency ?? '';
 
   swapTheLabel($('#project-form-title'), 'project.edit', 'Edit project');
   swapTheLabel($('#project-submit'), 'action.save', 'Save');
@@ -6205,6 +6233,16 @@ function editProject(project) {
   switchView('projects');
   form.scrollIntoView({ block: 'nearest' });
   form.elements.name.focus();
+}
+
+/** What a billable project's hours are charged at, as a line under its name. */
+function rateLine(project) {
+  return el('span', {
+    class: 'rate-line',
+    text: project.hourlyRate
+      ? fillIn(t('project.ratePerHour', 'billable at {0} an hour'), [fmtMoney(project.hourlyRate, project.currency)])
+      : t('project.noRate', 'billable, no rate yet'),
+  });
 }
 
 /**
@@ -14126,6 +14164,7 @@ function fillRangesFor(view) {
     ],
     report: [
       ['#form-report input[name="from"]', '#form-report input[name="to"]'],
+      ['#form-statement input[name="from"]', '#form-statement input[name="to"]'],
     ],
   }[view] ?? [];
 
@@ -14748,7 +14787,9 @@ function screenColours() {
  * over March's figures - and with nothing when the boxes were left empty and the
  * server chose the period itself. The report's select is the same kind of box.
  */
-const evaluatedPeriod = { report: null, overtime: null, statistics: null };
+const evaluatedPeriod = {
+  report: null, overtime: null, statistics: null, statement: null,
+};
 
 /** The period a document covers, as an answer named it. */
 function periodOf(period) {
@@ -14834,6 +14875,26 @@ async function reportDocument() {
   };
 }
 
+/** The statement last worked out, which the document and the workbook are made of. */
+let statementShown = null;
+
+/**
+ * The statement of work: the table, and a total per currency as the figures
+ * under it - the table's foot is not a row of figures a document reads.
+ */
+async function statementDocument() {
+  return {
+    title: t('statement.title', 'Statement of work'),
+    colours: screenColours(),
+    subtitle: periodOf(evaluatedPeriod.statement),
+    sections: [{ table: tableAsFigures($('#table-statement')) }],
+    summary: (statementShown?.totals ?? []).map((total) => ({
+      label: fillIn(t('statement.total', 'Total in {0}'), [total.currency]),
+      value: fmtMoney(total.amount, total.currency),
+    })),
+  };
+}
+
 /** The statistics screen: both charts, in the order they are on it. */
 async function statisticsDocument() {
   return {
@@ -14907,6 +14968,8 @@ function wireDocumentExports() {
     statisticsDocument);
   wireDocumentExport('#overtime-pdf', () => t('ot.filename', 'overtime'), overtimeDocument);
   wireDocumentExport('#workday-pdf', () => t('work.filename', 'working-time'), workDayDocument);
+  wireDocumentExport('#statement-pdf', () => t('statement.filename', 'statement-of-work'),
+    statementDocument);
 }
 
 // ------------------------------------------- export and import, table by table
@@ -17857,6 +17920,13 @@ function wireForms() {
       const budget = form.elements.budgetHours.value;
       changes.budgetHours = budget === '' ? 0 : Number(budget);
 
+      // The same for the rate: an emptied box takes it off. The switch says what
+      // it says either way, and an emptied currency is euros again.
+      const rate = form.elements.hourlyRate.value;
+      changes.hourlyRate = rate === '' ? 0 : Number(rate);
+      changes.billable = form.elements.billable.checked;
+      changes.currency = form.elements.currency.value.trim();
+
       mutate(() => api(`/projects/${id}`,
         { method: 'PUT', body: JSON.stringify(changes) }),
       t('msg.projectSaved', 'Project saved'),
@@ -17868,6 +17938,8 @@ function wireForms() {
     const body = formData(form);
 
     if (body.budgetHours !== undefined) body.budgetHours = Number(body.budgetHours);
+    if (body.hourlyRate !== undefined) body.hourlyRate = Number(body.hourlyRate);
+    body.billable = form.elements.billable.checked;
 
     // A project made while looking after somebody is theirs.
     if (viewingFor) body.ownerId = viewingFor.id;
@@ -18019,6 +18091,58 @@ function wireForms() {
       .replace('{3}', fmtHours(balance.totalTarget));
     $('#overtime-result').hidden = false;
   }
+
+  /**
+   * A statement of work, line by line and a total per currency. Drawn through
+   * redrawable, so a change of language writes the same figures in the other
+   * language's words and number format.
+   */
+  function renderStatement(statement) {
+    $('#statement-period').textContent = periodOf(evaluatedPeriod.statement);
+
+    const rows = statement.lines.map((line) => el('tr', {},
+      el('td', { class: 'text', text: line.name }),
+      el('td', { class: 'num', text: fmtHours(line.hours) }),
+      el('td', {
+        class: line.hourlyRate === null ? 'num empty' : 'num',
+        text: line.hourlyRate === null
+          ? t('statement.noRate', 'no rate yet')
+          : fmtMoney(line.hourlyRate, line.currency),
+      }),
+      el('td', { class: 'num', text: line.amount === null ? '–' : fmtMoney(line.amount, line.currency) }),
+    ));
+
+    fillTable($('#table-statement tbody'), rows, 4,
+      t('statement.empty', 'No billable hours in this period.'));
+
+    $('#table-statement tfoot').replaceChildren(...statement.totals.map((total) => el('tr', {},
+      el('th', { scope: 'row', class: 'text', text: fillIn(t('statement.total', 'Total in {0}'), [total.currency]) }),
+      el('td', { class: 'num', text: fmtHours(total.hours) }),
+      el('td', {}),
+      el('td', { class: 'num', text: fmtMoney(total.amount, total.currency) }),
+    )));
+
+    $('#statement-result').hidden = false;
+  }
+
+  $('#form-statement').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const { from, to } = formData(e.target);
+
+    mutate(async () => {
+      const statement = await api(`/reports/statement?${forSubject({ from, to })}`);
+
+      statementShown = statement;
+      evaluatedPeriod.statement = { from: statement.from, to: statement.to };
+
+      redrawable('statement', () => renderStatement(statement));
+    }, null, null);
+  });
+
+  // The same statement as a workbook - the one shown, not what the boxes say now.
+  $('#statement-xlsx').addEventListener('click', () => mutate(() => downloadSheet(
+    `/reports/statement/export?${forSubject(evaluatedPeriod.statement ?? {})}`,
+    t('statement.filename', 'statement-of-work')), null, null));
 
   $('#form-overtime').addEventListener('submit', (e) => {
     e.preventDefault();

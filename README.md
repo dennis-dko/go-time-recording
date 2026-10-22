@@ -230,8 +230,8 @@ Running it for real — behind a proxy, with HTTPS, as a service — is
 | --- | --- | --- |
 | **Recording** | Stopwatch, entry form and week grid; templates for what is booked often; changes to many entries at once; spreadsheet import and export | [Features](doc/features.md) |
 | **History** | Every correction keeps the version it replaced, for the entry's owner | [Features](doc/features.md#business-rules) |
-| **Evaluating** | Charts per day, project and activity, reports as bars, columns or a pie, the year as tiles, PDF exports | [Features](doc/features.md) |
-| **Projects** | Private to their owner, with a period, a status and an hour budget | [Projects](doc/features.md#projects) |
+| **Evaluating** | Charts per day, project and activity, reports as bars, columns or a pie, the year as tiles, statements of work, PDF exports | [Features](doc/features.md) |
+| **Projects** | Private to their owner, with a period, a status, an hour budget and an hourly rate | [Projects](doc/features.md#projects) |
 | **Targets and time off** | A planned week, the public holidays of every German state, leave with its entitlement and carry-over, sick days and days taken against overtime | [Overtime](doc/features.md#overtime) |
 | **Working time** | When each day began and ended and its breaks, for each person's own record | [Working time](doc/features.md#your-own-record-of-your-working-time) |
 | **Calendar subscription** | Booked days and days away in Outlook, Google or a telephone's calendar | [Calendar](doc/features.md#your-days-in-your-own-calendar) |

@@ -1137,7 +1137,7 @@
       <form method="post" id="form-project" class="card form" data-perm="projects:write">
         <h2 id="project-form-title" data-i18n="project.create">Create project</h2>
         <input type="hidden" name="id">
-        <p class="muted" data-i18n="project.hint">Your projects are yours: only you see them, and only you book on them. Two people working on the same thing keep a project each.</p>
+        <p class="muted" data-i18n="project.hint">Your projects are yours: only you see them and book on them - and a manager you are assigned to, where this installation has managers. Two people working on the same thing keep a project each.</p>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <!-- The start is filled in on arrival, like every other date this
@@ -1155,6 +1155,12 @@
           <!-- How many hours its owner means to spend on it: theirs to set, and
                nobody's to sign off. Emptied, it takes the budget off again. -->
           <label data-i18n="field.budgetHours">Hour budget<input type="number" name="budgetHours" step="any" min="0" max="100000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <!-- What its hours are charged at, for the statement of work under
+               Reports: a rate in whole units of the currency, kept to the
+               hundredth, and a currency that is euros where it is left empty. -->
+          <label class="switch"><input type="checkbox" name="billable"><span class="switch-track"></span><span class="switch-label" data-i18n="project.billable">Billable</span></label>
+          <label data-i18n="field.hourlyRate">Hourly rate<input type="number" name="hourlyRate" step="0.01" min="0" max="100000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <label data-i18n="field.currency">Currency<input type="text" name="currency" maxlength="3" pattern="[A-Za-z]{3}" placeholder="EUR" autocomplete="off"></label>
         </div>
         <div class="row">
           <button type="submit" id="project-submit" data-i18n="action.create">Create</button>
@@ -1344,6 +1350,45 @@
         <div class="row">
           <button type="button" class="secondary" id="report-pdf"
                   data-i18n="action.exportPdf">Export as PDF</button>
+        </div>
+      </div>
+
+      <!-- What the billable hours of a period come to, project by project, for
+           whoever charges for their time. Deliberately not an invoice - no number,
+           no tax, no customer - and a card of its own with a period of its own,
+           because it is asked for on its own: at the end of a month. -->
+      <form method="post" id="form-statement" class="card form" data-perm="reports:read:own">
+        <h2 data-i18n="statement.title">Statement of work</h2>
+        <p class="muted" data-i18n="statement.hint">The hours of your billable projects in a period, with their rate and what they come to, totalled per currency. Not an invoice: no number, no tax, no customer - that part you write your own way.</p>
+        <div class="grid">
+          <label data-i18n="field.from">From<input type="date" name="from"></label>
+          <label data-i18n="field.to">To<input type="date" name="to"></label>
+        </div>
+        <button type="submit" data-i18n="statement.create">Work it out</button>
+      </form>
+
+      <div class="card" id="statement-result" hidden>
+        <h2 data-i18n="statement.title">Statement of work</h2>
+        <p class="muted" id="statement-period"></p>
+        <div class="table-wrap">
+          <table id="table-statement">
+            <thead>
+              <tr>
+                <th data-i18n="field.project">Project</th>
+                <th class="num" data-i18n="field.hours">Hours</th>
+                <th class="num" data-i18n="field.hourlyRate">Hourly rate</th>
+                <th class="num" data-i18n="statement.amount">Amount</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+        <div class="row">
+          <button type="button" class="secondary" id="statement-pdf"
+                  data-i18n="action.exportPdf">Export as PDF</button>
+          <button type="button" class="secondary" id="statement-xlsx"
+                  data-i18n="wb.export">Export as .xlsx</button>
         </div>
       </div>
     </section>

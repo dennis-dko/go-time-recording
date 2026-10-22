@@ -1770,7 +1770,8 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 /* How much of a project's budget is booked, under its name: quiet until four
  * fifths, marked from there, and in the danger colour past the whole. */
-.budget-line { color: var(--muted); display: block; font-size: 12px; }
+.budget-line,
+.rate-line { color: var(--muted); display: block; font-size: 12px; }
 .budget-line.near { color: var(--text); font-weight: 600; }
 .budget-line.over { color: var(--danger); font-weight: 600; }
 

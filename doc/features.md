@@ -22,6 +22,7 @@ What the application does, and the rules it keeps while doing it.
 | Finding entries | The list narrows by project, by period and by text in the description, and the export follows the same filters |
 | Entry history | Every correction of an entry keeps the version it replaced - its day, hours, project and description, and when it was replaced - whether it was made in the form, by moving the entry to another project, on the week grid or for a whole selection at once. The entry's owner opens it from the entry; deleting the entry deletes its history |
 | Hour budgets | A project may carry the hours its owner means to spend on it; the list shows how much of that is booked, marked from four fifths and past the whole, and the booking that crosses either says so |
+| Statement of work | A project may be billable at an hourly rate in a currency of its own; under *Reports* a period's billable hours come to a line per project with its rate and amount, a total per currency, and leave as a PDF or an .xlsx. Not an invoice: no number, no tax, no customer |
 | Templates | A booking made often - a project, hours, a description - is kept from the form and fills it in again when chosen. Nothing is booked from a template on its own, and one whose project has closed can no longer be chosen |
 | Own statistics | Hours per day, per project and per activity, drawn as charts, for everybody rather than administrators |
 | Activities | A second way of sorting the same hours beside the project, written into the description with a # - #meeting, #review - and totalled under *Own statistics*. Nothing to set up first, and every description already written counts; an entry naming two counts towards both |
@@ -69,6 +70,20 @@ nobody. The project list says how much of it the hours booked so far use, and ma
 it from four fifths and again past the whole; the booking that takes a project past
 either says so once, and the evaluation of one project names its budget beside its
 total. A budget of nothing takes it off.
+
+A project may also be **billable**, at an hourly rate in a currency of its own -
+euros unless its owner says otherwise. Under *Reports*, the **statement of work**
+takes a period and lists each billable project with hours in it: the hours, the
+rate and what they come to, and under them a total for each currency, never one
+across two. A project with no rate yet is listed with its hours and no amount,
+rather than with a guess. The amount is the rate times the hours, rounded once to
+the hundredth, and money is kept in hundredths throughout, so nothing on a statement
+is a sum of roundings. It leaves as a PDF and as an .xlsx with the same figures.
+
+It is a statement and deliberately not an invoice. It has no number, no tax and no
+customer: each of those is a rule about somebody's books that this application
+cannot know, and an invoice that gets one of them wrong is worse than a figure that
+says what it is. A rate of nothing takes the rate off.
 
 ## Overtime
 
