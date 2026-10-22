@@ -377,6 +377,11 @@ func shippedRoleTitles(t *testing.T) map[string]string {
 // only refuse. This is the check that says so before somebody adds one back, because a
 // dropdown that looks ordinary and answers 403 is a bug that reads as a permissions
 // problem for as long as nobody tries it.
+//
+// One control does ask, and it is not on any form: a manager's picker under the tabs,
+// which turns every screen at once and lists only what /me/team answers - the accounts
+// an administrator assigned to them, which the server accepts. A per-form question is
+// what this keeps out; a fifth would be the second place asking which person.
 func TestNothingOnScreenAsksWhichPerson(t *testing.T) {
 	html := asset(t, "/")
 

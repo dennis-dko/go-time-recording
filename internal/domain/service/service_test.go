@@ -9,6 +9,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	"github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // These three operations are the ones with real refusals in them, and the
@@ -390,5 +391,54 @@ func TestAssigningARoleToAUserThatDoesNotExist(t *testing.T) {
 
 	if _, err := f.userDomain.AssignRoleToUser(context.Background(), 9999, "user"); err == nil {
 		t.Error("a role was assigned to a user that does not exist")
+	}
+}
+
+// ownedProject seeds an active project belonging to an account.
+func (f *fixture) ownedProject(t *testing.T, name string, owner uint) *model.Project {
+	t.Helper()
+
+	created, err := f.projects.Save(context.Background(),
+		&model.Project{Name: name, Status: model.ProjectStatusActive, OwnerID: &owner})
+	if err != nil {
+		t.Fatalf("seed project %s: %v", name, err)
+	}
+
+	return created
+}
+
+// An entry moves only onto a project of its owner's, whoever moves it - a project
+// of the mover's own is not there for it - and a manager moving it is named as the
+// one who changed it, where the owner moving it is nobody else's change.
+func TestAnEntryMovesOnlyOntoItsOwnersProjectsAndNamesWhoMovedIt(t *testing.T) {
+	f := newFixture(t)
+	owner, manager := uint(1), uint(2)
+
+	from := f.ownedProject(t, "From", owner)
+	to := f.ownedProject(t, "To", owner)
+	mine := f.ownedProject(t, "Mine", manager)
+	entry := f.entry(t, from.ID)
+
+	_, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, mine.ID, manager)
+	if detail, ok := apperror.Detail(err); !ok || detail.Kind != apperror.KindNotFound {
+		t.Errorf("moving the entry onto the manager's own project answered %v, want not found", err)
+	}
+
+	moved, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, to.ID, manager)
+	if err != nil {
+		t.Fatalf("the manager moving the entry onto its owner's project: %v", err)
+	}
+
+	if moved.UpdatedBy == nil || *moved.UpdatedBy != manager {
+		t.Errorf("the moved entry names %v as its last changer, want the manager", moved.UpdatedBy)
+	}
+
+	back, err := f.timesheetDomain.TransferTimesheetToProject(context.Background(), entry.ID, from.ID, owner)
+	if err != nil {
+		t.Fatalf("the owner moving the entry back: %v", err)
+	}
+
+	if back.UpdatedBy != nil {
+		t.Errorf("after its owner moved it, the entry names %d as its last changer", *back.UpdatedBy)
 	}
 }

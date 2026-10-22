@@ -36,6 +36,10 @@ type WorkDayRecord struct {
 	Recorded bool
 
 	BookedHours float64
+
+	// Notices is what the Working Hours Act says about the shift that began on this
+	// day; see model.WorkingTimeNotices.
+	Notices []model.WorkingTimeNotice
 }
 
 // Between reads somebody's days from one day to another: every day they recorded
@@ -46,10 +50,14 @@ func (s *WorkDayService) Between(ctx context.Context, userID uint, from, to time
 		return nil, err
 	}
 
-	recorded, err := s.days.Between(ctx, userID, first, last)
+	// From the day before, for the rest before the range's first day; the day
+	// itself is read for that and not returned.
+	recorded, err := s.days.Between(ctx, userID, first.AddDate(0, 0, -1), last)
 	if err != nil {
 		return nil, err
 	}
+
+	notices := model.WorkingTimeNotices(recorded)
 
 	entries, err := s.timesheets.GetByFilter(ctx, repository.TimesheetFilter{
 		UserID: userID, StartDate: &first, EndDate: &last,
@@ -61,7 +69,11 @@ func (s *WorkDayService) Between(ctx context.Context, userID uint, from, to time
 	byDay := make(map[time.Time]*WorkDayRecord)
 
 	for _, day := range recorded {
-		byDay[day.Day] = &WorkDayRecord{WorkDay: day, Recorded: true}
+		if day.Day.Before(first) {
+			continue
+		}
+
+		byDay[day.Day] = &WorkDayRecord{WorkDay: day, Recorded: true, Notices: notices[day.Day]}
 	}
 
 	for _, entry := range entries {

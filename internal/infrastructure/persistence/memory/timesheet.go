@@ -121,6 +121,18 @@ func (r *TimesheetRepository) HoursByProject(_ context.Context, userID uint) (ma
 	return totals, nil
 }
 
+func (r *TimesheetRepository) FirstDay(_ context.Context, userID uint) (time.Time, bool, error) {
+	var first time.Time
+
+	for _, ts := range r.store.all() {
+		if ts.UserID == userID && (first.IsZero() || ts.Date.Before(first)) {
+			first = ts.Date
+		}
+	}
+
+	return model.CalendarDay(first), !first.IsZero(), nil
+}
+
 // page applies a limit and an offset the way a SQL LIMIT/OFFSET would, including
 // answering with nothing for an offset past the end rather than with the last
 // page, which is what a hand-rolled slice usually gets wrong.
@@ -170,7 +182,13 @@ func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timeshe
 
 	before, err := r.store.get(timesheet.ID)
 	if err == nil {
-		corrected.CreatedAt = before.CreatedAt
+		corrected.CreatedAt, corrected.RecordedBy = before.CreatedAt, before.RecordedBy
+
+		// As the SQL repository does: a save that changes nothing leaves the name
+		// of whoever last did as it was.
+		if before.Says(timesheet) {
+			corrected.UpdatedBy = before.UpdatedBy
+		}
 	}
 
 	updated, err := r.store.update(timesheet.ID, &corrected)
@@ -184,6 +202,7 @@ func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timeshe
 
 		kept := model.RevisionOf(before, corrected.UpdatedAt)
 		kept.ID = r.nextRevision
+		kept.ReplacedBy = timesheet.UpdatedBy
 		r.revisions = append(r.revisions, kept)
 		r.mu.Unlock()
 	}

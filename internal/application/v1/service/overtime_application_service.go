@@ -58,6 +58,57 @@ type Day struct {
 	Counts bool
 }
 
+// SeenBy is the balance as viewer may see it. See DaysSeenBy.
+func (b *OvertimeBalance) SeenBy(viewer *Principal) *OvertimeBalance {
+	if !reasonsHiddenFrom(viewer, b.UserID) {
+		return b
+	}
+
+	seen := *b
+	seen.Days = slices.Clone(b.Days)
+
+	for i := range seen.Days {
+		seen.Days[i].Absence = undisclosed(seen.Days[i].Absence)
+	}
+
+	return &seen
+}
+
+// DaysSeenBy is somebody's days as viewer may see them: whole for their owner, and
+// for anybody else - a manager the owner was assigned to - with every absence told
+// only as model.AbsenceUndisclosed. A viewer whose id is zero is an installation
+// without authentication, which sees everything, as it does everywhere.
+//
+// What a day asked stays, because the balance is made of it: hiding the target
+// would leave a manager a figure they cannot follow, and the target of a day away
+// says no more than that it was a day away.
+func DaysSeenBy(days []Day, owner *model.User, viewer *Principal) []Day {
+	if !reasonsHiddenFrom(viewer, owner.ID) {
+		return days
+	}
+
+	seen := slices.Clone(days)
+	for i := range seen {
+		seen[i].Absence = undisclosed(seen[i].Absence)
+	}
+
+	return seen
+}
+
+// reasonsHiddenFrom says whether why somebody was away is kept from viewer.
+func reasonsHiddenFrom(viewer *Principal, ownerID uint) bool {
+	return viewer != nil && viewer.User != nil && viewer.User.ID != 0 && viewer.User.ID != ownerID
+}
+
+// undisclosed is an absence told without its reason, and no absence stays none.
+func undisclosed(kind string) string {
+	if kind == "" {
+		return ""
+	}
+
+	return model.AbsenceUndisclosed
+}
+
 // MaxDays is the longest range Days answers: fifty-three weeks, which is what a
 // year drawn as whole weeks from Monday to Sunday can span.
 const MaxDays = 371
@@ -146,6 +197,30 @@ func (r dayRules) of(day time.Time, booked float64) (target float64, counts bool
 	}
 
 	return target, booked > 0 || (target > 0 && !day.After(r.today))
+}
+
+// expectsWork says whether somebody was expected to work on a day at all: their
+// week plans hours for it, it is no public holiday where they work, and they were
+// not away - except for half a day of leave, which leaves half a day of work. A day
+// off against overtime is away, though it asks its whole target of the balance;
+// that is what takes it off the balance, and nobody is meant to book on it.
+//
+// Not of, which answers a different question: what a day asks of the balance, by
+// a rule that before somebody's chosen day knows no holidays at all.
+func (r dayRules) expectsWork(day time.Time) bool {
+	if model.TargetOn(day, r.schedules, r.before) <= 0 {
+		return false
+	}
+
+	if _, holiday := r.holidays[day]; holiday {
+		return false
+	}
+
+	if absence, away := r.absent[day]; away {
+		return absence.Kind == model.AbsenceHalfVacation
+	}
+
+	return true
 }
 
 // rulesFor gathers what decides somebody's days between two calendar days.
@@ -384,4 +459,166 @@ func (s *OvertimeService) Days(ctx context.Context, userID uint, from, to time.T
 	}
 
 	return days, nil
+}
+
+// RunningBalance is somebody's balance from the first day that counts up to today,
+// read against the bounds they set.
+type RunningBalance struct {
+	Hours float64
+
+	// Since is where the balance begins, nil while nothing counts yet.
+	Since *time.Time
+
+	Upper, Lower *float64
+
+	// Outside is model.BalanceAbove or model.BalanceBelow while the balance lies
+	// past one of the bounds, and empty otherwise.
+	Outside string
+}
+
+// Notices is what about somebody's own time deserves a banner.
+type Notices struct {
+	Balance RunningBalance
+
+	// UnbookedDay is the last day before today somebody was expected to work and
+	// booked nothing on, nil when that day was booked or they asked not to be told.
+	UnbookedDay *time.Time
+}
+
+// Notices answers what about somebody's own time deserves a banner.
+func (s *OvertimeService) Notices(ctx context.Context, userID uint) (*Notices, error) {
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	running, err := s.running(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	unbooked, err := s.unbookedDay(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Notices{Balance: running, UnbookedDay: unbooked}, nil
+}
+
+// reminderLookBack is how far back the last working day is looked for: two weeks,
+// which reaches past a fortnight of leave and the public holidays around it.
+const reminderLookBack = 14
+
+// unbookedDay is the last day before today somebody was expected to work, when
+// nothing is booked on it.
+//
+// Only that one day. Somebody who books a week at a time on Friday is told about
+// Thursday on Friday morning and about nothing on Monday, and an earlier gap is
+// the business of the day it was - a banner listing every unbooked day of a month
+// would be one nobody reads. Nothing is said about a day before the balance
+// begins, which belongs to a time before the account was used.
+func (s *OvertimeService) unbookedDay(ctx context.Context, user *model.User) (*time.Time, error) {
+	if user.SkipUnbookedReminder {
+		return nil, nil
+	}
+
+	begins, found, err := s.beginning(ctx, user)
+	if err != nil || !found {
+		return nil, err
+	}
+
+	today := todayOf(ctx, s.today, user)
+	last := today.AddDate(0, 0, -1)
+	first := today.AddDate(0, 0, -reminderLookBack)
+
+	rules, err := s.rulesFor(ctx, user, first, last)
+	if err != nil {
+		return nil, err
+	}
+
+	for day := last; !day.Before(first) && !day.Before(begins); day = day.AddDate(0, 0, -1) {
+		if !rules.expectsWork(day) {
+			continue
+		}
+
+		booked, err := s.timesheets.CountByFilter(ctx, repository.TimesheetFilter{
+			UserID: user.ID, StartDate: &day, EndDate: &day,
+		})
+		if err != nil || booked > 0 {
+			return nil, err
+		}
+
+		return &day, nil
+	}
+
+	return nil, nil
+}
+
+// beginning is the first day that counts towards somebody's balance: the first day
+// they booked on, or the day every working day counts from where that is earlier.
+func (s *OvertimeService) beginning(ctx context.Context, user *model.User) (time.Time, bool, error) {
+	first, found, err := s.timesheets.FirstDay(ctx, user.ID)
+	if err != nil {
+		return first, false, err
+	}
+
+	if from := user.EveryDayCountsFrom; from != nil && (!found || from.Before(first)) {
+		return *from, true, nil
+	}
+
+	return first, found, nil
+}
+
+// running is somebody's balance from the first day that counts to today.
+//
+// The first day that counts is the first day booked on, or the day every working
+// day counts from where that is earlier: from then on an unbooked working day is
+// a deficit, so it belongs to the balance whether or not anything was booked
+// before it. A booking ahead of today counts once its day has come, as it does
+// on the overtime screen.
+func (s *OvertimeService) running(ctx context.Context, user *model.User) (RunningBalance, error) {
+	running := RunningBalance{Upper: user.BalanceUpperLimit, Lower: user.BalanceLowerLimit}
+
+	first, found, err := s.beginning(ctx, user)
+	if err != nil {
+		return running, err
+	}
+
+	today := todayOf(ctx, s.today, user)
+
+	if !found || first.After(today) {
+		return running, nil
+	}
+
+	balance, err := s.Balance(ctx, user.ID, first, today)
+	if err != nil {
+		return running, err
+	}
+
+	running.Hours = balance.TotalBalance
+	running.Since = &first
+	running.Outside = user.BalanceOutside(running.Hours)
+
+	return running, nil
+}
+
+// maxBalanceBound is the furthest from zero a bound may lie: some years of
+// working days, which is further than anybody keeping a flexitime account means.
+const maxBalanceBound = 10000
+
+// SetBalanceLimits keeps the bounds of somebody's running balance, nil for none.
+//
+// An upper bound lies at zero or above and a lower one at zero or below. A bound on
+// the wrong side of zero would put every balance outside it from the first day,
+// which no one means and a banner would then say on every screen.
+func (s *OvertimeService) SetBalanceLimits(ctx context.Context, userID uint, upper, lower *float64) error {
+	if upper != nil && (*upper < 0 || *upper > maxBalanceBound) {
+		return apperror.InvalidFields("upperBound")
+	}
+
+	if lower != nil && (*lower > 0 || *lower < -maxBalanceBound) {
+		return apperror.InvalidFields("lowerBound")
+	}
+
+	return s.users.SetBalanceLimits(ctx, userID, upper, lower)
 }

@@ -35,6 +35,10 @@ type Handlers struct {
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
 	Documents  *rest.DocumentHandler
+	Exports    *rest.ExportHandler
+	AdminLog   *rest.AdminLogHandler
+	Team       *rest.TeamHandler
+	Statements *rest.StatementHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -113,6 +117,10 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/settings/telemetry", h.Settings.Telemetry)
 	app.PUT(base+"/settings/telemetry", h.Settings.SaveTelemetry)
 
+	// Whether anybody may look after somebody else's time at all - shipped off.
+	app.GET(base+"/settings/managers", h.Team.Switch)
+	app.PUT(base+"/settings/managers", h.Team.SaveSwitch)
+
 	// What is waiting for a restart, and the restart itself. Under /settings/
 	// like the rest, which also keeps it reachable during maintenance mode - the
 	// settings that need a restart are exactly the ones somebody is likely to be
@@ -131,6 +139,10 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// everything the process has written.
 	app.GET(base+"/admin/logs", h.Logs.Logs)
 
+	// Who changed how the installation is run. Under /admin for the same reason,
+	// and for whoever administers it: a record of administration is theirs to read.
+	app.GET(base+"/admin/changes", h.AdminLog.Changes)
+
 	app.GET(base+"/me", h.Me.Me)
 	app.PUT(base+"/me/password", h.Me.ChangePassword)
 	app.PUT(base+"/me/language", h.Auth.SetLanguage)
@@ -139,6 +151,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/holidays", h.Holidays.Mine)
 	app.PUT(base+"/me/holidays", h.Holidays.SetMine)
 	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
+	app.PUT(base+"/me/reminders", h.Auth.SetReminders)
 	// The clock, always the caller's own: starting somebody else's would record
 	// time nobody asked them about, so there is no user id in these routes and no
 	// permission for "other people's timers" to get wrong.
@@ -173,6 +186,18 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/absences", h.Absences.List)
 	app.POST(base+"/me/absences", h.Absences.Save)
 	app.DELETE(base+"/me/absences/{day}", h.Absences.Delete)
+
+	// Everything held about one's own account, for handing over.
+	app.GET(base+"/me/export", h.Exports.Account)
+
+	// The accounts the caller looks after as a manager, and who looks after the
+	// caller - the second one always answered, so nobody has to wonder.
+	app.GET(base+"/me/team", h.Team.Team)
+	app.GET(base+"/me/managers", h.Team.MyManagers)
+
+	// What about one's own time deserves a banner, worked out where the rules are.
+	app.GET(base+"/me/notices", h.Me.Notices)
+	app.PUT(base+"/me/balance-limits", h.Me.SetBalanceLimits)
 
 	// When somebody worked, a day at a time - theirs, like their entries.
 	app.GET(base+"/me/workdays", h.WorkDays.List)
@@ -218,6 +243,10 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/users/{id}/working-times", h.Users.UpdateWorkingTimes)
 	app.GET(base+"/users/{id}/overtime", h.Me.Overtime)
 
+	// Who looks after an account: an administrator's to decide, never a manager's.
+	app.GET(base+"/users/{id}/managers", h.Team.Managers)
+	app.PUT(base+"/users/{id}/managers", h.Team.SetManagers)
+
 	// Ahead of the {id} routes, for the same reason the others are: "export" is
 	// not an id.
 	app.GET(base+"/roles/export", h.Sheets.ExportRoles)
@@ -245,6 +274,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// the hours that belong to none. Neither can be said with an id in a path, which
 	// is why it is a route of its own rather than a parameter on the one above.
 	app.GET(base+"/reports", h.Timesheets.OwnReport)
+
+	// What the billable hours of a period come to, project by project - a statement
+	// of work rather than an invoice - and the same as a workbook.
+	app.GET(base+"/reports/statement", h.Statements.Statement)
+	app.GET(base+"/reports/statement/export", h.Statements.Export)
 
 	// The evaluations as a document, which is a POST because the charts travel
 	// with it: they are drawn in the browser, and what leaves the screen is the

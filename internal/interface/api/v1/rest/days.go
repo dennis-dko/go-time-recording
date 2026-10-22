@@ -5,6 +5,7 @@ import (
 
 	"gofr.dev/pkg/gofr"
 
+	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 )
 
@@ -35,22 +36,37 @@ type DaysResponse struct {
 // included, with what was booked on it and what it asked.
 //
 // The caller's own, and needing nothing beyond reading their own entries - the
-// same as the statistics, which this is the per-day half of.
+// same as the statistics, which this is the per-day half of. userId names an
+// account the caller looks after as a manager, whose days are then told without
+// the reasons they were away.
 func (h *MeHandler) Days(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermTimesheetReadOwn)
 	if err != nil {
 		return nil, err
 	}
 
-	from, to, err := weekRange(c, h.locationFor(c, principal.User))
+	requested, err := queryUint(c, "userId")
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
-	days, err := h.overtime.Days(c, principal.User.ID, from, to)
+	account, err := h.authz.accountFor(c, principal, requested, somebodyElsesEntries(),
+		model.PermTimesheetReadTeam)
+	if err != nil {
+		return nil, err
+	}
+
+	from, to, err := weekRange(c, h.locationFor(c, account))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
+
+	days, err := h.overtime.Days(c, account.ID, from, to)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	days = service.DaysSeenBy(days, account, principal)
 
 	answer := DaysResponse{
 		From: Date{Time: model.CalendarDay(from)},

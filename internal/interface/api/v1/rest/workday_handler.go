@@ -41,6 +41,17 @@ type WorkDayResponse struct {
 	BreakMinutes int     `json:"breakMinutes"`
 	WorkedHours  float64 `json:"workedHours"`
 	BookedHours  float64 `json:"bookedHours"`
+
+	// Notices is what the Working Hours Act says about the shift that began on this
+	// day, and an empty list rather than none when it says nothing.
+	Notices []WorkingTimeNoticeResponse `json:"notices"`
+}
+
+// WorkingTimeNoticeResponse is one limit of the Working Hours Act a shift went
+// past; see model.WorkingTimeNotice for what Minutes is the minutes of.
+type WorkingTimeNoticeResponse struct {
+	Rule    string `json:"rule"`
+	Minutes int    `json:"minutes"`
 }
 
 // WorkDaysResponse is a range of days and what they add up to.
@@ -90,6 +101,12 @@ func (h *WorkDayHandler) List(c *gofr.Context) (any, error) {
 	for _, day := range days {
 		described := WorkDayResponse{
 			Date: Date{Time: day.Day}, Recorded: day.Recorded, BookedHours: day.BookedHours,
+			Notices: make([]WorkingTimeNoticeResponse, 0, len(day.Notices)),
+		}
+
+		for _, notice := range day.Notices {
+			described.Notices = append(described.Notices,
+				WorkingTimeNoticeResponse{Rule: notice.Rule, Minutes: notice.Minutes})
 		}
 
 		if day.Recorded {

@@ -144,6 +144,45 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261020060000: {UP: func(d migration.Datasource) error {
 			return findAnEntrysHistoryByTheEntry(d)
 		}},
+		20261021010000: {UP: func(d migration.Datasource) error {
+			return letABalanceHaveAnUpperBound(d, dialect)
+		}},
+		20261021020000: {UP: func(d migration.Datasource) error {
+			return letABalanceHaveALowerBound(d, dialect)
+		}},
+		20261021030000: {UP: func(d migration.Datasource) error {
+			return letSomebodySkipTheUnbookedDayReminder(d)
+		}},
+		20261021040000: {UP: func(d migration.Datasource) error {
+			return letSomebodyChooseWhenTheStopwatchIsMentioned(d)
+		}},
+		20261022010000: {UP: func(d migration.Datasource) error {
+			return keepALogOfAdministration(d, dialect)
+		}},
+		20261022020000: {UP: func(d migration.Datasource) error {
+			return keepWhomEachManagerLooksAfter(d, dialect)
+		}},
+		20261022030000: {UP: func(d migration.Datasource) error {
+			return rememberWhoBookedAnEntry(d, dialect)
+		}},
+		20261022040000: {UP: func(d migration.Datasource) error {
+			return rememberWhoLastChangedAnEntry(d, dialect)
+		}},
+		20261022050000: {UP: func(d migration.Datasource) error {
+			return rememberWhoReplacedAVersion(d, dialect)
+		}},
+		20261022060000: {UP: func(d migration.Datasource) error {
+			return shipTheManagerRole(d, dialect)
+		}},
+		20261022070000: {UP: func(d migration.Datasource) error {
+			return letAProjectBeBillable(d, dialect)
+		}},
+		20261022080000: {UP: func(d migration.Datasource) error {
+			return giveAProjectAnHourlyRate(d)
+		}},
+		20261022090000: {UP: func(d migration.Datasource) error {
+			return giveAProjectACurrency(d)
+		}},
 	}
 }
 
@@ -1801,4 +1840,146 @@ func keepWhatEntriesSaidBefore(d migration.Datasource, dialect string) error {
 // statement is.
 func findAnEntrysHistoryByTheEntry(d migration.Datasource) error {
 	return execAll(d, "CREATE INDEX idx_timesheet_revisions_entry ON timesheet_revisions (timesheet_id)")
+}
+
+// letABalanceHaveAnUpperBound records the most a person means their running
+// balance to stand at, in hours. Null for every account there is, which is no
+// bound at all - and a statement of its own, as the lower bound below has one.
+func letABalanceHaveAnUpperBound(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE users ADD COLUMN balance_upper_limit %s", float(dialect)))
+}
+
+// letABalanceHaveALowerBound records the least a person means their running
+// balance to stand at, in hours; null is no bound.
+func letABalanceHaveALowerBound(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE users ADD COLUMN balance_lower_limit %s", float(dialect)))
+}
+
+// letSomebodySkipTheUnbookedDayReminder records who has switched off the banner
+// about a last working day with nothing booked on it. False for every account
+// there is, which is the reminder: it is switched off, not on.
+func letSomebodySkipTheUnbookedDayReminder(d migration.Datasource) error {
+	return execAll(d, "ALTER TABLE users ADD COLUMN skip_unbooked_reminder BOOLEAN NOT NULL DEFAULT FALSE")
+}
+
+// letSomebodyChooseWhenTheStopwatchIsMentioned records after how many hours a
+// running stopwatch is mentioned. Null for every account there is, which is the
+// default; zero is never.
+func letSomebodyChooseWhenTheStopwatchIsMentioned(d migration.Datasource) error {
+	return execAll(d, "ALTER TABLE users ADD COLUMN timer_alert_hours INTEGER")
+}
+
+// keepALogOfAdministration keeps who changed how the installation is run, and
+// when: accounts, roles, settings, a restart.
+//
+// The actor and the target are ids without a foreign key, on purpose. A key would
+// put the table on the erasure's list, and erasing an account would then erase the
+// record of what that account did to everybody else's - the one thing a log of
+// administration exists to keep. An id is never handed out twice, so once its
+// account is gone it names nobody, and the names are read when the log is shown.
+func keepALogOfAdministration(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE admin_events (
+		%s,
+		at %s NOT NULL,
+		actor_id %s NOT NULL,
+		action VARCHAR(64) NOT NULL,
+		target_id %s,
+		detail VARCHAR(255) NOT NULL DEFAULT ''
+	)`, primaryKey(dialect), timestamp(dialect), foreignKeyID(dialect), foreignKeyID(dialect)))
+}
+
+// keepWhomEachManagerLooksAfter keeps which accounts an administrator assigned to
+// each manager: both ends are accounts, so both are on the erasure's list, and the
+// pair is the key, which is also the one index the table needs.
+func keepWhomEachManagerLooksAfter(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE managed_accounts (
+		manager_id %s NOT NULL REFERENCES users(id),
+		user_id %s NOT NULL REFERENCES users(id),
+		PRIMARY KEY (manager_id, user_id)
+	)`, foreignKeyID(dialect), foreignKeyID(dialect)))
+}
+
+// rememberWhoBookedAnEntry records the manager who booked an entry in somebody's
+// name. Null for every entry there is, which is the owner: before managers there
+// was nobody else who could have. No foreign key, as in the administration log -
+// an erased manager leaves a number that names nobody rather than taking the
+// entry's history with them.
+func rememberWhoBookedAnEntry(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE timesheets ADD COLUMN recorded_by %s", foreignKeyID(dialect)))
+}
+
+// rememberWhoLastChangedAnEntry records the manager who last changed an entry, in
+// a statement of its own; null is the owner.
+func rememberWhoLastChangedAnEntry(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE timesheets ADD COLUMN updated_by %s", foreignKeyID(dialect)))
+}
+
+// rememberWhoReplacedAVersion records the manager whose correction replaced each
+// kept version of an entry; null is the owner.
+func rememberWhoReplacedAVersion(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE timesheet_revisions ADD COLUMN replaced_by %s", foreignKeyID(dialect)))
+}
+
+// shipTheManagerRole gives an installation the manager role.
+//
+// No installation arrives here holding the shipped one. A fresh installation is
+// seeded at its start with the roles of today's model, manager among them, and the
+// migration that retired the review path's manager removes that one as well, by
+// name. So a role called manager at this point is one an installation made itself
+// after that retirement: it is moved aside under a free name with everything it
+// has, as renameRole moves aside a role in the way of a shipped name, rather than
+// having its people quietly handed the team rights. One already holding them could
+// only be the shipped role, and is not shipped twice.
+func shipTheManagerRole(d migration.Datasource, dialect string) error {
+	existing, err := firstRoleThatExists(d, dialect, model.RoleManager)
+	if err != nil {
+		return err
+	}
+
+	if existing != "" {
+		var shipped int
+
+		if err := d.SQL.QueryRow(sqldb.Rebind(dialect,
+			"SELECT COUNT(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id "+
+				"WHERE r.name = ? AND rp.permission = ?"),
+			model.RoleManager, model.PermTimesheetReadTeam).Scan(&shipped); err != nil {
+			return fmt.Errorf("asking whether the manager role is the shipped one: %w", err)
+		}
+
+		if shipped > 0 {
+			return nil
+		}
+
+		free, err := aFreeRoleName(d, dialect, model.RoleManager)
+		if err != nil {
+			return err
+		}
+
+		if err := setRoleName(d, dialect, model.RoleManager, free); err != nil {
+			return fmt.Errorf("moving an installation's own manager role aside: %w", err)
+		}
+	}
+
+	return seedRole(d, dialect, shippedRole(model.RoleManager))
+}
+
+// letAProjectBeBillable marks whether a project's hours are charged to somebody.
+// False for every project there is: nothing was billed before there was a way to
+// say so, and a statement listing all of somebody's projects at once would be a
+// guess about which of them they charge for.
+func letAProjectBeBillable(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE projects ADD COLUMN billable %s NOT NULL DEFAULT %s",
+		boolean(dialect), falseLiteral(dialect)))
+}
+
+// giveAProjectAnHourlyRate keeps what an hour on a project is charged at, in
+// hundredths of its currency; null until its owner sets one.
+func giveAProjectAnHourlyRate(d migration.Datasource) error {
+	return execAll(d, "ALTER TABLE projects ADD COLUMN hourly_rate BIGINT")
+}
+
+// giveAProjectACurrency keeps what a project's rate is in, euros until its owner
+// says otherwise - which is what this application's own users charge in.
+func giveAProjectACurrency(d migration.Datasource) error {
+	return execAll(d, "ALTER TABLE projects ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'EUR'")
 }

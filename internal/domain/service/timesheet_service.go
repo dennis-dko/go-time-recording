@@ -31,15 +31,18 @@ func NewTimesheetDomainService(
 
 // TransferTimesheetToProject moves a time entry from one project to another.
 //
-// viewerID is who is asking, because the target may be somebody else's private
-// category: without this check a timesheets:transfer holder could move an entry
-// onto a project they are not allowed to see, and read its name back out of the
-// response.
+// actorID is who is moving it, zero where authentication is switched off. The
+// target is checked against the entry's owner, not against the mover, because an
+// entry can only ever be on a project of its owner's: for the owner that is the
+// same question, and for a manager moving it in the owner's name a project of the
+// manager's own is no more there for the entry than anybody else's - refused as
+// not found, so a mover cannot read a name back out of the response either. A
+// manager moving it is named as the one who changed it.
 func (s *TimesheetDomainService) TransferTimesheetToProject(
 	ctx context.Context,
 	timesheetID uint,
 	newProjectID uint,
-	viewerID uint,
+	actorID uint,
 ) (*model.Timesheet, error) {
 	timesheet, err := s.timesheetRepository.GetByID(ctx, timesheetID)
 	if err != nil {
@@ -51,7 +54,12 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 		return nil, err
 	}
 
-	if err := RequireVisible(newProject, viewerID); err != nil {
+	viewer := actorID
+	if actorID != 0 {
+		viewer = timesheet.UserID
+	}
+
+	if err := RequireVisible(newProject, viewer); err != nil {
 		return nil, err
 	}
 
@@ -69,6 +77,11 @@ func (s *TimesheetDomainService) TransferTimesheetToProject(
 	// Transferring is also how an uncategorised entry gets its first project.
 	projectID := newProject.ID
 	timesheet.ProjectID = &projectID
+
+	timesheet.UpdatedBy = nil
+	if actorID != 0 && actorID != timesheet.UserID {
+		timesheet.UpdatedBy = &actorID
+	}
 
 	updatedTimesheet, err := s.timesheetRepository.Update(ctx, timesheet)
 	if err != nil {

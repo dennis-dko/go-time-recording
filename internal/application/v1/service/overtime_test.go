@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/memory"
+	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
 )
 
 // overtimeFor builds a service over the same repositories the fixture uses.
@@ -242,3 +244,93 @@ func TestADayThatMeetsItsTargetHasNoBalanceAtAll(t *testing.T) {
 		}
 	}
 }
+
+// overtimeOn builds a service over the fixture's repositories for which today is
+// the given day.
+func overtimeOn(f *fixture, today time.Time) *service.OvertimeService {
+	return service.NewOvertimeService(f.timesheetRepo, f.userRepo, memory.NewWorkScheduleRepository(),
+		memory.NewAbsenceRepository(), nil, func(context.Context, *model.User) time.Time { return today })
+}
+
+// The running balance begins at the first day somebody booked on and runs to
+// today, so a booking made ahead counts once its day has come; and it is read
+// against the bounds its owner set, which a balance only crosses by going past.
+func TestTheRunningBalanceRunsFromTheFirstBookingToToday(t *testing.T) {
+	f := newFixture(t)
+
+	f.book(t, day(3), 10)
+	f.book(t, day(10), 9)
+	f.book(t, day(24), 5)
+
+	overtime := overtimeOn(f, day(20))
+
+	notices, err := overtime.Notices(context.Background(), f.userID)
+	if err != nil {
+		t.Fatalf("notices: %v", err)
+	}
+
+	running := notices.Balance
+	if running.Hours != 3 || running.Since == nil || !running.Since.Equal(day(3)) || running.Outside != "" {
+		t.Errorf("the running balance reads %+v, want +3 h since the 3rd and inside every bound", running)
+	}
+
+	upper := 2.5
+	if err := overtime.SetBalanceLimits(context.Background(), f.userID, &upper, nil); err != nil {
+		t.Fatalf("set the bounds: %v", err)
+	}
+
+	notices, err = overtime.Notices(context.Background(), f.userID)
+	if err != nil {
+		t.Fatalf("notices: %v", err)
+	}
+
+	if running := notices.Balance; running.Outside != model.BalanceAbove || running.Upper == nil ||
+		*running.Upper != 2.5 || running.Lower != nil {
+		t.Errorf("past an upper bound of 2.5 h the balance reads %+v, want it above and no lower bound", running)
+	}
+}
+
+// Somebody who has booked nothing has a balance of nothing, beginning nowhere.
+func TestNothingBookedIsABalanceThatHasNotBegun(t *testing.T) {
+	f := newFixture(t)
+
+	notices, err := overtimeOn(f, day(20)).Notices(context.Background(), f.userID)
+	if err != nil {
+		t.Fatalf("notices: %v", err)
+	}
+
+	if running := notices.Balance; running.Hours != 0 || running.Since != nil || running.Outside != "" {
+		t.Errorf("an account with nothing booked reads %+v", running)
+	}
+}
+
+// An upper bound lies at zero or above and a lower one at zero or below, and
+// neither further out than anybody could mean: a bound on the wrong side of zero
+// would put every balance outside it from the first day.
+func TestABalanceBoundIsOnItsOwnSideOfZero(t *testing.T) {
+	f := newFixture(t)
+	overtime := overtimeOn(f, day(20))
+
+	for _, tc := range []struct {
+		name         string
+		upper, lower *float64
+		field        string
+	}{
+		{"an upper bound below zero", hoursOf(-1), nil, "upperBound"},
+		{"a lower bound above zero", nil, hoursOf(1), "lowerBound"},
+		{"an upper bound nobody could mean", hoursOf(100000), nil, "upperBound"},
+		{"a lower bound nobody could mean", nil, hoursOf(-100000), "lowerBound"},
+	} {
+		err := overtime.SetBalanceLimits(context.Background(), f.userID, tc.upper, tc.lower)
+
+		if detail, ok := apperror.Detail(err); !ok || !slices.Contains(detail.Fields, tc.field) {
+			t.Errorf("%s answered %v, want the field %q refused", tc.name, err, tc.field)
+		}
+	}
+
+	if err := overtime.SetBalanceLimits(context.Background(), f.userID, hoursOf(0), hoursOf(0)); err != nil {
+		t.Errorf("bounds of zero on both sides were refused: %v", err)
+	}
+}
+
+func hoursOf(h float64) *float64 { return &h }

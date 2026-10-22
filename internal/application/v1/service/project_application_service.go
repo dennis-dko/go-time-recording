@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/command"
@@ -91,6 +93,15 @@ func (s *ProjectApplicationService) CreateProject(
 		return nil, err
 	}
 
+	if err := validateRate(cmd.HourlyRate); err != nil {
+		return nil, err
+	}
+
+	currency, err := currencyCode(cmd.Currency)
+	if err != nil {
+		return nil, err
+	}
+
 	createdProject, err := s.projectRepository.Save(ctx, &model.Project{
 		Name:        cmd.Name,
 		Description: cmd.Description,
@@ -99,6 +110,9 @@ func (s *ProjectApplicationService) CreateProject(
 		Status:      status,
 		OwnerID:     cmd.OwnerID,
 		BudgetHours: budgetOrNone(cmd.BudgetHours),
+		Billable:    cmd.Billable,
+		HourlyRate:  hundredths(cmd.HourlyRate),
+		Currency:    currency,
 	})
 	if err != nil {
 		return nil, err
@@ -239,6 +253,27 @@ func (s *ProjectApplicationService) UpdateProject(
 		existingProject.BudgetHours = budgetOrNone(cmd.BudgetHours)
 	}
 
+	if cmd.Billable != nil {
+		existingProject.Billable = *cmd.Billable
+	}
+
+	if cmd.HourlyRate != nil {
+		if err := validateRate(cmd.HourlyRate); err != nil {
+			return nil, err
+		}
+
+		existingProject.HourlyRate = hundredths(cmd.HourlyRate)
+	}
+
+	if cmd.Currency != nil {
+		currency, err := currencyCode(*cmd.Currency)
+		if err != nil {
+			return nil, err
+		}
+
+		existingProject.Currency = currency
+	}
+
 	err = validateProject(existingProject.Name, existingProject.Status, existingProject.Description,
 		existingProject.StartDate, existingProject.EndDate)
 	if err != nil {
@@ -268,6 +303,47 @@ func validateBudget(hours *float64) error {
 	}
 
 	return nil
+}
+
+// validateRate refuses a rate below nothing or beyond any that is charged, and one
+// that is not a number at all.
+func validateRate(rate *float64) error {
+	if rate != nil && !(*rate >= 0 && *rate <= model.MaxHourlyRate) {
+		return apperror.InvalidFields("hourlyRate")
+	}
+
+	return nil
+}
+
+// hundredths keeps a rate as the hundredths of its currency it is charged in, and
+// a rate of nothing as no rate, which is what it means.
+func hundredths(rate *float64) *int64 {
+	if rate == nil {
+		return nil
+	}
+
+	value := int64(math.Round(*rate * 100))
+	if value == 0 {
+		return nil
+	}
+
+	return &value
+}
+
+// currencyCode reads a currency as its ISO 4217 code: three letters, in capitals.
+// Empty is the default one; anything else is refused rather than guessed at,
+// because a statement in the wrong currency is wrong by the whole exchange rate.
+func currencyCode(code string) (string, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return model.DefaultCurrency, nil
+	}
+
+	if len(code) != 3 || strings.Trim(code, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
+		return "", apperror.InvalidFields("currency")
+	}
+
+	return code, nil
 }
 
 // budgetOrNone stores a budget of nothing as no budget, which is what it means.

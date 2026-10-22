@@ -3,6 +3,32 @@
 Responses are wrapped by the framework: `{"data": ...}` or `{"error": ...}`.
 The full reference is at `/api-docs`; the highlights:
 
+## From a terminal
+
+The binary is a client as well as a server. `go-time-recording track` books
+through this API as the owner of a personal token, made under *My account*, API
+tokens:
+
+```bash
+export GTR_URL=https://time.example.com GTR_TOKEN=gtr_...
+go-time-recording track start Website -m "release notes"
+go-time-recording track status
+go-time-recording track switch Webshop
+go-time-recording track stop
+go-time-recording track book 1:30 consulting -m "call" -d 2026-10-21
+go-time-recording track today
+```
+
+A project is named as it is called, or by the start of its name, among the
+active ones; hours are written 1.5, 1,5 or 1:30. The stopwatch it starts is the
+one the browser shows, running on the server, so stopping it anywhere stops it
+everywhere. The address and the token come from the environment rather than from
+flags, because a token on a command line lands in the shell's history and in every
+process listing. It exits with 0 when done, 1 when the installation refused or could
+not be reached - in the installation's own words - and 2 for a command line it could
+not read, which is what a script tells the two apart by. `track help` lists the
+commands.
+
 ## What a refusal looks like
 
 Every refusal names itself. The name is what something other than an English

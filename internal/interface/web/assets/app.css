@@ -341,6 +341,44 @@ body {
 
 nav { display: flex; gap: 4px; flex-wrap: wrap; }
 
+/* A manager's choice of whose time the screens show, last in the navigation. A
+   choice rather than a place to go, so a caption beside a select rather than a
+   tab - on one line, where every other label stacks its caption above. */
+.viewing-for {
+  align-items: center;
+  flex-direction: row;
+  margin-left: 8px;
+}
+
+.viewing-for select { width: auto; }
+
+/* While the screens show an account a manager looks after, what is always one's
+   own - the stopwatch, templates, an import, the week grid, working time, leave
+   and absences - goes, rather than acting on the manager's own record from a
+   screen showing somebody else's. */
+html[data-viewing-for] [data-own-only] { display: none !important; }
+
+/* Who booked or last changed an entry in its owner's name, under what it says. */
+.acted-by {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+}
+
+/* Who may see one's time, a line each: the name, and what they may do. */
+#managers-list { list-style: none; margin: 8px 0 0; padding: 0; }
+
+#managers-list li + li { margin-top: 8px; }
+
+#managers-list .muted { display: block; }
+
+/* The switches a dialog offers when it asks for several answers rather than a yes. */
+.choice-list {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
 /* Centred in the bar, which is the whole point of giving it a line. Centred on
    the bar rather than between its neighbours: it has no neighbours here, so a
    long name on the right cannot pull it off centre. */
@@ -1214,6 +1252,9 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .banner[hidden] { display: none; }
 
+/* The bookings the installation refused, a line each with the way to correct it. */
+#outbox-refused { margin: 6px 0 0; padding-left: 18px; }
+
 /* A button that reads as a link: this one goes somewhere rather than doing
    something, and a filled button beside a sentence would outweigh the sentence. */
 .link-button {
@@ -1732,9 +1773,25 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 /* How much of a project's budget is booked, under its name: quiet until four
  * fifths, marked from there, and in the danger colour past the whole. */
-.budget-line { color: var(--muted); display: block; font-size: 12px; }
+.budget-line,
+.rate-line { color: var(--muted); display: block; font-size: 12px; }
 .budget-line.near { color: var(--text); font-weight: 600; }
 .budget-line.over { color: var(--danger); font-weight: 600; }
+
+/* What the Working Hours Act says about a day in the working-time table: in the
+   banner's colour, because it is the same kind of thing - something that is true
+   and worth knowing, not a refusal - and one sentence a line, so a day past two
+   limits reads as two. */
+#table-workdays td.act { min-width: 12em; white-space: normal; }
+.act-notice {
+  background: color-mix(in srgb, #d68910 18%, var(--surface));
+  border-radius: 6px;
+  display: block;
+  font-size: 12.5px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+.act-notice + .act-notice { margin-top: 4px; }
 
 /* A day booked on with no working time recorded: there, so the record shows its
  * gap, and quieter than the days that are complete. */

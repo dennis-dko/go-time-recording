@@ -704,10 +704,11 @@ func TestAnAdministratorResetsAPasswordFromTheTable(t *testing.T) {
 	p.signIn("wilma@example.com", generated)
 	p.waitGone("#login-screen")
 
-	if !p.visible("#password-banner") {
-		t.Error("the account signed in on the reset password and was not asked to " +
-			"replace it")
-	}
+	// Waited for rather than looked at once. The sign-in screen goes as soon as
+	// the session is open, and the banner comes with the account, which /me
+	// answers a moment later: looking once between the two read a banner that was
+	// on its way as one that would never come, on a loaded runner and never here.
+	p.waitShown("#password-banner")
 }
 
 // Your own row says so, and says it before it says anything else.

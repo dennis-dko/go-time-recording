@@ -42,6 +42,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/tlsserver"
 	v1 "github.com/dennis-dko/go-time-recording/internal/interface/api/v1"
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
+	"github.com/dennis-dko/go-time-recording/internal/interface/cli"
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
 	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
@@ -269,6 +270,18 @@ func main() {
 
 		fmt.Println("the previous version is back in place; start it again")
 		os.Exit(0)
+	}
+
+	// The binary as a client of an installation rather than as one: track books
+	// from a terminal through the API with a personal token. Here, before the log
+	// is captured and before anything else starts, because it serves nothing -
+	// see the cli package. Ctrl-C cancels the request it is waiting on.
+	if len(os.Args) > 1 && os.Args[1] == "track" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		status := cli.Run(ctx, os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
+
+		stop()
+		os.Exit(status)
 	}
 
 	// Capture the process output before anything writes to it. GoFr's logger
@@ -570,6 +583,7 @@ func main() {
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
+	adminLog := appservice.NewAdminLogService(sqldb.NewAdminEventRepository(db, cfg.Dialect), userRepo, roleRepo)
 
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
@@ -835,7 +849,14 @@ func main() {
 				"Set AUTH_ENABLED=true to enforce sign-in and role permissions")
 	}
 
-	authorizer := rest.NewAuthorizer(cfg.AuthEnabled())
+	// Who may act for whom. One instance for the authorizer and the handlers, so
+	// the switch and the assignments are read the same way by both.
+	team := appservice.NewTeamService(sqldb.NewManagedAccountRepository(db, cfg.Dialect),
+		settingsRepo, userRepo, roleRepo, projectRepo)
+
+	authorizer := rest.NewAuthorizer(cfg.AuthEnabled()).WithTeam(team)
+
+	statements := appservice.NewStatementService(timesheetRepo, projectRepo)
 
 	// Built here rather than inline, because both the middleware that reads it and
 	// the handler that clears it need the same instance - two would mean the
@@ -937,6 +958,10 @@ func main() {
 	// UI, so the assets are still served and the page can render the notice.
 	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState, authorizer))
 
+	// After both authentication paths for the same reason: an administrative change is
+	// recorded with who made it, and only once it has gone through.
+	app.UseMiddleware(rest.AdministrationLog(adminLog, app.Logger()))
+
 	// The two things this application says without being asked: that it is about
 	// to restart into a new version, and that the account holding the connection
 	// may suddenly do more, or less, than it could a moment ago. After the session
@@ -1000,7 +1025,9 @@ func main() {
 		Roles:      rest.NewRoleHandler(roles, authorizer),
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer).WithTimezone(instanceTimezone),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),
-		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone),
+		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone).WithTeam(team),
+		Team:       rest.NewTeamHandler(team, authorizer),
+		Statements: rest.NewStatementHandler(statements, authorizer, instanceTimezone),
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      setupHandler,
@@ -1032,6 +1059,8 @@ func main() {
 			WithMaintenance(maintenanceState).
 			WithTimezone(instanceTimezone),
 		Documents: rest.NewDocumentHandler(authorizer, instanceName).WithTimezone(instanceTimezone),
+		Exports:   rest.NewExportHandler(appservice.NewAccountExportService(userRepo), authorizer),
+		AdminLog:  rest.NewAdminLogHandler(adminLog, authorizer),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,

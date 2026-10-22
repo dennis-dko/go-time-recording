@@ -43,15 +43,35 @@ func (h *ProjectHandler) WithTimezone(zone InstanceTimezoneFunc) *ProjectHandler
 // Your own projects, which is all there are. There were two kinds and a
 // "private=true" parameter to tell them apart; every project belongs to one person
 // now, so there is nothing to narrow and the parameter is gone.
+//
+// ownerId names an account the caller looks after as a manager, whose projects are
+// listed instead - with any of the team rights, because booking for somebody,
+// reading their time and keeping their projects all start from which they have.
 func (h *ProjectHandler) List(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermProjectRead)
 	if err != nil {
 		return nil, err
 	}
 
+	requested, err := queryUint(c, "ownerId")
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	account, err := h.authz.accountFor(c, principal, requested, somebodyElsesProjects(),
+		model.TeamPermissions()...)
+	if err != nil {
+		return nil, err
+	}
+
+	viewerID := h.authz.viewerID(principal)
+	if viewerID != 0 {
+		viewerID = account.ID
+	}
+
 	result, err := h.projects.ListProjects(c, query.ListProjectsQuery{
 		Status:   c.Param("status"),
-		ViewerID: h.authz.viewerID(principal),
+		ViewerID: viewerID,
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -75,8 +95,13 @@ func (h *ProjectHandler) Get(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	viewerID, err := h.authz.projectActor(c, principal, id, model.TeamPermissions()...)
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := h.projects.GetProject(c, query.GetProjectQuery{
-		ID: id, ViewerID: h.authz.viewerID(principal),
+		ID: id, ViewerID: viewerID,
 	})
 	if err != nil {
 		return nil, toHTTPError(err)
@@ -93,10 +118,11 @@ func (h *ProjectHandler) Get(c *gofr.Context) (any, error) {
 
 // Create handles POST /api/v1/projects.
 //
-// The project belongs to whoever created it, always. There was a "private": true to
-// ask for that, and projects:write against projects:write:own to decide which kind
-// somebody was allowed to make; there is one kind now, so there is nothing to ask
-// for and nothing to choose between.
+// The project belongs to whoever created it, always - or to the account a manager
+// created it for. There was a "private": true to ask for that, and projects:write
+// against projects:write:own to decide which kind somebody was allowed to make;
+// there is one kind now, so there is nothing to ask for and nothing to choose
+// between.
 func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermProjectWrite)
 	if err != nil {
@@ -108,19 +134,29 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	account, err := h.authz.accountFor(c, principal, req.OwnerID, somebodyElsesProjects(),
+		model.PermProjectWriteTeam)
+	if err != nil {
+		return nil, err
+	}
+
 	cmd := command.CreateProjectCommand{
 		Name:        req.Name,
 		Description: req.Description,
 		StartDate:   req.StartDate.Time,
 		Status:      req.Status,
-		Today:       time.Now().In(principal.User.TimezoneOf(h.timezone.resolve(c))),
+		Today:       time.Now().In(account.TimezoneOf(h.timezone.resolve(c))),
 		BudgetHours: req.BudgetHours,
+		Billable:    req.Billable,
+		HourlyRate:  req.HourlyRate,
+		Currency:    req.Currency,
 	}
 
-	// Whoever is asking. Zero means enforcement is switched off, and then there is no
+	// Whose it becomes. Zero means enforcement is switched off, and then there is no
 	// "whose" to record - the same reading every other handler takes, and the reads
 	// short-circuit their visibility check in that case too.
-	if owner := h.authz.viewerID(principal); owner != 0 {
+	if h.authz.viewerID(principal) != 0 {
+		owner := account.ID
 		cmd.OwnerID = &owner
 	}
 
@@ -139,8 +175,9 @@ func (h *ProjectHandler) Create(c *gofr.Context) (any, error) {
 
 // Update handles PUT /api/v1/projects/{id}.
 //
-// Yours to change; the service refuses anything that is not, and reports it as absent
-// rather than as forbidden so its existence stays private.
+// Yours to change, or one of an account you look after with projects:write:team;
+// the service refuses anything else, and reports it as absent rather than as
+// forbidden so its existence stays private.
 func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermProjectWrite)
 	if err != nil {
@@ -152,6 +189,11 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
+	actorID, err := h.authz.projectActor(c, principal, id, model.PermProjectWriteTeam)
+	if err != nil {
+		return nil, err
+	}
+
 	var req UpdateProjectRequest
 	if err := bind(c, &req); err != nil {
 		return nil, toHTTPError(err)
@@ -159,11 +201,14 @@ func (h *ProjectHandler) Update(c *gofr.Context) (any, error) {
 
 	cmd := command.UpdateProjectCommand{
 		ID:          id,
-		ActorID:     h.authz.viewerID(principal),
+		ActorID:     actorID,
 		Name:        req.Name,
 		Description: req.Description,
 		Status:      req.Status,
 		BudgetHours: req.BudgetHours,
+		Billable:    req.Billable,
+		HourlyRate:  req.HourlyRate,
+		Currency:    req.Currency,
 	}
 
 	if req.StartDate != nil {
@@ -207,9 +252,12 @@ func (h *ProjectHandler) Delete(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	err = h.projects.DeleteProject(c, command.DeleteProjectCommand{
-		ID: id, ActorID: h.authz.viewerID(principal),
-	})
+	actorID, err := h.authz.projectActor(c, principal, id, model.PermProjectWriteTeam)
+	if err != nil {
+		return nil, err
+	}
+
+	err = h.projects.DeleteProject(c, command.DeleteProjectCommand{ID: id, ActorID: actorID})
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -235,7 +283,12 @@ func (h *ProjectHandler) Archive(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	project, err := h.domain.ArchiveProject(c, id, h.authz.viewerID(principal))
+	actorID, err := h.authz.projectActor(c, principal, id, model.PermProjectWriteTeam)
+	if err != nil {
+		return nil, err
+	}
+
+	project, err := h.domain.ArchiveProject(c, id, actorID)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

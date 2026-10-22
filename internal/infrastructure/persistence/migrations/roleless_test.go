@@ -141,9 +141,13 @@ func TestNobodyIsLeftWithoutARoleByTheUpgrade(t *testing.T) {
 			// an installation being upgraded is in.
 			migrate(t, db, 0, retirement-1)
 
-			// A manager, which is what that migration has to find somewhere to put.
+			// A manager, which is what that migration has to find somewhere to put. The
+			// chain seeds today's roles at its start, and today has a manager again - a
+			// different one, shipped long after this migration - so the role may be there
+			// already; an installation this old had the reviewing one under that name.
 			if _, err := db.Exec(`INSERT INTO roles (name, description, is_system)
-				VALUES ('manager', 'Reviews time entries', 0)`); err != nil {
+				SELECT 'manager', 'Reviews time entries', 0
+				WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'manager')`); err != nil {
 				t.Fatalf("creating the manager role: %v", err)
 			}
 

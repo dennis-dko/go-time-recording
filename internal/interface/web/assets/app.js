@@ -40,6 +40,14 @@ let loadedVersion = null;
 /** The signed-in user, their permissions, and whether auth is on at all. */
 let me = { user: null, permissions: [], authEnabled: false };
 
+/**
+ * The account whose time the screens show while it is not one's own: one of the
+ * accounts a manager looks after, chosen in the picker under the tabs. null is
+ * one's own, which is what every page starts on - a reload is not the moment to
+ * find oneself looking at somebody else's time without having chosen to.
+ */
+let viewingFor = null;
+
 // ---------------------------------------------------------------- transport
 
 /**
@@ -298,6 +306,9 @@ async function reach(url, options) {
     unreachable.refusal = { detail: err.message };
     unreachable.cause = err;
 
+    // Which a booking can wait out: see keepForLater.
+    unreachable.unreachable = true;
+
     throw unreachable;
   } finally {
     if (key) writesInFlight.delete(key);
@@ -447,6 +458,7 @@ const FIELD_NAMES = {
   companyName: 'Company',
   companyUrl: 'Company website',
   confirmed: 'Confirmed accounts',
+  currency: 'Currency',
   dailyTargetHours: 'Target h/day',
   date: 'Date',
   budgetHours: 'Hour budget',
@@ -471,12 +483,14 @@ const FIELD_NAMES = {
   fromYear: 'From the year',
   host: 'Host',
   hours: 'Hours',
+  hourlyRate: 'Hourly rate',
   id: 'ID',
   kind: 'Reason',
   language: 'Language',
   ldapSyncMaxDeleteRatio: 'Deletion limit',
   legalNotice: 'Legal notice',
   logLevel: 'Log level',
+  lowerBound: 'Lower bound of the balance',
   maxDailyHours: 'Max h/day',
   name: 'Name',
   port: 'Port',
@@ -494,12 +508,14 @@ const FIELD_NAMES = {
   syncSchedule: 'Schedule',
   tabTitle: 'Browser tab',
   theme: 'Appearance',
+  timerAlertHours: 'Mention the stopwatch after (hours)',
   timezone: 'Timezone',
   title: 'Title',
   to: 'To',
   traceExporter: 'Trace exporter',
   tracerRatio: 'Share of traces recorded',
   tracerUrl: 'Collector',
+  upperBound: 'Upper bound of the balance',
   userFilter: 'User filter',
   userId: 'User',
   validFrom: 'Applies from',
@@ -670,10 +686,18 @@ function fillIn(text, values) {
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-/** Whether the signed-in user holds at least one of the given permissions. */
+/**
+ * Whether the signed-in user holds at least one of the given permissions.
+ *
+ * While the screens show an account a manager looks after, an own right counts only
+ * where the manager may do the same for that account - see TEAM_COUNTERPARTS - so
+ * the screens offer for somebody else exactly what the server takes.
+ */
 function can(...permissions) {
   if (!me.authEnabled) return true;
-  return permissions.some((p) => me.permissions.includes(p));
+
+  return permissions.some((p) => me.permissions.includes(p)
+    && (!viewingFor || !(p in TEAM_COUNTERPARTS) || viewingFor.rights.includes(TEAM_COUNTERPARTS[p])));
 }
 
 /**
@@ -2083,6 +2107,19 @@ function fmtNumber(n) {
 }
 
 /**
+ * An amount of money in its own currency, written the way the reader writes it:
+ * 1.068,75 € on a German screen, €1,068.75 on an English one. A code the runtime
+ * does not know is still written, as the figure beside the code. Display only.
+ */
+function fmtMoney(amount, currency) {
+  try {
+    return new Intl.NumberFormat(activeLocale(), { style: 'currency', currency }).format(amount);
+  } catch {
+    return `${fmtNumber(amount)} ${currency}`;
+  }
+}
+
+/**
  * A share between none and all, written the way the reader writes a number and
  * in full.
  *
@@ -2107,12 +2144,14 @@ function fmtShare(n) {
  */
 const fmtHours = (n) => `${fmtNumber(n)} ${t('unit.hours', 'h')}`;
 
+/** A balance in hours with its sign, which a credit carries as a plus. */
+const fmtSignedHours = (n) => `${n > 0 ? '+' : ''}${fmtHours(n)}`;
+
 /** Renders a signed balance, coloured as a credit or a debt. */
 function balanceCell(value) {
-  const sign = value > 0 ? '+' : '';
   return el('td', {
     class: `num ${value > 0 ? 'plus' : value < 0 ? 'minus' : ''}`,
-    text: `${sign}${fmtHours(value)}`,
+    text: fmtSignedHours(value),
   });
 }
 
@@ -2507,6 +2546,9 @@ const PERMISSION_TITLES = {
   'timesheets:transfer': 'Move time between projects',
   'reports:read:own': 'Evaluate own hours',
   'settings:write:own': 'Change own settings',
+  'timesheets:read:team': 'See the time of assigned accounts',
+  'timesheets:write:team': 'Record time for assigned accounts',
+  'projects:write:team': 'Keep the projects of assigned accounts',
 };
 
 /**
@@ -2517,7 +2559,7 @@ const PERMISSION_TITLES = {
  * is trying to answer.
  */
 const PERMISSION_DETAILS = {
-  'users:read': 'The list of accounts, their addresses and which role each holds. Not their recorded time - nobody sees anybody else\u2019s.',
+  'users:read': 'The list of accounts, their addresses and which role each holds. Not their recorded time - that takes a team right, for an account assigned to whoever holds it.',
   'users:write': 'Add an account, change a name or an address, assign a role. Not the initial password of an account somebody else set up.',
   'users:delete': 'Remove an account. Its recorded time goes with it.',
   'roles:read': 'The roles on this screen and what each grants.',
@@ -2527,11 +2569,14 @@ const PERMISSION_DETAILS = {
   'projects:write': 'Make a project and change one.',
   'projects:delete': 'Remove a project. Time booked on it keeps its hours and loses the project.',
   'projects:archive': 'Close a project to new bookings without deleting what is on it.',
-  'timesheets:read:own': 'One\u2019s own entries, calendar and balance. There is no right that opens somebody else\u2019s.',
+  'timesheets:read:own': 'One\u2019s own entries, calendar and balance. Somebody else\u2019s only through a team right, for an account an administrator assigned.',
   'timesheets:write:own': 'Record, correct and delete one\u2019s own time, by hand or with the stopwatch.',
   'timesheets:transfer': 'Move one\u2019s own entries from one project to another, in bulk.',
   'reports:read:own': 'The report and the charts, over one\u2019s own hours.',
   'settings:write:own': 'One\u2019s own account: password, language, appearance, timezone, working times, two-factor.',
+  'timesheets:read:team': 'As a manager: the entries, calendar, balance and evaluations of the accounts an administrator assigned - that a day was away, never why. Only while managers are switched on under Settings, and only beside the right to see one\u2019s own.',
+  'timesheets:write:team': 'As a manager: book, correct, move and delete time for the accounts an administrator assigned, each change named as one\u2019s own beside the entry. Only while managers are switched on, and only beside the right to record one\u2019s own.',
+  'projects:write:team': 'As a manager: make and change the projects of the accounts an administrator assigned, and archive or delete them as far as the role allows that for one\u2019s own. Only while managers are switched on.',
 };
 
 /** The areas rights are grouped under, in the order they are shown. */
@@ -2587,6 +2632,7 @@ const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
   'user-admin': 'User & administrator',
+  manager: 'Manager',
 };
 
 /**
@@ -2612,7 +2658,7 @@ function roleTitle(name) {
  * What a role is for, in the reader's language.
  *
  * The description lives in the database, in English, because an administrator writes
- * their own there. The three that ship with the application are translated instead,
+ * their own there. The ones that ship with the application are translated instead,
  * keyed on the name - a custom role falls through to whatever was typed, which is the
  * only sensible answer for words this application has never seen.
  */
@@ -2637,8 +2683,8 @@ function roleChoices() {
   // holding roles:read - so a picker built from it is empty for anybody who may
   // configure the installation without administering its roles, and empty again
   // whenever that fetch has not happened or did not finish. An empty picker is
-  // the one answer that is always wrong: these three are seeded, cannot be
-  // deleted, and are therefore always a truthful set of choices.
+  // the one answer that is always wrong: these are seeded, cannot be deleted,
+  // and are therefore always a truthful set of choices.
   const roles = cache.roles.length > 0
     ? cache.roles
     : Object.keys(SHIPPED_ROLE_TITLES).map((name) => ({ name }));
@@ -4056,6 +4102,9 @@ const TRANSLATIONS = {
     'err.onlyOwnEntriesRead': 'Du kannst nur deine eigenen Zeiteinträge sehen.',
     'err.onlyOwnEntriesWrite': 'Du kannst nur deine eigenen Zeiteinträge ändern.',
     'err.onlyOwnOvertime': 'Du kannst nur deinen eigenen Überstundenstand sehen.',
+    'err.onlyOwnProjects': 'Du kannst nur deine eigenen Projekte pflegen.',
+    'err.notAManager': '{0} hat keine Rolle mit Teamrechten und kann deshalb niemanden betreuen.',
+    'err.selfManaged': 'Ein Konto kann nicht sein eigener Manager sein.',
     'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
       + 'abgleichen.',
     'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
@@ -4072,6 +4121,7 @@ const TRANSLATIONS = {
     'err.restartWouldNotStart': 'Die Datenbank, die der nächste Start öffnen würde, antwortet nicht – die Anwendung käme nicht wieder. Es wurde nicht neu gestartet.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
+    'err.noAuthNoAccount': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Konto zu exportieren.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
     'err.syncStoppedPartWay': 'Der Abgleich wurde abgebrochen, nachdem er {0} Konto/Konten '
       + 'gelöscht und {1} angelegt hatte. Die Liste zeigt, was noch übrig ist.',
@@ -4223,6 +4273,9 @@ const TRANSLATIONS = {
     'field.ldapSyncMaxDeleteRatio': 'Höchstanteil gelöschter Konten',
     'field.legalNotice': 'Rechtlicher Hinweis',
     'field.logLevel': 'Protokollstufe',
+    'field.lowerBound': 'Untergrenze des Saldos',
+    'field.timerAlertHours': 'Stoppuhr erwähnen nach (Stunden)',
+    'field.upperBound': 'Obergrenze des Saldos',
     'field.maxDailyHours': 'Max/Tag',
     'field.port': 'Port',
     'field.projectId': 'Projekt',
@@ -4254,6 +4307,8 @@ const TRANSLATIONS = {
     'field.kind': 'Grund',
     'field.region': 'Bundesland',
     'field.budgetHours': 'Stundenkontingent',
+    'field.hourlyRate': 'Stundensatz',
+    'field.currency': 'Währung',
     'field.issuer': 'Adresse des Ausstellers',
     'field.clientId': 'Client-ID',
     'field.label': 'Name im Anmeldeformular',
@@ -4369,7 +4424,18 @@ const TRANSLATIONS = {
     'ot.target': 'Soll',
     'project.create': 'Projekt anlegen',
     'project.edit': 'Projekt bearbeiten',
-    'project.hint': 'Deine Projekte sind deine: nur du siehst sie, und nur du buchst darauf. Zwei Personen an derselben Sache haben je ein eigenes.',
+    'project.hint': 'Deine Projekte sind deine: nur du siehst sie und buchst darauf – und ein Manager, dem du zugewiesen bist, wo diese Installation Manager hat. Zwei Personen an derselben Sache haben je ein eigenes.',
+    'project.billable': 'Abrechenbar',
+    'project.ratePerHour': 'abrechenbar zu {0} die Stunde',
+    'project.noRate': 'abrechenbar, noch ohne Satz',
+    'statement.title': 'Leistungsnachweis',
+    'statement.hint': 'Die Stunden deiner abrechenbaren Projekte in einem Zeitraum, mit ihrem Satz und was sie ergeben, je Währung summiert. Keine Rechnung: keine Nummer, keine Steuer, kein Kunde – das schreibst du auf deine Weise.',
+    'statement.create': 'Ausrechnen',
+    'statement.amount': 'Betrag',
+    'statement.noRate': 'noch ohne Satz',
+    'statement.empty': 'Keine abrechenbaren Stunden in diesem Zeitraum.',
+    'statement.total': 'Summe in {0}',
+    'statement.filename': 'leistungsnachweis',
     'project.empty': 'Noch keine Projekte angelegt.',
     'project.open': 'offen',
     'report.result': 'Ergebnis',
@@ -4415,7 +4481,10 @@ const TRANSLATIONS = {
     'perm.timesheets:transfer': 'Zeiten auf andere Projekte umbuchen',
     'perm.reports:read:own': 'Eigene Stunden auswerten',
     'perm.settings:write:own': 'Eigene Einstellungen ändern',
-    'perm.desc.users:read': 'Die Liste der Konten, ihre Adressen und welche Rolle jedes hat. Nicht ihre erfassten Zeiten – die sieht niemand außer der Person selbst.',
+    'perm.timesheets:read:team': 'Zeiten zugewiesener Konten sehen',
+    'perm.timesheets:write:team': 'Zeiten für zugewiesene Konten erfassen',
+    'perm.projects:write:team': 'Projekte zugewiesener Konten pflegen',
+    'perm.desc.users:read': 'Die Liste der Konten, ihre Adressen und welche Rolle jedes hat. Nicht ihre erfassten Zeiten – dafür braucht es ein Teamrecht, für ein Konto, das dem Inhaber zugewiesen ist.',
     'perm.desc.users:write': 'Ein Konto anlegen, Name oder Adresse ändern, eine Rolle zuweisen.',
     'perm.desc.users:delete': 'Ein Konto entfernen. Die darauf erfassten Zeiten gehen mit.',
     'perm.desc.roles:read': 'Die Rollen auf diesem Bildschirm und was jede gewährt.',
@@ -4425,20 +4494,25 @@ const TRANSLATIONS = {
     'perm.desc.projects:write': 'Ein Projekt anlegen und ändern.',
     'perm.desc.projects:delete': 'Ein Projekt entfernen. Darauf gebuchte Zeiten behalten ihre Stunden und verlieren das Projekt.',
     'perm.desc.projects:archive': 'Ein Projekt für neue Buchungen schließen, ohne zu löschen, was darauf liegt.',
-    'perm.desc.timesheets:read:own': 'Die eigenen Einträge, den eigenen Kalender und den eigenen Saldo. Es gibt kein Recht, das fremde öffnet.',
+    'perm.desc.timesheets:read:own': 'Die eigenen Einträge, den eigenen Kalender und den eigenen Saldo. Fremde nur über ein Teamrecht, für ein Konto, das ein Administrator zugewiesen hat.',
     'perm.desc.timesheets:write:own': 'Eigene Zeiten erfassen, korrigieren und löschen – von Hand oder mit der Stoppuhr.',
     'perm.desc.timesheets:transfer': 'Eigene Einträge gesammelt von einem Projekt auf ein anderes umbuchen.',
     'perm.desc.reports:read:own': 'Bericht und Diagramme über die eigenen Stunden.',
     'perm.desc.settings:write:own': 'Das eigene Konto: Kennwort, Sprache, Erscheinungsbild, Zeitzone, Arbeitszeiten, Zwei-Faktor.',
+    'perm.desc.timesheets:read:team': 'Als Manager: Einträge, Kalender, Saldo und Auswertungen der Konten, die ein Administrator zugewiesen hat – dass ein Tag abwesend war, nie warum. Nur solange Manager unter Einstellungen eingeschaltet sind, und nur zusammen mit dem Recht, die eigenen zu sehen.',
+    'perm.desc.timesheets:write:team': 'Als Manager: Zeiten für die zugewiesenen Konten buchen, korrigieren, umbuchen und löschen; jede Änderung steht mit dem eigenen Namen beim Eintrag. Nur solange Manager eingeschaltet sind, und nur zusammen mit dem Recht, die eigenen zu erfassen.',
+    'perm.desc.projects:write:team': 'Als Manager: Projekte der zugewiesenen Konten anlegen und ändern, und sie archivieren oder löschen, soweit die Rolle das für die eigenen erlaubt. Nur solange Manager eingeschaltet sind.',
     'role.view': 'Rolle „{0}“',
     'role.startNew': 'Stattdessen eine neue Rolle anlegen',
     'role.shippedFixed': 'Diese Rolle wird mitgeliefert und wird angezeigt, nicht bearbeitet: weder Name noch Beschreibung noch Rechte. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'role.desc.admin': 'Verwaltet die Installation, ihre Konten und deren Rollen – und erfasst selbst keine Zeit.',
     'role.desc.user': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
     'role.desc.user-admin': 'Beides: arbeitet hier und verwaltet zusätzlich die Installation.',
+    'role.desc.manager': 'Erfasst die eigenen Zeiten und pflegt Zeiten und Projekte der Konten, die ein Administrator zugewiesen hat.',
     'role.name.admin': 'Administrator',
     'role.name.user': 'Benutzer',
     'role.name.user-admin': 'Benutzer & Administrator',
+    'role.name.manager': 'Manager',
     'role.none': 'ohne Rolle',
     'settings.changePassword': 'Passwort ändern',
     'settings.currentPassword': 'Aktuelles Passwort',
@@ -4553,6 +4627,69 @@ const TRANSLATIONS = {
     'work.booked': 'Gebucht',
     'work.empty': 'In diesem Monat ist nichts erfasst oder gebucht.',
     'work.total': 'Gearbeitet {0}, gebucht {1}',
+    'work.act': 'Arbeitszeitgesetz',
+    'bounds.title': 'Grenzen für meinen Saldo',
+    'bounds.hint': 'Halte deinen laufenden Saldo zwischen zwei Werten, wie bei einem Gleitzeitkonto. Liegt er außerhalb, sagt es ein Banner auf jeder Seite, bis er wieder drin ist. Leer heißt: keine Grenze.',
+    'bounds.above': 'Dein laufender Saldo liegt mit {0} über der Obergrenze von {1}, die du unter {2} gesetzt hast.',
+    'bounds.below': 'Dein laufender Saldo liegt mit {0} unter der Untergrenze von {1}, die du unter {2} gesetzt hast.',
+    'bounds.now': 'Dein laufender Saldo: {0}, gezählt ab {1}.',
+    'bounds.nothingYet': 'Noch zählt nichts zu deinem Saldo.',
+    'bounds.saved': 'Grenzen gespeichert',
+    'remind.title': 'Erinnerungen',
+    'remind.unbookedDay': 'Den letzten Arbeitstag nennen, wenn darauf nichts gebucht ist',
+    'remind.hint': 'Null heißt: Die Stoppuhr wird nie erwähnt. Nach einem Tag sagt sie von selbst, dass sie mehr hält, als ein Eintrag fassen kann.',
+    'remind.allowNotifications': 'Benachrichtigungen in diesem Browser erlauben',
+    'remind.notifyGranted': 'Dieser Browser zeigt Benachrichtigungen von hier.',
+    'remind.notifyDenied': 'Dieser Browser sperrt Benachrichtigungen von hier; das lässt sich nur in seinen eigenen Einstellungen ändern.',
+    'remind.notifyUnsupported': 'Dieser Browser kann keine Benachrichtigungen zeigen.',
+    'remind.unbooked': 'Am {0} ist nichts gebucht, nach deinem Plan ein Arbeitstag. Unter {1} lässt es sich nachtragen.',
+    'remind.saved': 'Erinnerungen gespeichert',
+    'export.title': 'Alles über mich',
+    'export.hint': 'Alles, was diese Installation über dein Konto speichert, als ZIP mit einer JSON-Datei je Bereich: deine Einträge und ihr Verlauf, Projekte, Vorlagen, Abwesenheiten, Urlaub, Wochenpläne, Arbeitszeiten und das Konto selbst. Passwörter, zweite Faktoren, Tokens und Schlüssel sind nicht dabei – nur, wann sie entstanden sind und zuletzt benutzt wurden.',
+    'export.download': 'Alles über mich herunterladen',
+    'export.filename': 'alles-ueber-mich',
+    'changes.title': 'Änderungen an der Installation',
+    'changes.hint': 'Wer ein Konto oder eine Rolle angelegt, geändert oder gelöscht, eine Einstellung gespeichert, den Wartungsmodus geschaltet oder die Anwendung neu gestartet hat, das Neueste zuerst. Ein inzwischen gelöschtes Konto erscheint mit seiner Nummer.',
+    'changes.when': 'Wann',
+    'changes.who': 'Wer',
+    'changes.what': 'Was',
+    'changes.more': 'Ältere Änderungen zeigen',
+    'changes.empty': 'Noch wurde nichts geändert.',
+    'change.userCreated': 'Konto {0} angelegt',
+    'change.userUpdated': 'Konto {0} korrigiert',
+    'change.userDeleted': 'Konto {0} gelöscht',
+    'change.userRole': '{0} die Rolle {1} gegeben',
+    'change.userPassword': 'Neues Passwort für {0} gesetzt',
+    'change.userManagers': '{0} Manager zugewiesen',
+    'change.usersImported': 'Konten aus einer Tabelle importiert',
+    'change.roleCreated': 'Rolle {0} angelegt',
+    'change.roleUpdated': 'Rolle {0} geändert',
+    'change.roleDeleted': 'Rolle {0} gelöscht',
+    'change.rolesImported': 'Rollen aus einer Tabelle importiert',
+    'change.maintenance': 'Wartungsmodus {1}geschaltet',
+    'change.managers': 'Manager {1}geschaltet',
+    'change.on': 'ein',
+    'change.off': 'aus',
+    'change.branding': 'Erscheinungsbild geändert',
+    'change.ldap': 'LDAP-Anbindung geändert',
+    'change.openid': 'Anmeldeanbieter geändert',
+    'change.synchronised': 'Verzeichnis-Abgleich ausgeführt',
+    'change.operational': 'Betrieb und Grenzen geändert',
+    'change.timezone': 'Zeitzone geändert',
+    'change.holidays': 'Feiertage geändert',
+    'change.datasource': 'Datenbankverbindung geändert',
+    'change.telemetry': 'Protokollierung, Metriken und Tracing geändert',
+    'change.restart': 'Anwendung neu gestartet',
+    'change.update': 'Aktualisierung gestartet',
+    'change.setup': 'Einrichtung abgeschlossen',
+    'timer.longBanner': 'Die Stoppuhr läuft seit {0}, länger als die {2}, nach denen du erinnert werden wolltest. Unter {1} lässt sie sich anhalten.',
+    'timer.longTitle': 'Die Stoppuhr läuft noch',
+    'timer.longBody': 'Seit {1}, länger als die {0}, die du gewählt hast.',
+    'work.actHint': 'Tage über einer Grenze des Arbeitszeitgesetzes werden markiert: mehr als zehn Stunden, eine zu kurze Pause oder weniger als elf Stunden Ruhe seit dem Vortag. Es sind Hinweise; erfasst wird, was war.',
+    'work.longDay': 'Mehr als zehn Stunden (§ 3 ArbZG)',
+    'work.shortBreak': '{0} Minuten Pause nötig (§ 4 ArbZG)',
+    'work.shortRest': 'Nur {0} Ruhe seit dem Vortag (§ 5 ArbZG)',
+    'work.noticeCount': '{0} Tage über einer Grenze des Arbeitszeitgesetzes.',
     'work.removed': 'Arbeitszeit zurückgenommen',
     'work.saved': 'Arbeitszeit erfasst',
     'work.filename': 'arbeitszeit',
@@ -4652,6 +4789,33 @@ const TRANSLATIONS = {
     'absence.sick': 'Krank',
     'absence.flexDay': 'Gleittag (vom Überstundenkonto)',
     'absence.localHoliday': 'Feiertag am Arbeitsort',
+    'team.viewingFor': 'Wessen Zeiten',
+    'outbox.kept': 'Keine Verbindung: auf diesem Gerät behalten und gesendet, sobald sie wieder da ist.',
+    'outbox.offline': 'Keine Verbindung zur Installation. Neue Buchungen bleiben auf diesem Gerät und werden gesendet, sobald sie wieder da ist.',
+    'outbox.waiting': 'Ohne Verbindung gebucht und auf diesem Gerät wartend: {0}. Gesendet wird, sobald die Verbindung wieder da ist.',
+    'outbox.refused': 'Die Installation hat diese ohne Verbindung gemachten Buchungen abgelehnt. Korrigiere sie, um sie erneut zu buchen:',
+    'outbox.correct': 'korrigieren',
+    'outbox.sent': 'Ohne Verbindung Gebuchtes gesendet: {0}',
+    'offline.signIn': 'Keine Verbindung zur Installation. Diese Seite macht von selbst weiter, sobald sie wieder da ist.',
+    'team.mine': 'Meine',
+    'team.viewingText': 'Du siehst die Zeiten von {0}. Was du hier buchst oder änderst, steht mit deinem Namen beim Eintrag, und {0} sieht es.',
+    'team.recordedBy': 'gebucht von {0}',
+    'team.updatedBy': 'geändert von {0}',
+    'team.replacedBy': 'von {0}',
+    'team.assign': 'Manager',
+    'team.assignTitle': 'Manager',
+    'team.assignText': 'Wer kümmert sich um die Zeiten von {0}? Diese Konten sehen sie, und {0} sieht, wer sie sind.',
+    'team.noCandidates': 'Noch hat niemand eine Rolle, die sich um andere Konten kümmert. Gib zuerst jemandem die Rolle „Manager“.',
+    'team.assigned': 'Manager zugewiesen',
+    'team.mineTitle': 'Wer deine Zeiten sehen darf',
+    'team.nobody': 'Niemand außer dir. Ein Administrator kann dir Manager zuweisen, sobald die Installation welche hat; sie stünden dann hier.',
+    'team.switchTitle': 'Manager',
+    'team.switchHint': 'Manager kümmern sich neben den eigenen um die Zeiten und Projekte der Konten, die ein Administrator ihnen unter Benutzer zuweist. Wer betreut wird, sieht unter Mein Konto, von wem, und was ein Manager bucht oder ändert, steht mit Namen beim Eintrag. Manager erfahren, dass jemand abwesend war, nie warum, und sehen niemandes Arbeitszeiten.',
+    'team.switchEnabled': 'Diese Installation hat Manager',
+    'team.switchConfirm': 'Manager einschalten? Wer Manager ist, sieht dann die Zeiten der Konten, die ein Administrator zugewiesen hat – und diese Personen sehen, wer.',
+    'team.switchOn': 'Einschalten',
+    'team.switchSaved': 'Manager gespeichert',
+    'absence.away': 'Abwesend',
     'absence.save': 'Erfassen',
     'absence.recorded': 'Erfasste Tage: {0}',
     'absence.removed': 'Abwesenheit zurückgenommen',
@@ -5152,6 +5316,586 @@ function foldableAddress(address) {
   return [address.slice(0, at + 1), el('wbr'), address.slice(at + 1)];
 }
 
+// ------------------------------------------------------------------- offline
+
+/**
+ * Lets the installed application open without a network: sw.js keeps the shell
+ * of the page and hands it out when the installation cannot be reached, and
+ * nothing the API answers. Browsers allow it on HTTPS and on this machine only,
+ * so an installation reached over plain HTTP simply goes without.
+ */
+function keepTheShell() {
+  if (!('serviceWorker' in navigator)) return;
+
+  navigator.serviceWorker.register('/sw.js').catch(() => {
+    // Not kept: the page works exactly as it did, it only cannot open offline.
+  });
+}
+
+/** Where this account's bookings made without a connection wait on this device. */
+const OUTBOX_PREFIX = 'gtr_outbox_';
+
+/**
+ * Whose outbox this page reads, or none before anybody is signed in.
+ *
+ * Per account, as drafts are, so another account signing in on the same device
+ * neither sees them nor sends them as its own.
+ */
+function outboxKey() {
+  const who = me.user?.id;
+
+  return who ? `${OUTBOX_PREFIX}${who}` : '';
+}
+
+/** The bookings waiting on this device, oldest first. */
+function readOutbox() {
+  const key = outboxKey();
+  if (!key) return [];
+
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? '[]');
+  } catch {
+    return [];
+  }
+}
+
+/** Keeps what waits, and says so on the banner. */
+function writeOutbox(items) {
+  const key = outboxKey();
+
+  if (key) {
+    try {
+      if (items.length) localStorage.setItem(key, JSON.stringify(items));
+      else localStorage.removeItem(key);
+    } catch {
+      // Storage refused - a private window, a full disk. What is drawn below is
+      // still true of this page, which is all that is left to say it to.
+    }
+  }
+
+  drawOutbox(items);
+}
+
+/**
+ * Keeps a booking the installation could not be reached for, to send once it can.
+ *
+ * Only a new booking. A correction or a deletion acts on what the server holds
+ * now, and done blind from a device that has not heard from it for an hour it
+ * could undo what was done elsewhere in the meantime; a booking adds an entry and
+ * replaces nothing, so it is the one write that can wait.
+ */
+function keepForLater(body) {
+  const kept = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    body,
+    keptAt: new Date().toISOString(),
+  };
+
+  writeOutbox([...readOutbox(), kept]);
+}
+
+/** Changes one booking in the outbox as it is now, or takes it out with null. */
+function changeKept(id, change) {
+  writeOutbox(readOutbox().flatMap((item) => {
+    if (item.id !== id) return [item];
+
+    return change ? [{ ...item, ...change }] : [];
+  }));
+}
+
+/**
+ * Whether a booking a page began sending, and did not live to say had arrived,
+ * is on the server already: the same day, project, hours and description, booked
+ * after it was kept. Asked rather than sent again, because sent again it would be
+ * booked twice - which is what this did, measured, whenever the page that sent it
+ * was replaced before it could say so.
+ */
+async function alreadyBooked(kept) {
+  const day = kept.body.date;
+  const answer = await api(`/timesheets?${new URLSearchParams({ from: day, to: day, limit: '500' })}`);
+
+  return (answer?.items ?? []).some((entry) => entry.durationHours === Number(kept.body.durationHours)
+    && (entry.projectId ?? 0) === Number(kept.body.projectId || 0)
+    && (entry.description ?? '') === (kept.body.description ?? '')
+    && Date.parse(entry.createdAt) >= Date.parse(kept.keptAt));
+}
+
+/** The name the outbox is sent under, one page at a time across every tab. */
+const OUTBOX_LOCK = 'gtr-outbox';
+
+/** Whether this page is sending the outbox now, where tabs cannot be asked. */
+let sendingOutbox = false;
+
+/**
+ * Sends what waits, oldest first, once the installation can be reached.
+ *
+ * One page at a time, across every tab of this installation, through a lock the
+ * browser holds for all of them: two tabs sending the same outbox would book
+ * everything in it twice. Each booking is marked as on its way before it goes and
+ * taken out the moment it has arrived, so a page replaced in between leaves one
+ * that alreadyBooked asks about rather than one sent again.
+ *
+ * A booking the installation refuses - its project closed in the meantime, the day
+ * full - stays with the reason until somebody corrects it: hours that vanished
+ * because of a rule nobody saw are hours lost. One that cannot reach it stops the
+ * round, and the rest wait with it, because they would only fail the same way.
+ */
+async function sendOutbox() {
+  if (!me.user || !navigator.onLine || !readOutbox().some((item) => !item.refused)) return;
+
+  const round = async () => {
+    let sent = 0;
+
+    for (const item of readOutbox()) {
+      if (item.refused) continue;
+
+      try {
+        if (item.sending && await alreadyBooked(item)) {
+          changeKept(item.id, null);
+
+          continue;
+        }
+
+        changeKept(item.id, { sending: true });
+
+        await api('/timesheets', { method: 'POST', body: JSON.stringify(item.body) });
+
+        changeKept(item.id, null);
+        sent += 1;
+      } catch (err) {
+        if (err.unreachable) {
+          changeKept(item.id, { sending: false });
+
+          break;
+        }
+
+        changeKept(item.id, { sending: false, refused: err.message });
+      }
+    }
+
+    if (sent) {
+      toast(fillIn(t('outbox.sent', 'Sent what was booked without a connection: {0}'), [sent]), 'ok');
+      await reloadTimeViews();
+    }
+  };
+
+  if (navigator.locks) {
+    await navigator.locks.request(OUTBOX_LOCK, round);
+
+    return;
+  }
+
+  if (sendingOutbox) return;
+
+  sendingOutbox = true;
+
+  try {
+    await round();
+  } finally {
+    sendingOutbox = false;
+  }
+}
+
+/** Puts a refused booking back into the form, and out of the outbox. */
+function correctKept(kept) {
+  changeKept(kept.id, null);
+
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  switchView('timesheets');
+
+  setDateField(form.elements.date, kept.body.date ?? '');
+  form.elements.durationHours.value = kept.body.durationHours ?? '';
+  form.elements.description.value = kept.body.description ?? '';
+  form.elements.projectId.value = kept.body.projectId ? String(kept.body.projectId) : '';
+
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.durationHours.focus();
+}
+
+/**
+ * Says what waits and what was refused, and that there is no connection while
+ * there is none. A banner, because each is a state: true until the bookings are
+ * sent or corrected, and gone the moment they are.
+ */
+function drawOutbox(items = readOutbox()) {
+  const banner = $('#outbox-banner');
+  if (!banner) return;
+
+  const waiting = items.filter((item) => !item.refused);
+  const refused = items.filter((item) => item.refused);
+
+  const lines = [];
+
+  if (!navigator.onLine) {
+    lines.push(t('outbox.offline',
+      'No connection to the installation. New bookings stay on this device and are sent once it is back.'));
+  }
+
+  if (waiting.length) {
+    lines.push(fillIn(t('outbox.waiting',
+      'Booked without a connection and waiting on this device: {0}. They are sent once it is back.'),
+    [waiting.length]));
+  }
+
+  if (refused.length) {
+    lines.push(t('outbox.refused',
+      'The installation refused these bookings made without a connection. Correct them to book them again:'));
+  }
+
+  $('#outbox-text').textContent = lines.join(' ');
+
+  const list = $('#outbox-refused');
+  list.replaceChildren(...refused.map((item) => el('li', {},
+    [fmtDate(item.body.date), fmtHours(Number(item.body.durationHours)), item.body.description]
+      .filter(Boolean).join(' · ') + ` - ${item.refused} `,
+    el('button', {
+      type: 'button',
+      class: 'link-button',
+      text: t('outbox.correct', 'correct'),
+      onclick: () => correctKept(item),
+    }))));
+  list.hidden = refused.length === 0;
+
+  banner.hidden = lines.length === 0 || !me.user;
+}
+
+/**
+ * The page's side of being offline: the banner follows the connection, what
+ * waits is sent the moment it is back, and a page that could not even load for
+ * want of one starts again by itself.
+ */
+function wireOffline() {
+  window.addEventListener('offline', () => {
+    drawOutbox();
+    showSignInOffline(true);
+  });
+
+  window.addEventListener('online', () => {
+    drawOutbox();
+
+    if (!$('#login-offline')?.hidden) {
+      startAgain();
+
+      return;
+    }
+
+    mutate(sendOutbox, null, null);
+  });
+}
+
+/**
+ * Loads the page again, once: the connection coming back and the next round of
+ * asking can both notice it, and a second reload replaced the page that was in the
+ * middle of sending what had waited.
+ */
+function startAgain() {
+  clearInterval(reachingAgain);
+
+  if (startingAgain) return;
+
+  startingAgain = true;
+  window.location.reload();
+}
+
+/** Whether the page is already being loaded again. */
+let startingAgain = false;
+
+/** How often a page that could not reach the installation asks it again. */
+const REACH_AGAIN_MS = 10000;
+
+/** The asking, while it goes on. */
+let reachingAgain = null;
+
+/**
+ * Says on the sign-in screen that the installation cannot be reached, where that
+ * is why nobody is signed in - the form on its own reads as a session that ended,
+ * and invites a password that cannot be checked - and asks it again until it
+ * answers, then starts the page again.
+ *
+ * Told by the load that failed rather than by navigator.onLine alone, which says
+ * whether there is a network and not whether the installation answers on it: an
+ * installation that is down behind a working network is the same wait.
+ */
+function showSignInOffline(unreachable) {
+  const note = $('#login-offline');
+  if (!note) return;
+
+  note.hidden = !unreachable || Boolean(me.user);
+
+  if (note.hidden || reachingAgain) return;
+
+  reachingAgain = setInterval(async () => {
+    try {
+      const answer = await reach(`${API}/branding`, { credentials: 'same-origin' });
+
+      if (answer.ok) startAgain();
+    } catch {
+      // Still not there: the next round asks again.
+    }
+  }, REACH_AGAIN_MS);
+}
+
+// ------------------------------------------------------------------ managers
+
+/**
+ * The accounts this account looks after as a manager, from /me/team: each with its
+ * id, its name and the team rights the manager's role gives over it. Empty for
+ * everybody else, and for everybody while the installation has no managers.
+ */
+let myTeam = [];
+
+/** The three team rights, which only ever reach an account a manager was assigned. */
+const TEAM_RIGHTS = ['timesheets:read:team', 'timesheets:write:team', 'projects:write:team'];
+
+/**
+ * The team right that carries an own right over to an account a manager looks
+ * after.
+ *
+ * While the screens show such an account, an own right counts only where the
+ * manager's role gives its counterpart over that account - see can - so a control
+ * is offered exactly where the server would take it. projects:read has none: any
+ * team right lists the account's projects, and the account is only in the team
+ * because the manager holds one.
+ */
+const TEAM_COUNTERPARTS = {
+  'timesheets:read:own': 'timesheets:read:team',
+  'reports:read:own': 'timesheets:read:team',
+  'timesheets:write:own': 'timesheets:write:team',
+  'timesheets:transfer': 'timesheets:write:team',
+  'projects:write': 'projects:write:team',
+  'projects:archive': 'projects:write:team',
+  'projects:delete': 'projects:write:team',
+};
+
+/** The account the time on screen belongs to: the one being looked after, or one's own. */
+function subjectID() {
+  return viewingFor?.id ?? me.user?.id;
+}
+
+/**
+ * A read of time, with userId while the screens show somebody a manager looks
+ * after - so every screen asks the server about the same account, and none of
+ * them about the manager by accident.
+ */
+function forSubject(params = {}) {
+  const query = new URLSearchParams(params);
+
+  if (viewingFor) query.set('userId', String(viewingFor.id));
+
+  return query;
+}
+
+/** Somebody who acted in another's name: their name, or their number once they are gone. */
+function actorName(actor) {
+  return actor.name || `#${actor.id}`;
+}
+
+/**
+ * Who booked or last changed an entry in its owner's name, as lines under what it
+ * says - shown to the owner and to the manager alike, which is why it is kept.
+ */
+function actedByLines(entry) {
+  return [
+    entry.recordedBy ? el('span', {
+      class: 'acted-by',
+      text: fillIn(t('team.recordedBy', 'booked by {0}'), [actorName(entry.recordedBy)]),
+    }) : null,
+    entry.updatedBy ? el('span', {
+      class: 'acted-by',
+      text: fillIn(t('team.updatedBy', 'changed by {0}'), [actorName(entry.updatedBy)]),
+    }) : null,
+  ];
+}
+
+/**
+ * Reads whom this account looks after, and draws the picker under the tabs.
+ *
+ * The account on screen goes back to one's own once it is no longer in the list -
+ * an assignment taken back, managers switched off - rather than going on asking
+ * the server about an account it now refuses.
+ */
+async function loadTeam() {
+  myTeam = me.authEnabled && me.user && !me.user.mustChangePassword
+    ? (await api('/me/team'))?.items ?? []
+    : [];
+
+  if (viewingFor) viewingFor = myTeam.find((member) => member.id === viewingFor.id) ?? null;
+
+  const picker = $('#viewing-for-picker');
+  if (picker) {
+    picker.replaceChildren(
+      el('option', { value: '', text: t('team.mine', 'Mine') }),
+      ...myTeam.map((member) => el('option', { value: String(member.id), text: member.name })),
+    );
+    picker.value = viewingFor ? String(viewingFor.id) : '';
+  }
+
+  const holder = $('#viewing-for');
+  if (holder) holder.hidden = myTeam.length === 0;
+
+  showViewingFor();
+}
+
+/**
+ * Lets every screen follow whose time is on it: the banner that says so, the cards
+ * that are always one's own, and the rights each control is offered by.
+ */
+function showViewingFor() {
+  if (viewingFor) document.documentElement.dataset.viewingFor = String(viewingFor.id);
+  else delete document.documentElement.dataset.viewingFor;
+
+  const banner = $('#viewing-banner');
+  if (banner) banner.hidden = !viewingFor;
+
+  if (viewingFor) {
+    redrawable('viewingFor', () => {
+      $('#viewing-text').textContent = fillIn(t('team.viewingText',
+        'You are looking at the time of {0}. What you book or change here carries your name '
+        + 'beside the entry, and {0} sees it.'), [viewingFor.name]);
+    });
+  } else {
+    stopRedrawing('viewingFor');
+  }
+
+  applyPermissionVisibility();
+
+  // A screen that is always one's own is no place to be looking at somebody else's from.
+  const current = $('.tab[aria-current="true"]');
+  if (viewingFor && current?.hasAttribute('data-own-only')) switchView('timesheets');
+}
+
+/** Turns every screen to the time of an account this one looks after, or back to its own. */
+async function viewTimeOf(id) {
+  viewingFor = myTeam.find((member) => String(member.id) === String(id)) ?? null;
+
+  // What was evaluated a moment ago was another account's period.
+  for (const result of ['#overtime-result', '#report-result']) {
+    const card = $(result);
+    if (card) card.hidden = true;
+  }
+
+  showViewingFor();
+  await refreshAll();
+}
+
+/**
+ * Asks which accounts look after somebody, and saves the answer.
+ *
+ * Offered only the accounts whose role gives a team right, because the server
+ * refuses anybody else as a manager - and never the account itself. Without the
+ * roles to tell, everybody else is offered and the server is the one to say no.
+ */
+async function assignManagers(user) {
+  const assigned = (await api(`/users/${user.id}/managers`))?.managerIds ?? [];
+
+  const looksAfter = (roleName) => {
+    const role = cache.roles.find((known) => known.name === roleName);
+
+    return !role || (role.permissions ?? []).some((right) => TEAM_RIGHTS.includes(right));
+  };
+
+  const candidates = cache.users.filter((other) => other.id !== user.id && !other.isSystem
+    && looksAfter(other.role));
+
+  const chosen = await confirmDialog({
+    title: t('team.assignTitle', 'Managers'),
+    text: fillIn(t('team.assignText',
+      'Who looks after the time of {0}? They will see it, and {0} sees who they are.'), [user.name]),
+    confirmLabel: t('action.save', 'Save'),
+    danger: false,
+    choices: candidates.map((candidate) => ({
+      value: candidate.id,
+      label: candidate.name,
+      checked: assigned.includes(candidate.id),
+    })),
+    empty: t('team.noCandidates',
+      'Nobody holds a role that looks after other accounts yet. Give somebody the role "Manager" first.'),
+  });
+
+  if (!chosen) return;
+
+  await patch(`/users/${user.id}/managers`, { managerIds: chosen.map(Number) },
+    t('team.assigned', 'Managers assigned'), refreshAll);
+}
+
+/**
+ * Whether a right belongs on the roles screen: every right, except the team rights
+ * while the installation has no managers - they would reach nobody, and a switch
+ * that does nothing is worse than none. A role holding one anyway shows it, so
+ * what a role grants is never hidden from whoever is reading it.
+ */
+function offeredRight(permission, held = []) {
+  return me.managersEnabled || !TEAM_RIGHTS.includes(permission) || held.includes(permission);
+}
+
+/** Says who may see this account's time, and what each of them may do with it. */
+async function loadMyManagers() {
+  const card = $('#managers-card');
+  if (!card) return;
+
+  card.hidden = !me.authEnabled;
+  if (!me.authEnabled || me.user?.mustChangePassword) return;
+
+  const managers = (await api('/me/managers'))?.items ?? [];
+
+  redrawable('myManagers', () => {
+    $('#managers-list').replaceChildren(...managers.map((manager) => el('li', {},
+      el('strong', { text: manager.name }),
+      el('span', { class: 'muted', text: manager.rights.map(permissionTitle).join(' · ') }))));
+    $('#managers-list').hidden = managers.length === 0;
+    $('#managers-nobody').hidden = managers.length > 0;
+  });
+}
+
+/** The installation's switch, as the server last said it - unless it is being changed. */
+async function loadManagersSwitch() {
+  const form = $('#form-managers');
+  if (!form || beingEdited(form)) return;
+
+  const state = await api('/settings/managers');
+
+  form.elements.enabled.checked = Boolean(state.enabled);
+  form.elements.enabled.defaultChecked = Boolean(state.enabled);
+}
+
+function wireManagers() {
+  const form = $('#form-managers');
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const enabled = form.elements.enabled.checked;
+
+    // Asked about only when switching them on, which is the direction in which
+    // somebody starts seeing a colleague's time. Off needs no question.
+    if (enabled && !form.elements.enabled.defaultChecked) {
+      const proceed = await confirmDialog({
+        title: t('team.switchTitle', 'Managers'),
+        text: t('team.switchConfirm',
+          'Switch managers on? Whoever is a manager then sees the time of the accounts an '
+          + 'administrator assigned to them - and those people see who.'),
+        confirmLabel: t('team.switchOn', 'Switch on'),
+        danger: false,
+      });
+
+      if (!proceed) {
+        form.elements.enabled.checked = false;
+
+        return;
+      }
+    }
+
+    saveForm(form, () => api('/settings/managers', {
+      method: 'PUT', body: JSON.stringify({ enabled }),
+    }), t('team.switchSaved', 'Managers saved'), refreshAll);
+  });
+
+  $('#viewing-for-picker')?.addEventListener('change', (event) => mutate(
+    () => viewTimeOf(event.target.value), null, null));
+}
+
 async function loadUsers() {
   // Listing accounts is a permission, and administering them is the only thing this
   // list is for now.
@@ -5168,7 +5912,8 @@ async function loadUsers() {
   //
   // A dropdown holding a single name is a question with one answer, so all four are
   // gone, and with them the two rights they existed to use. Whose time it is is not a
-  // choice any more, it is who is signed in.
+  // choice any more, it is who is signed in - except for a manager, whose one picker
+  // under the tabs lists only the accounts an administrator assigned to them.
   //
   // Emptied rather than left alone on the way out: a session that loses the right -
   // its role changed while it was signed in - must not go on showing the accounts it
@@ -5220,6 +5965,18 @@ async function loadUsers() {
         'data-action': 'reset-password',
         text: t('user.resetPassword', 'reset password'),
         onclick: () => resetPassword(u),
+      }));
+    }
+
+    // Who looks after this account, while the installation has managers - an
+    // assignment then reaches nothing, and a control that does nothing is worse
+    // than none. Not the built-in administrator, which keeps no time to look after.
+    if (can('users:write') && me.managersEnabled && !u.isSystem) {
+      actions.append(el('button', {
+        class: 'link',
+        'data-action': 'managers',
+        text: t('team.assign', 'managers'),
+        onclick: () => mutate(() => assignManagers(u), null, null),
       }));
     }
 
@@ -5512,6 +6269,8 @@ function renderPermissionCheckboxes(selected = [], { fixed = false } = {}) {
   let group = '';
 
   for (const permission of cache.permissions) {
+    if (!offeredRight(permission, selected)) continue;
+
     const area = permissionGroup(permission);
 
     if (area.key !== group) {
@@ -5560,7 +6319,7 @@ function renderPermissionLegend() {
 
   for (const permission of cache.permissions) {
     const detail = permissionDetail(permission);
-    if (!detail) continue;
+    if (!detail || !offeredRight(permission)) continue;
 
     list.append(el('dt', {},
       el('span', { text: permissionTitle(permission) }),
@@ -5657,7 +6416,10 @@ function resetRoleForm() {
 async function loadProjects() {
   if (!can('projects:read')) return;
 
-  cache.projects = (await api('/projects'))?.items ?? [];
+  // A manager books on the projects of the account on screen and keeps them, so
+  // every list below is that account's while it is there.
+  const owner = viewingFor ? `?ownerId=${viewingFor.id}` : '';
+  cache.projects = (await api(`/projects${owner}`))?.items ?? [];
 
   const bookable = cache.projects.filter((p) => p.status === 'active');
   // A blank first option is what lets time be booked without a project, and it
@@ -5711,7 +6473,7 @@ async function loadProjects() {
     // their own - so this is true of every row here. It stays because it is the
     // question the delete button is really asking: you may remove your own way of
     // organising your hours whatever your project permissions say.
-    const mine = me.user && p.ownerId === me.user.id;
+    const mine = me.user && p.ownerId === subjectID();
 
     // Offered whatever the status. An archived project is a closed record and a
     // name typed wrongly is still typed wrongly in it - and the server does not
@@ -5755,6 +6517,7 @@ async function loadProjects() {
 
     const name = el('td', { class: 'text', text: p.name });
     if (p.budgetHours) name.append(budgetLine(p));
+    if (p.billable) name.append(rateLine(p));
     // No "this one is yours" shade: they all are, and a table shaded from top to
     // bottom says nothing that an unshaded one does not.
     return el('tr', {},
@@ -5790,6 +6553,9 @@ function editProject(project) {
   setDateField(form.elements.startDate, project.startDate ?? '');
   setDateField(form.elements.endDate, project.endDate ?? '');
   form.elements.budgetHours.value = project.budgetHours ?? '';
+  form.elements.billable.checked = Boolean(project.billable);
+  form.elements.hourlyRate.value = project.hourlyRate ?? '';
+  form.elements.currency.value = project.currency ?? '';
 
   swapTheLabel($('#project-form-title'), 'project.edit', 'Edit project');
   swapTheLabel($('#project-submit'), 'action.save', 'Save');
@@ -5798,6 +6564,16 @@ function editProject(project) {
   switchView('projects');
   form.scrollIntoView({ block: 'nearest' });
   form.elements.name.focus();
+}
+
+/** What a billable project's hours are charged at, as a line under its name. */
+function rateLine(project) {
+  return el('span', {
+    class: 'rate-line',
+    text: project.hourlyRate
+      ? fillIn(t('project.ratePerHour', 'billable at {0} an hour'), [fmtMoney(project.hourlyRate, project.currency)])
+      : t('project.noRate', 'billable, no rate yet'),
+  });
 }
 
 /**
@@ -5878,7 +6654,7 @@ function resetProjectForm() {
  * disagree about it.
  */
 function mayEditTimesheet(entry) {
-  const mine = me.user && entry.userId === me.user.id;
+  const mine = me.user && entry.userId === subjectID();
 
   return Boolean(mine) && can('timesheets:write:own');
 }
@@ -6110,7 +6886,7 @@ function timesheetActions(entry) {
   // What it said before, for one of the reader's own entries saved again since it
   // was booked - the only ones with a history to show, and the only ones whose
   // history the server will show them.
-  if (entry.userId === me.user?.id && entry.updatedAt && entry.updatedAt !== entry.createdAt) {
+  if (entry.userId === subjectID() && entry.updatedAt && entry.updatedAt !== entry.createdAt) {
     actions.append(el('button', {
       class: 'link',
       'data-action': 'history',
@@ -6147,7 +6923,10 @@ async function showEntryHistory(entry) {
         el('th', { class: 'num', text: t('field.hours', 'Hours') }),
         el('th', { text: t('field.description', 'Description') }))),
       el('tbody', {}, ...history.map((version) => el('tr', {},
-        el('td', { text: fmtMoment(version.replacedAt) }),
+        el('td', {}, fmtMoment(version.replacedAt), version.replacedBy ? el('span', {
+          class: 'acted-by',
+          text: fillIn(t('team.replacedBy', 'by {0}'), [actorName(version.replacedBy)]),
+        }) : null),
         el('td', { text: fmtDate(version.date) }),
         el('td', { class: 'text', text: projectOf(version.projectId) }),
         el('td', { class: 'num', text: fmtHours(version.durationHours) }),
@@ -6201,6 +6980,9 @@ async function reloadTimeViews() {
 
   // And the budgets the hours just booked count towards.
   await noticeBudgets();
+
+  // And the running balance they moved, which may have crossed a bound.
+  await loadNotices();
 }
 
 /**
@@ -6278,7 +7060,7 @@ async function loadTimesheets(more = false) {
         text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project'),
       }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { class: 'text', text: entry.description || '–' }),
+      el('td', { class: 'text' }, entry.description || '–', ...actedByLines(entry)),
       actions,
     );
   });
@@ -6286,6 +7068,11 @@ async function loadTimesheets(more = false) {
   fillTable($('#table-timesheets tbody'), rows, 5, t('ts.empty', 'No entries for this filter.'));
 
   showTimesheetTally();
+
+  // The link answers to the filter as soon as the list does, from the count it
+  // already has: the new count comes back a request later, and until then a list
+  // of the waiting entries stood under the link that leads to it.
+  redrawable('unassigned', drawUnassigned);
 
   await countUnassigned();
 }
@@ -6302,7 +7089,7 @@ let unassignedEntries = 0;
  * happens to show.
  */
 async function countUnassigned() {
-  const answer = await api('/timesheets?projectId=none&limit=1');
+  const answer = await api(`/timesheets?${forSubject({ projectId: 'none', limit: '1' })}`);
 
   unassignedEntries = answer?.totalCount ?? 0;
 
@@ -6918,8 +7705,8 @@ async function loadCalendar() {
   // The month's days beside its entries, for what each day is besides worked on:
   // a day somebody is away.
   const [entries, month] = await Promise.all([
-    everyTimesheet(span),
-    api(`/me/days?${new URLSearchParams(span)}`),
+    everyTimesheet(forSubject(span)),
+    api(`/me/days?${forSubject(span)}`),
   ]);
 
   // Not drawn if the arrows have moved on while it was on its way. Two quick
@@ -7016,7 +7803,7 @@ function showCalendarDay(iso, entries) {
     const row = el('tr', {},
       el('td', { class: 'text', text: entry.projectId ? projectName(entry.projectId) : t('ts.noProject', 'No project') }),
       el('td', { class: 'num', text: fmtNumber(entry.durationHours) }),
-      el('td', { class: 'text', text: entry.description || '–' }),
+      el('td', { class: 'text' }, entry.description || '–', ...actedByLines(entry)),
       timesheetActions(entry),
     );
 
@@ -7083,6 +7870,7 @@ function absenceName(kind) {
     sick: () => t('absence.sick', 'Sick'),
     flexDay: () => t('absence.flexDay', 'Day off against overtime'),
     localHoliday: () => t('absence.localHoliday', 'Holiday where I work'),
+    away: () => t('absence.away', 'Away'),
   };
 
   return names[kind]?.() ?? kind;
@@ -7340,6 +8128,10 @@ function fillSettingsForm() {
   // never about it.
   fillMyTimezone();
 
+  // The same for the reminders, which guard themselves too.
+  fillReminders();
+  drawNotifyState();
+
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
   // replace whatever had been typed with the server's copy.
@@ -7369,8 +8161,8 @@ async function loadYearMap() {
   const span = (y) => new URLSearchParams({ from: `${y}-01-01`, to: `${y}-12-31` });
 
   const [shown, before] = await Promise.all([
-    api(`/me/days?${span(year)}`),
-    api(`/me/days?${span(year - 1)}`),
+    api(`/me/days?${forSubject(span(year))}`),
+    api(`/me/days?${forSubject(span(year - 1))}`),
   ]);
 
   // Overtaken by a step to another year while this was on its way.
@@ -7922,16 +8714,37 @@ function drawWorkDays() {
     el('td', { class: 'num', text: day.recorded ? String(day.breakMinutes) : '–' }),
     el('td', { class: 'num', text: day.recorded ? fmtHours(day.workedHours) : '–' }),
     el('td', { class: 'num', text: fmtHours(day.bookedHours) }),
+    el('td', { class: 'act' }, ...(day.notices ?? []).map(actNotice)),
     el('td', { class: 'actions' }, ...(writes ? workDayActions(day) : [])),
   ));
 
-  fillTable($('#table-workdays tbody'), rows, 7,
+  fillTable($('#table-workdays tbody'), rows, 8,
     t('work.empty', 'Nothing recorded or booked this month.'));
 
-  $('#workday-total').textContent = days.length
-    ? fillIn(t('work.total', 'Worked {0}, booked {1}'),
-      [fmtHours(workDays.totalWorked), fmtHours(workDays.totalBooked)])
-    : '';
+  const past = days.filter((day) => day.notices?.length).length;
+
+  $('#workday-total').textContent = [
+    days.length ? fillIn(t('work.total', 'Worked {0}, booked {1}'),
+      [fmtHours(workDays.totalWorked), fmtHours(workDays.totalBooked)]) : '',
+    past ? fillIn(t('work.noticeCount', '{0} days past a limit of the Working Hours Act.'), [past]) : '',
+  ].filter(Boolean).join(' · ');
+}
+
+/**
+ * One limit of the Working Hours Act a shift went past, as the server read it.
+ * Written as a sentence rather than a mark, because the PDF is made from this
+ * table and a mark alone would mean nothing on paper.
+ */
+function actNotice(notice) {
+  const said = {
+    longDay: () => t('work.longDay', 'More than ten hours (Working Hours Act § 3)'),
+    shortBreak: () => fillIn(t('work.shortBreak', '{0} minutes of breaks needed (Working Hours Act § 4)'),
+      [notice.minutes]),
+    shortRest: () => fillIn(t('work.shortRest', 'Only {0} of rest since the day before (Working Hours Act § 5)'),
+      [fmtHours(notice.minutes / 60)]),
+  }[notice.rule];
+
+  return el('span', { class: 'act-notice', text: said ? said() : notice.rule });
 }
 
 /** What can be done with a day: correct it, and take back what was recorded. */
@@ -8535,6 +9348,7 @@ async function loadAdmin() {
   if (!can('settings:manage')) return;
 
   await loadMaintenance();
+  await loadManagersSwitch();
 
   const branding = await api('/branding');
   const form = $('#form-branding');
@@ -8760,6 +9574,92 @@ async function loadAdmin() {
       ? `${t('sync.scheduleStored', 'Saved')}: ${ldap.syncSchedule}`
       : t('sync.scheduleManual', 'Runs only when the button below is pressed.');
   }
+
+  // Last, so a log that cannot be read leaves every card above it filled.
+  await loadChanges();
+}
+
+// ------------------------------------------------------- administration log
+
+/** The changes shown so far, oldest last, and whether older ones remain. */
+let adminChanges = { entries: [], more: false };
+
+/**
+ * Reads the administration log: the newest page, or the page before the oldest
+ * change shown when older ones are asked for.
+ */
+async function loadChanges(older = false) {
+  if (!can('settings:manage') || !$('#changes-card')) return;
+
+  const before = older ? adminChanges.entries.at(-1)?.id : null;
+  const page = await api(`/admin/changes${before ? `?before=${before}` : ''}`);
+
+  adminChanges = {
+    entries: older ? [...adminChanges.entries, ...page.entries] : page.entries,
+    more: page.more,
+  };
+
+  redrawable('changes', drawChanges);
+}
+
+function drawChanges() {
+  const rows = adminChanges.entries.map((entry) => el('tr', {},
+    el('td', { text: fmtMoment(entry.at) }),
+    el('td', { text: entry.actor.name || `#${entry.actor.id}` }),
+    el('td', { text: describeChange(entry) }),
+  ));
+
+  fillTable($('#table-changes tbody'), rows, 3, t('changes.empty', 'Nothing has been changed yet.'));
+  $('#changes-more').hidden = !adminChanges.more;
+}
+
+/**
+ * The sentence for each change the administration log records, one for every
+ * code in its table - test/adminlog_test.go holds the two together, so a change
+ * recorded is never shown as its code.
+ */
+const CHANGE_SENTENCES = {
+  'user.created': () => t('change.userCreated', 'Created the account {0}'),
+  'user.updated': () => t('change.userUpdated', 'Corrected the account {0}'),
+  'user.deleted': () => t('change.userDeleted', 'Deleted the account {0}'),
+  'user.role': () => t('change.userRole', 'Gave {0} the role {1}'),
+  'user.password': () => t('change.userPassword', 'Set a new password for {0}'),
+  'user.managers': () => t('change.userManagers', 'Assigned managers to {0}'),
+  'users.imported': () => t('change.usersImported', 'Imported accounts from a spreadsheet'),
+  'role.created': () => t('change.roleCreated', 'Created the role {0}'),
+  'role.updated': () => t('change.roleUpdated', 'Changed the role {0}'),
+  'role.deleted': () => t('change.roleDeleted', 'Deleted the role {0}'),
+  'roles.imported': () => t('change.rolesImported', 'Imported roles from a spreadsheet'),
+  'settings.maintenance': () => t('change.maintenance', 'Switched maintenance mode {1}'),
+  'settings.branding': () => t('change.branding', 'Changed the appearance'),
+  'settings.ldap': () => t('change.ldap', 'Changed the LDAP connection'),
+  'settings.openid': () => t('change.openid', 'Changed the sign-in provider'),
+  'directory.synchronised': () => t('change.synchronised', 'Ran the directory synchronisation'),
+  'settings.operational': () => t('change.operational', 'Changed operation and limits'),
+  'settings.timezone': () => t('change.timezone', 'Changed the timezone'),
+  'settings.holidays': () => t('change.holidays', 'Changed the public holidays'),
+  'settings.datasource': () => t('change.datasource', 'Changed the database connection'),
+  'settings.telemetry': () => t('change.telemetry', 'Changed logging, metrics and tracing'),
+  'settings.managers': () => t('change.managers', 'Switched managers {1}'),
+  'installation.restart': () => t('change.restart', 'Restarted the application'),
+  'installation.update': () => t('change.update', 'Started an update'),
+  'installation.setup': () => t('change.setup', 'Completed the setup'),
+};
+
+/** One change as a sentence: what was done, to whom, and the value it kept. */
+function describeChange(entry) {
+  const target = entry.target ? (entry.target.name || entry.detail || `#${entry.target.id}`) : '';
+  const detail = {
+    'user.role': () => roleTitle(entry.detail),
+    'settings.maintenance': () => (entry.detail === 'true'
+      ? t('change.on', 'on') : t('change.off', 'off')),
+    'settings.managers': () => (entry.detail === 'true'
+      ? t('change.on', 'on') : t('change.off', 'off')),
+  }[entry.action]?.() ?? entry.detail;
+
+  const sentence = CHANGE_SENTENCES[entry.action];
+
+  return sentence ? fillIn(sentence(), [target, detail]) : entry.action;
 }
 
 /**
@@ -8866,6 +9766,8 @@ function cropPreview(dataURI, crop, into) {
 }
 
 function wireAdmin() {
+  $('#changes-more').addEventListener('click', () => mutate(() => loadChanges(true), null, null));
+
   $('#logo-file').addEventListener('change', (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -9346,7 +10248,9 @@ const remove = (path, msg, after) => mutate(
  * differs only in its words - and reusing .overlay and .overlay-card means this
  * needs no new styling at all.
  */
-function confirmDialog({ title, text, detail, confirmLabel, danger = true, field = null }) {
+function confirmDialog({
+  title, text, detail, confirmLabel, danger = true, field = null, choices = null, empty = '',
+}) {
   return new Promise((resolve) => {
     // What had focus before, so it can be given back: a dialog that leaves
     // focus on nothing strands anybody using a keyboard.
@@ -9381,6 +10285,23 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true, field
         spellcheck: 'false',
       })
       : null;
+
+    // A choice of several rather than a yes: switches, and what it resolves to is
+    // the values switched on - an empty list too, which is an answer ("nobody")
+    // where a cancel is not. empty is said instead where there is nothing to choose.
+    const ticks = (choices ?? []).map((choice) => el('input', {
+      type: 'checkbox',
+      value: String(choice.value),
+      checked: Boolean(choice.checked),
+    }));
+
+    if (choices?.length) {
+      card.append(el('div', { class: 'choice-list' }, ...choices.map((choice, i) => el('label',
+        { class: 'switch' }, ticks[i], el('span', { class: 'switch-track' }),
+        el('span', { class: 'switch-label', text: choice.label })))));
+    } else if (choices && empty) {
+      card.append(el('p', { class: 'muted', text: empty }));
+    }
 
     if (field) {
       const controls = el('span', { class: 'row' }, input);
@@ -9440,7 +10361,11 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true, field
       class: `confirm-proceed${danger ? ' danger' : ''}`,
       type: 'button',
       text: confirmLabel,
-      onclick: () => close(field ? input.value : true),
+      onclick: () => {
+        if (field) close(input.value);
+        else if (choices) close(ticks.filter((tick) => tick.checked).map((tick) => tick.value));
+        else close(true);
+      },
     });
 
     card.append(el('div', { class: 'row confirm-actions' }, cancel, proceed));
@@ -9458,6 +10383,7 @@ function confirmDialog({ title, text, detail, confirmLabel, danger = true, field
     // instead - there is nothing to protect anybody from until it holds a value,
     // and a dialog that opens with the cursor somewhere else is one more click.
     if (input) input.focus();
+    else if (ticks.length) ticks[0].focus();
     else cancel.focus();
   });
 }
@@ -10006,6 +10932,14 @@ function forgetTheLastAccount() {
   cache.projects = [];
   cache.roles = [];
   cache.permissions = [];
+
+  // Whose time was on screen, and whom this account looked after: the next
+  // account to sign in starts on its own.
+  viewingFor = null;
+  myTeam = [];
+  delete document.documentElement.dataset.viewingFor;
+  $('#viewing-banner').hidden = true;
+  $('#viewing-for').hidden = true;
 
   // Emptied rather than left to the next render, which may never come: a table
   // whose loader returns early keeps whatever it last held.
@@ -13561,6 +14495,7 @@ function fillRangesFor(view) {
     ],
     report: [
       ['#form-report input[name="from"]', '#form-report input[name="to"]'],
+      ['#form-statement input[name="from"]', '#form-statement input[name="to"]'],
     ],
   }[view] ?? [];
 
@@ -13593,7 +14528,7 @@ async function loadStatistics() {
   if (!$('#statistics-from').value) setDateField($('#statistics-from'), range.from);
   if (!$('#statistics-to').value) setDateField($('#statistics-to'), range.to);
 
-  const params = new URLSearchParams({
+  const params = forSubject({
     from: $('#statistics-from').value,
     to: $('#statistics-to').value,
   });
@@ -13651,6 +14586,9 @@ function timesheetFilterParams() {
   if (from) params.set('from', from);
   if (to) params.set('to', to);
   if (search) params.set('q', search);
+
+  // The list and the export alike, so the file is what the screen showed.
+  if (viewingFor) params.set('userId', String(viewingFor.id));
 
   return params;
 }
@@ -14180,7 +15118,9 @@ function screenColours() {
  * over March's figures - and with nothing when the boxes were left empty and the
  * server chose the period itself. The report's select is the same kind of box.
  */
-const evaluatedPeriod = { report: null, overtime: null, statistics: null };
+const evaluatedPeriod = {
+  report: null, overtime: null, statistics: null, statement: null,
+};
 
 /** The period a document covers, as an answer named it. */
 function periodOf(period) {
@@ -14266,6 +15206,26 @@ async function reportDocument() {
   };
 }
 
+/** The statement last worked out, which the document and the workbook are made of. */
+let statementShown = null;
+
+/**
+ * The statement of work: the table, and a total per currency as the figures
+ * under it - the table's foot is not a row of figures a document reads.
+ */
+async function statementDocument() {
+  return {
+    title: t('statement.title', 'Statement of work'),
+    colours: screenColours(),
+    subtitle: periodOf(evaluatedPeriod.statement),
+    sections: [{ table: tableAsFigures($('#table-statement')) }],
+    summary: (statementShown?.totals ?? []).map((total) => ({
+      label: fillIn(t('statement.total', 'Total in {0}'), [total.currency]),
+      value: fmtMoney(total.amount, total.currency),
+    })),
+  };
+}
+
 /** The statistics screen: both charts, in the order they are on it. */
 async function statisticsDocument() {
   return {
@@ -14339,6 +15299,8 @@ function wireDocumentExports() {
     statisticsDocument);
   wireDocumentExport('#overtime-pdf', () => t('ot.filename', 'overtime'), overtimeDocument);
   wireDocumentExport('#workday-pdf', () => t('work.filename', 'working-time'), workDayDocument);
+  wireDocumentExport('#statement-pdf', () => t('statement.filename', 'statement-of-work'),
+    statementDocument);
 }
 
 // ------------------------------------------- export and import, table by table
@@ -14665,7 +15627,7 @@ async function loadReportChart(from, to, projectId) {
   // Scoped the way the evaluation was. The endpoint answers for every project
   // unless told otherwise, so an unscoped chart beside a table totalling one
   // project is two different numbers on one screen, both offered as the answer.
-  const params = new URLSearchParams({ from, to });
+  const params = forSubject({ from, to });
   if (projectId) params.set('projectId', projectId);
 
   const stats = await api(`/me/statistics?${params}`);
@@ -14750,6 +15712,14 @@ let timerTick = null;
  * once-a-second paint acts on the moment it changes rather than on every tick.
  */
 let timerForgotten = null;
+
+/**
+ * Whether the running clock is past the hours its owner chose to be told after,
+ * as last drawn - null until worked out for the clock in hand, so the first look
+ * at a clock already past them draws the banner without a notification: the
+ * notification is for a clock crossing the line while somebody is elsewhere.
+ */
+let timerLong = null;
 
 /**
  * The longest one entry may be, in hours.
@@ -14876,20 +15846,28 @@ function drawTimerBanner() {
   const banner = $('#timer-banner');
   if (!banner) return;
 
-  const show = runningTimer !== null && timerForgotten === true;
-  banner.hidden = !show;
+  const forgotten = runningTimer !== null && timerForgotten === true;
+  const long = runningTimer !== null && timerLong === true;
+  banner.hidden = !forgotten && !long;
 
-  if (!show) return;
+  if (banner.hidden) return;
 
   const text = $('#timer-banner-text');
   text.textContent = '';
 
   // Split on the placeholder, so where the link falls is the translator's
-  // business - as with the restart banner.
+  // business - as with the restart banner. The forgotten clock's sentence wins:
+  // it says what the other one says and what to do about it.
   const since = fmtMoment(runningTimer.startedAt);
-  const [before, after] = t('timer.banner',
-    'A stopwatch has been running since {0}, longer than one entry can hold. '
-    + 'Under {1} it can be booked up to the time the work really ended.').split('{1}');
+  const sentence = forgotten
+    ? t('timer.banner',
+      'A stopwatch has been running since {0}, longer than one entry can hold. '
+      + 'Under {1} it can be booked up to the time the work really ended.')
+    : fillIn(t('timer.longBanner',
+      'The stopwatch has been running since {0}, longer than the {2} you chose to be told after. '
+      + 'Under {1} it can be stopped.'),
+    [null, null, alertHoursText()]);
+  const [before, after] = sentence.split('{1}');
 
   text.append(fillIn(before ?? '', [since]));
 
@@ -14904,6 +15882,180 @@ function drawTimerBanner() {
   text.append(link);
 
   text.append(fillIn(after ?? '', [since]));
+}
+
+// ------------------------------------------------------------ own notices
+
+/** What about this person's own time deserves a banner, as the server read it. */
+let personalNotices = null;
+
+/**
+ * Asks what about this person's own time deserves a banner. Worked out on the
+ * server, because the balance read against the bounds is the overtime rule's,
+ * and that rule lives in one place.
+ */
+async function loadNotices() {
+  if (!can('reports:read:own')) return;
+
+  personalNotices = await api('/me/notices');
+
+  drawBalanceBanner();
+  fillBalanceBounds();
+  drawUnbookedBanner();
+}
+
+/**
+ * The last working day with nothing booked on it. The sentence leads to the
+ * booking form with that day already in it, which is the whole of what there is
+ * to do about it.
+ */
+function drawUnbookedBanner() {
+  const banner = $('#unbooked-banner');
+  if (!banner) return;
+
+  const day = personalNotices?.unbookedDay;
+
+  banner.hidden = !day;
+  if (!day) return;
+
+  // The calendar's own short name for the weekday, so the banner cannot call a
+  // day something the week grid does not.
+  const weekday = weekdayNames()[(new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7];
+  const values = [`${weekday} ${fmtDate(day)}`];
+  const [before, after] = t('remind.unbooked', 'Nothing is booked on {0}, a working day by your plan. '
+    + 'It can be added under {1}.').split('{1}');
+
+  const link = el('button', {
+    type: 'button', class: 'link-button', id: 'unbooked-banner-open', text: t('nav.timesheets', 'Time entries'),
+  });
+  link.addEventListener('click', () => openTheBookingFormOn(day));
+
+  $('#unbooked-banner-text').replaceChildren(fillIn(before ?? '', values), link, fillIn(after ?? '', values));
+}
+
+/** Takes whoever pressed the link to the booking form, with the day in it. */
+function openTheBookingFormOn(day) {
+  switchView('timesheets');
+
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  setDateField(form.elements.date, day);
+  form.scrollIntoView({ block: 'center' });
+  form.elements.durationHours?.focus();
+}
+
+/**
+ * Tells somebody looking at another window that the stopwatch has passed the
+ * hours they chose, where the browser allows it. A browser that offers
+ * notifications only through a service worker - Chrome on Android - refuses the
+ * constructor, and then the banner is all there is.
+ */
+function notifyTheLongStopwatch() {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !runningTimer) return;
+
+  try {
+    new Notification(t('timer.longTitle', 'The stopwatch is still running'), {
+      body: fillIn(t('timer.longBody', 'Since {1}, longer than the {0} you chose.'),
+        [alertHoursText(), fmtMoment(runningTimer.startedAt)]),
+      tag: 'gtr-stopwatch',
+    });
+  } catch {
+    // The banner says it.
+  }
+}
+
+/**
+ * The hours the stopwatch is mentioned after, with the unit the screen writes
+ * hours in. A whole number, so not fmtHours: "10 h" rather than "10.00 h".
+ */
+function alertHoursText() {
+  return `${me.reminders?.timerAlertHours ?? 0} ${t('unit.hours', 'h')}`;
+}
+
+/** The reminder choices as they are stored, unless somebody is changing them. */
+function fillReminders() {
+  const form = $('#form-reminders');
+  if (!form || !me.reminders || beingEdited(form)) return;
+
+  form.elements.unbookedDay.checked = me.reminders.unbookedDay;
+  form.elements.timerAlertHours.value = String(me.reminders.timerAlertHours);
+}
+
+/**
+ * Whether this browser will show a notification, and the button that asks it
+ * where it has not been asked yet. A refusal can only be taken back in the
+ * browser's own settings, so it is said rather than asked again.
+ */
+function drawNotifyState() {
+  const button = $('#notify-allow');
+  const state = $('#notify-state');
+  if (!button || !state) return;
+
+  const permission = 'Notification' in window ? Notification.permission : 'unsupported';
+
+  button.hidden = permission !== 'default';
+  state.textContent = {
+    granted: () => t('remind.notifyGranted', 'This browser shows notifications from here.'),
+    denied: () => t('remind.notifyDenied',
+      'This browser blocks notifications from here; that can only be changed in its own settings.'),
+    unsupported: () => t('remind.notifyUnsupported', 'This browser cannot show notifications.'),
+  }[permission]?.() ?? '';
+}
+
+/**
+ * The running balance past a bound its owner set. The sentence carries the way
+ * to the bounds inside it, split on the placeholder so where the link falls is
+ * the translator's business - as with the stopwatch's banner.
+ */
+function drawBalanceBanner() {
+  const banner = $('#balance-banner');
+  if (!banner) return;
+
+  const balance = personalNotices?.balance;
+  const outside = balance?.outside;
+
+  banner.hidden = !outside;
+  if (!outside) return;
+
+  const above = outside === 'above';
+  const sentence = above
+    ? t('bounds.above', 'Your running balance is {0}, above the upper bound of {1} you set under {2}.')
+    : t('bounds.below', 'Your running balance is {0}, below the lower bound of {1} you set under {2}.');
+  const values = [fmtSignedHours(balance.hours), fmtSignedHours(above ? balance.upperBound : balance.lowerBound)];
+  const [before, after] = sentence.split('{2}');
+
+  const link = el('button', {
+    type: 'button', class: 'link-button', id: 'balance-banner-open', text: t('nav.settings', 'My account'),
+  });
+  link.addEventListener('click', openTheBalanceBounds);
+
+  $('#balance-banner-text').replaceChildren(fillIn(before ?? '', values), link, fillIn(after ?? '', values));
+}
+
+/** The bounds as they are stored, and the balance they are chosen against. */
+function fillBalanceBounds() {
+  const form = $('#form-balance-bounds');
+  const balance = personalNotices?.balance;
+  if (!form || !balance) return;
+
+  if (!beingEdited(form)) {
+    form.elements.upperBound.value = balance.upperBound ?? '';
+    form.elements.lowerBound.value = balance.lowerBound ?? '';
+  }
+
+  $('#balance-now').textContent = balance.since
+    ? fillIn(t('bounds.now', 'Your running balance is {0}, counted from {1}.'),
+      [fmtSignedHours(balance.hours), fmtDate(balance.since)])
+    : t('bounds.nothingYet', 'Nothing counts towards your balance yet.');
+}
+
+/** Takes whoever pressed the balance banner's link to the bounds it is about. */
+function openTheBalanceBounds() {
+  switchView('settings');
+
+  const form = $('#form-balance-bounds');
+  if (form) form.scrollIntoView({ block: 'center' });
 }
 
 /** Takes whoever pressed the banner's link to the clock it is about. */
@@ -14972,6 +16124,7 @@ function renderTimer() {
     }
 
     timerForgotten = null;
+    timerLong = null;
     closeTimerForms();
     stopRedrawing('timerWords');
     applyTimerForgotten();
@@ -15001,6 +16154,21 @@ function renderTimer() {
       timerForgotten = forgotten;
       applyTimerForgotten();
     }
+
+    // The hours its owner chose to be told after, read on every tick so a choice
+    // saved under My account applies without the clock being loaded again. Not
+    // once the clock is past what an entry holds: that banner says more.
+    const alert = (me.reminders?.timerAlertHours ?? 0) * 3600;
+    const long = alert > 0 && seconds >= alert && !forgotten;
+
+    if (long !== timerLong) {
+      const crossed = long && timerLong === false;
+
+      timerLong = long;
+      drawTimerBanner();
+
+      if (crossed) notifyTheLongStopwatch();
+    }
   };
 
   paint();
@@ -15025,6 +16193,7 @@ async function loadTimer() {
   // Worked out again for the clock just read: a correction or a switch can have
   // moved it to either side of the limit.
   timerForgotten = null;
+  timerLong = null;
 
   // What it was started with, so stopping books what was chosen - the fields
   // are disabled while it runs, and this is what they show. Written whether or
@@ -16962,6 +18131,9 @@ async function refreshAll() {
     return;
   }
 
+  // Whose time the screens show, before any of them is filled.
+  await loadTeam();
+
   // Roles first: the user table renders a role picker from them.
   await loadRoles();
   await Promise.all([loadUsers(), loadProjects()]);
@@ -16980,6 +18152,13 @@ async function refreshAll() {
   await loadAbsences();
   await loadVacation();
   await loadMyHolidays();
+  await loadNotices();
+  await loadMyManagers();
+
+  // What was booked without a connection, now that there is one - and the banner
+  // for whoever is signed in now.
+  drawOutbox();
+  await sendOutbox();
   fillSettingsForm();
 
   document.documentElement.dataset.loaded = 'yes';
@@ -17077,6 +18256,13 @@ function wireForms() {
       const budget = form.elements.budgetHours.value;
       changes.budgetHours = budget === '' ? 0 : Number(budget);
 
+      // The same for the rate: an emptied box takes it off. The switch says what
+      // it says either way, and an emptied currency is euros again.
+      const rate = form.elements.hourlyRate.value;
+      changes.hourlyRate = rate === '' ? 0 : Number(rate);
+      changes.billable = form.elements.billable.checked;
+      changes.currency = form.elements.currency.value.trim();
+
       mutate(() => api(`/projects/${id}`,
         { method: 'PUT', body: JSON.stringify(changes) }),
       t('msg.projectSaved', 'Project saved'),
@@ -17088,6 +18274,11 @@ function wireForms() {
     const body = formData(form);
 
     if (body.budgetHours !== undefined) body.budgetHours = Number(body.budgetHours);
+    if (body.hourlyRate !== undefined) body.hourlyRate = Number(body.hourlyRate);
+    body.billable = form.elements.billable.checked;
+
+    // A project made while looking after somebody is theirs.
+    if (viewingFor) body.ownerId = viewingFor.id;
 
     mutate(() => api('/projects', { method: 'POST', body: JSON.stringify(body) }),
       t('msg.projectCreated', 'Project created'),
@@ -17117,17 +18308,47 @@ function wireForms() {
       projectId: Number(raw.projectId),
       durationHours: Number(raw.durationHours),
     };
+
+    // Booked for the account on screen. A correction needs no name: the entry
+    // already says whose it is.
+    if (!editing && viewingFor) body.userId = viewingFor.id;
+
     const path = editing ? `/timesheets/${id}` : '/timesheets';
     const method = editing ? 'PUT' : 'POST';
 
-    mutate(() => api(path, { method, body: JSON.stringify(body) }),
-      editing ? t('msg.entrySaved', 'Entry saved') : t('msg.booked', 'Time booked'),
-      async () => {
-        // Keeps the project and the date, so booking several entries in a row stays
-        // quick.
-        resetTimesheetForm();
-        await reloadTimeViews();
-      });
+    // Whether the booking waits on this device rather than having been booked,
+    // which decides what is said once it is put away.
+    let kept = false;
+
+    mutate(async () => {
+      try {
+        await api(path, { method, body: JSON.stringify(body) });
+      } catch (err) {
+        if (editing || !err.unreachable) throw err;
+
+        // A new booking waits on this device rather than being lost with the
+        // connection, and goes once it is back.
+        keepForLater(body);
+        kept = true;
+      }
+    }, editing ? t('msg.entrySaved', 'Entry saved') : null,
+    async () => {
+      // Keeps the project and the date, so booking several entries in a row stays
+      // quick.
+      resetTimesheetForm();
+
+      // Kept, nothing changed on the server to show, and nothing could be asked
+      // of it anyway: reloading would only add a second notice to the first.
+      if (kept) {
+        toast(t('outbox.kept', 'No connection: kept on this device, and sent once it is back.'), 'ok');
+
+        return;
+      }
+
+      if (!editing) toast(t('msg.booked', 'Time booked'), 'ok');
+
+      await reloadTimeViews();
+    });
   });
 
   $('#timesheet-cancel').addEventListener('click', resetTimesheetForm);
@@ -17178,7 +18399,7 @@ function wireForms() {
   $('#form-report').addEventListener('submit', (e) => {
     e.preventDefault();
     const { projectId, from, to } = formData(e.target);
-    const params = new URLSearchParams();
+    const params = forSubject();
     if (projectId) params.set('projectId', projectId);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
@@ -17232,6 +18453,58 @@ function wireForms() {
     $('#overtime-result').hidden = false;
   }
 
+  /**
+   * A statement of work, line by line and a total per currency. Drawn through
+   * redrawable, so a change of language writes the same figures in the other
+   * language's words and number format.
+   */
+  function renderStatement(statement) {
+    $('#statement-period').textContent = periodOf(evaluatedPeriod.statement);
+
+    const rows = statement.lines.map((line) => el('tr', {},
+      el('td', { class: 'text', text: line.name }),
+      el('td', { class: 'num', text: fmtHours(line.hours) }),
+      el('td', {
+        class: line.hourlyRate === null ? 'num empty' : 'num',
+        text: line.hourlyRate === null
+          ? t('statement.noRate', 'no rate yet')
+          : fmtMoney(line.hourlyRate, line.currency),
+      }),
+      el('td', { class: 'num', text: line.amount === null ? '–' : fmtMoney(line.amount, line.currency) }),
+    ));
+
+    fillTable($('#table-statement tbody'), rows, 4,
+      t('statement.empty', 'No billable hours in this period.'));
+
+    $('#table-statement tfoot').replaceChildren(...statement.totals.map((total) => el('tr', {},
+      el('th', { scope: 'row', class: 'text', text: fillIn(t('statement.total', 'Total in {0}'), [total.currency]) }),
+      el('td', { class: 'num', text: fmtHours(total.hours) }),
+      el('td', {}),
+      el('td', { class: 'num', text: fmtMoney(total.amount, total.currency) }),
+    )));
+
+    $('#statement-result').hidden = false;
+  }
+
+  $('#form-statement').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const { from, to } = formData(e.target);
+
+    mutate(async () => {
+      const statement = await api(`/reports/statement?${forSubject({ from, to })}`);
+
+      statementShown = statement;
+      evaluatedPeriod.statement = { from: statement.from, to: statement.to };
+
+      redrawable('statement', () => renderStatement(statement));
+    }, null, null);
+  });
+
+  // The same statement as a workbook - the one shown, not what the boxes say now.
+  $('#statement-xlsx').addEventListener('click', () => mutate(() => downloadSheet(
+    `/reports/statement/export?${forSubject(evaluatedPeriod.statement ?? {})}`,
+    t('statement.filename', 'statement-of-work')), null, null));
+
   $('#form-overtime').addEventListener('submit', (e) => {
     e.preventDefault();
     const { from, to } = formData(e.target);
@@ -17241,9 +18514,9 @@ function wireForms() {
     const suffix = params.toString() ? `?${params}` : '';
 
     mutate(async () => {
-      // Your own balance. The id is still in the path because the endpoint takes
-      // one, and any other id is refused rather than answered.
-      const balance = await api(`/users/${me.user.id}/overtime${suffix}`);
+      // The balance of the account on screen: your own, or one you look after as a
+      // manager. Any other id is refused rather than answered.
+      const balance = await api(`/users/${subjectID()}/overtime${suffix}`);
 
       redrawable('overtime', () => renderOvertime(balance));
     }, null, null);
@@ -17264,6 +18537,42 @@ function wireForms() {
       { method: 'PUT', body: JSON.stringify(body) }),
       t('msg.workingTimesSaved', 'Working hours saved'),
       refreshAll);
+  });
+
+  $('#form-reminders').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const body = {
+      unbookedDay: form.elements.unbookedDay.checked,
+      timerAlertHours: Number(form.elements.timerAlertHours.value || 0),
+    };
+
+    saveForm(form, () => api('/me/reminders', { method: 'PUT', body: JSON.stringify(body) }),
+      t('remind.saved', 'Reminders saved'),
+      async () => { await loadMe(); fillReminders(); await loadNotices(); });
+  });
+
+  $('#notify-allow').addEventListener('click', async () => {
+    if ('Notification' in window) await Notification.requestPermission();
+
+    drawNotifyState();
+  });
+
+  $('#export-me').addEventListener('click', () => mutate(
+    () => downloadFile(`${API}/me/export`, t('export.filename', 'everything-about-me'), 'zip'),
+    t('wb.exported', 'Export saved'), null));
+
+  $('#form-balance-bounds').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+
+    // Both at once, as the endpoint takes them: an empty field is no bound.
+    const bound = (input) => (input.value === '' ? null : Number(input.value));
+    const body = { upperBound: bound(form.elements.upperBound), lowerBound: bound(form.elements.lowerBound) };
+
+    saveForm(form, () => api('/me/balance-limits', { method: 'PUT', body: JSON.stringify(body) }),
+      t('bounds.saved', 'Bounds saved'),
+      loadNotices);
   });
 
   $('#form-schedule').addEventListener('submit', (e) => {
@@ -17361,6 +18670,11 @@ async function init() {
   // submit handler was never attached, which would silently reload the page.
   $('#form-login').addEventListener('submit', submitLogin);
   wireTicketSignIn();
+
+  // Before anything can fail for want of a connection, so a page that cannot
+  // reach the installation says so rather than only failing.
+  keepTheShell();
+  wireOffline();
 
   // Here rather than with the rest of the wiring below, so the sign-in form has
   // its reveal before anything that could fail has been tried. It also registers
@@ -17471,6 +18785,7 @@ async function init() {
     wireWorkDays();
     wireLogViewer();
     wireMaintenance();
+    wireManagers();
     $('#logout').addEventListener('click', doLogout);
     $('#language-picker').addEventListener('change', (e) => mutate(
       () => api('/me/language', { method: 'PUT', body: JSON.stringify({ language: e.target.value }) }),
@@ -17545,6 +18860,8 @@ async function init() {
  * belongs to showLogin, which already answers exactly that.
  */
 function afterAFailedFirstLoad(err) {
+  showSignInOffline(Boolean(err?.unreachable) || !navigator.onLine);
+
   if (me.user && err?.status !== 401) {
     restoreDrafts();
     hideLogin();

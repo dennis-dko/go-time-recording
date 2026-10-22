@@ -33,7 +33,9 @@
   and as an image for amd64 and arm64. Nothing to unpack beside it.
 - 🔒 **Your hours stay yours.** Every project belongs to one person, and nobody
   else — the administrator included — can read, total or correct anybody's time.
-  No teams, no manager view, no approval queue.
+  An installation may switch on managers for the people an administrator assigns
+  them, and then those people are told who, and see their name on every entry a
+  manager touched. No team totals, no approval queue.
 - 🗄️ **The database you already run.** SQLite in a single file, or PostgreSQL or
   MySQL. Started without one, the binary serves an installer on its own port and
   waits.
@@ -121,7 +123,7 @@ working time first — `task readme:pictures` takes them again.
     </td>
     <td valign="top" align="center">
       <img src="doc/images/phone.png" alt="The stopwatch on a telephone" width="240">
-      <p><b>From a telephone to a wide screen</b>, and installable as an app with the installation's own name and logo.</p>
+      <p><b>From a telephone to a wide screen</b>, and installable as an app with the installation's own name and logo - which opens without a network, and keeps what is booked meanwhile until it is back.</p>
     </td>
   </tr>
 </table>
@@ -228,14 +230,14 @@ Running it for real — behind a proxy, with HTTPS, as a service — is
 | --- | --- | --- |
 | **Recording** | Stopwatch, entry form and week grid; templates for what is booked often; changes to many entries at once; spreadsheet import and export | [Features](doc/features.md) |
 | **History** | Every correction keeps the version it replaced, for the entry's owner | [Features](doc/features.md#business-rules) |
-| **Evaluating** | Charts per day, project and activity, reports as bars, columns or a pie, the year as tiles, PDF exports | [Features](doc/features.md) |
-| **Projects** | Private to their owner, with a period, a status and an hour budget | [Projects](doc/features.md#projects) |
+| **Evaluating** | Charts per day, project and activity, reports as bars, columns or a pie, the year as tiles, statements of work, PDF exports | [Features](doc/features.md) |
+| **Projects** | Private to their owner, with a period, a status, an hour budget and an hourly rate | [Projects](doc/features.md#projects) |
 | **Targets and time off** | A planned week, the public holidays of every German state, leave with its entitlement and carry-over, sick days and days taken against overtime | [Overtime](doc/features.md#overtime) |
 | **Working time** | When each day began and ended and its breaks, for each person's own record | [Working time](doc/features.md#your-own-record-of-your-working-time) |
 | **Calendar subscription** | Booked days and days away in Outlook, Google or a telephone's calendar | [Calendar](doc/features.md#your-days-in-your-own-calendar) |
-| **Accounts and roles** | Roles and their rights administered at run time; an administrator who runs the installation without keeping hours in it | [Access](doc/access.md) |
+| **Accounts and roles** | Roles and their rights administered at run time; an administrator who runs the installation without keeping hours in it; managers for the accounts assigned to them, where an installation switches them on | [Access](doc/access.md) |
 | **Sign-in** | Passwords with TOTP, passkeys, LDAP and Active Directory with synchronisation, Kerberos, OpenID Connect | [Sign-in](doc/access.md#ldap) |
-| **API** | REST under `/api/v1`, described at `/api-docs`, reached with personal tokens that never outrank their owner | [API](doc/api.md) |
+| **API** | REST under `/api/v1`, described at `/api-docs`, reached with personal tokens that never outrank their owner - and `go-time-recording track` books through it from a terminal | [API](doc/api.md) |
 | **Operations** | Health, metrics, traces, live log, maintenance mode, updates, restart, HTTPS with Let's Encrypt, the installation's own name and logo | [Configuration](doc/configuration.md) |
 
 ## Documentation

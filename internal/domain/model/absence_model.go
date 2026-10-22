@@ -33,6 +33,15 @@ const (
 	AbsenceLocalHoliday = "localHoliday"
 )
 
+// AbsenceUndisclosed is what an absence reads as to anybody but the person it is
+// about - a manager they were assigned to: that the day was away, never why.
+//
+// Leave, a day off sick and a local holiday all ask the same nothing, and which of
+// them it was is the owner's to tell. A day off sick in particular is a fact about
+// somebody's health, which a manager has no business holding. Not a kind anybody
+// records, so AbsenceKinds does not offer it and ValidAbsenceKind refuses it.
+const AbsenceUndisclosed = "away"
+
 // absenceKinds are the kinds, in the order a picker offers them.
 var absenceKinds = []string{
 	AbsenceVacation, AbsenceHalfVacation, AbsenceSick, AbsenceFlexDay, AbsenceLocalHoliday,

@@ -107,6 +107,10 @@ type TimesheetRepository interface {
 	// zero - enforcement switched off - is shown everywhere else.
 	HoursByProject(ctx context.Context, userID uint) (map[uint]float64, error)
 
+	// FirstDay is the earliest day somebody booked on, and false when they have
+	// booked nothing yet: where a balance that runs from the beginning begins.
+	FirstDay(ctx context.Context, userID uint) (time.Time, bool, error)
+
 	GetByID(ctx context.Context, id uint) (*model.Timesheet, error)
 
 	GetByFilter(ctx context.Context, filter TimesheetFilter) ([]*model.Timesheet, error)

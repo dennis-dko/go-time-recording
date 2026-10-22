@@ -51,6 +51,17 @@ type UserRepository interface {
 	// either of those.
 	SetTOTP(ctx context.Context, id uint, secret string, enabled bool) error
 
+	// SetBalanceLimits writes the two bounds of somebody's running balance, nil
+	// for none, and nothing else - one statement for the pair, for the reason
+	// SetPreference writes one column: a read-modify-write of the whole row loses
+	// whatever changed in between.
+	SetBalanceLimits(ctx context.Context, id uint, upper, lower *float64) error
+
+	// SetReminders writes both of somebody's reminder choices, and nothing else,
+	// for the same reason: whether the last working day is mentioned, and after how
+	// many hours a running stopwatch is - nil for the default.
+	SetReminders(ctx context.Context, id uint, skipUnbooked bool, timerAlertHours *int) error
+
 	Delete(ctx context.Context, id uint) error
 }
 
@@ -78,3 +89,20 @@ const (
 	// keeps, empty meaning they follow the installation.
 	PreferenceHolidayRegion
 )
+
+// ExportedPart is one part of an account's export: what it is called and its rows,
+// each as column and value.
+type ExportedPart struct {
+	Name string
+	Rows []map[string]any
+}
+
+// AccountExporter reads everything held about an account, for handing it to the
+// person it is about.
+//
+// An interface of its own rather than a method on UserRepository, because only a
+// database can answer it honestly: what it hands over is what the tables hold, and
+// a repository kept in memory for tests holds no tables.
+type AccountExporter interface {
+	ExportUser(ctx context.Context, userID uint) ([]ExportedPart, error)
+}

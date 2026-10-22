@@ -14,20 +14,25 @@ What the application does, and the rules it keeps while doing it.
 | Access control | RBAC with roles administered at run time; bcrypt password hashes |
 | Sign-in | Session cookies, optional passkeys and TOTP two-factor per user, a browser's Kerberos ticket where a keytab and a directory are configured, and an OpenID Connect provider - Keycloak, Authentik, Entra ID, Google - for the accounts their owners linked to it |
 | Live log | The process log, filterable and searchable, for the built-in administrator |
+| Administration log | Who created, changed or deleted an account or a role, saved a setting, switched maintenance mode or restarted the application, kept across restarts and readable under *Settings* by whoever administers |
+| Managers | Switched on under *Settings*, off as shipped: a manager looks after the time and projects of the accounts an administrator assigned to them, choosing whose under *Whose time*. Whoever is looked after sees who under *My account* and the manager's name on every entry they booked or changed; a manager learns that a day was away, never why, and never sees anybody's working times |
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
 | Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second. A start pressed late can be corrected, a clock left running is booked up to the time the work ended, and switching to the next project books the clock and carries on from the same second |
+| Reminders | A banner names the last working day with nothing booked on it and leads to the booking form on that day; another says when the stopwatch has run longer than its owner chose - ten hours unless they chose otherwise - with a notification as well where the browser allows one. Both are chosen under *My account* |
 | Finding entries | The list narrows by project, by period and by text in the description, and the export follows the same filters |
 | Entry history | Every correction of an entry keeps the version it replaced - its day, hours, project and description, and when it was replaced - whether it was made in the form, by moving the entry to another project, on the week grid or for a whole selection at once. The entry's owner opens it from the entry; deleting the entry deletes its history |
 | Hour budgets | A project may carry the hours its owner means to spend on it; the list shows how much of that is booked, marked from four fifths and past the whole, and the booking that crosses either says so |
+| Statement of work | A project may be billable at an hourly rate in a currency of its own; under *Reports* a period's billable hours come to a line per project with its rate and amount, a total per currency, and leave as a PDF or an .xlsx. Not an invoice: no number, no tax, no customer |
 | Templates | A booking made often - a project, hours, a description - is kept from the form and fills it in again when chosen. Nothing is booked from a template on its own, and one whose project has closed can no longer be chosen |
 | Own statistics | Hours per day, per project and per activity, drawn as charts, for everybody rather than administrators |
 | Activities | A second way of sorting the same hours beside the project, written into the description with a # - #meeting, #review - and totalled under *Own statistics*. Nothing to set up first, and every description already written counts; an entry naming two counts towards both |
 | Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
-| Overtime | Balance per day and per period against a personal daily target |
+| Overtime | Balance per day and per period against a personal daily target, and a running balance with bounds of your own that raise a banner while it lies past them |
 | Calendar | Month view of where hours were booked |
-| Working time | When each day began and finished and how long its breaks were, beside the hours booked on it, under the calendar - a day booked on with no times recorded is shown as the gap it is, the running stopwatch's start is offered as the day's, and the month leaves as a PDF. Kept by each person for themselves; nobody else sees it |
+| Working time | When each day began and finished and how long its breaks were, beside the hours booked on it, under the calendar - a day booked on with no times recorded is shown as the gap it is, the running stopwatch's start is offered as the day's, a day past a limit of the Working Hours Act says which, and the month leaves as a PDF. Kept by each person for themselves; nobody else sees it |
 | Calendar subscription | An address of your own, made under *My account*, that Outlook, Google or a telephone subscribes to: every day you booked on - how many hours, and what on - and every day you are away, in the year either side of today. Read-only, shown once, and taken back by making a new one |
+| Everything about me | Everything the installation keeps about your account, as a ZIP with a JSON file per part - exactly what erasing it would delete, without the hashes, seeds and keys - from *My account*, for anybody signed in |
 | The year | Every day of a year as a tile, as dark as the hours booked on it, with the public holidays and the days away outlined rather than told by colour alone - beside the year before up to the same day, and both month by month as figures |
 | Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
 | Days away | Leave, half a day of it, sick days, days taken against overtime and holidays that hold only where somebody works, recorded over a range - but only on the days the planned week asks something of, so a fortnight of leave is its ten working days - and named in the calendar and on the week grid. From the day every working day counts from, each takes its part off what the day asks |
@@ -35,6 +40,7 @@ What the application does, and the rules it keeps while doing it.
 | Public holidays | The public holidays of every German state, worked out in the binary rather than fetched from anywhere. The installation chooses a state under *Settings*, and anybody can choose another - or none - under *My account*. They are named in the calendar and on the week, leave is not recorded on them, and from the day every working day counts from they ask nothing |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
 | Installable | A manifest and icons per installation - its own name and logo - so the page installs as an app on a telephone or a desktop, with shortcuts to the time entries, the calendar and the overtime. Browsers offer this over HTTPS or on localhost only |
+| Booking offline | The installed application opens without a network from the shell it kept, and says the installation cannot be reached rather than showing a dead page. A booking made in the form while the connection is gone waits on the device, a banner says how many wait, and they are sent - once each - when it is back; one the installation then refuses stays with its reason until it is corrected. Nothing the installation answers is ever shown from a copy. Over HTTPS or on localhost only, like installing |
 | Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |
 
 ## Projects
@@ -66,6 +72,20 @@ nobody. The project list says how much of it the hours booked so far use, and ma
 it from four fifths and again past the whole; the booking that takes a project past
 either says so once, and the evaluation of one project names its budget beside its
 total. A budget of nothing takes it off.
+
+A project may also be **billable**, at an hourly rate in a currency of its own -
+euros unless its owner says otherwise. Under *Reports*, the **statement of work**
+takes a period and lists each billable project with hours in it: the hours, the
+rate and what they come to, and under them a total for each currency, never one
+across two. A project with no rate yet is listed with its hours and no amount,
+rather than with a guess. The amount is the rate times the hours, rounded once to
+the hundredth, and money is kept in hundredths throughout, so nothing on a statement
+is a sum of roundings. It leaves as a PDF and as an .xlsx with the same figures.
+
+It is a statement and deliberately not an invoice. It has no number, no tax and no
+customer: each of those is a rule about somebody's books that this application
+cannot know, and an invoice that gets one of them wrong is worse than a figure that
+says what it is. A rate of nothing takes the rate off.
 
 ## Overtime
 
@@ -101,10 +121,33 @@ Saturday count as overtime. Every booked day used to be measured against the ful
 daily target whichever day it was, which stood a Saturday's work in the balance as
 a shortfall.
 
+The **running balance** is the same sum from the first day that counts - the first
+day booked on, or the chosen day where that is earlier - up to today, as a
+flexitime account keeps it. Under *My account* each person can give it two
+**bounds**, an upper one at zero or above and a lower one at zero or below; while
+the running balance lies past one of them, a banner says so on every screen, with
+the way back to the bounds inside it, and goes once the balance is inside again.
+Standing exactly on a bound is inside it, and an empty field is no bound.
+
+The same rules decide the **reminder** about a day with nothing booked on it. It
+names the last day before today somebody was expected to work - their week plans
+hours for it, it is no public holiday where they work, and they were not away,
+except for half a day of leave - and only that day: somebody who books a week at a
+time is told about Thursday on Friday morning, and an earlier gap is the business
+of the day it was. A day off against overtime is passed over, though it asks its
+whole target of the balance, because nobody is meant to book on it. Nothing is said
+about a day before the balance begins. The reminder is on until its owner switches
+it off under *My account*, beside the hours after which a running stopwatch is
+mentioned: ten, the most the Working Hours Act allows in a day, unless they choose
+otherwise, and never for zero. A browser that allows it shows a notification as
+well when the stopwatch crosses those hours while the page is open; one found
+already past them on loading gets the banner alone.
+
 It is your own balance. Somebody else's is their recorded time, totalled, so it
-takes the same right as reading their entries — and the team-wide overview that used
-to sit beside it is gone, because comparing colleagues is the one thing this
-arrangement says nobody does.
+takes the same right as reading their entries — which only a manager holds, for the
+accounts assigned to them, and then with every day away told as away, never why. The
+team-wide overview that used to sit beside it is gone, because comparing colleagues
+is the one thing this arrangement says nobody does.
 
 ## Timezones
 
@@ -136,9 +179,26 @@ A stopwatch running on the day offers its start as the day's, and the month leav
 as a PDF.
 
 It is each person's own record, kept for themselves. There is no view of anybody
-else's working time, for the reason there is none of anybody else's hours, so this
-documents one's own time rather than serving as an employer's time-keeping system.
+else's working time — not even a manager's, who looks after somebody's hours and
+never their start, end and breaks — so this documents one's own time rather than
+serving as an employer's time-keeping system.
 A night that runs past midnight is recorded as the two days it falls on.
+
+Each day is read against the three limits of the Working Hours Act
+(Arbeitszeitgesetz) that a record of start, end and breaks can show, and a day past
+one says which, in its own column and in the PDF:
+
+| Limit | Section | Marked when |
+| --- | --- | --- |
+| Ten hours a day | § 3 | more than ten hours were worked |
+| Breaks | § 4 | the breaks were shorter than 30 minutes past six hours of work, or 45 past nine |
+| Rest | § 5 | fewer than eleven hours lay between the end of one shift and the start of the next |
+
+A night recorded as the two days it falls on counts as one shift, so eight hours
+from ten at night are a shift that needed a break rather than two short days with
+no rest between them. The marks are notices and never refusals: the act has
+exceptions - a hospital, a harvest, a collective agreement - that this application
+cannot know about, and a record that refused the truth would be a worse record.
 
 ## Your days in your own calendar
 
@@ -174,6 +234,25 @@ calendar on a telephone or a computer fetches it from wherever that device is,
 over a VPN for example. How often it is fetched again is the calendar program's
 choice: the feed asks for every hour, and Google takes up to a day whatever it
 is asked.
+
+## Everything about you
+
+Under **My account**, *Everything about me* downloads what this installation keeps
+about your account as a ZIP: a JSON file per part - the account, your entries and
+the versions corrections replaced, projects, templates, absences, leave, planned
+weeks, working times, the stopwatch, and the personal tokens, passkeys, sessions,
+calendar address and provider links you have - each an array of rows with the
+columns as they are stored, and `about.json` saying what the archive is. It is the
+right of access and of portability (GDPR articles 15 and 20), open to anybody
+signed in whatever their role lets them do here, and only ever about their own
+account.
+
+It holds exactly what erasing the account would delete, read from the same list
+of tables, so nothing can be erased that could not have been handed over first.
+What it leaves out is what would be a way in for whoever finds the file: the
+password's hash, the second factor's seed, the hashes of tokens, sessions and the
+calendar address, and a passkey's key material. About those it says that they
+exist, when they were made and when they were last used.
 
 ## Spreadsheets
 
@@ -322,15 +401,18 @@ screen rather than to the top of it.
 
 The server enforces these; the interface merely also hides what is not allowed:
 
-- A time entry belongs to whoever recorded it. Reading, editing, deleting,
-  transferring and totalling it are refused to everybody else, with no exception and
-  no right that grants one — including the account that administers the installation
-  and including the combined role. There is no state to travel through and nobody to
-  approve anything: entries were once `open → submitted → approved`, and the role that
-  approved them is gone.
-- No screen asks which person. The booking form, the entry filter, the calendar and
+- A time entry belongs to the account it was booked for. Reading, editing, deleting,
+  transferring and totalling it are refused to everybody else — including the account
+  that administers the installation and the combined role — except a manager that
+  account was assigned to, while the installation has managers, and then in the open:
+  the entry names the manager who booked or last changed it. There is no state to
+  travel through and nobody to approve anything: entries were once
+  `open → submitted → approved`, and the role that approved them is gone.
+- No form asks which person. The booking form, the entry filter, the calendar and
   the overtime form each had a dropdown of colleagues; every one of them held a single
-  name by the end, and a question with one answer is not a question.
+  name by the end, and a question with one answer is not a question. A manager has
+  one choice instead, under *Whose time*, which turns every screen at once and lists
+  only the accounts assigned to them.
 - Hours are booked only onto **active** projects, whichever way they get there:
   booking, transferring, or editing an entry onto one.
 - The personal daily maximum applies, falling back to `MAX_DAILY_HOURS`.
@@ -347,6 +429,7 @@ The server enforces these; the interface merely also hides what is not allowed:
 - A project is invisible to everyone but its owner, and asking for one that is not
   yours answers `404` rather than `403`.
 - A correction keeps what the entry said before it, every time something in it
-  changes, and only the entry's owner can read that history - anybody else is told
-  the entry is not there. A save that changes nothing keeps nothing, and deleting an
+  changes, and only the entry's owner and a manager assigned to them can read that
+  history - anybody else is told the entry is not there. A version a manager's
+  correction replaced names the manager. A save that changes nothing keeps nothing, and deleting an
   entry deletes its history with it.

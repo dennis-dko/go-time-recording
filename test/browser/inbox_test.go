@@ -44,6 +44,17 @@ func TestEntriesWithoutAProjectAreAssignedTogether(t *testing.T) {
 	p.run("load the list", chromedp.Evaluate(`void mutate(loadTimesheets, null, null)`, nil))
 	p.waitForText("#ts-unassigned", "3")
 
+	// The count beside the link is asked after the list is drawn, and on a slow
+	// runner it came back after this case had looked: the link stood over the
+	// list it leads to, once in CI and never here. Held back on purpose, so the
+	// order that failed there is the order every run gets.
+	p.run("hold the count back", chromedp.Evaluate(`(() => {
+		const ask = window.fetch;
+		window.fetch = (input, init) => (String(input).includes('limit=1')
+			? new Promise((resolve) => setTimeout(resolve, 1500)).then(() => ask(input, init))
+			: ask(input, init));
+	})()`, nil))
+
 	p.run("open the waiting ones", p.click("#ts-unassigned"))
 	p.waitForRows("#table-timesheets tbody tr", 3)
 

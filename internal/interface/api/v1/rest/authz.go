@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -20,12 +21,40 @@ type Authorizer struct {
 	// open disables enforcement. It exists for running the instance without
 	// authentication at all, where there is no caller to check.
 	open bool
+
+	// team answers whether a manager may act for an account; nil reaches nobody,
+	// which is what a handler built for a test without managers needs.
+	team *service.TeamService
 }
 
 // NewAuthorizer creates an authorizer. When enforce is false every request is
 // allowed and the caller is reported as anonymous.
 func NewAuthorizer(enforce bool) *Authorizer {
 	return &Authorizer{open: !enforce}
+}
+
+// WithTeam lets the authorizer answer for managers.
+func (a *Authorizer) WithTeam(team *service.TeamService) *Authorizer {
+	a.team = team
+
+	return a
+}
+
+// reaches says whether the caller may act for somebody else's account with a team
+// right - only while the installation has managers, and only for an account an
+// administrator assigned to the caller; see service.TeamService.
+func (a *Authorizer) reaches(ctx context.Context, principal *service.Principal, userID uint,
+	permission string) (bool, error) {
+	if a.team == nil {
+		return false, nil
+	}
+
+	reached, err := a.team.Reaches(ctx, principal, userID, permission)
+	if err != nil {
+		return false, toHTTPError(err)
+	}
+
+	return reached, nil
 }
 
 // Enabled reports whether authorization is being enforced.
@@ -273,14 +302,14 @@ func (a *Authorizer) RequireSelf(
 }
 
 // scopeUserID narrows a requested user filter to what the caller may see, which is
-// themselves.
+// themselves - or an account they look after as a manager.
 //
 // The filter still exists as a parameter because an installation without
 // authentication uses it, and because asking about yourself by id is a reasonable
 // thing for a client to do. Asking about anybody else is refused rather than
 // quietly answered with your own rows: a list that does not match what was asked
 // for is worse than a plain no.
-func (a *Authorizer) scopeUserID(principal *service.Principal, requested uint) (uint, error) {
+func (a *Authorizer) scopeUserID(ctx context.Context, principal *service.Principal, requested uint) (uint, error) {
 	if a.open {
 		return requested, nil
 	}
@@ -289,21 +318,97 @@ func (a *Authorizer) scopeUserID(principal *service.Principal, requested uint) (
 		return 0, missingPermission(model.PermTimesheetReadOwn)
 	}
 
-	if requested != 0 && requested != principal.User.ID {
-		return 0, forbiddenError{msg: "you may only read your own time entries"}.
-			WithCode("onlyOwnEntriesRead")
+	account, err := a.accountFor(ctx, principal, requested, somebodyElsesEntries(), model.PermTimesheetReadTeam)
+	if err != nil {
+		return 0, err
 	}
 
-	return principal.User.ID, nil
+	return account.ID, nil
 }
 
-// requireOwner checks a write against a specific user's data.
-func (a *Authorizer) requireOwner(principal *service.Principal, ownerID uint) error {
+// accountFor is whose time a request is about, once the route has required its own
+// right: the caller's where requested names nobody else, and otherwise an account
+// the caller looks after with one of the team rights named - refused with refusal
+// where it is neither.
+//
+// A team right carries further what the matching own right already does, and never
+// stands in for it. So a route is gated on the same right whoever it is for, and a
+// role made of team rights alone reaches nobody - one rule for every route, rather
+// than a second set of gates that only managers pass through.
+func (a *Authorizer) accountFor(ctx context.Context, principal *service.Principal, requested uint,
+	refusal forbiddenError, rights ...string) (*model.User, error) {
+	if requested == 0 || requested == principal.User.ID {
+		return principal.User, nil
+	}
+
+	// Without authentication there is nobody to check, and the id is only a filter.
+	if a.open {
+		return &model.User{ID: requested}, nil
+	}
+
+	if a.team == nil {
+		return nil, refusal
+	}
+
+	member, err := a.team.Member(ctx, principal, requested, rights...)
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	if member == nil {
+		return nil, refusal
+	}
+
+	return member, nil
+}
+
+// projectActor is whose name a request about a project is made in: the caller's,
+// or the project's owner where the caller looks after them with one of the team
+// rights named - see service.TeamService.ProjectActor. Zero where authentication is
+// off, which the project services read as no narrowing.
+func (a *Authorizer) projectActor(ctx context.Context, principal *service.Principal, projectID uint,
+	rights ...string) (uint, error) {
+	viewer := a.viewerID(principal)
+	if viewer == 0 || a.team == nil {
+		return viewer, nil
+	}
+
+	actor, err := a.team.ProjectActor(ctx, principal, projectID, rights...)
+	if err != nil {
+		return 0, toHTTPError(err)
+	}
+
+	return actor, nil
+}
+
+// somebodyElsesProjects is how a request about projects that are not the caller's
+// is refused, where naming the account says nothing a refusal could leak.
+func somebodyElsesProjects() forbiddenError {
+	return forbiddenError{msg: "you may only keep your own projects"}.WithCode("onlyOwnProjects")
+}
+
+// somebodyElsesEntries is how a read of time that is not the caller's is refused.
+func somebodyElsesEntries() forbiddenError {
+	return forbiddenError{msg: "you may only read your own time entries"}.WithCode("onlyOwnEntriesRead")
+}
+
+// requireOwner checks a write against a specific user's data: the caller's own,
+// or an account they may book for as a manager.
+func (a *Authorizer) requireOwner(ctx context.Context, principal *service.Principal, ownerID uint) error {
 	if a.open {
 		return nil
 	}
 
 	if principal.Can(model.PermTimesheetWriteOwn) && principal.User.ID == ownerID {
+		return nil
+	}
+
+	reached, err := a.reaches(ctx, principal, ownerID, model.PermTimesheetWriteTeam)
+	if err != nil {
+		return err
+	}
+
+	if reached {
 		return nil
 	}
 
@@ -381,12 +486,26 @@ func (a *Authorizer) reportScope(principal *service.Principal) uint {
 // must still be able to transfer its own entries. requireOwner stays the check
 // for whose an entry would *become*, where the account named is the caller's
 // own choice and a refusal reveals nothing.
-func (a *Authorizer) requireOwnEntry(principal *service.Principal, id, ownerID uint) error {
+//
+// A manager's entry to somebody else's is the team right that would be needed to
+// do with it what the route does - reading it, or changing it - and without that
+// right the entry is not there for them either.
+func (a *Authorizer) requireOwnEntry(ctx context.Context, principal *service.Principal, id, ownerID uint,
+	teamRight string) error {
 	if a.open {
 		return nil
 	}
 
 	if principal.User != nil && principal.User.ID == ownerID {
+		return nil
+	}
+
+	reached, err := a.reaches(ctx, principal, ownerID, teamRight)
+	if err != nil {
+		return err
+	}
+
+	if reached {
 		return nil
 	}
 

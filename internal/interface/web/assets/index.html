@@ -198,7 +198,7 @@
 
     <nav id="tabs">
       <button class="tab" data-view="timesheets" data-perm="timesheets:read:own" data-i18n="nav.timesheets">Time entries<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-timesheets"/></svg></button>
-      <button class="tab" data-view="week" data-perm="timesheets:read:own" data-i18n="nav.week">Week<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-week"/></svg></button>
+      <button class="tab" data-view="week" data-perm="timesheets:read:own" data-own-only data-i18n="nav.week">Week<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-week"/></svg></button>
       <button class="tab" data-view="calendar" data-perm="timesheets:read:own" data-i18n="nav.calendar">Calendar<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-calendar"/></svg></button>
       <button class="tab" data-view="overtime" data-perm="timesheets:read:own" data-i18n="nav.overtime">Overtime<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-overtime"/></svg></button>
       <button class="tab" data-view="projects" data-perm="projects:read" data-i18n="nav.projects">Projects<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-projects"/></svg></button>
@@ -207,6 +207,15 @@
       <button class="tab" data-view="report" data-perm="reports:read:own" data-i18n="nav.report">Reports<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-report"/></svg></button>
       <button class="tab" data-view="settings" data-i18n="nav.settings">My account<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-account"/></svg></button>
       <button class="tab" data-view="admin" id="tab-admin" hidden data-perm="settings:manage" data-i18n="nav.admin">Settings<svg class="tab-icon" aria-hidden="true" focusable="false"><use href="#icon-admin"/></svg></button>
+      <!-- Whose time the screens show, for a manager: their own, or that of an
+           account an administrator assigned to them. Filled from /me/team and
+           shown only where that list has anybody on it, so it offers exactly the
+           accounts the server accepts and nobody else ever sees it. With the
+           navigation rather than on a form, because it decides every screen at
+           once: a form of its own would be a second place asking which person. -->
+      <label id="viewing-for" class="viewing-for" hidden><span data-i18n="team.viewingFor">Whose time</span>
+        <select id="viewing-for-picker"></select>
+      </label>
     </nav>
   </header>
 
@@ -247,6 +256,24 @@
        on its own: two things stuck to the same edge cover each other, and the
        one underneath is the one nobody knew was there. -->
   <div id="standing-notices">
+    <!-- What was booked without a connection and waits on this device, what the
+         installation refused of it, and that there is no connection at all while
+         there is none. A banner because each is a state: true until the bookings
+         are sent or corrected. Correcting is the way a refused one goes, so the
+         list offers that and nothing else. Filled by drawOutbox. -->
+    <div id="outbox-banner" class="banner" hidden>
+      <p id="outbox-text"></p>
+      <ul id="outbox-refused" hidden></ul>
+    </div>
+
+    <!-- Whose time is on screen, while it is not one's own. A banner because it is
+         a state: true for as long as the picker says somebody else, and gone the
+         moment it says one's own again - which is the way back, so there is
+         nothing here to press. Filled by showViewingFor. -->
+    <div id="viewing-banner" class="banner" hidden>
+      <p id="viewing-text"></p>
+    </div>
+
     <!-- The notice, and the way to the place it is acted on.
     
          It used to carry the whole thing: the list of waiting settings, the
@@ -309,12 +336,29 @@
     </div>
 
     <!-- A stopwatch past what one entry can hold, which is almost always one
-         somebody forgot. A banner because it is a state: it stays true on every
-         screen until the clock is booked or discarded. It points at the
-         stopwatch rather than booking from here - one place to read it, one
+         somebody forgot - or, before that, past the hours its owner chose to be
+         told after under My account. A banner because it is a state: it stays
+         true on every screen until the clock is booked or discarded. It points at
+         the stopwatch rather than booking from here - one place to read it, one
          place to act. Filled by drawTimerBanner. -->
     <div id="timer-banner" class="banner" hidden>
       <span id="timer-banner-text"></span>
+    </div>
+
+    <!-- The running balance past a bound its owner set under My account. A state:
+         it stays true on every screen until the balance is back inside, and goes
+         then. It points at the bounds rather than changing them here - one place
+         to read it, one place to act. Filled by drawBalanceBanner. -->
+    <div id="balance-banner" class="banner" hidden>
+      <span id="balance-banner-text"></span>
+    </div>
+
+    <!-- The last working day with nothing booked on it, until something is or its
+         owner switches the reminder off under My account. It leads to the booking
+         form with that day filled in rather than booking from here. Filled by
+         drawUnbookedBanner. -->
+    <div id="unbooked-banner" class="banner" hidden>
+      <span id="unbooked-banner-text"></span>
     </div>
   </div>
 
@@ -433,6 +477,12 @@
          somebody refused reads "back at 14:00" and tries their password again,
          because nothing on the screen says the refusal is not about them. -->
     <p id="login-maintenance-who" class="muted" hidden data-i18n="maint.signInWho">Only administrators can sign in while this lasts.</p>
+    <!-- That the installation cannot be reached, where that is why nobody is
+         signed in: the installed application opens from what sw.js kept, and
+         without this the form would read as a session that ended. -->
+    <div id="login-offline" class="banner banner-warn" hidden>
+      <p data-i18n="offline.signIn">No connection to the installation. This page carries on by itself once it is back.</p>
+    </div>
 
     <!-- Shown only while the session is being checked, and replaced by whichever
          answer comes back. No text: it is on screen for a moment and a sentence
@@ -566,7 +616,7 @@
       <!-- The clock, above the form, because it is the shorter way to record the
            day you are actually having: press start, work, press stop. The form
            below is for a day that has already happened. -->
-      <div class="card" id="timer-card" data-perm="timesheets:write:own">
+      <div class="card" id="timer-card" data-perm="timesheets:write:own" data-own-only>
         <div class="card-head">
           <h2 data-i18n="timer.title">Stopwatch</h2>
           <span class="timer-elapsed" id="timer-elapsed" aria-live="off"></span>
@@ -650,7 +700,7 @@
         <!-- Shown once somebody has kept a template. Choosing one fills the
              fields below and books nothing - that is still the button. Unnamed,
              so it is never part of what the form sends or of its draft. -->
-        <div class="grid" id="ts-template-row" hidden>
+        <div class="grid" id="ts-template-row" data-own-only hidden>
           <label class="wide" data-i18n="tpl.fill">Fill in from a template<select id="ts-template"></select></label>
         </div>
         <div class="grid">
@@ -670,7 +720,7 @@
         </div>
         <div class="form-actions">
           <button type="submit" id="timesheet-submit" data-i18n="action.book">Book</button>
-          <button type="button" class="secondary" id="ts-template-save" data-i18n="tpl.save">Save as template</button>
+          <button type="button" class="secondary" id="ts-template-save" data-own-only data-i18n="tpl.save">Save as template</button>
           <button type="button" class="link" id="timesheet-cancel" data-i18n="action.cancelEdit" hidden>cancel editing</button>
         </div>
       </form>
@@ -723,7 +773,7 @@
         <p class="muted" data-i18n="wb.text">Exports what the filters above are showing. An import creates entries; it never changes or replaces the ones that are already there.</p>
         <div class="row">
           <button type="button" class="secondary" id="wb-export" data-i18n="wb.export">Export as .xlsx</button>
-          <label class="file-pick" data-perm="timesheets:write:own">
+          <label class="file-pick" data-perm="timesheets:write:own" data-own-only>
             <span data-i18n="wb.choose">Choose a file…</span>
             <input type="file" id="wb-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
           </label>
@@ -751,7 +801,7 @@
       </div>
       <!-- The templates kept from the booking form, listed to take them back.
            Shown once there is one, like the picker in the form. -->
-      <div class="card" id="templates-card" data-perm="timesheets:write:own" hidden>
+      <div class="card" id="templates-card" data-perm="timesheets:write:own" data-own-only hidden>
         <h2 data-i18n="tpl.title">Templates</h2>
         <p class="muted" data-i18n="tpl.hint">Bookings you make often, kept with "Save as template" in the form above. A template only fills the form in: nothing is booked until you press Book.</p>
         <div class="table-wrap">
@@ -849,7 +899,7 @@
       <!-- When the days of the month shown above began and finished, and how long
            their breaks were: the person's own record of their working time, beside
            the hours they booked. Nobody else's screen shows it. -->
-      <div class="card" id="workday-card" data-perm="timesheets:read:own">
+      <div class="card" id="workday-card" data-perm="timesheets:read:own" data-own-only>
         <div class="card-head">
           <h2 data-i18n="work.title">Working time</h2>
           <div class="filters">
@@ -876,6 +926,7 @@
                 <th class="num" data-i18n="field.breakMinutes">Breaks (minutes)</th>
                 <th class="num" data-i18n="work.worked">Worked</th>
                 <th class="num" data-i18n="work.booked">Booked</th>
+                <th data-i18n="work.act">Working Hours Act</th>
                 <th class="actions" data-i18n="field.action">Action</th>
               </tr>
             </thead>
@@ -883,6 +934,7 @@
           </table>
         </div>
         <p class="muted" id="workday-total"></p>
+        <p class="muted" data-i18n="work.actHint">Days past a limit of the Working Hours Act are marked: more than ten hours, a break too short for the hours, or fewer than eleven hours of rest since the day before. They are notices; what happened is what is recorded.</p>
       </div>
 
       <div class="card" id="calendar-day-card" hidden>
@@ -909,7 +961,7 @@
       <!-- A year's leave: what it gives, what the year before left over, what is
            taken and what is planned - counted from the days of leave recorded
            below. The script owns the heading, which names the year. -->
-      <div class="card" id="vacation-card" data-perm="timesheets:read:own">
+      <div class="card" id="vacation-card" data-perm="timesheets:read:own" data-own-only>
         <div class="card-head">
           <h2 id="vacation-title">Leave</h2>
           <div class="filters">
@@ -942,7 +994,7 @@
 
       <!-- The days somebody is away, and why. Recorded over a range, but only on
            the days their week asks something of; the calendar above marks them. -->
-      <div class="card" id="absence-card" data-perm="timesheets:write:own">
+      <div class="card" id="absence-card" data-perm="timesheets:write:own" data-own-only>
         <h2 data-i18n="absence.title">Days away</h2>
         <p class="muted" data-i18n="absence.hint">Leave, illness and days taken against overtime. Only the days your week asks something of are recorded, so a fortnight of leave is its ten working days.</p>
         <form method="post" id="form-absence" class="form">
@@ -1101,7 +1153,7 @@
       <form method="post" id="form-project" class="card form" data-perm="projects:write">
         <h2 id="project-form-title" data-i18n="project.create">Create project</h2>
         <input type="hidden" name="id">
-        <p class="muted" data-i18n="project.hint">Your projects are yours: only you see them, and only you book on them. Two people working on the same thing keep a project each.</p>
+        <p class="muted" data-i18n="project.hint">Your projects are yours: only you see them and book on them - and a manager you are assigned to, where this installation has managers. Two people working on the same thing keep a project each.</p>
         <div class="grid">
           <label data-i18n="field.name">Name<input type="text" name="name" maxlength="255" required></label>
           <!-- The start is filled in on arrival, like every other date this
@@ -1119,6 +1171,12 @@
           <!-- How many hours its owner means to spend on it: theirs to set, and
                nobody's to sign off. Emptied, it takes the budget off again. -->
           <label data-i18n="field.budgetHours">Hour budget<input type="number" name="budgetHours" step="any" min="0" max="100000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <!-- What its hours are charged at, for the statement of work under
+               Reports: a rate in whole units of the currency, kept to the
+               hundredth, and a currency that is euros where it is left empty. -->
+          <label class="switch"><input type="checkbox" name="billable"><span class="switch-track"></span><span class="switch-label" data-i18n="project.billable">Billable</span></label>
+          <label data-i18n="field.hourlyRate">Hourly rate<input type="number" name="hourlyRate" step="0.01" min="0" max="100000" data-i18n-placeholder="field.optional" placeholder="optional"></label>
+          <label data-i18n="field.currency">Currency<input type="text" name="currency" maxlength="3" pattern="[A-Za-z]{3}" placeholder="EUR" autocomplete="off"></label>
         </div>
         <div class="row">
           <button type="submit" id="project-submit" data-i18n="action.create">Create</button>
@@ -1310,6 +1368,45 @@
                   data-i18n="action.exportPdf">Export as PDF</button>
         </div>
       </div>
+
+      <!-- What the billable hours of a period come to, project by project, for
+           whoever charges for their time. Deliberately not an invoice - no number,
+           no tax, no customer - and a card of its own with a period of its own,
+           because it is asked for on its own: at the end of a month. -->
+      <form method="post" id="form-statement" class="card form" data-perm="reports:read:own">
+        <h2 data-i18n="statement.title">Statement of work</h2>
+        <p class="muted" data-i18n="statement.hint">The hours of your billable projects in a period, with their rate and what they come to, totalled per currency. Not an invoice: no number, no tax, no customer - that part you write your own way.</p>
+        <div class="grid">
+          <label data-i18n="field.from">From<input type="date" name="from"></label>
+          <label data-i18n="field.to">To<input type="date" name="to"></label>
+        </div>
+        <button type="submit" data-i18n="statement.create">Work it out</button>
+      </form>
+
+      <div class="card" id="statement-result" hidden>
+        <h2 data-i18n="statement.title">Statement of work</h2>
+        <p class="muted" id="statement-period"></p>
+        <div class="table-wrap">
+          <table id="table-statement">
+            <thead>
+              <tr>
+                <th data-i18n="field.project">Project</th>
+                <th class="num" data-i18n="field.hours">Hours</th>
+                <th class="num" data-i18n="field.hourlyRate">Hourly rate</th>
+                <th class="num" data-i18n="statement.amount">Amount</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+        <div class="row">
+          <button type="button" class="secondary" id="statement-pdf"
+                  data-i18n="action.exportPdf">Export as PDF</button>
+          <button type="button" class="secondary" id="statement-xlsx"
+                  data-i18n="wb.export">Export as .xlsx</button>
+        </div>
+      </div>
     </section>
 
     <!-- My account -->
@@ -1331,6 +1428,44 @@
         </div>
         <p class="muted" data-i18n="settings.everyDayCountsFromHint">Until you choose a day, only the days you booked on count towards your balance. From the day you choose, every working day up to today counts, booked or not, less what a public holiday or an absence takes off it. Empty it to go back.</p>
         <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
+      <!-- The bounds of the running balance, with the balance itself beside them,
+           because a bound is chosen against a figure. Past one, a banner stands on
+           every screen until the balance is back inside: a state, not news. -->
+      <form method="post" id="form-balance-bounds" class="card form" data-perm="settings:write:own">
+        <h2 data-i18n="bounds.title">Bounds of my balance</h2>
+        <p class="muted" data-i18n="bounds.hint">Keep your running balance between two figures, as a flexitime account does. While it lies outside them, a banner says so on every screen until it is back inside. Empty means no bound.</p>
+        <div class="grid">
+          <label data-i18n="field.upperBound">Upper bound of the balance<input type="number" name="upperBound" step="0.5" min="0" max="10000" placeholder="40">
+          </label>
+          <label data-i18n="field.lowerBound">Lower bound of the balance<input type="number" name="lowerBound" step="0.5" min="-10000" max="0" placeholder="-20">
+          </label>
+        </div>
+        <p class="muted" id="balance-now"></p>
+        <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
+      <!-- What its owner is reminded of. Both reminders are banners, because both
+           are states - a day with nothing booked stays unbooked, a clock left
+           running stays running - and the stopwatch's may also be a notification,
+           where the browser allows one: the one thing a banner cannot do is reach
+           somebody looking at another window. -->
+      <form method="post" id="form-reminders" class="card form" data-perm="timesheets:write:own">
+        <h2 data-i18n="remind.title">Reminders</h2>
+        <div class="perm-grid switch-row">
+          <label class="switch"><input type="checkbox" name="unbookedDay"><span class="switch-track"></span><span class="switch-label" data-i18n="remind.unbookedDay">Mention the last working day when nothing is booked on it</span></label>
+        </div>
+        <div class="grid">
+          <label data-i18n="field.timerAlertHours">Mention the stopwatch after (hours)<input type="number" name="timerAlertHours" step="1" min="0" max="24" placeholder="10">
+          </label>
+        </div>
+        <p class="muted" data-i18n="remind.hint">Zero means the stopwatch is never mentioned. Past a day, it says by itself that it holds more than one entry can.</p>
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="notify-allow" hidden data-i18n="remind.allowNotifications">Allow notifications in this browser</button>
+        </div>
+        <p class="muted" id="notify-state"></p>
       </form>
 
       <!-- The week the balance is measured against, a figure per weekday. A plan
@@ -1541,6 +1676,24 @@
         </div>
         <button type="submit" data-i18n="settings.changePassword">Change password</button>
       </form>
+
+      <!-- Who may see this account's time, by name and with what each may do with
+           it. For every account and never withheld: somebody whose hours a manager
+           reads is told so before they have to wonder. Filled by loadMyManagers. -->
+      <div class="card" id="managers-card">
+        <h2 data-i18n="team.mineTitle">Who may see your time</h2>
+        <p class="muted" id="managers-nobody" data-i18n="team.nobody">Nobody but you. An administrator can assign you managers, once the installation has them; you would see them here.</p>
+        <ul id="managers-list" hidden></ul>
+      </div>
+
+      <!-- Everything this installation holds about the account, for anybody signed
+           in whatever their role: the right of access is the person's, not a
+           permission. Last on the screen, because it is about the whole of it. -->
+      <div class="card" id="export-card">
+        <h2 data-i18n="export.title">Everything about me</h2>
+        <p class="muted" data-i18n="export.hint">Everything this installation keeps about your account, as a ZIP with a JSON file for each part: your entries and their history, projects, templates, absences, leave, planned weeks, working times and the account itself. Passwords, second factors, tokens and keys are not in it – only when they were made and last used.</p>
+        <button type="button" class="secondary" id="export-me" data-i18n="export.download">Download everything about me</button>
+      </div>
     </section>
     <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
@@ -1687,6 +1840,18 @@
              read as one pair, which invites pressing Save to mean "take this
              file" - and choosing a file is already enough on its own. -->
         <button type="submit" class="row-apart" data-i18n="action.save">Save</button>
+      </form>
+
+      <!-- Whether anybody here may look after somebody else's time at all. Shipped
+           off: an installation that never chose managers behaves exactly as it did
+           before they existed. -->
+      <form method="post" id="form-managers" class="card form">
+        <h2 data-i18n="team.switchTitle">Managers</h2>
+        <p class="muted" data-i18n="team.switchHint">A manager looks after the time and projects of the accounts an administrator assigns to them under Users, beside their own. Whoever is looked after sees who, under My account, and every entry a manager books or changes carries the manager's name. A manager learns that a day was away, never why, and never sees anybody's working times.</p>
+        <div class="grid">
+          <label class="switch"><input type="checkbox" name="enabled"><span class="switch-track"></span><span class="switch-label" data-i18n="team.switchEnabled">This installation has managers</span></label>
+        </div>
+        <button type="submit" data-i18n="action.save">Save</button>
       </form>
 
       <form method="post" id="form-operational" class="card form">
@@ -1964,6 +2129,27 @@
         </div>
         <p class="muted" id="openid-test-result"></p>
       </form>
+
+      <!-- Who changed how the installation is run, and when. Kept, unlike the
+           live log below, which goes with the process; ids are kept and names read
+           when shown, so an erased account appears by its number alone. -->
+      <div class="card" id="changes-card" data-perm="settings:manage">
+        <h2 data-i18n="changes.title">Changes to the installation</h2>
+        <p class="muted" data-i18n="changes.hint">Who created, changed or deleted an account or a role, saved a setting, switched maintenance mode or restarted the application, newest first. An account erased since appears by its number.</p>
+        <div class="table-wrap">
+          <table id="table-changes">
+            <thead>
+              <tr>
+                <th data-i18n="changes.when">When</th>
+                <th data-i18n="changes.who">Who</th>
+                <th data-i18n="changes.what">What</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <button type="button" class="secondary" id="changes-more" hidden data-i18n="changes.more">Show older changes</button>
+      </div>
 
       <!-- The process log. Last in the administration screen because it is
            what you scroll to when something already went wrong. -->
