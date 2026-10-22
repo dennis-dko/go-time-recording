@@ -385,3 +385,96 @@ func (s *OvertimeService) Days(ctx context.Context, userID uint, from, to time.T
 
 	return days, nil
 }
+
+// RunningBalance is somebody's balance from the first day that counts up to today,
+// read against the bounds they set.
+type RunningBalance struct {
+	Hours float64
+
+	// Since is where the balance begins, nil while nothing counts yet.
+	Since *time.Time
+
+	Upper, Lower *float64
+
+	// Outside is model.BalanceAbove or model.BalanceBelow while the balance lies
+	// past one of the bounds, and empty otherwise.
+	Outside string
+}
+
+// Notices is what about somebody's own time deserves a banner.
+type Notices struct {
+	Balance RunningBalance
+}
+
+// Notices answers what about somebody's own time deserves a banner.
+func (s *OvertimeService) Notices(ctx context.Context, userID uint) (*Notices, error) {
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	running, err := s.running(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Notices{Balance: running}, nil
+}
+
+// running is somebody's balance from the first day that counts to today.
+//
+// The first day that counts is the first day booked on, or the day every working
+// day counts from where that is earlier: from then on an unbooked working day is
+// a deficit, so it belongs to the balance whether or not anything was booked
+// before it. A booking ahead of today counts once its day has come, as it does
+// on the overtime screen.
+func (s *OvertimeService) running(ctx context.Context, user *model.User) (RunningBalance, error) {
+	running := RunningBalance{Upper: user.BalanceUpperLimit, Lower: user.BalanceLowerLimit}
+
+	first, found, err := s.timesheets.FirstDay(ctx, user.ID)
+	if err != nil {
+		return running, err
+	}
+
+	if from := user.EveryDayCountsFrom; from != nil && (!found || from.Before(first)) {
+		first, found = *from, true
+	}
+
+	today := todayOf(ctx, s.today, user)
+
+	if !found || first.After(today) {
+		return running, nil
+	}
+
+	balance, err := s.Balance(ctx, user.ID, first, today)
+	if err != nil {
+		return running, err
+	}
+
+	running.Hours = balance.TotalBalance
+	running.Since = &first
+	running.Outside = user.BalanceOutside(running.Hours)
+
+	return running, nil
+}
+
+// maxBalanceBound is the furthest from zero a bound may lie: some years of
+// working days, which is further than anybody keeping a flexitime account means.
+const maxBalanceBound = 10000
+
+// SetBalanceLimits keeps the bounds of somebody's running balance, nil for none.
+//
+// An upper bound lies at zero or above and a lower one at zero or below. A bound on
+// the wrong side of zero would put every balance outside it from the first day,
+// which no one means and a banner would then say on every screen.
+func (s *OvertimeService) SetBalanceLimits(ctx context.Context, userID uint, upper, lower *float64) error {
+	if upper != nil && (*upper < 0 || *upper > maxBalanceBound) {
+		return apperror.InvalidFields("upperBound")
+	}
+
+	if lower != nil && (*lower > 0 || *lower < -maxBalanceBound) {
+		return apperror.InvalidFields("lowerBound")
+	}
+
+	return s.users.SetBalanceLimits(ctx, userID, upper, lower)
+}

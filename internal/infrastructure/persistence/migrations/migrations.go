@@ -144,6 +144,12 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261020060000: {UP: func(d migration.Datasource) error {
 			return findAnEntrysHistoryByTheEntry(d)
 		}},
+		20261021010000: {UP: func(d migration.Datasource) error {
+			return letABalanceHaveAnUpperBound(d, dialect)
+		}},
+		20261021020000: {UP: func(d migration.Datasource) error {
+			return letABalanceHaveALowerBound(d, dialect)
+		}},
 	}
 }
 
@@ -1801,4 +1807,17 @@ func keepWhatEntriesSaidBefore(d migration.Datasource, dialect string) error {
 // statement is.
 func findAnEntrysHistoryByTheEntry(d migration.Datasource) error {
 	return execAll(d, "CREATE INDEX idx_timesheet_revisions_entry ON timesheet_revisions (timesheet_id)")
+}
+
+// letABalanceHaveAnUpperBound records the most a person means their running
+// balance to stand at, in hours. Null for every account there is, which is no
+// bound at all - and a statement of its own, as the lower bound below has one.
+func letABalanceHaveAnUpperBound(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE users ADD COLUMN balance_upper_limit %s", float(dialect)))
+}
+
+// letABalanceHaveALowerBound records the least a person means their running
+// balance to stand at, in hours; null is no bound.
+func letABalanceHaveALowerBound(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE users ADD COLUMN balance_lower_limit %s", float(dialect)))
 }

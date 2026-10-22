@@ -174,6 +174,10 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.POST(base+"/me/absences", h.Absences.Save)
 	app.DELETE(base+"/me/absences/{day}", h.Absences.Delete)
 
+	// What about one's own time deserves a banner, worked out where the rules are.
+	app.GET(base+"/me/notices", h.Me.Notices)
+	app.PUT(base+"/me/balance-limits", h.Me.SetBalanceLimits)
+
 	// When somebody worked, a day at a time - theirs, like their entries.
 	app.GET(base+"/me/workdays", h.WorkDays.List)
 	app.PUT(base+"/me/workdays/{date}", h.WorkDays.Record)

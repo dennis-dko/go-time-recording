@@ -1973,6 +1973,34 @@
         }
       }
     },
+    "/me/notices": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "What about your own time deserves a banner",
+        "description": "Answers {\"balance\": {\"hours\": 43.5, \"since\": \"2026-01-05\", \"upperBound\": 40, \"lowerBound\": null, \"outside\": \"above\"}}. balance is your running balance - from the first day that counts, which is the first day you booked on or the day every working day counts from where that is earlier, up to today in your own timezone - beside the bounds you set, and outside is \"above\" or \"below\" while it lies past one of them and empty otherwise; standing exactly on a bound is inside it. since is null while nothing counts yet. The part is left out for an account without reports:read:own, which is answered with an empty object rather than refused: the interface asks on every load.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/me/balance-limits": {
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Set the bounds you keep your running balance within",
+        "description": "Takes {\"upperBound\": 40, \"lowerBound\": -20} in hours, both at once: null, or a bound left out, is none. An upper bound lies at zero or above and a lower one at zero or below, neither further out than 10000 hours (invalidFields upperBound or lowerBound), because a bound on the wrong side of zero would put every balance outside it from the first day. Answers what GET /me/notices answers. Needs settings:write:own, like the rest of your own figures.",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
+    },
     "/me/workdays": {
       "get": {
         "tags": [

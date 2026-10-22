@@ -316,6 +316,14 @@
     <div id="timer-banner" class="banner" hidden>
       <span id="timer-banner-text"></span>
     </div>
+
+    <!-- The running balance past a bound its owner set under My account. A state:
+         it stays true on every screen until the balance is back inside, and goes
+         then. It points at the bounds rather than changing them here - one place
+         to read it, one place to act. Filled by drawBalanceBanner. -->
+    <div id="balance-banner" class="banner" hidden>
+      <span id="balance-banner-text"></span>
+    </div>
   </div>
 
   <!-- The instance's own announcement, set under Settings. -->
@@ -1332,6 +1340,22 @@
           </label>
         </div>
         <p class="muted" data-i18n="settings.everyDayCountsFromHint">Until you choose a day, only the days you booked on count towards your balance. From the day you choose, every working day up to today counts, booked or not, less what a public holiday or an absence takes off it. Empty it to go back.</p>
+        <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
+      <!-- The bounds of the running balance, with the balance itself beside them,
+           because a bound is chosen against a figure. Past one, a banner stands on
+           every screen until the balance is back inside: a state, not news. -->
+      <form method="post" id="form-balance-bounds" class="card form" data-perm="settings:write:own">
+        <h2 data-i18n="bounds.title">Bounds of my balance</h2>
+        <p class="muted" data-i18n="bounds.hint">Keep your running balance between two figures, as a flexitime account does. While it lies outside them, a banner says so on every screen until it is back inside. Empty means no bound.</p>
+        <div class="grid">
+          <label data-i18n="field.upperBound">Upper bound of the balance<input type="number" name="upperBound" step="0.5" min="0" max="10000" placeholder="40">
+          </label>
+          <label data-i18n="field.lowerBound">Lower bound of the balance<input type="number" name="lowerBound" step="0.5" min="-10000" max="0" placeholder="-20">
+          </label>
+        </div>
+        <p class="muted" id="balance-now"></p>
         <button type="submit" data-i18n="action.save">Save</button>
       </form>
 

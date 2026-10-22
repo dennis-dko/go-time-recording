@@ -121,6 +121,18 @@ func (r *TimesheetRepository) HoursByProject(_ context.Context, userID uint) (ma
 	return totals, nil
 }
 
+func (r *TimesheetRepository) FirstDay(_ context.Context, userID uint) (time.Time, bool, error) {
+	var first time.Time
+
+	for _, ts := range r.store.all() {
+		if ts.UserID == userID && (first.IsZero() || ts.Date.Before(first)) {
+			first = ts.Date
+		}
+	}
+
+	return model.CalendarDay(first), !first.IsZero(), nil
+}
+
 // page applies a limit and an offset the way a SQL LIMIT/OFFSET would, including
 // answering with nothing for an offset past the end rather than with the last
 // page, which is what a hand-rolled slice usually gets wrong.

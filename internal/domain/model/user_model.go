@@ -85,6 +85,12 @@ type User struct {
 	// behind somebody does not change under them until they choose a day.
 	EveryDayCountsFrom *time.Time
 
+	// BalanceUpperLimit and BalanceLowerLimit are the bounds this person keeps their
+	// running balance within, in hours: an upper one of zero or more, a lower one of
+	// zero or less. Nil is no bound, which is what everybody has until they set one.
+	BalanceUpperLimit *float64
+	BalanceLowerLimit *float64
+
 	// IsExternal marks an account whose password lives in LDAP, so the local
 	// password fields are not used for it.
 	IsExternal bool
@@ -151,4 +157,23 @@ func (u *User) EffectiveDailyTarget() float64 {
 	}
 
 	return u.DailyTargetHours
+}
+
+// Where a balance stands against its owner's bounds.
+const (
+	BalanceAbove = "above"
+	BalanceBelow = "below"
+)
+
+// BalanceOutside says whether a running balance lies past one of this person's
+// bounds: BalanceAbove, BalanceBelow, or empty while it is inside both.
+func (u *User) BalanceOutside(balance float64) string {
+	switch {
+	case u.BalanceUpperLimit != nil && balance > *u.BalanceUpperLimit:
+		return BalanceAbove
+	case u.BalanceLowerLimit != nil && balance < *u.BalanceLowerLimit:
+		return BalanceBelow
+	default:
+		return ""
+	}
 }

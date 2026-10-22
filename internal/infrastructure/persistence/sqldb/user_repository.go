@@ -2,6 +2,7 @@ package sqldb
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,7 +20,8 @@ const userSelect = `SELECT u.id, u.name, u.email, u.role_id, COALESCE(r.name, ''
 	u.password_hash, u.must_change_password, u.is_system,
 	u.daily_target_hours, u.max_daily_hours,
 	u.totp_secret, u.totp_enabled, u.language, u.is_external, u.external_id, u.timezone,
-	u.tour_seen, u.theme, u.holiday_region, u.every_day_counts_from
+	u.tour_seen, u.theme, u.holiday_region, u.every_day_counts_from,
+	u.balance_upper_limit, u.balance_lower_limit
 	FROM users u LEFT JOIN roles r ON r.id = u.role_id`
 
 // UserRepository stores users in a SQL database.
@@ -177,6 +179,21 @@ func (r *UserRepository) Update(ctx context.Context, user *model.User) (*model.U
 	return r.GetByID(ctx, user.ID)
 }
 
+func (r *UserRepository) SetBalanceLimits(ctx context.Context, id uint, upper, lower *float64) error {
+	found, err := r.update(ctx, "users",
+		"UPDATE users SET balance_upper_limit = ?, balance_lower_limit = ? WHERE id = ?",
+		id, upper, lower, id)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if !found {
+		return apperror.NotFound("user", strconv.FormatUint(uint64(id), 10))
+	}
+
+	return nil
+}
+
 func (r *UserRepository) Delete(ctx context.Context, id uint) error {
 	affected, err := r.exec(ctx, "DELETE FROM users WHERE id = ?", id)
 	if err != nil {
@@ -203,15 +220,17 @@ type scanner interface {
 // forgets to.
 func (r *UserRepository) scanUser(s scanner) (*model.User, error) {
 	var (
-		user       model.User
-		countsFrom dateTime
+		user         model.User
+		countsFrom   dateTime
+		upper, lower sql.NullFloat64
 	)
 
 	err := s.Scan(&user.ID, &user.Name, &user.Email, &user.RoleID, &user.RoleName,
 		&user.PasswordHash, &user.MustChangePassword, &user.IsSystem,
 		&user.DailyTargetHours, &user.MaxDailyHours,
 		&user.TOTPSecret, &user.TOTPEnabled, &user.Language, &user.IsExternal, &user.ExternalID,
-		&user.Timezone, &user.TourSeen, &user.Theme, &user.HolidayRegion, &countsFrom)
+		&user.Timezone, &user.TourSeen, &user.Theme, &user.HolidayRegion, &countsFrom,
+		&upper, &lower)
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +238,14 @@ func (r *UserRepository) scanUser(s scanner) (*model.User, error) {
 	if countsFrom.Valid {
 		day := model.CalendarDay(countsFrom.Time)
 		user.EveryDayCountsFrom = &day
+	}
+
+	if upper.Valid {
+		user.BalanceUpperLimit = &upper.Float64
+	}
+
+	if lower.Valid {
+		user.BalanceLowerLimit = &lower.Float64
 	}
 
 	secret, err := r.secrets.Open(user.TOTPSecret)

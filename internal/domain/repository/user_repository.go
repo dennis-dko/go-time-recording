@@ -51,6 +51,12 @@ type UserRepository interface {
 	// either of those.
 	SetTOTP(ctx context.Context, id uint, secret string, enabled bool) error
 
+	// SetBalanceLimits writes the two bounds of somebody's running balance, nil
+	// for none, and nothing else - one statement for the pair, for the reason
+	// SetPreference writes one column: a read-modify-write of the whole row loses
+	// whatever changed in between.
+	SetBalanceLimits(ctx context.Context, id uint, upper, lower *float64) error
+
 	Delete(ctx context.Context, id uint) error
 }
 

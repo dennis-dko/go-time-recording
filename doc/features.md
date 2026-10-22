@@ -24,7 +24,7 @@ What the application does, and the rules it keeps while doing it.
 | Own statistics | Hours per day, per project and per activity, drawn as charts, for everybody rather than administrators |
 | Activities | A second way of sorting the same hours beside the project, written into the description with a # - #meeting, #review - and totalled under *Own statistics*. Nothing to set up first, and every description already written counts; an entry naming two counts towards both |
 | Evaluation | The same figures as bars, columns or a pie — whichever shape answers the question being asked |
-| Overtime | Balance per day and per period against a personal daily target |
+| Overtime | Balance per day and per period against a personal daily target, and a running balance with bounds of your own that raise a banner while it lies past them |
 | Calendar | Month view of where hours were booked |
 | Working time | When each day began and finished and how long its breaks were, beside the hours booked on it, under the calendar - a day booked on with no times recorded is shown as the gap it is, the running stopwatch's start is offered as the day's, a day past a limit of the Working Hours Act says which, and the month leaves as a PDF. Kept by each person for themselves; nobody else sees it |
 | Calendar subscription | An address of your own, made under *My account*, that Outlook, Google or a telephone subscribes to: every day you booked on - how many hours, and what on - and every day you are away, in the year either side of today. Read-only, shown once, and taken back by making a new one |
@@ -100,6 +100,14 @@ applies from Monday to Friday and the weekend asks nothing - so hours worked on 
 Saturday count as overtime. Every booked day used to be measured against the full
 daily target whichever day it was, which stood a Saturday's work in the balance as
 a shortfall.
+
+The **running balance** is the same sum from the first day that counts - the first
+day booked on, or the chosen day where that is earlier - up to today, as a
+flexitime account keeps it. Under *My account* each person can give it two
+**bounds**, an upper one at zero or above and a lower one at zero or below; while
+the running balance lies past one of them, a banner says so on every screen, with
+the way back to the bounds inside it, and goes once the balance is inside again.
+Standing exactly on a bound is inside it, and an empty field is no bound.
 
 It is your own balance. Somebody else's is their recorded time, totalled, so it
 takes the same right as reading their entries — and the team-wide overview that used

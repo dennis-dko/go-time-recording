@@ -477,6 +477,7 @@ const FIELD_NAMES = {
   ldapSyncMaxDeleteRatio: 'Deletion limit',
   legalNotice: 'Legal notice',
   logLevel: 'Log level',
+  lowerBound: 'Lower bound of the balance',
   maxDailyHours: 'Max h/day',
   name: 'Name',
   port: 'Port',
@@ -500,6 +501,7 @@ const FIELD_NAMES = {
   traceExporter: 'Trace exporter',
   tracerRatio: 'Share of traces recorded',
   tracerUrl: 'Collector',
+  upperBound: 'Upper bound of the balance',
   userFilter: 'User filter',
   userId: 'User',
   validFrom: 'Applies from',
@@ -2107,12 +2109,14 @@ function fmtShare(n) {
  */
 const fmtHours = (n) => `${fmtNumber(n)} ${t('unit.hours', 'h')}`;
 
+/** A balance in hours with its sign, which a credit carries as a plus. */
+const fmtSignedHours = (n) => `${n > 0 ? '+' : ''}${fmtHours(n)}`;
+
 /** Renders a signed balance, coloured as a credit or a debt. */
 function balanceCell(value) {
-  const sign = value > 0 ? '+' : '';
   return el('td', {
     class: `num ${value > 0 ? 'plus' : value < 0 ? 'minus' : ''}`,
-    text: `${sign}${fmtHours(value)}`,
+    text: fmtSignedHours(value),
   });
 }
 
@@ -4223,6 +4227,8 @@ const TRANSLATIONS = {
     'field.ldapSyncMaxDeleteRatio': 'Höchstanteil gelöschter Konten',
     'field.legalNotice': 'Rechtlicher Hinweis',
     'field.logLevel': 'Protokollstufe',
+    'field.lowerBound': 'Untergrenze des Saldos',
+    'field.upperBound': 'Obergrenze des Saldos',
     'field.maxDailyHours': 'Max/Tag',
     'field.port': 'Port',
     'field.projectId': 'Projekt',
@@ -4554,6 +4560,13 @@ const TRANSLATIONS = {
     'work.empty': 'In diesem Monat ist nichts erfasst oder gebucht.',
     'work.total': 'Gearbeitet {0}, gebucht {1}',
     'work.act': 'Arbeitszeitgesetz',
+    'bounds.title': 'Grenzen für meinen Saldo',
+    'bounds.hint': 'Halte deinen laufenden Saldo zwischen zwei Werten, wie bei einem Gleitzeitkonto. Liegt er außerhalb, sagt es ein Banner auf jeder Seite, bis er wieder drin ist. Leer heißt: keine Grenze.',
+    'bounds.above': 'Dein laufender Saldo liegt mit {0} über der Obergrenze von {1}, die du unter {2} gesetzt hast.',
+    'bounds.below': 'Dein laufender Saldo liegt mit {0} unter der Untergrenze von {1}, die du unter {2} gesetzt hast.',
+    'bounds.now': 'Dein laufender Saldo: {0}, gezählt ab {1}.',
+    'bounds.nothingYet': 'Noch zählt nichts zu deinem Saldo.',
+    'bounds.saved': 'Grenzen gespeichert',
     'work.actHint': 'Tage über einer Grenze des Arbeitszeitgesetzes werden markiert: mehr als zehn Stunden, eine zu kurze Pause oder weniger als elf Stunden Ruhe seit dem Vortag. Es sind Hinweise; erfasst wird, was war.',
     'work.longDay': 'Mehr als zehn Stunden (§ 3 ArbZG)',
     'work.shortBreak': '{0} Minuten Pause nötig (§ 4 ArbZG)',
@@ -6207,6 +6220,9 @@ async function reloadTimeViews() {
 
   // And the budgets the hours just booked count towards.
   await noticeBudgets();
+
+  // And the running balance they moved, which may have crossed a bound.
+  await loadNotices();
 }
 
 /**
@@ -14933,6 +14949,80 @@ function drawTimerBanner() {
   text.append(fillIn(after ?? '', [since]));
 }
 
+// ------------------------------------------------------------ own notices
+
+/** What about this person's own time deserves a banner, as the server read it. */
+let personalNotices = null;
+
+/**
+ * Asks what about this person's own time deserves a banner. Worked out on the
+ * server, because the balance read against the bounds is the overtime rule's,
+ * and that rule lives in one place.
+ */
+async function loadNotices() {
+  if (!can('reports:read:own')) return;
+
+  personalNotices = await api('/me/notices');
+
+  drawBalanceBanner();
+  fillBalanceBounds();
+}
+
+/**
+ * The running balance past a bound its owner set. The sentence carries the way
+ * to the bounds inside it, split on the placeholder so where the link falls is
+ * the translator's business - as with the stopwatch's banner.
+ */
+function drawBalanceBanner() {
+  const banner = $('#balance-banner');
+  if (!banner) return;
+
+  const balance = personalNotices?.balance;
+  const outside = balance?.outside;
+
+  banner.hidden = !outside;
+  if (!outside) return;
+
+  const above = outside === 'above';
+  const sentence = above
+    ? t('bounds.above', 'Your running balance is {0}, above the upper bound of {1} you set under {2}.')
+    : t('bounds.below', 'Your running balance is {0}, below the lower bound of {1} you set under {2}.');
+  const values = [fmtSignedHours(balance.hours), fmtSignedHours(above ? balance.upperBound : balance.lowerBound)];
+  const [before, after] = sentence.split('{2}');
+
+  const link = el('button', {
+    type: 'button', class: 'link-button', id: 'balance-banner-open', text: t('nav.settings', 'My account'),
+  });
+  link.addEventListener('click', openTheBalanceBounds);
+
+  $('#balance-banner-text').replaceChildren(fillIn(before ?? '', values), link, fillIn(after ?? '', values));
+}
+
+/** The bounds as they are stored, and the balance they are chosen against. */
+function fillBalanceBounds() {
+  const form = $('#form-balance-bounds');
+  const balance = personalNotices?.balance;
+  if (!form || !balance) return;
+
+  if (!beingEdited(form)) {
+    form.elements.upperBound.value = balance.upperBound ?? '';
+    form.elements.lowerBound.value = balance.lowerBound ?? '';
+  }
+
+  $('#balance-now').textContent = balance.since
+    ? fillIn(t('bounds.now', 'Your running balance is {0}, counted from {1}.'),
+      [fmtSignedHours(balance.hours), fmtDate(balance.since)])
+    : t('bounds.nothingYet', 'Nothing counts towards your balance yet.');
+}
+
+/** Takes whoever pressed the balance banner's link to the bounds it is about. */
+function openTheBalanceBounds() {
+  switchView('settings');
+
+  const form = $('#form-balance-bounds');
+  if (form) form.scrollIntoView({ block: 'center' });
+}
+
 /** Takes whoever pressed the banner's link to the clock it is about. */
 function openTheStopwatch() {
   switchView('timesheets');
@@ -17007,6 +17097,7 @@ async function refreshAll() {
   await loadAbsences();
   await loadVacation();
   await loadMyHolidays();
+  await loadNotices();
   fillSettingsForm();
 
   document.documentElement.dataset.loaded = 'yes';
@@ -17291,6 +17382,19 @@ function wireForms() {
       { method: 'PUT', body: JSON.stringify(body) }),
       t('msg.workingTimesSaved', 'Working hours saved'),
       refreshAll);
+  });
+
+  $('#form-balance-bounds').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+
+    // Both at once, as the endpoint takes them: an empty field is no bound.
+    const bound = (input) => (input.value === '' ? null : Number(input.value));
+    const body = { upperBound: bound(form.elements.upperBound), lowerBound: bound(form.elements.lowerBound) };
+
+    saveForm(form, () => api('/me/balance-limits', { method: 'PUT', body: JSON.stringify(body) }),
+      t('bounds.saved', 'Bounds saved'),
+      loadNotices);
   });
 
   $('#form-schedule').addEventListener('submit', (e) => {

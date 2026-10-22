@@ -405,6 +405,22 @@ func likeLiteral(text string) string {
 	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(text)
 }
 
+func (r *TimesheetRepository) FirstDay(ctx context.Context, userID uint) (time.Time, bool, error) {
+	var first dateTime
+
+	err := r.db.QueryRowContext(ctx,
+		r.rebind("SELECT MIN(date) FROM timesheets WHERE user_id = ?"), userID).Scan(&first)
+	if err != nil {
+		return time.Time{}, false, apperror.Internal(err)
+	}
+
+	if !first.Valid {
+		return time.Time{}, false, nil
+	}
+
+	return model.CalendarDay(first.Time), true, nil
+}
+
 // HoursByProject totals somebody's hours on each project they booked on, in one
 // grouped query rather than a listing per project.
 func (r *TimesheetRepository) HoursByProject(ctx context.Context, userID uint) (map[uint]float64, error) {
