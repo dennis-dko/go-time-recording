@@ -29,6 +29,7 @@ What the application does, and the rules it keeps while doing it.
 | Calendar | Month view of where hours were booked |
 | Working time | When each day began and finished and how long its breaks were, beside the hours booked on it, under the calendar - a day booked on with no times recorded is shown as the gap it is, the running stopwatch's start is offered as the day's, a day past a limit of the Working Hours Act says which, and the month leaves as a PDF. Kept by each person for themselves; nobody else sees it |
 | Calendar subscription | An address of your own, made under *My account*, that Outlook, Google or a telephone subscribes to: every day you booked on - how many hours, and what on - and every day you are away, in the year either side of today. Read-only, shown once, and taken back by making a new one |
+| Everything about me | Everything the installation keeps about your account, as a ZIP with a JSON file per part - exactly what erasing it would delete, without the hashes, seeds and keys - from *My account*, for anybody signed in |
 | The year | Every day of a year as a tile, as dark as the hours booked on it, with the public holidays and the days away outlined rather than told by colour alone - beside the year before up to the same day, and both month by month as figures |
 | Week grid | A week as a table - projects as rows, days as columns, hours typed straight into the cells - with what was booked, what each day asked and the balance underneath. *Copy last week* books the week before into the days that have nothing on them yet, leaving out what was booked on projects that have closed since |
 | Days away | Leave, half a day of it, sick days, days taken against overtime and holidays that hold only where somebody works, recorded over a range - but only on the days the planned week asks something of, so a fortnight of leave is its ten working days - and named in the calendar and on the week grid. From the day every working day counts from, each takes its part off what the day asks |
@@ -213,6 +214,25 @@ calendar on a telephone or a computer fetches it from wherever that device is,
 over a VPN for example. How often it is fetched again is the calendar program's
 choice: the feed asks for every hour, and Google takes up to a day whatever it
 is asked.
+
+## Everything about you
+
+Under **My account**, *Everything about me* downloads what this installation keeps
+about your account as a ZIP: a JSON file per part - the account, your entries and
+the versions corrections replaced, projects, templates, absences, leave, planned
+weeks, working times, the stopwatch, and the personal tokens, passkeys, sessions,
+calendar address and provider links you have - each an array of rows with the
+columns as they are stored, and `about.json` saying what the archive is. It is the
+right of access and of portability (GDPR articles 15 and 20), open to anybody
+signed in whatever their role lets them do here, and only ever about their own
+account.
+
+It holds exactly what erasing the account would delete, read from the same list
+of tables, so nothing can be erased that could not have been handed over first.
+What it leaves out is what would be a way in for whoever finds the file: the
+password's hash, the second factor's seed, the hashes of tokens, sessions and the
+calendar address, and a passkey's key material. About those it says that they
+exist, when they were made and when they were last used.
 
 ## Spreadsheets
 

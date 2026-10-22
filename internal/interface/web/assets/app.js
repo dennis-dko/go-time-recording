@@ -4077,6 +4077,7 @@ const TRANSLATIONS = {
     'err.restartWouldNotStart': 'Die Datenbank, die der nächste Start öffnen würde, antwortet nicht – die Anwendung käme nicht wieder. Es wurde nicht neu gestartet.',
     'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
     'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
+    'err.noAuthNoAccount': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Konto zu exportieren.',
     'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
     'err.syncStoppedPartWay': 'Der Abgleich wurde abgebrochen, nachdem er {0} Konto/Konten '
       + 'gelöscht und {1} angelegt hatte. Die Liste zeigt, was noch übrig ist.',
@@ -4578,6 +4579,10 @@ const TRANSLATIONS = {
     'remind.notifyUnsupported': 'Dieser Browser kann keine Benachrichtigungen zeigen.',
     'remind.unbooked': 'Am {0} ist nichts gebucht, nach deinem Plan ein Arbeitstag. Unter {1} lässt es sich nachtragen.',
     'remind.saved': 'Erinnerungen gespeichert',
+    'export.title': 'Alles über mich',
+    'export.hint': 'Alles, was diese Installation über dein Konto speichert, als ZIP mit einer JSON-Datei je Bereich: deine Einträge und ihr Verlauf, Projekte, Vorlagen, Abwesenheiten, Urlaub, Wochenpläne, Arbeitszeiten und das Konto selbst. Passwörter, zweite Faktoren, Tokens und Schlüssel sind nicht dabei – nur, wann sie entstanden sind und zuletzt benutzt wurden.',
+    'export.download': 'Alles über mich herunterladen',
+    'export.filename': 'alles-ueber-mich',
     'timer.longBanner': 'Die Stoppuhr läuft seit {0}, länger als die {2}, nach denen du erinnert werden wolltest. Unter {1} lässt sie sich anhalten.',
     'timer.longTitle': 'Die Stoppuhr läuft noch',
     'timer.longBody': 'Seit {1}, länger als die {0}, die du gewählt hast.',
@@ -17553,6 +17558,10 @@ function wireForms() {
 
     drawNotifyState();
   });
+
+  $('#export-me').addEventListener('click', () => mutate(
+    () => downloadFile(`${API}/me/export`, t('export.filename', 'everything-about-me'), 'zip'),
+    t('wb.exported', 'Export saved'), null));
 
   $('#form-balance-bounds').addEventListener('submit', (e) => {
     e.preventDefault();

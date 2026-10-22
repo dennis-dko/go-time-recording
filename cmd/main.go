@@ -1032,6 +1032,7 @@ func main() {
 			WithMaintenance(maintenanceState).
 			WithTimezone(instanceTimezone),
 		Documents: rest.NewDocumentHandler(authorizer, instanceName).WithTimezone(instanceTimezone),
+		Exports:   rest.NewExportHandler(appservice.NewAccountExportService(userRepo), authorizer),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,

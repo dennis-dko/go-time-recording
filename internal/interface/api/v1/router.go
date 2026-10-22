@@ -35,6 +35,7 @@ type Handlers struct {
 	Workbook   *rest.WorkbookHandler
 	Sheets     *rest.SheetHandler
 	Documents  *rest.DocumentHandler
+	Exports    *rest.ExportHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -174,6 +175,9 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/absences", h.Absences.List)
 	app.POST(base+"/me/absences", h.Absences.Save)
 	app.DELETE(base+"/me/absences/{day}", h.Absences.Delete)
+
+	// Everything held about one's own account, for handing over.
+	app.GET(base+"/me/export", h.Exports.Account)
 
 	// What about one's own time deserves a banner, worked out where the rules are.
 	app.GET(base+"/me/notices", h.Me.Notices)

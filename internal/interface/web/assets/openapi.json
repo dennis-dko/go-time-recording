@@ -1988,6 +1988,20 @@
         }
       }
     },
+    "/me/export": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Everything held about your own account, as a ZIP",
+        "description": "Answers application/zip: a JSON file per part - account, stopwatch, entry-history, time-entries, projects, api-tokens, passkeys, sessions, planned-weeks, entry-templates, absences, leave-entitlements, calendar-subscription, openid-links, working-times - each an array of rows with the columns as they are stored, and about.json saying what the archive is and what it leaves out. It holds exactly what erasing the account would delete. Left out are the password's hash, the second factor's seed, the hashes of personal tokens, sessions and the calendar address, and a passkey's key material: what is handed over about those is that they exist, when they were made and when they were last used. Open to anybody signed in, the built-in administrator included, and only ever about their own account (GDPR articles 15 and 20). Without authentication there is no account to export (noAuthNoAccount).",
+        "responses": {
+          "200": {
+            "description": "The archive"
+          }
+        }
+      }
+    },
     "/me/notices": {
       "get": {
         "tags": [

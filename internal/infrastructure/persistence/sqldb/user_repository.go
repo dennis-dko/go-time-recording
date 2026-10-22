@@ -57,6 +57,8 @@ func (r *UserRepository) WithSecrets(secrets *security.Sealer) *UserRepository {
 // compile-time check that the domain contract stays satisfied.
 var _ repository.UserRepository = (*UserRepository)(nil)
 
+var _ repository.AccountExporter = (*UserRepository)(nil)
+
 func (r *UserRepository) Save(ctx context.Context, user *model.User) (*model.User, error) {
 	secret, err := r.secrets.Seal(user.TOTPSecret)
 	if err != nil {

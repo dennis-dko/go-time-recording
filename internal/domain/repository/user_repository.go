@@ -89,3 +89,20 @@ const (
 	// keeps, empty meaning they follow the installation.
 	PreferenceHolidayRegion
 )
+
+// ExportedPart is one part of an account's export: what it is called and its rows,
+// each as column and value.
+type ExportedPart struct {
+	Name string
+	Rows []map[string]any
+}
+
+// AccountExporter reads everything held about an account, for handing it to the
+// person it is about.
+//
+// An interface of its own rather than a method on UserRepository, because only a
+// database can answer it honestly: what it hands over is what the tables hold, and
+// a repository kept in memory for tests holds no tables.
+type AccountExporter interface {
+	ExportUser(ctx context.Context, userID uint) ([]ExportedPart, error)
+}

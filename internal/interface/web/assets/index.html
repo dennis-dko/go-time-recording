@@ -1598,6 +1598,15 @@
         </div>
         <button type="submit" data-i18n="settings.changePassword">Change password</button>
       </form>
+
+      <!-- Everything this installation holds about the account, for anybody signed
+           in whatever their role: the right of access is the person's, not a
+           permission. Last on the screen, because it is about the whole of it. -->
+      <div class="card" id="export-card">
+        <h2 data-i18n="export.title">Everything about me</h2>
+        <p class="muted" data-i18n="export.hint">Everything this installation keeps about your account, as a ZIP with a JSON file for each part: your entries and their history, projects, templates, absences, leave, planned weeks, working times and the account itself. Passwords, second factors, tokens and keys are not in it – only when they were made and last used.</p>
+        <button type="button" class="secondary" id="export-me" data-i18n="export.download">Download everything about me</button>
+      </div>
     </section>
     <!-- Settings (built-in administrator only) -->
     <section id="view-admin" class="view" hidden>
