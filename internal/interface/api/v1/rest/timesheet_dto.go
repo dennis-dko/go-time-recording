@@ -27,6 +27,12 @@ type TimesheetResponse struct {
 	// the booking it corrected. RFC 3339, in UTC, as stored.
 	CreatedAt *time.Time `json:"createdAt"`
 	UpdatedAt *time.Time `json:"updatedAt"`
+
+	// RecordedBy and UpdatedBy are the manager who booked the entry and the one who
+	// last changed it, left out where it was the owner - so whoever the entry
+	// belongs to can read what was done in their name, and by whom.
+	RecordedBy *ActedByResponse `json:"recordedBy,omitempty"`
+	UpdatedBy  *ActedByResponse `json:"updatedBy,omitempty"`
 }
 
 // CreateTimesheetRequest is the payload for booking time.
@@ -77,7 +83,18 @@ func newTimesheetResponse(r *common.TimesheetResult) TimesheetResponse {
 		Description:   r.Description,
 		CreatedAt:     momentOrNil(r.CreatedAt),
 		UpdatedAt:     momentOrNil(r.UpdatedAt),
+		RecordedBy:    actedByResponse(r.RecordedBy),
+		UpdatedBy:     actedByResponse(r.UpdatedBy),
 	}
+}
+
+// actedByResponse is an account that acted in somebody's name, nil for nobody.
+func actedByResponse(actor *common.ActedBy) *ActedByResponse {
+	if actor == nil {
+		return nil
+	}
+
+	return &ActedByResponse{ID: actor.ID, Name: actor.Name}
 }
 
 func newTimesheetResponses(results []*common.TimesheetResult) []TimesheetResponse {

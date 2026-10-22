@@ -14,6 +14,7 @@ interface: create them, set their permissions, delete them.
 | `admin` | The installation, its accounts and their roles — and nothing else. A system role: it cannot be deleted or stripped of permissions |
 | `user` | Keeps their own time, projects and calendar |
 | `user-admin` | Both: somebody who works here and also administers |
+| `manager` | Keeps their own time, and the time and projects of the accounts assigned to them — see [Managers](#managers) |
 
 The third one is the answer to "somebody here needs to administer as well". It is
 handed out by the built-in administrator, so holding both jobs is a decision somebody
@@ -51,7 +52,9 @@ in a colleague's name. No role held either by the end, and the four screens that
 "which person" had been narrowed to a dropdown with a single entry — so ticking one in
 the role editor changed nothing anybody could see, while the API answered every
 question about every colleague. A capability with no screen is a capability nobody
-audits, so both are gone.
+audits, so both are gone. What exists instead is narrower and visible to the people it
+concerns: the [team rights](#managers), which reach only the accounts an administrator
+assigned, and only while the installation has managers switched on.
 
 Permissions are Go constants, not database rows: each one is checked by a
 specific line of code, and a permission that existed only in the database would
@@ -118,7 +121,8 @@ administration, so they keep their own hours and still nobody else's.
 ### Reports
 
 A project's report totals **your own** hours on it. Everyone sees their own figures
-there and through **My statistics**, and nobody sees anybody else's.
+there and through **My statistics**, and nobody sees anybody else's — except a
+manager, for the accounts assigned to them.
 
 **Every screen that evaluates a period arrives with one filled in** — the month
 so far — rather than waiting to be told. The alternative was worse in both
@@ -214,6 +218,47 @@ report was unreachable on every installation while appearing to be somebody else
 business. `timesheets:read:all` covered everything else and outlived it by one release.
 Both are withdrawn on upgrade, and a role that held one keeps the half of it that is
 still a right — whoever could read everybody's time can read their own.
+
+### Managers
+
+An installation can have managers: accounts that look after the time of the
+people an administrator assigns to them. It is switched off as shipped, and only
+whoever holds `settings:manage` switches it on. Until then every assignment
+waits, kept, and the team rights reach nobody.
+
+| Right | What it gives over an account assigned to its holder |
+| --- | --- |
+| `timesheets:read:team` | Its entries, calendar, balance, statistics and reports, and the history of its corrections |
+| `timesheets:write:team` | Booking, correcting, moving and deleting its time, on its own projects |
+| `projects:write:team` | Making and changing its projects, and archiving or deleting them as far as the role allows that for one's own |
+
+The shipped `manager` role holds all three beside everything `user` holds: a
+manager keeps their own time like anybody else. Like every shipped role it
+cannot be deleted or edited, so a role that should grant less — somebody who
+reads a team's time but does not book it — is a role of the installation's own,
+with only the rights it should have. A team right carries further what the
+matching own right already does and never stands in for it: a role holding
+`timesheets:read:team` without `timesheets:read:own` reaches nobody.
+
+A manager does everything as the account they are working for. A booking goes on
+that account's own projects and counts against its daily maximum; a report covers
+that account's projects; a project made for it is its own. Nothing a manager does
+widens what the account itself could have done.
+
+Three things hold whatever an installation configures:
+
+- **Only an administrator assigns**, holding `users:write`, and only an account
+  whose role holds a team right can be assigned — never to itself. A manager
+  cannot assign anybody: choosing whose time you see would be deciding what you
+  are allowed to know.
+- **Nothing is hidden from the person looked after.** Every account can read who
+  may see its time and what each of them may do with it. An entry a manager booked
+  or last changed names them, and so does every version a manager's correction
+  replaced in its history.
+- **Some things stay the person's own.** A manager learns that a day was away and
+  never why — a day off sick reads exactly like a day of leave — and has no view of
+  anybody's working times, the start, end and breaks of a day, at all. There is no
+  approval either: a manager looks after the hours, and nobody signs them off.
 
 ## API access with personal tokens
 
@@ -378,9 +423,9 @@ What holds the round trip together:
 Under **Settings**, *Changes to the installation* lists who changed how the
 installation is run, newest first: an account created, corrected, given another
 role, given a new password or deleted; a role created, changed or deleted;
-accounts or roles imported; each settings card saved; maintenance mode switched
-on or off; the directory synchronised; the application restarted, updated or set
-up. Everybody holding `settings:manage` can read it, and nobody else.
+accounts or roles imported; each settings card saved; maintenance mode or
+managers switched on or off; an account's managers assigned; the directory
+synchronised; the application restarted, updated or set up. Everybody holding `settings:manage` can read it, and nobody else.
 
 A change is recorded once it has gone through - a refused request changed
 nothing and is not there - by a middleware working from one table of routes, so

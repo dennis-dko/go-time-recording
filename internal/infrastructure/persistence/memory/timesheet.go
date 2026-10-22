@@ -182,7 +182,13 @@ func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timeshe
 
 	before, err := r.store.get(timesheet.ID)
 	if err == nil {
-		corrected.CreatedAt = before.CreatedAt
+		corrected.CreatedAt, corrected.RecordedBy = before.CreatedAt, before.RecordedBy
+
+		// As the SQL repository does: a save that changes nothing leaves the name
+		// of whoever last did as it was.
+		if before.Says(timesheet) {
+			corrected.UpdatedBy = before.UpdatedBy
+		}
 	}
 
 	updated, err := r.store.update(timesheet.ID, &corrected)
@@ -196,6 +202,7 @@ func (r *TimesheetRepository) Update(_ context.Context, timesheet *model.Timeshe
 
 		kept := model.RevisionOf(before, corrected.UpdatedAt)
 		kept.ID = r.nextRevision
+		kept.ReplacedBy = timesheet.UpdatedBy
 		r.revisions = append(r.revisions, kept)
 		r.mu.Unlock()
 	}

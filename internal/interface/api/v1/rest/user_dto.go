@@ -148,6 +148,11 @@ type MeResponse struct {
 	// UserResponse, which also describes other people's accounts to an
 	// administrator: these say nothing to anybody but their owner.
 	Reminders RemindersResponse `json:"reminders"`
+
+	// ManagersEnabled says whether the installation has managers, so the role
+	// editor offers the team rights and the accounts table the assignment only
+	// where they would do something.
+	ManagersEnabled bool `json:"managersEnabled"`
 }
 
 // RemindersResponse is what somebody chose to be reminded of: whether the last

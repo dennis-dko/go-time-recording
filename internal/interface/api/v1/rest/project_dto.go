@@ -30,6 +30,10 @@ type CreateProjectRequest struct {
 	EndDate     *Date    `json:"endDate"`
 	Status      string   `json:"status"`
 	BudgetHours *float64 `json:"budgetHours"`
+
+	// OwnerID is whose project it becomes: absent or the caller's own id for the
+	// caller, or an account the caller looks after as a manager.
+	OwnerID uint `json:"ownerId"`
 }
 
 // UpdateProjectRequest is the payload for a partial update.

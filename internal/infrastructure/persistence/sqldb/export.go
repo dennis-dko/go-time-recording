@@ -29,9 +29,11 @@ var accountExport = []struct {
 		"u.is_external, u.external_id, u.totp_enabled, u.must_change_password, u.tour_seen " +
 		"FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = ?"},
 	{"stopwatch", "SELECT project_id, description, started_at FROM running_timers WHERE user_id = ?"},
-	{"entry-history", "SELECT id, timesheet_id, date, duration_hours, project_id, description, replaced_at " +
+	{"entry-history", "SELECT id, timesheet_id, date, duration_hours, project_id, description, replaced_at, " +
+		"replaced_by " +
 		"FROM timesheet_revisions WHERE user_id = ? ORDER BY timesheet_id, replaced_at"},
-	{"time-entries", "SELECT id, project_id, date, duration_hours, description, created_at, updated_at " +
+	{"time-entries", "SELECT id, project_id, date, duration_hours, description, created_at, updated_at, " +
+		"recorded_by, updated_by " +
 		"FROM timesheets WHERE user_id = ? ORDER BY date, id"},
 	{"projects", "SELECT id, name, description, start_date, end_date, status, budget_hours " +
 		"FROM projects WHERE owner_id = ? ORDER BY id"},
@@ -50,6 +52,8 @@ var accountExport = []struct {
 	{"openid-links", "SELECT issuer, subject, created_at FROM openid_identities WHERE user_id = ? ORDER BY id"},
 	{"working-times", "SELECT day, start_minute, end_minute, break_minutes " +
 		"FROM work_days WHERE user_id = ? ORDER BY day"},
+	{"managers", "SELECT manager_id FROM managed_accounts WHERE user_id = ? ORDER BY manager_id"},
+	{"managed-accounts", "SELECT user_id FROM managed_accounts WHERE manager_id = ? ORDER BY user_id"},
 }
 
 // ExportUser reads everything held about an account, a part per table, each row

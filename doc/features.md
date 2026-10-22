@@ -127,9 +127,10 @@ well when the stopwatch crosses those hours while the page is open; one found
 already past them on loading gets the banner alone.
 
 It is your own balance. Somebody else's is their recorded time, totalled, so it
-takes the same right as reading their entries — and the team-wide overview that used
-to sit beside it is gone, because comparing colleagues is the one thing this
-arrangement says nobody does.
+takes the same right as reading their entries — which only a manager holds, for the
+accounts assigned to them, and then with every day away told as away, never why. The
+team-wide overview that used to sit beside it is gone, because comparing colleagues
+is the one thing this arrangement says nobody does.
 
 ## Timezones
 
@@ -161,8 +162,9 @@ A stopwatch running on the day offers its start as the day's, and the month leav
 as a PDF.
 
 It is each person's own record, kept for themselves. There is no view of anybody
-else's working time, for the reason there is none of anybody else's hours, so this
-documents one's own time rather than serving as an employer's time-keeping system.
+else's working time — not even a manager's, who looks after somebody's hours and
+never their start, end and breaks — so this documents one's own time rather than
+serving as an employer's time-keeping system.
 A night that runs past midnight is recorded as the two days it falls on.
 
 Each day is read against the three limits of the Working Hours Act
@@ -407,6 +409,7 @@ The server enforces these; the interface merely also hides what is not allowed:
 - A project is invisible to everyone but its owner, and asking for one that is not
   yours answers `404` rather than `403`.
 - A correction keeps what the entry said before it, every time something in it
-  changes, and only the entry's owner can read that history - anybody else is told
-  the entry is not there. A save that changes nothing keeps nothing, and deleting an
+  changes, and only the entry's owner and a manager assigned to them can read that
+  history - anybody else is told the entry is not there. A version a manager's
+  correction replaced names the manager. A save that changes nothing keeps nothing, and deleting an
   entry deletes its history with it.

@@ -65,6 +65,10 @@ func (r *UserRepository) PurgeUser(ctx context.Context, userID uint) error {
 			{"calendar feeds", "DELETE FROM calendar_feeds WHERE user_id = ?"},
 			{"openid identities", "DELETE FROM openid_identities WHERE user_id = ?"},
 			{"working days", "DELETE FROM work_days WHERE user_id = ?"},
+			// Both ends of an assignment: the accounts a manager looked after, and the
+			// managers who looked after this one.
+			{"assignments as a manager", "DELETE FROM managed_accounts WHERE manager_id = ?"},
+			{"assignments to managers", "DELETE FROM managed_accounts WHERE user_id = ?"},
 		}
 
 		for _, step := range steps {

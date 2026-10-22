@@ -33,7 +33,9 @@
   and as an image for amd64 and arm64. Nothing to unpack beside it.
 - 🔒 **Your hours stay yours.** Every project belongs to one person, and nobody
   else — the administrator included — can read, total or correct anybody's time.
-  No teams, no manager view, no approval queue.
+  An installation may switch on managers for the people an administrator assigns
+  them, and then those people are told who, and see their name on every entry a
+  manager touched. No team totals, no approval queue.
 - 🗄️ **The database you already run.** SQLite in a single file, or PostgreSQL or
   MySQL. Started without one, the binary serves an installer on its own port and
   waits.

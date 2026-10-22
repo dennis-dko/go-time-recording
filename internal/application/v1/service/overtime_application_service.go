@@ -58,6 +58,57 @@ type Day struct {
 	Counts bool
 }
 
+// SeenBy is the balance as viewer may see it. See DaysSeenBy.
+func (b *OvertimeBalance) SeenBy(viewer *Principal) *OvertimeBalance {
+	if !reasonsHiddenFrom(viewer, b.UserID) {
+		return b
+	}
+
+	seen := *b
+	seen.Days = slices.Clone(b.Days)
+
+	for i := range seen.Days {
+		seen.Days[i].Absence = undisclosed(seen.Days[i].Absence)
+	}
+
+	return &seen
+}
+
+// DaysSeenBy is somebody's days as viewer may see them: whole for their owner, and
+// for anybody else - a manager the owner was assigned to - with every absence told
+// only as model.AbsenceUndisclosed. A viewer whose id is zero is an installation
+// without authentication, which sees everything, as it does everywhere.
+//
+// What a day asked stays, because the balance is made of it: hiding the target
+// would leave a manager a figure they cannot follow, and the target of a day away
+// says no more than that it was a day away.
+func DaysSeenBy(days []Day, owner *model.User, viewer *Principal) []Day {
+	if !reasonsHiddenFrom(viewer, owner.ID) {
+		return days
+	}
+
+	seen := slices.Clone(days)
+	for i := range seen {
+		seen[i].Absence = undisclosed(seen[i].Absence)
+	}
+
+	return seen
+}
+
+// reasonsHiddenFrom says whether why somebody was away is kept from viewer.
+func reasonsHiddenFrom(viewer *Principal, ownerID uint) bool {
+	return viewer != nil && viewer.User != nil && viewer.User.ID != 0 && viewer.User.ID != ownerID
+}
+
+// undisclosed is an absence told without its reason, and no absence stays none.
+func undisclosed(kind string) string {
+	if kind == "" {
+		return ""
+	}
+
+	return model.AbsenceUndisclosed
+}
+
 // MaxDays is the longest range Days answers: fifty-three weeks, which is what a
 // year drawn as whole weeks from Monday to Sunday can span.
 const MaxDays = 371

@@ -39,15 +39,34 @@ const (
 	// granting nothing, and which one would have depended on where you looked.
 
 	// Everything about time is the person's own, so there is no "all" to contrast
-	// "own" with any more. The suffix stays on the names because the database and
-	// every installation's roles already spell them this way, and renaming a right
-	// to say the same thing is a migration that buys nothing.
+	// "own" with. The suffix stays on the names because the database and every
+	// installation's roles already spell them this way, and renaming a right to say
+	// the same thing is a migration that buys nothing.
 	PermTimesheetReadOwn  = "timesheets:read:own"
 	PermTimesheetWriteOwn = "timesheets:write:own"
 	PermTimesheetTransfer = "timesheets:transfer"
 	PermReportReadOwn     = "reports:read:own"
 	PermSettingsWriteOwn  = "settings:write:own"
+
+	// The three rights of a manager, and the one way across accounts there is.
+	//
+	// Each reaches only the accounts an administrator assigned to the holder, and
+	// only while the installation's manager switch is on - which it is not until
+	// somebody turns it on under Settings. Reading somebody's time is the entries,
+	// the balance and the evaluation; it is never their working times or why they
+	// were away, which are their own record and, for a day off sick, a health
+	// datum. Writing is booking and correcting in their name, which leaves the
+	// manager's name on the entry and in its history. Projects are creating,
+	// changing and archiving the projects of the people assigned.
+	PermTimesheetReadTeam  = "timesheets:read:team"
+	PermTimesheetWriteTeam = "timesheets:write:team"
+	PermProjectWriteTeam   = "projects:write:team"
 )
+
+// TeamPermissions are the rights that reach other people's accounts.
+func TeamPermissions() []string {
+	return []string{PermTimesheetReadTeam, PermTimesheetWriteTeam, PermProjectWriteTeam}
+}
 
 // There is no settings:write:other. A daily target and a daily ceiling are time
 // figures, and everything to do with time is the person's own.
@@ -79,12 +98,18 @@ const (
 // answered every question about every colleague. A capability with no screen is a
 // capability nobody audits.
 //
-// What replaces them is the arrangement itself: whose entry it is decides who may
-// read or change it, and that is not a permission because it is not a choice. The
-// question "may this person see somebody else's time" now has one answer, no, and
-// no box that appears to change it. Somebody who should administer the installation
-// as well as record their own hours is given the combined role, which grants the
-// accounts and the configuration - never a colleague's time.
+// What replaced them for two months was the arrangement itself: whose entry it is
+// decided who may read or change it. On 2026-10-21 the maintainer decided that an
+// installation may have managers after all, and the team rights above are the
+// answer to everything that went wrong with these two: they reach the accounts an
+// administrator assigned and no others, they grant nothing until the installation
+// switches managers on, they have screens - one choice of whose time is shown,
+// which every screen that can show somebody else's honours - and whatever a manager
+// changes carries their name where the person it belongs to can read it. Without
+// the switch the question "may this person see somebody else's time" still has one
+// answer, no. Somebody who should administer the installation as well as record
+// their own hours is given the combined role, which grants the accounts and the
+// configuration - never a colleague's time.
 
 // AllPermissions lists every permission the application enforces. The role
 // administration UI offers exactly these, so a typo cannot create a permission
@@ -99,6 +124,7 @@ func AllPermissions() []string {
 		PermTimesheetTransfer,
 		PermReportReadOwn,
 		PermSettingsWriteOwn,
+		PermTimesheetReadTeam, PermTimesheetWriteTeam, PermProjectWriteTeam,
 	}
 }
 
@@ -147,6 +173,13 @@ func UserPermissions() []string {
 	}
 }
 
+// ManagerPermissions is what a manager holds: their own work, as anybody's, and the
+// three team rights - which reach the accounts assigned to them while the
+// installation's manager switch is on, and nothing otherwise.
+func ManagerPermissions() []string {
+	return append(UserPermissions(), TeamPermissions()...)
+}
+
 // IsPermission reports whether name is a permission this application enforces.
 func IsPermission(name string) bool {
 	return slices.Contains(AllPermissions(), name)
@@ -174,6 +207,13 @@ const (
 	// slightly wrong - which nobody notices until somebody is refused something, or
 	// allowed something.
 	RoleUserAdmin = "user-admin"
+
+	// RoleManager is somebody who keeps their own time and looks after the time and
+	// projects of the accounts an administrator assigned to them. Shipped, so its
+	// rights are not assembled by hand, and undeletable like the other shipped roles -
+	// though it grants nothing beyond an ordinary account's until the installation
+	// switches managers on.
+	RoleManager = "manager"
 )
 
 // DefaultRoles is the role set seeded on first start. Admin is marked as a
@@ -209,6 +249,12 @@ func DefaultRoles() []Role {
 			// not be removable is the built-in administrator's own role, and that one
 			// is marked above.
 			Permissions: UserAdminPermissions(),
+		},
+		{
+			Name: RoleManager,
+			Description: "Keeps their own time, and the time and projects of the accounts " +
+				"assigned to them",
+			Permissions: ManagerPermissions(),
 		},
 	}
 }

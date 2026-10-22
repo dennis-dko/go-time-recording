@@ -70,16 +70,28 @@ type StatisticsResponse struct {
 	UntaggedHours float64            `json:"untaggedHours"`
 }
 
-// Own handles GET /api/v1/me/statistics.
+// Own handles GET /api/v1/me/statistics: the caller's own, or with userId those of
+// an account the caller looks after as a manager.
 func (h *StatisticsHandler) Own(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermTimesheetReadOwn)
 	if err != nil {
 		return nil, err
 	}
 
-	// In the reader's own zone, so "this month" is their month: the range would
+	requested, err := queryUint(c, "userId")
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	account, err := h.authz.accountFor(c, principal, requested, somebodyElsesEntries(),
+		model.PermTimesheetReadTeam)
+	if err != nil {
+		return nil, err
+	}
+
+	// In the account's own zone, so "this month" is their month: the range would
 	// otherwise be a day out for anybody far enough east or west of the server.
-	zone := principal.User.TimezoneOf(h.timezone.resolve(c))
+	zone := account.TimezoneOf(h.timezone.resolve(c))
 
 	from, to, err := overtimeRange(c, zone)
 	if err != nil {
@@ -93,7 +105,7 @@ func (h *StatisticsHandler) Own(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	stats, err := h.statistics.Own(c, principal.User.ID, from, to, scope)
+	stats, err := h.statistics.Own(c, account.ID, from, to, scope)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}

@@ -18,6 +18,7 @@ type MeHandler struct {
 	overtime *service.OvertimeService
 	authz    *Authorizer
 	timezone InstanceTimezoneFunc
+	team     *service.TeamService
 }
 
 // NewMeHandler creates the handler.
@@ -33,6 +34,13 @@ func NewMeHandler(
 	}
 }
 
+// WithTeam lets /me say whether the installation has managers.
+func (h *MeHandler) WithTeam(team *service.TeamService) *MeHandler {
+	h.team = team
+
+	return h
+}
+
 // Me handles GET /api/v1/me. The UI uses it to decide what to render, so it
 // deliberately stays reachable while a password change is still pending.
 func (h *MeHandler) Me(c *gofr.Context) (any, error) {
@@ -44,6 +52,13 @@ func (h *MeHandler) Me(c *gofr.Context) (any, error) {
 	permissions := principal.Permissions
 	if permissions == nil {
 		permissions = []string{}
+	}
+
+	managers := false
+	if h.team != nil {
+		if managers, err = h.team.Enabled(c); err != nil {
+			return nil, toHTTPError(err)
+		}
 	}
 
 	return MeResponse{
@@ -60,6 +75,8 @@ func (h *MeHandler) Me(c *gofr.Context) (any, error) {
 			UnbookedDay:     !principal.User.SkipUnbookedReminder,
 			TimerAlertHours: principal.User.EffectiveTimerAlertHours(),
 		},
+
+		ManagersEnabled: managers,
 	}, nil
 }
 
@@ -104,8 +121,10 @@ func (h *MeHandler) ChangePassword(c *gofr.Context) (any, error) {
 
 // Overtime handles GET /api/v1/users/{id}/overtime.
 //
-// Reading someone else's balance needs the wider reporting permission; your
-// own only needs the "own" one.
+// Your own balance takes reports:read:own. Somebody else's is somebody else's
+// recorded time, totalled, and nobody reads that - except a manager, for an account
+// an administrator assigned to them, and then without the reasons the account was
+// away; see service.DaysSeenBy.
 func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 	id, err := pathID(c)
 	if err != nil {
@@ -117,34 +136,30 @@ func (h *MeHandler) Overtime(c *gofr.Context) (any, error) {
 		return nil, err
 	}
 
-	if h.authz.Enabled() {
-		// Somebody else's balance is somebody else's recorded time, totalled, and
-		// nobody reads that. There is no permission to check here because there is
-		// no right that grants it - the id in the path is either yours or the
-		// answer is no.
-		if principal.User.ID != id {
-			return nil, forbiddenError{msg: "you may only read your own overtime balance"}.
-				WithCode("onlyOwnOvertime")
-		}
-
-		// Reading your own takes the narrow right, which until it was checked here
-		// appeared in the role editor and granted nothing.
-		if !principal.Can(model.PermReportReadOwn) {
-			return nil, missingPermission(model.PermReportReadOwn)
-		}
+	account, err := h.authz.accountFor(c, principal, id,
+		forbiddenError{msg: "you may only read your own overtime balance"}.WithCode("onlyOwnOvertime"),
+		model.PermTimesheetReadTeam)
+	if err != nil {
+		return nil, err
 	}
 
-	from, to, err := overtimeRange(c, h.locationFor(c, principal.User))
+	// Reading a balance takes the narrow right, which until it was checked here
+	// appeared in the role editor and granted nothing.
+	if h.authz.Enabled() && !principal.Can(model.PermReportReadOwn) {
+		return nil, missingPermission(model.PermReportReadOwn)
+	}
+
+	from, to, err := overtimeRange(c, h.locationFor(c, account))
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
-	balance, err := h.overtime.Balance(c, id, from, to)
+	balance, err := h.overtime.Balance(c, account.ID, from, to)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
 
-	return newOvertimeResponse(balance), nil
+	return newOvertimeResponse(balance.SeenBy(principal)), nil
 }
 
 // locationFor is the zone this person's dates are read in, so that a report

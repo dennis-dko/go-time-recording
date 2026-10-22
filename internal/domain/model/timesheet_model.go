@@ -34,6 +34,14 @@ type Timesheet struct {
 	// remembering to.
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	// RecordedBy and UpdatedBy are the manager who booked the entry and the one who
+	// last changed it, where that was not its owner, and nil where it was: what a
+	// manager does in somebody's name stays readable by the person it belongs to.
+	// Ids without a foreign key, as in the administration log - an erased manager
+	// leaves a number that names nobody, not a gap in somebody else's record.
+	RecordedBy *uint
+	UpdatedBy  *uint
 }
 
 // HasProject reports whether the entry is assigned to a project.

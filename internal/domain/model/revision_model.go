@@ -21,6 +21,10 @@ type TimesheetRevision struct {
 
 	// ReplacedAt is when the correction that replaced this version was made.
 	ReplacedAt time.Time
+
+	// ReplacedBy is the manager who made that correction, nil where the entry's owner
+	// made it.
+	ReplacedBy *uint
 }
 
 // RevisionOf is what an entry says now, kept as the version a correction made at

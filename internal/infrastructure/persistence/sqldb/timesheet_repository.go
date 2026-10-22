@@ -14,7 +14,7 @@ import (
 )
 
 const timesheetColumns = "id, user_id, project_id, date, duration_hours, description, " +
-	"created_at, updated_at"
+	"created_at, updated_at, recorded_by, updated_by"
 
 // TimesheetRepository stores time entries in a SQL database.
 type TimesheetRepository struct {
@@ -59,9 +59,9 @@ func (r *TimesheetRepository) Save(ctx context.Context, timesheet *model.Timeshe
 
 	id, err := r.insert(ctx,
 		"INSERT INTO timesheets (user_id, project_id, date, duration_hours, description, "+
-			"created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			"created_at, updated_at, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 		timesheet.UserID, timesheet.ProjectID, timesheet.Date,
-		timesheet.DurationHours, timesheet.Description, now, now)
+		timesheet.DurationHours, timesheet.Description, now, now, timesheet.RecordedBy)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -94,9 +94,9 @@ func (r *TimesheetRepository) SaveMany(ctx context.Context, entries []*model.Tim
 			// waiting for a lock this transaction is holding.
 			if _, err := tx.db.ExecContext(ctx, tx.rebind(
 				"INSERT INTO timesheets (user_id, project_id, date, duration_hours, "+
-					"description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"),
+					"description, created_at, updated_at, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
 				entry.UserID, entry.ProjectID, entry.Date,
-				entry.DurationHours, entry.Description, now, now); err != nil {
+				entry.DurationHours, entry.Description, now, now, entry.RecordedBy); err != nil {
 				return apperror.Internal(err)
 			}
 		}
@@ -187,6 +187,8 @@ func (r *TimesheetRepository) Update(ctx context.Context, timesheet *model.Times
 
 	found := true
 
+	var changedBy *uint
+
 	// What the entry said, read in the same transaction as the correction and -
 	// where the engine can - locked by it, so that two corrections at once cannot
 	// both keep the same earlier version and lose the one between.
@@ -207,23 +209,30 @@ func (r *TimesheetRepository) Update(ctx context.Context, timesheet *model.Times
 			return err
 		}
 
-		if !before.Says(timesheet) {
+		// Who changed it is the change's: a save that changes nothing leaves the name
+		// of whoever last did as it was.
+		changedBy = timesheet.UpdatedBy
+
+		if before.Says(timesheet) {
+			changedBy = before.UpdatedBy
+		} else {
 			kept := model.RevisionOf(before, now)
+			kept.ReplacedBy = timesheet.UpdatedBy
 
 			if _, err := tx.exec(ctx,
 				"INSERT INTO timesheet_revisions (timesheet_id, user_id, date, duration_hours, project_id, "+
-					"description, replaced_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+					"description, replaced_at, replaced_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 				kept.TimesheetID, kept.UserID, kept.Date, kept.DurationHours, kept.ProjectID,
-				kept.Description, kept.ReplacedAt); err != nil {
+				kept.Description, kept.ReplacedAt, kept.ReplacedBy); err != nil {
 				return err
 			}
 		}
 
 		_, err = tx.exec(ctx,
 			"UPDATE timesheets SET user_id = ?, project_id = ?, date = ?, duration_hours = ?, "+
-				"description = ?, updated_at = ? WHERE id = ?",
+				"description = ?, updated_at = ?, updated_by = ? WHERE id = ?",
 			timesheet.UserID, timesheet.ProjectID, timesheet.Date, timesheet.DurationHours,
-			timesheet.Description, now, timesheet.ID)
+			timesheet.Description, now, changedBy, timesheet.ID)
 
 		return err
 	})
@@ -236,7 +245,7 @@ func (r *TimesheetRepository) Update(ctx context.Context, timesheet *model.Times
 	}
 
 	updated := *timesheet
-	updated.UpdatedAt = now
+	updated.UpdatedAt, updated.UpdatedBy = now, changedBy
 
 	return &updated, nil
 }
@@ -271,8 +280,8 @@ func (r *TimesheetRepository) Delete(ctx context.Context, id uint) error {
 // replaced first - by when, and by which was kept last for two in the same second.
 func (r *TimesheetRepository) Revisions(ctx context.Context, timesheetID uint) ([]model.TimesheetRevision, error) {
 	rows, err := r.db.QueryContext(ctx, r.rebind(
-		"SELECT id, timesheet_id, user_id, date, duration_hours, project_id, description, replaced_at "+
-			"FROM timesheet_revisions WHERE timesheet_id = ? ORDER BY replaced_at DESC, id DESC"), timesheetID)
+		"SELECT id, timesheet_id, user_id, date, duration_hours, project_id, description, replaced_at, "+
+			"replaced_by FROM timesheet_revisions WHERE timesheet_id = ? ORDER BY replaced_at DESC, id DESC"), timesheetID)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -288,7 +297,8 @@ func (r *TimesheetRepository) Revisions(ctx context.Context, timesheetID uint) (
 		)
 
 		if err := rows.Scan(&revision.ID, &revision.TimesheetID, &revision.UserID, &date,
-			&revision.DurationHours, &revision.ProjectID, &revision.Description, &replacedAt); err != nil {
+			&revision.DurationHours, &revision.ProjectID, &revision.Description, &replacedAt,
+			&revision.ReplacedBy); err != nil {
 			return nil, apperror.Internal(err)
 		}
 
@@ -338,7 +348,8 @@ func scanTimesheet(s scanner) (*model.Timesheet, error) {
 	)
 
 	err := s.Scan(&timesheet.ID, &timesheet.UserID, &timesheet.ProjectID, &date,
-		&timesheet.DurationHours, &timesheet.Description, &created, &updated)
+		&timesheet.DurationHours, &timesheet.Description, &created, &updated,
+		&timesheet.RecordedBy, &timesheet.UpdatedBy)
 	if err != nil {
 		return nil, err
 	}

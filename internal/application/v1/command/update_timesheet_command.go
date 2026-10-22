@@ -14,6 +14,10 @@ type UpdateTimesheetCommand struct {
 	Date          *time.Time
 	DurationHours *float64
 	Description   *string
+
+	// UpdatedBy is the manager making the change in the owner's name, zero for the
+	// owner.
+	UpdatedBy uint
 }
 
 // UpdateTimesheetCommandResult command to get update result of existing timesheet

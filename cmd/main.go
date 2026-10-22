@@ -836,7 +836,12 @@ func main() {
 				"Set AUTH_ENABLED=true to enforce sign-in and role permissions")
 	}
 
-	authorizer := rest.NewAuthorizer(cfg.AuthEnabled())
+	// Who may act for whom. One instance for the authorizer and the handlers, so
+	// the switch and the assignments are read the same way by both.
+	team := appservice.NewTeamService(sqldb.NewManagedAccountRepository(db, cfg.Dialect),
+		settingsRepo, userRepo, roleRepo, projectRepo)
+
+	authorizer := rest.NewAuthorizer(cfg.AuthEnabled()).WithTeam(team)
 
 	// Built here rather than inline, because both the middleware that reads it and
 	// the handler that clears it need the same instance - two would mean the
@@ -1005,7 +1010,8 @@ func main() {
 		Roles:      rest.NewRoleHandler(roles, authorizer),
 		Projects:   rest.NewProjectHandler(projects, projectDomain, authorizer).WithTimezone(instanceTimezone),
 		Timesheets: rest.NewTimesheetHandler(timesheets, timesheetDomain, authorizer, instanceTimezone),
-		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone),
+		Me:         rest.NewMeHandler(auth, sessions, overtime, authorizer, instanceTimezone).WithTeam(team),
+		Team:       rest.NewTeamHandler(team, authorizer),
 		Tokens:     rest.NewAPITokenHandler(apiTokens, authorizer),
 		LDAPSync:   rest.NewLDAPSyncHandler(ldapSync, authorizer),
 		Setup:      setupHandler,

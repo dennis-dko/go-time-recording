@@ -2512,6 +2512,9 @@ const PERMISSION_TITLES = {
   'timesheets:transfer': 'Move time between projects',
   'reports:read:own': 'Evaluate own hours',
   'settings:write:own': 'Change own settings',
+  'timesheets:read:team': 'See the time of assigned accounts',
+  'timesheets:write:team': 'Record time for assigned accounts',
+  'projects:write:team': 'Keep the projects of assigned accounts',
 };
 
 /**
@@ -2522,7 +2525,7 @@ const PERMISSION_TITLES = {
  * is trying to answer.
  */
 const PERMISSION_DETAILS = {
-  'users:read': 'The list of accounts, their addresses and which role each holds. Not their recorded time - nobody sees anybody else\u2019s.',
+  'users:read': 'The list of accounts, their addresses and which role each holds. Not their recorded time - that takes a team right, for an account assigned to whoever holds it.',
   'users:write': 'Add an account, change a name or an address, assign a role. Not the initial password of an account somebody else set up.',
   'users:delete': 'Remove an account. Its recorded time goes with it.',
   'roles:read': 'The roles on this screen and what each grants.',
@@ -2532,11 +2535,14 @@ const PERMISSION_DETAILS = {
   'projects:write': 'Make a project and change one.',
   'projects:delete': 'Remove a project. Time booked on it keeps its hours and loses the project.',
   'projects:archive': 'Close a project to new bookings without deleting what is on it.',
-  'timesheets:read:own': 'One\u2019s own entries, calendar and balance. There is no right that opens somebody else\u2019s.',
+  'timesheets:read:own': 'One\u2019s own entries, calendar and balance. Somebody else\u2019s only through a team right, for an account an administrator assigned.',
   'timesheets:write:own': 'Record, correct and delete one\u2019s own time, by hand or with the stopwatch.',
   'timesheets:transfer': 'Move one\u2019s own entries from one project to another, in bulk.',
   'reports:read:own': 'The report and the charts, over one\u2019s own hours.',
   'settings:write:own': 'One\u2019s own account: password, language, appearance, timezone, working times, two-factor.',
+  'timesheets:read:team': 'As a manager: the entries, calendar, balance and evaluations of the accounts an administrator assigned - that a day was away, never why. Only while managers are switched on under Settings, and only beside the right to see one\u2019s own.',
+  'timesheets:write:team': 'As a manager: book, correct, move and delete time for the accounts an administrator assigned, each change named as one\u2019s own beside the entry. Only while managers are switched on, and only beside the right to record one\u2019s own.',
+  'projects:write:team': 'As a manager: make and change the projects of the accounts an administrator assigned, and archive or delete them as far as the role allows that for one\u2019s own. Only while managers are switched on.',
 };
 
 /** The areas rights are grouped under, in the order they are shown. */
@@ -2592,6 +2598,7 @@ const SHIPPED_ROLE_TITLES = {
   admin: 'Administrator',
   user: 'User',
   'user-admin': 'User & administrator',
+  manager: 'Manager',
 };
 
 /**
@@ -2617,7 +2624,7 @@ function roleTitle(name) {
  * What a role is for, in the reader's language.
  *
  * The description lives in the database, in English, because an administrator writes
- * their own there. The three that ship with the application are translated instead,
+ * their own there. The ones that ship with the application are translated instead,
  * keyed on the name - a custom role falls through to whatever was typed, which is the
  * only sensible answer for words this application has never seen.
  */
@@ -2642,8 +2649,8 @@ function roleChoices() {
   // holding roles:read - so a picker built from it is empty for anybody who may
   // configure the installation without administering its roles, and empty again
   // whenever that fetch has not happened or did not finish. An empty picker is
-  // the one answer that is always wrong: these three are seeded, cannot be
-  // deleted, and are therefore always a truthful set of choices.
+  // the one answer that is always wrong: these are seeded, cannot be deleted,
+  // and are therefore always a truthful set of choices.
   const roles = cache.roles.length > 0
     ? cache.roles
     : Object.keys(SHIPPED_ROLE_TITLES).map((name) => ({ name }));
@@ -4061,6 +4068,9 @@ const TRANSLATIONS = {
     'err.onlyOwnEntriesRead': 'Du kannst nur deine eigenen Zeiteinträge sehen.',
     'err.onlyOwnEntriesWrite': 'Du kannst nur deine eigenen Zeiteinträge ändern.',
     'err.onlyOwnOvertime': 'Du kannst nur deinen eigenen Überstundenstand sehen.',
+    'err.onlyOwnProjects': 'Du kannst nur deine eigenen Projekte pflegen.',
+    'err.notAManager': '{0} hat keine Rolle mit Teamrechten und kann deshalb niemanden betreuen.',
+    'err.selfManaged': 'Ein Konto kann nicht sein eigener Manager sein.',
     'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
       + 'abgleichen.',
     'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
@@ -4424,7 +4434,10 @@ const TRANSLATIONS = {
     'perm.timesheets:transfer': 'Zeiten auf andere Projekte umbuchen',
     'perm.reports:read:own': 'Eigene Stunden auswerten',
     'perm.settings:write:own': 'Eigene Einstellungen ändern',
-    'perm.desc.users:read': 'Die Liste der Konten, ihre Adressen und welche Rolle jedes hat. Nicht ihre erfassten Zeiten – die sieht niemand außer der Person selbst.',
+    'perm.timesheets:read:team': 'Zeiten zugewiesener Konten sehen',
+    'perm.timesheets:write:team': 'Zeiten für zugewiesene Konten erfassen',
+    'perm.projects:write:team': 'Projekte zugewiesener Konten pflegen',
+    'perm.desc.users:read': 'Die Liste der Konten, ihre Adressen und welche Rolle jedes hat. Nicht ihre erfassten Zeiten – dafür braucht es ein Teamrecht, für ein Konto, das dem Inhaber zugewiesen ist.',
     'perm.desc.users:write': 'Ein Konto anlegen, Name oder Adresse ändern, eine Rolle zuweisen.',
     'perm.desc.users:delete': 'Ein Konto entfernen. Die darauf erfassten Zeiten gehen mit.',
     'perm.desc.roles:read': 'Die Rollen auf diesem Bildschirm und was jede gewährt.',
@@ -4434,20 +4447,25 @@ const TRANSLATIONS = {
     'perm.desc.projects:write': 'Ein Projekt anlegen und ändern.',
     'perm.desc.projects:delete': 'Ein Projekt entfernen. Darauf gebuchte Zeiten behalten ihre Stunden und verlieren das Projekt.',
     'perm.desc.projects:archive': 'Ein Projekt für neue Buchungen schließen, ohne zu löschen, was darauf liegt.',
-    'perm.desc.timesheets:read:own': 'Die eigenen Einträge, den eigenen Kalender und den eigenen Saldo. Es gibt kein Recht, das fremde öffnet.',
+    'perm.desc.timesheets:read:own': 'Die eigenen Einträge, den eigenen Kalender und den eigenen Saldo. Fremde nur über ein Teamrecht, für ein Konto, das ein Administrator zugewiesen hat.',
     'perm.desc.timesheets:write:own': 'Eigene Zeiten erfassen, korrigieren und löschen – von Hand oder mit der Stoppuhr.',
     'perm.desc.timesheets:transfer': 'Eigene Einträge gesammelt von einem Projekt auf ein anderes umbuchen.',
     'perm.desc.reports:read:own': 'Bericht und Diagramme über die eigenen Stunden.',
     'perm.desc.settings:write:own': 'Das eigene Konto: Kennwort, Sprache, Erscheinungsbild, Zeitzone, Arbeitszeiten, Zwei-Faktor.',
+    'perm.desc.timesheets:read:team': 'Als Manager: Einträge, Kalender, Saldo und Auswertungen der Konten, die ein Administrator zugewiesen hat – dass ein Tag abwesend war, nie warum. Nur solange Manager unter Einstellungen eingeschaltet sind, und nur zusammen mit dem Recht, die eigenen zu sehen.',
+    'perm.desc.timesheets:write:team': 'Als Manager: Zeiten für die zugewiesenen Konten buchen, korrigieren, umbuchen und löschen; jede Änderung steht mit dem eigenen Namen beim Eintrag. Nur solange Manager eingeschaltet sind, und nur zusammen mit dem Recht, die eigenen zu erfassen.',
+    'perm.desc.projects:write:team': 'Als Manager: Projekte der zugewiesenen Konten anlegen und ändern, und sie archivieren oder löschen, soweit die Rolle das für die eigenen erlaubt. Nur solange Manager eingeschaltet sind.',
     'role.view': 'Rolle „{0}“',
     'role.startNew': 'Stattdessen eine neue Rolle anlegen',
     'role.shippedFixed': 'Diese Rolle wird mitgeliefert und wird angezeigt, nicht bearbeitet: weder Name noch Beschreibung noch Rechte. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
     'role.desc.admin': 'Verwaltet die Installation, ihre Konten und deren Rollen – und erfasst selbst keine Zeit.',
     'role.desc.user': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
     'role.desc.user-admin': 'Beides: arbeitet hier und verwaltet zusätzlich die Installation.',
+    'role.desc.manager': 'Erfasst die eigenen Zeiten und pflegt Zeiten und Projekte der Konten, die ein Administrator zugewiesen hat.',
     'role.name.admin': 'Administrator',
     'role.name.user': 'Benutzer',
     'role.name.user-admin': 'Benutzer & Administrator',
+    'role.name.manager': 'Manager',
     'role.none': 'ohne Rolle',
     'settings.changePassword': 'Passwort ändern',
     'settings.currentPassword': 'Aktuelles Passwort',
@@ -4595,12 +4613,14 @@ const TRANSLATIONS = {
     'change.userDeleted': 'Konto {0} gelöscht',
     'change.userRole': '{0} die Rolle {1} gegeben',
     'change.userPassword': 'Neues Passwort für {0} gesetzt',
+    'change.userManagers': '{0} Manager zugewiesen',
     'change.usersImported': 'Konten aus einer Tabelle importiert',
     'change.roleCreated': 'Rolle {0} angelegt',
     'change.roleUpdated': 'Rolle {0} geändert',
     'change.roleDeleted': 'Rolle {0} gelöscht',
     'change.rolesImported': 'Rollen aus einer Tabelle importiert',
     'change.maintenance': 'Wartungsmodus {1}geschaltet',
+    'change.managers': 'Manager {1}geschaltet',
     'change.on': 'ein',
     'change.off': 'aus',
     'change.branding': 'Erscheinungsbild geändert',
@@ -8908,6 +8928,7 @@ const CHANGE_SENTENCES = {
   'user.deleted': () => t('change.userDeleted', 'Deleted the account {0}'),
   'user.role': () => t('change.userRole', 'Gave {0} the role {1}'),
   'user.password': () => t('change.userPassword', 'Set a new password for {0}'),
+  'user.managers': () => t('change.userManagers', 'Assigned managers to {0}'),
   'users.imported': () => t('change.usersImported', 'Imported accounts from a spreadsheet'),
   'role.created': () => t('change.roleCreated', 'Created the role {0}'),
   'role.updated': () => t('change.roleUpdated', 'Changed the role {0}'),
@@ -8923,6 +8944,7 @@ const CHANGE_SENTENCES = {
   'settings.holidays': () => t('change.holidays', 'Changed the public holidays'),
   'settings.datasource': () => t('change.datasource', 'Changed the database connection'),
   'settings.telemetry': () => t('change.telemetry', 'Changed logging, metrics and tracing'),
+  'settings.managers': () => t('change.managers', 'Switched managers {1}'),
   'installation.restart': () => t('change.restart', 'Restarted the application'),
   'installation.update': () => t('change.update', 'Started an update'),
   'installation.setup': () => t('change.setup', 'Completed the setup'),
@@ -8934,6 +8956,8 @@ function describeChange(entry) {
   const detail = {
     'user.role': () => roleTitle(entry.detail),
     'settings.maintenance': () => (entry.detail === 'true'
+      ? t('change.on', 'on') : t('change.off', 'off')),
+    'settings.managers': () => (entry.detail === 'true'
       ? t('change.on', 'on') : t('change.off', 'off')),
   }[entry.action]?.() ?? entry.detail;
 

@@ -272,7 +272,7 @@
           "auth"
         ],
         "summary": "The signed-in user and their permissions",
-        "description": "Answers {\"user\", \"permissions\", \"authEnabled\", \"permissionsRevision\", \"reminders\": {\"unbookedDay\": true, \"timerAlertHours\": 10}}. reminders are your own reminder choices, set with PUT /me/reminders: whether the last working day is mentioned when nothing is booked on it, and after how many hours a running stopwatch is, with the default of ten worked out and zero for never.",
+        "description": "Answers {\"user\", \"permissions\", \"authEnabled\", \"permissionsRevision\", \"reminders\": {\"unbookedDay\": true, \"timerAlertHours\": 10}, \"managersEnabled\": false}. reminders are your own reminder choices, set with PUT /me/reminders: whether the last working day is mentioned when nothing is booked on it, and after how many hours a running stopwatch is, with the default of ten worked out and zero for never. managersEnabled says whether the installation has managers switched on (see /settings/managers).",
         "responses": {
           "200": {
             "description": "Identity and permissions"
@@ -587,14 +587,15 @@
           "timesheets"
         ],
         "summary": "List time entries",
-        "description": "Your own entries, one page at a time. `userId` may name you, which is a reasonable thing for a client to send; naming anybody else is refused rather than quietly answered with your own rows, because a list that does not match what was asked for is worse than a plain no. A request naming no `limit` gets the default page rather than every entry you have ever booked, and `totalCount` is how many match altogether - so a page shorter than `totalCount` means there is another one. For the same reason a `limit` above the maximum is refused rather than reduced.",
+        "description": "Your own entries, one page at a time. `userId` may name you, which is a reasonable thing for a client to send; naming anybody else is refused rather than quietly answered with your own rows, because a list that does not match what was asked for is worse than a plain no - unless it names an account you look after as a manager: one an administrator assigned to you, while the installation has managers switched on (see /settings/managers), with `timesheets:read:team` in your role beside `timesheets:read:own`. The listing is then that account's. An entry booked or last changed by somebody other than its owner names them, as recordedBy and updatedBy {\"id\", \"name\"}; both are left out where the owner did it. A request naming no `limit` gets the default page rather than every entry you have ever booked, and `totalCount` is how many match altogether - so a page shorter than `totalCount` means there is another one. For the same reason a `limit` above the maximum is refused rather than reduced.",
         "parameters": [
           {
             "name": "userId",
             "in": "query",
             "schema": {
               "type": "integer"
-            }
+            },
+            "description": "You, or an account you look after with timesheets:read:team."
           },
           {
             "name": "projectId",
@@ -658,7 +659,7 @@
           "timesheets"
         ],
         "summary": "Book time",
-        "description": "`projectId` is optional; omitting it records uncategorised hours. Omitting `userId` books for the caller.",
+        "description": "`projectId` is optional; omitting it records uncategorised hours. Omitting `userId` books for the caller. A manager may name an account they look after with `timesheets:write:team`, while the installation has managers switched on (see /settings/managers), and book it on one of that account's own projects; the entry then names them as recordedBy, which its owner sees beside it.",
         "requestBody": {
           "required": true,
           "content": {
@@ -699,14 +700,15 @@
           "200": {
             "description": "Entry"
           }
-        }
+        },
+        "description": "Your own entry, or with `timesheets:read:team` one of an account you look after as a manager; any other answers 404, as an id nobody holds does."
       },
       "put": {
         "tags": [
           "timesheets"
         ],
         "summary": "Update an entry",
-        "description": "Changes an entry of your own. Somebody else’s answers 404, exactly as an id nobody holds does, so the answer does not say which ids are real - on every method, not only here. Naming somebody else in `userId`, which would hand the entry over, is refused, and there is no right that changes either. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. A `projectId` of 0 takes the entry off its project, and an empty `description` empties it.",
+        "description": "Changes an entry of your own, or with `timesheets:write:team` one of an account you look after as a manager, which then names you as updatedBy. Anybody else’s answers 404, exactly as an id nobody holds does, so the answer does not say which ids are real - on every method, not only here. Naming in `userId` an account you may not book for, which would hand the entry over, is refused. A project given here goes through the same checks as booking onto it: it must exist, be one you may see, and still accept hours. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. A `projectId` of 0 takes the entry off its project, and an empty `description` empties it.",
         "responses": {
           "200": {
             "description": "Updated"
@@ -725,7 +727,8 @@
           "200": {
             "description": "Deleted"
           }
-        }
+        },
+        "description": "Your own entry, or with `timesheets:write:team` one of an account you look after as a manager; any other answers 404."
       }
     },
     "/timesheets/{id}/transfer": {
@@ -751,7 +754,8 @@
           "409": {
             "description": "The entry is already on that project, or the project is closed for booking"
           }
-        }
+        },
+        "description": "Moves an entry of your own - or with `timesheets:write:team` one of an account you look after as a manager, which then names you as updatedBy - onto another project of its owner's. Any other entry, and a project that is not its owner's, answers 404. Needs `timesheets:transfer`."
       }
     },
     "/projects": {
@@ -760,13 +764,21 @@
           "projects"
         ],
         "summary": "List projects",
-        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Each carries budgetHours - how many hours you mean to spend on it, null for none - and bookedHours, how many of your own are booked on it. Needs `projects:read`.",
+        "description": "Your own projects, which is all there are. There were two kinds - a shared project everybody could see and a private category - and a `private=true` parameter to narrow to the latter; every project belongs to one person now, so there is nothing to narrow. Each carries budgetHours - how many hours you mean to spend on it, null for none - and bookedHours, how many of your own are booked on it. Needs `projects:read`. `ownerId` names an account you look after as a manager, with any of the team rights, while the installation has managers switched on (see /settings/managers): the list is then that account's projects, which is where booking for it, reading its time and keeping its projects all start. Any other account is refused (onlyOwnProjects).",
         "parameters": [
           {
             "name": "status",
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "ownerId",
+            "in": "query",
+            "description": "An account you look after as a manager.",
+            "schema": {
+              "type": "integer"
             }
           }
         ],
@@ -781,7 +793,7 @@
           "projects"
         ],
         "summary": "Create a project",
-        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. `budgetHours` is optional too: how many hours you mean to spend on it, between 0 and 100000, which nobody but you sees or signs off. Needs `projects:write`.",
+        "description": "The project belongs to whoever created it, always. There was a `private: true` to ask for that, and `projects:write:own` beside `projects:write` to decide which kind you were allowed to make; there is one kind, so neither is left. `startDate` is optional - a project is one person’s way of organising their own hours, not a plan. `budgetHours` is optional too: how many hours you mean to spend on it, between 0 and 100000, which nobody but you sees or signs off. Needs `projects:write`. `ownerId` names an account you look after with `projects:write:team`, while the installation has managers switched on (see /settings/managers): the project is then that account's. Any other account is refused (onlyOwnProjects).",
         "requestBody": {
           "required": true,
           "content": {
@@ -825,14 +837,15 @@
           "404": {
             "description": "Unknown, or not yours - which answers the same way, so asking cannot tell you what colleagues have"
           }
-        }
+        },
+        "description": "Your own project, or one of an account you look after as a manager; any other answers 404, as an id nobody holds does."
       },
       "put": {
         "tags": [
           "projects"
         ],
         "summary": "Update a project",
-        "description": "Changes a project of your own. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, an empty `description` empties it, and a `budgetHours` of 0 takes the budget off.",
+        "description": "Changes a project of your own, or with `projects:write:team` one of an account you look after as a manager; any other answers 404. Every field is optional: one left out or sent as null stays as it is - null does not remove anything here. An empty `endDate` takes the end date off, an empty `description` empties it, and a `budgetHours` of 0 takes the budget off.",
         "responses": {
           "200": {
             "description": "Updated"
@@ -851,7 +864,8 @@
           "409": {
             "description": "The project still has time entries"
           }
-        }
+        },
+        "description": "Deletes a project of your own, or with `projects:write:team` one of an account you look after as a manager; any other answers 404. Needs `projects:delete`."
       }
     },
     "/projects/{id}/archive": {
@@ -877,7 +891,8 @@
           "409": {
             "description": "Not completed, or open entries remain"
           }
-        }
+        },
+        "description": "Archives a completed project of your own, or with `projects:write:team` one of an account you look after as a manager; any other answers 404. Needs `projects:archive`."
       }
     },
     "/projects/{id}/report": {
@@ -886,7 +901,7 @@
           "reports"
         ],
         "summary": "Hours booked on a project",
-        "description": "Your own hours on the project, and nobody else’s. It used to be a breakdown per colleague, gated on a separate `reports:read` that no role held, so the screen was unreachable and would have shown what each colleague had booked. Needs `reports:read:own`.",
+        "description": "Your own hours on the project, and nobody else’s. It used to be a breakdown per colleague, gated on a separate `reports:read` that no role held, so the screen was unreachable and would have shown what each colleague had booked. Needs `reports:read:own`. With `userId` a manager reads the report of an account they look after with `timesheets:read:team`, while the installation has managers switched on (see /settings/managers) - through that account's eyes: the project has to be the account's, and the hours are its own. Any other account is refused (onlyOwnEntriesRead).",
         "parameters": [
           {
             "name": "id",
@@ -911,6 +926,14 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "description": "An account you look after with timesheets:read:team.",
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -929,7 +952,7 @@
           "reports"
         ],
         "summary": "Hours you booked, with or without a project",
-        "description": "Your own hours over a period. `projectId` chooses what it covers: leave it out for every project, send `none` for the hours that were never given one, or send an id for that project. The project-scoped report at `/projects/{id}/report` cannot express either of the first two, because an id has no spare value for \"all\" and \"none\" at once. Needs `reports:read:own`.",
+        "description": "Your own hours over a period. `projectId` chooses what it covers: leave it out for every project, send `none` for the hours that were never given one, or send an id for that project. The project-scoped report at `/projects/{id}/report` cannot express either of the first two, because an id has no spare value for \"all\" and \"none\" at once. Needs `reports:read:own`. `userId` names an account you look after as a manager with `timesheets:read:team`, while the installation has managers switched on (see /settings/managers): the total is then that account's, over its own projects. Any other account is refused (onlyOwnEntriesRead).",
         "parameters": [
           {
             "name": "projectId",
@@ -954,6 +977,14 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "description": "An account you look after with timesheets:read:team.",
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -975,7 +1006,7 @@
           "reports"
         ],
         "summary": "Overtime balance for one user",
-        "description": "Your own balance, which needs `reports:read:own`. Anyone else’s is refused outright: a balance is their recorded time, totalled, and nobody reads that. Which days count depends on everyDayCountsFrom (see /users/{id}/working-times). Without it, and before it, only days with bookings count, each measured against the week in force on it (see /me/schedules) - without a plan, the daily target from Monday to Friday and nothing at the weekend. From it on, every working day up to today counts, booked or not, and asks what its week plans less what a public holiday (see /me/holidays) or an absence (see /me/absences) takes off it: nothing on a holiday, a day of leave, a sick day or a local holiday, half on half a day of leave, the whole day on a day off against overtime. A day after today counts once something is booked on it. Each day says why it asks less where something does, as absence or holiday, and the answer carries everyDayCountsFrom, null while only booked days count.",
+        "description": "Your own balance, which needs `reports:read:own`. Anyone else’s is refused (onlyOwnOvertime): a balance is their recorded time, totalled, and nobody reads that - except a manager holding `timesheets:read:team`, for an account an administrator assigned to them, while the installation has managers switched on (see /settings/managers). A manager is told that a day was away and never why: absence then reads \"away\", whatever was recorded. Which days count depends on everyDayCountsFrom (see /users/{id}/working-times). Without it, and before it, only days with bookings count, each measured against the week in force on it (see /me/schedules) - without a plan, the daily target from Monday to Friday and nothing at the weekend. From it on, every working day up to today counts, booked or not, and asks what its week plans less what a public holiday (see /me/holidays) or an absence (see /me/absences) takes off it: nothing on a holiday, a day of leave, a sick day or a local holiday, half on half a day of leave, the whole day on a day off against overtime. A day after today counts once something is booked on it. Each day says why it asks less where something does, as absence or holiday, and the answer carries everyDayCountsFrom, null while only booked days count.",
         "parameters": [
           {
             "name": "id",
@@ -1967,7 +1998,7 @@
           "timesheets"
         ],
         "summary": "What an entry said before each correction",
-        "description": "Answers {\"items\": [{\"date\", \"durationHours\", \"projectId\", \"description\", \"replacedAt\"}], \"totalCount\"}, the most recently replaced version first. Every correction that changes the day, the hours, the project or the description keeps the version it replaced - through the form, a transfer to another project, the week grid or a whole selection at once; a save that changes none of them keeps nothing. The entry's owner's only: anybody else is answered 404, as about the entry itself. Deleting the entry deletes its history with it. projectId names the project as it was, which may since have been deleted.",
+        "description": "Answers {\"items\": [{\"date\", \"durationHours\", \"projectId\", \"description\", \"replacedAt\", \"replacedBy\"}], \"totalCount\"}, the most recently replaced version first. Every correction that changes the day, the hours, the project or the description keeps the version it replaced - through the form, a transfer to another project, the week grid or a whole selection at once; a save that changes none of them keeps nothing. The entry's owner's, and a manager's with `timesheets:read:team` for an account they look after: anybody else is answered 404, as about the entry itself. replacedBy {\"id\", \"name\"} names whoever made the correction that replaced a version, where that was not the owner, and is left out where it was. Deleting the entry deletes its history with it. projectId names the project as it was, which may since have been deleted.",
         "parameters": [
           {
             "name": "id",
@@ -2171,12 +2202,22 @@
           "me"
         ],
         "summary": "Every day of a range: what was booked and what it asked",
-        "description": "Answers {\"from\", \"to\", \"days\": [{\"date\": \"2026-10-19\", \"booked\": 6.5, \"target\": 8, \"absence\": \"sick\", \"holiday\": \"whitMonday\"}], \"totalBooked\", \"totalTarget\"} - absence only on a day one is recorded (see /me/absences), holiday only on a public holiday of the state you keep (see /me/holidays). counts says whether the day counts towards the overtime balance, by the rule the balance keeps, so a week drawn from these comes to its figure. Every day of the range is there, the ones with nothing booked included - unlike the overtime balance, which counts only the days somebody worked. What a day asks is the week in force on it (see /me/schedules). Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD; the default is the week, Monday to Sunday, that today falls in, in your own timezone. At most 371 days (rangeTooLong), which is a year drawn as whole weeks.",
+        "description": "Answers {\"from\", \"to\", \"days\": [{\"date\": \"2026-10-19\", \"booked\": 6.5, \"target\": 8, \"absence\": \"sick\", \"holiday\": \"whitMonday\"}], \"totalBooked\", \"totalTarget\"} - absence only on a day one is recorded (see /me/absences), holiday only on a public holiday of the state you keep (see /me/holidays). counts says whether the day counts towards the overtime balance, by the rule the balance keeps, so a week drawn from these comes to its figure. Every day of the range is there, the ones with nothing booked included - unlike the overtime balance, which counts only the days somebody worked. What a day asks is the week in force on it (see /me/schedules). Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD; the default is the week, Monday to Sunday, that today falls in, in your own timezone. At most 371 days (rangeTooLong), which is a year drawn as whole weeks. With ?userId= a manager reads the days of an account they look after with `timesheets:read:team`, while the installation has managers switched on (see /settings/managers), in that account's timezone - and absence then reads \"away\", whatever was recorded: why somebody was away, a day off sick above all, is theirs to tell. Any other account is refused (onlyOwnEntriesRead).",
         "responses": {
           "200": {
             "description": "OK"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "description": "An account you look after with timesheets:read:team.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
       }
     },
     "/me/weeks/copy": {
@@ -2202,12 +2243,22 @@
           "me"
         ],
         "summary": "What your own recorded time adds up to",
-        "description": "Totals the caller's own entries: per day, per project and per activity, with the overall total. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD, inclusive at both ends; the default is the first of the current month to today, worked out in the caller's own timezone.\n\nDeliberately not the project report. That one is keyed on a project id, so it cannot express \"every project\" or \"no project\"; this one is keyed on the caller and needs only timesheets:read:own. Neither answers with anybody's hours but the caller's.\n\nTwo details a chart depends on. Every day in the range is present, including the ones with nothing on them: a chart drawn only from the days that have entries shows a full week where there were two working days. And the entries with no project are their own row with projectId null, because \"not categorised\" is an answer worth seeing the size of rather than a gap. The activities the descriptions name with a # - #meeting, #review - are totalled as tags, [{\"tag\": \"meeting\", \"hours\": 3.5}], most hours first, beside untaggedHours for what names none. An entry naming two counts towards both, so the tags can add up to more than the total. A tag starts where a word does and runs over letters, digits, - and _; one of digits alone, #123, is a ticket number and not an activity.",
+        "description": "Totals the caller's own entries: per day, per project and per activity, with the overall total. Range as ?from=YYYY-MM-DD&to=YYYY-MM-DD, inclusive at both ends; the default is the first of the current month to today, worked out in the caller's own timezone.\n\nDeliberately not the project report. That one is keyed on a project id, so it cannot express \"every project\" or \"no project\"; this one is keyed on the caller and needs only timesheets:read:own. Neither answers with anybody's hours but the caller's.\n\nTwo details a chart depends on. Every day in the range is present, including the ones with nothing on them: a chart drawn only from the days that have entries shows a full week where there were two working days. And the entries with no project are their own row with projectId null, because \"not categorised\" is an answer worth seeing the size of rather than a gap. The activities the descriptions name with a # - #meeting, #review - are totalled as tags, [{\"tag\": \"meeting\", \"hours\": 3.5}], most hours first, beside untaggedHours for what names none. An entry naming two counts towards both, so the tags can add up to more than the total. A tag starts where a word does and runs over letters, digits, - and _; one of digits alone, #123, is a ticket number and not an activity. \n\nWith ?userId= a manager reads the same for an account they look after with `timesheets:read:team`, while the installation has managers switched on (see /settings/managers): over that account's projects and in its timezone. Any other account is refused (onlyOwnEntriesRead).",
         "responses": {
           "200": {
             "description": "OK"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "description": "An account you look after with timesheets:read:team.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
       }
     },
     "/exports/document": {
@@ -2254,7 +2305,7 @@
           "timesheets"
         ],
         "summary": "Export time entries as .xlsx",
-        "description": "Takes the same filters as the list - projectId, from, to and q - with the same scoping: whoever may read only their own entries exports their own, whatever they ask for.",
+        "description": "Takes the same filters as the list - projectId, from, to and q - with the same scoping: whoever may read only their own entries exports their own, whatever they ask for. A manager may name an account they look after in userId, and exports what the list would show them.",
         "parameters": [
           {
             "name": "lang",
@@ -2878,6 +2929,157 @@
           },
           "409": {
             "description": "Asked too recently, or the update check is switched off"
+          }
+        }
+      }
+    },
+    "/settings/managers": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Whether the installation has managers",
+        "description": "Answers {\"enabled\": false}. Shipped off. Needs `settings:manage`.",
+        "responses": {
+          "200": {
+            "description": "The switch"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Switch managers on or off",
+        "description": "Takes {\"enabled\": true}. While it is off, a team right reaches nobody and every assignment waits, kept: switching it on again restores what an administrator had set up rather than starting over. Only then does anybody see a colleague's time at all - and only an account an administrator assigned to them, whose owner is told so under GET /me/managers. Needs `settings:manage`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The switch as it now stands"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
+        }
+      }
+    },
+    "/users/{id}/managers": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Who looks after an account",
+        "description": "Answers {\"managerIds\": [4, 9]}: the accounts an administrator assigned to look after this one, as stored - whether or not managers are switched on, because it is what switching them on would reach. Needs `users:read`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The assignment"
+          },
+          "403": {
+            "description": "Missing permission"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Assign the managers who look after an account",
+        "description": "Takes {\"managerIds\": [4, 9]} and replaces whoever looked after the account; an empty list takes them all away. Each has to hold a role with a team right (notAManager), and nobody looks after their own account (selfManaged). Only an administrator assigns: a manager choosing whose time they see would be deciding what they are allowed to know. Needs `users:write`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "managerIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The assignment as it now stands"
+          },
+          "400": {
+            "description": "Somebody who cannot look after anybody, or the account itself"
+          },
+          "403": {
+            "description": "Missing permission"
+          },
+          "404": {
+            "description": "No such account"
+          }
+        }
+      }
+    },
+    "/me/team": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "The accounts you look after",
+        "description": "Answers {\"items\": [{\"id\": 7, \"name\": \"Ben\", \"rights\": [\"timesheets:read:team\", \"timesheets:write:team\", \"projects:write:team\"]}]}, ordered by name: the accounts an administrator assigned to you, with the team rights your role gives you over them. An empty list while the installation has no managers, or while your role holds no team right.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/me/managers": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Who may see your time",
+        "description": "Answers {\"items\": [{\"id\": 4, \"name\": \"Anna\", \"rights\": [\"timesheets:read:team\"]}]}, ordered by name: who an administrator assigned to look after you, and what each of them may do with your time by the team rights their role holds. An empty list while the installation has no managers, because nobody then can. Every account may ask, and the answer is never withheld.",
+        "responses": {
+          "200": {
+            "description": "OK"
           }
         }
       }

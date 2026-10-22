@@ -13,6 +13,9 @@ type CreateTimesheetCommand struct {
 	Date          time.Time
 	DurationHours float64
 	Description   *string
+
+	// RecordedBy is the manager booking in UserID's name, zero for the owner.
+	RecordedBy uint
 }
 
 // CreateTimesheetCommandResult command to get create result of new timesheet

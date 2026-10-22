@@ -173,7 +173,7 @@ func (h *TimesheetHandler) Get(c *gofr.Context) (any, error) {
 	// Listing is the other way round on purpose: a filter naming somebody else
 	// is refused outright, because an empty list would be an answer to a
 	// question that was not asked.
-	if err := h.authz.requireOwnEntry(principal, id, result.Result.UserID); err != nil {
+	if err := h.authz.requireOwnEntry(c, principal, id, result.Result.UserID, model.PermTimesheetReadTeam); err != nil {
 		return nil, err
 	}
 
@@ -198,11 +198,12 @@ func (h *TimesheetHandler) Create(c *gofr.Context) (any, error) {
 		req.UserID = principal.User.ID
 	}
 
-	if err := h.authz.requireOwner(principal, req.UserID); err != nil {
+	if err := h.authz.requireOwner(c, principal, req.UserID); err != nil {
 		return nil, err
 	}
 
 	result, err := h.timesheets.CreateTimesheet(c, command.CreateTimesheetCommand{
+		RecordedBy:    h.authz.viewerID(principal),
 		UserID:        req.UserID,
 		ProjectID:     req.ProjectID,
 		Date:          req.Date.Time,
@@ -233,7 +234,8 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	if err := h.authz.requireOwnEntry(principal, id, existing.Result.UserID); err != nil {
+	if err := h.authz.requireOwnEntry(c, principal, id, existing.Result.UserID,
+		model.PermTimesheetWriteTeam); err != nil {
 		return nil, err
 	}
 
@@ -247,12 +249,13 @@ func (h *TimesheetHandler) Update(c *gofr.Context) (any, error) {
 	// to a colleague by naming them here, pushing hours onto an account that is not
 	// theirs to book for. Create checks the target the same way.
 	if req.UserID != nil {
-		if err := h.authz.requireOwner(principal, *req.UserID); err != nil {
+		if err := h.authz.requireOwner(c, principal, *req.UserID); err != nil {
 			return nil, err
 		}
 	}
 
 	cmd := command.UpdateTimesheetCommand{
+		UpdatedBy:     h.authz.viewerID(principal),
 		ID:            id,
 		UserID:        req.UserID,
 		ProjectID:     req.ProjectID,
@@ -290,7 +293,8 @@ func (h *TimesheetHandler) Delete(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	if err := h.authz.requireOwnEntry(principal, id, existing.Result.UserID); err != nil {
+	if err := h.authz.requireOwnEntry(c, principal, id, existing.Result.UserID,
+		model.PermTimesheetWriteTeam); err != nil {
 		return nil, err
 	}
 
@@ -336,7 +340,8 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	if err := h.authz.requireOwnEntry(principal, id, existing.Result.UserID); err != nil {
+	if err := h.authz.requireOwnEntry(c, principal, id, existing.Result.UserID,
+		model.PermTimesheetWriteTeam); err != nil {
 		return nil, err
 	}
 
@@ -368,8 +373,16 @@ func (h *TimesheetHandler) Transfer(c *gofr.Context) (any, error) {
 // screen's picker was required and the endpoint parsed an id out of the path - so
 // "everything I did" and "everything I did that is on nothing" were both
 // unaskable, which is precisely what people wanted to ask.
+//
+// userId names an account the caller looks after as a manager, whose hours are
+// then totalled instead - over that account's projects, never the manager's.
 func (h *TimesheetHandler) OwnReport(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermReportReadOwn)
+	if err != nil {
+		return nil, err
+	}
+
+	account, err := h.reportAccount(c, principal)
 	if err != nil {
 		return nil, err
 	}
@@ -379,12 +392,12 @@ func (h *TimesheetHandler) OwnReport(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	from, to, err := h.reportRange(c, principal)
+	from, to, err := h.reportRange(c, account)
 	if err != nil {
 		return nil, err
 	}
 
-	total, err := h.domain.GenerateOwnTimeReport(c, scope, *from, *to, principal.User.ID)
+	total, err := h.domain.GenerateOwnTimeReport(c, scope, *from, *to, account.ID)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -402,7 +415,7 @@ func (h *TimesheetHandler) OwnReport(c *gofr.Context) (any, error) {
 	// this period" and "0.00 h" say the same thing, and only one of them reads
 	// like an answer.
 	if total > 0 {
-		resp.Entries = append(resp.Entries, ReportEntry{UserID: principal.User.ID, Hours: total})
+		resp.Entries = append(resp.Entries, ReportEntry{UserID: account.ID, Hours: total})
 	}
 
 	return resp, nil
@@ -435,11 +448,22 @@ func reportScope(c *gofr.Context) (domainservice.ProjectScope, error) {
 // a word rather than a number because there is no id that means "not one of them".
 const unassignedProjects = "none"
 
+// reportAccount is whose hours an evaluation totals: the caller's own, or those of
+// the account userId names where the caller looks after it as a manager.
+func (h *TimesheetHandler) reportAccount(c *gofr.Context, principal *service.Principal) (*model.User, error) {
+	requested, err := queryUint(c, "userId")
+	if err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return h.authz.accountFor(c, principal, requested, somebodyElsesEntries(), model.PermTimesheetReadTeam)
+}
+
 // reportRange reads the from/to pair an evaluation covers, defaulting to the last
-// 30 days in the reader's own zone.
+// 30 days in the zone of the account it is about.
 func (h *TimesheetHandler) reportRange(
 	c *gofr.Context,
-	principal *service.Principal,
+	account *model.User,
 ) (*time.Time, *time.Time, error) {
 	from, err := queryDate(c, "from")
 	if err != nil {
@@ -451,9 +475,9 @@ func (h *TimesheetHandler) reportRange(
 		return nil, nil, toHTTPError(err)
 	}
 
-	// In the reader's zone: "the last 30 days" ending on the server's idea of
+	// In the account's zone: "the last 30 days" ending on the server's idea of
 	// today would be off by one for anyone far enough east or west.
-	now := time.Now().In(principal.User.TimezoneOf(h.timezone.resolve(c)))
+	now := time.Now().In(account.TimezoneOf(h.timezone.resolve(c)))
 	if to == nil {
 		to = &now
 	}
@@ -477,7 +501,9 @@ func (h *TimesheetHandler) reportRange(
 // The caller's own hours. It used to be everybody's for anyone who could open it at
 // all, gated on a right that no role held - so the screen was unreachable and, had
 // anyone granted it, would have shown what each colleague had booked on the project.
-// Nobody sees what anybody else has.
+// Nobody sees what anybody else has - except a manager, who with userId reads the
+// report of an account assigned to them, through that account's eyes: the project
+// has to be the account's, and the hours on it are the account's alone.
 func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 	principal, err := h.authz.Require(c, model.PermReportReadOwn)
 	if err != nil {
@@ -489,34 +515,22 @@ func (h *TimesheetHandler) Report(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	from, err := queryDate(c, "from")
+	account, err := h.reportAccount(c, principal)
 	if err != nil {
-		return nil, toHTTPError(err)
+		return nil, err
 	}
 
-	to, err := queryDate(c, "to")
+	from, to, err := h.reportRange(c, account)
 	if err != nil {
-		return nil, toHTTPError(err)
+		return nil, err
 	}
 
-	// In the reader's zone: "the last 30 days" ending on the server's idea of
-	// today would be off by one for anyone far enough east or west.
-	now := time.Now().In(principal.User.TimezoneOf(h.timezone.resolve(c)))
-	if to == nil {
-		to = &now
+	viewerID, onlyUserID := h.authz.viewerID(principal), h.authz.reportScope(principal)
+	if h.authz.Enabled() && account.ID != principal.User.ID {
+		viewerID, onlyUserID = account.ID, account.ID
 	}
 
-	if from == nil {
-		start := to.AddDate(0, 0, -30)
-		from = &start
-	}
-
-	if to.Before(*from) {
-		return nil, toHTTPError(apperror.Invalidf("'to' must not be before 'from'").WithCode("rangeInverted"))
-	}
-
-	perUser, err := h.domain.GenerateProjectTimeReport(c, projectID, *from, *to,
-		h.authz.viewerID(principal), h.authz.reportScope(principal))
+	perUser, err := h.domain.GenerateProjectTimeReport(c, projectID, *from, *to, viewerID, onlyUserID)
 	if err != nil {
 		return nil, toHTTPError(err)
 	}
@@ -581,7 +595,7 @@ func timesheetScopeOf(
 		return empty, toHTTPError(err)
 	}
 
-	userID, err := authz.scopeUserID(principal, requested)
+	userID, err := authz.scopeUserID(c, principal, requested)
 	if err != nil {
 		return empty, err
 	}

@@ -37,6 +37,7 @@ type Handlers struct {
 	Documents  *rest.DocumentHandler
 	Exports    *rest.ExportHandler
 	AdminLog   *rest.AdminLogHandler
+	Team       *rest.TeamHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -115,6 +116,10 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/settings/telemetry", h.Settings.Telemetry)
 	app.PUT(base+"/settings/telemetry", h.Settings.SaveTelemetry)
 
+	// Whether anybody may look after somebody else's time at all - shipped off.
+	app.GET(base+"/settings/managers", h.Team.Switch)
+	app.PUT(base+"/settings/managers", h.Team.SaveSwitch)
+
 	// What is waiting for a restart, and the restart itself. Under /settings/
 	// like the rest, which also keeps it reachable during maintenance mode - the
 	// settings that need a restart are exactly the ones somebody is likely to be
@@ -184,6 +189,11 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// Everything held about one's own account, for handing over.
 	app.GET(base+"/me/export", h.Exports.Account)
 
+	// The accounts the caller looks after as a manager, and who looks after the
+	// caller - the second one always answered, so nobody has to wonder.
+	app.GET(base+"/me/team", h.Team.Team)
+	app.GET(base+"/me/managers", h.Team.MyManagers)
+
 	// What about one's own time deserves a banner, worked out where the rules are.
 	app.GET(base+"/me/notices", h.Me.Notices)
 	app.PUT(base+"/me/balance-limits", h.Me.SetBalanceLimits)
@@ -231,6 +241,10 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.PUT(base+"/users/{id}/password", h.Users.SetPassword)
 	app.PUT(base+"/users/{id}/working-times", h.Users.UpdateWorkingTimes)
 	app.GET(base+"/users/{id}/overtime", h.Me.Overtime)
+
+	// Who looks after an account: an administrator's to decide, never a manager's.
+	app.GET(base+"/users/{id}/managers", h.Team.Managers)
+	app.PUT(base+"/users/{id}/managers", h.Team.SetManagers)
 
 	// Ahead of the {id} routes, for the same reason the others are: "export" is
 	// not an id.

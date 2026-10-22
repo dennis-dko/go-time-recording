@@ -78,6 +78,11 @@ const (
 	// SettingSetupCompleted records that the first-run wizard was dismissed.
 	// Only that: which steps are done is worked out from what is configured.
 	SettingSetupCompleted = "instance.setupCompleted"
+
+	// SettingManagers is whether this installation has managers: "true" turns the
+	// team rights on, and anything else - nothing stored, which is how it ships -
+	// leaves them granting nothing.
+	SettingManagers = "instance.managers"
 )
 
 // Branding is the instance's own labelling, editable by the administrator.

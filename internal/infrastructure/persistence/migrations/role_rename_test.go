@@ -205,11 +205,12 @@ func TestTheEverydayRoleIsRenamedAndKeepsItsPeople(t *testing.T) {
 		}
 	}
 
-	// Three roles and no more. A migration in the middle of the chain that looked the
-	// everyday role up by today's name only would have found nothing on this
-	// installation and seeded a second copy, which shows up here as a fourth role.
-	if got := strings.Join(roleNames(t, db), ","); got != "admin,user,user-admin" {
-		t.Errorf("this installation now has the roles %q, want admin,user,user-admin", got)
+	// The shipped roles and no more - the manager among them since it shipped. A
+	// migration in the middle of the chain that looked the everyday role up by today's
+	// name only would have found nothing on this installation and seeded a second copy,
+	// which shows up here as a fifth role.
+	if got := strings.Join(roleNames(t, db), ","); got != "admin,manager,user,user-admin" {
+		t.Errorf("this installation now has the roles %q, want admin,manager,user,user-admin", got)
 	}
 
 	// And each grants what the model says. This is the assertion that catches the other
@@ -365,8 +366,8 @@ func TestADirectoryDefaultThatIsNotAShippedRoleIsLeftAlone(t *testing.T) {
 	}
 }
 
-// A fresh installation comes out with exactly three roles, named as the model names
-// them.
+// A fresh installation comes out with exactly the shipped roles, named as the model
+// names them.
 //
 // The case that catches the subtler half of this change. The migration that first seeds
 // roles builds them from the model, so a fresh chain is seeded with today's names from
@@ -376,14 +377,14 @@ func TestADirectoryDefaultThatIsNotAShippedRoleIsLeftAlone(t *testing.T) {
 // half the installations there are.
 //
 // Counting the roles is what makes this bite: a middle migration that seeded a role
-// because it could not find the name it expected would show up here as a fourth.
-func TestAFreshInstallationHasTheThreeShippedRolesAndNoOthers(t *testing.T) {
+// because it could not find the name it expected would show up here as one too many.
+func TestAFreshInstallationHasTheShippedRolesAndNoOthers(t *testing.T) {
 	t.Parallel()
 
 	db := freshDB(t)
 	migrate(t, db, 0, latest(t))
 
-	want := "admin,user,user-admin"
+	want := "admin,manager,user,user-admin"
 	if got := strings.Join(roleNames(t, db), ","); got != want {
 		t.Errorf("a fresh installation has the roles %q, want %q\n\nA name left over is "+
 			"an old one that was not renamed; an extra one is a migration in the middle "+

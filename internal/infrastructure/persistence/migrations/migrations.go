@@ -159,6 +159,21 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261022010000: {UP: func(d migration.Datasource) error {
 			return keepALogOfAdministration(d, dialect)
 		}},
+		20261022020000: {UP: func(d migration.Datasource) error {
+			return keepWhomEachManagerLooksAfter(d, dialect)
+		}},
+		20261022030000: {UP: func(d migration.Datasource) error {
+			return rememberWhoBookedAnEntry(d, dialect)
+		}},
+		20261022040000: {UP: func(d migration.Datasource) error {
+			return rememberWhoLastChangedAnEntry(d, dialect)
+		}},
+		20261022050000: {UP: func(d migration.Datasource) error {
+			return rememberWhoReplacedAVersion(d, dialect)
+		}},
+		20261022060000: {UP: func(d migration.Datasource) error {
+			return shipTheManagerRole(d, dialect)
+		}},
 	}
 }
 
@@ -1862,4 +1877,79 @@ func keepALogOfAdministration(d migration.Datasource, dialect string) error {
 		target_id %s,
 		detail VARCHAR(255) NOT NULL DEFAULT ''
 	)`, primaryKey(dialect), timestamp(dialect), foreignKeyID(dialect), foreignKeyID(dialect)))
+}
+
+// keepWhomEachManagerLooksAfter keeps which accounts an administrator assigned to
+// each manager: both ends are accounts, so both are on the erasure's list, and the
+// pair is the key, which is also the one index the table needs.
+func keepWhomEachManagerLooksAfter(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE managed_accounts (
+		manager_id %s NOT NULL REFERENCES users(id),
+		user_id %s NOT NULL REFERENCES users(id),
+		PRIMARY KEY (manager_id, user_id)
+	)`, foreignKeyID(dialect), foreignKeyID(dialect)))
+}
+
+// rememberWhoBookedAnEntry records the manager who booked an entry in somebody's
+// name. Null for every entry there is, which is the owner: before managers there
+// was nobody else who could have. No foreign key, as in the administration log -
+// an erased manager leaves a number that names nobody rather than taking the
+// entry's history with them.
+func rememberWhoBookedAnEntry(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE timesheets ADD COLUMN recorded_by %s", foreignKeyID(dialect)))
+}
+
+// rememberWhoLastChangedAnEntry records the manager who last changed an entry, in
+// a statement of its own; null is the owner.
+func rememberWhoLastChangedAnEntry(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE timesheets ADD COLUMN updated_by %s", foreignKeyID(dialect)))
+}
+
+// rememberWhoReplacedAVersion records the manager whose correction replaced each
+// kept version of an entry; null is the owner.
+func rememberWhoReplacedAVersion(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf("ALTER TABLE timesheet_revisions ADD COLUMN replaced_by %s", foreignKeyID(dialect)))
+}
+
+// shipTheManagerRole gives an installation the manager role.
+//
+// No installation arrives here holding the shipped one. A fresh installation is
+// seeded at its start with the roles of today's model, manager among them, and the
+// migration that retired the review path's manager removes that one as well, by
+// name. So a role called manager at this point is one an installation made itself
+// after that retirement: it is moved aside under a free name with everything it
+// has, as renameRole moves aside a role in the way of a shipped name, rather than
+// having its people quietly handed the team rights. One already holding them could
+// only be the shipped role, and is not shipped twice.
+func shipTheManagerRole(d migration.Datasource, dialect string) error {
+	existing, err := firstRoleThatExists(d, dialect, model.RoleManager)
+	if err != nil {
+		return err
+	}
+
+	if existing != "" {
+		var shipped int
+
+		if err := d.SQL.QueryRow(sqldb.Rebind(dialect,
+			"SELECT COUNT(*) FROM role_permissions rp JOIN roles r ON r.id = rp.role_id "+
+				"WHERE r.name = ? AND rp.permission = ?"),
+			model.RoleManager, model.PermTimesheetReadTeam).Scan(&shipped); err != nil {
+			return fmt.Errorf("asking whether the manager role is the shipped one: %w", err)
+		}
+
+		if shipped > 0 {
+			return nil
+		}
+
+		free, err := aFreeRoleName(d, dialect, model.RoleManager)
+		if err != nil {
+			return err
+		}
+
+		if err := setRoleName(d, dialect, model.RoleManager, free); err != nil {
+			return fmt.Errorf("moving an installation's own manager role aside: %w", err)
+		}
+	}
+
+	return seedRole(d, dialect, shippedRole(model.RoleManager))
 }

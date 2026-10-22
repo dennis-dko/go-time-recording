@@ -240,15 +240,19 @@ func errorCode(t *testing.T, res response) string {
 	return body.Error.Code
 }
 
+// shippedRoles is how many roles a fresh installation is given: the administrator,
+// the user, the one combining the two, and the manager.
+const shippedRoles = 4
+
 // The roles a fresh installation ships with cannot be deleted.
 //
 // Two different reasons, and they are worth telling apart. The admin role is
 // fixed outright: an installation that loses it loses the way back into its own
 // settings, so it cannot be renamed, stripped or removed.
 //
-// The other two are ordinary roles - what they grant is this installation's
+// The others are ordinary roles - what they grant is this installation's
 // business and can be edited - and they are also the furniture. One is what every
-// new account is given; both are what the directory synchronisation assigns by
+// new account is given; any is what the directory synchronisation may assign by
 // default. Deleting one leaves those without an answer, and putting it back means
 // reproducing a list of permissions exactly from memory.
 func TestTheShippedRolesCannotBeDeleted(t *testing.T) {
@@ -268,8 +272,8 @@ func TestTheShippedRolesCannotBeDeleted(t *testing.T) {
 
 	admin.must(admin.api(http.MethodGet, "/roles", nil), http.StatusOK).Data(t, &roles)
 
-	if len(roles.Items) < 3 {
-		t.Fatalf("a fresh installation has %d role(s), want the three it ships with",
+	if len(roles.Items) < shippedRoles {
+		t.Fatalf("a fresh installation has %d role(s), want the four it ships with",
 			len(roles.Items))
 	}
 
@@ -301,8 +305,8 @@ func TestTheShippedRolesCannotBeDeleted(t *testing.T) {
 		}
 	}
 
-	if shipped != 3 {
-		t.Errorf("%d of the roles are marked as shipped, want 3", shipped)
+	if shipped != shippedRoles {
+		t.Errorf("%d of the roles are marked as shipped, want %d", shipped, shippedRoles)
 	}
 
 	// A role somebody made is still deletable, which is the half that must not
@@ -377,13 +381,13 @@ func TestTheShippedRolesCannotBeEdited(t *testing.T) {
 		}
 	}
 
-	if checked != 3 {
-		t.Errorf("%d shipped roles were checked, want 3", checked)
+	if checked != shippedRoles {
+		t.Errorf("%d shipped roles were checked, want %d", checked, shippedRoles)
 	}
 
 	// And the description, which was the one part still open. The reasoning was
 	// that a description belongs to the installation rather than to the
-	// application - but these three are the words the interface translates, keyed
+	// application - but these are the words the interface translates, keyed
 	// on the name, so an installation that edited one got a description in one
 	// language that the interface then overrode in another. That reads as the
 	// change not having been saved.

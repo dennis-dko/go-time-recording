@@ -84,6 +84,7 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 		Date:          cmd.Date,
 		DurationHours: cmd.DurationHours,
 		Description:   cmd.Description,
+		RecordedBy:    otherThan(cmd.RecordedBy, cmd.UserID),
 	})
 	if err != nil {
 		return nil, err
@@ -93,9 +94,9 @@ func (s *TimesheetApplicationService) CreateTimesheet(
 	// rather than hours somebody tried to record.
 	s.record(ctx, MetricHoursBooked, createdTimesheet.DurationHours)
 
-	return &command.CreateTimesheetCommandResult{
-		Result: common.NewTimesheetResultFromModel(createdTimesheet)[0],
-	}, nil
+	result := common.NewTimesheetResultFromModel(createdTimesheet)[0]
+
+	return &command.CreateTimesheetCommandResult{Result: result}, s.nameWhoActed(ctx, result)
 }
 
 // GetTimesheet processes the query to get a time entry
@@ -112,9 +113,9 @@ func (s *TimesheetApplicationService) GetTimesheet(
 		return nil, err
 	}
 
-	return &query.GetTimesheetQueryResult{
-		Result: common.NewTimesheetResultFromModel(timesheet)[0],
-	}, nil
+	result := common.NewTimesheetResultFromModel(timesheet)[0]
+
+	return &query.GetTimesheetQueryResult{Result: result}, s.nameWhoActed(ctx, result)
 }
 
 // ListTimesheets processes the query to get all time entries matching a filter
@@ -147,10 +148,9 @@ func (s *TimesheetApplicationService) ListTimesheets(
 		return nil, err
 	}
 
-	return &query.ListTimesheetsQueryResult{
-		Result:     common.NewTimesheetResultFromModel(timesheets...),
-		TotalCount: total,
-	}, nil
+	results := common.NewTimesheetResultFromModel(timesheets...)
+
+	return &query.ListTimesheetsQueryResult{Result: results, TotalCount: total}, s.nameWhoActed(ctx, results...)
 }
 
 // UpdateTimesheet processes the command to update a time entry
@@ -234,14 +234,16 @@ func (s *TimesheetApplicationService) UpdateTimesheet(
 		return nil, err
 	}
 
+	existingTimesheet.UpdatedBy = otherThan(cmd.UpdatedBy, existingTimesheet.UserID)
+
 	updatedTimesheet, err := s.timesheetRepository.Update(ctx, existingTimesheet)
 	if err != nil {
 		return nil, err
 	}
 
-	return &command.UpdateTimesheetCommandResult{
-		Result: common.NewTimesheetResultFromModel(updatedTimesheet)[0],
-	}, nil
+	result := common.NewTimesheetResultFromModel(updatedTimesheet)[0]
+
+	return &command.UpdateTimesheetCommandResult{Result: result}, s.nameWhoActed(ctx, result)
 }
 
 // DeleteTimesheet processes the command to delete a time entry
@@ -265,6 +267,10 @@ func (s *TimesheetApplicationService) DeleteTimesheet(ctx context.Context, cmd c
 type EntryHistory struct {
 	OwnerID   uint
 	Revisions []model.TimesheetRevision
+
+	// Names are the names of the managers whose corrections replaced versions, as
+	// they are called now.
+	Names map[uint]string
 }
 
 // Revisions returns an entry's history, the most recently replaced version first.
@@ -279,7 +285,20 @@ func (s *TimesheetApplicationService) Revisions(ctx context.Context, id uint) (*
 		return nil, err
 	}
 
-	return &EntryHistory{OwnerID: entry.UserID, Revisions: revisions}, nil
+	var replacers []uint
+
+	for _, revision := range revisions {
+		if revision.ReplacedBy != nil {
+			replacers = append(replacers, *revision.ReplacedBy)
+		}
+	}
+
+	names, err := s.namesOf(ctx, replacers...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EntryHistory{OwnerID: entry.UserID, Revisions: revisions, Names: names}, nil
 }
 
 // requireUserAndProject validates the booking target. The project is optional:
@@ -530,4 +549,69 @@ func (s *TimesheetApplicationService) WithMetrics(recorder Recorder) *TimesheetA
 // cheaper version of the other.
 func startOfDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
+// otherThan is the manager acting in an owner's name, for the model: nil where
+// nobody but the owner did.
+func otherThan(actor, owner uint) *uint {
+	if actor == 0 || actor == owner {
+		return nil
+	}
+
+	return &actor
+}
+
+// nameWhoActed fills in the names of the managers who booked or last changed the
+// entries, as they are called now. A manager erased since keeps the id and an
+// empty name: the entry outlives them, and their name does not.
+func (s *TimesheetApplicationService) nameWhoActed(ctx context.Context, results ...*common.TimesheetResult) error {
+	var ids []uint
+
+	for _, result := range results {
+		for _, actor := range []*common.ActedBy{result.RecordedBy, result.UpdatedBy} {
+			if actor != nil {
+				ids = append(ids, actor.ID)
+			}
+		}
+	}
+
+	names, err := s.namesOf(ctx, ids...)
+	if err != nil {
+		return err
+	}
+
+	for _, result := range results {
+		for _, actor := range []*common.ActedBy{result.RecordedBy, result.UpdatedBy} {
+			if actor != nil {
+				actor.Name = names[actor.ID]
+			}
+		}
+	}
+
+	return nil
+}
+
+// namesOf reads the names of accounts, each once; an account that is gone has
+// none.
+func (s *TimesheetApplicationService) namesOf(ctx context.Context, ids ...uint) (map[uint]string, error) {
+	names := make(map[uint]string, len(ids))
+
+	for _, id := range ids {
+		if _, known := names[id]; known {
+			continue
+		}
+
+		user, err := s.userRepository.GetByID(ctx, id)
+		if err != nil {
+			if detail, ok := apperror.Detail(err); !ok || detail.Kind != apperror.KindNotFound {
+				return nil, err
+			}
+
+			user = &model.User{}
+		}
+
+		names[id] = user.Name
+	}
+
+	return names, nil
 }
