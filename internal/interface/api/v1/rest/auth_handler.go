@@ -323,3 +323,20 @@ func permissionsOf(principal *service.Principal) []string {
 
 	return principal.Permissions
 }
+
+// SetReminders handles PUT /api/v1/me/reminders: both choices at once, as the
+// card under My account makes them.
+func (h *AuthHandler) SetReminders(c *gofr.Context) (any, error) {
+	var req RemindersRequest
+
+	id, err := h.askingWith(c, &req)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.sessions.SetReminders(c, id, req.UnbookedDay, req.TimerAlertHours); err != nil {
+		return nil, toHTTPError(err)
+	}
+
+	return RemindersResponse(req), nil
+}

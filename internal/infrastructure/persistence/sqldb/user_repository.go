@@ -21,7 +21,7 @@ const userSelect = `SELECT u.id, u.name, u.email, u.role_id, COALESCE(r.name, ''
 	u.daily_target_hours, u.max_daily_hours,
 	u.totp_secret, u.totp_enabled, u.language, u.is_external, u.external_id, u.timezone,
 	u.tour_seen, u.theme, u.holiday_region, u.every_day_counts_from,
-	u.balance_upper_limit, u.balance_lower_limit
+	u.balance_upper_limit, u.balance_lower_limit, u.skip_unbooked_reminder, u.timer_alert_hours
 	FROM users u LEFT JOIN roles r ON r.id = u.role_id`
 
 // UserRepository stores users in a SQL database.
@@ -194,6 +194,21 @@ func (r *UserRepository) SetBalanceLimits(ctx context.Context, id uint, upper, l
 	return nil
 }
 
+func (r *UserRepository) SetReminders(ctx context.Context, id uint, skipUnbooked bool, timerAlertHours *int) error {
+	found, err := r.update(ctx, "users",
+		"UPDATE users SET skip_unbooked_reminder = ?, timer_alert_hours = ? WHERE id = ?",
+		id, skipUnbooked, timerAlertHours, id)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if !found {
+		return apperror.NotFound("user", strconv.FormatUint(uint64(id), 10))
+	}
+
+	return nil
+}
+
 func (r *UserRepository) Delete(ctx context.Context, id uint) error {
 	affected, err := r.exec(ctx, "DELETE FROM users WHERE id = ?", id)
 	if err != nil {
@@ -223,6 +238,7 @@ func (r *UserRepository) scanUser(s scanner) (*model.User, error) {
 		user         model.User
 		countsFrom   dateTime
 		upper, lower sql.NullFloat64
+		alertHours   sql.NullInt64
 	)
 
 	err := s.Scan(&user.ID, &user.Name, &user.Email, &user.RoleID, &user.RoleName,
@@ -230,9 +246,14 @@ func (r *UserRepository) scanUser(s scanner) (*model.User, error) {
 		&user.DailyTargetHours, &user.MaxDailyHours,
 		&user.TOTPSecret, &user.TOTPEnabled, &user.Language, &user.IsExternal, &user.ExternalID,
 		&user.Timezone, &user.TourSeen, &user.Theme, &user.HolidayRegion, &countsFrom,
-		&upper, &lower)
+		&upper, &lower, &user.SkipUnbookedReminder, &alertHours)
 	if err != nil {
 		return nil, err
+	}
+
+	if alertHours.Valid {
+		hours := int(alertHours.Int64)
+		user.TimerAlertHours = &hours
 	}
 
 	if countsFrom.Valid {

@@ -282,6 +282,19 @@ func (r *UserRepository) SetBalanceLimits(_ context.Context, id uint, upper, low
 	return err
 }
 
+func (r *UserRepository) SetReminders(_ context.Context, id uint, skipUnbooked bool, timerAlertHours *int) error {
+	current, err := r.store.get(id)
+	if err != nil {
+		return err
+	}
+
+	current.SkipUnbookedReminder, current.TimerAlertHours = skipUnbooked, copyOf(timerAlertHours)
+
+	_, err = r.store.update(id, current)
+
+	return err
+}
+
 // copyOf is a pointer to a copy, so a caller changing the value it passed in later
 // does not reach into what was stored - which no SQL database would let it do.
 func copyOf[T any](value *T) *T {

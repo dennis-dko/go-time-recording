@@ -148,6 +148,30 @@ func (r dayRules) of(day time.Time, booked float64) (target float64, counts bool
 	return target, booked > 0 || (target > 0 && !day.After(r.today))
 }
 
+// expectsWork says whether somebody was expected to work on a day at all: their
+// week plans hours for it, it is no public holiday where they work, and they were
+// not away - except for half a day of leave, which leaves half a day of work. A day
+// off against overtime is away, though it asks its whole target of the balance;
+// that is what takes it off the balance, and nobody is meant to book on it.
+//
+// Not of, which answers a different question: what a day asks of the balance, by
+// a rule that before somebody's chosen day knows no holidays at all.
+func (r dayRules) expectsWork(day time.Time) bool {
+	if model.TargetOn(day, r.schedules, r.before) <= 0 {
+		return false
+	}
+
+	if _, holiday := r.holidays[day]; holiday {
+		return false
+	}
+
+	if absence, away := r.absent[day]; away {
+		return absence.Kind == model.AbsenceHalfVacation
+	}
+
+	return true
+}
+
 // rulesFor gathers what decides somebody's days between two calendar days.
 func (s *OvertimeService) rulesFor(ctx context.Context, user *model.User, first, last time.Time) (dayRules, error) {
 	schedules, err := s.schedules.ForUser(ctx, user.ID)
@@ -404,6 +428,10 @@ type RunningBalance struct {
 // Notices is what about somebody's own time deserves a banner.
 type Notices struct {
 	Balance RunningBalance
+
+	// UnbookedDay is the last day before today somebody was expected to work and
+	// booked nothing on, nil when that day was booked or they asked not to be told.
+	UnbookedDay *time.Time
 }
 
 // Notices answers what about somebody's own time deserves a banner.
@@ -418,7 +446,76 @@ func (s *OvertimeService) Notices(ctx context.Context, userID uint) (*Notices, e
 		return nil, err
 	}
 
-	return &Notices{Balance: running}, nil
+	unbooked, err := s.unbookedDay(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Notices{Balance: running, UnbookedDay: unbooked}, nil
+}
+
+// reminderLookBack is how far back the last working day is looked for: two weeks,
+// which reaches past a fortnight of leave and the public holidays around it.
+const reminderLookBack = 14
+
+// unbookedDay is the last day before today somebody was expected to work, when
+// nothing is booked on it.
+//
+// Only that one day. Somebody who books a week at a time on Friday is told about
+// Thursday on Friday morning and about nothing on Monday, and an earlier gap is
+// the business of the day it was - a banner listing every unbooked day of a month
+// would be one nobody reads. Nothing is said about a day before the balance
+// begins, which belongs to a time before the account was used.
+func (s *OvertimeService) unbookedDay(ctx context.Context, user *model.User) (*time.Time, error) {
+	if user.SkipUnbookedReminder {
+		return nil, nil
+	}
+
+	begins, found, err := s.beginning(ctx, user)
+	if err != nil || !found {
+		return nil, err
+	}
+
+	today := todayOf(ctx, s.today, user)
+	last := today.AddDate(0, 0, -1)
+	first := today.AddDate(0, 0, -reminderLookBack)
+
+	rules, err := s.rulesFor(ctx, user, first, last)
+	if err != nil {
+		return nil, err
+	}
+
+	for day := last; !day.Before(first) && !day.Before(begins); day = day.AddDate(0, 0, -1) {
+		if !rules.expectsWork(day) {
+			continue
+		}
+
+		booked, err := s.timesheets.CountByFilter(ctx, repository.TimesheetFilter{
+			UserID: user.ID, StartDate: &day, EndDate: &day,
+		})
+		if err != nil || booked > 0 {
+			return nil, err
+		}
+
+		return &day, nil
+	}
+
+	return nil, nil
+}
+
+// beginning is the first day that counts towards somebody's balance: the first day
+// they booked on, or the day every working day counts from where that is earlier.
+func (s *OvertimeService) beginning(ctx context.Context, user *model.User) (time.Time, bool, error) {
+	first, found, err := s.timesheets.FirstDay(ctx, user.ID)
+	if err != nil {
+		return first, false, err
+	}
+
+	if from := user.EveryDayCountsFrom; from != nil && (!found || from.Before(first)) {
+		return *from, true, nil
+	}
+
+	return first, found, nil
 }
 
 // running is somebody's balance from the first day that counts to today.
@@ -431,13 +528,9 @@ func (s *OvertimeService) Notices(ctx context.Context, userID uint) (*Notices, e
 func (s *OvertimeService) running(ctx context.Context, user *model.User) (RunningBalance, error) {
 	running := RunningBalance{Upper: user.BalanceUpperLimit, Lower: user.BalanceLowerLimit}
 
-	first, found, err := s.timesheets.FirstDay(ctx, user.ID)
+	first, found, err := s.beginning(ctx, user)
 	if err != nil {
 		return running, err
-	}
-
-	if from := user.EveryDayCountsFrom; from != nil && (!found || from.Before(first)) {
-		first, found = *from, true
 	}
 
 	today := todayOf(ctx, s.today, user)

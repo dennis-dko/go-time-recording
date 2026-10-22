@@ -91,6 +91,17 @@ type User struct {
 	BalanceUpperLimit *float64
 	BalanceLowerLimit *float64
 
+	// SkipUnbookedReminder switches off the banner that says the last working day
+	// has nothing booked on it. False - the reminder - is what everybody has until
+	// they switch it off, which is why the field says "skip": the zero value has to
+	// be the default, on a new account and on every account there already was.
+	SkipUnbookedReminder bool
+
+	// TimerAlertHours is how long a stopwatch may run before a banner says so, and
+	// a notification where the browser allows one. Nil is DefaultTimerAlertHours,
+	// for the reason above; zero is never.
+	TimerAlertHours *int
+
 	// IsExternal marks an account whose password lives in LDAP, so the local
 	// password fields are not used for it.
 	IsExternal bool
@@ -176,4 +187,23 @@ func (u *User) BalanceOutside(balance float64) string {
 	default:
 		return ""
 	}
+}
+
+// DefaultTimerAlertHours is how long a stopwatch runs before it is mentioned, for
+// somebody who has not chosen: ten hours, the most the Working Hours Act allows in
+// a day, past which a clock still running is almost always one nobody stopped.
+const DefaultTimerAlertHours = 10
+
+// MaxTimerAlertHours is the longest that can be chosen. Past a day, the stopwatch
+// already says it holds more than one entry can.
+const MaxTimerAlertHours = 24
+
+// EffectiveTimerAlertHours is how long this person's stopwatch runs before it is
+// mentioned: their own choice, or DefaultTimerAlertHours, and zero for never.
+func (u *User) EffectiveTimerAlertHours() int {
+	if u.TimerAlertHours == nil {
+		return DefaultTimerAlertHours
+	}
+
+	return *u.TimerAlertHours
 }

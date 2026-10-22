@@ -73,3 +73,15 @@ func (s *SessionService) SetHolidayRegion(ctx context.Context, userID uint, regi
 
 	return s.users.SetPreference(ctx, userID, repository.PreferenceHolidayRegion, region)
 }
+
+// SetReminders keeps both of somebody's reminder choices together: whether the
+// last working day is mentioned when nothing is booked on it, and after how many
+// hours a running stopwatch is - zero for never, and at most a day, past which the
+// stopwatch already says it holds more than one entry can.
+func (s *SessionService) SetReminders(ctx context.Context, userID uint, unbookedDay bool, timerAlertHours int) error {
+	if timerAlertHours < 0 || timerAlertHours > model.MaxTimerAlertHours {
+		return apperror.InvalidFields("timerAlertHours")
+	}
+
+	return s.users.SetReminders(ctx, userID, !unbookedDay, &timerAlertHours)
+}

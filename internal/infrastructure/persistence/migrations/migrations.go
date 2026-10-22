@@ -150,6 +150,12 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261021020000: {UP: func(d migration.Datasource) error {
 			return letABalanceHaveALowerBound(d, dialect)
 		}},
+		20261021030000: {UP: func(d migration.Datasource) error {
+			return letSomebodySkipTheUnbookedDayReminder(d)
+		}},
+		20261021040000: {UP: func(d migration.Datasource) error {
+			return letSomebodyChooseWhenTheStopwatchIsMentioned(d)
+		}},
 	}
 }
 
@@ -1820,4 +1826,18 @@ func letABalanceHaveAnUpperBound(d migration.Datasource, dialect string) error {
 // balance to stand at, in hours; null is no bound.
 func letABalanceHaveALowerBound(d migration.Datasource, dialect string) error {
 	return execAll(d, fmt.Sprintf("ALTER TABLE users ADD COLUMN balance_lower_limit %s", float(dialect)))
+}
+
+// letSomebodySkipTheUnbookedDayReminder records who has switched off the banner
+// about a last working day with nothing booked on it. False for every account
+// there is, which is the reminder: it is switched off, not on.
+func letSomebodySkipTheUnbookedDayReminder(d migration.Datasource) error {
+	return execAll(d, "ALTER TABLE users ADD COLUMN skip_unbooked_reminder BOOLEAN NOT NULL DEFAULT FALSE")
+}
+
+// letSomebodyChooseWhenTheStopwatchIsMentioned records after how many hours a
+// running stopwatch is mentioned. Null for every account there is, which is the
+// default; zero is never.
+func letSomebodyChooseWhenTheStopwatchIsMentioned(d migration.Datasource) error {
+	return execAll(d, "ALTER TABLE users ADD COLUMN timer_alert_hours INTEGER")
 }

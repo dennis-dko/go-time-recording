@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 type notices struct {
@@ -70,5 +71,68 @@ func TestTheBoundsOfARunningBalanceAreKeptAndReadBack(t *testing.T) {
 
 	if len(nothing) != 0 {
 		t.Errorf("the built-in administrator, who records no time, is told %v", nothing)
+	}
+}
+
+// The last working day with nothing booked on it is named until its owner switches
+// the reminder off, and both reminder choices travel with the account: kept by
+// PUT /me/reminders and read back with GET /me, on every database.
+func TestTheLastUnbookedWorkingDayIsNamedUntilTheReminderIsOff(t *testing.T) {
+	t.Parallel()
+
+	_, _, worker := startWithWorker(t)
+
+	// Yesterday, or the Friday before a weekend - the installation keeps no public
+	// holidays until a state is chosen, so the planned week alone decides.
+	expected := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -1)
+	for expected.Weekday() == time.Saturday || expected.Weekday() == time.Sunday {
+		expected = expected.AddDate(0, 0, -1)
+	}
+
+	// A week earlier, so the balance has begun before the day in question.
+	worker.must(worker.api(http.MethodPost, "/timesheets", map[string]any{
+		"date": expected.AddDate(0, 0, -7).Format(time.DateOnly), "durationHours": 8,
+	}), http.StatusCreated, http.StatusOK)
+
+	var reminded struct {
+		UnbookedDay *string `json:"unbookedDay"`
+	}
+
+	worker.must(worker.api(http.MethodGet, "/me/notices", nil), http.StatusOK).Data(t, &reminded)
+
+	if reminded.UnbookedDay == nil || *reminded.UnbookedDay != expected.Format(time.DateOnly) {
+		t.Fatalf("the notices name %v as unbooked, want %s", reminded.UnbookedDay, expected.Format(time.DateOnly))
+	}
+
+	worker.must(worker.api(http.MethodPut, "/me/reminders", map[string]any{
+		"unbookedDay": false, "timerAlertHours": 6,
+	}), http.StatusOK)
+
+	var me struct {
+		Reminders struct {
+			UnbookedDay     bool `json:"unbookedDay"`
+			TimerAlertHours int  `json:"timerAlertHours"`
+		} `json:"reminders"`
+	}
+
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+
+	if me.Reminders.UnbookedDay || me.Reminders.TimerAlertHours != 6 {
+		t.Errorf("the account reads its reminders as %+v, want the day off and six hours", me.Reminders)
+	}
+
+	var quiet struct {
+		UnbookedDay *string `json:"unbookedDay"`
+	}
+
+	worker.must(worker.api(http.MethodGet, "/me/notices", nil), http.StatusOK).Data(t, &quiet)
+
+	if quiet.UnbookedDay != nil {
+		t.Errorf("with the reminder off the notices still name %s", *quiet.UnbookedDay)
+	}
+
+	refused := worker.api(http.MethodPut, "/me/reminders", map[string]any{"unbookedDay": true, "timerAlertHours": 25})
+	if refused.Status != http.StatusBadRequest || !strings.Contains(string(refused.Body), "timerAlertHours") {
+		t.Errorf("25 hours answered %d: %s", refused.Status, refused.Body)
 	}
 }

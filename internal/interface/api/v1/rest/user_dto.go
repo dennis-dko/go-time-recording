@@ -143,6 +143,26 @@ type MeResponse struct {
 	// Every response carries the current one in a header; this is the baseline to
 	// compare it against. See PermissionRevision.
 	PermissionsRevision string `json:"permissionsRevision"`
+
+	// Reminders are this account's own reminder choices. Here rather than on
+	// UserResponse, which also describes other people's accounts to an
+	// administrator: these say nothing to anybody but their owner.
+	Reminders RemindersResponse `json:"reminders"`
+}
+
+// RemindersResponse is what somebody chose to be reminded of: whether the last
+// working day is mentioned when nothing is booked on it, and after how many hours
+// a running stopwatch is, with the default worked out and zero for never.
+type RemindersResponse struct {
+	UnbookedDay     bool `json:"unbookedDay"`
+	TimerAlertHours int  `json:"timerAlertHours"`
+}
+
+// RemindersRequest sets both reminder choices at once; the hours are an explicit
+// choice, from zero for never to a day.
+type RemindersRequest struct {
+	UnbookedDay     bool `json:"unbookedDay"`
+	TimerAlertHours int  `json:"timerAlertHours"`
 }
 
 func newUserResponse(r *common.UserResult, instanceTimezone string) UserResponse {

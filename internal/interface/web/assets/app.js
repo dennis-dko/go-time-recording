@@ -495,6 +495,7 @@ const FIELD_NAMES = {
   syncSchedule: 'Schedule',
   tabTitle: 'Browser tab',
   theme: 'Appearance',
+  timerAlertHours: 'Mention the stopwatch after (hours)',
   timezone: 'Timezone',
   title: 'Title',
   to: 'To',
@@ -4228,6 +4229,7 @@ const TRANSLATIONS = {
     'field.legalNotice': 'Rechtlicher Hinweis',
     'field.logLevel': 'Protokollstufe',
     'field.lowerBound': 'Untergrenze des Saldos',
+    'field.timerAlertHours': 'Stoppuhr erwähnen nach (Stunden)',
     'field.upperBound': 'Obergrenze des Saldos',
     'field.maxDailyHours': 'Max/Tag',
     'field.port': 'Port',
@@ -4567,6 +4569,18 @@ const TRANSLATIONS = {
     'bounds.now': 'Dein laufender Saldo: {0}, gezählt ab {1}.',
     'bounds.nothingYet': 'Noch zählt nichts zu deinem Saldo.',
     'bounds.saved': 'Grenzen gespeichert',
+    'remind.title': 'Erinnerungen',
+    'remind.unbookedDay': 'Den letzten Arbeitstag nennen, wenn darauf nichts gebucht ist',
+    'remind.hint': 'Null heißt: Die Stoppuhr wird nie erwähnt. Nach einem Tag sagt sie von selbst, dass sie mehr hält, als ein Eintrag fassen kann.',
+    'remind.allowNotifications': 'Benachrichtigungen in diesem Browser erlauben',
+    'remind.notifyGranted': 'Dieser Browser zeigt Benachrichtigungen von hier.',
+    'remind.notifyDenied': 'Dieser Browser sperrt Benachrichtigungen von hier; das lässt sich nur in seinen eigenen Einstellungen ändern.',
+    'remind.notifyUnsupported': 'Dieser Browser kann keine Benachrichtigungen zeigen.',
+    'remind.unbooked': 'Am {0} ist nichts gebucht, nach deinem Plan ein Arbeitstag. Unter {1} lässt es sich nachtragen.',
+    'remind.saved': 'Erinnerungen gespeichert',
+    'timer.longBanner': 'Die Stoppuhr läuft seit {0}, länger als die {2}, nach denen du erinnert werden wolltest. Unter {1} lässt sie sich anhalten.',
+    'timer.longTitle': 'Die Stoppuhr läuft noch',
+    'timer.longBody': 'Seit {1}, länger als die {0}, die du gewählt hast.',
     'work.actHint': 'Tage über einer Grenze des Arbeitszeitgesetzes werden markiert: mehr als zehn Stunden, eine zu kurze Pause oder weniger als elf Stunden Ruhe seit dem Vortag. Es sind Hinweise; erfasst wird, was war.',
     'work.longDay': 'Mehr als zehn Stunden (§ 3 ArbZG)',
     'work.shortBreak': '{0} Minuten Pause nötig (§ 4 ArbZG)',
@@ -7361,6 +7375,10 @@ function fillSettingsForm() {
   // zone card following the server - a second form frozen by a guard that was
   // never about it.
   fillMyTimezone();
+
+  // The same for the reminders, which guard themselves too.
+  fillReminders();
+  drawNotifyState();
 
   // Not over somebody who is part way through filling it in. This runs after
   // every save on the screen and after a language is chosen, and it used to
@@ -14795,6 +14813,14 @@ let timerTick = null;
 let timerForgotten = null;
 
 /**
+ * Whether the running clock is past the hours its owner chose to be told after,
+ * as last drawn - null until worked out for the clock in hand, so the first look
+ * at a clock already past them draws the banner without a notification: the
+ * notification is for a clock crossing the line while somebody is elsewhere.
+ */
+let timerLong = null;
+
+/**
  * The longest one entry may be, in hours.
  *
  * Read from the booking form's own limit rather than written down here again: that
@@ -14919,20 +14945,28 @@ function drawTimerBanner() {
   const banner = $('#timer-banner');
   if (!banner) return;
 
-  const show = runningTimer !== null && timerForgotten === true;
-  banner.hidden = !show;
+  const forgotten = runningTimer !== null && timerForgotten === true;
+  const long = runningTimer !== null && timerLong === true;
+  banner.hidden = !forgotten && !long;
 
-  if (!show) return;
+  if (banner.hidden) return;
 
   const text = $('#timer-banner-text');
   text.textContent = '';
 
   // Split on the placeholder, so where the link falls is the translator's
-  // business - as with the restart banner.
+  // business - as with the restart banner. The forgotten clock's sentence wins:
+  // it says what the other one says and what to do about it.
   const since = fmtMoment(runningTimer.startedAt);
-  const [before, after] = t('timer.banner',
-    'A stopwatch has been running since {0}, longer than one entry can hold. '
-    + 'Under {1} it can be booked up to the time the work really ended.').split('{1}');
+  const sentence = forgotten
+    ? t('timer.banner',
+      'A stopwatch has been running since {0}, longer than one entry can hold. '
+      + 'Under {1} it can be booked up to the time the work really ended.')
+    : fillIn(t('timer.longBanner',
+      'The stopwatch has been running since {0}, longer than the {2} you chose to be told after. '
+      + 'Under {1} it can be stopped.'),
+    [null, null, alertHoursText()]);
+  const [before, after] = sentence.split('{1}');
 
   text.append(fillIn(before ?? '', [since]));
 
@@ -14966,6 +15000,106 @@ async function loadNotices() {
 
   drawBalanceBanner();
   fillBalanceBounds();
+  drawUnbookedBanner();
+}
+
+/**
+ * The last working day with nothing booked on it. The sentence leads to the
+ * booking form with that day already in it, which is the whole of what there is
+ * to do about it.
+ */
+function drawUnbookedBanner() {
+  const banner = $('#unbooked-banner');
+  if (!banner) return;
+
+  const day = personalNotices?.unbookedDay;
+
+  banner.hidden = !day;
+  if (!day) return;
+
+  // The calendar's own short name for the weekday, so the banner cannot call a
+  // day something the week grid does not.
+  const weekday = weekdayNames()[(new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7];
+  const values = [`${weekday} ${fmtDate(day)}`];
+  const [before, after] = t('remind.unbooked', 'Nothing is booked on {0}, a working day by your plan. '
+    + 'It can be added under {1}.').split('{1}');
+
+  const link = el('button', {
+    type: 'button', class: 'link-button', id: 'unbooked-banner-open', text: t('nav.timesheets', 'Time entries'),
+  });
+  link.addEventListener('click', () => openTheBookingFormOn(day));
+
+  $('#unbooked-banner-text').replaceChildren(fillIn(before ?? '', values), link, fillIn(after ?? '', values));
+}
+
+/** Takes whoever pressed the link to the booking form, with the day in it. */
+function openTheBookingFormOn(day) {
+  switchView('timesheets');
+
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  setDateField(form.elements.date, day);
+  form.scrollIntoView({ block: 'center' });
+  form.elements.durationHours?.focus();
+}
+
+/**
+ * Tells somebody looking at another window that the stopwatch has passed the
+ * hours they chose, where the browser allows it. A browser that offers
+ * notifications only through a service worker - Chrome on Android - refuses the
+ * constructor, and then the banner is all there is.
+ */
+function notifyTheLongStopwatch() {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !runningTimer) return;
+
+  try {
+    new Notification(t('timer.longTitle', 'The stopwatch is still running'), {
+      body: fillIn(t('timer.longBody', 'Since {1}, longer than the {0} you chose.'),
+        [alertHoursText(), fmtMoment(runningTimer.startedAt)]),
+      tag: 'gtr-stopwatch',
+    });
+  } catch {
+    // The banner says it.
+  }
+}
+
+/**
+ * The hours the stopwatch is mentioned after, with the unit the screen writes
+ * hours in. A whole number, so not fmtHours: "10 h" rather than "10.00 h".
+ */
+function alertHoursText() {
+  return `${me.reminders?.timerAlertHours ?? 0} ${t('unit.hours', 'h')}`;
+}
+
+/** The reminder choices as they are stored, unless somebody is changing them. */
+function fillReminders() {
+  const form = $('#form-reminders');
+  if (!form || !me.reminders || beingEdited(form)) return;
+
+  form.elements.unbookedDay.checked = me.reminders.unbookedDay;
+  form.elements.timerAlertHours.value = String(me.reminders.timerAlertHours);
+}
+
+/**
+ * Whether this browser will show a notification, and the button that asks it
+ * where it has not been asked yet. A refusal can only be taken back in the
+ * browser's own settings, so it is said rather than asked again.
+ */
+function drawNotifyState() {
+  const button = $('#notify-allow');
+  const state = $('#notify-state');
+  if (!button || !state) return;
+
+  const permission = 'Notification' in window ? Notification.permission : 'unsupported';
+
+  button.hidden = permission !== 'default';
+  state.textContent = {
+    granted: () => t('remind.notifyGranted', 'This browser shows notifications from here.'),
+    denied: () => t('remind.notifyDenied',
+      'This browser blocks notifications from here; that can only be changed in its own settings.'),
+    unsupported: () => t('remind.notifyUnsupported', 'This browser cannot show notifications.'),
+  }[permission]?.() ?? '';
 }
 
 /**
@@ -15089,6 +15223,7 @@ function renderTimer() {
     }
 
     timerForgotten = null;
+    timerLong = null;
     closeTimerForms();
     stopRedrawing('timerWords');
     applyTimerForgotten();
@@ -15118,6 +15253,21 @@ function renderTimer() {
       timerForgotten = forgotten;
       applyTimerForgotten();
     }
+
+    // The hours its owner chose to be told after, read on every tick so a choice
+    // saved under My account applies without the clock being loaded again. Not
+    // once the clock is past what an entry holds: that banner says more.
+    const alert = (me.reminders?.timerAlertHours ?? 0) * 3600;
+    const long = alert > 0 && seconds >= alert && !forgotten;
+
+    if (long !== timerLong) {
+      const crossed = long && timerLong === false;
+
+      timerLong = long;
+      drawTimerBanner();
+
+      if (crossed) notifyTheLongStopwatch();
+    }
   };
 
   paint();
@@ -15142,6 +15292,7 @@ async function loadTimer() {
   // Worked out again for the clock just read: a correction or a switch can have
   // moved it to either side of the limit.
   timerForgotten = null;
+  timerLong = null;
 
   // What it was started with, so stopping books what was chosen - the fields
   // are disabled while it runs, and this is what they show. Written whether or
@@ -17382,6 +17533,25 @@ function wireForms() {
       { method: 'PUT', body: JSON.stringify(body) }),
       t('msg.workingTimesSaved', 'Working hours saved'),
       refreshAll);
+  });
+
+  $('#form-reminders').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const body = {
+      unbookedDay: form.elements.unbookedDay.checked,
+      timerAlertHours: Number(form.elements.timerAlertHours.value || 0),
+    };
+
+    saveForm(form, () => api('/me/reminders', { method: 'PUT', body: JSON.stringify(body) }),
+      t('remind.saved', 'Reminders saved'),
+      async () => { await loadMe(); fillReminders(); await loadNotices(); });
+  });
+
+  $('#notify-allow').addEventListener('click', async () => {
+    if ('Notification' in window) await Notification.requestPermission();
+
+    drawNotifyState();
   });
 
   $('#form-balance-bounds').addEventListener('submit', (e) => {

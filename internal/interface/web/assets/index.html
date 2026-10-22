@@ -309,9 +309,10 @@
     </div>
 
     <!-- A stopwatch past what one entry can hold, which is almost always one
-         somebody forgot. A banner because it is a state: it stays true on every
-         screen until the clock is booked or discarded. It points at the
-         stopwatch rather than booking from here - one place to read it, one
+         somebody forgot - or, before that, past the hours its owner chose to be
+         told after under My account. A banner because it is a state: it stays
+         true on every screen until the clock is booked or discarded. It points at
+         the stopwatch rather than booking from here - one place to read it, one
          place to act. Filled by drawTimerBanner. -->
     <div id="timer-banner" class="banner" hidden>
       <span id="timer-banner-text"></span>
@@ -323,6 +324,14 @@
          to read it, one place to act. Filled by drawBalanceBanner. -->
     <div id="balance-banner" class="banner" hidden>
       <span id="balance-banner-text"></span>
+    </div>
+
+    <!-- The last working day with nothing booked on it, until something is or its
+         owner switches the reminder off under My account. It leads to the booking
+         form with that day filled in rather than booking from here. Filled by
+         drawUnbookedBanner. -->
+    <div id="unbooked-banner" class="banner" hidden>
+      <span id="unbooked-banner-text"></span>
     </div>
   </div>
 
@@ -1357,6 +1366,28 @@
         </div>
         <p class="muted" id="balance-now"></p>
         <button type="submit" data-i18n="action.save">Save</button>
+      </form>
+
+      <!-- What its owner is reminded of. Both reminders are banners, because both
+           are states - a day with nothing booked stays unbooked, a clock left
+           running stays running - and the stopwatch's may also be a notification,
+           where the browser allows one: the one thing a banner cannot do is reach
+           somebody looking at another window. -->
+      <form method="post" id="form-reminders" class="card form" data-perm="timesheets:write:own">
+        <h2 data-i18n="remind.title">Reminders</h2>
+        <div class="perm-grid switch-row">
+          <label class="switch"><input type="checkbox" name="unbookedDay"><span class="switch-track"></span><span class="switch-label" data-i18n="remind.unbookedDay">Mention the last working day when nothing is booked on it</span></label>
+        </div>
+        <div class="grid">
+          <label data-i18n="field.timerAlertHours">Mention the stopwatch after (hours)<input type="number" name="timerAlertHours" step="1" min="0" max="24" placeholder="10">
+          </label>
+        </div>
+        <p class="muted" data-i18n="remind.hint">Zero means the stopwatch is never mentioned. Past a day, it says by itself that it holds more than one entry can.</p>
+        <div class="row">
+          <button type="submit" data-i18n="action.save">Save</button>
+          <button type="button" class="secondary" id="notify-allow" hidden data-i18n="remind.allowNotifications">Allow notifications in this browser</button>
+        </div>
+        <p class="muted" id="notify-state"></p>
       </form>
 
       <!-- The week the balance is measured against, a figure per weekday. A plan

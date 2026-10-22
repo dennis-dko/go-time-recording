@@ -17,6 +17,7 @@ What the application does, and the rules it keeps while doing it.
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
 | Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second. A start pressed late can be corrected, a clock left running is booked up to the time the work ended, and switching to the next project books the clock and carries on from the same second |
+| Reminders | A banner names the last working day with nothing booked on it and leads to the booking form on that day; another says when the stopwatch has run longer than its owner chose - ten hours unless they chose otherwise - with a notification as well where the browser allows one. Both are chosen under *My account* |
 | Finding entries | The list narrows by project, by period and by text in the description, and the export follows the same filters |
 | Entry history | Every correction of an entry keeps the version it replaced - its day, hours, project and description, and when it was replaced - whether it was made in the form, by moving the entry to another project, on the week grid or for a whole selection at once. The entry's owner opens it from the entry; deleting the entry deletes its history |
 | Hour budgets | A project may carry the hours its owner means to spend on it; the list shows how much of that is booked, marked from four fifths and past the whole, and the booking that crosses either says so |
@@ -108,6 +109,20 @@ flexitime account keeps it. Under *My account* each person can give it two
 the running balance lies past one of them, a banner says so on every screen, with
 the way back to the bounds inside it, and goes once the balance is inside again.
 Standing exactly on a bound is inside it, and an empty field is no bound.
+
+The same rules decide the **reminder** about a day with nothing booked on it. It
+names the last day before today somebody was expected to work - their week plans
+hours for it, it is no public holiday where they work, and they were not away,
+except for half a day of leave - and only that day: somebody who books a week at a
+time is told about Thursday on Friday morning, and an earlier gap is the business
+of the day it was. A day off against overtime is passed over, though it asks its
+whole target of the balance, because nobody is meant to book on it. Nothing is said
+about a day before the balance begins. The reminder is on until its owner switches
+it off under *My account*, beside the hours after which a running stopwatch is
+mentioned: ten, the most the Working Hours Act allows in a day, unless they choose
+otherwise, and never for zero. A browser that allows it shows a notification as
+well when the stopwatch crosses those hours while the page is open; one found
+already past them on loading gets the banner alone.
 
 It is your own balance. Somebody else's is their recorded time, totalled, so it
 takes the same right as reading their entries — and the team-wide overview that used

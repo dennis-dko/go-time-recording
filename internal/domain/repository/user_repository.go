@@ -57,6 +57,11 @@ type UserRepository interface {
 	// whatever changed in between.
 	SetBalanceLimits(ctx context.Context, id uint, upper, lower *float64) error
 
+	// SetReminders writes both of somebody's reminder choices, and nothing else,
+	// for the same reason: whether the last working day is mentioned, and after how
+	// many hours a running stopwatch is - nil for the default.
+	SetReminders(ctx context.Context, id uint, skipUnbooked bool, timerAlertHours *int) error
+
 	Delete(ctx context.Context, id uint) error
 }
 

@@ -139,6 +139,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	app.GET(base+"/me/holidays", h.Holidays.Mine)
 	app.PUT(base+"/me/holidays", h.Holidays.SetMine)
 	app.PUT(base+"/me/tour", h.Auth.SetTourSeen)
+	app.PUT(base+"/me/reminders", h.Auth.SetReminders)
 	// The clock, always the caller's own: starting somebody else's would record
 	// time nobody asked them about, so there is no user id in these routes and no
 	// permission for "other people's timers" to get wrong.

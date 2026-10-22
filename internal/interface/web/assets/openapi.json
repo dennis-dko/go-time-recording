@@ -272,6 +272,7 @@
           "auth"
         ],
         "summary": "The signed-in user and their permissions",
+        "description": "Answers {\"user\", \"permissions\", \"authEnabled\", \"permissionsRevision\", \"reminders\": {\"unbookedDay\": true, \"timerAlertHours\": 10}}. reminders are your own reminder choices, set with PUT /me/reminders: whether the last working day is mentioned when nothing is booked on it, and after how many hours a running stopwatch is, with the default of ten worked out and zero for never.",
         "responses": {
           "200": {
             "description": "Identity and permissions"
@@ -378,6 +379,20 @@
         ],
         "summary": "Record whether you have been shown the guided tour",
         "description": "Stored on the user rather than in the browser, so someone who has been introduced to the application is not introduced again on their next device. Settable both ways: sending false offers the tour again, which is how the \"Show the tour\" button works.",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
+    },
+    "/me/reminders": {
+      "put": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Choose what you are reminded of",
+        "description": "Takes {\"unbookedDay\": true, \"timerAlertHours\": 10}, both at once. unbookedDay keeps the banner about the last working day with nothing booked on it; timerAlertHours is how long a running stopwatch may go before a banner says so, and a notification where the browser allows one: zero for never, at most 24 (invalidFields timerAlertHours), because past a day the stopwatch already says it holds more than one entry can. Answers what it kept.",
         "responses": {
           "200": {
             "description": "Saved"
@@ -1979,7 +1994,7 @@
           "me"
         ],
         "summary": "What about your own time deserves a banner",
-        "description": "Answers {\"balance\": {\"hours\": 43.5, \"since\": \"2026-01-05\", \"upperBound\": 40, \"lowerBound\": null, \"outside\": \"above\"}}. balance is your running balance - from the first day that counts, which is the first day you booked on or the day every working day counts from where that is earlier, up to today in your own timezone - beside the bounds you set, and outside is \"above\" or \"below\" while it lies past one of them and empty otherwise; standing exactly on a bound is inside it. since is null while nothing counts yet. The part is left out for an account without reports:read:own, which is answered with an empty object rather than refused: the interface asks on every load.",
+        "description": "Answers {\"balance\": {\"hours\": 43.5, \"since\": \"2026-01-05\", \"upperBound\": 40, \"lowerBound\": null, \"outside\": \"above\"}, \"unbookedDay\": \"2026-10-20\"}. unbookedDay is the last day before today you were expected to work - your week plans hours for it, it is no public holiday where you work, and you were not away, half a day of leave apart - when nothing is booked on it; it is left out when that day was booked, when it lies before your balance begins, and when you switched the reminder off with PUT /me/reminders. Only that one day, looked for up to two weeks back: an earlier gap is the business of the day it was. It needs timesheets:read:own. balance is your running balance - from the first day that counts, which is the first day you booked on or the day every working day counts from where that is earlier, up to today in your own timezone - beside the bounds you set, and outside is \"above\" or \"below\" while it lies past one of them and empty otherwise; standing exactly on a bound is inside it. since is null while nothing counts yet. The part is left out for an account without reports:read:own, which is answered with an empty object rather than refused: the interface asks on every load.",
         "responses": {
           "200": {
             "description": "OK"

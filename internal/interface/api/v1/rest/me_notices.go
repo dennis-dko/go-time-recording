@@ -12,6 +12,11 @@ import (
 // screen asks on every load, and a refusal there would be noise in the log.
 type NoticesResponse struct {
 	Balance *RunningBalanceResponse `json:"balance,omitempty"`
+
+	// UnbookedDay is the last day before today the caller was expected to work and
+	// booked nothing on; left out when there is none, or when they asked not to be
+	// told.
+	UnbookedDay *Date `json:"unbookedDay,omitempty"`
 }
 
 // RunningBalanceResponse is the caller's balance from the first day that counts up
@@ -40,7 +45,8 @@ func (h *MeHandler) Notices(c *gofr.Context) (any, error) {
 
 	answer := NoticesResponse{}
 
-	if principal.User.ID == 0 || !principal.Can(model.PermReportReadOwn) {
+	readsBalance, readsEntries := principal.Can(model.PermReportReadOwn), principal.Can(model.PermTimesheetReadOwn)
+	if principal.User.ID == 0 || (!readsBalance && !readsEntries) {
 		return answer, nil
 	}
 
@@ -49,13 +55,19 @@ func (h *MeHandler) Notices(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	running := notices.Balance
-	answer.Balance = &RunningBalanceResponse{
-		Hours: running.Hours, Upper: running.Upper, Lower: running.Lower, Outside: running.Outside,
+	if readsBalance {
+		running := notices.Balance
+		answer.Balance = &RunningBalanceResponse{
+			Hours: running.Hours, Upper: running.Upper, Lower: running.Lower, Outside: running.Outside,
+		}
+
+		if running.Since != nil {
+			answer.Balance.Since = &Date{Time: *running.Since}
+		}
 	}
 
-	if running.Since != nil {
-		answer.Balance.Since = &Date{Time: *running.Since}
+	if readsEntries && notices.UnbookedDay != nil {
+		answer.UnbookedDay = &Date{Time: *notices.UnbookedDay}
 	}
 
 	return answer, nil

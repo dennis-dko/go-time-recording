@@ -36,3 +36,23 @@ func TestABalanceIsReadAgainstItsOwnersBounds(t *testing.T) {
 		}
 	}
 }
+
+// A stopwatch is mentioned after its owner's chosen hours, after the default for
+// somebody who never chose, and never for somebody who chose zero.
+func TestAStopwatchIsMentionedAfterItsOwnersHours(t *testing.T) {
+	never, six := 0, 6
+
+	for _, tc := range []struct {
+		name string
+		user *model.User
+		want int
+	}{
+		{"nobody chose", &model.User{}, model.DefaultTimerAlertHours},
+		{"six hours chosen", &model.User{TimerAlertHours: &six}, 6},
+		{"never chosen", &model.User{TimerAlertHours: &never}, 0},
+	} {
+		if got := tc.user.EffectiveTimerAlertHours(); got != tc.want {
+			t.Errorf("%s: mentioned after %d hours, want %d", tc.name, got, tc.want)
+		}
+	}
+}
