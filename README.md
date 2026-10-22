@@ -235,7 +235,7 @@ Running it for real — behind a proxy, with HTTPS, as a service — is
 | **Targets and time off** | A planned week, the public holidays of every German state, leave with its entitlement and carry-over, sick days and days taken against overtime | [Overtime](doc/features.md#overtime) |
 | **Working time** | When each day began and ended and its breaks, for each person's own record | [Working time](doc/features.md#your-own-record-of-your-working-time) |
 | **Calendar subscription** | Booked days and days away in Outlook, Google or a telephone's calendar | [Calendar](doc/features.md#your-days-in-your-own-calendar) |
-| **Accounts and roles** | Roles and their rights administered at run time; an administrator who runs the installation without keeping hours in it | [Access](doc/access.md) |
+| **Accounts and roles** | Roles and their rights administered at run time; an administrator who runs the installation without keeping hours in it; managers for the accounts assigned to them, where an installation switches them on | [Access](doc/access.md) |
 | **Sign-in** | Passwords with TOTP, passkeys, LDAP and Active Directory with synchronisation, Kerberos, OpenID Connect | [Sign-in](doc/access.md#ldap) |
 | **API** | REST under `/api/v1`, described at `/api-docs`, reached with personal tokens that never outrank their owner | [API](doc/api.md) |
 | **Operations** | Health, metrics, traces, live log, maintenance mode, updates, restart, HTTPS with Let's Encrypt, the installation's own name and logo | [Configuration](doc/configuration.md) |
