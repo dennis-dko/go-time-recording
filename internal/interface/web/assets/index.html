@@ -2031,6 +2031,27 @@
         <p class="muted" id="openid-test-result"></p>
       </form>
 
+      <!-- Who changed how the installation is run, and when. Kept, unlike the
+           live log below, which goes with the process; ids are kept and names read
+           when shown, so an erased account appears by its number alone. -->
+      <div class="card" id="changes-card" data-perm="settings:manage">
+        <h2 data-i18n="changes.title">Changes to the installation</h2>
+        <p class="muted" data-i18n="changes.hint">Who created, changed or deleted an account or a role, saved a setting, switched maintenance mode or restarted the application, newest first. An account erased since appears by its number.</p>
+        <div class="table-wrap">
+          <table id="table-changes">
+            <thead>
+              <tr>
+                <th data-i18n="changes.when">When</th>
+                <th data-i18n="changes.who">Who</th>
+                <th data-i18n="changes.what">What</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <button type="button" class="secondary" id="changes-more" hidden data-i18n="changes.more">Show older changes</button>
+      </div>
+
       <!-- The process log. Last in the administration screen because it is
            what you scroll to when something already went wrong. -->
       <div class="card" id="log-card">

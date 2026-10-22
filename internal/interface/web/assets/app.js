@@ -4583,6 +4583,38 @@ const TRANSLATIONS = {
     'export.hint': 'Alles, was diese Installation über dein Konto speichert, als ZIP mit einer JSON-Datei je Bereich: deine Einträge und ihr Verlauf, Projekte, Vorlagen, Abwesenheiten, Urlaub, Wochenpläne, Arbeitszeiten und das Konto selbst. Passwörter, zweite Faktoren, Tokens und Schlüssel sind nicht dabei – nur, wann sie entstanden sind und zuletzt benutzt wurden.',
     'export.download': 'Alles über mich herunterladen',
     'export.filename': 'alles-ueber-mich',
+    'changes.title': 'Änderungen an der Installation',
+    'changes.hint': 'Wer ein Konto oder eine Rolle angelegt, geändert oder gelöscht, eine Einstellung gespeichert, den Wartungsmodus geschaltet oder die Anwendung neu gestartet hat, das Neueste zuerst. Ein inzwischen gelöschtes Konto erscheint mit seiner Nummer.',
+    'changes.when': 'Wann',
+    'changes.who': 'Wer',
+    'changes.what': 'Was',
+    'changes.more': 'Ältere Änderungen zeigen',
+    'changes.empty': 'Noch wurde nichts geändert.',
+    'change.userCreated': 'Konto {0} angelegt',
+    'change.userUpdated': 'Konto {0} korrigiert',
+    'change.userDeleted': 'Konto {0} gelöscht',
+    'change.userRole': '{0} die Rolle {1} gegeben',
+    'change.userPassword': 'Neues Passwort für {0} gesetzt',
+    'change.usersImported': 'Konten aus einer Tabelle importiert',
+    'change.roleCreated': 'Rolle {0} angelegt',
+    'change.roleUpdated': 'Rolle {0} geändert',
+    'change.roleDeleted': 'Rolle {0} gelöscht',
+    'change.rolesImported': 'Rollen aus einer Tabelle importiert',
+    'change.maintenance': 'Wartungsmodus {1}geschaltet',
+    'change.on': 'ein',
+    'change.off': 'aus',
+    'change.branding': 'Erscheinungsbild geändert',
+    'change.ldap': 'LDAP-Anbindung geändert',
+    'change.openid': 'Anmeldeanbieter geändert',
+    'change.synchronised': 'Verzeichnis-Abgleich ausgeführt',
+    'change.operational': 'Betrieb und Grenzen geändert',
+    'change.timezone': 'Zeitzone geändert',
+    'change.holidays': 'Feiertage geändert',
+    'change.datasource': 'Datenbankverbindung geändert',
+    'change.telemetry': 'Protokollierung, Metriken und Tracing geändert',
+    'change.restart': 'Anwendung neu gestartet',
+    'change.update': 'Aktualisierung gestartet',
+    'change.setup': 'Einrichtung abgeschlossen',
     'timer.longBanner': 'Die Stoppuhr läuft seit {0}, länger als die {2}, nach denen du erinnert werden wolltest. Unter {1} lässt sie sich anhalten.',
     'timer.longTitle': 'Die Stoppuhr läuft noch',
     'timer.longBody': 'Seit {1}, länger als die {0}, die du gewählt hast.',
@@ -8826,6 +8858,88 @@ async function loadAdmin() {
       ? `${t('sync.scheduleStored', 'Saved')}: ${ldap.syncSchedule}`
       : t('sync.scheduleManual', 'Runs only when the button below is pressed.');
   }
+
+  // Last, so a log that cannot be read leaves every card above it filled.
+  await loadChanges();
+}
+
+// ------------------------------------------------------- administration log
+
+/** The changes shown so far, oldest last, and whether older ones remain. */
+let adminChanges = { entries: [], more: false };
+
+/**
+ * Reads the administration log: the newest page, or the page before the oldest
+ * change shown when older ones are asked for.
+ */
+async function loadChanges(older = false) {
+  if (!can('settings:manage') || !$('#changes-card')) return;
+
+  const before = older ? adminChanges.entries.at(-1)?.id : null;
+  const page = await api(`/admin/changes${before ? `?before=${before}` : ''}`);
+
+  adminChanges = {
+    entries: older ? [...adminChanges.entries, ...page.entries] : page.entries,
+    more: page.more,
+  };
+
+  redrawable('changes', drawChanges);
+}
+
+function drawChanges() {
+  const rows = adminChanges.entries.map((entry) => el('tr', {},
+    el('td', { text: fmtMoment(entry.at) }),
+    el('td', { text: entry.actor.name || `#${entry.actor.id}` }),
+    el('td', { text: describeChange(entry) }),
+  ));
+
+  fillTable($('#table-changes tbody'), rows, 3, t('changes.empty', 'Nothing has been changed yet.'));
+  $('#changes-more').hidden = !adminChanges.more;
+}
+
+/**
+ * The sentence for each change the administration log records, one for every
+ * code in its table - test/adminlog_test.go holds the two together, so a change
+ * recorded is never shown as its code.
+ */
+const CHANGE_SENTENCES = {
+  'user.created': () => t('change.userCreated', 'Created the account {0}'),
+  'user.updated': () => t('change.userUpdated', 'Corrected the account {0}'),
+  'user.deleted': () => t('change.userDeleted', 'Deleted the account {0}'),
+  'user.role': () => t('change.userRole', 'Gave {0} the role {1}'),
+  'user.password': () => t('change.userPassword', 'Set a new password for {0}'),
+  'users.imported': () => t('change.usersImported', 'Imported accounts from a spreadsheet'),
+  'role.created': () => t('change.roleCreated', 'Created the role {0}'),
+  'role.updated': () => t('change.roleUpdated', 'Changed the role {0}'),
+  'role.deleted': () => t('change.roleDeleted', 'Deleted the role {0}'),
+  'roles.imported': () => t('change.rolesImported', 'Imported roles from a spreadsheet'),
+  'settings.maintenance': () => t('change.maintenance', 'Switched maintenance mode {1}'),
+  'settings.branding': () => t('change.branding', 'Changed the appearance'),
+  'settings.ldap': () => t('change.ldap', 'Changed the LDAP connection'),
+  'settings.openid': () => t('change.openid', 'Changed the sign-in provider'),
+  'directory.synchronised': () => t('change.synchronised', 'Ran the directory synchronisation'),
+  'settings.operational': () => t('change.operational', 'Changed operation and limits'),
+  'settings.timezone': () => t('change.timezone', 'Changed the timezone'),
+  'settings.holidays': () => t('change.holidays', 'Changed the public holidays'),
+  'settings.datasource': () => t('change.datasource', 'Changed the database connection'),
+  'settings.telemetry': () => t('change.telemetry', 'Changed logging, metrics and tracing'),
+  'installation.restart': () => t('change.restart', 'Restarted the application'),
+  'installation.update': () => t('change.update', 'Started an update'),
+  'installation.setup': () => t('change.setup', 'Completed the setup'),
+};
+
+/** One change as a sentence: what was done, to whom, and the value it kept. */
+function describeChange(entry) {
+  const target = entry.target ? (entry.target.name || entry.detail || `#${entry.target.id}`) : '';
+  const detail = {
+    'user.role': () => roleTitle(entry.detail),
+    'settings.maintenance': () => (entry.detail === 'true'
+      ? t('change.on', 'on') : t('change.off', 'off')),
+  }[entry.action]?.() ?? entry.detail;
+
+  const sentence = CHANGE_SENTENCES[entry.action];
+
+  return sentence ? fillIn(sentence(), [target, detail]) : entry.action;
 }
 
 /**
@@ -8932,6 +9046,8 @@ function cropPreview(dataURI, crop, into) {
 }
 
 function wireAdmin() {
+  $('#changes-more').addEventListener('click', () => mutate(() => loadChanges(true), null, null));
+
   $('#logo-file').addEventListener('change', (e) => {
     const file = e.target.files?.[0];
     if (!file) return;

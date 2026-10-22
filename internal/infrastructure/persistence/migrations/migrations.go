@@ -156,6 +156,9 @@ func All(dialect string) map[int64]migration.Migrate {
 		20261021040000: {UP: func(d migration.Datasource) error {
 			return letSomebodyChooseWhenTheStopwatchIsMentioned(d)
 		}},
+		20261022010000: {UP: func(d migration.Datasource) error {
+			return keepALogOfAdministration(d, dialect)
+		}},
 	}
 }
 
@@ -1840,4 +1843,23 @@ func letSomebodySkipTheUnbookedDayReminder(d migration.Datasource) error {
 // default; zero is never.
 func letSomebodyChooseWhenTheStopwatchIsMentioned(d migration.Datasource) error {
 	return execAll(d, "ALTER TABLE users ADD COLUMN timer_alert_hours INTEGER")
+}
+
+// keepALogOfAdministration keeps who changed how the installation is run, and
+// when: accounts, roles, settings, a restart.
+//
+// The actor and the target are ids without a foreign key, on purpose. A key would
+// put the table on the erasure's list, and erasing an account would then erase the
+// record of what that account did to everybody else's - the one thing a log of
+// administration exists to keep. An id is never handed out twice, so once its
+// account is gone it names nobody, and the names are read when the log is shown.
+func keepALogOfAdministration(d migration.Datasource, dialect string) error {
+	return execAll(d, fmt.Sprintf(`CREATE TABLE admin_events (
+		%s,
+		at %s NOT NULL,
+		actor_id %s NOT NULL,
+		action VARCHAR(64) NOT NULL,
+		target_id %s,
+		detail VARCHAR(255) NOT NULL DEFAULT ''
+	)`, primaryKey(dialect), timestamp(dialect), foreignKeyID(dialect), foreignKeyID(dialect)))
 }

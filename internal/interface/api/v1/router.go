@@ -36,6 +36,7 @@ type Handlers struct {
 	Sheets     *rest.SheetHandler
 	Documents  *rest.DocumentHandler
 	Exports    *rest.ExportHandler
+	AdminLog   *rest.AdminLogHandler
 }
 
 // RegisterRoutes registers all v1 routes.
@@ -131,6 +132,10 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// nothing - and behind the built-in administrator, because it carries
 	// everything the process has written.
 	app.GET(base+"/admin/logs", h.Logs.Logs)
+
+	// Who changed how the installation is run. Under /admin for the same reason,
+	// and for whoever administers it: a record of administration is theirs to read.
+	app.GET(base+"/admin/changes", h.AdminLog.Changes)
 
 	app.GET(base+"/me", h.Me.Me)
 	app.PUT(base+"/me/password", h.Me.ChangePassword)

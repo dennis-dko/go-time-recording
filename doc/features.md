@@ -14,6 +14,7 @@ What the application does, and the rules it keeps while doing it.
 | Access control | RBAC with roles administered at run time; bcrypt password hashes |
 | Sign-in | Session cookies, optional passkeys and TOTP two-factor per user, a browser's Kerberos ticket where a keytab and a directory are configured, and an OpenID Connect provider - Keycloak, Authentik, Entra ID, Google - for the accounts their owners linked to it |
 | Live log | The process log, filterable and searchable, for the built-in administrator |
+| Administration log | Who created, changed or deleted an account or a role, saved a setting, switched maintenance mode or restarted the application, kept across restarts and readable under *Settings* by whoever administers |
 | Version | The running build in the footer of every page |
 | API access | Personal tokens, scoped by the owner's current role |
 | Stopwatch | Start and stop the clock; the measured time becomes an entry, to the second. A start pressed late can be corrected, a clock left running is booked up to the time the work ended, and switching to the next project books the clock and carries on from the same second |

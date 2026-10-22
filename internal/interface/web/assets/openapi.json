@@ -2752,6 +2752,20 @@
         }
       }
     },
+    "/admin/changes": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Who changed how the installation is run",
+        "description": "Answers {\"entries\": [{\"id\", \"at\", \"actor\": {\"id\", \"name\"}, \"action\": \"user.role\", \"target\": {\"id\", \"name\"}, \"detail\": \"user-admin\"}], \"more\"}, newest first, fifty at a time; ?before= the id of the oldest entry already shown reads the page before it. Every change that went through to an account (user.created, user.updated, user.deleted, user.role, user.password, users.imported), a role (role.created, role.updated, role.deleted, roles.imported), a setting (settings.maintenance with detail true or false, settings.branding, settings.ldap, settings.openid, settings.operational, settings.timezone, settings.holidays, settings.datasource, settings.telemetry) or the installation (directory.synchronised, installation.restart, installation.update, installation.setup) is recorded with the account that made it. Ids are kept and names read now: an account erased since has an empty name, and target is left out for a change to the installation as a whole. Needs settings:manage.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/admin/logs": {
       "get": {
         "tags": [

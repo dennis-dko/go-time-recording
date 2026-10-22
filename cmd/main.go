@@ -570,6 +570,7 @@ func main() {
 	tokenRepo := sqldb.NewAPITokenRepository(db, cfg.Dialect)
 	passkeyRepo := sqldb.NewPasskeyRepository(db, cfg.Dialect)
 	directoryRunRepo := sqldb.NewDirectoryRunRepository(db, cfg.Dialect)
+	adminLog := appservice.NewAdminLogService(sqldb.NewAdminEventRepository(db, cfg.Dialect), userRepo, roleRepo)
 
 	auth := appservice.NewAuthService(userRepo, roleRepo)
 	apiTokens := appservice.NewAPITokenService(tokenRepo, userRepo, auth)
@@ -937,6 +938,10 @@ func main() {
 	// UI, so the assets are still served and the page can render the notice.
 	app.UseMiddleware(rest.MaintenanceMiddleware(maintenanceState, authorizer))
 
+	// After both authentication paths for the same reason: an administrative change is
+	// recorded with who made it, and only once it has gone through.
+	app.UseMiddleware(rest.AdministrationLog(adminLog, app.Logger()))
+
 	// The two things this application says without being asked: that it is about
 	// to restart into a new version, and that the account holding the connection
 	// may suddenly do more, or less, than it could a moment ago. After the session
@@ -1033,6 +1038,7 @@ func main() {
 			WithTimezone(instanceTimezone),
 		Documents: rest.NewDocumentHandler(authorizer, instanceName).WithTimezone(instanceTimezone),
 		Exports:   rest.NewExportHandler(appservice.NewAccountExportService(userRepo), authorizer),
+		AdminLog:  rest.NewAdminLogHandler(adminLog, authorizer),
 		Settings: rest.NewSettingsHandler(settingsService, authorizer, limits,
 			cfg.Dialect, cfg.Telemetry, version,
 			ldapClient.Configure,

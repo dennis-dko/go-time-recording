@@ -372,3 +372,24 @@ What holds the round trip together:
   HTTP anybody on the way could answer for it and sign anybody in as anybody.
   The client secret is sealed with `SECRET_KEY` like the directory's bind
   password.
+
+## The administration log
+
+Under **Settings**, *Changes to the installation* lists who changed how the
+installation is run, newest first: an account created, corrected, given another
+role, given a new password or deleted; a role created, changed or deleted;
+accounts or roles imported; each settings card saved; maintenance mode switched
+on or off; the directory synchronised; the application restarted, updated or set
+up. Everybody holding `settings:manage` can read it, and nobody else.
+
+A change is recorded once it has gone through - a refused request changed
+nothing and is not there - by a middleware working from one table of routes, so
+no screen and no API client can change accounts, roles or settings past it.
+
+It keeps ids and reads the names when it is shown. An account renamed since
+appears under its new name; an account erased since appears by its number alone,
+because the log outlives the people it named without keeping their names. That is
+also why it is the one table referring to accounts that erasing an account leaves
+alone: the record of what an administrator did to everybody else's accounts is
+not theirs to take with them. Unlike the live log beside it, it survives a
+restart.
