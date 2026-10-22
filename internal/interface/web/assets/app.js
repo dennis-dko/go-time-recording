@@ -306,6 +306,9 @@ async function reach(url, options) {
     unreachable.refusal = { detail: err.message };
     unreachable.cause = err;
 
+    // Which a booking can wait out: see keepForLater.
+    unreachable.unreachable = true;
+
     throw unreachable;
   } finally {
     if (key) writesInFlight.delete(key);
@@ -4787,6 +4790,13 @@ const TRANSLATIONS = {
     'absence.flexDay': 'Gleittag (vom Überstundenkonto)',
     'absence.localHoliday': 'Feiertag am Arbeitsort',
     'team.viewingFor': 'Wessen Zeiten',
+    'outbox.kept': 'Keine Verbindung: auf diesem Gerät behalten und gesendet, sobald sie wieder da ist.',
+    'outbox.offline': 'Keine Verbindung zur Installation. Neue Buchungen bleiben auf diesem Gerät und werden gesendet, sobald sie wieder da ist.',
+    'outbox.waiting': 'Ohne Verbindung gebucht und auf diesem Gerät wartend: {0}. Gesendet wird, sobald die Verbindung wieder da ist.',
+    'outbox.refused': 'Die Installation hat diese ohne Verbindung gemachten Buchungen abgelehnt. Korrigiere sie, um sie erneut zu buchen:',
+    'outbox.correct': 'korrigieren',
+    'outbox.sent': 'Ohne Verbindung Gebuchtes gesendet: {0}',
+    'offline.signIn': 'Keine Verbindung zur Installation. Diese Seite macht von selbst weiter, sobald sie wieder da ist.',
     'team.mine': 'Meine',
     'team.viewingText': 'Du siehst die Zeiten von {0}. Was du hier buchst oder änderst, steht mit deinem Namen beim Eintrag, und {0} sieht es.',
     'team.recordedBy': 'gebucht von {0}',
@@ -5304,6 +5314,327 @@ function foldableAddress(address) {
   if (at < 0) return [address ?? ''];
 
   return [address.slice(0, at + 1), el('wbr'), address.slice(at + 1)];
+}
+
+// ------------------------------------------------------------------- offline
+
+/**
+ * Lets the installed application open without a network: sw.js keeps the shell
+ * of the page and hands it out when the installation cannot be reached, and
+ * nothing the API answers. Browsers allow it on HTTPS and on this machine only,
+ * so an installation reached over plain HTTP simply goes without.
+ */
+function keepTheShell() {
+  if (!('serviceWorker' in navigator)) return;
+
+  navigator.serviceWorker.register('/sw.js').catch(() => {
+    // Not kept: the page works exactly as it did, it only cannot open offline.
+  });
+}
+
+/** Where this account's bookings made without a connection wait on this device. */
+const OUTBOX_PREFIX = 'gtr_outbox_';
+
+/**
+ * Whose outbox this page reads, or none before anybody is signed in.
+ *
+ * Per account, as drafts are, so another account signing in on the same device
+ * neither sees them nor sends them as its own.
+ */
+function outboxKey() {
+  const who = me.user?.id;
+
+  return who ? `${OUTBOX_PREFIX}${who}` : '';
+}
+
+/** The bookings waiting on this device, oldest first. */
+function readOutbox() {
+  const key = outboxKey();
+  if (!key) return [];
+
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? '[]');
+  } catch {
+    return [];
+  }
+}
+
+/** Keeps what waits, and says so on the banner. */
+function writeOutbox(items) {
+  const key = outboxKey();
+
+  if (key) {
+    try {
+      if (items.length) localStorage.setItem(key, JSON.stringify(items));
+      else localStorage.removeItem(key);
+    } catch {
+      // Storage refused - a private window, a full disk. What is drawn below is
+      // still true of this page, which is all that is left to say it to.
+    }
+  }
+
+  drawOutbox(items);
+}
+
+/**
+ * Keeps a booking the installation could not be reached for, to send once it can.
+ *
+ * Only a new booking. A correction or a deletion acts on what the server holds
+ * now, and done blind from a device that has not heard from it for an hour it
+ * could undo what was done elsewhere in the meantime; a booking adds an entry and
+ * replaces nothing, so it is the one write that can wait.
+ */
+function keepForLater(body) {
+  const kept = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    body,
+    keptAt: new Date().toISOString(),
+  };
+
+  writeOutbox([...readOutbox(), kept]);
+}
+
+/** Changes one booking in the outbox as it is now, or takes it out with null. */
+function changeKept(id, change) {
+  writeOutbox(readOutbox().flatMap((item) => {
+    if (item.id !== id) return [item];
+
+    return change ? [{ ...item, ...change }] : [];
+  }));
+}
+
+/**
+ * Whether a booking a page began sending, and did not live to say had arrived,
+ * is on the server already: the same day, project, hours and description, booked
+ * after it was kept. Asked rather than sent again, because sent again it would be
+ * booked twice - which is what this did, measured, whenever the page that sent it
+ * was replaced before it could say so.
+ */
+async function alreadyBooked(kept) {
+  const day = kept.body.date;
+  const answer = await api(`/timesheets?${new URLSearchParams({ from: day, to: day, limit: '500' })}`);
+
+  return (answer?.items ?? []).some((entry) => entry.durationHours === Number(kept.body.durationHours)
+    && (entry.projectId ?? 0) === Number(kept.body.projectId || 0)
+    && (entry.description ?? '') === (kept.body.description ?? '')
+    && Date.parse(entry.createdAt) >= Date.parse(kept.keptAt));
+}
+
+/** The name the outbox is sent under, one page at a time across every tab. */
+const OUTBOX_LOCK = 'gtr-outbox';
+
+/** Whether this page is sending the outbox now, where tabs cannot be asked. */
+let sendingOutbox = false;
+
+/**
+ * Sends what waits, oldest first, once the installation can be reached.
+ *
+ * One page at a time, across every tab of this installation, through a lock the
+ * browser holds for all of them: two tabs sending the same outbox would book
+ * everything in it twice. Each booking is marked as on its way before it goes and
+ * taken out the moment it has arrived, so a page replaced in between leaves one
+ * that alreadyBooked asks about rather than one sent again.
+ *
+ * A booking the installation refuses - its project closed in the meantime, the day
+ * full - stays with the reason until somebody corrects it: hours that vanished
+ * because of a rule nobody saw are hours lost. One that cannot reach it stops the
+ * round, and the rest wait with it, because they would only fail the same way.
+ */
+async function sendOutbox() {
+  if (!me.user || !navigator.onLine || !readOutbox().some((item) => !item.refused)) return;
+
+  const round = async () => {
+    let sent = 0;
+
+    for (const item of readOutbox()) {
+      if (item.refused) continue;
+
+      try {
+        if (item.sending && await alreadyBooked(item)) {
+          changeKept(item.id, null);
+
+          continue;
+        }
+
+        changeKept(item.id, { sending: true });
+
+        await api('/timesheets', { method: 'POST', body: JSON.stringify(item.body) });
+
+        changeKept(item.id, null);
+        sent += 1;
+      } catch (err) {
+        if (err.unreachable) {
+          changeKept(item.id, { sending: false });
+
+          break;
+        }
+
+        changeKept(item.id, { sending: false, refused: err.message });
+      }
+    }
+
+    if (sent) {
+      toast(fillIn(t('outbox.sent', 'Sent what was booked without a connection: {0}'), [sent]), 'ok');
+      await reloadTimeViews();
+    }
+  };
+
+  if (navigator.locks) {
+    await navigator.locks.request(OUTBOX_LOCK, round);
+
+    return;
+  }
+
+  if (sendingOutbox) return;
+
+  sendingOutbox = true;
+
+  try {
+    await round();
+  } finally {
+    sendingOutbox = false;
+  }
+}
+
+/** Puts a refused booking back into the form, and out of the outbox. */
+function correctKept(kept) {
+  changeKept(kept.id, null);
+
+  const form = $('#form-timesheet');
+  if (!form) return;
+
+  switchView('timesheets');
+
+  setDateField(form.elements.date, kept.body.date ?? '');
+  form.elements.durationHours.value = kept.body.durationHours ?? '';
+  form.elements.description.value = kept.body.description ?? '';
+  form.elements.projectId.value = kept.body.projectId ? String(kept.body.projectId) : '';
+
+  form.scrollIntoView({ block: 'nearest' });
+  form.elements.durationHours.focus();
+}
+
+/**
+ * Says what waits and what was refused, and that there is no connection while
+ * there is none. A banner, because each is a state: true until the bookings are
+ * sent or corrected, and gone the moment they are.
+ */
+function drawOutbox(items = readOutbox()) {
+  const banner = $('#outbox-banner');
+  if (!banner) return;
+
+  const waiting = items.filter((item) => !item.refused);
+  const refused = items.filter((item) => item.refused);
+
+  const lines = [];
+
+  if (!navigator.onLine) {
+    lines.push(t('outbox.offline',
+      'No connection to the installation. New bookings stay on this device and are sent once it is back.'));
+  }
+
+  if (waiting.length) {
+    lines.push(fillIn(t('outbox.waiting',
+      'Booked without a connection and waiting on this device: {0}. They are sent once it is back.'),
+    [waiting.length]));
+  }
+
+  if (refused.length) {
+    lines.push(t('outbox.refused',
+      'The installation refused these bookings made without a connection. Correct them to book them again:'));
+  }
+
+  $('#outbox-text').textContent = lines.join(' ');
+
+  const list = $('#outbox-refused');
+  list.replaceChildren(...refused.map((item) => el('li', {},
+    [fmtDate(item.body.date), fmtHours(Number(item.body.durationHours)), item.body.description]
+      .filter(Boolean).join(' · ') + ` - ${item.refused} `,
+    el('button', {
+      type: 'button',
+      class: 'link-button',
+      text: t('outbox.correct', 'correct'),
+      onclick: () => correctKept(item),
+    }))));
+  list.hidden = refused.length === 0;
+
+  banner.hidden = lines.length === 0 || !me.user;
+}
+
+/**
+ * The page's side of being offline: the banner follows the connection, what
+ * waits is sent the moment it is back, and a page that could not even load for
+ * want of one starts again by itself.
+ */
+function wireOffline() {
+  window.addEventListener('offline', () => {
+    drawOutbox();
+    showSignInOffline(true);
+  });
+
+  window.addEventListener('online', () => {
+    drawOutbox();
+
+    if (!$('#login-offline')?.hidden) {
+      startAgain();
+
+      return;
+    }
+
+    mutate(sendOutbox, null, null);
+  });
+}
+
+/**
+ * Loads the page again, once: the connection coming back and the next round of
+ * asking can both notice it, and a second reload replaced the page that was in the
+ * middle of sending what had waited.
+ */
+function startAgain() {
+  clearInterval(reachingAgain);
+
+  if (startingAgain) return;
+
+  startingAgain = true;
+  window.location.reload();
+}
+
+/** Whether the page is already being loaded again. */
+let startingAgain = false;
+
+/** How often a page that could not reach the installation asks it again. */
+const REACH_AGAIN_MS = 10000;
+
+/** The asking, while it goes on. */
+let reachingAgain = null;
+
+/**
+ * Says on the sign-in screen that the installation cannot be reached, where that
+ * is why nobody is signed in - the form on its own reads as a session that ended,
+ * and invites a password that cannot be checked - and asks it again until it
+ * answers, then starts the page again.
+ *
+ * Told by the load that failed rather than by navigator.onLine alone, which says
+ * whether there is a network and not whether the installation answers on it: an
+ * installation that is down behind a working network is the same wait.
+ */
+function showSignInOffline(unreachable) {
+  const note = $('#login-offline');
+  if (!note) return;
+
+  note.hidden = !unreachable || Boolean(me.user);
+
+  if (note.hidden || reachingAgain) return;
+
+  reachingAgain = setInterval(async () => {
+    try {
+      const answer = await reach(`${API}/branding`, { credentials: 'same-origin' });
+
+      if (answer.ok) startAgain();
+    } catch {
+      // Still not there: the next round asks again.
+    }
+  }, REACH_AGAIN_MS);
 }
 
 // ------------------------------------------------------------------ managers
@@ -17823,6 +18154,11 @@ async function refreshAll() {
   await loadMyHolidays();
   await loadNotices();
   await loadMyManagers();
+
+  // What was booked without a connection, now that there is one - and the banner
+  // for whoever is signed in now.
+  drawOutbox();
+  await sendOutbox();
   fillSettingsForm();
 
   document.documentElement.dataset.loaded = 'yes';
@@ -17980,14 +18316,39 @@ function wireForms() {
     const path = editing ? `/timesheets/${id}` : '/timesheets';
     const method = editing ? 'PUT' : 'POST';
 
-    mutate(() => api(path, { method, body: JSON.stringify(body) }),
-      editing ? t('msg.entrySaved', 'Entry saved') : t('msg.booked', 'Time booked'),
-      async () => {
-        // Keeps the project and the date, so booking several entries in a row stays
-        // quick.
-        resetTimesheetForm();
-        await reloadTimeViews();
-      });
+    // Whether the booking waits on this device rather than having been booked,
+    // which decides what is said once it is put away.
+    let kept = false;
+
+    mutate(async () => {
+      try {
+        await api(path, { method, body: JSON.stringify(body) });
+      } catch (err) {
+        if (editing || !err.unreachable) throw err;
+
+        // A new booking waits on this device rather than being lost with the
+        // connection, and goes once it is back.
+        keepForLater(body);
+        kept = true;
+      }
+    }, editing ? t('msg.entrySaved', 'Entry saved') : null,
+    async () => {
+      // Keeps the project and the date, so booking several entries in a row stays
+      // quick.
+      resetTimesheetForm();
+
+      // Kept, nothing changed on the server to show, and nothing could be asked
+      // of it anyway: reloading would only add a second notice to the first.
+      if (kept) {
+        toast(t('outbox.kept', 'No connection: kept on this device, and sent once it is back.'), 'ok');
+
+        return;
+      }
+
+      if (!editing) toast(t('msg.booked', 'Time booked'), 'ok');
+
+      await reloadTimeViews();
+    });
   });
 
   $('#timesheet-cancel').addEventListener('click', resetTimesheetForm);
@@ -18310,6 +18671,11 @@ async function init() {
   $('#form-login').addEventListener('submit', submitLogin);
   wireTicketSignIn();
 
+  // Before anything can fail for want of a connection, so a page that cannot
+  // reach the installation says so rather than only failing.
+  keepTheShell();
+  wireOffline();
+
   // Here rather than with the rest of the wiring below, so the sign-in form has
   // its reveal before anything that could fail has been tried. It also registers
   // a submit handler per field, which runs beside a form's own rather than
@@ -18494,6 +18860,8 @@ async function init() {
  * belongs to showLogin, which already answers exactly that.
  */
 function afterAFailedFirstLoad(err) {
+  showSignInOffline(Boolean(err?.unreachable) || !navigator.onLine);
+
   if (me.user && err?.status !== 401) {
     restoreDrafts();
     hideLogin();

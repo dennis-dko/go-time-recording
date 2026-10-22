@@ -256,6 +256,16 @@
        on its own: two things stuck to the same edge cover each other, and the
        one underneath is the one nobody knew was there. -->
   <div id="standing-notices">
+    <!-- What was booked without a connection and waits on this device, what the
+         installation refused of it, and that there is no connection at all while
+         there is none. A banner because each is a state: true until the bookings
+         are sent or corrected. Correcting is the way a refused one goes, so the
+         list offers that and nothing else. Filled by drawOutbox. -->
+    <div id="outbox-banner" class="banner" hidden>
+      <p id="outbox-text"></p>
+      <ul id="outbox-refused" hidden></ul>
+    </div>
+
     <!-- Whose time is on screen, while it is not one's own. A banner because it is
          a state: true for as long as the picker says somebody else, and gone the
          moment it says one's own again - which is the way back, so there is
@@ -467,6 +477,12 @@
          somebody refused reads "back at 14:00" and tries their password again,
          because nothing on the screen says the refusal is not about them. -->
     <p id="login-maintenance-who" class="muted" hidden data-i18n="maint.signInWho">Only administrators can sign in while this lasts.</p>
+    <!-- That the installation cannot be reached, where that is why nobody is
+         signed in: the installed application opens from what sw.js kept, and
+         without this the form would read as a session that ended. -->
+    <div id="login-offline" class="banner banner-warn" hidden>
+      <p data-i18n="offline.signIn">No connection to the installation. This page carries on by itself once it is back.</p>
+    </div>
 
     <!-- Shown only while the session is being checked, and replaced by whichever
          answer comes back. No text: it is on screen for a moment and a sentence

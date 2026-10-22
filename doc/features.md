@@ -40,6 +40,7 @@ What the application does, and the rules it keeps while doing it.
 | Public holidays | The public holidays of every German state, worked out in the binary rather than fetched from anywhere. The installation chooses a state under *Settings*, and anybody can choose another - or none - under *My account*. They are named in the calendar and on the week, leave is not recorded on them, and from the day every working day counts from they ask nothing |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
 | Installable | A manifest and icons per installation - its own name and logo - so the page installs as an app on a telephone or a desktop, with shortcuts to the time entries, the calendar and the overtime. Browsers offer this over HTTPS or on localhost only |
+| Booking offline | The installed application opens without a network from the shell it kept, and says the installation cannot be reached rather than showing a dead page. A booking made in the form while the connection is gone waits on the device, a banner says how many wait, and they are sent - once each - when it is back; one the installation then refuses stays with its reason until it is corrected. Nothing the installation answers is ever shown from a copy. Over HTTPS or on localhost only, like installing |
 | Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |
 
 ## Projects

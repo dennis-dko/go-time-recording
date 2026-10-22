@@ -1252,6 +1252,9 @@ tbody tr.rejected td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .banner[hidden] { display: none; }
 
+/* The bookings the installation refused, a line each with the way to correct it. */
+#outbox-refused { margin: 6px 0 0; padding-left: 18px; }
+
 /* A button that reads as a link: this one goes somewhere rather than doing
    something, and a filled button beside a sentence would outweigh the sentence. */
 .link-button {

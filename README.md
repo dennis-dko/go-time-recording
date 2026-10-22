@@ -123,7 +123,7 @@ working time first — `task readme:pictures` takes them again.
     </td>
     <td valign="top" align="center">
       <img src="doc/images/phone.png" alt="The stopwatch on a telephone" width="240">
-      <p><b>From a telephone to a wide screen</b>, and installable as an app with the installation's own name and logo.</p>
+      <p><b>From a telephone to a wide screen</b>, and installable as an app with the installation's own name and logo - which opens without a network, and keeps what is booked meanwhile until it is back.</p>
     </td>
   </tr>
 </table>
