@@ -113,6 +113,9 @@ func TestTheReadmePicturesAreTakenFromTheApplication(t *testing.T) {
 	p.waitShown("#report-result")
 	p.run("as a pie", p.click(`#report-chart-switch [data-chart="pie"]`))
 	p.shootCard(into, "report", "#report-result")
+	p.run("work out the month's statement", p.click(`#form-statement button[type="submit"]`))
+	p.waitShown("#statement-result")
+	p.shootCard(into, "statement", "#statement-result")
 
 	p.showView("projects")
 	p.shootCard(into, "projects", "#view-projects .card:has(#table-projects)")
@@ -309,10 +312,11 @@ const theInstallation = `(async () => {
 	return true;
 })()`
 
-// demoRecord is somebody's last twelve months: five projects, three or four
-// entries a working day with an activity in each, leave and a few days off sick,
-// public holidays kept free, when each of the last two weeks' days began and
-// ended, and a stopwatch running since shortly before one.
+// demoRecord is somebody's last twelve months: five projects, three of them
+// charged by the hour, three or four entries a working day with an activity in
+// each, leave and a few days off sick, public holidays kept free, when each of
+// the last two weeks' days began and ended, and a stopwatch running since
+// shortly before one.
 //
 // The budgets are chosen to land one project past its budget and one in the
 // last fifth of it, which is where the project list marks them; the activities
@@ -329,12 +333,13 @@ const demoRecord = `(async () => {
 	const put = (path, body) => api(path, {method: 'PUT', body: JSON.stringify(body)});
 	const back = 365;
 
-	const project = async (name, description, budgetHours) => (await post('/projects', {
-		name, description, budgetHours, startDate: iso(ago(back + 30)), status: 'active'})).id;
+	const project = async (name, description, budgetHours, hourlyRate = null) => (await post('/projects', {
+		name, description, budgetHours, startDate: iso(ago(back + 30)), status: 'active',
+		billable: hourlyRate !== null, hourlyRate, currency: 'EUR'})).id;
 
-	const web = await project('Website relaunch', 'New shop front and checkout', 800);
-	const app = await project('Mobile app', 'Release 2.4 for iOS and Android', 1000);
-	const support = await project('Customer support', 'Second-level tickets', null);
+	const web = await project('Website relaunch', 'New shop front and checkout', 800, 95);
+	const app = await project('Mobile app', 'Release 2.4 for iOS and Android', 1000, 110);
+	const support = await project('Customer support', 'Second-level tickets', null, 70);
 	const tooling = await project('Internal tooling', 'Build pipeline and deployment', 160);
 	const training = await project('Training', 'Courses and conferences', 100);
 

@@ -94,6 +94,17 @@
         <path d="M12 5.6V2.8M12 21.2v-2.8M18.4 12H21.2M2.8 12h2.8"/>
         <path d="m16.5 7.5 2-2M5.5 18.5l2-2M16.5 16.5l2 2M5.5 5.5l2 2"/>
       </symbol>
+      <!-- The marks a notice opens with: done, and something that went wrong - a
+           shape as well as a colour, so the two are told apart without either. -->
+      <symbol id="icon-toast-ok" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16.5 9.5"/>
+      </symbol>
+      <symbol id="icon-toast-error" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>
+      </symbol>
+      <symbol id="icon-close" viewBox="0 0 24 24">
+        <path d="M7 7l10 10M17 7L7 17"/>
+      </symbol>
     </defs>
   </svg>
 
@@ -222,7 +233,7 @@
   <!-- A stack rather than one slot: two failures in a row used to show only the
        second, which is the case where the first one mattered. Each notice
        carries its own role, so an error interrupts a screen reader and a
-       "Saved" does not. -->
+       "Saved" does not. Built by toast. -->
   <div id="toast" class="toast-stack" aria-live="polite"></div>
 
   <!-- Shown while the installation is out of service. Separate from the

@@ -13,12 +13,14 @@ import (
 )
 
 // fakeInstallation answers the few routes track asks, the way the real API does -
-// in GoFr's envelope - and keeps what it was sent.
+// in GoFr's envelope - and keeps what it was sent. Its stopwatch runs until it is
+// stopped, and runs again once it is started.
 type fakeInstallation struct {
 	mu       sync.Mutex
 	sent     map[string][]map[string]any
 	token    string
 	refuseAs string
+	stopped  bool
 }
 
 func newFakeInstallation(t *testing.T) (*fakeInstallation, *httptest.Server) {
@@ -50,6 +52,17 @@ func (f *fakeInstallation) answer(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	f.sent[route] = append(f.sent[route], body)
+
+	if f.refuseAs == "" {
+		switch route {
+		case "POST /me/timer":
+			f.stopped = false
+		case "POST /me/timer/stop":
+			f.stopped = true
+		}
+	}
+
+	stopped := f.stopped
 	f.mu.Unlock()
 
 	if f.refuseAs != "" && r.Method != http.MethodGet {
@@ -62,11 +75,11 @@ func (f *fakeInstallation) answer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]string{
-		"GET /me": `{"user":{"effectiveTimezone":"Europe/Berlin"}}`,
+		"GET /me": `{"user":{"name":"Dana Example","effectiveTimezone":"Europe/Berlin"}}`,
 		"GET /projects": `{"items":[{"id":1,"name":"Website","status":"active"},` +
 			`{"id":2,"name":"Webshop","status":"active"},{"id":3,"name":"Archive","status":"archived"},` +
 			`{"id":4,"name":"Consulting","status":"active"}]}`,
-		"GET /me/timer":         `{"running":true,"projectId":4,"startedAt":"2026-10-22T07:12:00Z","elapsedHours":1.5}`,
+		"GET /me/timer":         `{"running":true,"projectId":4,"description":"review","startedAt":"2026-10-22T07:12:00Z","elapsedHours":1.5}`,
 		"POST /me/timer":        `{"running":true,"projectId":4,"startedAt":"2026-10-22T07:12:00Z","elapsedHours":0}`,
 		"POST /me/timer/stop":   `{"projectId":4,"date":"2026-10-22","durationHours":1.5}`,
 		"POST /me/timer/switch": `{"booked":{"projectId":4,"date":"2026-10-22","durationHours":1.5}}`,
@@ -74,6 +87,10 @@ func (f *fakeInstallation) answer(w http.ResponseWriter, r *http.Request) {
 		"GET /timesheets": `{"items":[{"projectId":4,"date":"2026-10-22","durationHours":2.5,"description":"review"},` +
 			`{"projectId":null,"date":"2026-10-22","durationHours":0.5}],"totalCount":2}`,
 	}[route]
+
+	if route == "GET /me/timer" && stopped {
+		data = `{"running":false,"elapsedHours":0}`
+	}
 
 	if data == "" {
 		w.WriteHeader(http.StatusNotFound)
@@ -143,6 +160,17 @@ func TestAProjectNameThatIsNotOneProjectIsSaidBack(t *testing.T) {
 
 	if sent := f.sentTo("POST /timesheets"); len(sent) != 0 {
 		t.Errorf("something was booked anyway: %v", sent)
+	}
+}
+
+// Bare, with its answer going anywhere but a terminal, track says what it does
+// and exits 2, as it did before it had a screen: a script that runs it so gets
+// lines, not a screen waiting for keys nobody is there to press.
+func TestBareTrackSaysWhatItDoesWhereThereIsNoTerminal(t *testing.T) {
+	f, server := newFakeInstallation(t)
+
+	if status, out, _ := track(t, server.URL, f.token); status != 2 || !strings.Contains(out, "track status") {
+		t.Errorf("bare track answered %d %q, want 2 and what it does", status, out)
 	}
 }
 

@@ -38,12 +38,9 @@ func newClient(base, token string) *client {
 
 // refusal is what the installation answered instead of doing something, in its
 // own words - which are what the person at the terminal needs to read.
-type refusal struct {
-	status  int
-	message string
-}
+type refusal string
 
-func (r refusal) Error() string { return r.message }
+func (r refusal) Error() string { return string(r) }
 
 // call sends a request and reads the data of the answer into into, nil for an
 // answer nobody needs.
@@ -108,8 +105,7 @@ func (c *client) call(ctx context.Context, method, path string, body, into any) 
 // installation's are about a session and what is wrong here is the token.
 func refusalOf(status int, raw []byte) error {
 	if status == http.StatusUnauthorized {
-		return refusal{status: status,
-			message: "the installation does not know this token - make one under My account, API tokens, and put it in GTR_TOKEN"}
+		return refusal("the installation does not know this token - make one under My account, API tokens, and put it in GTR_TOKEN")
 	}
 
 	var body struct {
@@ -127,5 +123,5 @@ func refusalOf(status int, raw []byte) error {
 		message = fmt.Sprintf("the installation answered %d %s", status, http.StatusText(status))
 	}
 
-	return refusal{status: status, message: message}
+	return refusal(message)
 }
