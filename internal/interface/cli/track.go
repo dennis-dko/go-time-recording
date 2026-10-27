@@ -8,15 +8,21 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // usage is what track says about itself.
 const usage = `go-time-recording track - book time from a terminal
 
+  track                              on a terminal, a screen: the stopwatch
+                                     running, today's entries, and a form for
+                                     each of the commands below
   track status                       the stopwatch, and what today adds up to
   track start [project] [-m text]    start the stopwatch, on a project or on none
   track stop                         stop it, and book what it measured
@@ -35,13 +41,19 @@ API tokens. A project is named as it is called, or by the start of its name.
 // installation refused or could not be reached, and 2 for a command line that
 // could not be read.
 //
+// The word alone opens the screen when the answer goes to a terminal, and says
+// what track does when it goes anywhere else: a script that runs track bare
+// gets the lines and the status it always had, rather than a screen waiting for
+// keys nobody is there to press.
+//
 // The installation and the token come from the environment rather than from
 // flags: a token on a command line lands in the shell's history and in every
 // process listing on the machine.
 func Run(ctx context.Context, args []string, env func(string) string, out, errOut io.Writer) int {
 	complain := &session{out: errOut}
+	onScreen := len(args) == 0 && isTerminal(out)
 
-	if len(args) == 0 || slices.Contains([]string{"help", "-h", "--help"}, args[0]) {
+	if !onScreen && (len(args) == 0 || slices.Contains([]string{"help", "-h", "--help"}, args[0])) {
 		(&session{out: out}).say("%s", strings.TrimRight(usage, "\n"))
 
 		if len(args) == 0 {
@@ -59,26 +71,14 @@ func Run(ctx context.Context, args []string, env func(string) string, out, errOu
 		return 2
 	}
 
-	line, err := parse(args[1:])
-	if err == nil {
-		s := &session{api: newClient(base, token), out: out}
+	s := &session{api: newClient(base, token), out: out}
 
-		switch args[0] {
-		case "status":
-			err = s.status(ctx, line)
-		case "start":
-			err = s.start(ctx, line)
-		case "stop":
-			err = s.stop(ctx, line)
-		case "switch":
-			err = s.switchTo(ctx, line)
-		case "book":
-			err = s.book(ctx, line)
-		case "today":
-			err = s.today(ctx, line)
-		default:
-			err = usageError(fmt.Sprintf("track does not know %q; track help says what it does", args[0]))
-		}
+	var err error
+
+	if onScreen {
+		err = s.show(ctx)
+	} else {
+		err = s.carryOut(ctx, args)
 	}
 
 	if err == nil {
@@ -93,6 +93,40 @@ func Run(ctx context.Context, args []string, env func(string) string, out, errOu
 	}
 
 	return 1
+}
+
+// carryOut does what one command line asks.
+func (s *session) carryOut(ctx context.Context, args []string) error {
+	line, err := parse(args[1:])
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "status":
+		return s.status(ctx, line)
+	case "start":
+		return s.start(ctx, line)
+	case "stop":
+		return s.stop(ctx, line)
+	case "switch":
+		return s.switchTo(ctx, line)
+	case "book":
+		return s.book(ctx, line)
+	case "today":
+		return s.today(ctx, line)
+	}
+
+	return usageError(fmt.Sprintf("track does not know %q; track help says what it does", args[0]))
+}
+
+// isTerminal tells a terminal from a pipe or a file. Asked of the terminal
+// itself rather than read off the file's mode, which calls /dev/null a
+// character device too.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+
+	return ok && term.IsTerminal(int(f.Fd()))
 }
 
 // usageError is a command line that cannot be read, as against a request the
@@ -152,6 +186,17 @@ func (s *session) say(format string, args ...any) {
 	_, _ = fmt.Fprintf(s.out, format+"\n", args...)
 }
 
+// report prints what a change did, or hands on why it could not be made.
+func (s *session) report(said string, err error) error {
+	if err != nil {
+		return err
+	}
+
+	s.say("%s", said)
+
+	return nil
+}
+
 // project is one of the token owner's projects, as /projects lists it.
 type project struct {
 	ID     uint   `json:"id"`
@@ -171,30 +216,40 @@ type entry struct {
 type stopwatch struct {
 	Running      bool       `json:"running"`
 	ProjectID    *uint      `json:"projectId"`
+	Description  *string    `json:"description"`
 	StartedAt    *time.Time `json:"startedAt"`
 	ElapsedHours float64    `json:"elapsedHours"`
 }
 
-// zone is where the token's owner keeps their days: their own zone, or the
-// installation's where they chose none - worked out by the installation, so a
-// day here is the day the browser would show them.
-func (s *session) zone(ctx context.Context) (*time.Location, error) {
+// me is the token's owner as /me answers: what they are called, and where they
+// keep their days - their own zone, or the installation's where they chose
+// none, worked out by the installation so that a day here is the day the
+// browser would show them.
+func (s *session) me(ctx context.Context) (string, *time.Location, error) {
 	var me struct {
 		User struct {
+			Name              string `json:"name"`
 			EffectiveTimezone string `json:"effectiveTimezone"`
 		} `json:"user"`
 	}
 
 	if err := s.api.call(ctx, http.MethodGet, "/me", nil, &me); err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	zone, err := time.LoadLocation(me.User.EffectiveTimezone)
 	if err != nil || me.User.EffectiveTimezone == "" {
-		return time.UTC, nil
+		zone = time.UTC
 	}
 
-	return zone, nil
+	return me.User.Name, zone, nil
+}
+
+// zone is where the token's owner keeps their days.
+func (s *session) zone(ctx context.Context) (*time.Location, error) {
+	_, zone, err := s.me(ctx)
+
+	return zone, err
 }
 
 // projects lists the token owner's projects.
@@ -206,6 +261,50 @@ func (s *session) projects(ctx context.Context) ([]project, error) {
 	err := s.api.call(ctx, http.MethodGet, "/projects", nil, &listed)
 
 	return listed.Items, err
+}
+
+// snapshot is the token owner's day as it stands: who they are, where their
+// days are kept, their projects, the stopwatch, and what today has booked.
+type snapshot struct {
+	name     string
+	zone     *time.Location
+	projects []project
+	clock    stopwatch
+	today    []entry
+}
+
+// snapshot reads the token owner's day.
+func (s *session) snapshot(ctx context.Context) (snapshot, error) {
+	var now snapshot
+
+	name, zone, err := s.me(ctx)
+	if err != nil {
+		return now, err
+	}
+
+	now.name, now.zone = name, zone
+
+	if now.projects, err = s.projects(ctx); err != nil {
+		return now, err
+	}
+
+	if err := s.api.call(ctx, http.MethodGet, "/me/timer", nil, &now.clock); err != nil {
+		return now, err
+	}
+
+	now.today, err = s.entriesOn(ctx, time.Now().In(zone).Format(time.DateOnly))
+
+	return now, err
+}
+
+// clockLine says what the stopwatch is doing, given how long it has run.
+func (n snapshot) clockLine(elapsed float64) string {
+	if !n.clock.Running || n.clock.StartedAt == nil {
+		return "The stopwatch is not running."
+	}
+
+	return fmt.Sprintf("Running since %s on %s - %s so far.", n.clock.StartedAt.In(n.zone).Format("15:04"),
+		nameOf(n.projects, n.clock.ProjectID), hoursAndMinutes(elapsed))
 }
 
 // projectNamed finds the active project somebody means: the one called that,
@@ -285,39 +384,73 @@ func (s *session) aimedAt(ctx context.Context, line commandLine) (map[string]any
 	return body, name, nil
 }
 
+// The changes track makes. Each answers with what it did in a sentence, which
+// the command prints and the screen shows under the clock - the same words for
+// the same change, wherever it was asked for.
+
+// startClock starts the stopwatch as body says, on the project called name, and
+// says when it started in the owner's zone.
+func (s *session) startClock(ctx context.Context, body map[string]any, name string, zone *time.Location) (string, error) {
+	var clock stopwatch
+	if err := s.api.call(ctx, http.MethodPost, "/me/timer", body, &clock); err != nil {
+		return "", err
+	}
+
+	started := time.Now()
+	if clock.StartedAt != nil {
+		started = *clock.StartedAt
+	}
+
+	return fmt.Sprintf("Started at %s on %s.", started.In(zone).Format("15:04"), name), nil
+}
+
+// stopClock stops the stopwatch and books what it measured.
+func (s *session) stopClock(ctx context.Context, projects []project) (string, error) {
+	var booked entry
+	if err := s.api.call(ctx, http.MethodPost, "/me/timer/stop", nil, &booked); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Booked %s on %s.", hours(booked.DurationHours), nameOf(projects, booked.ProjectID)), nil
+}
+
+// switchClock books what the stopwatch measured and carries on as body says, on
+// the project called name.
+func (s *session) switchClock(ctx context.Context, body map[string]any, name string, projects []project) (string, error) {
+	var switched struct {
+		Booked entry `json:"booked"`
+	}
+
+	if err := s.api.call(ctx, http.MethodPost, "/me/timer/switch", body, &switched); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Booked %s on %s; running on %s now.", hours(switched.Booked.DurationHours),
+		nameOf(projects, switched.Booked.ProjectID), name), nil
+}
+
+// bookHours books hours by hand as body says, on the project called name.
+func (s *session) bookHours(ctx context.Context, body map[string]any, name string) (string, error) {
+	var booked entry
+	if err := s.api.call(ctx, http.MethodPost, "/timesheets", body, &booked); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Booked %s on %s for %s.", hours(booked.DurationHours), name, booked.Date), nil
+}
+
 func (s *session) status(ctx context.Context, line commandLine) error {
 	if len(line.words) > 0 {
 		return usageError("status takes nothing after it")
 	}
 
-	zone, err := s.zone(ctx)
+	now, err := s.snapshot(ctx)
 	if err != nil {
 		return err
 	}
 
-	projects, err := s.projects(ctx)
-	if err != nil {
-		return err
-	}
-
-	var clock stopwatch
-	if err := s.api.call(ctx, http.MethodGet, "/me/timer", nil, &clock); err != nil {
-		return err
-	}
-
-	if clock.Running && clock.StartedAt != nil {
-		s.say("Running since %s on %s - %s so far.", clock.StartedAt.In(zone).Format("15:04"),
-			nameOf(projects, clock.ProjectID), hoursAndMinutes(clock.ElapsedHours))
-	} else {
-		s.say("The stopwatch is not running.")
-	}
-
-	entries, err := s.entriesOn(ctx, time.Now().In(zone).Format(time.DateOnly))
-	if err != nil {
-		return err
-	}
-
-	s.say("Booked today: %s.", hours(total(entries)))
+	s.say("%s", now.clockLine(now.clock.ElapsedHours))
+	s.say("Booked today: %s.", hours(total(now.today)))
 
 	return nil
 }
@@ -333,19 +466,7 @@ func (s *session) start(ctx context.Context, line commandLine) error {
 		return err
 	}
 
-	var clock stopwatch
-	if err := s.api.call(ctx, http.MethodPost, "/me/timer", body, &clock); err != nil {
-		return err
-	}
-
-	started := time.Now()
-	if clock.StartedAt != nil {
-		started = *clock.StartedAt
-	}
-
-	s.say("Started at %s on %s.", started.In(zone).Format("15:04"), name)
-
-	return nil
+	return s.report(s.startClock(ctx, body, name, zone))
 }
 
 func (s *session) stop(ctx context.Context, line commandLine) error {
@@ -353,19 +474,12 @@ func (s *session) stop(ctx context.Context, line commandLine) error {
 		return usageError("stop takes nothing after it: the stopwatch already knows what it is on")
 	}
 
-	var booked entry
-	if err := s.api.call(ctx, http.MethodPost, "/me/timer/stop", nil, &booked); err != nil {
-		return err
-	}
-
 	projects, err := s.projects(ctx)
 	if err != nil {
 		return err
 	}
 
-	s.say("Booked %s on %s.", hours(booked.DurationHours), nameOf(projects, booked.ProjectID))
-
-	return nil
+	return s.report(s.stopClock(ctx, projects))
 }
 
 func (s *session) switchTo(ctx context.Context, line commandLine) error {
@@ -374,23 +488,12 @@ func (s *session) switchTo(ctx context.Context, line commandLine) error {
 		return err
 	}
 
-	var switched struct {
-		Booked entry `json:"booked"`
-	}
-
-	if err := s.api.call(ctx, http.MethodPost, "/me/timer/switch", body, &switched); err != nil {
-		return err
-	}
-
 	projects, err := s.projects(ctx)
 	if err != nil {
 		return err
 	}
 
-	s.say("Booked %s on %s; running on %s now.", hours(switched.Booked.DurationHours),
-		nameOf(projects, switched.Booked.ProjectID), name)
-
-	return nil
+	return s.report(s.switchClock(ctx, body, name, projects))
 }
 
 func (s *session) book(ctx context.Context, line commandLine) error {
@@ -411,8 +514,8 @@ func (s *session) book(ctx context.Context, line commandLine) error {
 		}
 
 		day = time.Now().In(zone).Format(time.DateOnly)
-	} else if _, err := time.Parse(time.DateOnly, day); err != nil {
-		return usageError(fmt.Sprintf("%q is not a day: write it as YYYY-MM-DD", day))
+	} else if err := readableDay(day); err != nil {
+		return err
 	}
 
 	body, name, err := s.aimedAt(ctx, commandLine{words: line.words[1:], description: line.description})
@@ -422,14 +525,7 @@ func (s *session) book(ctx context.Context, line commandLine) error {
 
 	body["date"], body["durationHours"] = day, worked
 
-	var booked entry
-	if err := s.api.call(ctx, http.MethodPost, "/timesheets", body, &booked); err != nil {
-		return err
-	}
-
-	s.say("Booked %s on %s for %s.", hours(booked.DurationHours), name, booked.Date)
-
-	return nil
+	return s.report(s.bookHours(ctx, body, name))
 }
 
 func (s *session) today(ctx context.Context, line commandLine) error {
@@ -506,6 +602,16 @@ func parseHours(raw string) (float64, error) {
 	}
 
 	return worked, nil
+}
+
+// readableDay refuses a day that is not written as YYYY-MM-DD, which is the one
+// way the API reads one.
+func readableDay(day string) error {
+	if _, err := time.Parse(time.DateOnly, day); err != nil {
+		return usageError(fmt.Sprintf("%q is not a day: write it as YYYY-MM-DD", day))
+	}
+
+	return nil
 }
 
 // total adds up what entries booked.

@@ -1291,7 +1291,8 @@ installation, through its API, as the owner of a personal token - see
 [doc/api.md](../doc/api.md#from-a-terminal). It reads `GTR_URL` and `GTR_TOKEN`
 from the environment, opens no port and touches no database, so the binary that
 runs an installation is also the one people can hand out to book from a
-terminal.
+terminal. It draws its screen only when its output is a terminal - over SSH as
+well, with nothing installed beside it - and prints lines otherwise.
 
 Under systemd, `systemctl stop`, roll back, `systemctl start` - the unit file
 still points at the same path.
