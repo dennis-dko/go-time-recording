@@ -2,8 +2,8 @@
 
 <p align="center">
   <b>Project time tracking in a single self-contained binary.</b><br>
-  A web interface and a REST API for recording where working hours go —
-  self-hosted, on SQLite, PostgreSQL or MySQL.
+  A web interface, a REST API and a terminal client for recording where working
+  hours go — self-hosted, on SQLite, PostgreSQL or MySQL.
 </p>
 
 <p align="center">
@@ -29,9 +29,10 @@
 
 ## Why Go-Time-Recording
 
-- 📦 **One file to run.** The interface, the API, the schema migrations and the
-  timezone database are compiled into one binary — for Linux, Windows and macOS,
-  and as an image for amd64 and arm64. Nothing to unpack beside it.
+- 📦 **One file to run.** The interface, the API, the terminal client, the schema
+  migrations and the timezone database are compiled into one binary — for Linux,
+  Windows and macOS, and as an image for amd64 and arm64. Nothing to unpack beside
+  it.
 - 🔒 **Your hours stay yours.** Every project belongs to one person, and nobody
   else — the administrator included — can read, total or correct anybody's time.
   An installation may switch on managers for the people an administrator assigns
@@ -137,11 +138,13 @@ working time first — `task readme:pictures` takes them again.
 
 ## How it fits together
 
-One process answers everybody: the browser, the scripts, the calendar apps.
+One process answers everybody: the browser, the terminal, the scripts, the
+calendar apps.
 
 ```mermaid
 flowchart TB
     people(["People<br/>browser · telephone"])
+    terminal(["A terminal<br/>go-time-recording track"])
     scripts(["Scripts and tools<br/>personal API token"])
     calendars(["Calendar apps<br/>iCalendar subscription"])
 
@@ -157,6 +160,7 @@ flowchart TB
     telemetry["Prometheus · OpenTelemetry"]
 
     people --> ui --> api
+    terminal --> api
     scripts --> api
     calendars --> api
     installer -. chooses .-> db
@@ -174,6 +178,7 @@ flowchart LR
     stopwatch["Stopwatch"] --> entry
     form["Entry form"] --> entry
     grid["Week grid"] --> entry
+    terminal["Terminal"] --> entry
     workbook["Spreadsheet import"] --> entry
     entry[("Time entry<br/>day · hours · project · activity")]
     entry --> calendar["Calendar and year"]
@@ -322,7 +327,7 @@ says what track answers, and with which exit status.
 | [Accounts, roles and sign-in](doc/access.md) | Rights, the administrator, API tokens, LDAP, Kerberos and OpenID Connect |
 | [Security](doc/security.md) | Sessions, CSRF, passkeys, two factors, HTTPS, and what a copy of the database gives away |
 | [Configuration](doc/configuration.md) | Where each setting comes from, and what the interface can change |
-| [API](doc/api.md) | What a refusal looks like, and what the metrics carry |
+| [API](doc/api.md) | Booking from a terminal, what a refusal looks like, and what the metrics carry |
 | [Architecture](doc/architecture.md) | The four layers, and the decisions that would otherwise surprise |
 | [Development](doc/development.md) | The environments, and the checks a change has to pass |
 | [Releases and deployment](doc/deployment.md) | How a release is made and what it carries |
