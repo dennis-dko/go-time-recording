@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -310,6 +311,40 @@ func TestARefusedChangeIsSaidOnTheScreen(t *testing.T) {
 	}
 
 	w.close()
+}
+
+// An installation that cannot be reached is asked again every half minute: not
+// with every second the clock ticks once a read has failed, and not never when
+// the very first one failed.
+func TestAnInstallationOutOfReachIsAskedAgainEveryHalfMinute(t *testing.T) {
+	asked := func(m screen, msg tea.Msg) (screen, bool) {
+		next, _ := m.Update(msg)
+
+		return next.(screen), next.(screen).reading
+	}
+
+	start := time.Now()
+	out := errors.New("could not reach the installation")
+	m := newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:1", "gtr_x"), out: io.Discard})
+
+	m, _ = asked(m, loaded{err: out, at: start.Add(time.Second)})
+
+	if _, again := asked(m, tick(start.Add(31*time.Second))); !again {
+		t.Error("after a first read that failed, half a minute on, nothing asks again")
+	}
+
+	m = newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:1", "gtr_x"), out: io.Discard})
+	m, _ = asked(m, loaded{shown: snapshot{zone: time.UTC}, at: start})
+	m, _ = asked(m, tick(start.Add(30*time.Second)))
+	m, _ = asked(m, loaded{err: out, at: start.Add(31 * time.Second)})
+
+	if _, again := asked(m, tick(start.Add(32*time.Second))); again {
+		t.Error("a second after a read failed, the installation is asked again")
+	}
+
+	if _, again := asked(m, tick(start.Add(61*time.Second))); !again {
+		t.Error("half a minute after a read failed, nothing asks again")
+	}
 }
 
 // mustZone loads a zone the test depends on.

@@ -42,8 +42,13 @@ type screen struct {
 	loaded bool
 
 	// reading is a read of the day on its way, so the second hand does not ask
-	// again every second while an installation is slow to answer.
+	// again every second while an installation is slow to answer. askedAt is
+	// when the day was last asked for, answered or not: the half minute is
+	// counted from there, because counted from the last answer it ran out for
+	// good once an installation stopped answering, and from then on the screen
+	// asked with every second.
 	reading bool
+	askedAt time.Time
 
 	// busy is a change on its way, or one whose outcome has not been read yet.
 	// Until it has, the screen shows the day as it was before the change, and a
@@ -87,7 +92,7 @@ func newScreen(ctx context.Context, s *session) screen {
 		host = u.Host
 	}
 
-	return screen{ctx: ctx, s: s, host: host, reading: true}
+	return screen{ctx: ctx, s: s, host: host, reading: true, askedAt: time.Now()}
 }
 
 // show runs the screen until it is closed.
@@ -129,6 +134,13 @@ func (m screen) Init() tea.Cmd {
 	return tea.Batch(m.load(), second(), tea.RequestBackgroundColor)
 }
 
+// ask reads the day again, and remembers when it was asked.
+func (m screen) ask(now time.Time) (screen, tea.Cmd) {
+	m.reading, m.askedAt = true, now
+
+	return m, m.load()
+}
+
 // load reads the day again.
 func (m screen) load() tea.Cmd {
 	ctx, s := m.ctx, m.s
@@ -165,10 +177,10 @@ func (m screen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tick:
 		m.now = time.Time(msg)
 
-		if m.loaded && !m.reading && m.now.Sub(m.readAt) >= refreshEvery {
-			m.reading = true
+		if !m.reading && m.now.Sub(m.askedAt) >= refreshEvery {
+			next, read := m.ask(m.now)
 
-			return m, tea.Batch(second(), m.load())
+			return next, tea.Batch(second(), read)
 		}
 
 		return m, second()
@@ -180,9 +192,7 @@ func (m screen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.news, m.failure = "", msg.err.Error()
 		}
 
-		m.reading = true
-
-		return m, m.load()
+		return m.ask(time.Now())
 	}
 
 	if m.form != nil {
@@ -237,9 +247,7 @@ func (m screen) press(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		m.reading = true
-
-		return m, m.load()
+		return m.ask(time.Now())
 	}
 
 	if !m.loaded || m.busy {
