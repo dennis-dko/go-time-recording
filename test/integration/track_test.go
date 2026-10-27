@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"os/exec"
@@ -39,7 +40,7 @@ func TestTheBinaryBooksFromATerminalWithAPersonalToken(t *testing.T) {
 		t.Helper()
 
 		cmd := exec.Command(harness.Binary(), append([]string{"track"}, args...)...)
-		cmd.Env = append(os.Environ(), "GTR_URL="+a.BaseURL(), "GTR_TOKEN="+token.Secret)
+		cmd.Env = append(os.Environ(), "GTR_URL="+a.BaseURL(), "GTR_TOKEN="+token.Secret, "GTR_LANG=en")
 
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -93,5 +94,62 @@ func TestTheBinaryBooksFromATerminalWithAPersonalToken(t *testing.T) {
 
 	if clock.Running {
 		t.Error("the stopwatch is still running after track stop")
+	}
+}
+
+// Asked for German, the binary says a refusal in the words the German web
+// interface has for it - from the code and the values the installation sent, so
+// the day in it is written the German way rather than the way it travels.
+func TestTheBinarySaysARefusalInTheBrowsersGerman(t *testing.T) {
+	t.Parallel()
+
+	a, _, worker := startWithWorker(t)
+
+	var me struct {
+		User userResponse `json:"user"`
+	}
+
+	worker.must(worker.api(http.MethodGet, "/me", nil), http.StatusOK).Data(t, &me)
+	worker.must(worker.api(http.MethodPut, path("/users/", me.User.ID, "/working-times"),
+		map[string]any{"dailyTargetHours": 8, "maxDailyHours": 8}), http.StatusOK)
+	worker.must(worker.api(http.MethodPost, "/projects", map[string]any{
+		"name": "Website", "startDate": "2026-10-01",
+	}), http.StatusCreated, http.StatusOK)
+
+	var token struct {
+		Secret string `json:"secret"`
+	}
+
+	worker.must(worker.api(http.MethodPost, "/me/tokens", map[string]any{"name": "terminal"}),
+		http.StatusCreated, http.StatusOK).Data(t, &token)
+
+	track := func(args ...string) (string, int) {
+		t.Helper()
+
+		cmd := exec.Command(harness.Binary(), append([]string{"track", "--lang", "de"}, args...)...)
+		cmd.Env = append(os.Environ(), "GTR_URL="+a.BaseURL(), "GTR_TOKEN="+token.Secret)
+
+		out, err := cmd.CombinedOutput()
+
+		var exited *exec.ExitError
+		if errors.As(err, &exited) {
+			return string(out), exited.ExitCode()
+		}
+
+		if err != nil {
+			t.Fatalf("track %s: %v", strings.Join(args, " "), err)
+		}
+
+		return string(out), 0
+	}
+
+	if out, status := track("book", "5", "web", "-d", "2026-10-06"); status != 0 ||
+		!strings.Contains(out, "5,00 Std. auf Website für den 06.10.2026 gebucht.") {
+		t.Errorf("the first five hours answered %d %q", status, out)
+	}
+
+	want := "5 Std. würden am 06.10.2026 zusammen 10 Std. ergeben und damit das Tagesmaximum von 8 Std. überschreiten."
+	if out, status := track("book", "5", "web", "-d", "2026-10-06"); status != 1 || !strings.Contains(out, want) {
+		t.Errorf("five more hours on the same day answered %d %q, want 1 and %q", status, out, want)
 	}
 }

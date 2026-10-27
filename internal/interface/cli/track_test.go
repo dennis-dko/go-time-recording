@@ -109,14 +109,21 @@ func (f *fakeInstallation) sentTo(route string) []map[string]any {
 	return f.sent[route]
 }
 
-// track runs a command line against an installation and answers with the status,
-// what it said and what it complained.
+// track runs a command line against an installation, in English, and answers
+// with the status, what it said and what it complained. English is asked for
+// rather than left to the system, which on a German Windows is German.
 func track(t *testing.T, base, token string, args ...string) (int, string, string) {
+	t.Helper()
+
+	return trackWith(t, map[string]string{"GTR_URL": base, "GTR_TOKEN": token, "GTR_LANG": "en"}, args...)
+}
+
+// trackWith runs a command line with exactly the environment given.
+func trackWith(t *testing.T, env map[string]string, args ...string) (int, string, string) {
 	t.Helper()
 
 	var out, errOut bytes.Buffer
 
-	env := map[string]string{"GTR_URL": base, "GTR_TOKEN": token}
 	status := Run(context.Background(), args, func(key string) string { return env[key] }, &out, &errOut)
 
 	return status, out.String(), errOut.String()
@@ -228,13 +235,13 @@ func TestTheStatusSaysWhatIsRunningInTheAccountsZone(t *testing.T) {
 // The hours are read the three ways people write them, and nothing else.
 func TestHoursAreReadTheWaysPeopleWriteThem(t *testing.T) {
 	for raw, want := range map[string]float64{"1.5": 1.5, "1,5": 1.5, "1:30": 1.5, "0:45": 0.75, "8": 8} {
-		if got, err := parseHours(raw); err != nil || got != want {
+		if got, err := (language{}).parseHours(raw); err != nil || got != want {
 			t.Errorf("%q read as %v (%v), want %v", raw, got, err, want)
 		}
 	}
 
 	for _, raw := range []string{"", "-1", "0", "0:00", "1:60", "NaN", "Inf", "1h"} {
-		if _, err := parseHours(raw); err == nil {
+		if _, err := (language{}).parseHours(raw); err == nil {
 			t.Errorf("%q was read as hours", raw)
 		}
 	}

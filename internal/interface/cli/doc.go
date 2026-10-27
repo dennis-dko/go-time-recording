@@ -13,4 +13,9 @@
 // commands make. The commands stay, because a script reads lines and a screen
 // reader reads lines too, where a drawn screen serves neither; both make their
 // changes through the same functions and say what they did in the same words.
+//
+// Those words are English or German. Its own sentences come from a dictionary
+// of its own, and what the web interface also says - a refusal, a status, the
+// unit of an hour - from the web interface's dictionary, which the binary
+// carries, so the terminal and the browser never put one thing two ways.
 package cli

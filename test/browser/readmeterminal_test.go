@@ -64,9 +64,11 @@ type terminal struct {
 // only to match the README's other pictures. The screen asks the terminal for
 // its background and picks its colours by the answer, and through Windows' own
 // pseudo-console no answer arrives, so there the screen keeps the light colours
-// it starts with. Measured: on a dark terminal the same screen
-// came out in its light colours on Windows and its dark ones on Linux. On a light
-// one both draw alike, so the picture does not depend on where it was taken.
+// it starts with. Measured: on a dark terminal the same screen came out in its
+// light colours on Windows and its dark ones on Linux. On a light one both draw
+// alike, so the picture does not depend on where it was taken. The language is
+// English, as the README is, rather than whatever the machine taking the
+// pictures is set to.
 //
 // The instance is reached through the proxy setting, which the client honours,
 // so that track can be given terminalAddress and still arrive at base.
@@ -91,7 +93,7 @@ func openTerminal(t *testing.T, base, token string) *terminal {
 	}})
 
 	term.cmd = exec.Command(harness.Binary(), "track")
-	term.cmd.Env = append(os.Environ(), "GTR_URL="+terminalAddress, "GTR_TOKEN="+token,
+	term.cmd.Env = append(os.Environ(), "GTR_URL="+terminalAddress, "GTR_TOKEN="+token, "GTR_LANG=en",
 		"HTTP_PROXY="+base, "NO_PROXY=", "TERM=xterm-256color", "COLORTERM=truecolor")
 
 	if err := pty.Start(term.cmd); err != nil {

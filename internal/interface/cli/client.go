@@ -20,19 +20,22 @@ const requestTimeout = 30 * time.Second
 // application's answers.
 const maxAnswer = 8 << 20
 
-// client asks one installation's API as the owner of one personal token.
+// client asks one installation's API as the owner of one personal token, and
+// says what went wrong in the language track speaks.
 type client struct {
 	base  string
 	token string
 	http  *http.Client
+	lang  language
 }
 
 // newClient is a client for the installation at base, which may end in a slash.
-func newClient(base, token string) *client {
+func newClient(base, token string, lang language) *client {
 	return &client{
 		base:  strings.TrimRight(base, "/"),
 		token: token,
 		http:  &http.Client{Timeout: requestTimeout},
+		lang:  lang,
 	}
 }
 
@@ -58,7 +61,7 @@ func (c *client) call(ctx context.Context, method, path string, body, into any) 
 
 	req, err := http.NewRequestWithContext(ctx, method, c.base+"/api/v1"+path, payload)
 	if err != nil {
-		return fmt.Errorf("%q is not an address this can ask: %w", c.base, err)
+		return fmt.Errorf(c.lang.tr("%q is not an address this can ask: %w"), c.base, err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
@@ -70,18 +73,18 @@ func (c *client) call(ctx context.Context, method, path string, body, into any) 
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("could not reach %s: %w", c.base, err)
+		return fmt.Errorf(c.lang.tr("could not reach %s: %w"), c.base, err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswer))
 	if err != nil {
-		return fmt.Errorf("reading the answer from %s: %w", c.base, err)
+		return fmt.Errorf(c.lang.tr("reading the answer from %s: %w"), c.base, err)
 	}
 
 	if resp.StatusCode >= http.StatusMultipleChoices {
-		return refusalOf(resp.StatusCode, raw)
+		return c.lang.refusal(resp.StatusCode, raw)
 	}
 
 	if into == nil {
@@ -93,35 +96,8 @@ func (c *client) call(ctx context.Context, method, path string, body, into any) 
 	}
 
 	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Data == nil {
-		return fmt.Errorf("%s answered with something that is not this application's", c.base)
+		return fmt.Errorf(c.lang.tr("%s answered with something that is not this application's"), c.base)
 	}
 
 	return json.Unmarshal(envelope.Data, into)
-}
-
-// refusalOf reads the installation's own sentence out of a refused request.
-//
-// Not signed in is said in this program's words instead, because the
-// installation's are about a session and what is wrong here is the token.
-func refusalOf(status int, raw []byte) error {
-	if status == http.StatusUnauthorized {
-		return refusal("the installation does not know this token - make one under My account, API tokens, and put it in GTR_TOKEN")
-	}
-
-	var body struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-
-	message := ""
-	if json.Unmarshal(raw, &body) == nil {
-		message = body.Error.Message
-	}
-
-	if message == "" {
-		message = fmt.Sprintf("the installation answered %d %s", status, http.StatusText(status))
-	}
-
-	return refusal(message)
 }
