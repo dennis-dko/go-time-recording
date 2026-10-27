@@ -225,6 +225,14 @@
   // govulncheck is mandatory before a PR (section 3). In Imports mode gopls
   // reports an advisory against a dependency as a diagnostic while editing,
   // which is where a published advisory is cheapest to notice.
+  //
+  // It reports withdrawn ones too, and those are not findings. gopls asks
+  // govulncheck's query mode, which hands on every entry where the source scan
+  // CI runs drops the withdrawn - seen in x/vuln v1.9.0 and gopls v0.24.0. The
+  // seven against github.com/lib/pq (GO-2026-6166, 6168 to 6173) were
+  // withdrawn on 2026-08-18 and their CVEs rejected, and they name no fixed
+  // version, so no upgrade of lib/pq takes them off go.mod. Before acting on a
+  // diagnostic here, run govulncheck ./... - that is the gate.
   "go.diagnostic.vulncheck": "Imports",
 
   // ------------------------------------------------------------- debugging

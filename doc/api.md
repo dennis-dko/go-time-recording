@@ -7,10 +7,35 @@ The full reference is at `/api-docs`; the highlights:
 
 The binary is a client as well as a server. `go-time-recording track` books
 through this API as the owner of a personal token, made under *My account*, API
-tokens:
+tokens.
+
+On its own, on a terminal, it opens a screen: the stopwatch ticking, today's
+entries under it, and a form for each change. `s` starts the stopwatch, `w`
+switches it to another project and books what has run, `x` stops it and books
+what it measured - after asking - and `b` books hours by hand. `r` reads the day
+again, which the screen also does every half minute, so a stopwatch stopped in
+the browser stops here too; `esc` puts a form away and `q` closes the screen,
+which leaves a line saying how the stopwatch was left.
+
+```text
+  go-time-recording  time.example.com         Dana Example
+  ╭──────────────────────────────────────────────────────╮
+  │ ●  1:30:00   Consulting · review         since 09:12 │
+  ╰──────────────────────────────────────────────────────╯
+
+  Today  Tuesday, 27 October                        3.00 h
+     2.50 h  Consulting  review
+     0.50 h  no project
+
+  w switch  ·  x stop  ·  b book  ·  r refresh  ·  q quit
+```
+
+Each change is a command as well, for a script, an alias or a screen reader -
+which read lines, where the screen draws:
 
 ```bash
 export GTR_URL=https://time.example.com GTR_TOKEN=gtr_...
+go-time-recording track
 go-time-recording track start Website -m "release notes"
 go-time-recording track status
 go-time-recording track switch Webshop
@@ -27,7 +52,9 @@ flags, because a token on a command line lands in the shell's history and in eve
 process listing. It exits with 0 when done, 1 when the installation refused or could
 not be reached - in the installation's own words - and 2 for a command line it could
 not read, which is what a script tells the two apart by. `track help` lists the
-commands.
+commands, and so does `track` on its own wherever its output is not a terminal,
+so a script that runs it bare gets lines and status 2 rather than a screen
+waiting for keys.
 
 ## What a refusal looks like
 

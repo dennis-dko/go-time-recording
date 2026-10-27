@@ -31,10 +31,22 @@ func TestANoticeIsVisibleOverTheSignInScreen(t *testing.T) {
 
 	p.run("raise a notice", chromedp.Evaluate(`toast('something went wrong', 'error')`, nil))
 
-	// Visible as the browser sees it, which is the whole point: it was present in
-	// the markup before this change too, and painted underneath.
-	if !p.visible("#toast .toast-note") {
-		t.Error("a notice raised while the sign-in screen is up cannot be seen")
+	// Shown once it has faded in, and on top: a press where its cross is reaches
+	// the cross. That is the whole point - the notice was in the markup before
+	// this change too, painted underneath, and being rendered says nothing about
+	// what is drawn over it.
+	p.waitShown("#toast .toast-note")
+
+	var onTop bool
+
+	p.run("press where the cross is", chromedp.Evaluate(`(() => {
+		const cross = document.querySelector('#toast .toast-close');
+		const box = cross.getBoundingClientRect();
+		return cross.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+	})()`, &onTop))
+
+	if !onTop {
+		t.Error("a notice raised while the sign-in screen is up is drawn under it")
 	}
 
 	if !strings.Contains(p.text("#toast"), "something went wrong") {

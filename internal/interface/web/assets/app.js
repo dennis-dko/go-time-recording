@@ -1266,33 +1266,62 @@ function duringARestart() {
   return announced === 'update.restarting';
 }
 
+/**
+ * Reports news in a notice that floats over the page for as long as it takes to
+ * read: what was saved, what was sent, what failed. A state that goes on being
+ * true is a banner instead, in #standing-notices.
+ *
+ * At the foot of the window, and transparent to the pointer but for its cross
+ * and its detail, so a press on a notice reaches what it lies over; app.css says
+ * why. It still holds still while it is being read - while the pointer is over
+ * it, which followPointerOverNotices works out, or while the keyboard is in it -
+ * and goes at once when it is closed. The line along its foot runs down for the
+ * time it stays, so how long that is can be seen.
+ *
+ * The same sentence again while it is still up is counted on it rather than
+ * stacked under it: a loop of failures used to fill the corner with one
+ * sentence four times, which reads as four different things having gone wrong.
+ */
 function toast(message, kind = 'ok', detail = '') {
   const stack = $('#toast');
   if (!stack) return;
 
-  const note = el('div', { class: `toast-note ${kind}` });
+  const twin = [...stack.children].find((other) => other.dataset.message === message
+    && other.dataset.kind === kind && !other.classList.contains('leaving'));
+
+  if (twin) {
+    twin.bumpToast?.();
+
+    return;
+  }
+
+  const note = el('div', { class: `toast-note ${kind}`, 'data-message': message, 'data-kind': kind });
 
   // Errors are announced assertively and successes politely: an error is worth
   // interrupting whatever a screen reader was saying, and "Saved" is not.
   note.setAttribute('role', kind === 'error' ? 'alert' : 'status');
 
-  note.append(el('span', { class: 'toast-text', text: message }));
+  const body = el('div', { class: 'toast-body' }, el('span', { class: 'toast-text', text: message }));
 
   // The words of whatever actually failed, folded away. Shown open it would be a
   // paragraph of somebody else's English across the corner of the screen for
   // every reader who cannot use it; left out altogether it would be gone by the
   // time the person who can use it is asked.
-  if (detail) note.append(detailDisclosure(detail));
+  if (detail) body.append(detailDisclosure(detail));
+
+  const count = el('span', { class: 'toast-count', hidden: true });
 
   const dismiss = el('button', {
     class: 'toast-close',
     type: 'button',
     'aria-label': t('action.dismiss', 'Dismiss'),
-    text: '×',
-    onclick: () => note.remove(),
-  });
+    onclick: () => leave(),
+  }, spriteIcon('icon-close'));
 
-  note.append(dismiss);
+  const timer = el('span', { class: 'toast-timer', 'aria-hidden': 'true' });
+
+  note.append(spriteIcon(kind === 'error' ? 'icon-toast-error' : 'icon-toast-ok', 'toast-icon'),
+    body, count, dismiss, timer);
   stack.append(note);
 
   // Stacked rather than replaced. A single slot meant two failures in a row
@@ -1304,14 +1333,127 @@ function toast(message, kind = 'ok', detail = '') {
   // and not for a sentence explaining why a directory refused a bind.
   const linger = Math.min(TOAST_MAX_MS, TOAST_MIN_MS + message.length * TOAST_MS_PER_CHAR);
 
-  setTimeout(() => {
-    // Not while somebody is reading the detail they just opened. The timer is
-    // there so a notice nobody is looking at goes away by itself, and one that
-    // has been unfolded is the opposite of that.
-    if (note.querySelector('details[open]')) return;
+  let remaining = linger;
+  let since = 0;
+  let pending = null;
+  let holds = 0;
 
-    note.remove();
-  }, linger);
+  function leave() {
+    clearTimeout(pending);
+    note.classList.add('leaving');
+
+    // Away at once where nothing moves, and after its way out where it does.
+    const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setTimeout(() => note.remove(), motion ? TOAST_LEAVE_MS : 0);
+  }
+
+  function run() {
+    since = Date.now();
+    pending = setTimeout(() => {
+      // Not while somebody is reading the detail they just opened. The timer is
+      // there so a notice nobody is looking at goes away by itself, and one that
+      // has been unfolded is the opposite of that.
+      if (note.querySelector('details[open]')) return;
+
+      leave();
+    }, remaining);
+  }
+
+  function hold() {
+    if (note.classList.contains('leaving')) return;
+
+    holds += 1;
+    if (holds > 1) return;
+
+    clearTimeout(pending);
+    remaining = Math.max(0, remaining - (Date.now() - since));
+    note.classList.add('held');
+  }
+
+  function release() {
+    holds = Math.max(0, holds - 1);
+    if (holds > 0 || note.classList.contains('leaving') || !note.isConnected) return;
+
+    note.classList.remove('held');
+    run();
+  }
+
+  // The same news again: counted here, and given its full time again.
+  note.bumpToast = () => {
+    const seen = Number(note.dataset.count ?? '1') + 1;
+
+    note.dataset.count = String(seen);
+    count.hidden = false;
+    count.textContent = `×${seen}`;
+
+    clearTimeout(pending);
+    remaining = linger;
+
+    timer.style.animation = 'none';
+    void timer.offsetWidth;
+    timer.style.animation = '';
+    timer.style.animationDuration = `${linger}ms`;
+
+    if (holds === 0) run();
+  };
+
+  note.holdToast = hold;
+  note.releaseToast = release;
+  note.addEventListener('focusin', hold);
+  note.addEventListener('focusout', release);
+
+  timer.style.animationDuration = `${linger}ms`;
+  run();
+}
+
+/**
+ * Holds a notice still while the pointer is over it, worked out from where the
+ * pointer is: a notice is transparent to the pointer, so it never hears the
+ * pointer arrive or leave - the page under it does. A finger has no hover, and
+ * one that only scrolled past would hold a notice nothing then lets go of.
+ */
+function followPointerOverNotices() {
+  let over = new Set();
+
+  const follow = (x, y) => {
+    const notes = document.querySelectorAll('#toast .toast-note');
+    if (!notes.length && !over.size) return;
+
+    const now = new Set([...notes].filter((note) => {
+      const box = note.getBoundingClientRect();
+
+      return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+    }));
+
+    for (const note of now) if (!over.has(note)) note.holdToast?.();
+    for (const note of over) if (!now.has(note)) note.releaseToast?.();
+
+    over = now;
+  };
+
+  document.addEventListener('pointermove', (event) => {
+    if (event.pointerType !== 'touch') follow(event.clientX, event.clientY);
+  }, { passive: true });
+
+  // Out of the window altogether, which no pointermove reports.
+  document.documentElement.addEventListener('pointerleave', () => follow(-1, -1));
+}
+
+/** A drawing from the sprite in the document, for script that builds a control. */
+function spriteIcon(id, className = '') {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+
+  if (className) svg.setAttribute('class', className);
+
+  const use = document.createElementNS(ns, 'use');
+  use.setAttribute('href', `#${id}`);
+  svg.append(use);
+
+  return svg;
 }
 
 /**
@@ -1336,6 +1478,9 @@ const TOAST_LIMIT = 4;
 const TOAST_MIN_MS = 4000;
 const TOAST_MAX_MS = 20000;
 const TOAST_MS_PER_CHAR = 60;
+
+/** How long a notice takes to leave. */
+const TOAST_LEAVE_MS = 200;
 
 /**
  * The placeholders an administrator may put in the texts they configure.
@@ -18675,6 +18820,9 @@ async function init() {
   // reach the installation says so rather than only failing.
   keepTheShell();
   wireOffline();
+
+  // With them, because a failed start says so in a notice.
+  followPointerOverNotices();
 
   // Here rather than with the rest of the wiring below, so the sign-in form has
   // its reveal before anything that could fail has been tried. It also registers
