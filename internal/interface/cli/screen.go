@@ -383,8 +383,9 @@ func (m screen) View() tea.View {
 		parts = append(parts, m.todayList(look, width))
 	}
 
+	// Wrapped rather than cut short: a reason comes at the end of its sentence.
 	if line := m.statusLine(look); line != "" {
-		parts = append(parts, ansi.Truncate(line, width, "…"))
+		parts = append(parts, lipgloss.NewStyle().Width(width).Render(line))
 	}
 
 	parts = append(parts, m.legend(look))
@@ -408,8 +409,11 @@ func (m screen) clockCard(look palette, width int) string {
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(look.idle).
 		Padding(0, 1).Width(width)
 
-	if !m.loaded {
+	switch {
+	case !m.loaded && m.reading:
 		return box.Render(look.muted.Render("Reading " + m.host + " …"))
+	case !m.loaded:
+		return box.Render(look.muted.Render("Nothing read from " + m.host + " yet."))
 	}
 
 	clock := m.shown.clock

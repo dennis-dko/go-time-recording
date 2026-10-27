@@ -347,6 +347,27 @@ func TestAnInstallationOutOfReachIsAskedAgainEveryHalfMinute(t *testing.T) {
 	}
 }
 
+// Why the day cannot be read is said whole, over as many lines as it takes: the
+// reason comes at the end of the sentence, which is where a cut falls.
+func TestWhyTheDayCannotBeReadIsSaidWhole(t *testing.T) {
+	m := newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:9", "gtr_x"), out: io.Discard})
+
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
+	next, _ = next.(screen).Update(loaded{at: time.Now(), err: errors.New(`could not reach http://127.0.0.1:9: ` +
+		`Get "http://127.0.0.1:9/api/v1/me": dial tcp 127.0.0.1:9: connect: connection refused`)})
+
+	shows := strings.Join(strings.Fields(ansi.Strip(next.(screen).View().Content)), " ")
+
+	if !strings.Contains(shows, "connection refused") {
+		t.Errorf("the screen does not say why the day cannot be read:\n%s", ansi.Strip(next.(screen).View().Content))
+	}
+
+	// Nor does it go on saying it is reading, once it has stopped.
+	if strings.Contains(shows, "Reading ") {
+		t.Errorf("after the read failed, the screen still says it is reading:\n%s", ansi.Strip(next.(screen).View().Content))
+	}
+}
+
 // mustZone loads a zone the test depends on.
 func mustZone(t *testing.T, name string) *time.Location {
 	t.Helper()
