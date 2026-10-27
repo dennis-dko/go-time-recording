@@ -82,8 +82,14 @@ working time first — `task readme:pictures` takes them again.
       <p><b>The year at a glance.</b> A tile a day, as dark as the hours on it; public holidays and days away outlined rather than told by colour alone, beside the year before.</p>
     </td>
     <td valign="top">
-      <img src="doc/images/projects.png" alt="The project list, one project at 86 % of its hour budget and one past it at 114 %">
-      <p><b>Projects with hour budgets.</b> The list says how much of a budget is booked, marked from four fifths, and in red once it is past.</p>
+      <img src="doc/images/projects.png" alt="The project list: one project in the last fifth of its hour budget, one past it, and the hourly rate of those that are charged for">
+      <p><b>Projects with budgets and rates.</b> The list says how much of a budget is booked, marked from four fifths and in red once it is past, and what a project is charged an hour.</p>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <img src="doc/images/statement.png" alt="A statement of work for the month: the hours of three billable projects, their hourly rates and what they come to, totalled in euros">
+      <p><b>A statement of work at the end of the month.</b> The hours of the projects you charge for, at their rate, totalled per currency, as a PDF or a workbook. Not an invoice: the number, the tax and the customer stay yours to write.</p>
     </td>
   </tr>
   <tr>
