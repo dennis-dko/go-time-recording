@@ -2,8 +2,8 @@
 
 <p align="center">
   <b>Project time tracking in a single self-contained binary.</b><br>
-  A web interface and a REST API for recording where working hours go —
-  self-hosted, on SQLite, PostgreSQL or MySQL.
+  A web interface, a REST API and a terminal client for recording where working
+  hours go — self-hosted, on SQLite, PostgreSQL or MySQL.
 </p>
 
 <p align="center">
@@ -16,6 +16,7 @@
 <p align="center">
   <a href="#get-started">Get started</a> ·
   <a href="#a-tour">A tour</a> ·
+  <a href="#from-a-terminal">From a terminal</a> ·
   <a href="#how-it-fits-together">How it fits together</a> ·
   <a href="#what-it-does">What it does</a> ·
   <a href="#documentation">Documentation</a>
@@ -28,9 +29,10 @@
 
 ## Why Go-Time-Recording
 
-- 📦 **One file to run.** The interface, the API, the schema migrations and the
-  timezone database are compiled into one binary — for Linux, Windows and macOS,
-  and as an image for amd64 and arm64. Nothing to unpack beside it.
+- 📦 **One file to run.** The interface, the API, the terminal client, the schema
+  migrations and the timezone database are compiled into one binary — for Linux,
+  Windows and macOS, and as an image for amd64 and arm64. Nothing to unpack beside
+  it.
 - 🔒 **Your hours stay yours.** Every project belongs to one person, and nobody
   else — the administrator included — can read, total or correct anybody's time.
   An installation may switch on managers for the people an administrator assigns
@@ -136,11 +138,13 @@ working time first — `task readme:pictures` takes them again.
 
 ## How it fits together
 
-One process answers everybody: the browser, the scripts, the calendar apps.
+One process answers everybody: the browser, the terminal, the scripts, the
+calendar apps.
 
 ```mermaid
 flowchart TB
     people(["People<br/>browser · telephone"])
+    terminal(["A terminal<br/>go-time-recording track"])
     scripts(["Scripts and tools<br/>personal API token"])
     calendars(["Calendar apps<br/>iCalendar subscription"])
 
@@ -156,6 +160,7 @@ flowchart TB
     telemetry["Prometheus · OpenTelemetry"]
 
     people --> ui --> api
+    terminal --> api
     scripts --> api
     calendars --> api
     installer -. chooses .-> db
@@ -173,6 +178,7 @@ flowchart LR
     stopwatch["Stopwatch"] --> entry
     form["Entry form"] --> entry
     grid["Week grid"] --> entry
+    terminal["Terminal"] --> entry
     workbook["Spreadsheet import"] --> entry
     entry[("Time entry<br/>day · hours · project · activity")]
     entry --> calendar["Calendar and year"]
@@ -230,6 +236,72 @@ task dev DB=sqlite      # or: go run ./cmd
 Running it for real — behind a proxy, with HTTPS, as a service — is
 [`deploy/OPERATIONS.md`](deploy/OPERATIONS.md).
 
+## From a terminal
+
+The binary is a client as well. `go-time-recording track` books through an
+installation's API as the owner of a personal token, and serves nothing itself.
+On its own it opens a screen; with a command after it, it does that one thing
+and says what it did — for a script, an alias or a screen reader.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="doc/images/terminal.png" alt="track's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it">
+      <p><b>The day at a glance.</b> The stopwatch counts the seconds, and the screen reads the day again every half minute, so a stopwatch stopped in the browser stops here too.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="doc/images/terminal-switch.png" alt="The form that switches the stopwatch to another project, with the active projects to choose from">
+      <p><b>A form for each change.</b> <code>s</code> starts the stopwatch, <code>w</code> switches it to another project and books what has run, <code>x</code> stops it and books it after asking, <code>b</code> books hours by hand; <code>esc</code> puts a form away and <code>q</code> closes the screen.</p>
+    </td>
+  </tr>
+</table>
+
+**Set it up once:**
+
+1. Download the binary for your platform from the
+   [latest release](https://github.com/dennis-dko/go-time-recording/releases/latest)
+   — the same file that runs an installation — and put it on your `PATH` as
+   `go-time-recording`, made executable with `chmod +x` on Linux and macOS, or
+   as `go-time-recording.exe` on Windows.
+2. In the browser, under **My account → API tokens**, create a token and copy it:
+   it is shown once. It carries exactly the rights of your role, can be given a
+   number of days to last, and is revoked in the same list.
+3. Tell track where the installation is and who you are — in the environment
+   rather than as an argument, where a token would land in the shell's history:
+
+   ```bash
+   export GTR_URL=https://time.example.com
+   export GTR_TOKEN=gtr_...
+   ```
+
+   On Windows, once for your account; every terminal opened afterwards has them:
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable('GTR_URL', 'https://time.example.com', 'User')
+   [Environment]::SetEnvironmentVariable('GTR_TOKEN', 'gtr_...', 'User')
+   ```
+
+   track checks the installation's certificate against the authorities the
+   operating system trusts, so one whose certificate comes from an authority of
+   its own needs that authority installed on the machine as well.
+
+**Then** `go-time-recording track` opens the screen, and each change is a
+command as well:
+
+```bash
+go-time-recording track status                 # the stopwatch, and today's total
+go-time-recording track start Website -m "landing page"
+go-time-recording track switch Mobile          # books what has run, carries on
+go-time-recording track stop                   # books what it measured
+go-time-recording track book 1:30 Customer -d 2026-10-21
+go-time-recording track today                  # today's entries
+```
+
+A project is named as it is called, in any case, or by the start of its name
+when no other active project starts the same way; hours are written 1.5, 1,5 or
+1:30. `track help` lists the commands, and [the API page](doc/api.md#from-a-terminal)
+says what track answers, and with which exit status.
+
 ## What it does
 
 | Area | What you get | Read more |
@@ -255,7 +327,7 @@ Running it for real — behind a proxy, with HTTPS, as a service — is
 | [Accounts, roles and sign-in](doc/access.md) | Rights, the administrator, API tokens, LDAP, Kerberos and OpenID Connect |
 | [Security](doc/security.md) | Sessions, CSRF, passkeys, two factors, HTTPS, and what a copy of the database gives away |
 | [Configuration](doc/configuration.md) | Where each setting comes from, and what the interface can change |
-| [API](doc/api.md) | What a refusal looks like, and what the metrics carry |
+| [API](doc/api.md) | Booking from a terminal, what a refusal looks like, and what the metrics carry |
 | [Architecture](doc/architecture.md) | The four layers, and the decisions that would otherwise surprise |
 | [Development](doc/development.md) | The environments, and the checks a change has to pass |
 | [Releases and deployment](doc/deployment.md) | How a release is made and what it carries |

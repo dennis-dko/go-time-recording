@@ -114,6 +114,7 @@ func TestEveryControlIsBigEnoughToPressOnATabletHeldSideways(t *testing.T) {
 
 		for _, view := range []string{"welcome", "users", "roles", "settings", "admin"} {
 			p.run("open "+view, chromedp.Evaluate(fmt.Sprintf("switchView(%q)", view), nil))
+			p.showANotice(view)
 
 			if small := p.tooSmallToPress(); len(small) > 0 {
 				t.Errorf("at %dx%d on the %s screen these are too small to press with a finger: %v",

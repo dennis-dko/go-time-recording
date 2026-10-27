@@ -361,12 +361,22 @@ func TestEveryControlIsBigEnoughToPressOnAPhone(t *testing.T) {
 	for _, view := range []string{"welcome", "users", "roles", "settings"} {
 		p.run("open "+view, chromedp.Evaluate(
 			fmt.Sprintf("switchView(%q)", view), nil))
+		p.showANotice(view)
 
 		if small := p.tooSmallToPress(); len(small) > 0 {
 			t.Errorf("on the %s screen these are too small to press with a thumb: %v",
 				view, small)
 		}
 	}
+}
+
+// showANotice puts a fresh notice on the screen, so that its cross is among what
+// is measured. Otherwise it is measured only when a notice happens to be up -
+// which is how its 18 pixels were once found, by chance.
+func (p *page) showANotice(view string) {
+	p.t.Helper()
+
+	p.run("show a notice", chromedp.Evaluate(fmt.Sprintf(`toast(%q)`, "A notice on the "+view+" screen"), nil))
 }
 
 // tooSmallToPress answers what on the screen as it stands is shorter than a
@@ -378,13 +388,21 @@ func TestEveryControlIsBigEnoughToPressOnAPhone(t *testing.T) {
 // the cell holding it, header cells included - the one that selects every row
 // lives in a th. A file field is drawn by the browser and hardly restylable; its
 // label is what can be given room. A summary is pressed to open what it heads.
+//
+// Measured once whatever is coming in has arrived: a notice comes in from 98 per
+// cent of its size, and its 44-pixel cross measured on the way is 43 - a size no
+// finger ever meets.
 func (p *page) tooSmallToPress() []string {
 	p.t.Helper()
 
 	var small []string
 
-	p.evalJSON(`JSON.stringify(
-		[...document.querySelectorAll('button, select, .tab, summary, input:not([type=hidden])')]
+	p.awaitJSON(`(async () => {
+		await Promise.all(document.getAnimations()
+			.filter((animation) => animation.animationName === 'toast-in')
+			.map((animation) => animation.finished.catch(() => {})));
+
+		return [...document.querySelectorAll('button, select, .tab, summary, input:not([type=hidden])')]
 			.filter((el) => !el.hidden && el.offsetParent !== null)
 			.map((el) => (['checkbox', 'radio', 'file'].includes(el.type)
 				? (el.closest('label, td, th') ?? el)
@@ -397,7 +415,8 @@ func (p *page) tooSmallToPress() []string {
 			.map((el) => (el.id || el.className || el.tagName) + ':' +
 				Math.round(el.getBoundingClientRect().height))
 			.filter((v, i, a) => a.indexOf(v) === i)
-			.slice(0, 8))`, &small)
+			.slice(0, 8);
+	})()`, &small)
 
 	return small
 }

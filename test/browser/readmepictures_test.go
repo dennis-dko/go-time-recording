@@ -134,6 +134,23 @@ func TestTheReadmePicturesAreTakenFromTheApplication(t *testing.T) {
 	p.run("a telephone", chromedp.EmulateViewport(390, 844, chromedp.EmulateScale(2)))
 	p.shoot(into, "phone")
 
+	// The same day from a terminal, through track and a token of its own.
+	var token struct {
+		Secret string `json:"secret"`
+	}
+
+	p.awaitJSON(`api('/me/tokens', {method: 'POST', body: JSON.stringify({name: 'Terminal', expiresInDays: 0})})`, &token)
+
+	term := openTerminal(t, p.app.BaseURL(), token.Secret)
+	term.await("Website relaunch", "Today")
+	keep(t, into, "terminal", term.photograph())
+
+	term.press("w")
+	term.await("Switch to another project")
+	term.press("jj")
+	term.await("> Mobile app")
+	keep(t, into, "terminal-switch", term.photograph())
+
 	photographTheInstaller(t, into)
 }
 

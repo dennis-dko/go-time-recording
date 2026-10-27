@@ -629,6 +629,11 @@ tasks:
       it skips everywhere else, CI included, so the pictures change only when
       somebody asks.
 
+      The terminal's pictures are taken the same way rather than drawn: the
+      binary the suite built runs track in a pseudo-terminal against that
+      instance, a terminal emulator keeps what it draws, and the browser
+      photographs the emulator's cells.
+
       The letters are this machine's own fonts, so Windows and Linux take the
       same screen in different faces. Neither is wrong; one run takes them all,
       so the README does not mix them.

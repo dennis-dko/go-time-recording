@@ -17,18 +17,7 @@ again, which the screen also does every half minute, so a stopwatch stopped in
 the browser stops here too; `esc` puts a form away and `q` closes the screen,
 which leaves a line saying how the stopwatch was left.
 
-```text
-  go-time-recording  time.example.com         Dana Example
-  ╭──────────────────────────────────────────────────────╮
-  │ ●  1:30:00   Consulting · review         since 09:12 │
-  ╰──────────────────────────────────────────────────────╯
-
-  Today  Tuesday, 27 October                        3.00 h
-     2.50 h  Consulting  review
-     0.50 h  no project
-
-  w switch  ·  x stop  ·  b book  ·  r refresh  ·  q quit
-```
+<img src="images/terminal.png" alt="track's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it" width="600">
 
 Each change is a command as well, for a script, an alias or a screen reader -
 which read lines, where the screen draws:
@@ -49,9 +38,12 @@ active ones; hours are written 1.5, 1,5 or 1:30. The stopwatch it starts is the
 one the browser shows, running on the server, so stopping it anywhere stops it
 everywhere. The address and the token come from the environment rather than from
 flags, because a token on a command line lands in the shell's history and in every
-process listing. It exits with 0 when done, 1 when the installation refused or could
-not be reached - in the installation's own words - and 2 for a command line it could
-not read, which is what a script tells the two apart by. `track help` lists the
+process listing. The installation's certificate is checked against the
+authorities the operating system trusts, so one whose certificate comes from an
+authority of its own needs that authority installed on the machine as well. It
+exits with 0 when done, 1 when the installation refused or could not be reached -
+in the installation's own words - and 2 for a command line it could not read,
+which is what a script tells the two apart by. `track help` lists the
 commands, and so does `track` on its own wherever its output is not a terminal,
 so a script that runs it bare gets lines and status 2 rather than a screen
 waiting for keys.
