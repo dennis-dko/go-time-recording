@@ -323,18 +323,25 @@ func TestAnInstallationOutOfReachIsAskedAgainEveryHalfMinute(t *testing.T) {
 		return next.(screen), next.(screen).reading
 	}
 
+	opened := func() screen {
+		return newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:1", "gtr_x"), out: io.Discard})
+	}
+
+	// Taken after both screens are opened, each noting when it first asked: a
+	// start taken before would put "thirty seconds on" a few nanoseconds short
+	// of the half minute, on a clock fine enough to tell - Linux's is, and this
+	// case failed there while it passed on Windows.
+	neverRead, readOnce := opened(), opened()
 	start := time.Now()
 	out := errors.New("could not reach the installation")
-	m := newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:1", "gtr_x"), out: io.Discard})
 
-	m, _ = asked(m, loaded{err: out, at: start.Add(time.Second)})
+	m, _ := asked(neverRead, loaded{err: out, at: start.Add(time.Second)})
 
 	if _, again := asked(m, tick(start.Add(31*time.Second))); !again {
 		t.Error("after a first read that failed, half a minute on, nothing asks again")
 	}
 
-	m = newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:1", "gtr_x"), out: io.Discard})
-	m, _ = asked(m, loaded{shown: snapshot{zone: time.UTC}, at: start})
+	m, _ = asked(readOnce, loaded{shown: snapshot{zone: time.UTC}, at: start})
 	m, _ = asked(m, tick(start.Add(30*time.Second)))
 	m, _ = asked(m, loaded{err: out, at: start.Add(31 * time.Second)})
 
