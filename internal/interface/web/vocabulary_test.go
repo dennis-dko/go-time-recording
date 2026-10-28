@@ -253,8 +253,8 @@ func serverErrorCodes(t *testing.T) map[string]struct{} {
 // mentions the key and the coverage tests cannot see it - which is how a field
 // could be rejected by name and shown as an identifier for good.
 //
-// In English too, which is the language this used to forget. TRANSLATIONS.en is
-// empty on purpose, so the English is whatever the lookup falls back to - and the
+// In English too, which is the language this used to forget. English has no
+// dictionary on purpose, so the English is whatever the lookup falls back to - and the
 // fallback was the name itself: a refused import row said "Invalid field(s):
 // durationHours" about a box labelled Hours, while the German beside it said
 // Stunden. FIELD_NAMES holds the English, the way PERMISSION_TITLES does for the

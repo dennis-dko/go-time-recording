@@ -33,6 +33,11 @@ type document struct {
 	// as it is - a missing title is a worse failure than a generic one.
 	before, middle, after string
 	usable                bool
+
+	// languages is the meta tag naming the languages the page may speak, written
+	// after the title. Fixed for the life of the process, like the dictionaries
+	// it is made from.
+	languages string
 }
 
 // The exact strings replaced. Kept as constants beside the markup they match,
@@ -65,10 +70,11 @@ func newDocument(sub fs.FS) document {
 	}
 
 	return document{
-		before: markup[:titleAt],
-		middle: markup[titleAt+len(titleMarkup) : iconAt],
-		after:  markup[iconAt+len(iconMarkup):],
-		usable: true,
+		before:    markup[:titleAt],
+		middle:    markup[titleAt+len(titleMarkup) : iconAt],
+		after:     markup[iconAt+len(iconMarkup):],
+		usable:    true,
+		languages: languagesMeta(),
 	}
 }
 
@@ -96,7 +102,7 @@ func (d document) serve(w http.ResponseWriter, r *http.Request, branding Brandin
 		"\n  " + `<link rel="apple-touch-icon" href="` + appIconPath + `192?v=` +
 		appIconVersion(branding) + `">`
 
-	page := d.before + "<title>" + escape(title) + "</title>" + d.middle + icon + d.after
+	page := d.before + "<title>" + escape(title) + "</title>\n  " + d.languages + d.middle + icon + d.after
 
 	header := w.Header()
 	header.Set("Content-Type", "text/html; charset=utf-8")

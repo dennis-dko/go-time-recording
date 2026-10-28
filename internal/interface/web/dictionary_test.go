@@ -1,58 +1,83 @@
 package web_test
 
 import (
+	"encoding/json"
+	"html"
+	"net/http"
+	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
-// What the binary reads out of the page's dictionary is the whole dictionary, as
-// these tests read it: no entry dropped, and each value the text the page has.
-//
-// Two readings of one table, so this is what keeps them one: the terminal client
-// says a refusal from the production reading, and the checks that every key is
-// translated run on the other.
-func TestTheDictionaryIsReadWhole(t *testing.T) {
-	read := web.Dictionary("de")
-	tested := dictionaries(t)["de"]
-
-	if len(tested) < 1000 {
-		t.Fatalf("the tests read %d German entries; the reading has stopped finding them", len(tested))
+// A language's dictionary is handed to the page as the binary carries it, at an
+// address of its own, revalidated by its fingerprint; English, which has none,
+// and anything that is no language are not found.
+func TestADictionaryIsHandedToThePageAsTheBinaryCarriesIt(t *testing.T) {
+	rec := get(t, http.MethodGet, "/i18n/de.json")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the German dictionary answered %d", rec.Code)
 	}
 
-	for key, raw := range tested {
-		value, ok := read[key]
-		if !ok {
-			t.Errorf("%s is in the page's German and not in what the binary reads", key)
+	carried, _ := i18n.File("de")
+	if rec.Body.String() != string(carried) {
+		t.Error("the German dictionary was handed out other than the binary carries it")
+	}
 
-			continue
+	if kind := rec.Header().Get("Content-Type"); !strings.HasPrefix(kind, "application/json") {
+		t.Errorf("it was handed out as %q", kind)
+	}
+
+	tag := rec.Header().Get("ETag")
+	if tag == "" {
+		t.Fatal("it carries no fingerprint to be revalidated by")
+	}
+
+	if again := getWithHeader(t, "/i18n/de.json", "If-None-Match", tag); again.Code != http.StatusNotModified {
+		t.Errorf("asked again with its fingerprint it answered %d, want 304", again.Code)
+	}
+
+	for _, path := range []string{"/i18n/en.json", "/i18n/fr.json", "/i18n/de", "/i18n/../app.js", "/i18n/"} {
+		if rec := get(t, http.MethodGet, path); rec.Code != http.StatusNotFound {
+			t.Errorf("%s answered %d, want 404", path, rec.Code)
 		}
+	}
+}
 
-		// With nothing escaped, which the table never is today, a value is the
-		// text between its quotes - several literals' worth where it is joined.
-		if !strings.Contains(raw, `\`) {
-			var want strings.Builder
-			for i, part := range strings.Split(raw, "'") {
-				if i%2 == 1 {
-					want.WriteString(part)
-				}
-			}
+// The document names the languages the page may speak, each by what it calls
+// itself, so the script knows them before it has asked anything - and offline,
+// where the document is what the service worker kept.
+func TestTheDocumentNamesTheLanguagesItMaySpeak(t *testing.T) {
+	rec := httptest.NewRecorder()
+	brandedServer(web.Branding{Title: "Zeiterfassung"}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
-			if value != want.String() {
-				t.Errorf("%s is read as %q, want %q", key, value, want.String())
-			}
+	found := regexp.MustCompile(`<meta name="languages" content="([^"]*)">`).FindStringSubmatch(rec.Body.String())
+	if found == nil {
+		t.Fatal("the document names no languages")
+	}
+
+	var named map[string]string
+	if err := json.Unmarshal([]byte(html.UnescapeString(found[1])), &named); err != nil {
+		t.Fatalf("the languages it names do not read: %v", err)
+	}
+
+	for _, language := range i18n.Languages() {
+		if named[language] != i18n.Name(language) {
+			t.Errorf("it names %s as %q, want %q", language, named[language], i18n.Name(language))
 		}
 	}
 
-	for key := range read {
-		if _, ok := tested[key]; !ok {
-			t.Errorf("the binary reads %s, which the page's German does not have", key)
-		}
+	if len(named) != len(i18n.Languages()) {
+		t.Errorf("it names %v, want exactly %v", named, i18n.Languages())
 	}
 
-	if english := web.Dictionary("en"); len(english) != 0 {
-		t.Errorf("English is read as %d entries; it is the source and has none", len(english))
+	// English first, because the script's list of them is read in that order and
+	// the first is the one a list falls back to.
+	if !strings.HasPrefix(html.UnescapeString(found[1]), `{"en":`) {
+		t.Errorf("English is not named first: %s", found[1])
 	}
 }
 

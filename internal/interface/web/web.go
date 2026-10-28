@@ -95,10 +95,7 @@ func Handler(branding BrandingFunc) func(http.Handler) http.Handler {
 	shipped := shippedIcon(sub)
 	converted := &icons{}
 
-	// The page's own dictionary, read once, so what the installed app's shortcuts
-	// are called in German is what the page calls those screens.
-	script, _ := fs.ReadFile(sub, "app.js")
-	install := newInstallable(string(script))
+	install := newInstallable()
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -137,6 +134,15 @@ func Handler(branding BrandingFunc) func(http.Handler) http.Handler {
 				} else {
 					install.serveAppIcon(w, r, current)
 				}
+
+				return
+			}
+
+			// A language's dictionary, from the ones the binary carries rather than
+			// from these assets: the installer and the terminal client read the
+			// same files. Before the fallback too, because it is not a file here.
+			if file, ok := strings.CutPrefix(path(r), dictionaryPath); ok {
+				serveDictionary(w, r, file)
 
 				return
 			}

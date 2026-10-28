@@ -687,6 +687,29 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 /**
+ * The languages this installation speaks, each by what it calls itself, English
+ * first: written into the document by the server, from the dictionaries the
+ * binary carries, so a language is offered here as soon as its file is there and
+ * nothing in this script has to be told.
+ *
+ * Read from the document rather than asked of the API, because the document is
+ * what the service worker keeps - offline, this is still known. Here rather than
+ * beside the dictionaries because the appearance texts' languages are read from
+ * it while this script is still loading.
+ */
+const LANGUAGES = (() => {
+  try {
+    const offered = JSON.parse(document.querySelector('meta[name="languages"]')?.content ?? '');
+    if (offered && typeof offered === 'object' && typeof offered.en === 'string') return offered;
+  } catch {
+    // The served document always carries it; only a page opened some other way
+    // does not, and that page speaks English.
+  }
+
+  return { en: 'English' };
+})();
+
+/**
  * Whether the signed-in user holds at least one of the given permissions.
  *
  * While the screens show an account a manager looks after, an own right counts only
@@ -1801,7 +1824,7 @@ function brandingIn(branding, field) {
 
 /** What a language is called, in its own words. */
 function languageName(language) {
-  return { en: 'English', de: 'Deutsch' }[language] ?? language;
+  return LANGUAGES[language] ?? language;
 }
 
 /**
@@ -2081,8 +2104,18 @@ function resizeCropBox(start, dx, dy, corner) {
   return { x, y, w, h };
 }
 
-/** The languages the appearance texts can be written in. */
-const BRANDING_LANGUAGES = ['en', 'de'];
+/** The languages the appearance texts can be written in: every one there is. */
+const BRANDING_LANGUAGES = Object.keys(LANGUAGES);
+
+/**
+ * Offers the appearance texts in each of those languages, each by what it calls
+ * itself - so a language whose dictionary arrives is a language its texts can be
+ * written in, with nothing in the markup to add.
+ */
+function offerBrandingLanguages() {
+  $('#branding-language')?.replaceChildren(...BRANDING_LANGUAGES.map((language) =>
+    el('option', { value: language, text: languageName(language) })));
+}
 
 /** The texts that translate, per language, while the form is open. */
 let brandingDraft = {};
@@ -3725,1324 +3758,75 @@ function applyPermissionVisibility(root = document) {
 // ---------------------------------------------------------------------- i18n
 
 /**
- * Translations for the interface.
+ * What the screen says in each language but English, by language: the
+ * dictionaries loaded so far.
  *
- * English is the source language and lives in the markup itself, so the `en`
- * dictionary is intentionally empty: switching back to English restores the
- * original text nodes. Every user-visible string has a key here, including the
- * ones this script generates at run time.
- *
- * This comment used to say the opposite, naming German as the source and `de` as
- * the empty one. Both halves were wrong, and a comment that describes the mirror
- * image of the code is worse than none: it is the thing somebody reads before
- * adding a key, and it told them to put it in the wrong dictionary.
+ * Each lives in a file of its own, /i18n/<language>.json, which the server hands
+ * out from the dictionaries the binary carries - the ones the installer and the
+ * terminal client read as well - and is fetched the first time its language is
+ * spoken. English has none and needs none: it is the source, in the markup and in
+ * the fallbacks passed to t(), so a key a dictionary lacks degrades to English
+ * rather than to a language nobody asked for.
  */
-const TRANSLATIONS = {
-  // English is the source language: it lives in the markup and in the
-  // fallbacks passed to t(), so a key missing from a translation below
-  // degrades to English rather than to a language nobody asked for.
-  en: {},
+const dictionaries = { en: {} };
 
-  de: {
-    // Entries that read the same in both languages are still listed, so the
-    // dictionary stays a complete translation of the markup rather than
-    // something a reader has to diff against it.
-    'auth.disabled': 'Authentifizierung deaktiviert',
-    'admin.baseDn': 'Base DN',
-    'admin.bindDn': 'Bind DN (optional)',
-    'admin.dbHost': 'Host',
-    'admin.dbPort': 'Port',
-    'admin.logo': 'Logo (PNG oder JPEG, max. 256 KB)',
-    'admin.logoChoose': 'Bild wählen…',
-    'admin.logoInHeader': 'In der Kopfzeile',
-    'admin.logoCropHint': 'Jede Vorschau zeigt einen Ausschnitt des Logos. Zum Wählen darauf klicken.',
-    'crop.title': 'Welcher Teil des Logos?',
-    'crop.text': 'Ziehen, um den Teil des Logos zu wählen, der hier verwendet wird: {0}.',
-    'crop.free': 'Ziehe die Ecken in eine beliebige Form. Der gewählte Teil wird in die jeweilige Stelle eingepasst, niemals verzerrt.',
-    'crop.whole': 'Ganzes Logo verwenden',
-    'crop.apply': 'Diesen Teil verwenden',
-    'admin.logoAsFavicon': 'Im Browser-Tab',
-    'admin.logoOnSignIn': 'Auf der Anmeldeseite',
-    'field.name': 'Name',
-    'field.optional': 'optional',
-    'field.start': 'Start',
-    'field.status': 'Status',
-    'totp.code': 'Code',
-
-    'setup.title': 'Einrichtung',
-    'setup.progress': 'Schritt {n} von {total} — {done} erledigt',
-    'setup.next': 'Weiter',
-    'setup.back': 'Zurück',
-    'setup.skip': 'Diesen Schritt überspringen',
-    'setup.openSettings': 'Stattdessen die Einstellungen öffnen',
-    'setup.later': 'Später abschließen',
-    'setup.finish': 'Fertigstellen',
-    'setup.done': 'Einrichtung abgeschlossen.',
-    'setup.stillRequired': 'Diese Schritte müssen zuerst erledigt werden; bis dahin erscheint der Assistent immer wieder.',
-    'setup.password.title': 'Administrator-Passwort ändern',
-    'setup.password.text': 'Dieses Konto hat noch das Passwort aus der Dokumentation, das jeder nachlesen kann. Bis zur Änderung lässt sich nichts anderes nutzen.',
-    'setup.timezone.title': 'Zeitzone wählen',
-    'setup.timezone.text': 'Sie bestimmt, auf welchen Kalendertag eine Buchung fällt. Ohne Angabe gilt UTC, was Abendbuchungen für den Großteil der Welt auf den falschen Tag legt.',
-    'tour.card.title': 'Geführter Rundgang',
-    'tour.card.text': 'Ein kurzer Rundgang durch die Bereiche der Anwendung. Wird bei der ersten Anmeldung einmal gezeigt; jederzeit erneut startbar.',
-    'tour.card.start': 'Rundgang anzeigen',
-    'tour.count': 'Schritt {n} von {total}',
-    'tour.next': 'Weiter',
-    'tour.back': 'Zurück',
-    'tour.end': 'Rundgang überspringen',
-    'tour.finish': 'Fertig',
-    'tour.welcome.title': 'Der Weg zurück',
-    'tour.welcome.text': 'Der Titel bringt dich von überall auf die Willkommensseite. Dort steht, was der heutige Tag schon hat – und von dort lässt sich dieser Rundgang erneut starten.',
-    'tour.nav.title': 'Alles liegt hier oben',
-    'tour.nav.text': 'Diese Reiter sind die ganze Anwendung. Sichtbar ist nur, was deine Rolle erlaubt — bei manchen ist diese Leiste also kürzer als bei anderen.',
-    'tour.timer.title': 'Die Stoppuhr',
-    'tour.timer.text': 'Beim Anfangen starten, beim Aufhören stoppen – die gemessene Zeit wird gebucht. Sie läuft weiter, wenn du den Browser schließt, denn sie läuft auf dem Server und nicht in diesem Tab.',
-    'tour.book.title': 'Zeit buchen',
-    'tour.book.text': 'Datum wählen, Stunden eintragen, fertig. Ein Projekt ist optional, Zeiten lassen sich also jetzt erfassen und später einsortieren. Gespeichert wird, was du schreibst – auf die Minute genau, hier rundet nichts auf eine Viertelstunde.',
-    'tour.entries.title': 'Deine Einträge',
-    'tour.entries.text': 'Alles Gebuchte, filterbar nach Projekt. Ein Klick auf eine Zeile öffnet sie zum Korrigieren, mehrere angehakte lassen sich in einem Zug löschen. Es bleibt deins zum Ändern – es gibt niemanden, dem du es vorlegen müsstest.',
-    'tour.sheet.title': 'Rein und raus als Tabelle',
-    'tour.sheet.text': 'Deine Stunden als Tabellendatei, mit den Spaltenköpfen in deiner Sprache. Ein Import zeigt zuerst, was er ändern würde, bevor er etwas ändert. Jede Tabelle, bei der sich das lohnt, hat dasselbe Paar auf ihrem eigenen Bildschirm.',
-    'tour.calendar.title': 'Der Monat auf einen Blick',
-    'tour.calendar.text': 'Welche Tage Stunden haben und wie viele. Ein Klick auf einen Tag zeigt, was dahintersteckt – und ein Klick auf einen dieser Einträge öffnet ihn zum Korrigieren.',
-    'tour.stats.title': 'Deine eigenen Zahlen',
-    'tour.stats.text': 'Stunden pro Tag und pro Projekt, über einen Zeitraum deiner Wahl. Nur deine eigenen – und niemand sonst sieht sie.',
-    'tour.overtime.title': 'Dein Überstundensaldo',
-    'tour.overtime.text': 'Gebuchte Stunden gegen das, was der Tag von dir verlangt: deinen Wochenplan, oder ohne einen dein Tagesziel von Montag bis Freitag. Bis du unter „Mein Konto“ einen Tag wählst, zählen nur Tage mit Buchungen; ab dann zählt jeder Arbeitstag, und Feiertage und Abwesenheiten verlangen weniger.',
-    'tour.projects.title': 'Deine Projekte',
-    'tour.projects.text': 'Ein Platz für deine Stunden, und zwar nur deiner: Nur du siehst sie und nur du buchst darauf. Zwei Menschen an derselben Sache haben jeweils ein eigenes Projekt.',
-    'tour.report.title': 'Auswertungen',
-    'tour.report.text': 'Was du in einem Zeitraum gebucht hast: auf einem Projekt, über alle hinweg oder nur die Stunden ohne Projekt. Deine eigenen Stunden – es gibt keine Aufschlüsselung nach Personen, denn niemand sieht, was jemand anderes erfasst hat.',
-    'tour.users.title': 'Die Menschen, die hier arbeiten',
-    'tour.users.text': 'Ein Konto anlegen und ihm eine Rolle geben. Es startet mit den Vorgaben der Installation; die eigenen Arbeitszeiten setzt danach die Person selbst unter „Mein Konto“.',
-    'tour.userTable.title': 'Wer hier ist und was er darf',
-    'tour.userTable.text': 'Die Rolle neben jedem Namen lässt sich hier ändern. Der eingebaute Administrator ist die Ausnahme: Er lässt sich weder löschen noch umhängen, denn er ist der Weg zurück ins System.',
-    'tour.roles.title': 'Rollen entscheiden, was möglich ist',
-    'tour.roles.text': 'Eine Rolle ist ein Satz Rechte, und jedes einzelne wird von echtem Code durchgesetzt und nicht von einem versteckten Knopf. Hier ankreuzen, was die Rolle darf – jedes Konto mit dieser Rolle ändert sich mit.',
-    'tour.account.title': 'Mein Konto',
-    'tour.account.text': 'Dein Tagessoll und dein Tagesmaximum. Das Tagessoll ist der Maßstab für den Überstundensaldo, und niemand außer dir setzt es.',
-    'tour.myZone.title': 'Deine Zeitzone',
-    'tour.myZone.text': 'Sie entscheidet, auf welchen Kalendertag eine Buchung fällt. Bei der ersten Anmeldung wird sie aus dem Browser übernommen – und hier widersprichst du dem.',
-    'tour.totp.title': 'Ein zweiter Faktor',
-    'tour.totp.text': 'Ein Code aus einer Authenticator-App, eingerichtet durch Scannen eines QR-Codes – oder durch Abtippen des Geheimnisses, wenn Scannen nicht geht.',
-    'tour.passkey.title': 'Anmelden ohne Kennwort',
-    'tour.passkey.text': 'Ein Passkey bleibt auf diesem Gerät und wird mit dem entsperrt, was das Gerät ohnehin entsperrt. Du kannst mehrere hinterlegen, einen pro Gerät.',
-    'tour.tokens.title': 'Token für Skripte',
-    'tour.tokens.text': 'Mit einem persönlichen Token kann ein Skript in deinem Namen buchen – mit genau den Rechten, die deine Rolle im Moment der Nutzung hat. Er wird einmal angezeigt, beim Anlegen.',
-    'tour.password.title': 'Dein Kennwort',
-    'tour.password.text': 'Eine Änderung beendet alle anderen Sitzungen außer dieser. Ein Konto, das sich über das Verzeichnis anmeldet, hat hier kein Kennwort zu ändern.',
-    'tour.branding.title': 'Wie diese Installation aussieht',
-    'tour.branding.text': 'Titel, Banner, Logo und Fußzeile. Das Logo wird zum Symbol im Browser-Tab – und genau das unterscheidet auf einen Blick eine Testinstanz von der echten.',
-    'tour.database.title': 'Die Datenbank',
-    'tour.database.text': 'In welche Datenbank diese Installation schreibt. Die Verbindung wird vor dem Speichern getestet, und die Änderung gilt ab dem nächsten Start.',
-    'tour.ldap.title': 'Anmelden gegen ein Verzeichnis',
-    'tour.ldap.text': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Darunter läuft der Abgleich nach Zeitplan – und lässt sich vorher ansehen, bevor er von Hand ausgeführt wird.',
-    'tour.ldap.textElsewhere': 'Konten können aus LDAP kommen, statt hier angelegt zu werden. Der Abgleich löscht Konten und bleibt dem eingebauten Administrator oder der Rolle „{0}“ vorbehalten.',
-    'tour.maintenance.title': 'Wartungsmodus',
-    'tour.maintenance.text': 'Schließt die Installation mit einer Erklärung, die auch auf der Anmeldemaske steht – wer nicht hineinkommt, erfährt also warum, statt zu raten.',
-    'tour.limits.title': 'Grenzwerte und Laufzeiten',
-    'tour.limits.text': 'Wie lange eine Sitzung gilt, wie viele Anfragen jemand stellen darf und mit welchen Werten ein neues Konto startet.',
-    'tour.telemetry.title': 'Metriken und Tracing',
-    'tour.telemetry.text': 'Die Protokollstufe, der Metrik-Endpunkt und wohin Traces exportiert werden. Die Stufe gilt sofort; die beiden anderen werden beim Start des Prozesses gelesen, gelten also ab dem nächsten.',
-    'tour.log.title': 'Das Protokoll, ohne Shell',
-    'tour.log.text': 'Was dieser Prozess schreibt, filterbar nach Stufe. Die erste Anlaufstelle, wenn etwas abgelehnt wurde und der Grund nicht auf dem Bildschirm stand.',
-    'tour.theme.title': 'Darstellung und Sprache',
-    'tour.theme.text': 'Hell oder dunkel — automatisch richtet sich nach der Tageszeit. Die Sprache folgt dem Browser, bis du eine wählst. Das war alles, viel Erfolg.',
-
-    'setup.decideFirst': 'Bitte diesen Schritt zuerst erledigen.',
-    'setup.branding.title': 'Installation benennen',
-    'setup.branding.text': 'Der Titel erscheint im Browser-Tab und in der Kopfzeile. Optional, aber genau das unterscheidet auf einen Blick eine Testinstanz von der echten.',
-    'setup.directory.title': 'Verzeichnis anbinden (optional)',
-    'setup.directory.text': 'Mit angebundenem LDAP oder Active Directory melden sich alle mit ihrem vorhandenen Konto an, und hier werden keine Passwörter gespeichert. Überspringen, um Konten lokal zu verwalten.',
-
-    'ops.title': 'Betrieb und Grenzwerte',
-    'ops.hint': 'Leer lassen, um den Wert aus der Konfigurationsdatei zu behalten. Änderungen wirken innerhalb weniger Sekunden, ohne Neustart – außer der Sitzungsdauer, die ab der nächsten Anmeldung gilt.',
-    'ops.sessionIdle': 'Abmelden nach Untätigkeit (Minuten, 0 = nie)',
-    'ops.sessionLifetime': 'Sitzungsdauer (Stunden)',
-    'ops.maxDailyHours': 'Maximale Stunden pro Tag (systemweit)',
-    'ops.rateLimit': 'Ratenbegrenzung (Anfragen)',
-    'ops.rateWindow': 'Zeitfenster der Ratenbegrenzung (Sekunden)',
-    'ops.deleteRatio': 'Verzeichnis-Abgleich: Löschgrenze (0–1, 0 = keine Grenze)',
-    'ops.deleteRatioSmall': 'Die Löschgrenze ist ein Anteil an den Verzeichniskonten, die es hier schon gibt. Bei einem oder zwei davon ist ein einziger Weggang alle oder die Hälfte, und eine Grenze darunter lehnt ihn ab: Ist der Weggang echt, die Grenze für diesen Lauf anheben.',
-    'ops.reset': 'Alle Werte auf die Konfigurationsdatei zurücksetzen',
-    'ops.saved': 'Grenzwerte gespeichert',
-    'ops.reset.done': 'Alle Werte folgen wieder der Konfigurationsdatei',
-    'ops.effective': 'Aktuell wirksam',
-    'ops.sessionShort': 'Sitzung',
-    'ops.idleShort': 'Untätigkeit',
-    'ops.maxShort': 'max./Tag',
-    'ops.rateShort': 'Rate',
-    'ops.ratioShort': 'Löschgrenze',
-    'ops.off': 'aus',
-
-    'tel.title': 'Protokoll, Metriken und Traces',
-    'tel.logLevel': 'Protokollstufe',
-    'tel.activeLog': 'Protokollstufe',
-    'tel.hint': 'Die Protokollstufe gilt sofort. Der Metrik-Port wird beim Start gebunden und der Trace-Exporter beim Start gebaut, darum werden diese hier gespeichert und beim nächsten Start übernommen; die Neustart-Karte zeigt, was wartet. Ein Feld, das der Konfigurationsdatei folgt, behält seinen Wert von dort.',
-    'tel.warn': 'Der Metrik-Port fragt nicht nach einer Anmeldung, ist nicht durch TLS geschützt und liefert neben den Metriken auch Go-Profiling-Endpunkte — wo er erreichbar ist, ist es auch ein Heap-Dump. Nur für die eigene Überwachung freigeben.',
-    'tel.metrics': 'Metrik-Endpunkt',
-    'tel.metricsOff': 'Nicht ausliefern',
-    'tel.exporter': 'Trace-Exporter',
-    'tel.tracesOff': 'Nirgendwohin exportieren',
-    'tel.follow': 'Der Konfigurationsdatei folgen',
-    'tel.url': 'Collector als host:port, verschlüsselt mit https:// davor',
-    'tel.urlShort': 'Collector',
-    'tel.ratio': 'Anteil aufgezeichneter Traces (0–1)',
-    'tel.ratioShort': 'Anteil aufgezeichneter Traces',
-    'tel.tracingHint': 'Läuft deploy/compose.tracing.yaml neben der Anwendung? Dann ist es Exporter OTLP und Collector jaeger:4317, und die Traces liegen unter {0}.',
-    'tel.tracingLoopback': 'Antwortet die Adresse nicht, veröffentlicht die mitgelieferte Datei den Trace-Browser absichtlich nur auf dem Loopback des Servers – dann führt der Weg über {0}.',
-    'tel.reset': 'Alles auf die Konfigurationsdatei zurücksetzen',
-    'tel.resetDone': 'Metriken und Traces folgen wieder der Konfigurationsdatei',
-    'tel.activeMetrics': 'Metriken',
-    'tel.activeMetricsOff': 'werden nicht ausgeliefert',
-    'tel.activeTraces': 'Traces',
-    'tel.activeTracesOff': 'werden nicht exportiert',
-
-    'password.reveal': 'Passwort anzeigen',
-    'password.hide': 'Passwort verbergen',
-
-    'restart.title': 'Neustart',
-    'restart.open': 'Neustart',
-    'restart.summary': 'Für {0} gespeicherte Einstellung(en) steht ein {1} aus.',
-    'restart.unsupported.noExecve': 'Ein Neustart aus der Anwendung heraus ist unter Windows nicht möglich: dafür wird execve gebraucht, das es dort nicht gibt. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
-    'restart.unsupported.executableUnknown': 'Ein Neustart aus der Anwendung heraus ist nicht möglich: die laufende Programmdatei lässt sich nicht auffinden. Gespeicherte Einstellungen werden wirksam, sobald die Anwendung so neu gestartet wird, wie sie gestartet wurde.',
-    'restart.hint': 'Einige Einstellungen werden nur beim Start der Anwendung gelesen. Diese sind gespeichert und warten:',
-    'restart.modeContainer': 'Diese Installation läuft in einem Container. Der Knopf '
-      + 'hält ihn an, und deine Container-Verwaltung startet ihn wieder - was sie nur '
-      + 'mit einer Neustart-Richtlinie tut, die auch einen ohne Fehler beendeten '
-      + 'Container neu startet: always oder unless-stopped, nicht on-failure. Die mit '
-      + 'dieser Anwendung ausgelieferte Bereitstellung setzt eine solche.',
-    'restart.modeProcess': 'Die Anwendung ersetzt sich selbst, läuft also durchgehend.',
-    'restart.now': 'Jetzt neu starten',
-    'restart.confirm': 'Anwendung neu starten? Wer gerade darin arbeitet, muss die Seite neu laden.',
-    'restart.waiting': 'Neustart läuft',
-    'restart.waitingHint': 'Es wird gewartet, bis die Anwendung wieder erreichbar ist …',
-    'restart.done': 'Die Anwendung wurde neu gestartet, die Einstellungen sind jetzt wirksam.',
-    'restart.failed': 'Der Neustart konnte nicht gestartet werden',
-    'restart.slow': 'Die Anwendung antwortet noch nicht. Möglicherweise startet sie noch — bitte die Seite gleich neu laden.',
-    'restart.none': 'nichts',
-    'restart.on': 'an',
-    'restart.off': 'aus',
-    'restart.dbPassword': 'Datenbank-Passwort',
-
-    // Why a single row of an imported file cannot be written. The server sends a
-    // code and the values its English sentence interpolated, so these say the same
-    // thing in the same order the reader would - see rowProblem.
-    'row.nameMissing': 'Der Name fehlt.',
-    'row.startDate': '„{0}“ ist kein Beginn, den der Import versteht (JJJJ-MM-TT).',
-    'row.endDate': '„{0}“ ist kein Ende, das der Import versteht (JJJJ-MM-TT).',
-    'row.notAStatus': '„{0}“ ist kein Status; möglich sind {1}, {2} oder {3}.',
-    'row.archiveNeedsCompleted': 'Archiviert werden kann erst, was den Status „{0}“ hat; '
-      + '„{1}“ ist „{2}“.',
-    'row.roleNameMissing': 'Der Name fehlt, und daran wird die Zeile erkannt.',
-    'row.systemRole': '„{0}“ ist eine Systemrolle, ihre Rechte lassen sich nicht ändern.',
-    'row.roleGrantsNothing': '„{0}“ würde ohne jedes Recht angelegt – wer die Rolle hätte, '
-      + 'könnte keinen einzigen Bereich öffnen.',
-    'row.emailMissing': 'Die E-Mail-Adresse fehlt, und daran wird die Zeile erkannt.',
-    'row.emailInvalid': '„{0}“ ist keine E-Mail-Adresse, und an dieser Spalte wird die '
-      + 'Zeile erkannt.',
-    'row.noSuchAccount': 'Für „{0}“ gibt es kein Konto; dieser Import ändert Konten und '
-      + 'legt keine an.',
-    'row.noSuchRole': '„{0}“ ist keine Rolle.',
-    'row.dateMissing': 'Das Datum fehlt.',
-    'row.dateNotUnderstood': '„{0}“ ist kein Datum, das der Import versteht (JJJJ-MM-TT).',
-    'row.hoursMissing': 'Die Stunden fehlen.',
-    'row.hoursNotANumber': '„{0}“ ist keine Stundenzahl.',
-    'row.noSuchUser': 'Es gibt niemanden mit dem Namen „{0}“.',
-    'row.notYourTime': 'Du darfst nur eigene Zeiten importieren, und diese Zeile gehört '
-      + 'zu {0}.',
-    'row.noSuchProject': 'Es gibt kein Projekt mit dem Namen „{0}“.',
-    'row.projectNotActive': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
-
-    'user.directoryHint': 'Wird im LDAP verwaltet. Das Passwort liegt dort, und das Entfernen des Eintrags dort entfernt auch dieses Konto.',
-
-    'passkey.title': 'Passkeys',
-    'passkey.hint': 'Mit Fingerabdruck, Gesicht oder Geräte-PIN anmelden, statt ein Passwort einzutippen. Der Schlüssel verlässt das Gerät nie, kann also weder abgephisht noch aus einem Datenleck gelesen werden. Dein Passwort funktioniert weiterhin.',
-    'passkey.name': 'Name für dieses Gerät',
-    'passkey.namePlaceholder': 'Arbeitslaptop',
-    'passkey.add': 'Passkey hinzufügen',
-    'passkey.added': 'Hinzugefügt',
-    'passkey.lastUsed': 'Zuletzt benutzt',
-    'passkey.never': 'nie',
-    'passkey.empty': 'Noch keine Passkeys. Füge einen hinzu, um dich ohne Passwort anzumelden.',
-    'passkey.signIn': 'Mit Passkey anmelden',
-    'passkey.added.done': 'Passkey hinzugefügt',
-    'passkey.removed': 'Passkey entfernt',
-    'passkey.cancelled': 'Der Passkey wurde nicht verwendet.',
-    'passkey.notCreated': 'Der Passkey wurde nicht angelegt.',
-    'passkey.err.notAllowed': 'Die Abfrage wurde abgebrochen oder lief ab. Es wurde nichts geändert.',
-    'passkey.err.already': 'Dieses Gerät hat für dieses Konto schon einen Passkey.',
-    'passkey.err.unsupported': 'Dieses Gerät kann keinen Passkey der Art erstellen, die diese Installation verlangt.',
-    'passkey.err.insecure': 'Ein Passkey braucht HTTPS, die Adresse, für die er angelegt wurde, und ein Zertifikat, dem dieses Gerät vertraut. Eine weggeklickte Zertifikatswarnung genügt nicht.',
-    'passkey.err.certificate': 'Dieses Gerät vertraut dem Zertifikat dieser Seite nicht, deshalb ist hier kein Passkey möglich. Die Zertifizierungsstelle muss auf dem Gerät installiert werden.',
-    'passkey.err.aborted': 'Die Abfrage wurde geschlossen, bevor etwas geschehen ist.',
-    'passkey.failed': 'Der Passkey wurde nicht akzeptiert.',
-    'kerberos.signIn': 'Mit Single Sign-on anmelden',
-    'kerberos.usePassword': 'Stattdessen mit Passwort anmelden',
-    'kerberos.failed': 'Die Anmeldung per Single Sign-on hat nicht geklappt: Der Browser hat kein Ticket vorgelegt, das diese Installation annimmt, oder das Verzeichnis kennt das Konto nicht.',
-    'kerberos.codeFailed': 'Die Anmeldung wurde nicht angenommen. Bitte den Code prüfen.',
-
-    'tz.title': 'Zeitzone',
-    'tz.hint': 'Bestimmt, auf welchen Kalendertag eine Buchung fällt — für alle, die unter „Mein Konto" keine eigene gesetzt haben.',
-    'tz.myTitle': 'Meine Zeitzone',
-    'tz.myHint': 'Bestimmt, auf welchen Kalendertag deine Buchungen fallen. Lass es auf „Systemeinstellung folgen", außer du arbeitest aus einem anderen Land.',
-    'tz.timezone': 'Zeitzone',
-    'tz.inherit': 'Systemeinstellung folgen',
-    'tz.saved': 'Zeitzone gespeichert',
-
-    'app.theme': 'Darstellung',
-    'theme.auto': 'Automatisch (nach Tageszeit)',
-    'theme.light': 'Hell',
-    'theme.dark': 'Dunkel',
-
-    'action.archive': 'archivieren',
-    'action.book': 'Buchen',
-    'action.calculate': 'Berechnen',
-    'action.cancelEdit': 'Bearbeiten abbrechen',
-    'action.complete': 'abschließen',
-    'action.create': 'Anlegen',
-    'action.delete': 'löschen',
-    'bulk.pick': 'Auswählen',
-    'bulk.pickAll': 'Alle auswählen',
-    'bulk.count': '{n} ausgewählt',
-    'bulk.delete': 'Ausgewählte löschen',
-    'bulk.title': 'Die ausgewählten Zeilen löschen?',
-    'bulk.text': 'Das lässt sich nicht rückgängig machen.',
-    'bulk.done': '{n} gelöscht',
-    'bulk.refused': '{n} konnten nicht gelöscht werden',
-    'bulk.assignTo': 'Einem Projekt zuordnen …',
-    'bulk.assign': 'Zuordnen',
-    'bulk.assigned': '{0} dem Projekt {1} zugeordnet',
-    'bulk.assignRefused': '{0} konnten nicht zugeordnet werden',
-    'sheet.projects.text': 'Exportiert deine Projekte. Ein Import '
-      + 'ordnet Zeilen über den Namen zu: ein vorhandener Name wird aktualisiert, ein neuer '
-      + 'angelegt. Eine leere '
-      + 'Zelle lässt den Wert unverändert, es geht also nichts verloren, wenn eine Spalte '
-      + 'fehlt.',
-    'sheet.projects.file': 'projekte',
-    'sheet.projects.done': '{0} Zeilen geschrieben.',
-    'sheet.users.text': 'Exportiert alle Konten: Name, E-Mail, Rolle und ob das Kennwort '
-      + 'im Verzeichnis liegt. Ein Import ändert Name und Rolle, zugeordnet über die '
-      + 'E-Mail-Adresse, und legt keine Konten an – ein neues braucht ein Kennwort, und das '
-      + 'gehört nicht in eine Tabelle. Arbeitszeiten und Zeitzonen stehen nicht darin: sie '
-      + 'gehören der Person, die sie unter „Mein Konto“ selbst setzt.',
-    'sheet.users.file': 'benutzer',
-    'sheet.users.done': '{0} Zeilen geschrieben.',
-    'sheet.roles.text': 'Exportiert jede Rolle mit einer Spalte pro Recht, die ja oder nein '
-      + 'enthält – genau das Raster, das man braucht, wenn die Frage lautet, was vier Rollen '
-      + 'dürfen. Ein Import ordnet Zeilen über den Namen zu, legt eine noch nicht vorhandene '
-      + 'Rolle an und weist eine Spaltenüberschrift zurück, die ein hier nicht durchgesetztes '
-      + 'Recht benennt. Eine System-Rolle lässt sich nur anders beschreiben, sonst nichts.',
-    'sheet.roles.file': 'rollen',
-    'sheet.roles.done': '{0} Zeilen geschrieben.',
-    'action.edit': 'bearbeiten',
-    'action.evaluate': 'Auswerten',
-    'action.exportPdf': 'Als PDF exportieren',
-    'action.reload': 'Neu laden',
-    'action.generate': 'Erzeugen',
-    'action.new': 'Neu',
-    'action.save': 'Speichern',
-    'action.dismiss': 'Schließen',
-    'action.cancel': 'Abbrechen',
-    'stats.title': 'Meine Stunden',
-    'stats.perDay': 'Stunden pro Tag',
-    'stats.perProject': 'Stunden pro Projekt',
-    'stats.perActivity': 'Stunden pro Tätigkeit',
-    'stats.activityHint': 'Schreib eine Tätigkeit mit # in eine Beschreibung – #besprechung, #review – und ihre Stunden werden hier zusammengezählt. Ein Eintrag mit zweien zählt für beide, deshalb kann die Summe größer sein als die Gesamtzeit.',
-    'stats.noActivity': 'Keine Tätigkeit',
-    'stats.total': 'Gesamt',
-    'stats.filename': 'statistik',
-    'stats.noProject': 'Kein Projekt',
-    'stats.deletedProject': 'gelöschtes Projekt',
-    'stats.empty': 'In diesem Zeitraum wurde nichts erfasst.',
-    'install.title': 'Als App installieren',
-    'install.text': 'Installiert öffnet sich die Zeiterfassung vom Startbildschirm oder aus dem Startmenü wie eine eigene App, ohne den Browser drumherum. Ein langer Druck auf ihr Symbol führt direkt zu den Zeiteinträgen, zum Kalender oder zu den Überstunden.',
-    'install.manual': 'Wo hier keine Schaltfläche erscheint, hat der Browser das Angebot in seinem Menü, als „App installieren“ oder „Zum Startbildschirm hinzufügen“.',
-    'install.now': 'Installieren',
-    'schedule.title': 'Meine Woche',
-    'schedule.hint': 'Wie viele Stunden jeder Wochentag von dir verlangt, für den Überstundensaldo. Ein Plan gilt ab dem Tag, den du wählst; die Wochen davor behalten den Plan, der damals galt.',
-    'schedule.validFrom': 'Gilt ab',
-    'schedule.save': 'Plan speichern',
-    'schedule.saved': 'Plan gespeichert',
-    'schedule.before': 'Vor dem ersten Plan und ohne einen: {0} Std. von Montag bis Freitag, am Wochenende nichts.',
-    'schedule.label': 'Der Plan ab {0}',
-    'schedule.removed': 'Plan entfernt',
-    'schedule.empty': 'Noch kein Plan – von Montag bis Freitag gilt das Tagessoll.',
-    'week.thisWeek': 'Diese Woche',
-    'week.hint': 'Trag die Stunden direkt in die Zellen ein: Eine Zahl in einer leeren Zelle bucht sie, eine geänderte Zahl korrigiert den Eintrag dahinter. Wo mehrere Einträge eine Zelle ergeben, führt sie stattdessen zu ihnen.',
-    'week.sum': 'Summe',
-    'week.addRow': 'Zeile hinzufügen für',
-    'week.title': 'Woche {0} · {1} – {2}',
-    'week.several': '{0} Einträge – anzeigen',
-    'week.empty': 'Diese Woche ist noch nichts gebucht.',
-    'week.booked': 'Ist',
-    'week.target': 'Soll',
-    'week.balance': 'Saldo',
-    'week.choose': 'Auswählen …',
-    'week.removeTitle': 'Diesen Eintrag zurücknehmen?',
-    'week.removeText': 'Die am {1} gebuchten {0} werden gelöscht.',
-    'week.removed': 'Eintrag zurückgenommen',
-    'week.copyLast': 'Vorwoche kopieren',
-    'week.copyTitle': 'Vorwoche kopieren?',
-    'week.copyText': 'Die Einträge der Woche ab {0} werden an denselben Wochentagen dieser Woche noch einmal gebucht – nur an Tagen, an denen noch nichts gebucht ist.',
-    'week.copyConfirm': 'Kopieren',
-    'week.copied': 'Kopierte Einträge: {0} ({1}).',
-    'week.copyKept': 'Schon gebuchte Tage, so gelassen, wie sie waren: {0}.',
-    'week.copyClosed': 'Ausgelassen, weil ihr Projekt keine Buchungen mehr annimmt: {0}.',
-    'timer.title': 'Stoppuhr',
-    'timer.hint': 'Erfasst die tatsächlich gemessene Zeit, sekundengenau — der Eintrag landet auf dem Tag, an dem die Uhr gestartet wurde, in deiner eigenen Zeitzone.',
-    'timer.start': 'Starten',
-    'timer.stop': 'Stoppen und buchen',
-    'timer.discard': 'Verwerfen',
-    'timer.started': 'Die Uhr läuft',
-    'timer.discarded': 'Die Uhr wurde verworfen',
-    'timer.discardTitle': 'Gemessene Zeit verwerfen?',
-    'timer.discardText': 'Die Uhr wird angehalten und nichts erfasst. Das kann nicht rückgängig gemacht werden.',
-    'timer.since': 'Läuft seit {0}',
-    'timer.time': 'Uhrzeit',
-    'timer.adjustOpen': 'Start korrigieren',
-    'timer.adjustTitle': 'Wann hast du angefangen?',
-    'timer.adjustSave': 'Diesen Start übernehmen',
-    'timer.adjusted': 'Start korrigiert',
-    'timer.endOpen': 'früher aufgehört?',
-    'timer.endTitle': 'Wann hast du aufgehört?',
-    'timer.endForgotten': 'Die Uhr läuft länger, als ein Eintrag fassen kann – vermutlich wurde sie vergessen. Gib an, wann du aufgehört hast, dann wird bis dahin gebucht, auf den Tag, an dem sie gestartet wurde.',
-    'timer.endSave': 'Bis dahin buchen',
-    'timer.switchOpen': 'Wechseln zu …',
-    'timer.switchTitle': 'Mit etwas anderem weitermachen',
-    'timer.switchHint': 'Bucht die bisher gemessene Zeit und misst ab derselben Sekunde weiter, für das, was jetzt kommt.',
-    'timer.switchSave': 'Buchen und weiter',
-    'timer.switched': 'Gebucht – die Uhr läuft weiter',
-    'timer.banner': 'Eine Stoppuhr läuft seit {0} und damit länger, als ein Eintrag fassen kann. Unter {1} lässt sie sich mit der richtigen Endzeit buchen.',
-    'confirm.deleteTitle': 'Endgültig löschen?',
-    'confirm.deleteText': 'wird gelöscht. Das kann nicht rückgängig gemacht werden.',
-    'sync.confirmTitle': 'Abgleich ausführen?',
-    'sync.elsewhere': 'Wird diesem Konto nicht angeboten. Ein Lauf löscht die Konten, die das Verzeichnis nicht mehr führt, samt der darauf erfassten Zeit; er gehört deshalb zu einem Konto, das administriert und selbst keine Zeit erfasst: dem eingebauten Administrator oder einem Konto mit der Rolle „{0}“. Mit einem solchen Konto lässt er sich ansehen, ausführen und planen.',
-    'admin.activeConnection': 'Aktuell verbunden über',
-    'admin.connectionFromEnvironment': 'Diese Verbindung kommt aus der Umgebung, '
-      + 'nicht aus einer gespeicherten Einstellung. Wird dieses Formular gespeichert, '
-      + 'ob geändert oder nicht, wird sie zu einer eigenen Einstellung, die ab dem '
-      + 'nächsten Start vor der Umgebung gilt.',
-    'admin.banner': 'Banner-Text (leer = ausgeblendet)',
-    'admin.bindPassword': 'Bind-Passwort',
-    'admin.branding': 'Erscheinungsbild',
-    'admin.brandingHint': 'Titel, Banner, Logo und Fußzeile dieser Installation.',
-    'admin.company': 'Firma',
-    'admin.companyUrl': 'Firmen-Website',
-    'admin.database': 'Datenbank-Anbindung',
-    'admin.databaseHint': 'Die Verbindung wird gespeichert und beim nächsten Start der Anwendung verwendet. Ein Wechsel im laufenden Betrieb wäre nicht gefahrlos möglich.',
-    'admin.dbName': 'Datenbank / Dateiname',
-    'admin.dbFile': 'Datenbankdatei – wird angelegt, falls sie fehlt',
-    'admin.dbPassword': 'Passwort',
-    'admin.dbSsl': 'SSL-Modus',
-    'admin.dbUser': 'Benutzer',
-    'admin.defaultRole': 'Standardrolle für neue Benutzer',
-    'admin.dialect': 'Typ',
-    'admin.footer': 'Fußzeile',
-    'admin.idAttr': 'Eindeutiges ID-Attribut (entryUUID, Active Directory: objectGUID)',
-    'admin.keepStored': 'unverändert lassen',
-    'admin.passwordForThisServer': 'das Passwort für diesen Server',
-    'admin.ldap': 'LDAP-Anbindung',
-    'admin.ldapEnabled': 'Aktiviert',
-    'admin.ldapHint': 'Bei aktivierter Anbindung wird das Passwort gegen das Verzeichnis geprüft. Unbekannte Benutzer werden beim ersten erfolgreichen Login lokal angelegt.',
-    'admin.legal': 'Rechtlicher Hinweis',
-    'admin.logoClear': 'Logo entfernen',
-    'admin.logoTooBig': 'Das Logo darf höchstens 256 KB groß sein.',
-    'admin.mailAttr': 'E-Mail-Attribut',
-    'admin.nameAttr': 'Namens-Attribut',
-    'admin.restartNeeded': 'Gespeichert. Wird beim nächsten Start übernommen.',
-    'admin.saved': 'Einstellungen gespeichert',
-    'admin.skipVerify': 'Zertifikat nicht prüfen (unsicher)',
-    'admin.testConnection': 'Verbindung testen',
-    'admin.testing': 'Verbindung wird geprüft …',
-    'admin.testOk': 'Die Verbindung funktioniert.',
-    'admin.textLanguage': 'Sprache dieser Texte',
-    'admin.title': 'Titel (Kopfzeile)',
-    'admin.tabTitle': 'Browser-Tab (leer = Titel)',
-    'setup.instanceName': 'Name dieser Installation',
-    'admin.userFilter': 'Benutzer-Filter (%s = Anmeldename)',
-    'app.language': 'Sprache',
-    'banner.password': 'Das Initialpasswort ist noch aktiv. Bitte unter „Mein Konto" ändern — bis dahin bleibt die übrige Anwendung gesperrt.',
-    'detail.show': 'Technische Details',
-    'detail.reference': 'Referenz: {0}',
-    'err.unauthenticated': 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',
-    'err.notFound': '{0} mit der Kennung {1} wurde nicht gefunden.',
-    // What a refusal for something that is not there names it - see entityName.
-    'entity.passkey': 'Passkey',
-    'entity.project': 'Projekt',
-    'entity.role': 'Rolle',
-    'entity.schedule': 'Wochenplan',
-    'entity.template': 'Vorlage',
-    'entity.absence': 'Abwesenheit',
-    'entity.feed': 'Kalender-Abo',
-    'entity.identity': 'Verknüpfung',
-    'entity.workday': 'Arbeitstag',
-    'entity.entitlement': 'Urlaubsanspruch',
-    'entity.session': 'Sitzung',
-    'entity.timesheet': 'Zeiteintrag',
-    'entity.token': 'Token',
-    'entity.user': 'Konto',
-    'err.invalidFields': 'Ungültige Felder',
-    'err.rateLimited': 'Zu viele Anfragen. Bitte in {0} Sekunden erneut versuchen.',
-    'err.updateCheckedRecently': 'Die Release-Quelle wurde gerade erst gefragt. '
-      + 'Erneut möglich in {0} Sekunden.',
-    'err.updateCheckOff': 'Die Aktualisierungsprüfung ist für diese Installation abgeschaltet.',
-    'err.bodyTooLarge': 'Die gesendeten Daten sind zu groß (Grenze: {0} MB).',
-    'err.csrfRejected': 'Diese Seite ist zu lange geöffnet gewesen. Bitte neu laden und noch einmal versuchen.',
-    'err.maintenance': 'Diese Installation ist wegen Wartungsarbeiten vorübergehend nicht verfügbar.',
-    'err.noInstallerSession': 'Diese Installation wurde nicht über den Einrichtungs-Assistenten eingerichtet.',
-    'err.noBuiltInAdmin': 'Diese Installation hat kein eingebautes Administratorkonto.',
-    'err.installationAlreadyInUse': 'Diese Installation ist bereits in Betrieb. Bitte mit dem Passwort anmelden, das dafür gewählt wurde.',
-    'err.cannotResetOwnPassword': 'Das eigene Passwort wird unter „Mein Konto“ geändert — dort wird nach dem aktuellen gefragt.',
-    'err.cannotDeleteSelf': 'Das Konto, mit dem du angemeldet bist, kann nicht gelöscht werden.',
-    'err.defaultRoleUndeletable': '„{0}“ ist eine mitgelieferte Rolle und kann nicht gelöscht werden.',
-    'err.directoryRoleAdministers': '„{0}“ verwaltet diese Installation und kann nicht die Rolle sein, mit der jedes Konto aus dem Verzeichnis beginnt.',
-    'err.internal': 'Die Anfrage konnte nicht ausgeführt werden. Die technischen Details stehen darunter.',
-    'err.probeFailed': 'Die Verbindung konnte nicht hergestellt werden.',
-    'update.available': 'Version {0} ist verfügbar. Diese Installation läuft mit {1}.',
-    'announce.installing': 'Eine neue Version ({0}) wird installiert. Du kannst weiterarbeiten; die Anwendung startet gleich neu.',
-    'announce.restarting': 'Die Anwendung startet gerade in Version {0}. Diese Seite lädt sich gleich von selbst neu.',
-    'announce.pending': 'Version {0} ist installiert und wird beim nächsten Start der Anwendung aktiv. Bis dahin ändert sich nichts.',
-    'announce.cancelled': 'Das Update wurde nicht installiert, es hat sich nichts geändert. Die Anwendung läuft unverändert weiter.',
-    'cal.close': 'schließen',
-    'cal.clickToEdit': 'Zum Bearbeiten auf einen Eintrag klicken.',
-    'cal.monthTotal': 'Gesamt im Monat',
-    'cal.months': 'Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember',
-    'cal.today': 'Heute',
-    'cal.weekdays': 'Mo,Di,Mi,Do,Fr,Sa,So',
-    'err.accountOfAnotherEntry': 'Das Konto unter „{0}“ gehört zu einem anderen Verzeichniseintrag, in der Regel zu jemandem, der die Adresse vorher hatte. Wem es gehört, muss die Administration klären.',
-    'err.adminHasNoPasskey': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit sich eine Installation nie durch ein verlorenes Gerät aussperrt.',
-    'err.directoryAccountHasNoPasskey': 'Ein Konto aus dem Verzeichnis meldet sich mit dem Kennwort des Verzeichnisses an, damit das Verzeichnis es beenden kann.',
-    'err.adminHasNoOpenID': 'Der eingebaute Administrator meldet sich mit Kennwort an, damit eine Installation nie von einem Anbieter abhängt.',
-    'err.directoryAccountHasNoOpenID': 'Ein Konto aus dem Verzeichnis meldet sich mit dem Kennwort des Verzeichnisses an, damit das Verzeichnis es beenden kann.',
-    'err.openidOff': 'Die Anmeldung über einen Anbieter ist ausgeschaltet.',
-    'err.openidUnreachable': 'Der Anmeldeanbieter war nicht erreichbar.',
-    'err.openidRefused': 'Der Anmeldeanbieter hat die Anmeldung nicht bestätigt.',
-    'err.openidNotLinked': 'Diese Identität ist mit keinem Konto hier verknüpft. Melde dich mit deinem Kennwort an und verknüpfe sie unter „Mein Konto“.',
-    'err.openidLinkedElsewhere': 'Diese Identität ist schon mit einem anderen Konto verknüpft.',
-    'err.openidNeedsHttps': 'Ein Anmeldeanbieter muss über HTTPS erreichbar sein.',
-    'err.adminRoleMustAdminister': 'Der eingebaute Administrator kann nicht in die Rolle „{0}“ wechseln, ihr fehlt „{1}“.',
-    'err.adminUndeletable': 'Der eingebaute Administrator kann nicht gelöscht werden.',
-    'err.archiveNeedsCompleted': 'Ein Projekt kann erst archiviert werden, wenn sein Status „{0}“ ist.',
-    'err.attemptExpired': 'Dieser Versuch ist abgelaufen. Bitte erneut versuchen.',
-    'err.bodyNotJSON': 'Die Anfrage enthält kein gültiges JSON.',
-    'err.credentialUnreadable': 'Der Anmeldeschlüssel konnte nicht gelesen werden.',
-    'err.datasourceInvalid': 'Die Datenbank-Verbindung ist unvollständig oder ungültig.',
-    'err.passwordSwallowsName': 'Ohne Passwort erfährt PostgreSQL den Namen der Datenbank „{0}“ nicht und öffnet stattdessen die, die wie das Konto heißt. Nötig ist das Passwort des Kontos – irgendein Wert, wenn der Server keines verlangt – oder, wenn die Daten dieser Installation schon dort liegen, der Name dieser Datenbank.',
-    'err.postgresMisread': 'PostgreSQL würde diese Verbindung nicht so erhalten, wie sie eingegeben ist: GoFr schreibt sie ohne Anführungszeichen, und ein Leerzeichen, ein Backslash oder ein Anführungszeichen am Anfang übersteht das weder im Benutzer noch im Passwort noch im Datenbanknamen.',
-    'err.mysqlMisread': 'MySQL würde diese Verbindung nicht so erhalten, wie sie eingegeben ist: GoFr schreibt sie ohne Maskierung, und ein Doppelpunkt im Benutzer, ein Fragezeichen oder Schrägstrich im Datenbanknamen oder eine IPv6-Adresse ohne eckige Klammern übersteht das nicht.',
-    'err.dateFormat': 'Das Datum „{0}“ muss YYYY-MM-DD oder RFC 3339 sein.',
-    'err.deletionNeedsConfirming': '„{0}“ hat {1} erfasste Zeiteinträge. Sie würden mit dem Konto gelöscht und sind nicht wiederherstellbar – zum Fortfahren bitte bestätigen.',
-    'err.emailTaken': 'Es gibt bereits einen Benutzer mit der E-Mail-Adresse „{0}“.',
-    'err.entryAlreadyOnProject': 'Der Zeiteintrag ist bereits auf Projekt „{0}“ gebucht.',
-    'err.initialPasswordPending': 'Das Anfangskennwort muss geändert werden, bevor die Anwendung genutzt werden kann.',
-    'err.invalidCredentials': 'E-Mail-Adresse oder Kennwort ist falsch.',
-    'err.invalidToken': 'Ungültiges Token.',
-    'err.logoNotInline': 'Das Logo muss ein eingebettetes Bild sein (data:image/…).',
-    'err.logoNotRaster': 'Das Logo muss ein PNG oder ein JPEG sein. SVG wird von manchen Browsern nicht als Tab-Symbol übernommen.',
-    'err.logoTooLarge': 'Das Logo muss kleiner als {0} KB sein.',
-    'err.logoTooManyPixels': 'Das Logo darf höchstens {0} Megapixel haben. Eine kleine Datei kann trotzdem sehr viele Bildpunkte enthalten.',
-    'err.missingPermission': 'Dafür fehlt die Berechtigung „{0}“.',
-    'err.onlyOwnWorkingTimes': 'Du kannst nur deine eigenen Arbeitszeiten ändern.',
-    'err.onlyOwnEntriesRead': 'Du kannst nur deine eigenen Zeiteinträge sehen.',
-    'err.onlyOwnEntriesWrite': 'Du kannst nur deine eigenen Zeiteinträge ändern.',
-    'err.onlyOwnOvertime': 'Du kannst nur deinen eigenen Überstundenstand sehen.',
-    'err.onlyOwnProjects': 'Du kannst nur deine eigenen Projekte pflegen.',
-    'err.notAManager': '{0} hat keine Rolle mit Teamrechten und kann deshalb niemanden betreuen.',
-    'err.selfManaged': 'Ein Konto kann nicht sein eigener Manager sein.',
-    'err.onlyBuiltInAdminSyncs': 'Nur die eingebaute Administration darf das Verzeichnis '
-      + 'abgleichen.',
-    'err.updateInstalling': 'Eine Aktualisierung wird bereits installiert. Bitte '
-      + 'warte, bis sie abgeschlossen ist.',
-    'err.updateAlreadyInstalled': '{0} ist bereits heruntergeladen und startet mit dem nächsten Neustart.',
-    'err.updateDisabled': 'Die Aktualisierung ist auf dieser Installation abgeschaltet.',
-    'err.updateInContainer': 'Dies läuft in einem Container. Ein dort ausgetauschtes Programm wird beim nächsten Neuerzeugen des Containers überschrieben. Bitte das Abbild von Hand aktualisieren – oder deploy/compose.update.yaml zur Bereitstellung hinzufügen, dann geht es von hier aus.',
-    'err.updateNotNewer': 'Diese Installation läuft bereits mit {0}.',
-    'err.onlyBuiltInAdminSchedules': 'Nur die eingebaute Administration darf den '
-      + 'Verzeichnisabgleich planen.',
-    'err.onlyBuiltInAdminSetsUp': 'Nur die eingebaute Administration darf die Einrichtung '
-      + 'durchlaufen.',
-    'err.restartUnsupported': 'Ein Neustart aus der Anwendung heraus ist auf diesem System nicht möglich. Gespeicherte Einstellungen werden beim nächsten regulären Start wirksam.',
-    'err.restartWouldNotStart': 'Die Datenbank, die der nächste Start öffnen würde, antwortet nicht – die Anwendung käme nicht wieder. Es wurde nicht neu gestartet.',
-    'err.mustChangePasswordFirst': 'Das Konto muss zuerst sein Anfangskennwort ändern.',
-    'err.noAuthNoPassword': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Kennwort zu ändern.',
-    'err.noAuthNoAccount': 'Diese Instanz läuft ohne Anmeldung, es gibt also kein Konto zu exportieren.',
-    'err.noDirectory': 'Es ist kein Verzeichnis konfiguriert.',
-    'err.syncStoppedPartWay': 'Der Abgleich wurde abgebrochen, nachdem er {0} Konto/Konten '
-      + 'gelöscht und {1} angelegt hatte. Die Liste zeigt, was noch übrig ist.',
-    'err.syncAlreadyRunning': 'Ein Verzeichnis-Abgleich läuft bereits; dieser wurde nicht gestartet.',
-    'err.syncDiffersFromPreview': 'Das Verzeichnis antwortet inzwischen anders als in der bestätigten '
-      + 'Vorschau: Dieser Lauf würde {0} Konto/Konten löschen, darum wurde nichts geändert. Bitte erneut '
-      + 'prüfen.',
-    'err.syncDirectoryAnsweredEmpty': 'Das Verzeichnis hat niemanden mit einer Mailadresse geliefert; es wird niemand gelöscht.',
-    'err.syncWouldRemoveTooMany': 'Würde {0} von {1} Verzeichniskonten entfernen ({2} %), mehr als die '
-      + 'Sicherheitsgrenze von {3} %. Prüfe Filter und Base-DN des Verzeichnisses und hebe die '
-      + 'Löschgrenze unter „Betrieb und Grenzwerte“ oder LDAP_SYNC_MAX_DELETE_RATIO an, wenn das wirklich '
-      + 'beabsichtigt ist.',
-    'err.noSession': 'Keine Sitzung.',
-    'err.noTimerRunning': 'Es läuft keine Stoppuhr.',
-    'err.overDailyLimit': '{0} Std. würden am {2} zusammen {1} Std. ergeben und damit das Tagesmaximum von {3} Std. überschreiten.',
-    'err.passkeyKnown': 'Dieser Anmeldeschlüssel ist bereits registriert.',
-    'err.passkeyRejected': 'Der Anmeldeschlüssel wurde nicht akzeptiert.',
-    'err.passkeyUnverified': 'Der Anmeldeschlüssel konnte nicht geprüft werden.',
-    'err.passkeyWrongSession': 'Diese Registrierung gehört zu einer anderen Anmeldung.',
-    'err.passwordTooShort': 'Das Kennwort muss mindestens {0} Zeichen lang sein.',
-    'err.passwordTooLong': 'Das Kennwort darf höchstens {0} Byte lang sein. Umlaute und ß zählen doppelt, ein Emoji vierfach – eine lange Passphrase mit Umlauten kann die Grenze also früher erreichen, als sie aussieht.',
-    'err.passwordUnchanged': 'Das neue Kennwort muss sich vom aktuellen unterscheiden.',
-    'err.projectClosedForBooking': 'Projekt „{0}“ ist {1} und nimmt keine Zeiteinträge mehr an.',
-    'err.projectIsBeingTimed': 'Bei {0} Person(en) läuft gerade eine Stoppuhr auf dieses Projekt. Es kann gelöscht werden, sobald sie gestoppt haben.',
-    'err.projectHasEntries': 'Das Projekt hat noch {0} Zeiteinträge und kann nicht gelöscht werden.',
-    'err.pageSizeTooLarge': 'Eine Seite darf höchstens {0} Einträge enthalten.',
-    'err.rangeInverted': '„bis“ darf nicht vor „von“ liegen.',
-    'err.rangeTooLong': 'Ein Zeitraum darf höchstens {0} Tage umfassen.',
-    'err.nothingToCopy': 'In der Woche, aus der kopiert werden soll, ist nichts gebucht.',
-    'err.roleNameTaken': 'Es gibt bereits eine Rolle namens „{0}“.',
-    'err.roleStillAssigned': 'Rolle „{0}“ ist noch {1} Benutzer(n) zugewiesen.',
-    'err.sessionExpired': 'Die Sitzung ist abgelaufen.',
-    'err.systemRoleUndeletable': 'Die Systemrolle „{0}“ kann nicht gelöscht werden.',
-    'err.systemRoleUnrenamable': 'Die Systemrolle „{0}“ kann nicht umbenannt werden.',
-    'err.systemRoleDescriptionFixed': 'Die Beschreibung der mitgelieferten Rolle „{0}“ lässt sich nicht ändern – sie wird von der Oberfläche übersetzt.',
-    'err.systemRoleRightsFixed': 'Die Rechte der Systemrolle „{0}“ lassen sich nicht ändern – weder entziehen noch hinzufügen. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
-    'err.roleGrantsNothing': 'Eine Rolle muss mindestens ein Recht gewähren.',
-    'err.targetOverMaximum': 'Das Tagesziel ({0} Std.) darf das Tagesmaximum ({1} Std.) nicht überschreiten.',
-    'err.timerTooLong': 'Die Stoppuhr misst {0} Stunden, mehr als ein Eintrag aufnehmen kann. Gib an, wann du aufgehört hast, oder verwirf die Stoppuhr.',
-    'err.timerTooShort': 'Die Stoppuhr läuft kürzer als die kleinste buchbare Dauer. Bitte stattdessen verwerfen.',
-    'err.timerEndBeforeStart': 'Die Endzeit liegt vor dem Start der Stoppuhr. Bitte die Uhrzeit prüfen.',
-    'err.timerEndInFuture': 'Die Endzeit liegt in der Zukunft. Eine Stoppuhr lässt sich nur bis jetzt buchen.',
-    'err.timerStartInFuture': 'Eine Stoppuhr kann nicht in der Zukunft beginnen.',
-    'err.tooManyTokens': 'Höchstens {0} Token pro Benutzer. Bitte zuerst eines widerrufen.',
-    'err.tooManyTemplates': 'Höchstens {0} Vorlagen pro Person. Lösch zuerst eine.',
-    'err.templateEmpty': 'Eine Vorlage muss etwas ausfüllen: ein Projekt, Stunden oder eine Beschreibung.',
-    'err.noWorkingDays': 'In diesem Zeitraum liegt kein Arbeitstag, also gibt es nichts zu erfassen.',
-    'err.twoFactorAlreadyOn': 'Die Zwei-Faktor-Anmeldung ist bereits aktiv.',
-    'err.twoFactorCodeInvalid': 'Der Zwei-Faktor-Code ist nicht gültig.',
-    'err.twoFactorCodeUsed': 'Dieser Code wurde bereits verwendet. Bitte warte auf den nächsten.',
-    'err.kerberosOff': 'Die Anmeldung mit einem Kerberos-Ticket ist auf dieser Installation nicht eingerichtet.',
-    'err.kerberosNeedsDirectory': 'Eine Kerberos-Anmeldung wird im Verzeichnis nachgeschlagen, und hier ist kein Verzeichnis eingerichtet.',
-    'err.twoFactorNotOn': 'Die Zwei-Faktor-Anmeldung ist nicht aktiv.',
-    'err.twoFactorNotStarted': 'Bitte zuerst die Zwei-Faktor-Einrichtung starten.',
-    'err.twoFactorRequired': 'Ein Zwei-Faktor-Code ist erforderlich.',
-    'err.unknownPermissions': 'Unbekannte Rechte: {0}',
-    'err.wrongCurrentPassword': 'Das aktuelle Kennwort ist nicht korrekt.',
-    'field.action': 'Aktion',
-    'err.importEmpty': 'Die Datei enthält nichts zu importieren.',
-    'err.importHasRejectedRows': '{0} von {1} Zeilen können nicht importiert werden. Es wurde nichts geschrieben.',
-    'err.noFileUploaded': 'Es wurde keine Datei übermittelt.',
-    'msg.tooSlow': 'Der Server hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.',
-    'msg.unreachable': 'Der Server war nicht erreichbar. Bitte die Verbindung prüfen und es erneut versuchen.',
-    'msg.alreadySending': 'Das wird bereits gesendet.',
-    'err.notAWorkbook': 'Das ist keine lesbare .xlsx-Datei.',
-    'err.chartNotAPicture': 'Das Diagramm konnte nicht gelesen werden. '
-      + 'Bitte die Auswertung erneut anzeigen und dann exportieren.',
-    'err.chartTooManyPixels': 'Das Diagramm darf höchstens {0} Megapixel haben. '
-      + 'Die Dateigröße sagt darüber nichts – ein Bild kann klein ankommen und '
-      + 'trotzdem sehr viele Bildpunkte enthalten.',
-    'err.documentTooLong': 'Die Auswertung ist zu umfangreich für ein Dokument. '
-      + 'Bitte einen kürzeren Zeitraum wählen.',
-    'err.unknownPermissionColumn': '„{0}“ ist kein Recht, das diese Anwendung kennt – '
-      + 'die Datei stammt vermutlich aus einer anderen Installation.',
-    'err.unsupportedDialect': '„{0}“ ist keine Datenbank, die diese Anwendung öffnen '
-      + 'kann. Möglich sind: {1}.',
-    'err.wrongWorkbook': 'Diese Datei enthält etwas anderes – vermutlich der Export einer '
-      + 'anderen Tabelle.',
-    'err.importStoppedAtRow': 'Abgebrochen bei Zeile {0}. {1} Zeilen wurden geschrieben; '
-      + 'die Datei kann erneut importiert werden, um den Rest nachzuholen.',
-    'err.uploadUnreadable': 'Die übermittelte Datei konnte nicht gelesen werden.',
-    'field.actor': 'Aufrufer',
-    'valid.email': 'Bitte gib eine E-Mail-Adresse ein.',
-    'valid.max': 'Höchstens {0}.',
-    'valid.maxLength': 'Höchstens {0} Zeichen.',
-    'valid.min': 'Mindestens {0}.',
-    'valid.minLength': 'Mindestens {0} Zeichen.',
-    'valid.number': 'Bitte gib eine Zahl ein.',
-    'valid.required': 'Bitte fülle dieses Feld aus.',
-    'valid.url': 'Bitte gib eine Webadresse ein.',
-    'wb.allReady': 'Alle {0} Zeilen können importiert werden.',
-    'wb.choose': 'Datei wählen…',
-    'wb.chosen': 'Zum Prüfen auf „Datei prüfen“ klicken.',
-    'wb.clear': 'abbrechen',
-    'wb.empty': 'Die Datei enthält keine Einträge.',
-    'wb.export': 'Als .xlsx exportieren',
-    'wb.exported': 'Export gespeichert',
-    'wb.filename': 'zeiteintraege',
-    'wb.import': 'Importieren',
-    'wb.imported': 'Die Datei wurde importiert',
-    'wb.importedCount': '{0} Einträge angelegt.',
-    'wb.noFile': 'Bitte zuerst eine Datei wählen.',
-    'wb.preview': 'Datei prüfen',
-    'wb.problem': 'Problem',
-    'wb.row': 'Zeile',
-    'wb.someRejected': '{0} von {1} Zeilen können importiert werden. Solange eine Zeile abgelehnt wird, wird nichts geschrieben.',
-    'wb.text': 'Exportiert, was die Filter oben zeigen. Ein Import legt Einträge an; vorhandene werden nie geändert oder ersetzt.',
-    'wb.title': 'Tabelle',
-    'welcome.back': 'Willkommen zurück',
-    'welcome.backName': 'Willkommen zurück, {0}',
-    'welcome.hello': 'Willkommen, {0}',
-    'welcome.helloPlain': 'Willkommen',
-    'welcome.point.account': 'Zeitzone, Sprache und einen zweiten Faktor stellst du unter „Mein Konto“ ein.',
-    'welcome.point.target': 'Dein eigenes Tagessoll und Tagesmaximum stellst du unter „Mein Konto“ ein.',
-    'welcome.point.administer': 'Lege die Menschen an, die hier arbeiten, und entscheide, was jede und jeder darf.',
-    'welcome.point.book': 'Stunden von Hand buchen – oder eine Stoppuhr laufen lassen, die es für dich tut.',
-    'welcome.point.see': 'Den Monat im Kalender sehen und die eigenen Zahlen als Diagramme.',
-    'welcome.continue': 'Los geht’s',
-    'welcome.goTo': 'Zur Willkommensseite',
-    'welcome.text': 'Hier wird deine Arbeitszeit erfasst. Ein kurzer Rundgang dauert etwa eine Minute; du kannst ihn jederzeit unter „Mein Konto“ erneut starten.',
-    'welcome.timerRunning': 'Es läuft noch eine Stoppuhr. Unter „Zeiteinträge“ stoppen, um die Zeit zu buchen.',
-    'welcome.todayHours': 'Heute bislang {0} gebucht.',
-    'welcome.todayNothing': 'Heute noch nichts gebucht.',
-    'welcome.week': 'Diese Woche',
-    'welcome.weekTotal': '{0} von {1}',
-    'welcome.weekToday': 'Heute {0} von {1}',
-    'welcome.weekRemaining': 'noch {0}',
-    'welcome.weekDay': '{0}: {1} von {2}',
-    'welcome.recent': 'Deine letzten Einträge',
-    'welcome.recentAll': 'Alle Zeiteinträge',
-    'welcome.recentNone': 'In den letzten 90 Tagen wurde nichts erfasst.',
-    'welcome.tour': 'Rundgang starten',
-    'field.banner': 'Banner-Text',
-    'field.baseDn': 'Basis-DN',
-    'field.code': 'Code',
-    'field.companyName': 'Firma',
-    'field.companyUrl': 'Firmen-Adresse',
-    'field.confirmed': 'Bestätigte Konten',
-    'field.dailyTargetHours': 'Soll/Tag',
-    'field.defaultRole': 'Standardrolle',
-    'field.durationHours': 'Stunden',
-    'field.endDate': 'Ende',
-    'field.endedAt': 'Beendet um',
-    'field.footerText': 'Fußzeile',
-    'field.expiresInDays': 'Läuft ab in (Tagen)',
-    'field.host': 'Host',
-    'field.id': 'Kennung',
-    'field.language': 'Sprache',
-    'field.ldapSyncMaxDeleteRatio': 'Höchstanteil gelöschter Konten',
-    'field.legalNotice': 'Rechtlicher Hinweis',
-    'field.logLevel': 'Protokollstufe',
-    'field.lowerBound': 'Untergrenze des Saldos',
-    'field.timerAlertHours': 'Stoppuhr erwähnen nach (Stunden)',
-    'field.upperBound': 'Obergrenze des Saldos',
-    'field.maxDailyHours': 'Max/Tag',
-    'field.port': 'Port',
-    'field.projectId': 'Projekt',
-    'field.q': 'Suche',
-    'field.rateLimit': 'Anfragegrenze',
-    'field.rateLimitWindowSeconds': 'Zeitfenster der Anfragegrenze (Sekunden)',
-    'field.sessionIdleMinutes': 'Abmelden nach Untätigkeit (Minuten)',
-    'field.sessionLifetimeHours': 'Sitzungsdauer (Stunden)',
-    'field.startDate': 'Start',
-    'field.startedAt': 'Begonnen um',
-    'field.syncSchedule': 'Zeitplan',
-    'field.theme': 'Erscheinungsbild',
-    'field.timezone': 'Zeitzone',
-    'field.validFrom': 'Gilt ab',
-    'field.tabTitle': 'Browser-Tab',
-    'field.title': 'Titel',
-    'field.traceExporter': 'Trace-Exporter',
-    'field.tracerRatio': 'Trace-Anteil',
-    'field.tracerUrl': 'Trace-Adresse',
-    'field.userFilter': 'Benutzerfilter',
-    'field.userId': 'Benutzer',
-    'date.day': 'TT',
-    'date.month': 'MM',
-    'date.year': 'JJJJ',
-    'field.date': 'Datum',
-    'field.default': 'Standard',
-    'field.description': 'Beschreibung',
-    'field.day': 'Tag',
-    'field.kind': 'Grund',
-    'field.region': 'Bundesland',
-    'field.budgetHours': 'Stundenkontingent',
-    'field.hourlyRate': 'Stundensatz',
-    'field.currency': 'Währung',
-    'field.issuer': 'Adresse des Ausstellers',
-    'field.clientId': 'Client-ID',
-    'field.label': 'Name im Anmeldeformular',
-    'field.breakMinutes': 'Pausen (Minuten)',
-    'field.everyDayCountsFrom': 'Jeder Arbeitstag zählt ab',
-    'field.days': 'Urlaubstage pro Jahr',
-    'field.fromYear': 'Ab dem Jahr',
-    'field.year': 'Jahr',
-    'field.email': 'E-Mail',
-    'field.end': 'Ende',
-    'field.from': 'Von',
-    'field.hours': 'Stunden',
-    'field.maxPerDay': 'Max/Tag',
-    'field.newPassword': 'Neues Passwort',
-    'field.password': 'Passwort',
-    'field.period': 'Zeitraum',
-    'field.project': 'Projekt',
-    'field.projectOptional': 'Projekt (optional)',
-    'field.role': 'Rolle',
-    'field.targetPerDay': 'Soll/Tag',
-    'field.to': 'Bis',
-    'field.user': 'Benutzer',
-    'filter.allProjects': 'Alle Projekte',
-    'filter.search': 'In Beschreibungen suchen',
-    'filter.searchPlaceholder': 'ein Wort, eine Ticketnummer, #besprechung',
-    'footer.source': 'Quellcode auf GitHub',
-    'footer.versionTitle': 'Laufende Version dieser Installation',
-    'log.clear': 'Ansicht leeren',
-    'log.delay': 'Aktualisierung alle (s)',
-    'log.dropped': 'Ältere Zeilen wurden aus dem Puffer verworfen und sind nicht mehr abrufbar.',
-    'log.restarted': 'Die Anwendung wurde neu gestartet. Es folgt das Protokoll des neuen Prozesses.',
-    'log.skipped': 'Es kamen mehr Zeilen, als eine Seite fasst; {0} wurden übersprungen, um die neuesten zu zeigen.',
-    'log.failed': 'Das Protokoll konnte nicht gelesen werden',
-    'log.follow': 'Mitlaufen',
-    'log.hint': 'Was dieser Prozess geschrieben hat, das Neueste unten. Hier landet nur, was die Protokollstufe zulässt – eine Stufe darunter anzuhaken zeigt deshalb nichts. Die Stufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt. Nur im Speicher gehalten: nach einem Neustart ist das bis dahin Erfasste verloren, und eine Protokollsammlung ersetzt das hier nicht.',
-    'log.manual': 'Automatische Aktualisierung ist aus. Für Mitlaufen eine Sekundenzahl eintragen.',
-    'log.pause': 'Anhalten',
-    'log.levelTooQuiet': 'Diese Installation schreibt {0} und höher, bei {1} bleibt es also leer. Die Protokollstufe wird oben unter „Protokoll, Metriken und Traces“ eingestellt.',
-    'log.paused': 'Angehalten.',
-    'log.resume': 'Fortsetzen',
-    'log.search': 'Suche',
-    'log.signedOut': 'Nicht mehr angemeldet; das Protokoll wird nicht weiter aktualisiert.',
-    'log.title': 'Live-Protokoll',
-    'log.unavailable': 'In diesem Prozess ist keine Protokollerfassung aktiv, es gibt daher nichts anzuzeigen.',
-    'log.upTo': 'Bis Zeile',
-    'login.email': 'E-Mail',
-    'login.failed': 'E-Mail-Adresse oder Passwort ist nicht korrekt.',
-    'login.password': 'Passwort',
-    'login.submit': 'Anmelden',
-    'login.totp': 'Code der Authenticator-App',
-    'login.totpNeeded': 'Bitte den Code aus der Authenticator-App eingeben.',
-    'login.welcome': 'Willkommen bei {0}',
-    'msg.booked': 'Zeit gebucht',
-    'msg.entryDeleted': 'Eintrag gelöscht',
-    'msg.entrySaved': 'Eintrag gespeichert',
-    'maint.confirm': 'Installation außer Betrieb nehmen? Alle, die sie nicht verwalten dürfen, werden abgewiesen.',
-    'admin.markupLegend': 'Was in Banner, Fußzeile und rechtlichem Hinweis möglich ist',
-    'markup.year': 'Das aktuelle Jahr — eine Copyright-Zeile bleibt richtig, ohne dass jemand sie ändert',
-    'markup.date': 'Das heutige Datum, geschrieben wie es die lesende Person schreibt',
-    'markup.time': 'Die aktuelle Uhrzeit',
-    'markup.version': 'Die hier laufende Version',
-    'markup.instance': 'Der oben eingestellte Titel',
-    'markup.link': 'Ein Link. Nur http-, https- und mailto-Adressen werden zu Links; alles andere wird als der geschriebene Text angezeigt',
-    'markup.note': 'Alles Übrige wird genau so angezeigt, wie es getippt wurde. Diese Texte lesen auch Personen, die noch nicht angemeldet sind — deshalb ist es kein HTML.',
-    'maint.enabled': 'Außer Betrieb',
-    'maint.hint': 'Weist alle anderen mit einem Hinweis ab, während die Installation weiterläuft. Vor dem Wiederherstellen oder Verschieben der Datenbank zu benutzen: in diesem Zeitraum erfasste Zeiten sind verloren, sobald der Stand zurückgespielt wird, und wer sie erfasst hat, erfährt es nicht.',
-    'maint.message': 'Hinweis für alle anderen',
-    'maint.messagePlaceholder': 'Ab 14:00 wieder erreichbar',
-    'maint.offSaved': 'Die Installation ist wieder in Betrieb.',
-    'maint.onSaved': 'Die Installation ist jetzt außer Betrieb.',
-    'maint.title': 'Wartungsmodus',
-    'maint.who': 'Solange er aktiv ist, können nur diejenigen arbeiten, die diese Installation verwalten dürfen: dieses eingebaute Konto und alle mit der Administrator-Rolle. Alle anderen werden abgewiesen — genau das ist der Zweck.',
-    'maint.signInWho': 'Während der Wartung können sich nur Administratoren anmelden.',
-    'msg.error': 'Fehler',
-    'msg.initFailed': 'Initialisierung fehlgeschlagen',
-    'msg.loadFailed': 'Konnte nicht alles laden',
-    'msg.rightsChanged': 'Deine Berechtigungen haben sich geändert. Bitte die Seite neu laden.',
-    'msg.passwordReset': 'Passwort zurückgesetzt',
-    'msg.passwordChanged': 'Passwort geändert. Bitte neu anmelden.',
-    'msg.projectArchived': 'Projekt archiviert',
-    'msg.projectCompleted': 'Projekt abgeschlossen',
-    'msg.projectCreated': 'Projekt angelegt',
-    'msg.projectSaved': 'Projekt gespeichert',
-    'msg.projectDeleted': 'Projekt gelöscht',
-    'msg.roleChanged': 'Rolle geändert',
-    'msg.roleCreated': 'Rolle angelegt',
-    'msg.roleDeleted': 'Rolle gelöscht',
-    'msg.roleSaved': 'Rolle gespeichert',
-    'msg.userCreated': 'Benutzer angelegt',
-    'msg.userSaved': 'Benutzer gespeichert',
-    'msg.userDeleted': 'Benutzer gelöscht',
-    'msg.workingTimesSaved': 'Arbeitszeiten gespeichert',
-    'nav.admin': 'Einstellungen',
-    'nav.calendar': 'Kalender',
-    'nav.week': 'Woche',
-    'nav.logout': 'Abmelden',
-    'nav.menu': 'Menü',
-    'nav.overtime': 'Überstunden',
-    'nav.projects': 'Projekte',
-    'nav.report': 'Auswertung',
-    'nav.roles': 'Rollen',
-    'nav.settings': 'Mein Konto',
-    'nav.timesheets': 'Zeiteinträge',
-    'nav.users': 'Benutzer',
-    'ot.balance': 'Saldo',
-    'ot.filename': 'ueberstunden',
-    'ot.booked': 'Gebucht',
-    'ot.empty': 'Keine Buchungen in diesem Zeitraum.',
-    'ot.nothingCounts': 'In diesem Zeitraum zählt nichts für den Saldo.',
-    'ot.ruleEveryDay': 'Jeder Arbeitstag zählt ab dem {0}.',
-    'ot.ruleBooked': 'Es zählen nur die Tage, an denen du gebucht hast. Wähle unter „Mein Konto“ einen Tag, ab dem jeder Arbeitstag zählt.',
-    'ot.meta': '{0} · Soll {1}/Tag · gebucht {2} von {3}',
-    'ot.target': 'Soll',
-    'project.create': 'Projekt anlegen',
-    'project.edit': 'Projekt bearbeiten',
-    'project.hint': 'Deine Projekte sind deine: nur du siehst sie und buchst darauf – und ein Manager, dem du zugewiesen bist, wo diese Installation Manager hat. Zwei Personen an derselben Sache haben je ein eigenes.',
-    'project.billable': 'Abrechenbar',
-    'project.ratePerHour': 'abrechenbar zu {0} die Stunde',
-    'project.noRate': 'abrechenbar, noch ohne Satz',
-    'statement.title': 'Leistungsnachweis',
-    'statement.hint': 'Die Stunden deiner abrechenbaren Projekte in einem Zeitraum, mit ihrem Satz und was sie ergeben, je Währung summiert. Keine Rechnung: keine Nummer, keine Steuer, kein Kunde – das schreibst du auf deine Weise.',
-    'statement.create': 'Ausrechnen',
-    'statement.amount': 'Betrag',
-    'statement.noRate': 'noch ohne Satz',
-    'statement.empty': 'Keine abrechenbaren Stunden in diesem Zeitraum.',
-    'statement.total': 'Summe in {0}',
-    'statement.filename': 'leistungsnachweis',
-    'project.empty': 'Noch keine Projekte angelegt.',
-    'project.open': 'offen',
-    'report.result': 'Ergebnis',
-    'report.filename': 'auswertung',
-    'report.exporting': 'Wird erstellt …',
-    'report.chartFailed': 'Das Diagramm konnte nicht in ein Bild umgewandelt werden.',
-    'report.total': '{0} gesamt',
-    'report.title': 'Auswertung',
-    'report.noProject': 'Kein Projekt',
-    'report.chartKind': 'Diagrammart',
-    'report.bars': 'Balken',
-    'report.columns': 'Säulen',
-    'report.pie': 'Kreis',
-    'report.byProject': 'Stunden je Projekt',
-    'report.byDay': 'Stunden je Tag',
-    'role.create': 'Rolle anlegen',
-    'role.edit': 'Rolle „{0}“ bearbeiten',
-    'role.empty': 'Keine Rollen vorhanden.',
-    'role.permissions': 'Berechtigungen',
-    'role.rights': 'Rechte',
-    'role.shippedRole': 'Mitgelieferte Rolle',
-    'role.systemRole': 'Systemrolle',
-    'action.view': 'anzeigen',
-    'perm.legend': 'Was die einzelnen Rechte erlauben',
-    'perm.group.users': 'Konten',
-    'perm.group.roles': 'Rollen',
-    'perm.group.settings': 'Einstellungen',
-    'perm.group.projects': 'Projekte',
-    'perm.group.timesheets': 'Zeiten',
-    'perm.group.reports': 'Auswertungen',
-    'perm.users:read': 'Konten sehen',
-    'perm.users:write': 'Konten anlegen und ändern',
-    'perm.users:delete': 'Konten löschen',
-    'perm.roles:read': 'Rollen sehen',
-    'perm.roles:write': 'Rollen anlegen und ändern',
-    'perm.settings:manage': 'Installation verwalten',
-    'perm.projects:read': 'Projekte sehen',
-    'perm.projects:write': 'Projekte anlegen und ändern',
-    'perm.projects:delete': 'Projekte löschen',
-    'perm.projects:archive': 'Projekte archivieren',
-    'perm.timesheets:read:own': 'Eigene Zeiten sehen',
-    'perm.timesheets:write:own': 'Eigene Zeiten erfassen',
-    'perm.timesheets:transfer': 'Zeiten auf andere Projekte umbuchen',
-    'perm.reports:read:own': 'Eigene Stunden auswerten',
-    'perm.settings:write:own': 'Eigene Einstellungen ändern',
-    'perm.timesheets:read:team': 'Zeiten zugewiesener Konten sehen',
-    'perm.timesheets:write:team': 'Zeiten für zugewiesene Konten erfassen',
-    'perm.projects:write:team': 'Projekte zugewiesener Konten pflegen',
-    'perm.desc.users:read': 'Die Liste der Konten, ihre Adressen und welche Rolle jedes hat. Nicht ihre erfassten Zeiten – dafür braucht es ein Teamrecht, für ein Konto, das dem Inhaber zugewiesen ist.',
-    'perm.desc.users:write': 'Ein Konto anlegen, Name oder Adresse ändern, eine Rolle zuweisen.',
-    'perm.desc.users:delete': 'Ein Konto entfernen. Die darauf erfassten Zeiten gehen mit.',
-    'perm.desc.roles:read': 'Die Rollen auf diesem Bildschirm und was jede gewährt.',
-    'perm.desc.roles:write': 'Eine Rolle anlegen, ändern oder eine entfernen, die niemand hat. Die mitgelieferten Rollen bleiben, wie sie sind.',
-    'perm.desc.settings:manage': 'Die Installation selbst: Datenbankverbindung, Verzeichnis, Erscheinungsbild, Wartungsmodus, Metriken, Protokoll und Neustart. Dieses Recht macht jemanden zum Administrator.',
-    'perm.desc.projects:read': 'Die Liste der Projekte und wie sie heißen.',
-    'perm.desc.projects:write': 'Ein Projekt anlegen und ändern.',
-    'perm.desc.projects:delete': 'Ein Projekt entfernen. Darauf gebuchte Zeiten behalten ihre Stunden und verlieren das Projekt.',
-    'perm.desc.projects:archive': 'Ein Projekt für neue Buchungen schließen, ohne zu löschen, was darauf liegt.',
-    'perm.desc.timesheets:read:own': 'Die eigenen Einträge, den eigenen Kalender und den eigenen Saldo. Fremde nur über ein Teamrecht, für ein Konto, das ein Administrator zugewiesen hat.',
-    'perm.desc.timesheets:write:own': 'Eigene Zeiten erfassen, korrigieren und löschen – von Hand oder mit der Stoppuhr.',
-    'perm.desc.timesheets:transfer': 'Eigene Einträge gesammelt von einem Projekt auf ein anderes umbuchen.',
-    'perm.desc.reports:read:own': 'Bericht und Diagramme über die eigenen Stunden.',
-    'perm.desc.settings:write:own': 'Das eigene Konto: Kennwort, Sprache, Erscheinungsbild, Zeitzone, Arbeitszeiten, Zwei-Faktor.',
-    'perm.desc.timesheets:read:team': 'Als Manager: Einträge, Kalender, Saldo und Auswertungen der Konten, die ein Administrator zugewiesen hat – dass ein Tag abwesend war, nie warum. Nur solange Manager unter Einstellungen eingeschaltet sind, und nur zusammen mit dem Recht, die eigenen zu sehen.',
-    'perm.desc.timesheets:write:team': 'Als Manager: Zeiten für die zugewiesenen Konten buchen, korrigieren, umbuchen und löschen; jede Änderung steht mit dem eigenen Namen beim Eintrag. Nur solange Manager eingeschaltet sind, und nur zusammen mit dem Recht, die eigenen zu erfassen.',
-    'perm.desc.projects:write:team': 'Als Manager: Projekte der zugewiesenen Konten anlegen und ändern, und sie archivieren oder löschen, soweit die Rolle das für die eigenen erlaubt. Nur solange Manager eingeschaltet sind.',
-    'role.view': 'Rolle „{0}“',
-    'role.startNew': 'Stattdessen eine neue Rolle anlegen',
-    'role.shippedFixed': 'Diese Rolle wird mitgeliefert und wird angezeigt, nicht bearbeitet: weder Name noch Beschreibung noch Rechte. Wer hier arbeiten und zusätzlich verwalten soll, bekommt die Rolle „Benutzer & Administrator“.',
-    'role.desc.admin': 'Verwaltet die Installation, ihre Konten und deren Rollen – und erfasst selbst keine Zeit.',
-    'role.desc.user': 'Verwaltet die eigenen Zeiten, Projekte und den eigenen Kalender.',
-    'role.desc.user-admin': 'Beides: arbeitet hier und verwaltet zusätzlich die Installation.',
-    'role.desc.manager': 'Erfasst die eigenen Zeiten und pflegt Zeiten und Projekte der Konten, die ein Administrator zugewiesen hat.',
-    'role.name.admin': 'Administrator',
-    'role.name.user': 'Benutzer',
-    'role.name.user-admin': 'Benutzer & Administrator',
-    'role.name.manager': 'Manager',
-    'role.none': 'ohne Rolle',
-    'settings.changePassword': 'Passwort ändern',
-    'settings.currentPassword': 'Aktuelles Passwort',
-    'settings.maxHours': 'Maximale Stunden pro Tag',
-    'settings.newPassword': 'Neues Passwort',
-    'settings.targetHours': 'Soll-Stunden pro Tag',
-    'settings.workingTimes': 'Meine Arbeitszeiten',
-    'settings.workingTimesHint': 'Das Tagessoll ist die Grundlage der Überstunden, von Montag bis Freitag, solange kein Wochenplan unten etwas anderes sagt. Das Tagesmaximum begrenzt, wie viel an einem Tag gebucht werden darf.',
-    'settings.everyDayCountsFrom': 'Jeder Arbeitstag zählt ab',
-    'settings.everyDayCountsFromHint': 'Bis du einen Tag wählst, zählen für deinen Saldo nur die Tage, an denen du gebucht hast. Ab dem gewählten Tag zählt jeder Arbeitstag bis heute, gebucht oder nicht, abzüglich dessen, was ein Feiertag oder eine Abwesenheit wegnimmt. Leere das Feld, um zurückzukehren.',
-    'sync.aborted': 'Abgebrochen',
-    'sync.confirm': 'ACHTUNG: {n} Konto/Konten und {h} Zeiteinträge werden unwiderruflich gelöscht. Fortfahren?',
-    'sync.created': 'Angelegt',
-    'sync.deleted': 'Gelöscht',
-    'sync.directoryUsers': 'Im Verzeichnis',
-    'sync.byPerson': 'Bestätigt nach Vorschau',
-    'sync.entries': 'Zeiteinträge',
-    'sync.noRuns': 'Noch kein Lauf hat ein Konto entfernt oder angelegt.',
-    'sync.runAdded': 'Angelegt',
-    'sync.runAt': 'Zeitpunkt',
-    'sync.runEntries': 'Zeiteinträge entfernt',
-    'sync.runRemoved': 'Entfernt',
-    'sync.runStarted': 'Gestartet von',
-    'sync.runs': 'Letzte Läufe',
-    'sync.runsHint': 'Was jeder Lauf geändert hat, der ein Konto entfernt oder angelegt hat – ohne Namen, damit die Personen, die ein Lauf entfernt hat, gelöscht bleiben. Das Protokoll nennt sie, solange es reicht.',
-    'sync.unattended': 'Zeitplan oder Skript',
-    'sync.schedule': 'Automatisch ausführen (Cron, fünf Felder — leer heißt nur von Hand)',
-    'sync.scheduleHint': 'Standardmäßig leer, und das sollte es bleiben, bis eine Vorschau gelesen wurde: ein automatischer Lauf löscht, ohne dass jemand hinsieht. Wird beim nächsten Start übernommen — der Zeitplan wird beim Start der Anwendung gebaut. Er läuft nach der Uhr des Servers, im ausgelieferten Container also in UTC, und nicht in der Zeitzone der Installation.',
-    'sync.scheduleStored': 'Gespeichert',
-    'sync.scheduleManual': 'Läuft nur, wenn der Knopf unten gedrückt wird.',
-    'sync.scheduleShort': 'Verzeichnis-Zeitplan',
-    'sync.hint': 'Gleicht die Benutzer mit dem Verzeichnis ab. Das LDAP wird ausschließlich gelesen und nie verändert.',
-    'sync.localExternal': 'Lokal aus dem Verzeichnis',
-    'sync.none': 'Keine Konten fehlen im Verzeichnis.',
-    'sync.preview': 'Vorschau',
-    'sync.run': 'Abgleich ausführen',
-    'sync.running': 'Wird geprüft …',
-    'status.active': 'aktiv',
-    'status.archived': 'archiviert',
-    'status.completed': 'abgeschlossen',
-    'sync.title': 'Verzeichnis-Abgleich',
-    'sync.warning': 'Achtung: Konten, die im Verzeichnis fehlen, werden hier gelöscht — mitsamt ihren erfassten Zeiten, eigenen Projekten und Tokens. Das lässt sich nicht rückgängig machen. Bitte immer zuerst die Vorschau ansehen.',
-    'sync.wouldCreate': 'Würden angelegt',
-    'sync.wouldDelete': 'Würden gelöscht',
-    'token.copyNow': 'Jetzt kopieren — dieser Wert wird nicht wieder angezeigt:',
-    'token.create': 'Token erstellen',
-    'token.created': 'Erstellt',
-    'token.docs': 'API-Dokumentation ↗',
-    'token.empty': 'Noch keine Tokens angelegt.',
-    'token.expires': 'Gültig für (Tage, 0 = unbegrenzt)',
-    'token.expiresAt': 'Läuft ab',
-    'token.hint': 'Ein Token ersetzt bei API-Aufrufen dein Passwort und hat immer genau die Rechte deiner aktuellen Rolle. Der Wert wird nur einmal angezeigt.',
-    'token.lastUsed': 'Zuletzt genutzt',
-    'token.name': 'Bezeichnung',
-    'token.never': 'unbegrenzt',
-    'token.prefix': 'Präfix',
-    'token.revoke': 'widerrufen',
-    'token.revoked': 'Token widerrufen',
-    'token.title': 'API-Tokens',
-    'token.unused': 'nie',
-    'totp.confirm': 'Bestätigen',
-    'totp.disable': 'Deaktivieren',
-    'totp.disabled': 'Zwei-Faktor-Authentifizierung deaktiviert',
-    'totp.enable': 'Aktivieren',
-    'totp.enabled': 'Zwei-Faktor-Authentifizierung aktiviert',
-    'totp.instructions': 'Diesen Code mit der Authenticator-App scannen oder den Schlüssel von Hand eintragen und den angezeigten Code bestätigen:',
-    'totp.manual': 'Schlüssel stattdessen von Hand eintragen',
-    'totp.off': 'Zwei-Faktor-Authentifizierung ist nicht aktiviert.',
-    'totp.qrAlt': 'QR-Code für die Authenticator-App',
-    'totp.on': 'Zwei-Faktor-Authentifizierung ist aktiviert.',
-    'totp.title': 'Zwei-Faktor-Authentifizierung',
-    'ts.book': 'Zeit buchen',
-    'ts.unassigned': '{0} ohne Projekt',
-    'project.budgetUsed': '{0} von {1} gebucht · {2} %',
-    'project.budgetReached': '{0} hat sein ganzes Kontingent von {1} aufgebraucht.',
-    'project.budgetNear': '{0} hat vier Fünftel seines Kontingents von {1} aufgebraucht.',
-    'report.budget': 'Alle Stunden zusammen: {0} von seinem Kontingent von {1} ({2} %).',
-    'openid.signIn': 'Mit {0} anmelden',
-    'openid.signInUnnamed': 'Über deine Organisation anmelden',
-    'openid.notConfirmed': 'Der Anmeldeanbieter hat die Anmeldung nicht bestätigt.',
-    'openid.linkedNow': 'Dein Konto ist verknüpft. Ab jetzt kannst du dich über deine Organisation anmelden.',
-    'openid.title': 'Anmeldung über deine Organisation',
-    'openid.hint': 'Verknüpfe dein Konto mit deiner Identität beim Anmeldeanbieter deiner Organisation und melde dich dort an statt mit deinem Kennwort – mit dem zweiten Faktor des Anbieters. Dein Kennwort funktioniert weiterhin.',
-    'openid.adminBarred': 'Der eingebaute Administrator meldet sich mit seinem Kennwort an, damit diese Installation nie von einem Anbieter abhängt, um hereinzukommen.',
-    'openid.directoryBarred': 'Dein Konto stammt aus dem Verzeichnis und meldet sich dort mit seinem Kennwort an, damit das Verzeichnis es beenden kann.',
-    'openid.linked': 'Verknüpft seit {0}.',
-    'openid.notLinked': 'Noch nicht verknüpft.',
-    'openid.link': 'Mit {0} verknüpfen',
-    'openid.linkUnnamed': 'Mit dem Konto deiner Organisation verknüpfen',
-    'openid.unlink': 'Verknüpfung lösen',
-    'openid.unlinkTitle': 'Verknüpfung lösen?',
-    'openid.unlinkText': 'Der Anbieter meldet dich danach nicht mehr an. Dein Kennwort funktioniert weiterhin.',
-    'openid.unlinked': 'Verknüpfung gelöst',
-    'admin.openid': 'Anmeldeanbieter (OpenID Connect)',
-    'admin.openidHint': 'Die Leute können sich über den Anbieter deiner Organisation anmelden – Keycloak, Authentik, Entra ID, Google – statt mit einem Kennwort, sobald jede und jeder ihr Konto unter „Mein Konto“ damit verknüpft hat. Niemand wird allein über eine Adresse angemeldet, und für niemanden, den der Anbieter kennt, wird je ein Konto angelegt. Trage diese Installation beim Anbieter mit der Rücksprungadresse unten ein.',
-    'admin.openidEnabled': 'Im Anmeldeformular anbieten',
-    'admin.openidIssuer': 'Adresse des Ausstellers',
-    'admin.openidClientId': 'Client-ID',
-    'admin.openidClientSecret': 'Client-Secret',
-    'admin.openidLabel': 'Name im Anmeldeformular',
-    'admin.openidRedirect': 'Rücksprungadresse',
-    'admin.openidTest': 'Anbieter prüfen',
-    'history.open': 'Verlauf',
-    'history.title': 'Frühere Fassungen des Eintrags vom {0}',
-    'history.replaced': 'Ersetzt',
-    'history.none': 'Nach dem Buchen erneut gespeichert, ohne dass sich darin etwas geändert hat.',
-    'history.unlistedProject': 'ein Projekt, das nicht mehr geführt wird',
-    'history.close': 'Schließen',
-    'work.title': 'Arbeitszeit',
-    'work.hint': 'Wann du begonnen und aufgehört hast und wie lang deine Pausen waren, Tag für Tag – deine eigene Aufzeichnung deiner Arbeitszeit, neben den Stunden, die du auf Projekte gebucht hast. Niemand sonst sieht sie.',
-    'work.worked': 'Gearbeitet',
-    'work.booked': 'Gebucht',
-    'work.empty': 'In diesem Monat ist nichts erfasst oder gebucht.',
-    'work.total': 'Gearbeitet {0}, gebucht {1}',
-    'work.act': 'Arbeitszeitgesetz',
-    'bounds.title': 'Grenzen für meinen Saldo',
-    'bounds.hint': 'Halte deinen laufenden Saldo zwischen zwei Werten, wie bei einem Gleitzeitkonto. Liegt er außerhalb, sagt es ein Banner auf jeder Seite, bis er wieder drin ist. Leer heißt: keine Grenze.',
-    'bounds.above': 'Dein laufender Saldo liegt mit {0} über der Obergrenze von {1}, die du unter {2} gesetzt hast.',
-    'bounds.below': 'Dein laufender Saldo liegt mit {0} unter der Untergrenze von {1}, die du unter {2} gesetzt hast.',
-    'bounds.now': 'Dein laufender Saldo: {0}, gezählt ab {1}.',
-    'bounds.nothingYet': 'Noch zählt nichts zu deinem Saldo.',
-    'bounds.saved': 'Grenzen gespeichert',
-    'remind.title': 'Erinnerungen',
-    'remind.unbookedDay': 'Den letzten Arbeitstag nennen, wenn darauf nichts gebucht ist',
-    'remind.hint': 'Null heißt: Die Stoppuhr wird nie erwähnt. Nach einem Tag sagt sie von selbst, dass sie mehr hält, als ein Eintrag fassen kann.',
-    'remind.allowNotifications': 'Benachrichtigungen in diesem Browser erlauben',
-    'remind.notifyGranted': 'Dieser Browser zeigt Benachrichtigungen von hier.',
-    'remind.notifyDenied': 'Dieser Browser sperrt Benachrichtigungen von hier; das lässt sich nur in seinen eigenen Einstellungen ändern.',
-    'remind.notifyUnsupported': 'Dieser Browser kann keine Benachrichtigungen zeigen.',
-    'remind.unbooked': 'Am {0} ist nichts gebucht, nach deinem Plan ein Arbeitstag. Unter {1} lässt es sich nachtragen.',
-    'remind.saved': 'Erinnerungen gespeichert',
-    'export.title': 'Alles über mich',
-    'export.hint': 'Alles, was diese Installation über dein Konto speichert, als ZIP mit einer JSON-Datei je Bereich: deine Einträge und ihr Verlauf, Projekte, Vorlagen, Abwesenheiten, Urlaub, Wochenpläne, Arbeitszeiten und das Konto selbst. Passwörter, zweite Faktoren, Tokens und Schlüssel sind nicht dabei – nur, wann sie entstanden sind und zuletzt benutzt wurden.',
-    'export.download': 'Alles über mich herunterladen',
-    'export.filename': 'alles-ueber-mich',
-    'changes.title': 'Änderungen an der Installation',
-    'changes.hint': 'Wer ein Konto oder eine Rolle angelegt, geändert oder gelöscht, eine Einstellung gespeichert, den Wartungsmodus geschaltet oder die Anwendung neu gestartet hat, das Neueste zuerst. Ein inzwischen gelöschtes Konto erscheint mit seiner Nummer.',
-    'changes.when': 'Wann',
-    'changes.who': 'Wer',
-    'changes.what': 'Was',
-    'changes.more': 'Ältere Änderungen zeigen',
-    'changes.empty': 'Noch wurde nichts geändert.',
-    'change.userCreated': 'Konto {0} angelegt',
-    'change.userUpdated': 'Konto {0} korrigiert',
-    'change.userDeleted': 'Konto {0} gelöscht',
-    'change.userRole': '{0} die Rolle {1} gegeben',
-    'change.userPassword': 'Neues Passwort für {0} gesetzt',
-    'change.userManagers': '{0} Manager zugewiesen',
-    'change.usersImported': 'Konten aus einer Tabelle importiert',
-    'change.roleCreated': 'Rolle {0} angelegt',
-    'change.roleUpdated': 'Rolle {0} geändert',
-    'change.roleDeleted': 'Rolle {0} gelöscht',
-    'change.rolesImported': 'Rollen aus einer Tabelle importiert',
-    'change.maintenance': 'Wartungsmodus {1}geschaltet',
-    'change.managers': 'Manager {1}geschaltet',
-    'change.on': 'ein',
-    'change.off': 'aus',
-    'change.branding': 'Erscheinungsbild geändert',
-    'change.ldap': 'LDAP-Anbindung geändert',
-    'change.openid': 'Anmeldeanbieter geändert',
-    'change.synchronised': 'Verzeichnis-Abgleich ausgeführt',
-    'change.operational': 'Betrieb und Grenzen geändert',
-    'change.timezone': 'Zeitzone geändert',
-    'change.holidays': 'Feiertage geändert',
-    'change.datasource': 'Datenbankverbindung geändert',
-    'change.telemetry': 'Protokollierung, Metriken und Tracing geändert',
-    'change.restart': 'Anwendung neu gestartet',
-    'change.update': 'Aktualisierung gestartet',
-    'change.setup': 'Einrichtung abgeschlossen',
-    'timer.longBanner': 'Die Stoppuhr läuft seit {0}, länger als die {2}, nach denen du erinnert werden wolltest. Unter {1} lässt sie sich anhalten.',
-    'timer.longTitle': 'Die Stoppuhr läuft noch',
-    'timer.longBody': 'Seit {1}, länger als die {0}, die du gewählt hast.',
-    'work.actHint': 'Tage über einer Grenze des Arbeitszeitgesetzes werden markiert: mehr als zehn Stunden, eine zu kurze Pause oder weniger als elf Stunden Ruhe seit dem Vortag. Es sind Hinweise; erfasst wird, was war.',
-    'work.longDay': 'Mehr als zehn Stunden (§ 3 ArbZG)',
-    'work.shortBreak': '{0} Minuten Pause nötig (§ 4 ArbZG)',
-    'work.shortRest': 'Nur {0} Ruhe seit dem Vortag (§ 5 ArbZG)',
-    'work.noticeCount': '{0} Tage über einer Grenze des Arbeitszeitgesetzes.',
-    'work.removed': 'Arbeitszeit zurückgenommen',
-    'work.saved': 'Arbeitszeit erfasst',
-    'work.filename': 'arbeitszeit',
-    'work.documentCaption': 'Eine Aufzeichnung, die ihre Inhaberin oder ihr Inhaber für sich selbst führt: wann jeder Tag begann und endete, seine Pausen und die darauf gebuchten Stunden.',
-    'feed.title': 'Kalender-Abo',
-    'feed.hint': 'Deine gebuchten Stunden Tag für Tag und die Tage, an denen du abwesend bist, in Outlook, Google oder auf dem Telefon – neben deinen Terminen. Die Adresse ist ein Schlüssel dazu: Wer sie hat, kann sie lesen. Deshalb wird sie nur einmal angezeigt, und eine neue Adresse nimmt die alte zurück.',
-    'feed.reach': 'Google und Outlook im Web lesen die Adresse von ihren eigenen Servern aus, dafür muss diese Installation aus dem Internet erreichbar sein. Ein Kalender auf dem Telefon oder Rechner liest sie von dort, wo das Gerät gerade ist.',
-    'feed.copyNow': 'Jetzt in den Kalender übernehmen – diese Adresse wird nicht wieder angezeigt:',
-    'feed.create': 'Adresse erstellen',
-    'feed.replace': 'Neue Adresse',
-    'feed.remove': 'Adresse entfernen',
-    'feed.active': 'Adresse {0}… seit {1}, zuletzt gelesen: {2}.',
-    'feed.unread': 'noch nie',
-    'feed.none': 'Noch keine Adresse.',
-    'feed.replaceTitle': 'Neue Adresse erstellen?',
-    'feed.replaceText': 'Jeder Kalender mit der bisherigen Adresse zeigt deine Tage danach nicht mehr. Das ist richtig, wenn jemand sie gesehen haben könnte.',
-    'feed.removeTitle': 'Adresse entfernen?',
-    'feed.removeText': 'Jeder Kalender mit dieser Adresse zeigt deine Tage danach nicht mehr.',
-    'feed.removed': 'Adresse entfernt',
-    'tpl.fill': 'Aus einer Vorlage ausfüllen',
-    'tpl.choose': 'Vorlage wählen …',
-    'tpl.closed': 'ihr Projekt nimmt keine Buchungen an',
-    'tpl.save': 'Als Vorlage speichern',
-    'tpl.saved': 'Als Vorlage gespeichert',
-    'tpl.title': 'Vorlagen',
-    'tpl.hint': 'Buchungen, die du oft machst, gespeichert mit „Als Vorlage speichern“ im Formular oben. Eine Vorlage füllt das Formular nur aus: Gebucht wird erst, wenn du auf „Buchen“ drückst.',
-    'tpl.one': 'Vorlage',
-    'tpl.deleted': 'Vorlage gelöscht',
-    'tpl.empty': 'Noch keine Vorlagen.',
-    'holiday.myTitle': 'Meine Feiertage',
-    'holiday.myHint': 'Die gesetzlichen Feiertage des Bundeslands, in dem du arbeitest: im Kalender und in der Woche markiert, bei erfasstem Urlaub ausgelassen, und ab dem Tag, ab dem jeder Arbeitstag zählt, ohne Soll. Lass es auf „der Installation folgen“, außer du arbeitest in einem anderen Bundesland oder außerhalb Deutschlands.',
-    'holiday.region': 'Bundesland',
-    'holiday.title': 'Gesetzliche Feiertage',
-    'holiday.hint': 'Das Bundesland, dessen gesetzliche Feiertage für alle gelten, die unter „Mein Konto“ kein eigenes gewählt haben. Ohne eines gelten für niemanden Feiertage.',
-    'holiday.inherit': 'Der Installation folgen ({0})',
-    'holiday.noneKept': 'keine',
-    'holiday.noRegion': 'Keine Feiertage',
-    'holiday.saved': 'Feiertage gespeichert',
-    'region.BW': 'Baden-Württemberg',
-    'region.BY': 'Bayern',
-    'region.BE': 'Berlin',
-    'region.BB': 'Brandenburg',
-    'region.HB': 'Bremen',
-    'region.HH': 'Hamburg',
-    'region.HE': 'Hessen',
-    'region.MV': 'Mecklenburg-Vorpommern',
-    'region.NI': 'Niedersachsen',
-    'region.NW': 'Nordrhein-Westfalen',
-    'region.RP': 'Rheinland-Pfalz',
-    'region.SL': 'Saarland',
-    'region.SN': 'Sachsen',
-    'region.ST': 'Sachsen-Anhalt',
-    'region.SH': 'Schleswig-Holstein',
-    'region.TH': 'Thüringen',
-    'holiday.newYear': 'Neujahr',
-    'holiday.epiphany': 'Heilige Drei Könige',
-    'holiday.womensDay': 'Internationaler Frauentag',
-    'holiday.goodFriday': 'Karfreitag',
-    'holiday.easterSunday': 'Ostersonntag',
-    'holiday.easterMonday': 'Ostermontag',
-    'holiday.labourDay': 'Tag der Arbeit',
-    'holiday.liberationDay': 'Tag der Befreiung',
-    'holiday.ascension': 'Christi Himmelfahrt',
-    'holiday.whitSunday': 'Pfingstsonntag',
-    'holiday.whitMonday': 'Pfingstmontag',
-    'holiday.corpusChristi': 'Fronleichnam',
-    'holiday.assumption': 'Mariä Himmelfahrt',
-    'holiday.childrensDay': 'Weltkindertag',
-    'holiday.germanUnity': 'Tag der Deutschen Einheit',
-    'holiday.reformationDay': 'Reformationstag',
-    'holiday.allSaints': 'Allerheiligen',
-    'holiday.repentanceDay': 'Buß- und Bettag',
-    'holiday.christmasDay': '1. Weihnachtstag',
-    'holiday.stStephensDay': '2. Weihnachtstag',
-    'year.title': 'Das Jahr {0}',
-    'year.booked': 'Gebucht: {0} · Tage mit Stunden: {1}',
-    'year.compare': '{0} bis zum selben Tag: {1}',
-    'year.less': 'Weniger',
-    'year.more': 'Mehr',
-    'year.holiday': 'Feiertag',
-    'year.away': 'Abwesend',
-    'year.month': 'Monat',
-    'vacation.title': 'Urlaub {0}',
-    'vacation.left': 'Resttage: {0}',
-    'vacation.detail': 'Anspruch: {0} · übertragen: {1} · genommen: {2} · geplant: {3}',
-    'vacation.none': 'Für dieses Jahr ist noch kein Urlaub eingetragen: Trag unten ein, wie viele Tage ein Jahr gibt.',
-    'vacation.days': 'Urlaubstage pro Jahr',
-    'vacation.fromYear': 'Ab dem Jahr',
-    'vacation.from': 'ab {0}',
-    'vacation.withdrawn': 'Urlaubsanspruch zurückgenommen',
-    'vacation.noEntitlements': 'Noch keine Urlaubstage eingetragen.',
-    'vacation.saved': 'Urlaubsanspruch gespeichert',
-    'absence.title': 'Abwesenheiten',
-    'absence.hint': 'Urlaub, Krankheit und Tage, die vom Überstundenkonto genommen werden. Erfasst werden nur die Tage, an denen deine Woche etwas verlangt – zwei Wochen Urlaub sind also seine zehn Arbeitstage.',
-    'absence.vacation': 'Urlaub',
-    'absence.halfVacation': 'Halber Tag Urlaub',
-    'absence.sick': 'Krank',
-    'absence.flexDay': 'Gleittag (vom Überstundenkonto)',
-    'absence.localHoliday': 'Feiertag am Arbeitsort',
-    'team.viewingFor': 'Wessen Zeiten',
-    'outbox.kept': 'Keine Verbindung: auf diesem Gerät behalten und gesendet, sobald sie wieder da ist.',
-    'outbox.offline': 'Keine Verbindung zur Installation. Neue Buchungen bleiben auf diesem Gerät und werden gesendet, sobald sie wieder da ist.',
-    'outbox.waiting': 'Ohne Verbindung gebucht und auf diesem Gerät wartend: {0}. Gesendet wird, sobald die Verbindung wieder da ist.',
-    'outbox.refused': 'Die Installation hat diese ohne Verbindung gemachten Buchungen abgelehnt. Korrigiere sie, um sie erneut zu buchen:',
-    'outbox.correct': 'korrigieren',
-    'outbox.sent': 'Ohne Verbindung Gebuchtes gesendet: {0}',
-    'offline.signIn': 'Keine Verbindung zur Installation. Diese Seite macht von selbst weiter, sobald sie wieder da ist.',
-    'team.mine': 'Meine',
-    'team.viewingText': 'Du siehst die Zeiten von {0}. Was du hier buchst oder änderst, steht mit deinem Namen beim Eintrag, und {0} sieht es.',
-    'team.recordedBy': 'gebucht von {0}',
-    'team.updatedBy': 'geändert von {0}',
-    'team.replacedBy': 'von {0}',
-    'team.assign': 'Manager',
-    'team.assignTitle': 'Manager',
-    'team.assignText': 'Wer kümmert sich um die Zeiten von {0}? Diese Konten sehen sie, und {0} sieht, wer sie sind.',
-    'team.noCandidates': 'Noch hat niemand eine Rolle, die sich um andere Konten kümmert. Gib zuerst jemandem die Rolle „Manager“.',
-    'team.assigned': 'Manager zugewiesen',
-    'team.mineTitle': 'Wer deine Zeiten sehen darf',
-    'team.nobody': 'Niemand außer dir. Ein Administrator kann dir Manager zuweisen, sobald die Installation welche hat; sie stünden dann hier.',
-    'team.switchTitle': 'Manager',
-    'team.switchHint': 'Manager kümmern sich neben den eigenen um die Zeiten und Projekte der Konten, die ein Administrator ihnen unter Benutzer zuweist. Wer betreut wird, sieht unter Mein Konto, von wem, und was ein Manager bucht oder ändert, steht mit Namen beim Eintrag. Manager erfahren, dass jemand abwesend war, nie warum, und sehen niemandes Arbeitszeiten.',
-    'team.switchEnabled': 'Diese Installation hat Manager',
-    'team.switchConfirm': 'Manager einschalten? Wer Manager ist, sieht dann die Zeiten der Konten, die ein Administrator zugewiesen hat – und diese Personen sehen, wer.',
-    'team.switchOn': 'Einschalten',
-    'team.switchSaved': 'Manager gespeichert',
-    'absence.away': 'Abwesend',
-    'absence.save': 'Erfassen',
-    'absence.recorded': 'Erfasste Tage: {0}',
-    'absence.removed': 'Abwesenheit zurückgenommen',
-    'absence.empty': 'In diesem Jahr ist keine Abwesenheit erfasst.',
-    'ts.empty': 'Keine Einträge für diesen Filter.',
-    'ts.more': 'Mehr anzeigen',
-    'ts.showing': '{0} von {1} Einträgen',
-    'ts.edit': 'Eintrag bearbeiten',
-    'ts.entries': 'Einträge',
-    'ts.noProject': 'Kein Projekt',
-    'unit.hours': 'Std.',
-
-    // Updating. The card says something true on every deployment, which is why
-    // there are three endings rather than one: this can restart itself, this
-    // cannot, and this is a container where replacing the binary would be undone.
-    'update.title': 'Version',
-    'update.running': 'Diese Installation läuft mit {0}',
-    'update.current': '{0} ist die installierte Version.',
-    'update.found': '{0} ist verfügbar. Diese Installation läuft mit {1}.',
-    'update.check': 'Aktualisierung suchen',
-    'update.checking': 'Wird gesucht …',
-    'update.install': 'Herunterladen und installieren',
-    'update.notes': 'Was sich geändert hat ↗',
-    'update.pending': '{0} ist heruntergeladen und startet mit dem nächsten Neustart.',
-    'update.pendingRestart': 'Den Neustart unten verwenden oder die Anwendung selbst neu starten.',
-    'update.willRestart': 'Der Download wird gegen die Prüfsumme des Releases geprüft. '
-      + 'Die Anwendung startet sich danach selbst neu.',
-    'update.willAskRestart': 'Der Download wird gegen die Prüfsumme des Releases geprüft. '
-      + 'Danach muss die Anwendung von Hand neu gestartet werden — dieses System kann '
-      + 'sich nicht selbst neu starten.',
-    'update.noBinary': 'Das Release enthält keinen Build für diese Plattform und kann daher nicht von hier aus installiert werden. Was es anbietet, steht auf der Release-Seite.',
-    'update.inContainer': 'Dies läuft in einem Container. Ein ausgetauschtes Programm wäre '
-      + 'beim nächsten Neuaufbau wieder weg — stattdessen das Abbild aktualisieren: '
-      + 'docker compose pull && docker compose up -d',
-    'update.byImage': 'Es wird ein neues Abbild geladen, dieser Container daraus neu erzeugt und das ersetzte Abbild anschließend entfernt. Die Anwendung ist einige Sekunden weg und kommt als neue Fassung zurück – diese Seite wartet darauf.',
-    'update.replacing': 'Ein neues Abbild wird geladen und dieser Container ersetzt …',
-    'update.imageNothingNewer': 'Die letzte Aktualisierung des Abbilds fand nichts Neueres als das laufende Abbild, daher wurde nichts geändert. Legt GTR_VERSION eine Version fest, folgt das Abbild dieser Einstellung und nicht dieser Karte.',
-    'update.imageFailed': 'Die letzte Aktualisierung des Abbilds hat nicht funktioniert, und es wurde nichts geändert.',
-    'update.off': 'Die Suche nach neuen Versionen ist auf dieser Installation '
-      + 'abgeschaltet (UPDATE_CHECK).',
-    'update.confirm': 'Die neue Version herunterladen und installieren? '
-      + 'Die Anwendung startet danach neu.',
-    'update.downloading': 'Die neue Version wird heruntergeladen und geprüft …',
-    'update.done': 'Die neue Version läuft.',
-    'update.installedRestart': 'Die neue Version liegt bereit. Zum Verwenden die '
-      + 'Anwendung neu starten.',
-    'update.unversioned': 'Dieser Stand wurde nicht aus einem Release gebaut, es gibt '
-      + 'also nichts zu vergleichen. Die neueste veröffentlichte Version ist {0}.',
-    'update.unversionedAlone': 'Dieser Stand wurde nicht aus einem Release gebaut.',
-    'update.unreachable': 'Die neueste Version konnte nicht abgefragt werden',
-    'user.create': 'Benutzer anlegen',
-    'user.edit': 'Benutzer bearbeiten',
-    'user.empty': 'Noch keine Benutzer angelegt.',
-    'user.initialPassword': 'leer = Initialpasswort',
-    'user.deleteConfirm': 'Trotzdem löschen? Die erfassten Zeiten sind danach unwiederbringlich verloren.',
-    'user.ownAccount': 'Inhaberkonto',
-    'field.source': 'Herkunft',
-    'user.local': 'Lokal',
-    'user.fromDirectory': 'Verzeichnis',
-    'err.directoryAccountReadOnly': '„{0}“ stammt aus dem Verzeichnis. Name und Adresse werden von dort übernommen; hier lässt sich nur die Rolle ändern.',
-    'err.directoryAccountUndeletable': '„{0}“ stammt aus dem Verzeichnis. Bitte den Eintrag dort entfernen — der nächste Abgleich entfernt dieses Konto.',
-    'user.resetPassword': 'Passwort zurücksetzen',
-    'user.resetTitle': 'Passwort zurücksetzen',
-    'user.resetText': 'Gib {0} ein Passwort, mit dem sie sich einmal anmelden '
-      + 'kann. Sie muss dann ein eigenes wählen, bevor sie irgendetwas nutzen '
-      + 'kann, und alle offenen Sitzungen dieses Kontos enden jetzt.',
-    'user.resetConfirm': 'Zurücksetzen',
-    'user.resetHint': 'Mindestens {0} Zeichen.',
-    'user.systemAccount': 'Systemkonto',
-  },
-};
+/** The dictionaries on their way, so a language asked for twice is fetched once. */
+const fetchingDictionaries = {};
 
 /**
- * Applies the active language.
+ * Loads a language's dictionary the first time it is spoken.
+ *
+ * English, and a language this installation does not speak, answer at once with
+ * none. One that cannot be fetched - offline, and never fetched before, so the
+ * service worker holds no copy of it - is not remembered as empty: the next time
+ * the language is spoken it is asked for again.
+ */
+function loadDictionary(language) {
+  if (dictionaries[language]) return Promise.resolve(dictionaries[language]);
+  if (!(language in LANGUAGES)) return Promise.resolve(dictionaries.en);
+
+  fetchingDictionaries[language] ??= (async () => {
+    try {
+      const response = await reach(`/i18n/${encodeURIComponent(language)}.json`);
+      if (!response.ok) return dictionaries.en;
+
+      dictionaries[language] = await response.json();
+
+      return dictionaries[language];
+    } catch {
+      return dictionaries.en;
+    } finally {
+      delete fetchingDictionaries[language];
+    }
+  })();
+
+  return fetchingDictionaries[language];
+}
+
+/** How many languages have been asked for, so the last one asked draws the screen. */
+let languagesAsked = 0;
+
+/**
+ * Applies a language to the page.
  *
  * Elements carry their English text in the markup, so a key with no
  * translation - including every key when English itself is selected - leaves
  * the English in place. That is what makes English the fallback rather than
  * merely one more translation.
+ *
+ * The language's dictionary is loaded first, the first time it is spoken. A
+ * second change of language can overtake the first while its dictionary is on
+ * the way; the one asked for last draws the screen, and the other stands down
+ * when its dictionary arrives rather than drawing the screen in the language
+ * just left. Last asked, not the active language: a guard comparing with
+ * activeLanguage() would make the argument mean nothing, and a page told to
+ * speak German would stay English.
  */
-function applyLanguage(language) {
-  const dict = TRANSLATIONS[language] ?? {};
+async function applyLanguage(language) {
+  const asked = ++languagesAsked;
+  const dict = await loadDictionary(language);
+  if (asked !== languagesAsked) return;
+
   document.documentElement.lang = language;
 
   for (const node of $$('[data-i18n]')) {
@@ -5073,7 +3857,7 @@ function applyLanguage(language) {
   }
 
   // The English source kept and put back, as the three above do it. This one
-  // only ever assigned, and TRANSLATIONS.en is deliberately empty - so English is
+  // only ever assigned, and English has no dictionary - so English is
   // exactly the case where there is nothing to assign, and going to German and
   // back left every one of these in German on an otherwise English page. Only
   // the readers who cannot see the label beside the control were told, and one of
@@ -5297,7 +4081,7 @@ const FALLBACK_LANGUAGE = 'en';
  * which is the language the markup itself is written in.
  */
 function detectBrowserLanguage() {
-  const supported = Object.keys(TRANSLATIONS);
+  const supported = Object.keys(LANGUAGES);
   const preferences = navigator.languages?.length
     ? navigator.languages
     : [navigator.language ?? FALLBACK_LANGUAGE];
@@ -5309,9 +4093,13 @@ function detectBrowserLanguage() {
   return FALLBACK_LANGUAGE;
 }
 
-/** Translates one key for use in code-generated text. */
+/**
+ * Translates one key for use in code-generated text: in English, the fallback,
+ * until the language's dictionary has arrived - which applyLanguage waits for
+ * before it draws anything again.
+ */
 function t(key, fallback) {
-  return TRANSLATIONS[activeLanguage()]?.[key] ?? fallback;
+  return dictionaries[activeLanguage()]?.[key] ?? fallback;
 }
 
 /**
@@ -5435,7 +4223,7 @@ async function loadMe() {
   $("#password-banner").hidden = !me.user.mustChangePassword;
   $("#logout").hidden = !me.authEnabled;
 
-  applyLanguage(activeLanguage());
+  await applyLanguage(activeLanguage());
   applyAccountTheme();
   applyPermissionVisibility();
 
@@ -6847,7 +5635,7 @@ function editTimesheet(entry) {
  * The English source travels too, and that half is easy to miss. applyLanguage
  * keeps a copy of the source the first time it translates an element and puts
  * that copy back when the dictionary has nothing for the key - and
- * TRANSLATIONS.en is deliberately empty, so English is exactly the case that
+ * English has no dictionary, so English is exactly the case that
  * restores the copy. A copy taken while the old key was declared would come back
  * as the old message the next time somebody read the page in English.
  *
@@ -18864,6 +17652,10 @@ async function init() {
   // one cannot go back to asking half of them.
   document.addEventListener('visibilitychange', askWhetherTheScreenIsStillTrue);
 
+  // The browser's language's dictionary, on its way while the branding is.
+  loadDictionary(activeLanguage());
+  offerBrandingLanguages();
+
   // Branding is public, so the sign-in screen already carries the instance's
   // own title and logo. A failure here must not block signing in.
   try {
@@ -18876,7 +17668,7 @@ async function init() {
 
   // Applied before the first render so the sign-in screen already speaks the
   // browser language; a signed-in user overrides it in loadMe.
-  applyLanguage(activeLanguage());
+  await applyLanguage(activeLanguage());
 
   // Before the sign-in screen is shown, so its passkey button appears with it
   // rather than popping in afterwards. The ticket's button likewise, and the

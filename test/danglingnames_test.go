@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 // A comment that names something names something that exists.
@@ -24,8 +26,9 @@ import (
 // the reader who follows it finds nothing and concludes the reason is gone.
 //
 // The words asked about are camelCase ones - a lowercase start and an inner
-// capital - because those are identifiers rather than prose. A word no Go file
-// and no part of app.js declares or uses fails, unless it is named below.
+// capital - because those are identifiers rather than prose. A word no Go file,
+// no part of app.js and no key of a dictionary declares or uses fails, unless it
+// is named below.
 func TestEveryNameACommentPointsAtExists(t *testing.T) {
 	names, mentions := commentMentions(t)
 
@@ -108,7 +111,8 @@ type commentMention struct {
 var camelCase = regexp.MustCompile(`\b[a-z]+(?:[A-Z][a-z0-9]+)+\b`)
 
 // commentMentions returns every identifier in the tree, with the words app.js
-// uses, and every camelCase word a Go comment carries.
+// uses and the keys the dictionaries translate, and every camelCase word a Go
+// comment carries.
 func commentMentions(t *testing.T) (map[string]bool, []commentMention) {
 	t.Helper()
 
@@ -156,6 +160,16 @@ func commentMentions(t *testing.T) (map[string]bool, []commentMention) {
 
 	for _, word := range regexp.MustCompile(`\b[A-Za-z_]\w*\b`).FindAllString(string(js), -1) {
 		names[word] = true
+	}
+
+	// And at the codes a refusal carries and the keys the markup is translated
+	// by, which are named where they are translated.
+	for _, language := range i18n.Languages()[1:] {
+		for key := range i18n.Dictionary(language) {
+			for _, word := range strings.Split(key, ".") {
+				names[word] = true
+			}
+		}
 	}
 
 	return names, mentions
