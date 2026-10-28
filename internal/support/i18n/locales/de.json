@@ -1097,7 +1097,7 @@
   "track.badAddress": "„{0}“ ist keine Adresse, an die sich eine Anfrage richten lässt",
   "track.book.noHours": "book braucht zuerst die Stunden: track book 1,5 Website",
   "track.booked": "{0} auf {1} für den {2} gebucht.",
-  "track.bookedToday": "Heute gebucht: {0}.",
+  "track.bookedToday": "Heute {0} gebucht.",
   "track.d.missing": "-d braucht einen Tag dahinter, als JJJJ-MM-TT",
   "track.form.book": "Zeit von Hand buchen",
   "track.form.dayHint": "JJJJ-MM-TT",

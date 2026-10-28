@@ -112,7 +112,7 @@ func TestTrackSpeaksGermanWhenAsked(t *testing.T) {
 		says []string
 	}{
 		// 07:12 UTC is 09:12 in Berlin in October.
-		{[]string{"--lang", "de", "status"}, []string{"Läuft seit 09:12 auf Consulting – bisher 1:30.", "Heute gebucht: 3,00 Std."}},
+		{[]string{"--lang", "de", "status"}, []string{"Läuft seit 09:12 auf Consulting – bisher 1:30.", "Heute 3,00 Std. gebucht."}},
 		{[]string{"book", "1:30", "consult", "-d", "2026-10-21", "--lang=de"}, []string{"1,50 Std. auf Consulting für den 21.10.2026 gebucht."}},
 		{[]string{"today", "--lang", "de"}, []string{"   2,50 Std.  Consulting - review", "   0,50 Std.  kein Projekt", "   3,00 Std.  insgesamt"}},
 		{[]string{"help", "--lang", "de"}, []string{"Zeit im Terminal buchen", "--lang <Sprache>"}},
@@ -128,6 +128,13 @@ func TestTrackSpeaksGermanWhenAsked(t *testing.T) {
 			if !strings.Contains(out, said) {
 				t.Errorf("%q said %q, want %q in it", tc.args, out, said)
 			}
+		}
+
+		// An hour ends on the point of "Std.", and in German that point is also
+		// the point of a sentence ending on one - so a sentence that put its own
+		// after it would end twice.
+		if strings.Contains(out, "..") {
+			t.Errorf("%q said %q, which ends a sentence twice", tc.args, out)
 		}
 	}
 
@@ -151,7 +158,7 @@ func TestTrackSpeaksTheLanguageTheAccountChose(t *testing.T) {
 
 	env := map[string]string{"GTR_URL": server.URL, "GTR_TOKEN": f.token, "LANG": "en_US.UTF-8"}
 
-	if status, out, errOut := trackWith(t, env, "status"); status != 0 || !strings.Contains(out, "Heute gebucht: 3,00 Std.") {
+	if status, out, errOut := trackWith(t, env, "status"); status != 0 || !strings.Contains(out, "Heute 3,00 Std. gebucht.") {
 		t.Errorf("an account that chose German, on an English system, answered %d %q %q", status, out, errOut)
 	}
 
