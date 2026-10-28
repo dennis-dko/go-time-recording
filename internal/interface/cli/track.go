@@ -20,39 +20,42 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
-// usage is what track says about itself.
-const usage = `go-time-recording track - book time from a terminal
+// usage is what the client says about itself.
+const usage = `go-time-recording-client - book time from a terminal
 
-  track                              on a terminal, a screen: the stopwatch
-                                     running, today's entries, and a form for
-                                     each of the commands below
-  track status                       the stopwatch, and what today adds up to
-  track start [project] [-m text]    start the stopwatch, on a project or on none
-  track stop                         stop it, and book what it measured
-  track switch [project] [-m text]   book what it measured, carry on on another
-  track book <hours> [project] [-m text] [-d YYYY-MM-DD]
+On a terminal and without a command, it opens a screen: the stopwatch running,
+today's entries, and a form for each of these commands.
+
+  status                             the stopwatch, and what today adds up to
+  start [project] [-m text]          start the stopwatch, on a project or on none
+  stop                               stop it, and book what it measured
+  switch [project] [-m text]         book what it measured, carry on on another
+  book <hours> [project] [-m text] [-d YYYY-MM-DD]
                                      book hours by hand: 1.5, 1,5 or 1:30
-  track today                        today's entries and their total
+  today                              today's entries and their total
 
-  --lang <language>                  the language track speaks, such as de or
-                                     en, wherever it stands on the line;
-                                     GTR_LANG keeps one, and otherwise it is
-                                     the account's, then the system's
+  --lang <language>                  the language it speaks, such as de or en,
+                                     wherever it stands on the line; GTR_LANG
+                                     keeps one, and otherwise it is the
+                                     account's, then the system's
+  --version                          on its own: the release it was built for
 
 The installation is GTR_URL, for example https://time.example.com, and the
 account is the owner of the personal token in GTR_TOKEN - made under My account,
 API tokens. A project is named as it is called, or by the start of its name.
+The client belongs to the release it was built for: use the one whose version
+the installation shows at the foot of its page.
 `
 
-// Run carries out "go-time-recording track" with the arguments after the word,
+// Run carries out go-time-recording-client with the arguments it was given,
 // and answers with the exit status a shell reads: 0 for done, 1 where the
 // installation refused or could not be reached, and 2 for a command line that
 // could not be read.
 //
-// The word alone opens the screen when the answer goes to a terminal, and says
-// what track does when it goes anywhere else: a script that runs track bare
-// gets the lines and the status it always had, rather than a screen waiting for
-// keys nobody is there to press.
+// No command opens the screen when the answer goes to a terminal, and says what
+// the client does when it goes anywhere else: a script that runs it bare gets
+// the lines and the status it always had, rather than a screen waiting for keys
+// nobody is there to press.
 //
 // The installation and the token come from the environment rather than from
 // flags: a token on a command line lands in the shell's history and in every
@@ -86,7 +89,7 @@ func Run(ctx context.Context, args []string, env func(string) string, out, errOu
 
 	base, token := strings.TrimSpace(env("GTR_URL")), strings.TrimSpace(env("GTR_TOKEN"))
 	if base == "" || token == "" {
-		complain.say("%s", lang.text("track.needsAddress", "track needs GTR_URL, the installation's address, and GTR_TOKEN, a personal token made under My account."))
+		complain.say("%s", lang.text("track.needsAddress", "go-time-recording-client needs GTR_URL, the installation's address, and GTR_TOKEN, a personal token made under My account."))
 
 		return 2
 	}
@@ -172,7 +175,7 @@ func (s *session) carryOut(ctx context.Context, args []string) error {
 		return s.today(ctx, line)
 	}
 
-	return usageError(s.lang.text("track.unknownCommand", "track does not know \"{0}\"; track help says what it does", args[0]))
+	return usageError(s.lang.text("track.unknownCommand", "go-time-recording-client does not know \"{0}\"; \"go-time-recording-client help\" says what it does", args[0]))
 }
 
 // isTerminal tells a terminal from a pipe or a file. Asked of the terminal
@@ -228,8 +231,8 @@ func (l language) parse(args []string) (commandLine, error) {
 	return line, nil
 }
 
-// session is one run of track against one installation, and the language it
-// speaks.
+// session is one run of the client against one installation, and the language
+// it speaks.
 type session struct {
 	api  *client
 	out  io.Writer
@@ -441,9 +444,9 @@ func (s *session) aimedAt(ctx context.Context, line commandLine) (map[string]any
 	return body, name, nil
 }
 
-// The changes track makes. Each answers with what it did in a sentence, which
-// the command prints and the screen shows under the clock - the same words for
-// the same change, wherever it was asked for.
+// The changes the client makes. Each answers with what it did in a sentence,
+// which the command prints and the screen shows under the clock - the same
+// words for the same change, wherever it was asked for.
 
 // startClock starts the stopwatch as body says, on the project called name, and
 // says when it started in the owner's zone.
@@ -557,7 +560,7 @@ func (s *session) switchTo(ctx context.Context, line commandLine) error {
 
 func (s *session) book(ctx context.Context, line commandLine) error {
 	if len(line.words) == 0 {
-		return usageError(s.lang.text("track.book.noHours", "book needs the hours first: track book 1.5 Website"))
+		return usageError(s.lang.text("track.book.noHours", "book needs the hours first, as in: book 1.5 Website"))
 	}
 
 	worked, err := s.lang.parseHours(line.words[0])

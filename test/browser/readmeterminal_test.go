@@ -27,22 +27,22 @@ import (
 )
 
 // terminalColumns and terminalRows are the size of the terminal the README's
-// pictures of track are taken in: narrow enough that the letters can still be
-// read where the README shows two pictures side by side, wide enough that the
-// stopwatch's line is not cut short, and tall enough for the longest form. Rows
-// left empty below are not photographed.
+// pictures of the client are taken in: narrow enough that the letters can still
+// be read where the README shows two pictures side by side, wide enough that
+// the stopwatch's line is not cut short, and tall enough for the longest form.
+// Rows left empty below are not photographed.
 const terminalColumns, terminalRows = 76, 34
 
 // terminalAddress is the installation as the pictures name it. The screen's
-// header shows the address track was given, and the port this instance happened
-// to get is not something a reader would type.
+// header shows the address the client was given, and the port this instance
+// happened to get is not something a reader would type.
 const terminalAddress = "http://time.example.com"
 
-// terminal is "go-time-recording track" running in a pseudo-terminal, and the
+// terminal is go-time-recording-client running in a pseudo-terminal, and the
 // emulator that keeps what it draws.
 //
 // The pictures of the terminal are taken the way the browser's are: from the
-// program rather than drawn. The binary the suite built runs in a real
+// program rather than drawn. The client the suite built runs in a real
 // pseudo-terminal against the instance the browser pictures come from, a
 // terminal emulator keeps the cells it draws, and a browser photographs those
 // cells. Nothing on the way knows what the screen is meant to look like, so a
@@ -58,7 +58,7 @@ type terminal struct {
 	title string
 }
 
-// openTerminal starts track for the account token belongs to.
+// openTerminal starts the client for the account token belongs to.
 //
 // The terminal is light - the light interface's text on its surface - and not
 // only to match the README's other pictures. The screen asks the terminal for
@@ -71,7 +71,7 @@ type terminal struct {
 // pictures is set to.
 //
 // The instance is reached through the proxy setting, which the client honours,
-// so that track can be given terminalAddress and still arrive at base.
+// so that the client can be given terminalAddress and still arrive at base.
 func openTerminal(t *testing.T, base, token string) *terminal {
 	t.Helper()
 
@@ -92,13 +92,13 @@ func openTerminal(t *testing.T, base, token string) *terminal {
 		term.mu.Unlock()
 	}})
 
-	term.cmd = exec.Command(harness.Binary(), "track")
+	term.cmd = exec.Command(harness.Client())
 	term.cmd.Env = append(os.Environ(), "GTR_URL="+terminalAddress, "GTR_TOKEN="+token, "GTR_LANG=en",
 		"HTTP_PROXY="+base, "NO_PROXY=", "TERM=xterm-256color", "COLORTERM=truecolor")
 
 	if err := pty.Start(term.cmd); err != nil {
 		_ = pty.Close()
-		t.Fatalf("starting track in the pseudo-terminal: %v", err)
+		t.Fatalf("starting the client in the pseudo-terminal: %v", err)
 	}
 
 	// What the program draws goes to the emulator, and what the emulator says
@@ -159,12 +159,12 @@ func (term *terminal) snapshot() uv.ScreenBuffer {
 	return buffer
 }
 
-// close asks track to quit, waits for it a little, and lets the terminal go.
+// close asks the client to quit, waits for it a little, and lets the terminal go.
 //
 // Ctrl-C rather than q, because q is a letter like any other while a form is
 // open. And the wait is bounded here rather than by the context WaitProcess
 // takes, which it honours only on Windows: elsewhere it waits for the process
-// however long that is, and a track still at its form never ends.
+// however long that is, and a client still at its form never ends.
 func (term *terminal) close() {
 	term.press("\x03")
 

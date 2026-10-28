@@ -14,6 +14,8 @@ version: '3'
 
 vars:
   APP_NAME: go-time-recording
+  # The terminal client, a program of its own beside the one that serves.
+  CLIENT_NAME: go-time-recording-client
   BIN_DIR: bin
   CONFIG_SRC: cmd/configs
 
@@ -502,7 +504,7 @@ tasks:
   # -------------------------------------------------------------------- ship
 
   build:
-    desc: 'Ship: build the binary into bin/, with its configuration beside it.'
+    desc: 'Ship: build the binary and the terminal client into bin/, with the configuration beside them.'
     deps: [tidy]
     cmds:
       # On Windows, the icon and the Properties tab - the same resource the
@@ -512,6 +514,7 @@ tasks:
       # reason to be unable to build the application.
       - '{{if eq OS "windows"}}sh build/windows-resource.sh {{.VERSION}} || echo "no goversioninfo on PATH - building without the resource"{{end}}'
       - task: build:binary
+      - task: build:client
       - '{{if eq OS "windows"}}sh build/windows-resource.sh --clean{{end}}'
 
   # The binary and its configuration, and nothing written anywhere but bin/: what
@@ -535,6 +538,15 @@ tasks:
       # ./cmd rather than ./cmd/main.go: naming the file builds that file, and a
       # .syso beside it in the package is not picked up.
       - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd
+
+  # The terminal client, with the same version as the binary it belongs to. Not
+  # part of build:binary, which dev:watch builds on every save and which needs
+  # nothing the client has.
+  build:client:
+    internal: true
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.CLIENT_NAME}}{{exeExt}} ./cmd/client
 
   image:
     desc: 'Ship: build the deployment image, tagged with the version and "latest".'
@@ -630,7 +642,7 @@ tasks:
       somebody asks.
 
       The terminal's pictures are taken the same way rather than drawn: the
-      binary the suite built runs track in a pseudo-terminal against that
+      terminal client the suite built runs in a pseudo-terminal against that
       instance, a terminal emulator keeps what it draws, and the browser
       photographs the emulator's cells.
 

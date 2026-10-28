@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"os"
@@ -14,11 +15,11 @@ import (
 	"github.com/dennis-dko/go-time-recording/test/harness"
 )
 
-// The binary books from a terminal as the owner of a personal token: track book
-// puts an entry on the owner's project, and the stopwatch track starts is the one
-// the API shows running, which track stop then books - the same clock, not a
-// second one kept on the machine. The token is never written back out.
-func TestTheBinaryBooksFromATerminalWithAPersonalToken(t *testing.T) {
+// The terminal client books as the owner of a personal token: book puts an
+// entry on the owner's project, and the stopwatch start starts is the one the
+// API shows running, which stop then books - the same clock, not a second one
+// kept on the machine. The token is never written back out.
+func TestTheClientBooksFromATerminalWithAPersonalToken(t *testing.T) {
 	t.Parallel()
 
 	a, _, worker := startWithWorker(t)
@@ -39,7 +40,7 @@ func TestTheBinaryBooksFromATerminalWithAPersonalToken(t *testing.T) {
 	track := func(args ...string) string {
 		t.Helper()
 
-		cmd := exec.Command(harness.Binary(), append([]string{"track"}, args...)...)
+		cmd := exec.Command(harness.Client(), args...)
 		cmd.Env = append(os.Environ(), "GTR_URL="+a.BaseURL(), "GTR_TOKEN="+token.Secret, "GTR_LANG=en")
 
 		out, err := cmd.CombinedOutput()
@@ -97,10 +98,10 @@ func TestTheBinaryBooksFromATerminalWithAPersonalToken(t *testing.T) {
 	}
 }
 
-// Asked for German, the binary says a refusal in the words the German web
+// Asked for German, the client says a refusal in the words the German web
 // interface has for it - from the code and the values the installation sent, so
 // the day in it is written the German way rather than the way it travels.
-func TestTheBinarySaysARefusalInTheBrowsersGerman(t *testing.T) {
+func TestTheClientSaysARefusalInTheBrowsersGerman(t *testing.T) {
 	t.Parallel()
 
 	a, _, worker := startWithWorker(t)
@@ -126,7 +127,7 @@ func TestTheBinarySaysARefusalInTheBrowsersGerman(t *testing.T) {
 	track := func(args ...string) (string, int) {
 		t.Helper()
 
-		cmd := exec.Command(harness.Binary(), append([]string{"track", "--lang", "de"}, args...)...)
+		cmd := exec.Command(harness.Client(), append([]string{"--lang", "de"}, args...)...)
 		cmd.Env = append(os.Environ(), "GTR_URL="+a.BaseURL(), "GTR_TOKEN="+token.Secret)
 
 		out, err := cmd.CombinedOutput()
@@ -151,5 +152,37 @@ func TestTheBinarySaysARefusalInTheBrowsersGerman(t *testing.T) {
 	want := "5 Std. würden am 06.10.2026 zusammen 10 Std. ergeben und damit das Tagesmaximum von 8 Std. überschreiten."
 	if out, status := track("book", "5", "web", "-d", "2026-10-06"); status != 1 || !strings.Contains(out, want) {
 		t.Errorf("five more hours on the same day answered %d %q, want 1 and %q", status, out, want)
+	}
+}
+
+// The terminal client was the web binary's track command, and that command line
+// is answered with where the client went rather than passed over - passed over,
+// the web binary starts and serves an installer instead of booking anything.
+func TestTheWebBinarySendsTrackToTheClient(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, harness.Binary(), "track", "status")
+	cmd.Dir = t.TempDir()
+
+	out, err := cmd.CombinedOutput()
+
+	var exited *exec.ExitError
+	if !errors.As(err, &exited) || exited.ExitCode() != 2 || !strings.Contains(string(out), "go-time-recording-client") {
+		t.Errorf("track on the web binary answered %v %q, want 2 and the name of the client", err, out)
+	}
+}
+
+// The client says which release it was built for, which is how somebody tells
+// whether it belongs to the installation it talks to. The harness builds it
+// unstamped, so it is dev here.
+func TestTheClientSaysWhichReleaseItBelongsTo(t *testing.T) {
+	t.Parallel()
+
+	out, err := exec.Command(harness.Client(), "--version").Output()
+	if err != nil || strings.TrimSpace(string(out)) != "dev" {
+		t.Errorf("--version answered %v %q, want dev", err, out)
 	}
 }

@@ -173,14 +173,15 @@ func TestAProjectNameThatIsNotOneProjectIsSaidBack(t *testing.T) {
 	}
 }
 
-// Bare, with its answer going anywhere but a terminal, track says what it does
-// and exits 2, as it did before it had a screen: a script that runs it so gets
-// lines, not a screen waiting for keys nobody is there to press.
+// Bare, with its answer going anywhere but a terminal, the client says what it
+// does and exits 2, as it did before it had a screen: a script that runs it so
+// gets lines, not a screen waiting for keys nobody is there to press.
 func TestBareTrackSaysWhatItDoesWhereThereIsNoTerminal(t *testing.T) {
 	f, server := newFakeInstallation(t)
 
-	if status, out, _ := track(t, server.URL, f.token); status != 2 || !strings.Contains(out, "track status") {
-		t.Errorf("bare track answered %d %q, want 2 and what it does", status, out)
+	status, out, _ := track(t, server.URL, f.token)
+	if status != 2 || !strings.Contains(out, "go-time-recording-client - ") || !strings.Contains(out, "\n  status ") {
+		t.Errorf("the bare client answered %d %q, want 2 and what it does", status, out)
 	}
 }
 

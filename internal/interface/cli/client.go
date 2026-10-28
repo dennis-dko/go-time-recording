@@ -22,7 +22,7 @@ const requestTimeout = 30 * time.Second
 const maxAnswer = 8 << 20
 
 // client asks one installation's API as the owner of one personal token, and
-// says what went wrong in the language track speaks.
+// says what went wrong in the language the client speaks.
 type client struct {
 	base  string
 	token string

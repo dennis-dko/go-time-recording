@@ -13,7 +13,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
-// language is what track says things in.
+// language is what the client says things in.
 //
 // Its sentences are keyed track.* in the dictionaries every part of the
 // application reads, with the English written where they are said, as the web
@@ -52,19 +52,21 @@ func (l language) code() string {
 // spoken is the languages there are words for, as somebody types them.
 func spoken() string { return strings.Join(i18n.Languages(), ", ") }
 
-// chooseLanguage decides what track speaks, as far as it can be told without
-// asking the installation: the --lang flag, then GTR_LANG, then the language the
-// system is set to, then English. explicit says whether somebody asked, which
-// is what decides whether the account's own language is asked for next.
+// chooseLanguage decides what the client speaks, as far as it can be told
+// without asking the installation: the --lang flag, then GTR_LANG, then the
+// language the system is set to, then English. explicit says whether somebody
+// asked, which is what decides whether the account's own language is asked for
+// next.
 //
-// The flag and GTR_LANG are somebody asking, so a language track does not have
-// is refused rather than ignored - in the language the next one down chose, and
-// only where nothing above it asked for one track has: a stray GTR_LANG does not
-// stand in the way of a --lang on the line. The system's setting is only a guess
-// at what somebody reads - a French LANG is no reason to refuse to start - so a
-// language there is no dictionary for is English. system is asked last, and
-// only where the environment says nothing, because LANG and its kin are how a
-// terminal says it on every system but Windows, which sets none of them.
+// The flag and GTR_LANG are somebody asking, so a language the client does not
+// have is refused rather than ignored - in the language the next one down
+// chose, and only where nothing above it asked for one the client has: a stray
+// GTR_LANG does not stand in the way of a --lang on the line. The system's
+// setting is only a guess at what somebody reads - a French LANG is no reason
+// to refuse to start - so a language there is no dictionary for is English.
+// system is asked last, and only where the environment says nothing, because
+// LANG and its kin are how a terminal says it on every system but Windows,
+// which sets none of them.
 func chooseLanguage(flag string, env func(string) string, system func() string) (chosen language, explicit bool, refused error) {
 	set := ""
 
@@ -165,7 +167,7 @@ func (l language) text(key, english string, values ...string) string {
 	return l.words.Text(key, english, values...)
 }
 
-// usage is what track says about itself, in this language.
+// usage is what the client says about itself, in this language.
 func (l language) usage() string {
 	return l.text("track.usage", usage)
 }
@@ -181,8 +183,8 @@ func (l language) hours(h float64) string {
 func (l language) number(v float64) string { return l.words.Number(v) }
 
 // date writes a day that travels as YYYY-MM-DD the way the reader writes one.
-// English keeps the form it travels in, which is how track has always written
-// it; a dictionary names its own as a Go layout.
+// English keeps the form it travels in, which is how the client has always
+// written it; a dictionary names its own as a Go layout.
 func (l language) date(day string) string {
 	at, err := time.Parse(time.DateOnly, day)
 	if err != nil {
@@ -214,7 +216,7 @@ func (l language) weekday(at time.Time) string {
 
 // refusal reads what the installation said when it refused a request.
 //
-// Not signed in is said in track's own words, because the installation's are
+// Not signed in is said in the client's own words, because the installation's are
 // about a session and what is wrong here is the token. Anything else is the
 // installation's sentence - in English as it wrote it, and in another language
 // as the web interface says it, from the code it sent and the values that go

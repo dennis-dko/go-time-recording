@@ -21,7 +21,7 @@ import (
 // the installation nothing.
 const refreshEvery = 30 * time.Second
 
-// screen is track on a terminal: the stopwatch running live, what today has
+// screen is the client on a terminal: the stopwatch running live, what today has
 // booked, and a form for each change the commands make.
 //
 // It makes those changes through the same session as the commands, so it can
