@@ -303,9 +303,10 @@ when no other active project starts the same way; hours are written 1.5, 1,5 or
 says what track answers, and with which exit status.
 
 track speaks English or German: `--lang de` or `--lang en` anywhere on the
-line, `GTR_LANG` to keep one, and otherwise the language the system is set to.
-In German it says what the installation refuses in the words the web interface
-has for it.
+line, `GTR_LANG` to keep one, and otherwise the language the account chose in
+the browser - or, where it chose none, the language the system is set to. In
+German it says what the installation refuses in the words the web interface has
+for it.
 
 ## What it does
 

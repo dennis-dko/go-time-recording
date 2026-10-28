@@ -16,6 +16,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/term"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 // usage is what track says about itself.
@@ -32,9 +34,10 @@ const usage = `go-time-recording track - book time from a terminal
                                      book hours by hand: 1.5, 1,5 or 1:30
   track today                        today's entries and their total
 
-  --lang de|en                       the language track speaks, wherever it
-                                     stands on the line; GTR_LANG keeps one,
-                                     and otherwise it is the system's
+  --lang <language>                  the language track speaks, such as de or
+                                     en, wherever it stands on the line;
+                                     GTR_LANG keeps one, and otherwise it is
+                                     the account's, then the system's
 
 The installation is GTR_URL, for example https://time.example.com, and the
 account is the owner of the personal token in GTR_TOKEN - made under My account,
@@ -54,20 +57,19 @@ API tokens. A project is named as it is called, or by the start of its name.
 // The installation and the token come from the environment rather than from
 // flags: a token on a command line lands in the shell's history and in every
 // process listing on the machine. The language may come from either, because it
-// is nobody's secret.
+// is nobody's secret - and where neither names one, it is the one the account
+// chose in the browser, so the terminal speaks what the screen does.
 func Run(ctx context.Context, args []string, env func(string) string, out, errOut io.Writer) int {
 	flag, args, named := languageFlag(args)
-	lang, err := chooseLanguage(flag, env, systemLanguage)
+	lang, explicit, err := chooseLanguage(flag, env, systemLanguage)
 
 	if !named {
-		err = usageError(lang.tr("--lang needs de or en after it"))
+		err = usageError(lang.text("track.lang.missing", "--lang needs a language after it: {0}", spoken()))
 	}
 
 	complain := &session{out: errOut, lang: lang}
 	if err != nil {
-		complain.say("%v", err)
-
-		return 2
+		return complain.failed(err)
 	}
 
 	onScreen := len(args) == 0 && isTerminal(out)
@@ -84,12 +86,27 @@ func Run(ctx context.Context, args []string, env func(string) string, out, errOu
 
 	base, token := strings.TrimSpace(env("GTR_URL")), strings.TrimSpace(env("GTR_TOKEN"))
 	if base == "" || token == "" {
-		complain.say("%s", lang.tr("track needs GTR_URL, the installation's address, and GTR_TOKEN, a personal token made under My account."))
+		complain.say("%s", lang.text("track.needsAddress", "track needs GTR_URL, the installation's address, and GTR_TOKEN, a personal token made under My account."))
 
 		return 2
 	}
 
 	s := &session{api: newClient(base, token, lang), out: out, lang: lang}
+
+	// Asked before anything else, so a failure is said once: the request that
+	// would have been next goes to the same installation and would fail the same
+	// way, after the same wait.
+	if !explicit {
+		chosen, err := s.accountLanguage(ctx)
+		if err != nil {
+			return complain.failed(err)
+		}
+
+		if chosen != "" && slices.Contains(i18n.Languages(), chosen) {
+			s.lang = speaking(chosen)
+			s.api.lang, complain.lang = s.lang, s.lang
+		}
+	}
 
 	if onScreen {
 		err = s.show(ctx)
@@ -101,7 +118,15 @@ func Run(ctx context.Context, args []string, env func(string) string, out, errOu
 		return 0
 	}
 
-	complain.say("%v", err)
+	return complain.failed(err)
+}
+
+// failed says why something could not be done, and answers with the exit status
+// that tells a script which kind of failure it was: 2 for a command line that
+// could not be read, 1 for anything the installation refused or could not
+// answer.
+func (s *session) failed(err error) int {
+	s.say("%v", err)
 
 	var unreadable usageError
 	if errors.As(err, &unreadable) {
@@ -109,6 +134,20 @@ func Run(ctx context.Context, args []string, env func(string) string, out, errOu
 	}
 
 	return 1
+}
+
+// accountLanguage is the language the token's owner chose in the browser, and
+// empty where they never chose one - read from /me, as the browser reads it.
+func (s *session) accountLanguage(ctx context.Context) (string, error) {
+	var me struct {
+		User struct {
+			Language string `json:"language"`
+		} `json:"user"`
+	}
+
+	err := s.api.call(ctx, http.MethodGet, "/me", nil, &me)
+
+	return me.User.Language, err
 }
 
 // carryOut does what one command line asks.
@@ -133,7 +172,7 @@ func (s *session) carryOut(ctx context.Context, args []string) error {
 		return s.today(ctx, line)
 	}
 
-	return usageError(fmt.Sprintf(s.lang.tr("track does not know %q; track help says what it does"), args[0]))
+	return usageError(s.lang.text("track.unknownCommand", "track does not know \"{0}\"; track help says what it does", args[0]))
 }
 
 // isTerminal tells a terminal from a pipe or a file. Asked of the terminal
@@ -168,7 +207,7 @@ func (l language) parse(args []string) (commandLine, error) {
 		switch args[i] {
 		case "-m", "--message":
 			if i+1 == len(args) {
-				return line, usageError(l.tr("-m needs the text after it"))
+				return line, usageError(l.text("track.m.missing", "-m needs the text after it"))
 			}
 
 			i++
@@ -176,7 +215,7 @@ func (l language) parse(args []string) (commandLine, error) {
 			line.description = &text
 		case "-d", "--date":
 			if i+1 == len(args) {
-				return line, usageError(l.tr("-d needs a day after it, as YYYY-MM-DD"))
+				return line, usageError(l.text("track.d.missing", "-d needs a day after it, as YYYY-MM-DD"))
 			}
 
 			i++
@@ -318,10 +357,10 @@ func (s *session) snapshot(ctx context.Context) (snapshot, error) {
 // clockLine says what the stopwatch is doing, given how long it has run.
 func (n snapshot) clockLine(l language, elapsed float64) string {
 	if !n.clock.Running || n.clock.StartedAt == nil {
-		return l.tr("The stopwatch is not running.")
+		return l.text("track.notRunning", "The stopwatch is not running.")
 	}
 
-	return fmt.Sprintf(l.tr("Running since %s on %s - %s so far."), n.clock.StartedAt.In(n.zone).Format("15:04"),
+	return l.text("track.running", "Running since {0} on {1} - {2} so far.", n.clock.StartedAt.In(n.zone).Format("15:04"),
 		l.nameOf(n.projects, n.clock.ProjectID), hoursAndMinutes(elapsed))
 }
 
@@ -350,7 +389,7 @@ func (l language) projectNamed(projects []project, name string) (project, error)
 	case 1:
 		return starting[0], nil
 	case 0:
-		return project{}, fmt.Errorf(l.tr("no active project of yours is called %q"), name)
+		return project{}, errors.New(l.text("track.noSuchProject", "no active project of yours is called \"{0}\"", name))
 	}
 
 	names := make([]string, 0, len(starting))
@@ -358,18 +397,18 @@ func (l language) projectNamed(projects []project, name string) (project, error)
 		names = append(names, p.Name)
 	}
 
-	return project{}, fmt.Errorf(l.tr("%q could be any of %s; say which"), name, strings.Join(names, ", "))
+	return project{}, errors.New(l.text("track.ambiguous", "\"{0}\" could be any of {1}; say which", name, strings.Join(names, ", ")))
 }
 
 // nameOf is what a project is called, by its id; nil is no project.
 func (l language) nameOf(projects []project, id *uint) string {
 	if id == nil {
-		return l.tr("no project")
+		return l.text("track.noProject", "no project")
 	}
 
 	at := slices.IndexFunc(projects, func(p project) bool { return p.ID == *id })
 	if at < 0 {
-		return fmt.Sprintf(l.tr("project %d"), *id)
+		return l.text("track.projectNumber", "project {0}", strconv.FormatUint(uint64(*id), 10))
 	}
 
 	return projects[at].Name
@@ -379,7 +418,7 @@ func (l language) nameOf(projects []project, id *uint) string {
 // name, if they name one, and the description given.
 func (s *session) aimedAt(ctx context.Context, line commandLine) (map[string]any, string, error) {
 	body := map[string]any{}
-	name := s.lang.tr("no project")
+	name := s.lang.text("track.noProject", "no project")
 
 	if len(line.words) > 0 {
 		projects, err := s.projects(ctx)
@@ -419,7 +458,7 @@ func (s *session) startClock(ctx context.Context, body map[string]any, name stri
 		started = *clock.StartedAt
 	}
 
-	return fmt.Sprintf(s.lang.tr("Started at %s on %s."), started.In(zone).Format("15:04"), name), nil
+	return s.lang.text("track.started", "Started at {0} on {1}.", started.In(zone).Format("15:04"), name), nil
 }
 
 // stopClock stops the stopwatch and books what it measured.
@@ -429,7 +468,7 @@ func (s *session) stopClock(ctx context.Context, projects []project) (string, er
 		return "", err
 	}
 
-	return fmt.Sprintf(s.lang.tr("Booked %s on %s."), s.lang.hours(booked.DurationHours),
+	return s.lang.text("track.stopped", "Booked {0} on {1}.", s.lang.hours(booked.DurationHours),
 		s.lang.nameOf(projects, booked.ProjectID)), nil
 }
 
@@ -444,7 +483,7 @@ func (s *session) switchClock(ctx context.Context, body map[string]any, name str
 		return "", err
 	}
 
-	return fmt.Sprintf(s.lang.tr("Booked %s on %s; running on %s now."), s.lang.hours(switched.Booked.DurationHours),
+	return s.lang.text("track.switched", "Booked {0} on {1}; running on {2} now.", s.lang.hours(switched.Booked.DurationHours),
 		s.lang.nameOf(projects, switched.Booked.ProjectID), name), nil
 }
 
@@ -455,13 +494,13 @@ func (s *session) bookHours(ctx context.Context, body map[string]any, name strin
 		return "", err
 	}
 
-	return fmt.Sprintf(s.lang.tr("Booked %s on %s for %s."), s.lang.hours(booked.DurationHours), name,
+	return s.lang.text("track.booked", "Booked {0} on {1} for {2}.", s.lang.hours(booked.DurationHours), name,
 		s.lang.date(booked.Date)), nil
 }
 
 func (s *session) status(ctx context.Context, line commandLine) error {
 	if len(line.words) > 0 {
-		return usageError(s.lang.tr("status takes nothing after it"))
+		return usageError(s.lang.text("track.status.extra", "status takes nothing after it"))
 	}
 
 	now, err := s.snapshot(ctx)
@@ -470,7 +509,7 @@ func (s *session) status(ctx context.Context, line commandLine) error {
 	}
 
 	s.say("%s", now.clockLine(s.lang, now.clock.ElapsedHours))
-	s.say(s.lang.tr("Booked today: %s."), s.lang.hours(total(now.today)))
+	s.say("%s", s.lang.text("track.bookedToday", "Booked today: {0}.", s.lang.hours(total(now.today))))
 
 	return nil
 }
@@ -491,7 +530,7 @@ func (s *session) start(ctx context.Context, line commandLine) error {
 
 func (s *session) stop(ctx context.Context, line commandLine) error {
 	if len(line.words) > 0 || line.description != nil || line.day != "" {
-		return usageError(s.lang.tr("stop takes nothing after it: the stopwatch already knows what it is on"))
+		return usageError(s.lang.text("track.stop.extra", "stop takes nothing after it: the stopwatch already knows what it is on"))
 	}
 
 	projects, err := s.projects(ctx)
@@ -518,7 +557,7 @@ func (s *session) switchTo(ctx context.Context, line commandLine) error {
 
 func (s *session) book(ctx context.Context, line commandLine) error {
 	if len(line.words) == 0 {
-		return usageError(s.lang.tr("book needs the hours first: track book 1.5 Website"))
+		return usageError(s.lang.text("track.book.noHours", "book needs the hours first: track book 1.5 Website"))
 	}
 
 	worked, err := s.lang.parseHours(line.words[0])
@@ -550,7 +589,7 @@ func (s *session) book(ctx context.Context, line commandLine) error {
 
 func (s *session) today(ctx context.Context, line commandLine) error {
 	if len(line.words) > 0 {
-		return usageError(s.lang.tr("today takes nothing after it"))
+		return usageError(s.lang.text("track.today.extra", "today takes nothing after it"))
 	}
 
 	zone, err := s.zone(ctx)
@@ -564,7 +603,7 @@ func (s *session) today(ctx context.Context, line commandLine) error {
 	}
 
 	if len(entries) == 0 {
-		s.say("%s", s.lang.tr("Nothing booked today."))
+		s.say("%s", s.lang.text("track.nothingToday", "Nothing booked today."))
 
 		return nil
 	}
@@ -586,7 +625,7 @@ func (s *session) today(ctx context.Context, line commandLine) error {
 		s.say("   %*s  %s%s", width, s.lang.hours(e.DurationHours), s.lang.nameOf(projects, e.ProjectID), text)
 	}
 
-	s.say("   %*s  %s", width, sum, s.lang.tr("in total"))
+	s.say("   %*s  %s", width, sum, s.lang.text("track.inTotal", "in total"))
 
 	return nil
 }
@@ -630,7 +669,7 @@ func (s *session) entriesOn(ctx context.Context, day string) ([]entry, error) {
 
 // parseHours reads hours the ways people write them: 1.5, 1,5 or 1:30.
 func (l language) parseHours(raw string) (float64, error) {
-	refused := usageError(fmt.Sprintf(l.tr("%q is not a number of hours: write 1.5, 1,5 or 1:30"), raw))
+	refused := usageError(l.text("track.notHours", "\"{0}\" is not a number of hours: write 1.5, 1,5 or 1:30", raw))
 
 	if whole, minutes, found := strings.Cut(raw, ":"); found {
 		h, errHours := strconv.Atoi(whole)
@@ -655,7 +694,7 @@ func (l language) parseHours(raw string) (float64, error) {
 // way the API reads one.
 func (l language) readableDay(day string) error {
 	if _, err := time.Parse(time.DateOnly, day); err != nil {
-		return usageError(fmt.Sprintf(l.tr("%q is not a day: write it as YYYY-MM-DD"), day))
+		return usageError(l.text("track.notDay", "\"{0}\" is not a day: write it as YYYY-MM-DD", day))
 	}
 
 	return nil

@@ -21,6 +21,9 @@ type fakeInstallation struct {
 	token    string
 	refuseAs string
 	stopped  bool
+
+	// language is the one the account chose in the browser; empty is none.
+	language string
 }
 
 func newFakeInstallation(t *testing.T) (*fakeInstallation, *httptest.Server) {
@@ -62,7 +65,7 @@ func (f *fakeInstallation) answer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stopped := f.stopped
+	stopped, language := f.stopped, f.language
 	f.mu.Unlock()
 
 	if f.refuseAs != "" && r.Method != http.MethodGet {
@@ -75,7 +78,7 @@ func (f *fakeInstallation) answer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]string{
-		"GET /me": `{"user":{"name":"Dana Example","effectiveTimezone":"Europe/Berlin"}}`,
+		"GET /me": `{"user":{"name":"Dana Example","effectiveTimezone":"Europe/Berlin","language":"` + language + `"}}`,
 		"GET /projects": `{"items":[{"id":1,"name":"Website","status":"active"},` +
 			`{"id":2,"name":"Webshop","status":"active"},{"id":3,"name":"Archive","status":"archived"},` +
 			`{"id":4,"name":"Consulting","status":"active"}]}`,

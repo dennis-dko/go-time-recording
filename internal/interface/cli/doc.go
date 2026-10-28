@@ -14,8 +14,10 @@
 // reader reads lines too, where a drawn screen serves neither; both make their
 // changes through the same functions and say what they did in the same words.
 //
-// Those words are English or German. Its own sentences come from a dictionary
-// of its own, and what the web interface also says - a refusal, a status, the
-// unit of an hour - from the web interface's dictionary, which the binary
-// carries, so the terminal and the browser never put one thing two ways.
+// Those words are English, or another language the binary carries a dictionary
+// for. Its own sentences are the dictionaries' track entries, and what the web
+// interface says as well - a refusal, a status, the unit of an hour - it says in
+// the web interface's entries, so the terminal and the browser never put one
+// thing two ways. The language is the one asked for with --lang or GTR_LANG,
+// otherwise the one the account chose in the browser, otherwise the system's.
 package cli

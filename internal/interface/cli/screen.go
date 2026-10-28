@@ -118,7 +118,7 @@ func (s *session) leave(ctx context.Context, ended tea.Model, err error) error {
 	case ctx.Err() != nil, errors.Is(err, tea.ErrInterrupted):
 		return nil
 	case err != nil:
-		return fmt.Errorf(s.lang.tr("the screen could not be opened: %w"), err)
+		return fmt.Errorf("%s: %w", s.lang.text("track.screenFailed", "the screen could not be opened"), err)
 	}
 
 	if last, ok := ended.(screen); ok && last.loaded {
@@ -235,10 +235,10 @@ func (m screen) offers() []offer {
 	l := m.s.lang
 
 	if m.shown.clock.Running {
-		return []offer{{"w", "switch", l.tr("switch")}, {"x", "stop", l.tr("stop")}, {"b", "book", l.tr("book")}}
+		return []offer{{"w", "switch", l.text("track.key.switch", "switch")}, {"x", "stop", l.text("track.key.stop", "stop")}, {"b", "book", l.text("track.key.book", "book")}}
 	}
 
-	return []offer{{"s", "start", l.tr("start")}, {"b", "book", l.tr("book")}}
+	return []offer{{"s", "start", l.text("track.key.start", "start")}, {"b", "book", l.text("track.key.book", "book")}}
 }
 
 // press answers a key while no form is open.
@@ -417,14 +417,14 @@ func (m screen) clockCard(look palette, width int) string {
 
 	switch {
 	case !m.loaded && m.reading:
-		return box.Render(look.muted.Render(fmt.Sprintf(l.tr("Reading %s …"), m.host)))
+		return box.Render(look.muted.Render(l.text("track.reading", "Reading {0} …", m.host)))
 	case !m.loaded:
-		return box.Render(look.muted.Render(fmt.Sprintf(l.tr("Nothing read from %s yet."), m.host)))
+		return box.Render(look.muted.Render(l.text("track.nothingRead", "Nothing read from {0} yet.", m.host)))
 	}
 
 	clock := m.shown.clock
 	if !clock.Running || clock.StartedAt == nil {
-		return box.Render(look.muted.Render("○  ") + l.tr("The stopwatch is not running."))
+		return box.Render(look.muted.Render("○  ") + l.text("track.notRunning", "The stopwatch is not running."))
 	}
 
 	on := l.nameOf(m.shown.projects, clock.ProjectID)
@@ -433,7 +433,7 @@ func (m screen) clockCard(look palette, width int) string {
 	}
 
 	left := look.ok.Render("●  ") + look.strong.Render(clockFace(m.elapsed())) + "   " + on
-	right := look.muted.Render(fmt.Sprintf(l.tr("since %s"), clock.StartedAt.In(m.shown.zone).Format("15:04")))
+	right := look.muted.Render(l.text("track.since", "since {0}", clock.StartedAt.In(m.shown.zone).Format("15:04")))
 
 	return box.BorderForeground(look.running).Render(spread(width-4, left, right))
 }
@@ -444,11 +444,11 @@ func (m screen) todayList(look palette, width int) string {
 	entries := m.shown.today
 	day := l.weekday(m.readAt.In(m.shown.zone))
 
-	heading := spread(width, look.strong.Render(l.tr("Today"))+look.muted.Render("  "+day),
+	heading := spread(width, look.strong.Render(l.text("cal.today", "Today"))+look.muted.Render("  "+day),
 		look.strong.Render(l.hours(total(entries))))
 
 	if len(entries) == 0 {
-		return heading + "\n" + look.muted.Render(l.tr("Nothing booked yet."))
+		return heading + "\n" + look.muted.Render(l.text("track.nothingYet", "Nothing booked yet."))
 	}
 
 	names := make([]string, len(entries))
@@ -488,7 +488,7 @@ func (m screen) statusLine(look palette) string {
 	case m.news != "":
 		return look.ok.Render("✓ ") + m.news
 	case m.busy:
-		return look.muted.Render(m.s.lang.tr("Sending …"))
+		return look.muted.Render(m.s.lang.text("track.sending", "Sending …"))
 	}
 
 	return ""
@@ -502,13 +502,13 @@ func (m screen) legend(look palette) string {
 
 	switch {
 	case m.form != nil:
-		keys = []offer{{"esc", "", l.tr("cancel")}, {"ctrl+c", "", l.tr("quit")}}
+		keys = []offer{{"esc", "", l.text("track.key.cancel", "cancel")}, {"ctrl+c", "", l.text("track.key.quit", "quit")}}
 	default:
 		if m.loaded && !m.busy {
 			keys = m.offers()
 		}
 
-		keys = append(keys, offer{"r", "", l.tr("refresh")}, offer{"q", "", l.tr("quit")})
+		keys = append(keys, offer{"r", "", l.text("track.key.refresh", "refresh")}, offer{"q", "", l.text("track.key.quit", "quit")})
 	}
 
 	named := make([]string, len(keys))

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -61,7 +62,7 @@ func (c *client) call(ctx context.Context, method, path string, body, into any) 
 
 	req, err := http.NewRequestWithContext(ctx, method, c.base+"/api/v1"+path, payload)
 	if err != nil {
-		return fmt.Errorf(c.lang.tr("%q is not an address this can ask: %w"), c.base, err)
+		return fmt.Errorf("%s: %w", c.lang.text("track.badAddress", "\"{0}\" is not an address this can ask", c.base), err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
@@ -73,14 +74,14 @@ func (c *client) call(ctx context.Context, method, path string, body, into any) 
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf(c.lang.tr("could not reach %s: %w"), c.base, err)
+		return fmt.Errorf("%s: %w", c.lang.text("track.unreachable", "could not reach {0}", c.base), err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswer))
 	if err != nil {
-		return fmt.Errorf(c.lang.tr("reading the answer from %s: %w"), c.base, err)
+		return fmt.Errorf("%s: %w", c.lang.text("track.unreadable", "reading the answer from {0}", c.base), err)
 	}
 
 	if resp.StatusCode >= http.StatusMultipleChoices {
@@ -96,7 +97,7 @@ func (c *client) call(ctx context.Context, method, path string, body, into any) 
 	}
 
 	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Data == nil {
-		return fmt.Errorf(c.lang.tr("%s answered with something that is not this application's"), c.base)
+		return errors.New(c.lang.text("track.notThisApplication", "{0} answered with something that is not this application's", c.base))
 	}
 
 	return json.Unmarshal(envelope.Data, into)

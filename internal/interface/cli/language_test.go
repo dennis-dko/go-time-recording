@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -20,6 +19,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 // The language is what was asked for on the line, then in GTR_LANG, then what
@@ -27,47 +27,48 @@ import (
 // was asked for and is not had is refused, in the language track falls back to.
 func TestTheLanguageIsChosenInTheOrderItWasAskedFor(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		flag    string
-		env     map[string]string
-		system  string
-		german  bool
-		refused string
+		name     string
+		flag     string
+		env      map[string]string
+		system   string
+		code     string
+		explicit bool
+		refused  string
 	}{
-		{name: "nothing set anywhere", german: false},
-		{name: "the flag", flag: "de", german: true},
-		{name: "the flag over GTR_LANG", flag: "en", env: map[string]string{"GTR_LANG": "de"}, german: false},
-		{name: "GTR_LANG", env: map[string]string{"GTR_LANG": "de"}, german: true},
-		{name: "GTR_LANG as a locale", env: map[string]string{"GTR_LANG": "de_DE.UTF-8"}, german: true},
-		{name: "GTR_LANG over LANG", env: map[string]string{"GTR_LANG": "en-GB", "LANG": "de_DE.UTF-8"}, german: false},
-		{name: "LANG", env: map[string]string{"LANG": "de_DE.UTF-8"}, german: true},
-		{name: "LC_ALL over LANG", env: map[string]string{"LC_ALL": "en_US.UTF-8", "LANG": "de_DE.UTF-8"}, german: false},
-		{name: "LC_MESSAGES over LANG", env: map[string]string{"LC_MESSAGES": "de_AT", "LANG": "en_US"}, german: true},
-		{name: "the environment over the system", env: map[string]string{"LANG": "C.UTF-8"}, system: "de-DE", german: false},
-		{name: "the system", system: "de-DE", german: true},
-		{name: "a system in a language track does not have", system: "fr-FR", german: false},
-		{name: "a LANG in a language track does not have", env: map[string]string{"LANG": "fr_FR.UTF-8"}, german: false},
-		{name: "a LANG that only starts with the letters", env: map[string]string{"LANG": "default"}, german: false},
-		{name: "a flag naming one it does not have", flag: "fr", env: map[string]string{"LANG": "de_DE"},
-			german: true, refused: `--lang nimmt de oder en, nicht "fr"`},
-		{name: "a flag naming one it does not have, under a GTR_LANG it has", flag: "fr",
-			env: map[string]string{"GTR_LANG": "de"}, german: true, refused: `--lang nimmt de oder en, nicht "fr"`},
-		{name: "GTR_LANG naming one it does not have", env: map[string]string{"GTR_LANG": "english"},
-			german: false, refused: `GTR_LANG takes de or en, not "english"`},
-		{name: "a stray GTR_LANG under a flag it has", flag: "de", env: map[string]string{"GTR_LANG": "english"},
-			german: true},
+		{name: "nothing set anywhere", code: "en"},
+		{name: "the flag", flag: "de", code: "de", explicit: true},
+		{name: "the flag over GTR_LANG", flag: "en", env: map[string]string{"GTR_LANG": "de"}, code: "en", explicit: true},
+		{name: "GTR_LANG", env: map[string]string{"GTR_LANG": "de"}, code: "de", explicit: true},
+		{name: "GTR_LANG as a locale", env: map[string]string{"GTR_LANG": "de_DE.UTF-8"}, code: "de", explicit: true},
+		{name: "GTR_LANG over LANG", env: map[string]string{"GTR_LANG": "en-GB", "LANG": "de_DE.UTF-8"}, code: "en", explicit: true},
+		{name: "LANG", env: map[string]string{"LANG": "de_DE.UTF-8"}, code: "de"},
+		{name: "LC_ALL over LANG", env: map[string]string{"LC_ALL": "en_US.UTF-8", "LANG": "de_DE.UTF-8"}, code: "en"},
+		{name: "LC_MESSAGES over LANG", env: map[string]string{"LC_MESSAGES": "de_AT", "LANG": "en_US"}, code: "de"},
+		{name: "the environment over the system", env: map[string]string{"LANG": "C.UTF-8"}, system: "de-DE", code: "en"},
+		{name: "the system", system: "de-DE", code: "de"},
+		{name: "a system in a language there are no words for", system: "fr-FR", code: "en"},
+		{name: "a LANG in a language there are no words for", env: map[string]string{"LANG": "fr_FR.UTF-8"}, code: "en"},
+		{name: "a LANG that only starts with the letters", env: map[string]string{"LANG": "default"}, code: "en"},
+		{name: "a flag naming one there are no words for", flag: "fr", env: map[string]string{"LANG": "de_DE"},
+			code: "de", refused: `--lang nimmt en, de, nicht „fr“`},
+		{name: "a flag naming one there are no words for, under a GTR_LANG there are", flag: "fr",
+			env: map[string]string{"GTR_LANG": "de"}, code: "de", explicit: true, refused: `--lang nimmt en, de, nicht „fr“`},
+		{name: "GTR_LANG naming one there are no words for", env: map[string]string{"GTR_LANG": "english"},
+			code: "en", refused: `GTR_LANG takes en, de, not "english"`},
+		{name: "a stray GTR_LANG under a flag there are words for", flag: "de", env: map[string]string{"GTR_LANG": "english"},
+			code: "de", explicit: true},
 	} {
 		env := func(key string) string { return tc.env[key] }
 		asked := 0
 
-		chosen, err := chooseLanguage(tc.flag, env, func() string { asked++; return tc.system })
+		chosen, explicit, err := chooseLanguage(tc.flag, env, func() string { asked++; return tc.system })
 
 		if tc.env["LANG"] != "" && asked > 0 {
 			t.Errorf("%s: the system was asked although LANG says %q", tc.name, tc.env["LANG"])
 		}
 
-		if chosen.german != tc.german {
-			t.Errorf("%s: German is %v, want %v", tc.name, chosen.german, tc.german)
+		if chosen.code() != tc.code || explicit != tc.explicit {
+			t.Errorf("%s: chose %s (asked for: %v), want %s (%v)", tc.name, chosen.code(), explicit, tc.code, tc.explicit)
 		}
 
 		switch {
@@ -114,7 +115,7 @@ func TestTrackSpeaksGermanWhenAsked(t *testing.T) {
 		{[]string{"--lang", "de", "status"}, []string{"Läuft seit 09:12 auf Consulting – bisher 1:30.", "Heute gebucht: 3,00 Std."}},
 		{[]string{"book", "1:30", "consult", "-d", "2026-10-21", "--lang=de"}, []string{"1,50 Std. auf Consulting für den 21.10.2026 gebucht."}},
 		{[]string{"today", "--lang", "de"}, []string{"   2,50 Std.  Consulting - review", "   0,50 Std.  kein Projekt", "   3,00 Std.  insgesamt"}},
-		{[]string{"help", "--lang", "de"}, []string{"Zeit im Terminal buchen", "--lang de|en"}},
+		{[]string{"help", "--lang", "de"}, []string{"Zeit im Terminal buchen", "--lang <Sprache>"}},
 	} {
 		status, out, errOut := track(t, server.URL, f.token, tc.args...)
 		if status != 0 {
@@ -132,7 +133,7 @@ func TestTrackSpeaksGermanWhenAsked(t *testing.T) {
 
 	// And what cannot be read, in German too - from GTR_LANG this time.
 	env := map[string]string{"GTR_URL": server.URL, "GTR_TOKEN": f.token, "GTR_LANG": "de"}
-	if status, _, errOut := trackWith(t, env, "book", "viel"); status != 2 || !strings.Contains(errOut, `"viel" ist keine Stundenzahl`) {
+	if status, _, errOut := trackWith(t, env, "book", "viel"); status != 2 || !strings.Contains(errOut, "„viel“ ist keine Stundenzahl") {
 		t.Errorf("unreadable hours answered %d %q, want 2 in German", status, errOut)
 	}
 
@@ -142,12 +143,37 @@ func TestTrackSpeaksGermanWhenAsked(t *testing.T) {
 	}
 }
 
+// Where nobody asked for a language, track speaks the one the account chose in
+// the browser - over the one the system is set to, and under one asked for.
+func TestTrackSpeaksTheLanguageTheAccountChose(t *testing.T) {
+	f, server := newFakeInstallation(t)
+	f.language = "de"
+
+	env := map[string]string{"GTR_URL": server.URL, "GTR_TOKEN": f.token, "LANG": "en_US.UTF-8"}
+
+	if status, out, errOut := trackWith(t, env, "status"); status != 0 || !strings.Contains(out, "Heute gebucht: 3,00 Std.") {
+		t.Errorf("an account that chose German, on an English system, answered %d %q %q", status, out, errOut)
+	}
+
+	if status, out, _ := trackWith(t, env, "status", "--lang", "en"); status != 0 || !strings.Contains(out, "Booked today: 3.00 h.") {
+		t.Errorf("--lang en under an account that chose German answered %d %q", status, out)
+	}
+
+	f.mu.Lock()
+	f.language = ""
+	f.mu.Unlock()
+
+	if status, out, _ := trackWith(t, env, "status"); status != 0 || !strings.Contains(out, "Booked today: 3.00 h.") {
+		t.Errorf("an account that chose nothing, on an English system, answered %d %q", status, out)
+	}
+}
+
 // A refusal is said in the browser's German: the sentence the web interface has
 // for its code, with a status, a kind of record and a day written as the page
 // writes them, the fields named as its forms name them - and the installation's
 // own English where the page has no sentence for it.
 func TestARefusalIsSaidInTheBrowsersGerman(t *testing.T) {
-	l := inGerman()
+	l := speaking("de")
 
 	for _, tc := range []struct {
 		name   string
@@ -185,14 +211,14 @@ func TestARefusalIsSaidInTheBrowsersGerman(t *testing.T) {
 }
 
 // Every way REFUSAL_VALUES writes a value is one track knows how to write: a new
-// one would otherwise reach a German sentence as the word it travels in.
+// one would otherwise reach a sentence as the word it travels in.
 func TestEveryWayAValueIsWrittenIsOneTrackKnows(t *testing.T) {
 	named := web.RefusalValues()
 	if len(named) == 0 {
 		t.Fatal("REFUSAL_VALUES read as nothing; the reading has stopped finding it")
 	}
 
-	writers := inGerman().valueWriters()
+	writers := speaking("de").valueWriters()
 
 	for code, values := range named {
 		for at, kind := range values {
@@ -206,7 +232,8 @@ func TestEveryWayAValueIsWrittenIsOneTrackKnows(t *testing.T) {
 // Hours, figures and days are written the way the web interface writes them in
 // each language.
 func TestHoursFiguresAndDaysAreWrittenTheWayThePageWritesThem(t *testing.T) {
-	de, en := inGerman(), language{}
+	de, en := speaking("de"), language{}
+	tuesday := time.Date(2026, time.October, 27, 12, 0, 0, 0, time.UTC)
 
 	for _, tc := range []struct{ got, want string }{
 		{en.hours(2.5), "2.50 h"},
@@ -218,10 +245,9 @@ func TestHoursFiguresAndDaysAreWrittenTheWayThePageWritesThem(t *testing.T) {
 		{en.date("2026-10-21"), "2026-10-21"},
 		{de.date("2026-10-21"), "21.10.2026"},
 		{de.date("someday"), "someday"},
-		{en.weekday(time.Date(2026, time.October, 27, 12, 0, 0, 0, time.UTC)), "Tuesday, 27 October"},
-		{de.weekday(time.Date(2026, time.October, 27, 12, 0, 0, 0, time.UTC)), "Dienstag, 27. Oktober"},
-		{de.fillIn("{0} und {1}, {2} und {9}", []any{1.0, 1.25, "x"}), "1 und 1,25, x und {9}"},
-		{de.fillIn("{ offen {0", []any{"x"}), "{ offen {0"},
+		{en.weekday(tuesday), "Tuesday, 27 October"},
+		{de.weekday(tuesday), "Dienstag, 27. Oktober"},
+		{strings.Join(de.refusalValues("x", []any{1.0, 1.25, "x"}), " "), "1 1,25 x"},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("wrote %q, want %q", tc.got, tc.want)
@@ -234,7 +260,7 @@ func TestHoursFiguresAndDaysAreWrittenTheWayThePageWritesThem(t *testing.T) {
 func TestTheScreenSpeaksGerman(t *testing.T) {
 	f, server := newFakeInstallation(t)
 
-	de := inGerman()
+	de := speaking("de")
 	m := newScreen(context.Background(), &session{api: newClient(server.URL, f.token, de), out: io.Discard, lang: de})
 
 	read, _ := m.load()().(loaded)
@@ -265,103 +291,107 @@ func TestTheScreenSpeaksGerman(t *testing.T) {
 
 	ended := m
 	ended.now = ended.readAt
+
 	if farewell := ended.farewell(ended.readAt); !strings.HasPrefix(farewell, "Läuft seit 09:12 auf Consulting") {
 		t.Errorf("the screen leaves %q behind, want the German line", farewell)
 	}
 }
 
-// translated is every sentence this package passes through tr, with where.
-func translated(t *testing.T) map[string]string {
+// looked is one key this package looks up, with its English and where.
+type looked struct {
+	english, at string
+}
+
+// lookups is every key this package passes to text, with its English: a key
+// must be written out, or nothing could hold it to a dictionary.
+func lookups(t *testing.T) map[string]looked {
 	t.Helper()
 
-	said := map[string]string{}
+	found := map[string]looked{}
 
 	for _, file := range packageFiles(t) {
 		ast.Inspect(file.syntax, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) != 1 {
+			if !ok || len(call.Args) < 2 {
 				return true
 			}
 
-			if selector, ok := call.Fun.(*ast.SelectorExpr); !ok || selector.Sel.Name != "tr" {
+			if selector, ok := call.Fun.(*ast.SelectorExpr); !ok || selector.Sel.Name != "text" {
 				return true
 			}
 
-			literal, ok := call.Args[0].(*ast.BasicLit)
-			if !ok || literal.Kind != token.STRING {
-				t.Errorf("%s passes tr something other than a sentence, which nothing can hold to a translation",
-					file.fset.Position(call.Pos()))
+			key, ok := call.Args[0].(*ast.BasicLit)
+			if !ok || key.Kind != token.STRING {
+				t.Errorf("%s looks up a key that is not written out", file.fset.Position(call.Pos()))
 
 				return true
 			}
 
-			sentence, _ := strconv.Unquote(literal.Value)
-			said[sentence] = file.fset.Position(literal.Pos()).String()
+			name, _ := strconv.Unquote(key.Value)
+			english := ""
+
+			if literal, ok := call.Args[1].(*ast.BasicLit); ok && literal.Kind == token.STRING {
+				english, _ = strconv.Unquote(literal.Value)
+			}
+
+			found[name] = looked{english: english, at: file.fset.Position(key.Pos()).String()}
 
 			return true
 		})
 	}
 
-	if len(said) < 50 {
-		t.Fatalf("found %d sentences passed through tr; the reading has stopped finding them", len(said))
+	if len(found) < 50 {
+		t.Fatalf("found %d keys looked up; the reading has stopped finding them", len(found))
 	}
 
-	return said
+	return found
 }
 
-// Every sentence track says has its German, every German entry is a sentence
-// track still says, and each says what its English says with the same values.
-func TestEverySentenceHasItsGerman(t *testing.T) {
-	said := translated(t)
+// Every key track looks up is in every dictionary, every track.* entry is one it
+// still looks up, and each fills in the places its English does.
+func TestEveryKeyTrackLooksUpIsInEveryDictionary(t *testing.T) {
+	used := lookups(t)
 
-	for _, sentence := range sortedKeys(said) {
-		if _, ok := german[sentence]; !ok {
-			t.Errorf("%s says %q, which has no German", said[sentence], sentence)
+	for _, language := range i18n.Languages()[1:] {
+		words := i18n.Dictionary(language)
+
+		for _, key := range sortedKeys(used) {
+			sentence, ok := words[key]
+			if !ok {
+				t.Errorf("%s looks up %s, which %s has no words for", used[key].at, key, language)
+
+				continue
+			}
+
+			if english := used[key].english; english != "" && !slices.Equal(places(english), places(sentence)) {
+				t.Errorf("%s fills in %v in English and %v in %s", key, places(english), places(sentence), language)
+			}
 		}
-	}
 
-	for _, sentence := range sortedKeys(german) {
-		if _, ok := said[sentence]; !ok {
-			t.Errorf("german translates %q, which nothing says any more", sentence)
-		}
-	}
-
-	for sentence, translation := range german {
-		if want, got := verbs(sentence), verbs(translation); !slices.Equal(want, got) {
-			t.Errorf("%q fills in %v, but its German %q fills in %v", sentence, want, translation, got)
+		for _, key := range sortedKeys(words) {
+			if _, ok := used[key]; strings.HasPrefix(key, "track.") && !ok {
+				t.Errorf("%s has %s, which track no longer looks up", language, key)
+			}
 		}
 	}
 }
 
-// verb is one of fmt's verbs, with the argument it takes and an optional index.
-var verb = regexp.MustCompile(`%(?:\[(\d+)\])?[-+# 0-9.*]*([a-zA-Z])`)
+// place is one of {0}, {1} ... in a sentence.
+var place = regexp.MustCompile(`\{\d+\}`)
 
-// verbs is which argument each verb of a format takes and as what, in argument
-// order: a translation may move them about with %[2]s, and must take the same.
-func verbs(format string) []string {
-	var taken []string
+// places is which values a sentence takes, each once, in order.
+func places(sentence string) []string {
+	found := place.FindAllString(sentence, -1)
 
-	next := 1
+	sort.Strings(found)
 
-	for _, m := range verb.FindAllStringSubmatch(strings.ReplaceAll(format, "%%", ""), -1) {
-		at := next
-		if m[1] != "" {
-			at, _ = strconv.Atoi(m[1])
-		}
-
-		taken = append(taken, fmt.Sprintf("%d:%s", at, m[2]))
-		next = at + 1
-	}
-
-	sort.Strings(taken)
-
-	return taken
+	return slices.Compact(found)
 }
 
-// Nothing this package says to somebody is written as a bare string, where tr
-// cannot reach it: every literal that reads as words is a sentence passed to tr,
-// a German one, or the usage.
-func TestNoSentenceIsSaidAroundTheDictionary(t *testing.T) {
+// Nothing this package says to somebody is written as a bare string, where a
+// dictionary cannot reach it: every literal that reads as words is a key or
+// the English handed to text, or the usage.
+func TestNoSentenceIsSaidAroundTheDictionaries(t *testing.T) {
 	prose := regexp.MustCompile(`[A-Za-z]{2,} [A-Za-z]{2,}`)
 
 	for _, file := range packageFiles(t) {
@@ -370,17 +400,14 @@ func TestNoSentenceIsSaidAroundTheDictionary(t *testing.T) {
 		ast.Inspect(file.syntax, func(n ast.Node) bool {
 			switch node := n.(type) {
 			case *ast.CallExpr:
-				if selector, ok := node.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "tr" {
-					for _, arg := range node.Args {
+				if selector, ok := node.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "text" {
+					for _, arg := range node.Args[:min(2, len(node.Args))] {
 						inside[arg] = true
 					}
 				}
 			case *ast.ValueSpec:
-				for _, name := range node.Names {
-					if name.Name == "german" || name.Name == "usage" || name.Name == "usageGerman" ||
-						name.Name == "germanWeekdays" || name.Name == "germanMonths" {
-						ast.Inspect(node, func(m ast.Node) bool { inside[m] = true; return true })
-					}
+				if slices.ContainsFunc(node.Names, func(name *ast.Ident) bool { return name.Name == "usage" }) {
+					ast.Inspect(node, func(m ast.Node) bool { inside[m] = true; return true })
 				}
 			case *ast.ImportSpec:
 				inside[node.Path] = true
@@ -400,7 +427,7 @@ func TestNoSentenceIsSaidAroundTheDictionary(t *testing.T) {
 				return true
 			}
 
-			t.Errorf("%s says %q around the dictionary; pass it through tr", file.fset.Position(literal.Pos()), text)
+			t.Errorf("%s says %q around the dictionaries; look it up with text", file.fset.Position(literal.Pos()), text)
 
 			return true
 		})

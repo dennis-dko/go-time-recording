@@ -49,11 +49,14 @@ so a script that runs it bare gets lines and status 2 rather than a screen
 waiting for keys.
 
 It speaks English or German. `--lang de` or `--lang en` may stand anywhere on
-the line, `GTR_LANG` keeps one, and otherwise it is the language the system is
-set to - `LC_ALL`, `LC_MESSAGES` or `LANG`, and on Windows, which sets none of
-them, the language of its own screens. A language that is asked for and not
-had is refused with status 2; one the system is set to is only a guess, and
-anything but German there is English. In German, track says what the
+the line, `GTR_LANG` keeps one, and otherwise it is the language the account
+chose in the browser, which track asks the installation for before anything
+else. Where the account chose none, it is the language the system is set to -
+`LC_ALL`, `LC_MESSAGES` or `LANG`, and on Windows, which sets none of them, the
+language of its own screens - and so is what track says before it knows whose
+token it holds: `track help`, and a missing address or token. A language that
+is asked for and not had is refused with status 2; one the system is set to is
+only a guess, and anything but German there is English. In German, track says what the
 installation refuses the way the German web interface does - from the code and
 the values the refusal carries, so a day in it is written 06.10.2026 - and
 keeps the installation's English only where the interface has no sentence for

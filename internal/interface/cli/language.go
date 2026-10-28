@@ -2,53 +2,70 @@ package cli
 
 import (
 	"encoding/json"
-	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 // language is what track says things in.
 //
-// Every sentence in this package is written in English and passed through tr,
-// and the English is the key: german holds what it becomes. The zero value is
-// English, so anything nobody gave a language speaks English, and a sentence
-// nobody has translated is still said - in English, as in the web interface.
-//
-// What track says in the browser's words is not in german at all: a refusal, a
-// project's status, a field's name and the unit an hour is written in come from
-// the web interface's own dictionary, which the binary carries, so the two say
-// the same thing the same way and cannot come to disagree.
+// Its sentences are keyed track.* in the dictionaries every part of the
+// application reads, with the English written where they are said, as the web
+// interface does it. What the web interface says as well - a refusal, a status,
+// a field's name, the unit of an hour - is looked up under the web interface's
+// own key, so the terminal and the browser say one thing one way. The zero
+// value is English, so anything nobody gave a language speaks English, and a
+// sentence a dictionary lacks is still said, in English.
 type language struct {
-	german bool
+	words i18n.Translator
 
-	// page is the web interface's German, and refusals which values of which
-	// refusal it writes in words of its own.
-	page     map[string]string
+	// refusals names which values of which refusal the web interface writes in
+	// words of its own.
 	refusals map[string]map[int]string
 }
 
-// inGerman is German, with the web interface's dictionary read from the binary.
-func inGerman() language {
-	return language{german: true, page: web.Dictionary("de"), refusals: web.RefusalValues()}
+// speaking is the language a code names, English for one there are no words
+// for.
+func speaking(code string) language {
+	if code == i18n.English || !slices.Contains(i18n.Languages(), code) {
+		return language{}
+	}
+
+	return language{words: i18n.For(code), refusals: web.RefusalValues()}
 }
 
-// chooseLanguage decides what track speaks: the --lang flag, then GTR_LANG, then
-// the language the system is set to, then English.
+// code is the language's code: en, de ...
+func (l language) code() string {
+	if code := l.words.Language(); code != "" {
+		return code
+	}
+
+	return i18n.English
+}
+
+// spoken is the languages there are words for, as somebody types them.
+func spoken() string { return strings.Join(i18n.Languages(), ", ") }
+
+// chooseLanguage decides what track speaks, as far as it can be told without
+// asking the installation: the --lang flag, then GTR_LANG, then the language the
+// system is set to, then English. explicit says whether somebody asked, which
+// is what decides whether the account's own language is asked for next.
 //
 // The flag and GTR_LANG are somebody asking, so a language track does not have
 // is refused rather than ignored - in the language the next one down chose, and
 // only where nothing above it asked for one track has: a stray GTR_LANG does not
 // stand in the way of a --lang on the line. The system's setting is only a guess
-// at what somebody reads - a French LANG is no reason to refuse to start - so
-// anything but German there is English. system is asked last, and only where
-// the environment says nothing, because LANG and its kin are how a terminal says
-// it on every system but Windows, which sets none of them.
-func chooseLanguage(flag string, env func(string) string, system func() string) (language, error) {
+// at what somebody reads - a French LANG is no reason to refuse to start - so a
+// language there is no dictionary for is English. system is asked last, and
+// only where the environment says nothing, because LANG and its kin are how a
+// terminal says it on every system but Windows, which sets none of them.
+func chooseLanguage(flag string, env func(string) string, system func() string) (chosen language, explicit bool, refused error) {
 	set := ""
 
 	for _, name := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
@@ -61,9 +78,7 @@ func chooseLanguage(flag string, env func(string) string, system func() string) 
 		set = system()
 	}
 
-	chosen := languageNamed(set)
-
-	var refused error
+	chosen = languageNamed(set)
 
 	for _, asked := range []struct{ from, value string }{
 		{"GTR_LANG", strings.TrimSpace(env("GTR_LANG"))},
@@ -75,40 +90,35 @@ func chooseLanguage(flag string, env func(string) string, system func() string) 
 
 		named, ok := languageAsked(asked.value)
 		if !ok {
-			refused = usageError(fmt.Sprintf(chosen.tr("%s takes de or en, not %q"), asked.from, asked.value))
+			refused = usageError(chosen.text("track.lang.unknown", `{0} takes {1}, not "{2}"`,
+				asked.from, spoken(), asked.value))
 
 			continue
 		}
 
-		chosen, refused = named, nil
+		chosen, explicit, refused = named, true, nil
 	}
 
-	return chosen, refused
+	return chosen, explicit, refused
 }
 
-// languageAsked reads a language somebody named: de or en, alone or as the
-// start of a locale such as de_DE.UTF-8 or en-GB.
+// languageAsked reads a language somebody named: its code alone, or as the
+// start of a locale such as de_DE.UTF-8 or en-GB - and false for one there are
+// no words for.
 func languageAsked(name string) (language, bool) {
-	switch strings.ToLower(name) {
-	case "de", "en":
-	default:
-		if len(name) < 3 || !strings.ContainsRune("_-.", rune(name[2])) {
-			return language{}, false
-		}
+	code, _, _ := strings.Cut(strings.ToLower(name), "_")
+	code, _, _ = strings.Cut(code, "-")
+	code, _, _ = strings.Cut(code, ".")
+
+	if !slices.Contains(i18n.Languages(), code) {
+		return language{}, false
 	}
 
-	switch strings.ToLower(name[:2]) {
-	case "de":
-		return inGerman(), true
-	case "en":
-		return language{}, true
-	}
-
-	return language{}, false
+	return speaking(code), true
 }
 
-// languageNamed is the language a locale names, which is English unless it is
-// German.
+// languageNamed is the language a locale names, which is English unless there
+// are words for it.
 func languageNamed(locale string) language {
 	named, _ := languageAsked(locale)
 
@@ -149,100 +159,70 @@ func languageFlag(args []string) (string, []string, bool) {
 	return flag, rest, true
 }
 
-// usage is what track says about itself, in this language.
-func (l language) usage() string {
-	if l.german {
-		return usageGerman
-	}
-
-	return usage
+// text is what a key says in this language, or english where there are no
+// words for it, with values put in where it says {0}, {1} ...
+func (l language) text(key, english string, values ...string) string {
+	return l.words.Text(key, english, values...)
 }
 
-// tr is what one of track's sentences is in this language.
-func (l language) tr(english string) string {
-	if !l.german {
-		return english
-	}
-
-	if said, ok := german[english]; ok {
-		return said
-	}
-
-	return english
+// usage is what track says about itself, in this language.
+func (l language) usage() string {
+	return l.text("track.usage", usage)
 }
 
 // hours writes a number of hours the way the web interface does in this
 // language: 2.50 h, or 2,50 Std.
 func (l language) hours(h float64) string {
-	if !l.german {
-		return fmt.Sprintf("%.2f h", h)
-	}
-
-	unit := l.page["unit.hours"]
-	if unit == "" {
-		unit = "h"
-	}
-
-	return l.number(h) + " " + unit
+	return l.number(h) + " " + l.text("unit.hours", "h")
 }
 
 // number writes a figure to two places, the way the web interface writes one:
 // 1,234.50 in English and 1.234,50 in German.
-func (l language) number(v float64) string {
-	point, group := ".", ","
-	if l.german {
-		point, group = ",", "."
-	}
-
-	whole, fraction, _ := strings.Cut(strconv.FormatFloat(math.Abs(v), 'f', 2, 64), ".")
-
-	var grouped strings.Builder
-
-	for i, digit := range whole {
-		if i > 0 && (len(whole)-i)%3 == 0 {
-			grouped.WriteString(group)
-		}
-
-		grouped.WriteRune(digit)
-	}
-
-	sign := ""
-	if v < 0 && (whole != "0" || fraction != "00") {
-		sign = "-"
-	}
-
-	return sign + grouped.String() + point + fraction
-}
+func (l language) number(v float64) string { return l.words.Number(v) }
 
 // date writes a day that travels as YYYY-MM-DD the way the reader writes one.
-// English keeps the form it travels in, which is how track has always written it.
+// English keeps the form it travels in, which is how track has always written
+// it; a dictionary names its own as a Go layout.
 func (l language) date(day string) string {
 	at, err := time.Parse(time.DateOnly, day)
-	if err != nil || !l.german {
+	if err != nil {
 		return day
 	}
 
-	return at.Format("02.01.2006")
+	return l.words.Day(at)
 }
 
-// weekday writes a day of the week and its date: Monday, 2 January.
+// weekday writes a day of the week and its date: Tuesday, 27 October. The
+// names are a dictionary's own, Sunday first and January first, where it has
+// them.
 func (l language) weekday(at time.Time) string {
-	if !l.german {
-		return at.Format("Monday, 2 January")
+	days := strings.Fields(l.text("track.weekdays", ""))
+	months := strings.Fields(l.text("track.months", ""))
+
+	day, month := at.Weekday().String(), at.Month().String()
+
+	if len(days) == 7 {
+		day = days[at.Weekday()]
 	}
 
-	return fmt.Sprintf("%s, %d. %s", germanWeekdays[at.Weekday()], at.Day(), germanMonths[at.Month()-1])
+	if len(months) == 12 {
+		month = months[at.Month()-1]
+	}
+
+	return l.text("track.weekday", "{0}, {1} {2}", day, strconv.Itoa(at.Day()), month)
 }
 
 // refusal reads what the installation said when it refused a request.
 //
 // Not signed in is said in track's own words, because the installation's are
 // about a session and what is wrong here is the token. Anything else is the
-// installation's sentence - in English as it wrote it, and in German as the web
-// interface says it, from the code it sent and the values that go into it.
+// installation's sentence - in English as it wrote it, and in another language
+// as the web interface says it, from the code it sent and the values that go
+// into it.
 func (l language) refusal(status int, raw []byte) error {
 	if status == http.StatusUnauthorized {
-		return refusal(l.tr("the installation does not know this token - make one under My account, API tokens, and put it in GTR_TOKEN"))
+		return refusal(l.text("track.tokenUnknown",
+			"the installation does not know this token - make one under My account, API tokens, and put it in GTR_TOKEN"))
 	}
 
 	var body struct {
@@ -251,17 +231,16 @@ func (l language) refusal(status int, raw []byte) error {
 
 	_ = json.Unmarshal(raw, &body)
 
-	if l.german {
-		if sentence := l.inPageWords(body.Error); sentence != "" {
-			return refusal(sentence)
-		}
+	if sentence := l.inPageWords(body.Error); sentence != "" {
+		return refusal(sentence)
 	}
 
 	if body.Error.Message != "" {
 		return refusal(body.Error.Message)
 	}
 
-	return refusal(fmt.Sprintf(l.tr("the installation answered %d %s"), status, http.StatusText(status)))
+	return refusal(l.text("track.answered", "the installation answered {0} {1}",
+		strconv.Itoa(status), http.StatusText(status)))
 }
 
 // said is a refusal as the installation sends it.
@@ -273,46 +252,60 @@ type said struct {
 }
 
 // inPageWords is a refusal as the web interface says it, or nothing where its
-// dictionary has no sentence for it. The same order as its describeRefusal: the
-// fields named first, because which ones is more use than any sentence.
+// dictionary has no sentence for it - which in English is always, the web
+// interface's English being the fallbacks in its own script. The same order as
+// its describeRefusal: the fields named first, because which ones is more use
+// than any sentence.
 func (l language) inPageWords(refused said) string {
 	if refused.Code == "maintenance" {
-		return l.page["err.maintenance"]
+		sentence, _ := l.words.Lookup("err.maintenance")
+
+		return sentence
 	}
 
-	if len(refused.Param) > 0 && l.page["err.invalidFields"] != "" {
+	if fields, ok := l.words.Lookup("err.invalidFields"); ok && len(refused.Param) > 0 {
 		named := make([]string, len(refused.Param))
 
 		for i, field := range refused.Param {
-			named[i] = field
-			if label := l.page["field."+field]; label != "" {
-				named[i] = label
-			}
+			named[i] = l.pageWord("field.", field)
 		}
 
-		return l.page["err.invalidFields"] + ": " + strings.Join(named, ", ")
+		return fields + ": " + strings.Join(named, ", ")
 	}
 
-	sentence := l.page["err."+refused.Code]
-	if refused.Code == "" || sentence == "" {
+	sentence, ok := l.words.Lookup("err." + refused.Code)
+	if refused.Code == "" || !ok {
 		return ""
 	}
 
-	return l.fillIn(sentence, l.refusalValues(refused.Code, refused.Values))
+	return i18n.Fill(sentence, l.refusalValues(refused.Code, refused.Values)...)
 }
 
 // refusalValues writes the values of a refusal the way the web interface's
-// REFUSAL_VALUES says: a status and a kind of record in its words, a day the
-// way the reader writes one.
-func (l language) refusalValues(code string, values []any) []any {
+// REFUSAL_VALUES and fillIn say: a status and a kind of record in its words, a
+// day the way the reader writes one, a whole number as it is and a fraction to
+// two places.
+func (l language) refusalValues(code string, values []any) []string {
 	named, writers := l.refusals[code], l.valueWriters()
-	written := make([]any, len(values))
+	written := make([]string, len(values))
 
 	for i, value := range values {
-		written[i] = value
-
-		if text, isText := value.(string); isText && writers[named[i]] != nil {
-			written[i] = writers[named[i]](text)
+		switch v := value.(type) {
+		case string:
+			written[i] = v
+			if writers[named[i]] != nil {
+				written[i] = writers[named[i]](v)
+			}
+		case float64:
+			written[i] = l.number(v)
+			if v == math.Trunc(v) {
+				written[i] = strconv.FormatFloat(v, 'f', -1, 64)
+			}
+		case nil:
+			written[i] = ""
+		default:
+			encoded, _ := json.Marshal(v)
+			written[i] = string(encoded)
 		}
 	}
 
@@ -333,56 +326,9 @@ func (l language) valueWriters() map[string]func(string) string {
 // pageWord is one of the web interface's words, or the word itself where it has
 // none.
 func (l language) pageWord(prefix, word string) string {
-	if said := l.page[prefix+word]; said != "" {
+	if said, ok := l.words.Lookup(prefix + word); ok {
 		return said
 	}
 
 	return word
-}
-
-// fillIn puts the values back into a sentence where it says {0}, {1} ..., as the
-// web interface's fillIn does: a whole number as it is, a fraction to two places,
-// and a place with no value left as it stands.
-func (l language) fillIn(sentence string, values []any) string {
-	var out strings.Builder
-
-	for rest := sentence; rest != ""; {
-		before, after, found := strings.Cut(rest, "{")
-		out.WriteString(before)
-
-		if !found {
-			break
-		}
-
-		digits, tail, closed := strings.Cut(after, "}")
-
-		at, err := strconv.Atoi(digits)
-		if !closed || err != nil || at < 0 || at >= len(values) || values[at] == nil {
-			out.WriteString("{")
-
-			rest = after
-
-			continue
-		}
-
-		out.WriteString(l.value(values[at]))
-
-		rest = tail
-	}
-
-	return out.String()
-}
-
-// value is one value of a refusal as a sentence writes it.
-func (l language) value(v any) string {
-	number, isNumber := v.(float64)
-	if !isNumber {
-		return fmt.Sprint(v)
-	}
-
-	if number == math.Trunc(number) {
-		return strconv.FormatFloat(number, 'f', -1, 64)
-	}
-
-	return l.number(number)
 }
