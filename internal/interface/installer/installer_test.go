@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,42 @@ import (
 	"testing"
 
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
+
+// The page is handed out with its sentences in every language but English
+// written into it, under the keys it looks up, and with nothing in them able to
+// close the element they are written into.
+func TestThePageIsHandedOutWithItsWordsInIt(t *testing.T) {
+	rec := httptest.NewRecorder()
+	(&server{}).page(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	body := rec.Body.String()
+
+	start := strings.Index(body, `<script type="application/json" id="dictionaries">`)
+	if start < 0 {
+		t.Fatal("the page carries no block of its words")
+	}
+
+	block, _, _ := strings.Cut(body[start+len(`<script type="application/json" id="dictionaries">`):], "</script>")
+
+	var words map[string]map[string]string
+	if err := json.Unmarshal([]byte(block), &words); err != nil {
+		t.Fatalf("the block does not read: %v", err)
+	}
+
+	if words["de"]["title"] != i18n.Dictionary("de")["installer.title"] || words["de"]["title"] == "" {
+		t.Errorf("German is written in as %q for the title", words["de"]["title"])
+	}
+
+	if _, english := words["en"]; english {
+		t.Error("English is written in, though it has no dictionary and lives in the markup")
+	}
+
+	if strings.Contains(block, "<") {
+		t.Error("a sentence carries a raw < into the page, which could close the element it is in")
+	}
+}
 
 // The installer is the one screen that cannot be corrected from inside the
 // application, because it is what runs when there is no application yet. A
@@ -159,8 +195,8 @@ func TestTheInstallerFollowsTheBrowserLanguage(t *testing.T) {
 			t.Errorf("no element carries the key %q", key)
 		}
 
-		if !strings.Contains(markup, `'`+key+`':`) {
-			t.Errorf("the German dictionary has no entry for %q", key)
+		if i18n.Dictionary("de")["installer."+key] == "" {
+			t.Errorf("the German dictionary has no entry for installer.%s", key)
 		}
 	}
 
@@ -178,13 +214,14 @@ func TestTheInstallerFollowsTheBrowserLanguage(t *testing.T) {
 	}
 }
 
-// The page says nothing its dictionary cannot say in German.
+// The page says nothing its dictionaries cannot say, and they say nothing the
+// page does not ask for.
 //
-// Two shapes, because both had happened on this page: a lookup whose key the
-// dictionary does not hold, which renders the English and looks translated in
-// the source; and a label written straight from a literal - the password
-// button's name was "Show the password" on an otherwise German screen, for
-// everybody who reads a screen by its accessible names.
+// Two shapes of the first, because both had happened on this page: a lookup
+// whose key the dictionary does not hold, which renders the English and looks
+// translated in the source; and a label written straight from a literal - the
+// password button's name was "Show the password" on an otherwise German screen,
+// for everybody who reads a screen by its accessible names.
 func TestTheInstallerPageSaysNothingItCannotTranslate(t *testing.T) {
 	raw, err := assets.ReadFile("assets/install.html")
 	if err != nil {
@@ -193,17 +230,37 @@ func TestTheInstallerPageSaysNothingItCannotTranslate(t *testing.T) {
 
 	page := string(raw)
 
-	// A whole key, followed by its fallback. The two lookups built from a prefix
-	// - a refusal's code, a field's name - are held by the case that knows which
-	// codes and fields the server sends.
-	looked := regexp.MustCompile(`\bt\('([a-zA-Z.]+)',`).FindAllStringSubmatch(page, -1)
-	if len(looked) < 10 {
-		t.Fatalf("found %d lookups in the page; this case is reading nothing", len(looked))
+	// A whole key, followed by its fallback, and a key the markup names. The two
+	// lookups built from a prefix - a refusal's code, a field's name - are held by
+	// the case that knows which codes and fields the server sends.
+	asked := map[string]bool{}
+
+	for _, pattern := range []string{`\bt\('([a-zA-Z.]+)',`, `data-i18n="([a-zA-Z.]+)"`} {
+		for _, lookup := range regexp.MustCompile(pattern).FindAllStringSubmatch(page, -1) {
+			asked[lookup[1]] = true
+		}
 	}
 
-	for _, lookup := range looked {
-		if !strings.Contains(page, "'"+lookup[1]+"':") {
-			t.Errorf("the page looks up %q and its German dictionary has no such entry", lookup[1])
+	if len(asked) < 20 {
+		t.Fatalf("found %d keys the page asks for; this case is reading nothing", len(asked))
+	}
+
+	for _, language := range i18n.Languages()[1:] {
+		words := i18n.Dictionary(language)
+
+		for key := range asked {
+			if words["installer."+key] == "" {
+				t.Errorf("the page asks for %q and %s has no installer.%s", key, language, key)
+			}
+		}
+
+		for key := range words {
+			own, mine := strings.CutPrefix(key, "installer.")
+			if !mine || asked[own] || strings.HasPrefix(own, "err.") || strings.HasPrefix(own, "field.") {
+				continue
+			}
+
+			t.Errorf("%s has %s, which the page never asks for", language, key)
 		}
 	}
 
