@@ -148,7 +148,7 @@ flowchart TB
     scripts(["Scripts and tools<br/>personal API token"])
     calendars(["Calendar apps<br/>iCalendar subscription"])
 
-    subgraph binary["go-time-recording — one binary"]
+    subgraph binary["go-time-recording-web — one binary"]
         installer["Installer<br/>until a database exists"]
         ui["Web interface<br/>embedded"]
         api["REST API<br/>/api/v1 · /api-docs"]
@@ -212,13 +212,14 @@ cp .env.example .env    # DB_PASSWORD is required
 docker compose up -d
 ```
 
-**As a single binary** — download the one for your platform from the
-[latest release](https://github.com/dennis-dko/go-time-recording/releases/latest)
-and start it:
+**As a single binary** — download `go-time-recording-web` for your platform
+from the [latest release](https://github.com/dennis-dko/go-time-recording/releases/latest)
+and start it. It is the whole installation; `go-time-recording-client` beside it
+is the [terminal client](#from-a-terminal), which only books against one.
 
 ```bash
-chmod +x go-time-recording_*_linux_amd64
-./go-time-recording_*_linux_amd64
+chmod +x go-time-recording-web_*_linux_amd64
+./go-time-recording-web_*_linux_amd64
 ```
 
 Then open <http://localhost:8000>. Without a database the binary serves the
@@ -256,13 +257,14 @@ and says what it did — for a script, an alias or a screen reader.
   </tr>
 </table>
 
-**It belongs to the installation's release.** The client is built from the same
-source as the installation and released beside it, and what it knows of the
-installation's API — the routes, the fields, the codes a refusal carries and
-the words the page has for them — is what that release has. A client from
-another release may ask for something the installation does not have, or not
-understand what it answers. So use the client of the release the installation
-runs: the installation shows its version at the foot of every page, and
+**It depends on the version of the installation.** The client is built from
+the same source as `go-time-recording-web`, the installation's binary, and
+released beside it with the same version. What it knows of the installation's
+API — the routes, the fields, the codes a refusal carries and the words the page
+has for them — is what that version has, so a client from another release may
+ask for something the installation does not have, or not understand what it
+answers. Use the client whose version is the installation's: the installation
+shows its version at the foot of every page, and
 `go-time-recording-client --version` says the client's. When the installation
 is updated, take the client of the new release as well.
 

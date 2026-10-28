@@ -70,7 +70,7 @@ func TestReadingTheReleaseFeed(t *testing.T) {
 			"assets": []map[string]string{
 				{"name": binary, "browser_download_url": "https://example.invalid/bin"},
 				{"name": "SHA256SUMS", "browser_download_url": "https://example.invalid/sums"},
-				{"name": "go-time-recording_v9.9.9_plan9_386", "browser_download_url": "nope"},
+				{"name": "go-time-recording-web_v9.9.9_plan9_386", "browser_download_url": "nope"},
 			},
 		})
 	}))
@@ -174,7 +174,7 @@ func stagedRelease(t *testing.T, version, sum string, body []byte) (*Source, Rel
 		if strings.HasSuffix(r.URL.Path, "/sums") {
 			if sum == "" {
 				// A file for some other platform only.
-				_, _ = fmt.Fprintf(w, "%s  go-time-recording_%s_plan9_386\n",
+				_, _ = fmt.Fprintf(w, "%s  go-time-recording-web_%s_plan9_386\n",
 					strings.Repeat("0", 64), version)
 
 				return

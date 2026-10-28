@@ -64,5 +64,5 @@ resource() {
   printf 'wrote %s for %s\n' "$1" "$VERSION"
 }
 
-resource "$WEB" go-time-recording "Project time tracking: REST API and web interface in one file"
+resource "$WEB" go-time-recording-web "Project time tracking: REST API and web interface in one file"
 resource "$CLIENT" go-time-recording-client "Project time tracking: the terminal client"

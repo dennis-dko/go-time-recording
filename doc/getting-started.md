@@ -172,14 +172,14 @@ the mark off the file first — Windows attaches it to anything downloaded from 
 internet:
 
 ```powershell
-Unblock-File .\go-time-recording_v0.1.39_windows_amd64.exe
+Unblock-File .\go-time-recording-web_v1.2.3_windows_amd64.exe
 ```
 
 Check the download against the release's `SHA256SUMS` before doing either. That
 is the part that actually tells you the file is the one that was published:
 
 ```powershell
-Get-FileHash .\go-time-recording_v0.1.39_windows_amd64.exe -Algorithm SHA256
+Get-FileHash .\go-time-recording-web_v1.2.3_windows_amd64.exe -Algorithm SHA256
 ```
 
 **Properly, for everybody.** A code signing certificate, which costs money every

@@ -33,7 +33,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
     -trimpath \
     -ldflags "-s -w -X main.version=${VERSION}" \
-    -o /out/go-time-recording ./cmd
+    -o /out/go-time-recording-web ./cmd
 
 FROM alpine:3.24
 
@@ -62,7 +62,7 @@ RUN apk add --no-cache ca-certificates tzdata \
 
 WORKDIR /app
 
-COPY --from=build /out/go-time-recording /app/go-time-recording
+COPY --from=build /out/go-time-recording-web /app/go-time-recording-web
 # GoFr reads its configuration from ./configs relative to the working directory.
 COPY --from=build /src/cmd/configs /app/configs
 
@@ -105,4 +105,4 @@ EXPOSE 8000 2121
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
     CMD wget -qO- http://127.0.0.1:8000/.well-known/alive >/dev/null 2>&1 || exit 1
 
-ENTRYPOINT ["/app/go-time-recording"]
+ENTRYPOINT ["/app/go-time-recording-web"]

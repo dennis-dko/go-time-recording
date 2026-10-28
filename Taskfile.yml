@@ -13,7 +13,11 @@ version: '3'
 # in step.
 
 vars:
+  # The project's name, which the image is tagged with and a local SQLite file
+  # is called by; the two programs carry it in names of their own.
   APP_NAME: go-time-recording
+  # The installation: the server and its web interface.
+  WEB_NAME: go-time-recording-web
   # The terminal client, a program of its own beside the one that serves.
   CLIENT_NAME: go-time-recording-client
   BIN_DIR: bin
@@ -145,7 +149,7 @@ tasks:
       - '{{if .WATCH}}mkdir -p air/gotmp{{else}}true{{end}}'
       # From here as well, so the process air starts finds ./configs; the root
       # air watches is one up, which .air.toml says.
-      - '{{if .WATCH}}go run github.com/air-verse/air@{{.AIR_VERSION}} -c ../.air.toml --build.cmd "task{{exeExt}} dev:rebuild" --build.full_bin ./{{.APP_NAME}}{{exeExt}}{{else}}./{{.APP_NAME}}{{exeExt}}{{end}}'
+      - '{{if .WATCH}}go run github.com/air-verse/air@{{.AIR_VERSION}} -c ../.air.toml --build.cmd "task{{exeExt}} dev:rebuild" --build.full_bin ./{{.WEB_NAME}}{{exeExt}}{{else}}./{{.WEB_NAME}}{{exeExt}}{{end}}'
 
   # What air runs on every change, its first build included: the binary, and the
   # stale connection removed for the reason dev:binary removes it. The build copies
@@ -527,7 +531,7 @@ tasks:
     cmds:
       # The artifact is environment-independent: GoFr picks its config file from
       # APP_ENV at start-up, so there is nothing to choose here.
-      - echo "Building {{.APP_NAME}} {{.VERSION}}"
+      - echo "Building {{.WEB_NAME}} {{.VERSION}}"
       - mkdir -p {{.BIN_DIR}}
       # Absolute, because on Windows this is Task's own cp, which asks whether the
       # target is a directory relative to the process's working directory and
@@ -537,7 +541,7 @@ tasks:
       - cp -r "{{.ROOT_DIR}}/{{.CONFIG_SRC}}" "{{.ROOT_DIR}}/{{.BIN_DIR}}/"
       # ./cmd rather than ./cmd/main.go: naming the file builds that file, and a
       # .syso beside it in the package is not picked up.
-      - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.APP_NAME}}{{exeExt}} ./cmd
+      - go build -ldflags "-X main.version={{.VERSION}}" -o ./{{.BIN_DIR}}/{{.WEB_NAME}}{{exeExt}} ./cmd
 
   # The terminal client, with the same version as the binary it belongs to. Not
   # part of build:binary, which dev:watch builds on every save and which needs
@@ -685,10 +689,10 @@ tasks:
     # Ignored errors throughout: "no such process" is the normal outcome and not
     # a failure, and this must never be the reason `task clean` stops.
     cmds:
-      - cmd: '{{if eq OS "windows"}}taskkill /F /IM {{.APP_NAME}}.exe{{else}}pkill -f {{.APP_NAME}}{{end}}'
-        ignore_error: true
-      # The harness builds to app.exe; a test killed mid-run leaves it behind.
-      - cmd: '{{if eq OS "windows"}}taskkill /F /IM app.exe{{else}}true{{end}}'
+      # The installation, whether task dev started it or a suite's harness did
+      # and the test was killed mid-run: both build it under this name. Not the
+      # terminal client, which may be somebody's open screen in another window.
+      - cmd: '{{if eq OS "windows"}}taskkill /F /IM {{.WEB_NAME}}.exe{{else}}pkill -f {{.WEB_NAME}}{{end}}'
         ignore_error: true
 
       # And the browsers the suites drive, which outlive an interrupted run the

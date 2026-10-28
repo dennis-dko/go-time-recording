@@ -278,8 +278,16 @@ jobs:
           # belongs to it: from the same commit, with the same version stamped
           # in, which is what the client answers --version with.
           build() {
-            compile go-time-recording ./cmd "$@"
+            compile go-time-recording-web ./cmd "$@"
             compile go-time-recording-client ./cmd/client "$@"
+
+            # And the installation once more, under the name it had before it
+            # was called -web. Every version installed before then updates itself
+            # by downloading go-time-recording_<version>_<os>_<arch> and has no
+            # way to be told another name, so a release without it is one none
+            # of them can take. A copy rather than a second build, so the two
+            # names cannot be two programs; SHA256SUMS lists both with one hash.
+            cp "dist/go-time-recording-web_${VERSION}_$1_$2${3:-}" "dist/go-time-recording_${VERSION}_$1_$2${3:-}"
           }
 
           build linux   amd64
@@ -477,8 +485,9 @@ jobs:
           target_commitish: ${{ needs.version.outputs.sha }}
           generate_release_notes: true
           files: |
-            dist/go-time-recording_*
+            dist/go-time-recording-web_*
             dist/go-time-recording-client_*
+            dist/go-time-recording_*
             dist/SHA256SUMS
           # append_body puts this below the generated notes, which is where it
           # belongs: the changelog is what a returning reader came for, and this
@@ -497,9 +506,13 @@ jobs:
             run it. It is self-contained: the interface, the timezone database and
             the migrations are compiled in.
 
-            `go-time-recording-client_*` is the terminal client, which books against
-            an installation from the shell and serves nothing itself. It belongs to
-            this release: use it with an installation that runs this version.
+            `go-time-recording-web_*` is the installation: the server and its web
+            interface. `go-time-recording-client_*` is the terminal client, which books
+            against an installation from the shell and serves nothing itself. It
+            belongs to this release: use it with an installation that runs this
+            version. `go-time-recording_*` is the installation once more, under the name
+            the versions installed before the two were separated download when they
+            update themselves - the same file as `go-time-recording-web_*`.
 
             With **no database configured** it serves an installer on its own port
             and waits, so the first start needs nothing but the binary.

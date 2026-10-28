@@ -153,9 +153,11 @@ func New(api, token string) *Source {
 //
 // The same shape the release workflow builds, and windows is the one that
 // differs - it carries the extension the operating system needs to run it at
-// all.
+// all. The release publishes the same file as go-time-recording_... as well,
+// which is the name every version from before the web binary was called -web
+// asks for, and has no way to be told another.
 func assetName(version string) string {
-	name := fmt.Sprintf("go-time-recording_%s_%s_%s", version, runtime.GOOS, runtime.GOARCH)
+	name := fmt.Sprintf("go-time-recording-web_%s_%s_%s", version, runtime.GOOS, runtime.GOARCH)
 
 	if runtime.GOOS == "windows" {
 		name += ".exe"
