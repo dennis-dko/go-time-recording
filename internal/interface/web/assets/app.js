@@ -698,15 +698,15 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
  * it while this script is still loading.
  */
 const LANGUAGES = (() => {
-  try {
-    const offered = JSON.parse(document.querySelector('meta[name="languages"]')?.content ?? '');
-    if (offered && typeof offered === 'object' && typeof offered.en === 'string') return offered;
-  } catch {
-    // The served document always carries it; only a page opened some other way
-    // does not, and that page speaks English.
+  const offered = {};
+
+  for (const tag of $$('meta[name="language"]')) {
+    if (tag.content && tag.dataset.name) offered[tag.content] = tag.dataset.name;
   }
 
-  return { en: 'English' };
+  // The served document always carries them; only a page opened some other way
+  // does not, and that page speaks English.
+  return typeof offered.en === 'string' ? offered : { en: 'English' };
 })();
 
 /**

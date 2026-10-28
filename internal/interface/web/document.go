@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 // iconPath is where the browser tab's icon comes from.
@@ -34,7 +36,7 @@ type document struct {
 	before, middle, after string
 	usable                bool
 
-	// languages is the meta tag naming the languages the page may speak, written
+	// languages is the meta tags naming the languages the page may speak, written
 	// after the title. Fixed for the life of the process, like the dictionaries
 	// it is made from.
 	languages string
@@ -74,7 +76,7 @@ func newDocument(sub fs.FS) document {
 		middle:    markup[titleAt+len(titleMarkup) : iconAt],
 		after:     markup[iconAt+len(iconMarkup):],
 		usable:    true,
-		languages: languagesMeta(),
+		languages: languagesMeta(i18n.Languages(), i18n.Name),
 	}
 }
 

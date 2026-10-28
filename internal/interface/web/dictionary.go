@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"html"
 	"io/fs"
 	"net/http"
@@ -48,30 +47,24 @@ func serveDictionary(w http.ResponseWriter, r *http.Request, file string) {
 }
 
 // languagesMeta is the languages the page may speak, each by what it calls
-// itself, English first - written into the document's head, where the script
-// finds them before it has asked the server anything, and offline as well,
-// where the document is what the service worker kept.
-func languagesMeta() string {
-	var named strings.Builder
+// itself, English first - one tag a language in the document's head, where the
+// script finds them before it has asked the server anything, and offline as
+// well, where the document is what the service worker kept.
+//
+// One tag a language with its name in an attribute of its own, rather than one
+// tag holding a JSON object of them all: JSON inside a quoted attribute is safe
+// only as long as the escaping around it holds, and CodeQL reads it as a quote
+// that could close the attribute, which is a critical alert on every pull
+// request. A value escaped as text is all an attribute ever needs to hold.
+func languagesMeta(languages []string, name func(string) string) string {
+	tags := make([]string, 0, len(languages))
 
-	named.WriteString("{")
-
-	for i, language := range i18n.Languages() {
-		if i > 0 {
-			named.WriteString(",")
-		}
-
-		code, _ := json.Marshal(language)
-		name, _ := json.Marshal(i18n.Name(language))
-
-		named.Write(code)
-		named.WriteString(":")
-		named.Write(name)
+	for _, language := range languages {
+		tags = append(tags, `<meta name="language" content="`+html.EscapeString(language)+
+			`" data-name="`+html.EscapeString(name(language))+`">`)
 	}
 
-	named.WriteString("}")
-
-	return `<meta name="languages" content="` + html.EscapeString(named.String()) + `">`
+	return strings.Join(tags, "\n  ")
 }
 
 // RefusalValues is app.js's REFUSAL_VALUES, read rather than copied: for each

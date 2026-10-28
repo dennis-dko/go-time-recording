@@ -1,11 +1,11 @@
 package web_test
 
 import (
-	"encoding/json"
 	"html"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,30 +54,24 @@ func TestTheDocumentNamesTheLanguagesItMaySpeak(t *testing.T) {
 	rec := httptest.NewRecorder()
 	brandedServer(web.Branding{Title: "Zeiterfassung"}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
-	found := regexp.MustCompile(`<meta name="languages" content="([^"]*)">`).FindStringSubmatch(rec.Body.String())
-	if found == nil {
-		t.Fatal("the document names no languages")
-	}
+	tags := regexp.MustCompile(`<meta name="language" content="([^"]*)" data-name="([^"]*)">`).
+		FindAllStringSubmatch(rec.Body.String(), -1)
 
-	var named map[string]string
-	if err := json.Unmarshal([]byte(html.UnescapeString(found[1])), &named); err != nil {
-		t.Fatalf("the languages it names do not read: %v", err)
-	}
+	var named []string
 
-	for _, language := range i18n.Languages() {
-		if named[language] != i18n.Name(language) {
-			t.Errorf("it names %s as %q, want %q", language, named[language], i18n.Name(language))
+	for _, tag := range tags {
+		language, name := html.UnescapeString(tag[1]), html.UnescapeString(tag[2])
+		named = append(named, language)
+
+		if name != i18n.Name(language) {
+			t.Errorf("it names %s as %q, want %q", language, name, i18n.Name(language))
 		}
 	}
 
-	if len(named) != len(i18n.Languages()) {
-		t.Errorf("it names %v, want exactly %v", named, i18n.Languages())
-	}
-
-	// English first, because the script's list of them is read in that order and
-	// the first is the one a list falls back to.
-	if !strings.HasPrefix(html.UnescapeString(found[1]), `{"en":`) {
-		t.Errorf("English is not named first: %s", found[1])
+	// In the dictionaries' order, English first, because the script's list of
+	// them is read in that order and the first is the one a list falls back to.
+	if !slices.Equal(named, i18n.Languages()) {
+		t.Errorf("the document names %v, want %v", named, i18n.Languages())
 	}
 }
 
