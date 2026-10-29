@@ -1,5 +1,5 @@
 // Package i18n is every language the application speaks besides English: one
-// dictionary a language, in locales/<language>.json, compiled into the binary
+// dictionary a language, in locale/<language>.json, compiled into the binary
 // and read by everything that says something to somebody - the web interface,
 // which fetches /i18n/<language>.json, the installer, the terminal client, the
 // workbooks, the calendar feed and the foot of a PDF.

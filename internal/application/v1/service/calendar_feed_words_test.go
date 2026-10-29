@@ -19,7 +19,7 @@ import (
 // So this reads those fallbacks out of app.js and holds the feed's English to
 // them, and every other language to its dictionary.
 func TestTheFeedCallsThingsWhatTheScreenCallsThem(t *testing.T) {
-	script, err := os.ReadFile("../../../interface/web/assets/app.js")
+	script, err := os.ReadFile("../../../interface/web/asset/app.js")
 	if err != nil {
 		t.Fatalf("read the interface's script: %v", err)
 	}

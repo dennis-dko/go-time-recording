@@ -13,7 +13,7 @@ import (
 
 // locales holds a dictionary for every language but English.
 //
-//go:embed locales/*.json
+//go:embed locale/*.json
 var locales embed.FS
 
 // English is the language the application is written in, which has no
@@ -25,7 +25,7 @@ const English = "en"
 func Languages() []string {
 	languages := []string{English}
 
-	entries, err := fs.ReadDir(locales, "locales")
+	entries, err := fs.ReadDir(locales, "locale")
 	if err != nil {
 		return languages
 	}
@@ -50,7 +50,7 @@ func File(language string) ([]byte, bool) {
 		return nil, false
 	}
 
-	body, err := fs.ReadFile(locales, "locales/"+language+".json")
+	body, err := fs.ReadFile(locales, "locale/"+language+".json")
 
 	return body, err == nil
 }

@@ -153,7 +153,7 @@ func commentMentions(t *testing.T) (map[string]bool, []commentMention) {
 	}
 
 	// Go comments point at the interface's functions too, which live in app.js.
-	js, err := os.ReadFile(filepath.Join("..", "internal", "interface", "web", "assets", "app.js"))
+	js, err := os.ReadFile(filepath.Join("..", "internal", "interface", "web", "asset", "app.js"))
 	if err != nil {
 		t.Fatalf("reading app.js: %v", err)
 	}

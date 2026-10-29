@@ -17,8 +17,8 @@ import (
 //
 // The camera is a case in the browser suite that runs only when asked, so
 // nothing else notices when the two part. A picture the README names and
-// doc/images does not hold is a broken image on the page most people see first;
-// one doc/images holds and nothing shows is downloaded by every clone and never
+// doc/image does not hold is a broken image on the page most people see first;
+// one doc/image holds and nothing shows is downloaded by every clone and never
 // looked at; and one the camera does not take is never taken again, so it shows
 // a screen as it was the day somebody put it there by hand.
 func TestTheReadmeShowsWhatTheCameraTakes(t *testing.T) {
@@ -29,9 +29,9 @@ func TestTheReadmeShowsWhatTheCameraTakes(t *testing.T) {
 
 	kept := map[string]bool{}
 
-	entries, err := os.ReadDir(filepath.Join("..", "doc", "images"))
+	entries, err := os.ReadDir(filepath.Join("..", "doc", "image"))
 	if err != nil {
-		t.Fatalf("reading doc/images: %v", err)
+		t.Fatalf("reading doc/image: %v", err)
 	}
 
 	for _, entry := range entries {
@@ -45,24 +45,24 @@ func TestTheReadmeShowsWhatTheCameraTakes(t *testing.T) {
 
 	for _, name := range sortedKeys(shown) {
 		if !kept[name] {
-			t.Errorf("%s shows doc/images/%s, which is not there", shown[name], name)
+			t.Errorf("%s shows doc/image/%s, which is not there", shown[name], name)
 		}
 
 		if !taken[name] {
-			t.Errorf("%s shows doc/images/%s, which the camera does not take - so it "+
+			t.Errorf("%s shows doc/image/%s, which the camera does not take - so it "+
 				"is never taken again, and shows the screen as it was", shown[name], name)
 		}
 	}
 
 	for _, name := range sortedKeys(kept) {
 		if _, ok := shown[name]; !ok {
-			t.Errorf("doc/images/%s is shown nowhere; drop it, or show it", name)
+			t.Errorf("doc/image/%s is shown nowhere; drop it, or show it", name)
 		}
 	}
 
 	for _, name := range sortedKeys(taken) {
 		if !kept[name] {
-			t.Errorf("the camera takes %s and doc/images holds none; run task readme:pictures", name)
+			t.Errorf("the camera takes %s and doc/image holds none; run task readme:pictures", name)
 		}
 	}
 }
@@ -113,7 +113,7 @@ func picturesTheCameraTakes(t *testing.T) map[string]bool {
 	return taken
 }
 
-// picturesTheDocumentationShows answers each picture in doc/images that the
+// picturesTheDocumentationShows answers each picture in doc/image that the
 // README or a page beside it shows, with the first document that shows it.
 func picturesTheDocumentationShows(t *testing.T) map[string]string {
 	t.Helper()
@@ -129,7 +129,7 @@ func picturesTheDocumentationShows(t *testing.T) map[string]string {
 		documents = append(documents, filepath.ToSlash(strings.TrimPrefix(page, ".."+string(filepath.Separator))))
 	}
 
-	picture := regexp.MustCompile(`images/([a-z0-9-]+\.png)`)
+	picture := regexp.MustCompile(`image/([a-z0-9-]+\.png)`)
 	shown := map[string]string{}
 
 	for _, document := range documents {

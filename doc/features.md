@@ -375,7 +375,7 @@ Those two slots belong to whoever runs the installation, and filling them with
 our mark makes an unbranded installation look branded by somebody else. The
 application's own mark — an hourglass — has its own places: the browser tab, the
 `.exe`, and the button beside the title that leads to the welcome screen. It is
-drawn (`internal/interface/web/assets/favicon.svg`) rather than a font character,
+drawn (`internal/interface/web/asset/favicon.svg`) rather than a font character,
 and `go run ./build/icon > build/icon.ico` redraws the Windows copy from the same
 geometry whenever it changes.
 

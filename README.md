@@ -1,4 +1,4 @@
-<h1 align="center"><img src="internal/interface/web/assets/favicon.svg" alt="" width="96"><br>Go-Time-Recording</h1>
+<h1 align="center"><img src="internal/interface/web/asset/favicon.svg" alt="" width="96"><br>Go-Time-Recording</h1>
 
 <p align="center">
   <b>Project time tracking in a single self-contained binary.</b><br>
@@ -23,8 +23,8 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="doc/images/calendar-dark.png">
-  <img src="doc/images/calendar.png" alt="The calendar: a month of booked hours, with two days of leave, a day off sick and a public holiday marked">
+  <source media="(prefers-color-scheme: dark)" srcset="doc/image/calendar-dark.png">
+  <img src="doc/image/calendar.png" alt="The calendar: a month of booked hours, with two days of leave, a day off sick and a public holiday marked">
 </picture>
 
 ## Why Go-Time-Recording
@@ -60,77 +60,77 @@ working time first — `task readme:pictures` takes them again.
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="doc/images/week.png" alt="The week grid: projects as rows and days as columns, with the hours booked, what each day asked and the balance underneath">
+      <img src="doc/image/week.png" alt="The week grid: projects as rows and days as columns, with the hours booked, what each day asked and the balance underneath">
       <p><b>The week as a grid.</b> Type hours straight into the cells; what each day asked and the balance sit underneath, and <i>Copy last week</i> fills the days that are still empty.</p>
     </td>
     <td width="50%" valign="top">
-      <img src="doc/images/stopwatch.png" alt="The stopwatch, running for an hour and twenty minutes on the website relaunch">
+      <img src="doc/image/stopwatch.png" alt="The stopwatch, running for an hour and twenty minutes on the website relaunch">
       <p><b>A stopwatch that counts seconds.</b> Switch to the next project without losing one; a start pressed late can be corrected, and a clock left running is booked up to when the work ended.</p>
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <img src="doc/images/activities.png" alt="Charts of the month's hours per project and per activity">
+      <img src="doc/image/activities.png" alt="Charts of the month's hours per project and per activity">
       <p><b>Your own figures, as charts.</b> Hours per project, and per activity: write <code>#meeting</code> or <code>#review</code> into a description and it is counted — nothing to set up first.</p>
     </td>
     <td valign="top">
-      <img src="doc/images/report.png" alt="A report of the month as a pie chart, one slice per project">
+      <img src="doc/image/report.png" alt="A report of the month as a pie chart, one slice per project">
       <p><b>Reports in the shape the question needs.</b> Bars, columns or a pie, each project keeping its colour in all three, and a PDF of the same.</p>
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <img src="doc/images/year.png" alt="The year as tiles, one per day, darker for more hours, with public holidays and days away outlined">
+      <img src="doc/image/year.png" alt="The year as tiles, one per day, darker for more hours, with public holidays and days away outlined">
       <p><b>The year at a glance.</b> A tile a day, as dark as the hours on it; public holidays and days away outlined rather than told by colour alone, beside the year before.</p>
     </td>
     <td valign="top">
-      <img src="doc/images/projects.png" alt="The project list: one project in the last fifth of its hour budget, one past it, and the hourly rate of those that are charged for">
+      <img src="doc/image/projects.png" alt="The project list: one project in the last fifth of its hour budget, one past it, and the hourly rate of those that are charged for">
       <p><b>Projects with budgets and rates.</b> The list says how much of a budget is booked, marked from four fifths and in red once it is past, and what a project is charged an hour.</p>
     </td>
   </tr>
   <tr>
     <td colspan="2" valign="top">
-      <img src="doc/images/statement.png" alt="A statement of work for the month: the hours of three billable projects, their hourly rates and what they come to, totalled in euros">
+      <img src="doc/image/statement.png" alt="A statement of work for the month: the hours of three billable projects, their hourly rates and what they come to, totalled in euros">
       <p><b>A statement of work at the end of the month.</b> The hours of the projects you charge for, at their rate, totalled per currency, as a PDF or a workbook. Not an invoice: the number, the tax and the customer stay yours to write.</p>
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <img src="doc/images/overtime.png" alt="The overtime balance of the month, day by day">
+      <img src="doc/image/overtime.png" alt="The overtime balance of the month, day by day">
       <p><b>An overtime balance against your own target.</b> Choose a day, and from then on every working day counts — less what a public holiday or a day away takes off it.</p>
     </td>
     <td valign="top">
-      <img src="doc/images/workday.png" alt="The working time of the month: when each day began and ended, its breaks, and the hours booked beside them">
+      <img src="doc/image/workday.png" alt="The working time of the month: when each day began and ended, its breaks, and the hours booked beside them">
       <p><b>Your working time, on record.</b> When each day began and ended and how long the breaks were, beside the hours booked; a gap shows as one, and the month leaves as a PDF.</p>
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <img src="doc/images/entries.png" alt="The entry list narrowed to the month's meetings">
+      <img src="doc/image/entries.png" alt="The entry list narrowed to the month's meetings">
       <p><b>Every entry, findable.</b> Narrow the list by project, period or words in the description — the export follows the same filter — and every correction keeps the version it replaced.</p>
     </td>
     <td valign="top">
-      <img src="doc/images/signin.png" alt="The sign-in form, offering a password, a passkey and the organisation's provider">
+      <img src="doc/image/signin.png" alt="The sign-in form, offering a password, a passkey and the organisation's provider">
       <p><b>Sign in your way.</b> A password and an authenticator app, a passkey, your organisation's provider — or, inside a domain, the Kerberos ticket the browser already holds.</p>
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <img src="doc/images/log.png" alt="The live log under Settings, filtered by level">
+      <img src="doc/image/log.png" alt="The live log under Settings, filtered by level">
       <p><b>Operated from the browser.</b> The process log, live; the database, the directory, telemetry, maintenance, updates and a restart, all under <i>Settings</i>.</p>
     </td>
     <td valign="top">
-      <img src="doc/images/installer.png" alt="The installer asking for the setup token and a database">
+      <img src="doc/image/installer.png" alt="The installer asking for the setup token and a database">
       <p><b>Set up in the browser.</b> Without a database the binary serves this screen, guarded by a token from its log, and then takes its port over in the same process.</p>
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <img src="doc/images/calendar-de.png" alt="The calendar in German">
+      <img src="doc/image/calendar-de.png" alt="The calendar in German">
       <p><b>English and German</b>, every screen and every refusal — dates and figures written the way the reader's language writes them.</p>
     </td>
     <td valign="top" align="center">
-      <img src="doc/images/phone.png" alt="The stopwatch on a telephone" width="240">
+      <img src="doc/image/phone.png" alt="The stopwatch on a telephone" width="240">
       <p><b>From a telephone to a wide screen</b>, and installable as an app with the installation's own name and logo - which opens without a network, and keeps what is booked meanwhile until it is back.</p>
     </td>
   </tr>
@@ -247,11 +247,11 @@ and says what it did — for a script, an alias or a screen reader.
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="doc/images/terminal.png" alt="The client's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it">
+      <img src="doc/image/terminal.png" alt="The client's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it">
       <p><b>The day at a glance.</b> The stopwatch counts the seconds, and the screen reads the day again every half minute, so a stopwatch stopped in the browser stops here too.</p>
     </td>
     <td width="50%" valign="top">
-      <img src="doc/images/terminal-switch.png" alt="The form that switches the stopwatch to another project, with the active projects to choose from">
+      <img src="doc/image/terminal-switch.png" alt="The form that switches the stopwatch to another project, with the active projects to choose from">
       <p><b>A form for each change.</b> <code>s</code> starts the stopwatch, <code>w</code> switches it to another project and books what has run, <code>x</code> stops it and books it after asking, <code>b</code> books hours by hand; <code>esc</code> puts a form away and <code>q</code> closes the screen.</p>
     </td>
   </tr>

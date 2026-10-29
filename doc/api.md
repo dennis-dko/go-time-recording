@@ -22,7 +22,7 @@ again, which the screen also does every half minute, so a stopwatch stopped in
 the browser stops here too; `esc` puts a form away and `q` closes the screen,
 which leaves a line saying how the stopwatch was left.
 
-<img src="images/terminal.png" alt="The client's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it" width="600">
+<img src="image/terminal.png" alt="The client's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it" width="600">
 
 Each change is a command as well, for a script, an alias or a screen reader -
 which read lines, where the screen draws:

@@ -2,7 +2,7 @@
 //
 // The .exe gets its icon from that file, by way of goversioninfo and
 // build/windows-resource.sh. It is a binary in the tree, which is a copy of a
-// picture that also exists as internal/interface/web/assets/favicon.svg - and a
+// picture that also exists as internal/interface/web/asset/favicon.svg - and a
 // copy nobody can regenerate is a copy that silently keeps the old mark forever.
 // That is exactly what happened to the tab icon: it was cached at an address
 // that could not change, and went on showing a picture nobody had chosen. This

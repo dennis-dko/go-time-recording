@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"gofr.dev/pkg/gofr/migration"
+	gofrmigration "gofr.dev/pkg/gofr/migration"
 
-	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migration"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 	"github.com/dennis-dko/go-time-recording/test/harness"
 )
@@ -34,7 +34,7 @@ func TestTheWholeChainUpgradesAnInstallationInUseSinceTheFirstVersion(t *testing
 	t.Parallel()
 
 	dialect, db := harness.EmptyDatabase(t)
-	all := migrations.All(dialect)
+	all := migration.All(dialect)
 
 	run := func(after, through int64) {
 		t.Helper()
@@ -50,7 +50,7 @@ func TestTheWholeChainUpgradesAnInstallationInUseSinceTheFirstVersion(t *testing
 		slices.Sort(versions)
 
 		for _, version := range versions {
-			if err := all[version].UP(migration.Datasource{SQL: db}); err != nil {
+			if err := all[version].UP(gofrmigration.Datasource{SQL: db}); err != nil {
 				t.Fatalf("migration %d on %s, over the first version's rows: %v", version, dialect, err)
 			}
 		}

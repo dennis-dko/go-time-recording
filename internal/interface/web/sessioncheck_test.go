@@ -75,7 +75,7 @@ func TestTheSignInFormIsHiddenWhileTheSessionIsChecked(t *testing.T) {
 func readAsset(t *testing.T, name string) string {
 	t.Helper()
 
-	body, err := os.ReadFile(filepath.Join("assets", name))
+	body, err := os.ReadFile(filepath.Join("asset", name))
 	if err != nil {
 		t.Fatalf("reading %s: %v", name, err)
 	}
