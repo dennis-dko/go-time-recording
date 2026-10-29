@@ -59,7 +59,7 @@ func TestThePageIsHandedOutWithItsWordsInIt(t *testing.T) {
 // from disk, so it is the markup that actually ships.
 
 func TestTheInstallerOffersEveryDatabaseTheServerAccepts(t *testing.T) {
-	page, err := assets.ReadFile("assets/install.html")
+	page, err := assets.ReadFile("asset/install.html")
 	if err != nil {
 		t.Fatalf("the installer page is not embedded: %v", err)
 	}
@@ -106,7 +106,7 @@ func contains(values []string, want string) bool {
 // waits for ever. It did: the page never reloaded after the database was
 // configured. The content type is what separates them.
 func TestTheWaitLoopDistinguishesTheApplicationFromTheInstaller(t *testing.T) {
-	page, err := assets.ReadFile("assets/install.html")
+	page, err := assets.ReadFile("asset/install.html")
 	if err != nil {
 		t.Fatalf("reading the installer page: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestTheWaitLoopDistinguishesTheApplicationFromTheInstaller(t *testing.T) {
 // application was starting. Read from the page rather than driven: two minutes
 // of waiting is what the case would otherwise be.
 func TestTheWaitForTheApplicationEndsWhoeverAnswers(t *testing.T) {
-	page, err := assets.ReadFile("assets/install.html")
+	page, err := assets.ReadFile("asset/install.html")
 	if err != nil {
 		t.Fatalf("reading the installer page: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestTheWaitForTheApplicationEndsWhoeverAnswers(t *testing.T) {
 // you. It cannot ask the server which language to use, because there is no
 // database yet and no session; the browser's own preference is all there is.
 func TestTheInstallerFollowsTheBrowserLanguage(t *testing.T) {
-	page, err := assets.ReadFile("assets/install.html")
+	page, err := assets.ReadFile("asset/install.html")
 	if err != nil {
 		t.Fatalf("reading the installer page: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestTheInstallerFollowsTheBrowserLanguage(t *testing.T) {
 // password button's name was "Show the password" on an otherwise German screen,
 // for everybody who reads a screen by its accessible names.
 func TestTheInstallerPageSaysNothingItCannotTranslate(t *testing.T) {
-	raw, err := assets.ReadFile("assets/install.html")
+	raw, err := assets.ReadFile("asset/install.html")
 	if err != nil {
 		t.Fatalf("reading the installer page: %v", err)
 	}

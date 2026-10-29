@@ -1,4 +1,4 @@
-package migrations_test
+package migration_test
 
 import (
 	"database/sql"
@@ -6,12 +6,12 @@ import (
 	"slices"
 	"testing"
 
-	"gofr.dev/pkg/gofr/migration"
+	gofrmigration "gofr.dev/pkg/gofr/migration"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
-	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migration"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 )
 
@@ -36,7 +36,7 @@ import (
 func migrate(t *testing.T, db *sql.DB, after, through int64) {
 	t.Helper()
 
-	all := migrations.All(sqldb.DialectSQLite)
+	all := migration.All(sqldb.DialectSQLite)
 
 	versions := make([]int64, 0, len(all))
 
@@ -49,7 +49,7 @@ func migrate(t *testing.T, db *sql.DB, after, through int64) {
 	slices.Sort(versions)
 
 	for _, version := range versions {
-		if err := all[version].UP(migration.Datasource{SQL: db}); err != nil {
+		if err := all[version].UP(gofrmigration.Datasource{SQL: db}); err != nil {
 			t.Fatalf("migration %d: %v", version, err)
 		}
 	}
@@ -62,7 +62,7 @@ func latest(t *testing.T) int64 {
 
 	var highest int64
 
-	for version := range migrations.All(sqldb.DialectSQLite) {
+	for version := range migration.All(sqldb.DialectSQLite) {
 		if version > highest {
 			highest = version
 		}

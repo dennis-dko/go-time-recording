@@ -29,10 +29,10 @@ func TestEveryValueFormattedIntoSQLIsNamed(t *testing.T) {
 		"cmd/main.go:makeSQLiteWait": "sqliteBusyTimeout, a constant; " +
 			"a PRAGMA takes no parameters, so there is no other way to write it",
 
-		"internal/infrastructure/persistence/migrations/migrations.go:addRoleBasedAccess": "model.RoleUser, " +
+		"internal/infrastructure/persistence/migration/migrations.go:addRoleBasedAccess": "model.RoleUser, " +
 			"a constant, and the constant rather than a literal on purpose - the comment above it says why",
 
-		"internal/infrastructure/persistence/migrations/migrations.go:addSessionsAndPreferences": "the " +
+		"internal/infrastructure/persistence/migration/migrations.go:addSessionsAndPreferences": "the " +
 			"literal reports:read and model.RoleAdmin, a constant; the migration has run everywhere and stays as written",
 	}
 

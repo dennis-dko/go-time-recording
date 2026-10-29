@@ -18,7 +18,7 @@ import (
 // escaped that need not be - so that two people adding a sentence at once meet
 // as two lines in a merge rather than as a file rewritten twice.
 func TestEveryDictionaryIsWrittenTheOneWay(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("locales", "*.json"))
+	files, err := filepath.Glob(filepath.Join("locale", "*.json"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("found no dictionaries: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestOnlyADictionaryIsHandedOut(t *testing.T) {
 		t.Error("the German dictionary is not handed out")
 	}
 
-	for _, name := range []string{"en", "", "fr", "../i18n", "locales/de", "de.json", "DE", "de/../de"} {
+	for _, name := range []string{"en", "", "fr", "../i18n", "locale/de", "de.json", "DE", "de/../de"} {
 		if _, ok := i18n.File(name); ok {
 			t.Errorf("%q was handed out as a dictionary", name)
 		}

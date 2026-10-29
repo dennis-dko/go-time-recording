@@ -41,7 +41,7 @@ type BrandingFunc func(context.Context) Branding
 // assets holds the UI. all: is not needed here because no file starts with
 // '_' or '.', but the pattern must keep matching every file added later.
 //
-//go:embed assets
+//go:embed asset
 var assets embed.FS
 
 // apiPrefixes are the paths the UI must never shadow. Anything under them is
@@ -82,7 +82,7 @@ var apiPrefixes = []string{
 // There is no arrangement of client-side code that fixes that, because the
 // problem is the order of two things and one of them is a round trip.
 func Handler(branding BrandingFunc) func(http.Handler) http.Handler {
-	sub, err := fs.Sub(assets, "assets")
+	sub, err := fs.Sub(assets, "asset")
 	if err != nil {
 		// Only reachable if the embed directive and this path disagree,
 		// which is a build-time mistake rather than a runtime condition.

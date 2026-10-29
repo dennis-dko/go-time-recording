@@ -22,7 +22,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
-//go:embed assets/install.html
+//go:embed asset/install.html
 var assets embed.FS
 
 // TokenEnv supplies the token instead of one being generated.
@@ -204,7 +204,7 @@ func portOf(addr net.Addr) string {
 }
 
 func (s *server) page(w http.ResponseWriter, r *http.Request) {
-	page, err := assets.ReadFile("assets/install.html")
+	page, err := assets.ReadFile("asset/install.html")
 	if err != nil {
 		http.Error(w, "the installer page is missing from this build", http.StatusInternalServerError)
 

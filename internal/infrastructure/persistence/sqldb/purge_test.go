@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"gofr.dev/pkg/gofr/migration"
+	gofrmigration "gofr.dev/pkg/gofr/migration"
 
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
-	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migration"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 
 	_ "modernc.org/sqlite"
@@ -32,7 +32,7 @@ func newTestDB(t *testing.T) *sql.DB {
 
 	t.Cleanup(func() { _ = db.Close() })
 
-	all := migrations.All(sqldb.DialectSQLite)
+	all := migration.All(sqldb.DialectSQLite)
 
 	versions := make([]int64, 0, len(all))
 	for version := range all {
@@ -43,7 +43,7 @@ func newTestDB(t *testing.T) *sql.DB {
 	slices.Sort(versions)
 
 	for _, version := range versions {
-		if err := all[version].UP(migration.Datasource{SQL: db}); err != nil {
+		if err := all[version].UP(gofrmigration.Datasource{SQL: db}); err != nil {
 			t.Fatalf("migration %d: %v", version, err)
 		}
 	}
