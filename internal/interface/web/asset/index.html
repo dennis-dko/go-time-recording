@@ -1572,6 +1572,9 @@
         <p class="muted" data-i18n="install.text">Installed, the time recording opens from the home screen or the start menu like an app of its own, without the browser around it. A long press on its icon leads straight to the time entries, the calendar or the overtime.</p>
         <p class="muted" id="install-manual" data-i18n="install.manual">Where no button appears here, the browser keeps the offer in its menu, as "Install app" or "Add to Home screen".</p>
         <button type="button" class="secondary" id="install-now" hidden data-i18n="install.now">Install</button>
+        <p class="muted" id="install-phone" data-i18n="install.phone" hidden>To open it on a phone, type this address into the phone's browser or scan the code with the phone's camera; it can be installed from that browser.</p>
+        <pre class="value" id="install-address" hidden></pre>
+        <img id="install-qr" class="qr" alt="" hidden>
       </div>
 
       <form method="post" id="form-my-timezone" class="card form">
@@ -1633,6 +1636,8 @@
         <div id="feed-address" hidden>
           <p class="muted plus" data-i18n="feed.copyNow">Add it to your calendar now – this address is never shown again:</p>
           <pre class="secret" id="feed-address-value"></pre>
+          <p class="muted" id="feed-qr-hint" data-i18n="feed.qrHint" hidden>The same address as a code, to get it onto your phone without typing it. Add it there to your calendar as a subscribed calendar.</p>
+          <img id="feed-qr" class="qr" alt="" hidden>
         </div>
         <div class="row">
           <button type="button" id="feed-create" data-i18n="feed.create">Create address</button>
@@ -1661,6 +1666,12 @@
         <div id="token-secret" hidden>
           <p class="muted plus" data-i18n="token.copyNow">Copy it now — this value is never shown again:</p>
           <pre class="secret" id="token-secret-value"></pre>
+          <div id="token-address" hidden>
+            <p class="muted" data-i18n="token.address">The address of this installation, which goes with it:</p>
+            <pre class="value" id="token-address-value"></pre>
+          </div>
+          <p class="muted" id="token-qr-hint" data-i18n="token.qrHint" hidden>An app scans this code instead: it holds the address of this installation and the token, which the terminal client is given as GTR_URL and GTR_TOKEN.</p>
+          <img id="token-qr" class="qr" alt="" hidden>
         </div>
         <div class="table-wrap">
           <table id="table-tokens">

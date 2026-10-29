@@ -79,7 +79,7 @@ func TestEveryAdministrativeChangeIsInTheAdministrationLog(t *testing.T) {
 // never records.
 func TestEveryRecordedChangeHasItsSentence(t *testing.T) {
 	table := read(t, filepath.Join("..", "internal", "interface", "api", "v1", "rest", "adminlog.go"))
-	script := read(t, filepath.Join("..", "internal", "interface", "web", "assets", "app.js"))
+	script := read(t, filepath.Join("..", "internal", "interface", "web", "asset", "app.js"))
 
 	var recorded []string
 

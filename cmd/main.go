@@ -23,7 +23,7 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/container"
 	"gofr.dev/pkg/gofr/logging"
-	"gofr.dev/pkg/gofr/migration"
+	gofrmigration "gofr.dev/pkg/gofr/migration"
 	"modernc.org/sqlite"
 
 	appservice "github.com/dennis-dko/go-time-recording/internal/application/v1/service"
@@ -36,7 +36,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/kerberos"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/logsink"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/openid"
-	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migration"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/selfupdate"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/tlsserver"
@@ -519,7 +519,7 @@ func main() {
 
 	// Schema first: the binary provisions its own database on first start, so
 	// a deployment needs no separate migration step.
-	app.Migrate(sayingWhy(migrations.All(cfg.Dialect), console))
+	app.Migrate(sayingWhy(migration.All(cfg.Dialect), console))
 
 	if unavailable(db) {
 		// Without this the app starts happily and every request panics on a
@@ -1129,13 +1129,13 @@ func main() {
 // database already holding a table of the same name exited 1 with an empty log
 // in one of its first two runs. A migration is this application's own, so it
 // says why itself, past the pipe, while GoFr still has the rollback to do.
-func sayingWhy(all map[int64]migration.Migrate, console io.Writer) map[int64]migration.Migrate {
-	said := make(map[int64]migration.Migrate, len(all))
+func sayingWhy(all map[int64]gofrmigration.Migrate, console io.Writer) map[int64]gofrmigration.Migrate {
+	said := make(map[int64]gofrmigration.Migrate, len(all))
 
 	for version, step := range all {
 		up := step.UP
 
-		step.UP = func(d migration.Datasource) error {
+		step.UP = func(d gofrmigration.Datasource) error {
 			err := up(d)
 			if err != nil {
 				// Best effort, like every line to a console: there is nowhere

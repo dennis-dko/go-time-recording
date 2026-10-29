@@ -73,7 +73,7 @@ func languagesMeta(languages []string, name func(string) string) string {
 // says refusals as the page does has to treat those values as the page does, or
 // a German sentence says "completed" where the page says "abgeschlossen".
 func RefusalValues() map[string]map[int]string {
-	script, err := fs.ReadFile(assets, "assets/app.js")
+	script, err := fs.ReadFile(assets, "asset/app.js")
 	if err != nil {
 		return map[string]map[int]string{}
 	}

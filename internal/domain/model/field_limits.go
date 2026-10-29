@@ -11,7 +11,7 @@ import "strings"
 // shape of the bug is a form that works everywhere it is tried and fails only
 // where it matters.
 //
-// Each one matches a column in internal/infrastructure/persistence/migrations.
+// Each one matches a column in internal/infrastructure/persistence/migration.
 // TEXT columns have no width, and the two limits for those are chosen rather
 // than derived: a description is a description, and nothing good comes of one
 // large enough to slow every page that lists it.

@@ -145,7 +145,7 @@ that make the synchronisation's edge cases reproducible.
 ## Adding a language
 
 Every language but English is one file - German is
-[`internal/support/i18n/locales/de.json`](../internal/support/i18n/locales/de.json) -
+[`internal/support/i18n/locale/de.json`](../internal/support/i18n/locale/de.json) -
 and everything that says something reads it: the page, the installer, the
 terminal client, the workbooks, the calendar feed and the foot of a PDF. English
 has no file. It is written where it is said, in the markup and beside every

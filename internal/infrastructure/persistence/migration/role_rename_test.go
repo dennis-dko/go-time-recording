@@ -1,4 +1,4 @@
-package migrations_test
+package migration_test
 
 import (
 	"database/sql"

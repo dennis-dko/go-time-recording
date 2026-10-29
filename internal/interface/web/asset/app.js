@@ -7364,6 +7364,15 @@ function forgetTheTokenValue() {
   panel.hidden = true;
   delete panel.dataset.token;
   $('#token-secret-value').textContent = '';
+  $('#token-address-value').textContent = '';
+  $('#token-address').hidden = true;
+
+  // The code beside it carries the same value, in its picture rather than as
+  // text, so it goes with it - from the screen and from the markup.
+  const qr = $('#token-qr');
+  qr.hidden = true;
+  qr.removeAttribute('src');
+  $('#token-qr-hint').hidden = true;
 }
 
 function wireTokens() {
@@ -7383,6 +7392,24 @@ function wireTokens() {
       // of what was meant.
       $('#token-secret-value').textContent = created.secret;
       $('#token-secret').dataset.token = String(created.id);
+
+      // The address the value is used at, as the terminal client's GTR_URL -
+      // read out of the code's own URI rather than from this page, so that the
+      // text and the code cannot name two different installations.
+      const address = new URLSearchParams(created.connectUri?.split('?')[1]).get('url');
+      $('#token-address-value').textContent = address ?? '';
+      $('#token-address').hidden = !address;
+
+      // And the same value with the installation's address, as a code an app
+      // scans instead of being typed what the terminal client reads from
+      // GTR_URL and GTR_TOKEN. Not every answer brings one - a code that failed
+      // to render does not cost the token - and then there is only the value.
+      const qr = $('#token-qr');
+      qr.hidden = !created.qr;
+      qr.alt = created.qr ? t('token.qrAlt', 'QR code with the address of this installation and the new token') : '';
+      if (created.qr) qr.src = created.qr;
+      $('#token-qr-hint').hidden = !created.qr;
+
       $('#token-secret').hidden = false;
       e.target.reset();
       await loadTokens();
@@ -7814,6 +7841,12 @@ function forgetTheFeedAddress() {
   panel.hidden = true;
   delete panel.dataset.prefix;
   $('#feed-address-value').textContent = '';
+
+  // The code carries the same key, in its picture, so it goes with the text.
+  const qr = $('#feed-qr');
+  qr.hidden = true;
+  qr.removeAttribute('src');
+  $('#feed-qr-hint').hidden = true;
 }
 
 /**
@@ -7856,6 +7889,15 @@ function wireCalendarFeed() {
       // the address a calendar needs is the one this page was reached at.
       $('#feed-address-value').textContent = `${location.origin}${feed.path}`;
       $('#feed-address').dataset.prefix = feed.prefix;
+
+      // The same address as a code, for the phone a calendar is usually on. The
+      // server builds it from this page's own origin, so it is the text above.
+      const qr = $('#feed-qr');
+      qr.hidden = !feed.qr;
+      qr.alt = feed.qr ? t('feed.qrAlt', 'QR code of the calendar address') : '';
+      if (feed.qr) qr.src = feed.qr;
+      $('#feed-qr-hint').hidden = !feed.qr;
+
       $('#feed-address').hidden = false;
 
       await loadCalendarFeed();
@@ -9941,6 +9983,9 @@ function forgetTheLastAccount() {
   // And a calendar feed's address, which is one too - a key to somebody's days -
   // with what the card said about it.
   forgetTheCalendarFeed();
+
+  // And the installation's address as a code, so that no code outlives a session.
+  forgetTheAddressCode();
 
   // And what the provider card said about the account's link.
   forgetTheOpenIDLink();
@@ -15291,6 +15336,51 @@ function showInstallOffer() {
   if (manual) manual.hidden = Boolean(installOffer);
 }
 
+/**
+ * Shows this installation's address as a code on the card, for opening it on a
+ * phone without typing the address - once a session, because the address does
+ * not change while the page is open, and not at all where the card is hidden,
+ * which is in the installed app.
+ *
+ * The server draws it from the address this page names as its own, so the code
+ * is of the page the reader is looking at. Only a convenience: without one the
+ * card simply has none, and nothing else waits on it.
+ */
+async function loadAddressCode() {
+  const qr = $('#install-qr');
+  if (!qr || $('#install-card')?.hidden || qr.getAttribute('src')) return;
+
+  try {
+    const answer = await api(`/me/address?origin=${encodeURIComponent(location.origin)}`);
+    if (!answer?.qr) return;
+
+    qr.src = answer.qr;
+    qr.alt = t('install.qrAlt', 'QR code with the address of this installation');
+    qr.hidden = false;
+    $('#install-address').textContent = answer.address;
+    $('#install-address').hidden = false;
+    $('#install-phone').hidden = false;
+  } catch {
+    // The card offers installing in this browser either way.
+  }
+}
+
+/**
+ * Takes the code off the card when the session ends. Not a secret, but no code
+ * on the page outlives the session it was drawn in, so none has to be asked
+ * about separately.
+ */
+function forgetTheAddressCode() {
+  const qr = $('#install-qr');
+  if (!qr) return;
+
+  qr.hidden = true;
+  qr.removeAttribute('src');
+  $('#install-address').textContent = '';
+  $('#install-address').hidden = true;
+  $('#install-phone').hidden = true;
+}
+
 // ------------------------------------------------------- metrics and tracing
 
 /**
@@ -17078,6 +17168,7 @@ async function refreshAll() {
   await loadAdmin();
   await loadTokens();
   await loadCalendarFeed();
+  await loadAddressCode();
   await loadPasskeys();
   await loadOpenIDLink();
   await loadSchedules();

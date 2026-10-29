@@ -39,7 +39,7 @@ What the application does, and the rules it keeps while doing it.
 | Leave | Days of leave a year, from a year on, and for each year what is left of them: what the year gives, what the year before left over - carried in, or owed where it was overdrawn - and what is taken and still planned, counted from the days of leave recorded on working days |
 | Public holidays | The public holidays of every German state, worked out in the binary rather than fetched from anywhere. The installation chooses a state under *Settings*, and anybody can choose another - or none - under *My account*. They are named in the calendar and on the week, leave is not recorded on them, and from the day every working day counts from they ask nothing |
 | Transport | Optional HTTPS with automatic Let's Encrypt certificates |
-| Installable | A manifest and icons per installation - its own name and logo - so the page installs as an app on a telephone or a desktop, with shortcuts to the time entries, the calendar and the overtime. Browsers offer this over HTTPS or on localhost only |
+| Installable | A manifest and icons per installation - its own name and logo - so the page installs as an app on a telephone or a desktop, with shortcuts to the time entries, the calendar and the overtime. Browsers offer this over HTTPS or on localhost only. *My account* shows the installation's address beside the offer, as text and as a QR code, to open it on a telephone by scanning it rather than typing it |
 | Booking offline | The installed application opens without a network from the shell it kept, and says the installation cannot be reached rather than showing a dead page. A booking made in the form while the connection is gone waits on the device, a banner says how many wait, and they are sent - once each - when it is back; one the installation then refuses stays with its reason until it is corrected. Nothing the installation answers is ever shown from a copy. Over HTTPS or on localhost only, like installing |
 | Operations | Health and liveness endpoints, Prometheus metrics, tracing (all from GoFr), administered under *Settings* |
 
@@ -222,6 +222,11 @@ address, and that decides the rest:
   address takes the old one back at once, and so does removing it - which is
   what to do if anybody may have seen it. The card says when the address was
   last read, which is how to tell whether a calendar is reading it at all.
+- **It comes as a code as well.** Beside the address, and as briefly, is a QR
+  code of exactly that address, for the telephone a calendar is usually on:
+  scanned, the address is on the phone without anybody typing it, and is added
+  to the calendar there as a subscribed one. The code is the key as much as the
+  text is, and leaves the screen with it.
 - **It is hidden in the log.** Every reading is logged under its address, so the
   process log writes `gtrcal_[hidden]` in place of the key - on the console as
   well as in the log viewer - and whoever reads the log learns that a calendar
@@ -375,7 +380,7 @@ Those two slots belong to whoever runs the installation, and filling them with
 our mark makes an unbranded installation look branded by somebody else. The
 application's own mark — an hourglass — has its own places: the browser tab, the
 `.exe`, and the button beside the title that leads to the welcome screen. It is
-drawn (`internal/interface/web/assets/favicon.svg`) rather than a font character,
+drawn (`internal/interface/web/asset/favicon.svg`) rather than a font character,
 and `go run ./build/icon > build/icon.ico` redraws the Windows copy from the same
 geometry whenever it changes.
 

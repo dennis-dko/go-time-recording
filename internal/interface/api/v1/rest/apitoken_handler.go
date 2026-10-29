@@ -3,6 +3,7 @@ package rest
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
 	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/qrcode"
 )
 
 // APITokenHeader is the alternative to "Authorization: Bearer <token>", for
@@ -105,6 +107,25 @@ type APITokenResponse struct {
 
 	Expired bool    `json:"expired"`
 	Secret  *string `json:"secret,omitempty"`
+
+	// ConnectURI is what an app reaches this installation with as the token's
+	// owner: go-time-recording://connect?url=...&token=..., carrying the two
+	// values the terminal client reads as GTR_URL and GTR_TOKEN. QR is the same
+	// address as a code to scan, an SVG data URI. Both carry the secret, so both
+	// exist where it does - in the answer that created the token - and nowhere
+	// else.
+	ConnectURI *string `json:"connectUri,omitempty"`
+	QR         *string `json:"qr,omitempty"`
+}
+
+// connectScheme is the scheme of a connection address, which an app registers
+// so that scanning the code with the camera opens it.
+const connectScheme = "go-time-recording"
+
+// connectURI is the connection address of an installation reached at address,
+// as the owner of token.
+func connectURI(address, token string) string {
+	return connectScheme + "://connect?" + url.Values{"url": {address}, "token": {token}}.Encode()
 }
 
 // CreateAPITokenRequest asks for a new token.
@@ -160,7 +181,24 @@ func (h *APITokenHandler) Create(c *gofr.Context) (any, error) {
 		return nil, toHTTPError(err)
 	}
 
-	return newAPITokenResponse(issued.Token, &issued.Secret), nil
+	created := newAPITokenResponse(issued.Token, &issued.Secret)
+
+	// The installation as the page asking sees it, which is the address its owner
+	// types into the browser - and so the one an app is to use as well.
+	if request := requestOf(c); request != nil {
+		connect := connectURI(addressAsSeen(request), issued.Secret)
+		created.ConnectURI = &connect
+
+		// A code that failed to render must not take the token down with it: the
+		// value and the address are in the answer either way.
+		if code, err := qrcode.SVGDataURI(connect); err == nil {
+			created.QR = &code
+		} else {
+			c.Logger.Errorf("could not render the token's QR code: %v", err)
+		}
+	}
+
+	return created, nil
 }
 
 // Revoke handles DELETE /api/v1/me/tokens/{id}.

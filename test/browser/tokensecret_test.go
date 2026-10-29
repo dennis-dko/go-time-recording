@@ -4,6 +4,7 @@ package browser
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -25,7 +26,8 @@ import (
 // comparison a half-finished second factor is the smaller thing to leave behind.
 //
 // Both halves are checked, because the comment claims one of them and the account
-// needs the other.
+// needs the other - for the value and for the QR code beside it, which carries
+// the same value with the installation's address so that an app can scan it.
 func TestATokenValueDoesNotOutliveTheScreen(t *testing.T) {
 	t.Parallel()
 
@@ -38,7 +40,7 @@ func TestATokenValueDoesNotOutliveTheScreen(t *testing.T) {
 		p.click(`#form-token button[type="submit"]`),
 		chromedp.WaitVisible("#token-secret", chromedp.ByID))
 
-	read := func(when string) (value string, shown bool) {
+	read := func(when string) (value string, shown bool, code string) {
 		t.Helper()
 
 		var out string
@@ -46,37 +48,59 @@ func TestATokenValueDoesNotOutliveTheScreen(t *testing.T) {
 		p.run("read the panel "+when, chromedp.Evaluate(`JSON.stringify({
 			value: document.querySelector('#token-secret-value').textContent.trim(),
 			shown: !document.querySelector('#token-secret').hidden,
+			code: document.querySelector('#token-qr')?.getAttribute('src') ?? '',
 		})`, &out))
 
 		var panel struct {
 			Value string `json:"value"`
 			Shown bool   `json:"shown"`
+			Code  string `json:"code"`
 		}
 
 		if err := json.Unmarshal([]byte(out), &panel); err != nil {
 			t.Fatalf("reading the panel (%q): %v", out, err)
 		}
 
-		return panel.Value, panel.Shown
+		return panel.Value, panel.Shown, panel.Code
 	}
 
-	secret, shown := read("just after creating")
+	secret, shown, code := read("just after creating")
 
 	if secret == "" || !shown {
 		t.Fatalf("the token value is not on screen (value %q, shown %v), so this "+
 			"case would pass whatever happens to it", secret, shown)
 	}
 
+	if !strings.HasPrefix(code, "data:image/svg+xml") || !p.visible("#token-qr") {
+		t.Fatalf("the QR code an app scans is not beside the value (src %.40q, shown %v)",
+			code, p.visible("#token-qr"))
+	}
+
+	// And what the code holds besides the value, as text: the address an app or
+	// the terminal client is given with it, for somebody who cannot scan.
+	var origin string
+
+	p.run("read the page's origin", chromedp.Evaluate(`location.origin`, &origin))
+
+	if address := p.text("#token-address-value"); address != origin || !p.visible("#token-address-value") {
+		t.Errorf("the address beside the code reads %q (shown %v), want this page's %q",
+			address, p.visible("#token-address-value"), origin)
+	}
+
 	// The half the comment claims.
 	p.run("go somewhere else", p.click(`.tab[data-view="timesheets"]`),
 		chromedp.WaitVisible("#form-timesheet", chromedp.ByID))
 
-	awayValue, awayShown := read("after navigating away")
+	awayValue, awayShown, awayCode := read("after navigating away")
 
-	if awayValue != "" || awayShown {
+	if address := p.text("#token-address-value"); address != "" {
+		t.Errorf("the address that came with the token is still on the card after leaving the screen (%q)", address)
+	}
+
+	if awayValue != "" || awayShown || awayCode != "" {
 		t.Errorf("the token value is still in the document after leaving the screen "+
-			"(value %q, shown %v). It is set in one place and cleared in none",
-			awayValue, awayShown)
+			"(value %q, shown %v, code %.40q). It is set in one place and cleared in none",
+			awayValue, awayShown, awayCode)
 	}
 
 	// And the half that belongs to the account.
@@ -86,13 +110,13 @@ func TestATokenValueDoesNotOutliveTheScreen(t *testing.T) {
 	p.run("sign out", p.click("#logout"),
 		chromedp.WaitVisible("#form-login", chromedp.ByID))
 
-	afterValue, afterShown := read("after signing out")
+	afterValue, afterShown, afterCode := read("after signing out")
 
-	if afterValue != "" || afterShown {
+	if afterValue != "" || afterShown || afterCode != "" {
 		t.Errorf("the token value is still in the document after signing out "+
-			"(value %q, shown %v). It is a bearer credential carrying the whole of "+
-			"that account's role, and it works until somebody revokes it",
-			afterValue, afterShown)
+			"(value %q, shown %v, code %.40q). It is a bearer credential carrying the "+
+			"whole of that account's role, and it works until somebody revokes it",
+			afterValue, afterShown, afterCode)
 	}
 }
 
@@ -123,5 +147,13 @@ func TestARevokedTokensValueLeavesTheCard(t *testing.T) {
 
 	if p.visible("#token-secret") || p.text("#token-secret-value") != "" {
 		t.Errorf("the revoked token's value is still on the card (shown=%v)", p.visible("#token-secret"))
+	}
+
+	var code string
+
+	p.run("read the code", chromedp.Evaluate(`document.querySelector('#token-qr')?.getAttribute('src') ?? ''`, &code))
+
+	if code != "" {
+		t.Errorf("the revoked token's QR code is still in the document (%.40q)", code)
 	}
 }

@@ -212,6 +212,7 @@ func RegisterRoutes(app *gofr.App, h Handlers) {
 	// The address somebody's calendar program reads their recorded days from: theirs
 	// to make, see and take back, and read with the key in the path and nothing else,
 	// because a calendar program has nothing else to send.
+	app.GET(base+"/me/address", h.Auth.Address)
 	app.GET(base+"/me/calendar-feed", h.Calendar.Get)
 	app.POST(base+"/me/calendar-feed", h.Calendar.Create)
 	app.DELETE(base+"/me/calendar-feed", h.Calendar.Remove)

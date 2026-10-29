@@ -635,7 +635,7 @@ tasks:
     desc: 'Upkeep: take the README''s pictures again, from the running application.'
     summary: |
       Books a year of somebody's working time into a fresh instance and
-      photographs the screens that show it, into doc/images - the pictures the
+      photographs the screens that show it, into doc/image - the pictures the
       README shows. Run it after changing a screen one of them shows, and look
       at what it took before committing it: nothing checks how a picture looks,
       only that the README shows what the camera takes.
@@ -655,7 +655,7 @@ tasks:
       so the README does not mix them.
     env:
       GOTMPDIR: '{{.ROOT_DIR}}/{{.TMP_DIR}}'
-      GTR_README_PICTURES: '{{.ROOT_DIR}}/doc/images'
+      GTR_README_PICTURES: '{{.ROOT_DIR}}/doc/image'
     cmds:
       - mkdir -p {{.TMP_DIR}}
       - defer: rm -rf {{.TMP_DIR}}

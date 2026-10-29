@@ -1,4 +1,4 @@
-package migrations_test
+package migration_test
 
 import (
 	"go/ast"
@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migrations"
+	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/migration"
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/persistence/sqldb"
 )
 
@@ -51,7 +51,7 @@ func TestEveryNewMigrationComesAfterEveryReleasedOne(t *testing.T) {
 		}
 	}
 
-	chain := migrations.All(sqldb.DialectSQLite)
+	chain := migration.All(sqldb.DialectSQLite)
 
 	for _, version := range released {
 		if _, ok := chain[version]; !ok {

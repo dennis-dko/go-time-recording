@@ -1653,7 +1653,6 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 
 .lang { width: auto; }
 
-/* Secrets are shown for manual entry, so they must wrap rather than overflow. */
 /* The enrolment QR code.
    A white plate under it rather than the surface colour: the code carries its own
    light margin, and on the dark theme a code floating on a dark card reads as a
@@ -1678,7 +1677,11 @@ tr.self td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   font-size: 13px;
 }
 
-.secret {
+/* Values shown for typing in elsewhere, so they must wrap rather than overflow.
+   A secret and an address look alike; only the class secret says that the text
+   must not outlive the session. */
+.secret,
+.value {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;

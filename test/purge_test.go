@@ -35,7 +35,7 @@ import (
 func TestEveryTableReferencingAnAccountIsPurgedWithIt(t *testing.T) {
 	root := ".."
 	chain := read(t, filepath.Join(root,
-		"internal", "infrastructure", "persistence", "migrations", "migrations.go"))
+		"internal", "infrastructure", "persistence", "migration", "migrations.go"))
 	purge := read(t, filepath.Join(root,
 		"internal", "infrastructure", "persistence", "sqldb", "purge.go"))
 

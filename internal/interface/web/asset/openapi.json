@@ -547,7 +547,7 @@
         },
         "responses": {
           "201": {
-            "description": "The token, including its secret"
+            "description": "The token, including its `secret`, and what an app connects with: `connectUri`, which is `go-time-recording://connect?token=<the secret>&url=<this installation>` - the two values the terminal client reads as `GTR_TOKEN` and `GTR_URL`, the address being the one the request reached the installation at - and `qr`, that address as a QR code in an SVG data URI. All three exist only in this response."
           },
           "409": {
             "description": "Token limit reached"
@@ -2123,6 +2123,23 @@
         }
       }
     },
+    "/me/address": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "This installation's address, and the same as a QR code",
+        "description": "Answers {\"address\": \"https://time.example.com\", \"qr\": \"data:image/svg+xml;base64,...\"}. `?origin=` names the address the asking page is at, its location.origin, and is taken where it names the host the request reached, with http or https; otherwise the address is this installation as the request reached it. The code is what the card offering to install the page shows, for opening the installation on a phone without typing its address. Needs nothing beyond being signed in.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Not signed in"
+          }
+        }
+      }
+    },
     "/me/calendar-feed": {
       "get": {
         "tags": [
@@ -2144,7 +2161,7 @@
         "description": "No body. Answers as GET does, with path added: the address the feed is read at, key included, relative to this installation - the only time the key is ever shown, because only a hash of it is kept. The address you had before reads nothing from this moment on, which is how a key somebody has seen is taken back.",
         "responses": {
           "201": {
-            "description": "The new feed, with its address"
+            "description": "The new feed, with its address: `path`, relative to this installation, and `qr`, the whole address - the page's own origin and the path - as a QR code in an SVG data URI, for a phone to scan. Both carry the feed's key and exist only in this response."
           }
         }
       },
