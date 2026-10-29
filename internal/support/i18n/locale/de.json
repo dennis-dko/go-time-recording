@@ -1001,6 +1001,8 @@
   "token.name": "Bezeichnung",
   "token.never": "unbegrenzt",
   "token.prefix": "Präfix",
+  "token.qrAlt": "QR-Code mit der Adresse dieser Installation und dem neuen Token",
+  "token.qrHint": "Eine App scannt stattdessen diesen Code: Er enthält die Adresse dieser Installation und den Token, die der Terminal-Client als GTR_URL und GTR_TOKEN bekommt.",
   "token.revoke": "widerrufen",
   "token.revoked": "Token widerrufen",
   "token.title": "API-Tokens",

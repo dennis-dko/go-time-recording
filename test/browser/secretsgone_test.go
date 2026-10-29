@@ -20,7 +20,9 @@ import (
 // This checks the class rather than the ids, so the fourth was covered by being
 // marked rather than by somebody remembering this case exists. That is the whole
 // reason the class is worth having: it is the markup saying which text on the
-// page must not be handed on.
+// page must not be handed on. A QR code carries its secret in its picture rather
+// than as text, so every img.qr is asked for its address the same way - the
+// enrolment's, and the one a new token is shown with for an app to scan.
 func TestNothingMarkedSecretSurvivesTheSignOut(t *testing.T) {
 	t.Parallel()
 
@@ -43,10 +45,12 @@ func TestNothingMarkedSecretSurvivesTheSignOut(t *testing.T) {
 
 		var out string
 
-		p.run("read every secret "+when, chromedp.Evaluate(`JSON.stringify(
-			Object.fromEntries([...document.querySelectorAll('.secret')]
-				.map((node) => [node.id || node.className, node.textContent.trim()])))`,
-			&out))
+		p.run("read every secret "+when, chromedp.Evaluate(`JSON.stringify(Object.fromEntries([
+			...[...document.querySelectorAll('.secret')]
+				.map((node) => [node.id || node.className, node.textContent.trim()]),
+			...[...document.querySelectorAll('img.qr')]
+				.map((node) => [node.id, node.getAttribute('src') ?? '']),
+		]))`, &out))
 
 		var read map[string]string
 
@@ -71,7 +75,7 @@ func TestNothingMarkedSecretSurvivesTheSignOut(t *testing.T) {
 		}
 	}
 
-	if held < 4 {
+	if held < 6 {
 		t.Fatalf("only %d of %d marked elements are holding anything, so this case "+
 			"is not covering what it means to: %v", held, len(before), before)
 	}

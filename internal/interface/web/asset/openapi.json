@@ -547,7 +547,7 @@
         },
         "responses": {
           "201": {
-            "description": "The token, including its secret"
+            "description": "The token, including its `secret`, and what an app connects with: `connectUri`, which is `go-time-recording://connect?token=<the secret>&url=<this installation>` - the two values the terminal client reads as `GTR_TOKEN` and `GTR_URL`, the address being the one the request reached the installation at - and `qr`, that address as a QR code in an SVG data URI. All three exist only in this response."
           },
           "409": {
             "description": "Token limit reached"

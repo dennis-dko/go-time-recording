@@ -7364,6 +7364,13 @@ function forgetTheTokenValue() {
   panel.hidden = true;
   delete panel.dataset.token;
   $('#token-secret-value').textContent = '';
+
+  // The code beside it carries the same value, in its picture rather than as
+  // text, so it goes with it - from the screen and from the markup.
+  const qr = $('#token-qr');
+  qr.hidden = true;
+  qr.removeAttribute('src');
+  $('#token-qr-hint').hidden = true;
 }
 
 function wireTokens() {
@@ -7383,6 +7390,17 @@ function wireTokens() {
       // of what was meant.
       $('#token-secret-value').textContent = created.secret;
       $('#token-secret').dataset.token = String(created.id);
+
+      // And the same value with the installation's address, as a code an app
+      // scans instead of being typed what the terminal client reads from
+      // GTR_URL and GTR_TOKEN. Not every answer brings one - a code that failed
+      // to render does not cost the token - and then there is only the value.
+      const qr = $('#token-qr');
+      qr.hidden = !created.qr;
+      qr.alt = created.qr ? t('token.qrAlt', 'QR code with the address of this installation and the new token') : '';
+      if (created.qr) qr.src = created.qr;
+      $('#token-qr-hint').hidden = !created.qr;
+
       $('#token-secret').hidden = false;
       e.target.reset();
       await loadTokens();

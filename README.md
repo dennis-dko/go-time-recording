@@ -278,7 +278,10 @@ is updated, take the client of the new release as well.
    Windows.
 2. In the browser, under **My account → API tokens**, create a token and copy it:
    it is shown once. It carries exactly the rights of your role, can be given a
-   number of days to last, and is revoked in the same list.
+   number of days to last, and is revoked in the same list. Beside it, also once,
+   is a QR code holding the token and the installation's address together, for
+   an app to scan instead of being typed both -
+   [the API page](doc/api.md#connecting-an-app) says what it holds.
 3. Tell the client where the installation is and who you are — in the
    environment rather than as an argument, where a token would land in the
    shell's history:
