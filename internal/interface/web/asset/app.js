@@ -9975,6 +9975,9 @@ function forgetTheLastAccount() {
   // with what the card said about it.
   forgetTheCalendarFeed();
 
+  // And the installation's address as a code, so that no code outlives a session.
+  forgetTheAddressCode();
+
   // And what the provider card said about the account's link.
   forgetTheOpenIDLink();
 
@@ -15324,6 +15327,47 @@ function showInstallOffer() {
   if (manual) manual.hidden = Boolean(installOffer);
 }
 
+/**
+ * Shows this installation's address as a code on the card, for opening it on a
+ * phone without typing the address - once a session, because the address does
+ * not change while the page is open, and not at all where the card is hidden,
+ * which is in the installed app.
+ *
+ * The server draws it from the address this page names as its own, so the code
+ * is of the page the reader is looking at. Only a convenience: without one the
+ * card simply has none, and nothing else waits on it.
+ */
+async function loadAddressCode() {
+  const qr = $('#install-qr');
+  if (!qr || $('#install-card')?.hidden || qr.getAttribute('src')) return;
+
+  try {
+    const answer = await api(`/me/address?origin=${encodeURIComponent(location.origin)}`);
+    if (!answer?.qr) return;
+
+    qr.src = answer.qr;
+    qr.alt = t('install.qrAlt', 'QR code with the address of this installation');
+    qr.hidden = false;
+    $('#install-phone').hidden = false;
+  } catch {
+    // The card offers installing in this browser either way.
+  }
+}
+
+/**
+ * Takes the code off the card when the session ends. Not a secret, but no code
+ * on the page outlives the session it was drawn in, so none has to be asked
+ * about separately.
+ */
+function forgetTheAddressCode() {
+  const qr = $('#install-qr');
+  if (!qr) return;
+
+  qr.hidden = true;
+  qr.removeAttribute('src');
+  $('#install-phone').hidden = true;
+}
+
 // ------------------------------------------------------- metrics and tracing
 
 /**
@@ -17111,6 +17155,7 @@ async function refreshAll() {
   await loadAdmin();
   await loadTokens();
   await loadCalendarFeed();
+  await loadAddressCode();
   await loadPasskeys();
   await loadOpenIDLink();
   await loadSchedules();

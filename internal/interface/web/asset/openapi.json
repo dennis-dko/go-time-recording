@@ -2123,6 +2123,23 @@
         }
       }
     },
+    "/me/address": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "This installation's address, and the same as a QR code",
+        "description": "Answers {\"address\": \"https://time.example.com\", \"qr\": \"data:image/svg+xml;base64,...\"}. `?origin=` names the address the asking page is at, its location.origin, and is taken where it names the host the request reached, with http or https; otherwise the address is this installation as the request reached it. The code is what the card offering to install the page shows, for opening the installation on a phone without typing its address. Needs nothing beyond being signed in.",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Not signed in"
+          }
+        }
+      }
+    },
     "/me/calendar-feed": {
       "get": {
         "tags": [

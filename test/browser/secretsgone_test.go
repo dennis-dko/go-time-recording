@@ -76,7 +76,7 @@ func TestNothingMarkedSecretSurvivesTheSignOut(t *testing.T) {
 		}
 	}
 
-	if held < 7 {
+	if held < 8 {
 		t.Fatalf("only %d of %d marked elements are holding anything, so this case "+
 			"is not covering what it means to: %v", held, len(before), before)
 	}

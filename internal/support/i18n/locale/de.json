@@ -461,6 +461,8 @@
   "holiday.womensDay": "Internationaler Frauentag",
   "install.manual": "Wo hier keine Schaltfläche erscheint, hat der Browser das Angebot in seinem Menü, als „App installieren“ oder „Zum Startbildschirm hinzufügen“.",
   "install.now": "Installieren",
+  "install.phone": "Um sie auf einem Handy zu öffnen, scanne diesen Code dort mit der Kamera; installieren lässt sie sich dann aus dem Browser des Handys.",
+  "install.qrAlt": "QR-Code mit der Adresse dieser Installation",
   "install.text": "Installiert öffnet sich die Zeiterfassung vom Startbildschirm oder aus dem Startmenü wie eine eigene App, ohne den Browser drumherum. Ein langer Druck auf ihr Symbol führt direkt zu den Zeiteinträgen, zum Kalender oder zu den Überstunden.",
   "install.title": "Als App installieren",
   "installer.action.save": "Speichern und starten",

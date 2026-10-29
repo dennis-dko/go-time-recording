@@ -291,10 +291,18 @@ func requestOrigin(r *http.Request) string {
 // address beside the code, so the two cannot differ even behind a proxy that
 // does not say which scheme the browser used.
 func addressAsSeen(r *http.Request) string {
-	origin, err := url.Parse(r.Header.Get("Origin"))
-	if err == nil && (origin.Scheme == "http" || origin.Scheme == "https") &&
-		origin.Host != "" && strings.EqualFold(origin.Host, requestHost(r)) {
-		return origin.Scheme + "://" + strings.ToLower(origin.Host)
+	return addressNamed(r, r.Header.Get("Origin"))
+}
+
+// addressNamed is origin where it names this installation as the request reached
+// it - http or https, and the host the request reached - and requestOrigin
+// otherwise. Only the scheme and the host are taken, so nothing a caller names
+// can put a path, or somewhere else, into a code.
+func addressNamed(r *http.Request, origin string) string {
+	named, err := url.Parse(origin)
+	if err == nil && (named.Scheme == "http" || named.Scheme == "https") &&
+		named.Host != "" && strings.EqualFold(named.Host, requestHost(r)) {
+		return named.Scheme + "://" + strings.ToLower(named.Host)
 	}
 
 	return requestOrigin(r)
