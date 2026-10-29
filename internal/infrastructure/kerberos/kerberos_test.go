@@ -57,6 +57,30 @@ func TestATicketForThisServiceSaysWhoseItIs(t *testing.T) {
 	}
 }
 
+// Tickets for one name are taken however quickly they follow each other. The
+// acceptor refuses an authenticator it has seen before as a replay, and two for
+// the same name are the same to it when they carry the same time to the
+// microsecond - the realm does not enter into it. RFC 4120 has the client see to
+// it that they never do, and kerberostest is the client here.
+func TestTicketsInQuickSuccessionAreNotTakenForReplays(t *testing.T) {
+	var log logged
+
+	acceptor, err := Load(kerberostest.KeytabFile(t, t.TempDir(), "the-service-secret"), "", &log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range 20 {
+		status, _, who := served(t, acceptor,
+			kerberostest.Negotiate(t, "the-service-secret", "alice", kerberostest.Realm))
+
+		if status != http.StatusOK || who == nil {
+			t.Fatalf("ticket %d of 20 for alice, made right after the one before, was answered %d: %q",
+				i+1, status, log.warnings)
+		}
+	}
+}
+
 // A request without a ticket is asked for one, which is what makes a browser
 // that trusts this address send it - and all a browser that does not ever sees.
 func TestARequestWithoutATicketIsAskedForOne(t *testing.T) {
