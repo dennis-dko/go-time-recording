@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,8 +54,23 @@ func KeytabFile(t *testing.T, dir, secret string) string {
 	return path
 }
 
+// stamping is held while an authenticator is made, because the suites ask for
+// tickets from cases running in parallel.
+var stamping sync.Mutex
+
+// stamped is the wall clock, in microseconds, by which the last authenticator
+// had been stamped.
+var stamped int64
+
 // Negotiate is the Authorization header a browser sends: a ticket for the
 // service, issued to name of clientRealm and sealed with the key secret derives.
+//
+// Its authenticator is stamped later than the last one, to the microsecond. A
+// service keeps the stamps it has seen for each name - gokrb5's for the name
+// alone, without the realm - and refuses a repeat as a replay, so RFC 4120 has a
+// client see to it that it never reuses one, as a browser's does. gokrb5 stamps
+// with time.Now, which on Windows moves in steps of up to ten milliseconds, and
+// left to it two tickets for one name made within a step were refused as one.
 func Negotiate(t *testing.T, secret, name, clientRealm string) string {
 	t.Helper()
 
@@ -70,7 +87,17 @@ func Negotiate(t *testing.T, secret, name, clientRealm string) string {
 
 	cl := client.NewWithPassword(name, clientRealm, "unused", config.New(), client.DisablePAFXFAST(true))
 
+	stamping.Lock()
+
+	for time.Now().UnixMicro() <= stamped {
+		runtime.Gosched()
+	}
+
 	init, err := spnego.NewNegTokenInitKRB5(cl, ticket, sessionKey)
+	stamped = time.Now().UnixMicro()
+
+	stamping.Unlock()
+
 	if err != nil {
 		t.Fatalf("building the token: %v", err)
 	}
