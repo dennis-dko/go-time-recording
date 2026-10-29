@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the Windows resource that gives the .exe its icon and its Properties
+# Builds the Windows resource that gives each .exe its icon and its Properties
 # tab, and puts it where the linker will find it.
 #
 # Run before a windows build and removed after it. The Go toolchain links any
@@ -9,8 +9,13 @@
 # behind would be linked into the next one. That is why this is a step with a
 # matching removal rather than a file in the tree.
 #
-#   build/windows-resource.sh v1.2.3      write cmd/resource_windows_amd64.syso
-#   build/windows-resource.sh --clean     remove it again
+#   build/windows-resource.sh v1.2.3      write the resource of both programs
+#   build/windows-resource.sh --clean     remove them again
+#
+# Two programs, two packages: the web binary in cmd/ and the terminal client in
+# cmd/client/. A .syso belongs to its package directory and to no other, so each
+# gets its own, from the one template with its own name and description put in -
+# one template, so the icon, the copyright and the version are written once.
 #
 # The name matters. goversioninfo writes resource.syso by default, which the
 # toolchain links for EVERY platform; the _windows_amd64 suffix is what confines
@@ -18,10 +23,11 @@
 
 set -eu
 
-TARGET="cmd/resource_windows_amd64.syso"
+WEB="cmd/resource_windows_amd64.syso"
+CLIENT="cmd/client/resource_windows_amd64.syso"
 
 if [ "${1:-}" = "--clean" ]; then
-  rm -f "$TARGET"
+  rm -f "$WEB" "$CLIENT"
   exit 0
 fi
 
@@ -41,13 +47,22 @@ case "${MAJOR:-}${MINOR:-}${PATCH:-}" in
   *[!0-9]*|"") MAJOR=0; MINOR=0; PATCH=0 ;;
 esac
 
-sed -e "s/\"Major\": 0/\"Major\": ${MAJOR}/" \
-    -e "s/\"Minor\": 0/\"Minor\": ${MINOR}/" \
-    -e "s/\"Patch\": 0/\"Patch\": ${PATCH}/" \
-    -e "s/0\.0\.0\.0/${MAJOR}.${MINOR}.${PATCH}.0/" \
-    build/versioninfo.json.in > build/versioninfo.json
+# resource <target> <file name without .exe> <description>
+resource() {
+  sed -e "s/\"Major\": 0/\"Major\": ${MAJOR}/" \
+      -e "s/\"Minor\": 0/\"Minor\": ${MINOR}/" \
+      -e "s/\"Patch\": 0/\"Patch\": ${PATCH}/" \
+      -e "s/0\.0\.0\.0/${MAJOR}.${MINOR}.${PATCH}.0/" \
+      -e "s/\"FileDescription\": \"[^\"]*\"/\"FileDescription\": \"$3\"/" \
+      -e "s/\"InternalName\": \"[^\"]*\"/\"InternalName\": \"$2\"/" \
+      -e "s/\"OriginalFilename\": \"[^\"]*\"/\"OriginalFilename\": \"$2.exe\"/" \
+      build/versioninfo.json.in > build/versioninfo.json
 
-goversioninfo -o "$TARGET" build/versioninfo.json
-rm -f build/versioninfo.json
+  goversioninfo -o "$1" build/versioninfo.json
+  rm -f build/versioninfo.json
 
-printf 'wrote %s for %s\n' "$TARGET" "$VERSION"
+  printf 'wrote %s for %s\n' "$1" "$VERSION"
+}
+
+resource "$WEB" go-time-recording-web "Project time tracking: REST API and web interface in one file"
+resource "$CLIENT" go-time-recording-client "Project time tracking: the terminal client"

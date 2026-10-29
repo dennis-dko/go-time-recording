@@ -43,7 +43,7 @@ func watch(t *testing.T, base, token string) *watched {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &watched{t: t, out: &bytes.Buffer{}, ended: make(chan struct{})}
-	s := &session{api: newClient(base, token), out: w.out}
+	s := &session{api: newClient(base, token, language{}), out: w.out}
 
 	w.p = s.program(ctx, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithWindowSize(100, 40),
 		tea.WithoutSignals(), tea.WithFilter(func(m tea.Model, msg tea.Msg) tea.Msg {
@@ -153,7 +153,7 @@ func settled(m screen) bool { return m.loaded && m.form == nil && !m.busy && !m.
 func TestTheScreenShowsTheStopwatchRunningAndTodaysEntries(t *testing.T) {
 	f, server := newFakeInstallation(t)
 
-	m := newScreen(context.Background(), &session{api: newClient(server.URL, f.token), out: io.Discard})
+	m := newScreen(context.Background(), &session{api: newClient(server.URL, f.token, language{}), out: io.Discard})
 
 	read, _ := m.load()().(loaded)
 	if read.err != nil {
@@ -324,7 +324,7 @@ func TestAnInstallationOutOfReachIsAskedAgainEveryHalfMinute(t *testing.T) {
 	}
 
 	opened := func() screen {
-		return newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:1", "gtr_x"), out: io.Discard})
+		return newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:1", "gtr_x", language{}), out: io.Discard})
 	}
 
 	// Taken after both screens are opened, each noting when it first asked: a
@@ -357,7 +357,7 @@ func TestAnInstallationOutOfReachIsAskedAgainEveryHalfMinute(t *testing.T) {
 // Why the day cannot be read is said whole, over as many lines as it takes: the
 // reason comes at the end of the sentence, which is where a cut falls.
 func TestWhyTheDayCannotBeReadIsSaidWhole(t *testing.T) {
-	m := newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:9", "gtr_x"), out: io.Discard})
+	m := newScreen(context.Background(), &session{api: newClient("http://127.0.0.1:9", "gtr_x", language{}), out: io.Discard})
 
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 	next, _ = next.(screen).Update(loaded{at: time.Now(), err: errors.New(`could not reach http://127.0.0.1:9: ` +

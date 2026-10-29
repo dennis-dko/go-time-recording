@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -27,38 +26,39 @@ type answers struct {
 
 // formFor is the form for a change, writing into the screen's answers.
 func (m screen) formFor(doing string) *huh.Form {
-	a := m.asked
-	running := nameOf(m.shown.projects, m.shown.clock.ProjectID)
+	a, l := m.asked, m.s.lang
+	running := l.nameOf(m.shown.projects, m.shown.clock.ProjectID)
 
 	var group *huh.Group
 
 	switch doing {
 	case "start":
-		group = huh.NewGroup(m.projectField(&a.project), describe(&a.description)).
-			Title("Start the stopwatch")
+		group = huh.NewGroup(m.projectField(&a.project), m.describe(&a.description)).
+			Title(l.text("track.form.start", "Start the stopwatch"))
 	case "switch":
-		group = huh.NewGroup(m.projectField(&a.project), describe(&a.description)).
-			Title("Switch to another project").
-			Description(fmt.Sprintf("What has run so far is booked on %s.", running))
+		group = huh.NewGroup(m.projectField(&a.project), m.describe(&a.description)).
+			Title(l.text("track.form.switch", "Switch to another project")).
+			Description(l.text("track.form.switchNote", "What has run so far is booked on {0}.", running))
 	case "stop":
 		group = huh.NewGroup(huh.NewConfirm().Key("stop").
-			Title(fmt.Sprintf("Book %s on %s?", hoursAndMinutes(m.elapsed().Hours()), running)).
-			Affirmative("Stop and book").Negative("Keep it running").Value(&a.stop)).
-			Title("Stop the stopwatch")
+			Title(l.text("track.form.stopQuestion", "Book {0} on {1}?", hoursAndMinutes(m.elapsed().Hours()), running)).
+			Affirmative(l.text("track.form.stopYes", "Stop and book")).Negative(l.text("track.form.stopNo", "Keep it running")).Value(&a.stop)).
+			Title(l.text("track.form.stop", "Stop the stopwatch"))
 	default:
 		group = huh.NewGroup(
-			huh.NewInput().Key("hours").Title("Hours").Placeholder("1.5, 1,5 or 1:30").
-				Validate(readableHours).Value(&a.hours),
+			huh.NewInput().Key("hours").Title(l.text("field.hours", "Hours")).Placeholder(l.text("track.form.hoursHint", "1.5, 1,5 or 1:30")).
+				Validate(l.readableHours).Value(&a.hours),
 			m.projectField(&a.project),
-			huh.NewInput().Key("day").Title("Day").Placeholder("YYYY-MM-DD").
-				Validate(readableDay).Value(&a.day),
-			describe(&a.description),
-		).Title("Book time by hand")
+			huh.NewInput().Key("day").Title(l.text("field.day", "Day")).Placeholder(l.text("track.form.dayHint", "YYYY-MM-DD")).
+				Validate(l.readableDay).Value(&a.day),
+			m.describe(&a.description),
+		).Title(l.text("track.form.book", "Book time by hand"))
 	}
 
 	// Escape puts a form away; ctrl+c, which huh would use, closes the screen.
 	keys := huh.NewDefaultKeyMap()
-	keys.Quit = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel"))
+	keys.Quit = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", l.text("track.key.cancel", "cancel")))
+	l.keyHelp(keys)
 
 	// The screen's answer to whether the terminal is dark rather than the form's
 	// own: the terminal says so once, before any form is open, and is not asked
@@ -74,7 +74,8 @@ func (m screen) formFor(doing string) *huh.Form {
 
 // projectField picks one of the account's active projects, or none.
 func (m screen) projectField(into *uint) *huh.Select[uint] {
-	options := []huh.Option[uint]{huh.NewOption("No project", uint(0))}
+	l := m.s.lang
+	options := []huh.Option[uint]{huh.NewOption(l.text("ts.noProject", "No project"), uint(0))}
 
 	for _, p := range m.shown.projects {
 		if p.Status == "active" {
@@ -82,7 +83,7 @@ func (m screen) projectField(into *uint) *huh.Select[uint] {
 		}
 	}
 
-	field := huh.NewSelect[uint]().Key("project").Title("Project").Options(options...).Value(into)
+	field := huh.NewSelect[uint]().Key("project").Title(l.text("field.project", "Project")).Options(options...).Value(into)
 
 	// The height counts the title's line.
 	if len(options) > projectRows {
@@ -93,16 +94,53 @@ func (m screen) projectField(into *uint) *huh.Select[uint] {
 }
 
 // describe asks what the time went on, which may be nothing.
-func describe(into *string) *huh.Input {
-	return huh.NewInput().Key("description").Title("Description").Placeholder("optional").
+func (m screen) describe(into *string) *huh.Input {
+	l := m.s.lang
+
+	return huh.NewInput().Key("description").Title(l.text("field.description", "Description")).Placeholder(l.text("track.form.optional", "optional")).
 		CharLimit(model.MaxDescriptionLength).Value(into)
 }
 
 // readableHours refuses hours written in none of the ways parseHours reads.
-func readableHours(raw string) error {
-	_, err := parseHours(strings.TrimSpace(raw))
+func (l language) readableHours(raw string) error {
+	_, err := l.parseHours(strings.TrimSpace(raw))
 
 	return err
+}
+
+// keyHelp says in this language what huh's keys do, in the line under a form:
+// the keys of the three kinds of field these forms have.
+func (l language) keyHelp(keys *huh.KeyMap) {
+	help := func(binding *key.Binding, doing string) {
+		binding.SetHelp(binding.Help().Key, doing)
+	}
+
+	help(&keys.Input.AcceptSuggestion, l.text("track.huh.complete", "complete"))
+	help(&keys.Input.Prev, l.text("track.huh.back", "back"))
+	help(&keys.Input.Next, l.text("track.huh.next", "next"))
+	help(&keys.Input.Submit, l.text("track.huh.submit", "submit"))
+
+	help(&keys.Select.Prev, l.text("track.huh.back", "back"))
+	help(&keys.Select.Next, l.text("track.huh.select", "select"))
+	help(&keys.Select.Submit, l.text("track.huh.submit", "submit"))
+	help(&keys.Select.Up, l.text("track.huh.up", "up"))
+	help(&keys.Select.Down, l.text("track.huh.down", "down"))
+	help(&keys.Select.Left, l.text("track.huh.left", "left"))
+	help(&keys.Select.Right, l.text("track.huh.right", "right"))
+	help(&keys.Select.Filter, l.text("track.huh.filter", "filter"))
+	help(&keys.Select.SetFilter, l.text("track.huh.setFilter", "set filter"))
+	help(&keys.Select.ClearFilter, l.text("track.huh.clearFilter", "clear filter"))
+	help(&keys.Select.HalfPageUp, l.text("track.huh.halfPageUp", "½ page up"))
+	help(&keys.Select.HalfPageDown, l.text("track.huh.halfPageDown", "½ page down"))
+	help(&keys.Select.GotoTop, l.text("track.huh.goToStart", "go to start"))
+	help(&keys.Select.GotoBottom, l.text("track.huh.goToEnd", "go to end"))
+
+	help(&keys.Confirm.Prev, l.text("track.huh.back", "back"))
+	help(&keys.Confirm.Next, l.text("track.huh.next", "next"))
+	help(&keys.Confirm.Submit, l.text("track.huh.submit", "submit"))
+	help(&keys.Confirm.Toggle, l.text("track.huh.toggle", "toggle"))
+	help(&keys.Confirm.Accept, l.text("track.huh.yes", "Yes"))
+	help(&keys.Confirm.Reject, l.text("track.huh.no", "No"))
 }
 
 // request is the change an answered form asks for, as it will be sent; nil
@@ -115,7 +153,7 @@ func (m screen) request() tea.Cmd {
 		picked = &a.project
 	}
 
-	name := nameOf(shown.projects, picked)
+	name := s.lang.nameOf(shown.projects, picked)
 	body := map[string]any{}
 
 	if picked != nil {
@@ -140,7 +178,7 @@ func (m screen) request() tea.Cmd {
 
 		change = func() (string, error) { return s.stopClock(ctx, shown.projects) }
 	case "book":
-		worked, err := parseHours(strings.TrimSpace(a.hours))
+		worked, err := s.lang.parseHours(strings.TrimSpace(a.hours))
 		if err != nil {
 			return func() tea.Msg { return done{err: err} }
 		}

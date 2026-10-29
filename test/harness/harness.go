@@ -153,18 +153,19 @@ func (a *App) MetricsPort() int { return a.metricsPort }
 // Log returns what the instance has written so far, for a failure message.
 func (a *App) Log() string { return a.logs.String() }
 
-// binaryPath is set by Build and reused by every Start in the package.
-var binaryPath atomic.Pointer[string]
+// binaryPath is set by Build and reused by every Start in the package, and
+// clientPath beside it is the terminal client Build compiled with it.
+var binaryPath, clientPath atomic.Pointer[string]
 
-// Build compiles the application once, for the whole test binary to share.
-// Call it from TestMain.
+// Build compiles the application once, for the whole test binary to share,
+// and the terminal client beside it. Call it from TestMain.
 func Build() (cleanup func(), err error) {
 	dir, err := os.MkdirTemp("", "gtr-harness-*")
 	if err != nil {
 		return nil, fmt.Errorf("cannot create a temporary directory: %w", err)
 	}
 
-	path := filepath.Join(dir, "go-time-recording"+exeSuffix())
+	path := filepath.Join(dir, "go-time-recording-web"+exeSuffix())
 
 	args := []string{"build", "-o", path}
 
@@ -197,16 +198,40 @@ func Build() (cleanup func(), err error) {
 		return nil, fmt.Errorf("cannot build the application: %w", err)
 	}
 
+	// Without the race detector: the client runs one command and exits, and
+	// what the detector is asked to watch is the instance it talks to.
+	client := filepath.Join(dir, "go-time-recording-client"+exeSuffix())
+
+	build = exec.Command("go", "build", "-o", client, "./cmd/client")
+	build.Dir = RepoRoot()
+	build.Stderr = os.Stderr
+
+	if err := build.Run(); err != nil {
+		_ = os.RemoveAll(dir)
+
+		return nil, fmt.Errorf("cannot build the terminal client: %w", err)
+	}
+
 	binaryPath.Store(&path)
+	clientPath.Store(&client)
 
 	return func() { _ = os.RemoveAll(dir) }, nil
 }
 
 // Binary is the application Build compiled, for a case that runs it with
-// arguments of its own - as a client of an instance rather than as one. Empty
-// before Build has run.
+// arguments of its own. Empty before Build has run.
 func Binary() string {
 	if path := binaryPath.Load(); path != nil {
+		return *path
+	}
+
+	return ""
+}
+
+// Client is the terminal client Build compiled, for a case that books against
+// an instance from a terminal. Empty before Build has run.
+func Client() string {
+	if path := clientPath.Load(); path != nil {
 		return *path
 	}
 

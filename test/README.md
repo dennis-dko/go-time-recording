@@ -93,7 +93,7 @@ The settings, for running it some other way:
 ```bash
 DB_DIALECT=postgres DB_HOST=localhost DB_PORT=55432 \
 DB_NAME=go-time-recording DB_USER=gtr DB_PASSWORD=gtr-test-password \
-DB_SSL_MODE=disable ./go-time-recording
+DB_SSL_MODE=disable ./go-time-recording-web
 ```
 
 The directory is configured in the running application under **Settings → LDAP

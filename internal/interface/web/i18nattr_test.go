@@ -13,8 +13,8 @@ import (
 // halves: a copy of the English source taken the first time it is translated,
 // and that copy put back when the dictionary has nothing for the key.
 //
-// The second half is not optional here, because TRANSLATIONS.en is deliberately
-// empty - "nothing for the key" is exactly what English is. A branch that only
+// The second half is not optional here, because English has no dictionary -
+// "nothing for the key" is exactly what English is. A branch that only
 // assigns therefore works in one direction and never comes back: aria-label was
 // written that way, and going to German and back left all seven of them in
 // German on an otherwise English page, told only to the readers who cannot see
@@ -65,6 +65,6 @@ func TestEveryTranslatedAttributeKeepsItsEnglishSource(t *testing.T) {
 	for _, kind := range missing {
 		t.Errorf("applyLanguage translates %s without keeping the English source, "+
 			"so a page switched to German and back keeps the German one - "+
-			"TRANSLATIONS.en is empty, which is the case that needs the source", kind)
+			"English has no dictionary, which is the case that needs the source", kind)
 	}
 }

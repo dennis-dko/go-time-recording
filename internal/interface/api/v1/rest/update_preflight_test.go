@@ -96,7 +96,7 @@ func TestABinaryUpdateIntoADatabaseThatDoesNotAnswerIsRefusedBeforeItIsAnnounced
 		}
 
 		_, _ = fmt.Fprintf(w, `{"tag_name":"v9.9.9","assets":[
-			{"name":"go-time-recording_v9.9.9_%s_%s%s","browser_download_url":"%s/binary"},
+			{"name":"go-time-recording-web_v9.9.9_%s_%s%s","browser_download_url":"%s/binary"},
 			{"name":"SHA256SUMS","browser_download_url":"%s/sums"}]}`,
 			runtime.GOOS, runtime.GOARCH, binarySuffix(), feed.URL, feed.URL)
 	}))

@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 // iconPath is where the browser tab's icon comes from.
@@ -33,6 +35,11 @@ type document struct {
 	// as it is - a missing title is a worse failure than a generic one.
 	before, middle, after string
 	usable                bool
+
+	// languages is the meta tags naming the languages the page may speak, written
+	// after the title. Fixed for the life of the process, like the dictionaries
+	// it is made from.
+	languages string
 }
 
 // The exact strings replaced. Kept as constants beside the markup they match,
@@ -65,10 +72,11 @@ func newDocument(sub fs.FS) document {
 	}
 
 	return document{
-		before: markup[:titleAt],
-		middle: markup[titleAt+len(titleMarkup) : iconAt],
-		after:  markup[iconAt+len(iconMarkup):],
-		usable: true,
+		before:    markup[:titleAt],
+		middle:    markup[titleAt+len(titleMarkup) : iconAt],
+		after:     markup[iconAt+len(iconMarkup):],
+		usable:    true,
+		languages: languagesMeta(i18n.Languages(), i18n.Name),
 	}
 }
 
@@ -96,7 +104,7 @@ func (d document) serve(w http.ResponseWriter, r *http.Request, branding Brandin
 		"\n  " + `<link rel="apple-touch-icon" href="` + appIconPath + `192?v=` +
 		appIconVersion(branding) + `">`
 
-	page := d.before + "<title>" + escape(title) + "</title>" + d.middle + icon + d.after
+	page := d.before + "<title>" + escape(title) + "</title>\n  " + d.languages + d.middle + icon + d.after
 
 	header := w.Header()
 	header.Set("Content-Type", "text/html; charset=utf-8")

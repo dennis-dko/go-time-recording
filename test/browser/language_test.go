@@ -216,7 +216,7 @@ func checkGermanEverywhere(t *testing.T, signIn func(*page)) {
 
 		p.run("check "+view, chromedp.Evaluate(`
 			(() => {
-				const german = TRANSLATIONS.de ?? {};
+				const german = dictionaries.de ?? {};
 				const bad = [];
 
 				for (const node of document.querySelectorAll('[data-i18n]')) {
@@ -665,5 +665,45 @@ func TestSwitchingLanguageTranslatesThePage(t *testing.T) {
 	p.run("switch back to English", chromedp.Evaluate(`applyLanguage('en')`, nil))
 	if back := p.waitChanged(`label[data-i18n="login.email"]`, german); back != english {
 		t.Errorf("expected %q back, got %q", english, back)
+	}
+}
+
+// A language asked for while another's dictionary is still on the way is the one
+// the page is drawn in. German is asked for first and its dictionary has to be
+// fetched; English is asked for after it and needs none, so English is drawn
+// first and German's dictionary arrives over it - which, drawn, would leave a
+// page in the language somebody had just left.
+func TestALaterLanguageIsNotOverwrittenByAnEarlierOnesDictionary(t *testing.T) {
+	t.Parallel()
+
+	p := open(t)
+
+	p.run("start from English", chromedp.Evaluate(`applyLanguage('en')`, nil, awaitPromise))
+	english := p.text(`label[data-i18n="login.email"]`)
+
+	var drawn struct {
+		Lang    string `json:"lang"`
+		Arrived bool   `json:"arrived"`
+	}
+
+	// The order is forced rather than hoped for: the German dictionary is
+	// forgotten first, so it has to come over the network while English is drawn
+	// from nothing at all, and the case waits for the German call to finish
+	// before it looks.
+	p.run("German, overtaken by English", chromedp.Evaluate(`(async () => {
+		delete dictionaries.de;
+		const german = applyLanguage('de');
+		await applyLanguage('en');
+		await german;
+		return { lang: document.documentElement.lang, arrived: 'de' in dictionaries };
+	})()`, &drawn, awaitPromise))
+
+	if !drawn.Arrived {
+		t.Fatal("the German dictionary never arrived, so nothing was overtaken and the case measured nothing")
+	}
+
+	if got := p.text(`label[data-i18n="login.email"]`); drawn.Lang != "en" || got != english {
+		t.Errorf("the page is drawn in %q and the email field reads %q; English, %q, was asked for last",
+			drawn.Lang, got, english)
 	}
 }

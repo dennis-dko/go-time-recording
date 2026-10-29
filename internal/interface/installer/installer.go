@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -18,6 +19,7 @@ import (
 
 	appconfig "github.com/dennis-dko/go-time-recording/internal/infrastructure/config"
 	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 //go:embed assets/install.html
@@ -223,7 +225,40 @@ func (s *server) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, _ = w.Write(page)
+	_, _ = w.Write(bytes.Replace(page, []byte(dictionariesMarkup), []byte(pageDictionaries()), 1))
+}
+
+// dictionariesMarkup is the empty block in the page that pageDictionaries fills.
+const dictionariesMarkup = `<script type="application/json" id="dictionaries">{}</script>`
+
+// pageDictionaries is the page's own sentences in every language but English,
+// as the block the page reads them from: the installer.* entries of each of the
+// dictionaries the application reads, under the keys the page looks up.
+//
+// Written into the page rather than fetched by it, so the page stays one
+// self-contained file. Marshalled with HTML escaped, so no sentence can close
+// the element it is written into.
+func pageDictionaries() string {
+	all := map[string]map[string]string{}
+
+	for _, language := range i18n.Languages()[1:] {
+		words := map[string]string{}
+
+		for key, sentence := range i18n.Dictionary(language) {
+			if own, ok := strings.CutPrefix(key, "installer."); ok {
+				words[own] = sentence
+			}
+		}
+
+		all[language] = words
+	}
+
+	body, err := json.Marshal(all)
+	if err != nil {
+		return dictionariesMarkup
+	}
+
+	return `<script type="application/json" id="dictionaries">` + string(body) + `</script>`
 }
 
 // stateResponse labels the page and pre-fills what is already known.

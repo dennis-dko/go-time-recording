@@ -12,6 +12,7 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/domain/repository"
 	domainservice "github.com/dennis-dko/go-time-recording/internal/domain/service"
 	"github.com/dennis-dko/go-time-recording/internal/support/apperror"
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 	"github.com/dennis-dko/go-time-recording/internal/support/ical"
 	"github.com/dennis-dko/go-time-recording/internal/support/security"
 )
@@ -157,7 +158,7 @@ func (s *CalendarFeedService) Read(ctx context.Context, key string) ([]byte, err
 	}
 
 	language := user.EffectiveLanguage()
-	words := feedLanguages[language]
+	words := feedWords{i18n.For(language)}
 
 	calendar := ical.Calendar{Stamp: time.Now()}
 	if s.name != nil {
@@ -179,7 +180,7 @@ func (s *CalendarFeedService) Read(ctx context.Context, key string) ([]byte, err
 		calendar.Events = append(calendar.Events, ical.Event{
 			UID:         uid(day.date, "booked"),
 			Day:         day.date,
-			Summary:     strings.Replace(words.booked, "{0}", words.hoursOf(total), 1),
+			Summary:     words.booked(total),
 			Description: strings.Join(lines, "\n"),
 		})
 	}
@@ -310,53 +311,36 @@ func bookedDays(entries []*model.Timesheet) []bookedDay {
 	return days
 }
 
-// feedWords is how a feed writes in one language.
-//
-// A small table of its own, as a workbook's headings are: the feed is written on
-// the server, and the interface's dictionary is JavaScript inside app.js. The words
-// are the interface's, so the calendar and the screen call a thing the same, and
-// TestTheFeedCallsThingsWhatTheScreenCallsThem holds the two together.
+// feedWords is how a feed writes in one language: in the interface's own words,
+// from the dictionaries every part of the application reads, so the calendar and
+// the screen call a thing the same - an hour, an entry with no project, a reason
+// to be away. A language with no dictionary is written in English, which is
+// what the fallbacks here say.
 type feedWords struct {
-	// decimal and hours write a number of hours the way the screen does: two
-	// places, in the reader's separator, followed by the unit.
-	decimal string
-	hours   string
-
-	// booked is a day's total, with the hours in place of {0}.
-	booked string
-
-	noProject string
-	absences  map[string]string
+	words i18n.Translator
 }
 
-// feedLanguages are the languages a feed is written in, keyed as an account keeps
-// its choice. An account's effective language is always one of them.
-var feedLanguages = map[string]feedWords{
-	model.LanguageEnglish: {
-		decimal: ".", hours: "h", booked: "{0} booked", noProject: "No project",
-		absences: map[string]string{
-			model.AbsenceVacation:     "Leave",
-			model.AbsenceHalfVacation: "Half a day of leave",
-			model.AbsenceSick:         "Sick",
-			model.AbsenceFlexDay:      "Day off against overtime",
-			model.AbsenceLocalHoliday: "Holiday where I work",
-		},
-	},
-	model.LanguageGerman: {
-		decimal: ",", hours: "Std.", booked: "{0} gebucht", noProject: "Kein Projekt",
-		absences: map[string]string{
-			model.AbsenceVacation:     "Urlaub",
-			model.AbsenceHalfVacation: "Halber Tag Urlaub",
-			model.AbsenceSick:         "Krank",
-			model.AbsenceFlexDay:      "Gleittag (vom Überstundenkonto)",
-			model.AbsenceLocalHoliday: "Feiertag am Arbeitsort",
-		},
-	},
+// absenceEnglish is what each kind of day away is called in English: the
+// interface's own fallbacks, which live in its script rather than in a
+// dictionary - TestTheFeedCallsThingsWhatTheScreenCallsThem holds the two
+// together.
+var absenceEnglish = map[string]string{
+	model.AbsenceVacation:     "Leave",
+	model.AbsenceHalfVacation: "Half a day of leave",
+	model.AbsenceSick:         "Sick",
+	model.AbsenceFlexDay:      "Day off against overtime",
+	model.AbsenceLocalHoliday: "Holiday where I work",
 }
 
-// hoursOf writes a number of hours.
+// hoursOf writes a number of hours the way the screen does: two places, in the
+// reader's separators, followed by the unit.
 func (w feedWords) hoursOf(hours float64) string {
-	return strings.Replace(strconv.FormatFloat(hours, 'f', 2, 64), ".", w.decimal, 1) + " " + w.hours
+	return w.words.Number(hours) + " " + w.words.Text("unit.hours", "h")
+}
+
+// booked is a day's summary: what it adds up to.
+func (w feedWords) booked(hours float64) string {
+	return w.words.Text("calendarFeed.booked", "{0} booked", w.hoursOf(hours))
 }
 
 // entryLine is one entry under its day: the hours, the project, and what was
@@ -365,7 +349,7 @@ func (w feedWords) entryLine(entry *model.Timesheet, names map[uint]string) stri
 	parts := []string{w.hoursOf(entry.DurationHours)}
 
 	if entry.ProjectID == nil {
-		parts = append(parts, w.noProject)
+		parts = append(parts, w.words.Text("ts.noProject", "No project"))
 	} else if name, named := names[*entry.ProjectID]; named {
 		parts = append(parts, name)
 	}
@@ -379,12 +363,13 @@ func (w feedWords) entryLine(entry *model.Timesheet, names map[uint]string) stri
 	return strings.Join(parts, " · ")
 }
 
-// absenceName is what a day away is called, or its kind as recorded for one this
-// table does not know.
+// absenceName is what a day away is called, or its kind as recorded for one
+// nothing has a name for.
 func (w feedWords) absenceName(kind string) string {
-	if name, found := w.absences[kind]; found {
-		return name
+	english, found := absenceEnglish[kind]
+	if !found {
+		english = kind
 	}
 
-	return kind
+	return w.words.Text("absence."+kind, english)
 }

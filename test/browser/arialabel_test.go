@@ -18,7 +18,7 @@ import (
 // fourth, aria-label, does neither - it assigns when there is a translation and
 // does nothing at all when there is not.
 //
-// TRANSLATIONS.en is deliberately empty, so that "nothing" is exactly what
+// English has no dictionary, so that "nothing" is exactly what
 // English is. Going to German and back therefore left every translated
 // aria-label in German on an otherwise English page. Six elements carry one,
 // among them the navigation menu, the appearance picker and the language picker

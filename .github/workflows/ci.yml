@@ -590,8 +590,11 @@ jobs:
 
       # ./cmd rather than ./cmd/main.go: naming the file builds that file, so a
       # second one added to the package would be left out of the check that is
-      # supposed to prove the package builds.
-      - run: go build -o /dev/null ./cmd
+      # supposed to prove the package builds. The terminal client is a program
+      # of its own and is released beside it, so it is built here too.
+      - run: |
+          go build -o /dev/null ./cmd
+          go build -o /dev/null ./cmd/client
 
       # Every platform a release publishes, on this one runner - there is no cgo
       # anywhere in the tree, so GOOS and GOARCH are all it takes.
@@ -613,6 +616,7 @@ jobs:
             os="${target%/*}"; arch="${target#*/}"
             echo "==> ${os}/${arch}"
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -o /dev/null ./cmd
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -o /dev/null ./cmd/client
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go vet ./...
           done
 

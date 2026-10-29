@@ -144,11 +144,11 @@ calendar apps.
 ```mermaid
 flowchart TB
     people(["People<br/>browser · telephone"])
-    terminal(["A terminal<br/>go-time-recording track"])
+    terminal(["A terminal<br/>go-time-recording-client"])
     scripts(["Scripts and tools<br/>personal API token"])
     calendars(["Calendar apps<br/>iCalendar subscription"])
 
-    subgraph binary["go-time-recording — one binary"]
+    subgraph binary["go-time-recording-web — one binary"]
         installer["Installer<br/>until a database exists"]
         ui["Web interface<br/>embedded"]
         api["REST API<br/>/api/v1 · /api-docs"]
@@ -212,13 +212,14 @@ cp .env.example .env    # DB_PASSWORD is required
 docker compose up -d
 ```
 
-**As a single binary** — download the one for your platform from the
-[latest release](https://github.com/dennis-dko/go-time-recording/releases/latest)
-and start it:
+**As a single binary** — download `go-time-recording-web` for your platform
+from the [latest release](https://github.com/dennis-dko/go-time-recording/releases/latest)
+and start it. It is the whole installation; `go-time-recording-client` beside it
+is the [terminal client](#from-a-terminal), which only books against one.
 
 ```bash
-chmod +x go-time-recording_*_linux_amd64
-./go-time-recording_*_linux_amd64
+chmod +x go-time-recording-web_*_linux_amd64
+./go-time-recording-web_*_linux_amd64
 ```
 
 Then open <http://localhost:8000>. Without a database the binary serves the
@@ -238,7 +239,7 @@ Running it for real — behind a proxy, with HTTPS, as a service — is
 
 ## From a terminal
 
-The binary is a client as well. `go-time-recording track` books through an
+The terminal client, `go-time-recording-client`, books through an
 installation's API as the owner of a personal token, and serves nothing itself.
 On its own it opens a screen; with a command after it, it does that one thing
 and says what it did — for a script, an alias or a screen reader.
@@ -246,7 +247,7 @@ and says what it did — for a script, an alias or a screen reader.
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="doc/images/terminal.png" alt="track's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it">
+      <img src="doc/images/terminal.png" alt="The client's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it">
       <p><b>The day at a glance.</b> The stopwatch counts the seconds, and the screen reads the day again every half minute, so a stopwatch stopped in the browser stops here too.</p>
     </td>
     <td width="50%" valign="top">
@@ -256,18 +257,31 @@ and says what it did — for a script, an alias or a screen reader.
   </tr>
 </table>
 
+**It depends on the version of the installation.** The client is built from
+the same source as `go-time-recording-web`, the installation's binary, and
+released beside it with the same version. What it knows of the installation's
+API — the routes, the fields, the codes a refusal carries and the words the page
+has for them — is what that version has, so a client from another release may
+ask for something the installation does not have, or not understand what it
+answers. Use the client whose version is the installation's: the installation
+shows its version at the foot of every page, and
+`go-time-recording-client --version` says the client's. When the installation
+is updated, take the client of the new release as well.
+
 **Set it up once:**
 
-1. Download the binary for your platform from the
-   [latest release](https://github.com/dennis-dko/go-time-recording/releases/latest)
-   — the same file that runs an installation — and put it on your `PATH` as
-   `go-time-recording`, made executable with `chmod +x` on Linux and macOS, or
-   as `go-time-recording.exe` on Windows.
+1. Download the terminal client for your platform from the
+   [release](https://github.com/dennis-dko/go-time-recording/releases) the
+   installation runs — `go-time-recording-client_<version>_<os>_<arch>` — and
+   put it on your `PATH` as `go-time-recording-client`, made executable with
+   `chmod +x` on Linux and macOS, or as `go-time-recording-client.exe` on
+   Windows.
 2. In the browser, under **My account → API tokens**, create a token and copy it:
    it is shown once. It carries exactly the rights of your role, can be given a
    number of days to last, and is revoked in the same list.
-3. Tell track where the installation is and who you are — in the environment
-   rather than as an argument, where a token would land in the shell's history:
+3. Tell the client where the installation is and who you are — in the
+   environment rather than as an argument, where a token would land in the
+   shell's history:
 
    ```bash
    export GTR_URL=https://time.example.com
@@ -281,26 +295,33 @@ and says what it did — for a script, an alias or a screen reader.
    [Environment]::SetEnvironmentVariable('GTR_TOKEN', 'gtr_...', 'User')
    ```
 
-   track checks the installation's certificate against the authorities the
+   The client checks the installation's certificate against the authorities the
    operating system trusts, so one whose certificate comes from an authority of
    its own needs that authority installed on the machine as well.
 
-**Then** `go-time-recording track` opens the screen, and each change is a
+**Then** `go-time-recording-client` opens the screen, and each change is a
 command as well:
 
 ```bash
-go-time-recording track status                 # the stopwatch, and today's total
-go-time-recording track start Website -m "landing page"
-go-time-recording track switch Mobile          # books what has run, carries on
-go-time-recording track stop                   # books what it measured
-go-time-recording track book 1:30 Customer -d 2026-10-21
-go-time-recording track today                  # today's entries
+go-time-recording-client status                 # the stopwatch, and today's total
+go-time-recording-client start Website -m "landing page"
+go-time-recording-client switch Mobile          # books what has run, carries on
+go-time-recording-client stop                   # books what it measured
+go-time-recording-client book 1:30 Customer -d 2026-10-21
+go-time-recording-client today                  # today's entries
 ```
 
 A project is named as it is called, in any case, or by the start of its name
 when no other active project starts the same way; hours are written 1.5, 1,5 or
-1:30. `track help` lists the commands, and [the API page](doc/api.md#from-a-terminal)
-says what track answers, and with which exit status.
+1:30. `go-time-recording-client help` lists the commands, and
+[the API page](doc/api.md#from-a-terminal) says what the client answers, and
+with which exit status.
+
+The client speaks English or German: `--lang de` or `--lang en` anywhere on the
+line, `GTR_LANG` to keep one, and otherwise the language the account chose in
+the browser - or, where it chose none, the language the system is set to. In
+German it says what the installation refuses in the words the web interface has
+for it.
 
 ## What it does
 
@@ -315,7 +336,7 @@ says what track answers, and with which exit status.
 | **Calendar subscription** | Booked days and days away in Outlook, Google or a telephone's calendar | [Calendar](doc/features.md#your-days-in-your-own-calendar) |
 | **Accounts and roles** | Roles and their rights administered at run time; an administrator who runs the installation without keeping hours in it; managers for the accounts assigned to them, where an installation switches them on | [Access](doc/access.md) |
 | **Sign-in** | Passwords with TOTP, passkeys, LDAP and Active Directory with synchronisation, Kerberos, OpenID Connect | [Sign-in](doc/access.md#ldap) |
-| **API** | REST under `/api/v1`, described at `/api-docs`, reached with personal tokens that never outrank their owner - and `go-time-recording track` books through it from a terminal, on a screen of its own or a command at a time | [API](doc/api.md) |
+| **API** | REST under `/api/v1`, described at `/api-docs`, reached with personal tokens that never outrank their owner - and `go-time-recording-client` books through it from a terminal, on a screen of its own or a command at a time | [API](doc/api.md) |
 | **Operations** | Health, metrics, traces, live log, maintenance mode, updates, restart, HTTPS with Let's Encrypt, the installation's own name and logo | [Configuration](doc/configuration.md) |
 
 ## Documentation

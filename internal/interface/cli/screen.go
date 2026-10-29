@@ -21,7 +21,7 @@ import (
 // the installation nothing.
 const refreshEvery = 30 * time.Second
 
-// screen is track on a terminal: the stopwatch running live, what today has
+// screen is the client on a terminal: the stopwatch running live, what today has
 // booked, and a form for each change the commands make.
 //
 // It makes those changes through the same session as the commands, so it can
@@ -118,7 +118,7 @@ func (s *session) leave(ctx context.Context, ended tea.Model, err error) error {
 	case ctx.Err() != nil, errors.Is(err, tea.ErrInterrupted):
 		return nil
 	case err != nil:
-		return fmt.Errorf("the screen could not be opened: %w", err)
+		return fmt.Errorf("%s: %w", s.lang.text("track.screenFailed", "the screen could not be opened"), err)
 	}
 
 	if last, ok := ended.(screen); ok && last.loaded {
@@ -223,18 +223,22 @@ func (m screen) read(msg loaded) screen {
 	return m
 }
 
-// offer is a key that opens the form for a change.
-type offer struct{ key, doing string }
+// offer is a key that opens the form for a change, and what the legend calls the
+// change. The keys stay the same in every language, so a hand that knows them
+// does not have to learn them again.
+type offer struct{ key, doing, called string }
 
 // offers are the changes the stopwatch can take as it stands, in the order the
 // legend names them. A key for a change it cannot take - stopping one that is
 // not running - is not offered, and does nothing.
 func (m screen) offers() []offer {
+	l := m.s.lang
+
 	if m.shown.clock.Running {
-		return []offer{{"w", "switch"}, {"x", "stop"}, {"b", "book"}}
+		return []offer{{"w", "switch", l.text("track.key.switch", "switch")}, {"x", "stop", l.text("track.key.stop", "stop")}, {"b", "book", l.text("track.key.book", "book")}}
 	}
 
-	return []offer{{"s", "start"}, {"b", "book"}}
+	return []offer{{"s", "start", l.text("track.key.start", "start")}, {"b", "book", l.text("track.key.book", "book")}}
 }
 
 // press answers a key while no form is open.
@@ -312,7 +316,7 @@ func (m screen) farewell(now time.Time) string {
 		m.now = now
 	}
 
-	return m.shown.clockLine(m.elapsed().Hours())
+	return m.shown.clockLine(m.s.lang, m.elapsed().Hours())
 }
 
 // tones are the web interface's colours, light or dark, so that the terminal
@@ -409,55 +413,60 @@ func (m screen) clockCard(look palette, width int) string {
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(look.idle).
 		Padding(0, 1).Width(width)
 
+	l := m.s.lang
+
 	switch {
 	case !m.loaded && m.reading:
-		return box.Render(look.muted.Render("Reading " + m.host + " …"))
+		return box.Render(look.muted.Render(l.text("track.reading", "Reading {0} …", m.host)))
 	case !m.loaded:
-		return box.Render(look.muted.Render("Nothing read from " + m.host + " yet."))
+		return box.Render(look.muted.Render(l.text("track.nothingRead", "Nothing read from {0} yet.", m.host)))
 	}
 
 	clock := m.shown.clock
 	if !clock.Running || clock.StartedAt == nil {
-		return box.Render(look.muted.Render("○  ") + "The stopwatch is not running.")
+		return box.Render(look.muted.Render("○  ") + l.text("track.notRunning", "The stopwatch is not running."))
 	}
 
-	on := nameOf(m.shown.projects, clock.ProjectID)
+	on := l.nameOf(m.shown.projects, clock.ProjectID)
 	if clock.Description != nil && *clock.Description != "" {
 		on += look.muted.Render(" · " + *clock.Description)
 	}
 
 	left := look.ok.Render("●  ") + look.strong.Render(clockFace(m.elapsed())) + "   " + on
-	right := look.muted.Render("since " + clock.StartedAt.In(m.shown.zone).Format("15:04"))
+	right := look.muted.Render(l.text("track.since", "since {0}", clock.StartedAt.In(m.shown.zone).Format("15:04")))
 
 	return box.BorderForeground(look.running).Render(spread(width-4, left, right))
 }
 
 // todayList is what today has booked, entry by entry, under its total.
 func (m screen) todayList(look palette, width int) string {
+	l := m.s.lang
 	entries := m.shown.today
-	day := m.readAt.In(m.shown.zone).Format("Monday, 2 January")
+	day := l.weekday(m.readAt.In(m.shown.zone))
 
-	heading := spread(width, look.strong.Render("Today")+look.muted.Render("  "+day),
-		look.strong.Render(hours(total(entries))))
+	heading := spread(width, look.strong.Render(l.text("cal.today", "Today"))+look.muted.Render("  "+day),
+		look.strong.Render(l.hours(total(entries))))
 
 	if len(entries) == 0 {
-		return heading + "\n" + look.muted.Render("Nothing booked yet.")
+		return heading + "\n" + look.muted.Render(l.text("track.nothingYet", "Nothing booked yet."))
 	}
 
 	names := make([]string, len(entries))
 	column := 0
 
 	for i, e := range entries {
-		names[i] = nameOf(m.shown.projects, e.ProjectID)
+		names[i] = l.nameOf(m.shown.projects, e.ProjectID)
 		column = max(column, lipgloss.Width(names[i]))
 	}
 
 	column = min(column, width/2)
 	rows := []string{heading}
+	hoursWidth := hoursColumn(l.hoursOf(entries)...)
 
 	for i, e := range entries {
 		name := ansi.Truncate(names[i], column, "…")
-		row := fmt.Sprintf("%9s  %s", hours(e.DurationHours), name+strings.Repeat(" ", column-lipgloss.Width(name)))
+		row := fmt.Sprintf("   %*s  %s", hoursWidth, l.hours(e.DurationHours),
+			name+strings.Repeat(" ", column-lipgloss.Width(name)))
 
 		if e.Description != nil && *e.Description != "" {
 			row += "  " + look.muted.Render(*e.Description)
@@ -479,7 +488,7 @@ func (m screen) statusLine(look palette) string {
 	case m.news != "":
 		return look.ok.Render("✓ ") + m.news
 	case m.busy:
-		return look.muted.Render("Sending …")
+		return look.muted.Render(m.s.lang.text("track.sending", "Sending …"))
 	}
 
 	return ""
@@ -487,22 +496,24 @@ func (m screen) statusLine(look palette) string {
 
 // legend names the keys that do something now, and only those.
 func (m screen) legend(look palette) string {
+	l := m.s.lang
+
 	var keys []offer
 
 	switch {
 	case m.form != nil:
-		keys = []offer{{"esc", "cancel"}, {"ctrl+c", "quit"}}
+		keys = []offer{{"esc", "", l.text("track.key.cancel", "cancel")}, {"ctrl+c", "", l.text("track.key.quit", "quit")}}
 	default:
 		if m.loaded && !m.busy {
 			keys = m.offers()
 		}
 
-		keys = append(keys, offer{"r", "refresh"}, offer{"q", "quit"})
+		keys = append(keys, offer{"r", "", l.text("track.key.refresh", "refresh")}, offer{"q", "", l.text("track.key.quit", "quit")})
 	}
 
 	named := make([]string, len(keys))
 	for i, k := range keys {
-		named[i] = look.key.Render(k.key) + " " + look.muted.Render(k.doing)
+		named[i] = look.key.Render(k.key) + " " + look.muted.Render(k.called)
 	}
 
 	return strings.Join(named, look.muted.Render("  ·  "))
@@ -512,7 +523,7 @@ func (m screen) legend(look palette) string {
 // from another tab.
 func (m screen) windowTitle() string {
 	if m.loaded && m.shown.clock.Running {
-		return clockFace(m.elapsed()) + " · " + nameOf(m.shown.projects, m.shown.clock.ProjectID)
+		return clockFace(m.elapsed()) + " · " + m.s.lang.nameOf(m.shown.projects, m.shown.clock.ProjectID)
 	}
 
 	return "go-time-recording"

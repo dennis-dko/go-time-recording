@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 	"github.com/dennis-dko/go-time-recording/internal/support/imaging"
 )
 
@@ -33,11 +35,11 @@ const (
 
 // appShortcut is one screen a long press on the installed app leads to.
 //
-// Named by the interface's own words: the English is the key, as everywhere in
-// the page, and the German is read out of the page's dictionary when the handler
-// is built rather than written down here a second time. The manifest is fetched
-// by the device, not by the page, so it cannot go through t() - but it can use
-// what t() uses.
+// Named by the interface's own words: the key is the page's, the English is its
+// fallback, and every other language's name is read from the dictionaries the
+// page reads rather than written down here a second time. The manifest is
+// fetched by the device, not by the page, so it cannot go through t() - but it
+// can use what t() uses.
 type appShortcut struct {
 	key, english, view string
 }
@@ -50,30 +52,24 @@ var appShortcuts = []appShortcut{
 
 // installable serves what makes the page installable as an app.
 type installable struct {
-	german map[string]string
+	// words names the shortcuts, by language: read once, because the
+	// dictionaries are compiled in and cannot change while the process runs.
+	words map[string]i18n.Translator
 
 	mu    sync.Mutex
 	drawn map[string][]byte
 }
 
-// newInstallable reads the German for the shortcuts out of the page's own
-// dictionary, so the two cannot come to disagree.
-func newInstallable(script string) *installable {
-	german := map[string]string{}
+// newInstallable reads the shortcuts' names out of the dictionaries the page
+// reads, so the two cannot come to disagree.
+func newInstallable() *installable {
+	words := map[string]i18n.Translator{}
 
-	for _, shortcut := range appShortcuts {
-		// The entry as the dictionary writes it: 'nav.calendar': 'Kalender'.
-		_, after, found := strings.Cut(script, "'"+shortcut.key+"': '")
-		if !found {
-			continue
-		}
-
-		if value, _, closed := strings.Cut(after, "'"); closed && value != "" {
-			german[shortcut.key] = value
-		}
+	for _, language := range i18n.Languages() {
+		words[language] = i18n.For(language)
 	}
 
-	return &installable{german: german, drawn: map[string][]byte{}}
+	return &installable{words: words, drawn: map[string][]byte{}}
 }
 
 // appManifest is the Web App Manifest, the fields a device reads of it.
@@ -115,11 +111,7 @@ func (s *installable) serveManifest(w http.ResponseWriter, r *http.Request, bran
 		name = "Time Recording"
 	}
 
-	lang := "en"
-	if prefersGerman(r.Header.Get("Accept-Language")) {
-		lang = "de"
-	}
-
+	lang := preferredLanguage(r.Header.Get("Accept-Language"))
 	version := appIconVersion(branding)
 
 	manifest := appManifest{
@@ -146,13 +138,8 @@ func (s *installable) serveManifest(w http.ResponseWriter, r *http.Request, bran
 	}
 
 	for _, shortcut := range appShortcuts {
-		label := shortcut.english
-		if german, ok := s.german[shortcut.key]; ok && lang == "de" {
-			label = german
-		}
-
 		manifest.Shortcuts = append(manifest.Shortcuts, manifestTarget{
-			Name: label,
+			Name: s.words[lang].Text(shortcut.key, shortcut.english),
 			URL:  "/#" + shortcut.view,
 		})
 	}
@@ -254,27 +241,21 @@ func appIconVersion(b Branding) string {
 	return fingerprint(b.Logo + "\x00" + fmt.Sprint(b.IconCrop))
 }
 
-// prefersGerman reports whether a device asking with this Accept-Language would
-// rather read German than English - the two languages the interface speaks.
+// preferredLanguage is the language a device asking with this Accept-Language
+// would rather read, of the languages the interface speaks.
 //
 // The highest weight wins, and the order breaks a tie, which is what the header
-// means. A device asking for neither gets English, the language the interface is
-// written in.
-func prefersGerman(header string) bool {
-	best, bestWeight := "", -1.0
+// means. A device asking for none of them gets English, the language the
+// interface is written in.
+func preferredLanguage(header string) string {
+	best, bestWeight := i18n.English, -1.0
+	spoken := i18n.Languages()
 
 	for part := range strings.SplitSeq(header, ",") {
 		tag, params, _ := strings.Cut(strings.TrimSpace(part), ";")
-		tag = strings.ToLower(strings.TrimSpace(tag))
+		language, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(tag)), "-")
 
-		var language string
-
-		switch {
-		case tag == "de" || strings.HasPrefix(tag, "de-"):
-			language = "de"
-		case tag == "en" || strings.HasPrefix(tag, "en-"):
-			language = "en"
-		default:
+		if !slices.Contains(spoken, language) {
 			continue
 		}
 
@@ -291,5 +272,5 @@ func prefersGerman(header string) bool {
 		}
 	}
 
-	return best == "de"
+	return best
 }

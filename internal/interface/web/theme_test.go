@@ -53,7 +53,7 @@ func TestThemeScriptIsSelfContained(t *testing.T) {
 	}
 
 	// It runs before app.js, so leaning on anything from there would throw.
-	for _, forbidden := range []string{"TRANSLATIONS", "api(", "$('"} {
+	for _, forbidden := range []string{"dictionaries", "api(", "$('"} {
 		if strings.Contains(script, forbidden) {
 			t.Errorf("theme.js must not depend on app.js, but references %q", forbidden)
 		}

@@ -12,6 +12,8 @@ import (
 	"codeberg.org/go-pdf/fpdf"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goregular"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 // The page, in millimetres, and the room left around it.
@@ -310,17 +312,8 @@ func writeFooter(pdf *fpdf.Fpdf, ink inks, footer, language string, written time
 // not being given a machine-readable field here - they are being told when the
 // page was made.
 func moment(written time.Time, language string) string {
-	if language == germanLanguage {
-		return written.Format("02.01.2006 15:04")
-	}
-
-	return written.Format("2006-01-02 15:04")
+	return i18n.For(language).Moment(written)
 }
-
-// germanLanguage is named here rather than imported. This package lays out a
-// page and knows nothing else about the application, and one string is a smaller
-// thing to repeat than a dependency on the domain is to add.
-const germanLanguage = "de"
 
 // writeHeading writes the title and the period it covers.
 func writeHeading(pdf *fpdf.Fpdf, ink inks, doc Document) {

@@ -5,9 +5,14 @@ The full reference is at `/api-docs`; the highlights:
 
 ## From a terminal
 
-The binary is a client as well as a server. `go-time-recording track` books
-through this API as the owner of a personal token, made under *My account*, API
-tokens.
+The terminal client, `go-time-recording-client`, books through this API as the
+owner of a personal token, made under *My account*, API tokens. It is a binary
+of its own, released beside the installation's, and it belongs to that release:
+what it asks for and how it reads the answers - the routes, the fields, the
+codes a refusal carries and the values the page writes its own way - are those
+of the version it was built from. `go-time-recording-client --version` says
+which that is, and it should be the version the installation shows at the foot
+of its pages.
 
 On its own, on a terminal, it opens a screen: the stopwatch ticking, today's
 entries under it, and a form for each change. `s` starts the stopwatch, `w`
@@ -17,20 +22,20 @@ again, which the screen also does every half minute, so a stopwatch stopped in
 the browser stops here too; `esc` puts a form away and `q` closes the screen,
 which leaves a line saying how the stopwatch was left.
 
-<img src="images/terminal.png" alt="track's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it" width="600">
+<img src="images/terminal.png" alt="The client's screen in a terminal: the stopwatch running for an hour and twenty minutes on the website relaunch, and today's three entries under it" width="600">
 
 Each change is a command as well, for a script, an alias or a screen reader -
 which read lines, where the screen draws:
 
 ```bash
 export GTR_URL=https://time.example.com GTR_TOKEN=gtr_...
-go-time-recording track
-go-time-recording track start Website -m "release notes"
-go-time-recording track status
-go-time-recording track switch Webshop
-go-time-recording track stop
-go-time-recording track book 1:30 consulting -m "call" -d 2026-10-21
-go-time-recording track today
+go-time-recording-client
+go-time-recording-client start Website -m "release notes"
+go-time-recording-client status
+go-time-recording-client switch Webshop
+go-time-recording-client stop
+go-time-recording-client book 1:30 consulting -m "call" -d 2026-10-21
+go-time-recording-client today
 ```
 
 A project is named as it is called, or by the start of its name, among the
@@ -43,10 +48,24 @@ authorities the operating system trusts, so one whose certificate comes from an
 authority of its own needs that authority installed on the machine as well. It
 exits with 0 when done, 1 when the installation refused or could not be reached -
 in the installation's own words - and 2 for a command line it could not read,
-which is what a script tells the two apart by. `track help` lists the
-commands, and so does `track` on its own wherever its output is not a terminal,
-so a script that runs it bare gets lines and status 2 rather than a screen
-waiting for keys.
+which is what a script tells the two apart by. `go-time-recording-client help`
+lists the commands, and so does the client on its own wherever its output is not
+a terminal, so a script that runs it bare gets lines and status 2 rather than a
+screen waiting for keys.
+
+It speaks English or German. `--lang de` or `--lang en` may stand anywhere on
+the line, `GTR_LANG` keeps one, and otherwise it is the language the account
+chose in the browser, which the client asks the installation for before
+anything else. Where the account chose none, it is the language the system is
+set to - `LC_ALL`, `LC_MESSAGES` or `LANG`, and on Windows, which sets none of
+them, the language of its own screens - and so is what the client says before
+it knows whose token it holds: its help, and a missing address or token. A
+language that is asked for and not had is refused with status 2; one the system
+is set to is only a guess, and anything but German there is English. In German,
+the client says what the installation refuses the way the German web interface
+does - from the code and the values the refusal carries, so a day in it is
+written 06.10.2026 - and keeps the installation's English only where the
+interface has no sentence for it.
 
 ## What a refusal looks like
 

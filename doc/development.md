@@ -48,7 +48,7 @@ anywhere:
 task build
 cd bin
 rm -f configs/datasource.json          # if a previous run wrote one
-DB_DIALECT= DB_NAME= ./go-time-recording
+DB_DIALECT= DB_NAME= ./go-time-recording-web
 ```
 
 Both variables have to be **empty rather than absent**: the process inherits your
@@ -134,13 +134,39 @@ The application runs in the foreground; `Ctrl-C` stops it and leaves the
 containers up, so the next start is quick. `task dev:watch` puts
 [air](https://github.com/air-verse/air) in front of it, at the version the
 Taskfile pins and without installing anything: a saved Go file, `app.js`, the
-stylesheet, the markup or a `.env` under `cmd/configs` builds the binary again
-and starts it, a few seconds later. The page is not reloaded for you, and a
-build that fails stops the running process, so the browser cannot show code
-that is no longer in the editor. [`.air.toml`](../.air.toml) says what is watched. LDAP is not configured through the
+stylesheet, the markup, a dictionary or a `.env` under `cmd/configs` builds the
+binary again and starts it, a few seconds later. The page is not reloaded for
+you, and a build that fails stops the running process, so the browser cannot
+show code that is no longer in the editor. [`.air.toml`](../.air.toml) says what is watched. LDAP is not configured through the
 environment — it is administered in the running application under *Settings*;
 [`test/README.md`](../test/README.md) lists the values and the seeded accounts
 that make the synchronisation's edge cases reproducible.
+
+## Adding a language
+
+Every language but English is one file - German is
+[`internal/support/i18n/locales/de.json`](../internal/support/i18n/locales/de.json) -
+and everything that says something reads it: the page, the installer, the
+terminal client, the workbooks, the calendar feed and the foot of a PDF. English
+has no file. It is written where it is said, in the markup and beside every
+lookup, so a sentence a dictionary lacks is said in English rather than not at
+all.
+
+A new language is two changes:
+
+1. A copy of `de.json` named for the language's code - `fr.json`, say - with
+   every sentence translated. `language.name` is what the language calls
+   itself, `number.point` and `number.group` how it writes a figure, and
+   `layout.day` and `layout.time` how it writes a day and a time, as Go layouts
+   written with the reference day: `02.01.2006` writes 27.08.2026, and `15:04`
+   writes 23:40. A sentence takes its values where it says `{0}`, `{1}`.
+2. The code in `SupportedLanguages`, in
+   [`internal/domain/model/user_model.go`](../internal/domain/model/user_model.go).
+
+Nothing else names a language: the choosers, the manifest, the installer and the
+terminal client take the list from the files. `task test` says what is missing -
+a key the new file lacks, or has and German does not, a file not written the one
+way, a figure or a day it cannot write, or a language offered with no file.
 
 ## Verify
 

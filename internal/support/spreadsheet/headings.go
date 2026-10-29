@@ -1,60 +1,44 @@
 package spreadsheet
 
-import "strings"
+import (
+	"strings"
 
-// translations is what a workbook calls things, in each language it is written in.
-//
-// Its own table rather than the interface's dictionary: the file is built on the
-// server, in Go, and the interface's dictionary is JavaScript inside app.js.
-// Sharing one would mean shipping the dictionary to the server or the sheet
-// headings to the browser, and neither is worth it for two dozen words.
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
+)
+
+// translations is what a workbook calls things, in each language it is written
+// in: the workbook.* entries of the dictionaries every part of the application
+// reads, read once, because they are compiled in.
 //
 // The keys are the English words, which are also the fallback: a word nobody has
-// translated is still written, in English, rather than left blank.
+// translated is still written, in English, rather than left blank. A dictionary
+// keys them the same way, behind workbook. - workbook.Time entries - because the
+// words travel through the code as English data, a table's own headings, and are
+// looked up as they arrive.
 //
 // Values are translated as well as headings - "archived" in a German export is
 // not much better than "Status: archived" - and the importer accepts both
 // spellings, which is what keeps a German export readable by the same
 // application that wrote it.
-var translations = map[string]map[string]string{
-	"de": {
-		// Sheet names.
-		"Time entries": "Zeiteinträge",
-		"Projects":     "Projekte",
-		"Users":        "Benutzer",
-		"Roles":        "Rollen",
+var translations = workbookWords()
 
-		"Statement of work": "Leistungsnachweis",
+// workbookWords reads the workbook's words out of every dictionary there is.
+func workbookWords() map[string]map[string]string {
+	all := map[string]map[string]string{}
 
-		// Columns.
-		"Date":          "Datum",
-		"User":          "Benutzer",
-		"Project":       "Projekt",
-		"Hours":         "Stunden",
-		"Description":   "Beschreibung",
-		"Name":          "Name",
-		"Start":         "Beginn",
-		"End":           "Ende",
-		"Status":        "Status",
-		"Email":         "E-Mail",
-		"Role":          "Rolle",
-		"Daily target":  "Tagessoll",
-		"Daily maximum": "Tagesmaximum",
-		"Time zone":     "Zeitzone",
-		"Directory":     "Verzeichnis",
-		"System":        "System",
-		"Rate":          "Satz",
-		"Currency":      "Währung",
-		"Amount":        "Betrag",
-		"Total":         "Summe",
+	for _, language := range i18n.Languages()[1:] {
+		words := map[string]string{}
 
-		// Values.
-		"active":    "aktiv",
-		"archived":  "archiviert",
-		"completed": "abgeschlossen",
-		"yes":       "ja",
-		"no":        "nein",
-	},
+		for key, word := range i18n.Dictionary(language) {
+			if english, ok := strings.CutPrefix(key, "workbook."); ok {
+				words[english] = word
+			}
+		}
+
+		all[language] = words
+	}
+
+	return all
 }
 
 // Translate gives the word in the language asked for, or the word itself.

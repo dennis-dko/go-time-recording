@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/i18n"
 )
 
 // The interface is written in English and every other language is a dictionary
@@ -30,40 +32,34 @@ func asset(t *testing.T, path string) string {
 	return rec.Body.String()
 }
 
-var (
-	// A dictionary: `  <lang>: {` up to the matching `  },`. The empty form
-	// `{}` is matched first, or the search would run past it and swallow the
-	// next language's entries.
-	dictPattern = regexp.MustCompile(`(?s)\n  ([a-z]{2}): \{(\}|.*?\n  \}),`)
+// otherReaders are the parts of each dictionary the page does not read, each
+// held to its readers by tests of their own: the installer's, the terminal
+// client's, the workbooks', the calendar feed's, and the i18n package's own
+// figures and days.
+var otherReaders = []string{"installer.", "track.", "workbook.", "calendarFeed.", "number.", "layout."}
 
-	// One entry, whose value may be several literals joined by "+".
-	entryPattern = regexp.MustCompile(`(?s)'([^']+)':\s*((?:'(?:[^'\\]|\\.)*'\s*\+?\s*)+),`)
-)
-
-// dictionaries reads the translation tables out of app.js.
+// dictionaries are what the page says in each language but English, by
+// language: the files the binary carries and hands the page, with the keys the
+// page looks up.
 func dictionaries(t *testing.T) map[string]map[string]string {
 	t.Helper()
 
-	js := asset(t, "/app.js")
-
-	start := strings.Index(js, "const TRANSLATIONS = {")
-	if start < 0 {
-		t.Fatal("app.js no longer declares TRANSLATIONS")
-	}
-
 	out := map[string]map[string]string{}
 
-	for _, dict := range dictPattern.FindAllStringSubmatch(js[start:], -1) {
-		entries := map[string]string{}
-		for _, entry := range entryPattern.FindAllStringSubmatch(dict[2], -1) {
-			entries[entry[1]] = entry[2]
+	for _, language := range i18n.Languages()[1:] {
+		words := map[string]string{}
+
+		for key, sentence := range i18n.Dictionary(language) {
+			if !slices.ContainsFunc(otherReaders, func(prefix string) bool { return strings.HasPrefix(key, prefix) }) {
+				words[key] = sentence
+			}
 		}
 
-		out[dict[1]] = entries
+		out[language] = words
 	}
 
-	if len(out) == 0 {
-		t.Fatal("no dictionaries found; the TRANSLATIONS layout changed")
+	if len(out["de"]) < 1000 {
+		t.Fatalf("the German dictionary holds %d of the page's sentences; it is not being read", len(out["de"]))
 	}
 
 	return out
@@ -85,18 +81,7 @@ var codeKeyPattern = regexp.MustCompile(`(?:^|[^A-Za-z0-9_$.])t\('([^']+)'\s*,`)
 func codeKeys(t *testing.T) []string {
 	t.Helper()
 
-	js := asset(t, "/app.js")
-
-	// Without the dictionaries, or every German entry would be read back as a
-	// key the code looks up.
-	start := strings.Index(js, "const TRANSLATIONS = {")
-	end := strings.Index(js[start:], "\n};")
-
-	if start < 0 || end < 0 {
-		t.Fatal("could not locate the TRANSLATIONS block")
-	}
-
-	code := js[:start] + js[start+end:]
+	code := asset(t, "/app.js")
 
 	seen := map[string]bool{}
 	for _, m := range codeKeyPattern.FindAllStringSubmatch(code, -1) {
@@ -138,19 +123,17 @@ func markupKeys(t *testing.T) []string {
 	return keys
 }
 
-// English lives in the markup, so an "en" dictionary would be a second source
-// of truth that could drift from what the page actually says.
+// English lives in the markup, so an English dictionary would be a second source
+// of truth that could drift from what the page actually says - and the script
+// carries none of its own any more either: every language's words are in the
+// files the binary hands it.
 func TestEnglishIsTheSourceNotATranslation(t *testing.T) {
-	dicts := dictionaries(t)
-
-	english, ok := dicts["en"]
-	if !ok {
-		t.Fatal("expected an en entry in TRANSLATIONS, even if empty")
+	if _, ok := i18n.File("en"); ok {
+		t.Error("there is an English dictionary; English is the source and lives in the markup")
 	}
 
-	if len(english) != 0 {
-		t.Errorf("en must stay empty because the markup already carries English, "+
-			"but it holds %d entries", len(english))
+	if js := asset(t, "/app.js"); strings.Contains(js, "const TRANSLATIONS") {
+		t.Error("app.js carries a dictionary of its own again; the words belong in the i18n files")
 	}
 }
 
@@ -268,6 +251,12 @@ func TestNoTranslationIsUnused(t *testing.T) {
 			// TestEveryServerErrorCodeIsTranslated and TestEveryRejectedFieldIsNamed -
 			// which check them against the Go source in both directions.
 			if strings.HasPrefix(key, "err.") {
+				continue
+			}
+
+			// What a language calls itself is read by the server, which writes it
+			// into the document for the script's list of languages.
+			if key == "language.name" {
 				continue
 			}
 
@@ -390,18 +379,9 @@ func swappedLabelKeys(t *testing.T) map[string]bool {
 }
 
 func TestCodeFallbacksAreEnglish(t *testing.T) {
-	js := asset(t, "/app.js")
-
-	start := strings.Index(js, "const TRANSLATIONS = {")
-	end := strings.Index(js[start:], "\n};")
-
-	if start < 0 || end < 0 {
-		t.Fatal("could not locate the TRANSLATIONS block")
-	}
-
-	// Everything except the dictionaries themselves, which are allowed to hold
-	// other languages.
-	code := js[:start] + js[start+end:]
+	// The whole script: the other languages' words are in the files the binary
+	// hands it, so nothing in here may be anything but English.
+	code := asset(t, "/app.js")
 
 	// Accented Latin, Greek or Cyrillic letters mean another language leaked
 	// into the source. Typographic punctuation is not included: an ellipsis or
@@ -510,7 +490,7 @@ func TestFormattingFollowsTheLocaleAndWordsFollowTheLanguage(t *testing.T) {
 
 	// And the dictionary is not looked up by a locale, which would miss: the
 	// table is keyed on "de", and "de-AT" is not a key in it.
-	if strings.Contains(js, "TRANSLATIONS[activeLocale()]") {
+	if strings.Contains(js, "dictionaries[activeLocale()]") || !strings.Contains(js, "dictionaries[activeLanguage()]") {
 		t.Error("the dictionary is looked up by locale, so any browser with a region " +
 			"falls through to the English fallback for every key")
 	}
@@ -550,9 +530,6 @@ func TestOneWordForAnHour(t *testing.T) {
 	if !ok {
 		t.Fatal("unit.hours is gone; the hour unit is no longer translated at all")
 	}
-
-	// The stored form is a JavaScript literal, quotes and all.
-	unit = strings.Trim(unit, "'")
 
 	// A bare "h" used as a unit: after a placeholder, or after a figure, and
 	// followed by the end, a bracket or a space. Deliberately narrow - "h" occurs
@@ -632,12 +609,10 @@ func TestOneWordForTheTour(t *testing.T) {
 // verb. A Sie opening a sentence before a singular verb is the pronoun for a zone
 // or a clock - "Sie bestimmt, auf welchen Kalendertag ..." - and is not counted.
 func TestTheGermanSaysDu(t *testing.T) {
-	dict, ok := dictionaries(t)["de"]
-	if !ok {
-		t.Fatal("app.js has no German dictionary")
-	}
+	// The whole of it, the installer's and the terminal client's sentences
+	// included: one product, one form of address.
+	dict := i18n.Dictionary("de")
 
-	piece := regexp.MustCompile(`'((?:[^'\\]|\\.)*)'`)
 	inside := regexp.MustCompile(`[a-zäöüß0-9,;:–\-)] (Sie|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres|Ihnen)\b`)
 	possessive := regexp.MustCompile(`\b(Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres|Ihnen)\b`)
 	opening := regexp.MustCompile(`(?:^|[.!?]\s+)Sie (dürfen|können|müssen|haben|sind|werden|sollten|möchten|wollen|brauchen|finden|sehen)\b`)
@@ -647,15 +622,7 @@ func TestTheGermanSaysDu(t *testing.T) {
 
 	var formal []string
 
-	for key, raw := range dict {
-		var text strings.Builder
-
-		for _, m := range piece.FindAllStringSubmatch(raw, -1) {
-			text.WriteString(m[1])
-		}
-
-		said := text.String()
-
+	for key, said := range dict {
 		if du.MatchString(said) {
 			saysDu++
 		}
@@ -678,22 +645,16 @@ func TestTheGermanSaysDu(t *testing.T) {
 
 // The installer's own refusals have their own translations.
 //
-// It cannot use the dictionary in app.js: it runs before there is a database, so
-// nothing of the application is loaded, and it is served as one self-contained
-// page on purpose. So it carries a small table of its own - and a code it sends
-// without an entry there is shown as the English the server wrote, on a screen
-// that is otherwise translated.
+// Its sentences are its own, under installer.* in the dictionaries the server
+// writes into its page - it runs before there is a database, so nothing of the
+// application is loaded - and a code it sends without an entry there is shown as
+// the English the server wrote, on a screen that is otherwise translated.
 func TestTheInstallerTranslatesItsOwnRefusals(t *testing.T) {
 	root := filepath.Join("..", "installer")
 
 	source, err := os.ReadFile(filepath.Join(root, "installer.go"))
 	if err != nil {
 		t.Fatalf("reading the installer: %v", err)
-	}
-
-	page, err := os.ReadFile(filepath.Join(root, "assets", "install.html"))
-	if err != nil {
-		t.Fatalf("reading the installer page: %v", err)
 	}
 
 	// And the refusals of the connection checks it calls, which reach its page
@@ -709,22 +670,23 @@ func TestTheInstallerTranslatesItsOwnRefusals(t *testing.T) {
 		t.Fatal("the installer sends no coded refusals; this test is reading nothing")
 	}
 
-	for _, match := range codes {
-		key := "'err." + string(match[1]) + "'"
+	for _, language := range i18n.Languages()[1:] {
+		words := i18n.Dictionary(language)
 
-		if !strings.Contains(string(page), key) {
-			t.Errorf("the installer sends %s and its page has no %s, so a German "+
-				"reader is shown the English sentence", match[1], key)
+		for _, match := range codes {
+			if key := "installer.err." + string(match[1]); words[key] == "" {
+				t.Errorf("the installer sends %s and %s has no %s, so its reader is shown "+
+					"the English sentence", match[1], language, key)
+			}
 		}
-	}
 
-	// The fields it refuses, which is the other half and the half that was
-	// reported: "invalid field(s): name" named the payload key rather than the
-	// label above the box.
-	for _, field := range []string{"name", "host", "port", "user"} {
-		if !strings.Contains(string(page), "'field."+field+"'") {
-			t.Errorf("the installer can refuse %q and its page cannot name that field",
-				field)
+		// The fields it refuses, which is the other half and the half that was
+		// reported: "invalid field(s): name" named the payload key rather than the
+		// label above the box.
+		for _, field := range []string{"name", "host", "port", "user"} {
+			if words["installer.field."+field] == "" {
+				t.Errorf("the installer can refuse %q and %s cannot name that field", field, language)
+			}
 		}
 	}
 }

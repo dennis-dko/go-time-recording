@@ -37,7 +37,7 @@ func TestAnInstallThatPanicsTakesItsAnnouncementBack(t *testing.T) {
 
 	t.Chdir(t.TempDir())
 
-	asset := fmt.Sprintf("go-time-recording_v9.9.9_%s_%s%s", runtime.GOOS, runtime.GOARCH, binarySuffix())
+	asset := fmt.Sprintf("go-time-recording-web_v9.9.9_%s_%s%s", runtime.GOOS, runtime.GOARCH, binarySuffix())
 
 	var feed *httptest.Server
 

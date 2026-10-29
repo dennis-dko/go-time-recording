@@ -241,7 +241,7 @@ application under *Settings*, and takes effect without a restart. See
 The binary is self-contained; the image is a convenience, not a requirement.
 
 ```bash
-DB_DIALECT=postgres DB_NAME=… DB_HOST=… DB_USER=… DB_PASSWORD=… ./go-time-recording
+DB_DIALECT=postgres DB_NAME=… DB_HOST=… DB_USER=… DB_PASSWORD=… ./go-time-recording-web
 ```
 
 `DB_NAME` is not optional and this line used to leave it out, which does not

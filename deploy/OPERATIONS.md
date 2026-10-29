@@ -31,7 +31,7 @@ private interface, firewall it, or switch it off under *Settings*.
 | --- | --- | --- | --- |
 | **A** Compose | `docker compose up -d` | PostgreSQL, in the stack | `127.0.0.1:8000` |
 | **B** Compose + TLS | `docker compose -f compose.yaml -f compose.tls.yaml up -d` | PostgreSQL, in the stack | `:80` and `:443` |
-| **C** Single binary | `./go-time-recording` | your choice, asked on first start | `:8000` |
+| **C** Single binary | `./go-time-recording-web` | your choice, asked on first start | `:8000` |
 | **D** Bare container | `docker run …` | asked on first start | `:8000` |
 
 A is the normal answer. B if nothing else terminates TLS. C for a small
@@ -118,8 +118,8 @@ out. Two certificates for one name means one renewal that quietly stops working.
 
 ## C · Single binary
 
-Download the file for your platform from the release, check it against
-`SHA256SUMS`, and run it.
+Download `go-time-recording-web` for your platform from the release, check it
+against `SHA256SUMS`, and run it.
 
 ```bash
 mkdir -p /opt/gtr/configs
@@ -127,7 +127,7 @@ cd /opt/gtr
 cp /path/to/.env.binary.example configs/.env
 $EDITOR configs/.env
 chmod 600 configs/.env
-./go-time-recording
+./go-time-recording-web
 ```
 
 **The working directory matters.** It is what `configs/` is resolved against, so
@@ -142,8 +142,8 @@ download against `SHA256SUMS`, then either press through the dialog or clear the
 download mark first:
 
 ```powershell
-Get-FileHash .\go-time-recording_v1.2.3_windows_amd64.exe -Algorithm SHA256
-Unblock-File .\go-time-recording_v1.2.3_windows_amd64.exe
+Get-FileHash .\go-time-recording-web_v1.2.3_windows_amd64.exe -Algorithm SHA256
+Unblock-File .\go-time-recording-web_v1.2.3_windows_amd64.exe
 ```
 
 Rolling this out to more than a handful of machines is the point at which a
@@ -165,7 +165,7 @@ Type=simple
 User=gtr
 Group=gtr
 WorkingDirectory=/opt/gtr
-ExecStart=/opt/gtr/go-time-recording
+ExecStart=/opt/gtr/go-time-recording-web
 Restart=on-failure
 RestartSec=5s
 
@@ -1242,10 +1242,17 @@ application not coming back.
 
 ### The file keeps its name
 
-A release is published as `go-time-recording_v1.2.3_windows_amd64.exe`, so a
-manual download says which version it is in its own name. An update installed
+A release is published as `go-time-recording-web_v1.2.3_windows_amd64.exe`, so
+a manual download says which version it is in its own name. An update installed
 from the interface does not rename anything: the new version is written to the
 path the running one already occupies, whatever that path is called.
+
+A version from before the binary was called `-web` cannot update itself from
+the interface to one that is: it asks the release for
+`go-time-recording_v1.2.3_windows_amd64.exe`, and releases no longer carry that
+name. Replace it by hand once - stop it, put the new file where the old one
+was, under the name the old one had, start it - and from then on it updates
+itself again.
 
 That is deliberate and not negotiable. The path is the installation - a systemd
 unit, a Windows service, a shortcut, a scheduled task and whatever scripts exist
@@ -1255,7 +1262,7 @@ application offline and leaves no obvious reason why.
 Which version a file is stays answerable three ways:
 
 ```bash
-./go-time-recording --version
+./go-time-recording-web --version
 ```
 
 On Windows, right-click → *Properties* → *Details*: the published binaries carry
@@ -1265,7 +1272,7 @@ being asked. And the footer of the interface names it beside the platform.
 ### Going back
 
 The version being replaced is kept, on both platforms, beside the binary as
-`go-time-recording.old`. It stays there until the *next* update, which removes it
+`go-time-recording-web.old`. It stays there until the *next* update, which removes it
 as its first act - so there is always exactly one version to go back to, and
 never two.
 
@@ -1275,24 +1282,32 @@ taken, or a certificate it cannot read. At that point there is no interface to
 press anything in, which is why the way back is a flag rather than a button:
 
 ```bash
-./go-time-recording --rollback
+./go-time-recording-web --rollback
 # the previous version is back in place; start it again
 ```
 
 It moves two files: the version that would not serve becomes
-`go-time-recording.failed`, kept so it can be looked at, and `.old` takes its
+`go-time-recording-web.failed`, kept so it can be looked at, and `.old` takes its
 name back. No database, no configuration, nothing else touched. Start it as you
 normally would.
 
-### The same file as a client
+### The terminal client
 
-`go-time-recording track` does not serve anything: it books against an
-installation, through its API, as the owner of a personal token - see
+`go-time-recording-client` is a binary of its own, released beside this one, and
+it does not serve anything: it books against an installation, through its API,
+as the owner of a personal token - see
 [doc/api.md](../doc/api.md#from-a-terminal). It reads `GTR_URL` and `GTR_TOKEN`
-from the environment, opens no port and touches no database, so the binary that
-runs an installation is also the one people can hand out to book from a
-terminal. It draws its screen only when its output is a terminal - over SSH as
+from the environment, opens no port and touches no database, so it is the file
+to hand out to people who book from a terminal, with no server on their
+machine. It draws its screen only when its output is a terminal - over SSH as
 well, with nothing installed beside it - and prints lines otherwise.
+
+It belongs to the release it came with: what it asks the API for and how it
+reads the answers are that version's. Hand out the client of the version the
+installation runs, and the new one with every update; `--version` on either
+binary says which it is. The installation's binary was the client as well, as
+`track`, until the two were separated - asked for `track` now, it says where the
+client went and exits with 2 instead of starting.
 
 Under systemd, `systemctl stop`, roll back, `systemctl start` - the unit file
 still points at the same path.
@@ -1386,7 +1401,7 @@ only.
 GTR_VERSION=v1.3.0 docker compose up -d      # after a dump
 
 # C
-systemctl stop gtr && cp go-time-recording_v1.3.0_linux_amd64 /opt/gtr/go-time-recording && systemctl start gtr
+systemctl stop gtr && cp go-time-recording-web_v1.3.0_linux_amd64 /opt/gtr/go-time-recording-web && systemctl start gtr
 ```
 
 The schema migrates itself on the way up. There is no separate command, and

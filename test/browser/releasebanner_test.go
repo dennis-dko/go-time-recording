@@ -34,12 +34,14 @@ func TestTheReleaseBannerFillsInBothVersionsInAnyOrder(t *testing.T) {
 	// is answering behind this case, and its answer takes the banner down.
 	p.settleReleaseWatch()
 
-	// A translation that names the running version first. Written into the table
-	// rather than into the file, because the fault is in the reading of it and any
-	// sentence with the two in this order shows it.
-	p.run("a sentence the other way round", chromedp.Evaluate(
-		`TRANSLATIONS.de['update.available'] =
-			'Diese Installation läuft mit {1}. Version {0} ist verfügbar.'`, nil))
+	// A translation that names the running version first. Written into the loaded
+	// dictionary rather than into the file, because the fault is in the reading of
+	// it and any sentence with the two in this order shows it - loaded first, so
+	// the German chosen below finds it already there rather than fetching over it.
+	p.run("a sentence the other way round", chromedp.Evaluate(`(async () => {
+		await loadDictionary('de');
+		dictionaries.de['update.available'] = 'Diese Installation läuft mit {1}. Version {0} ist verfügbar.';
+	})()`, nil, awaitPromise))
 
 	p.chooseLanguage("de")
 

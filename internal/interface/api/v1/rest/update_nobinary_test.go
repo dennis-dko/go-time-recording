@@ -25,7 +25,7 @@ func TestANewerReleaseWithNothingForThisPlatformSaysSo(t *testing.T) {
 
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"tag_name":"v9.9.9","body":"notes","html_url":"https://example.com/r",
-			"assets":[{"name":"go-time-recording_v9.9.9_plan9_386","browser_download_url":"https://example.com/b"},
+			"assets":[{"name":"go-time-recording-web_v9.9.9_plan9_386","browser_download_url":"https://example.com/b"},
 			{"name":"SHA256SUMS","browser_download_url":"https://example.com/s"}]}`)
 	}))
 	defer feed.Close()

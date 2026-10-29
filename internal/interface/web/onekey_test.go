@@ -43,17 +43,7 @@ func TestOneKeySaysOneThing(t *testing.T) {
 		note(m[1], m[2])
 	}
 
-	js := asset(t, "/app.js")
-
-	// Without the dictionaries, whose values are the other languages.
-	start := strings.Index(js, "const TRANSLATIONS = {")
-	end := strings.Index(js[start:], "\n};")
-
-	if start < 0 || end < 0 {
-		t.Fatal("could not locate the TRANSLATIONS block")
-	}
-
-	code := withoutLineComments(js[:start] + js[start+end:])
+	code := withoutLineComments(asset(t, "/app.js"))
 
 	for _, pattern := range []string{
 		`\bt\(\s*'([^']+)'\s*,\s*'((?:[^'\\]|\\.)*)'`,

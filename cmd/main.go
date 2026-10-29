@@ -42,7 +42,6 @@ import (
 	"github.com/dennis-dko/go-time-recording/internal/infrastructure/tlsserver"
 	v1 "github.com/dennis-dko/go-time-recording/internal/interface/api/v1"
 	"github.com/dennis-dko/go-time-recording/internal/interface/api/v1/rest"
-	"github.com/dennis-dko/go-time-recording/internal/interface/cli"
 	"github.com/dennis-dko/go-time-recording/internal/interface/installer"
 	"github.com/dennis-dko/go-time-recording/internal/interface/web"
 	"github.com/dennis-dko/go-time-recording/internal/support/hosting"
@@ -272,16 +271,15 @@ func main() {
 		os.Exit(0)
 	}
 
-	// The binary as a client of an installation rather than as one: track books
-	// from a terminal through the API with a personal token. Here, before the log
-	// is captured and before anything else starts, because it serves nothing -
-	// see the cli package. Ctrl-C cancels the request it is waiting on.
+	// The terminal client was this binary's track command until it became a
+	// binary of its own, and the command line that used to start it is answered
+	// rather than ignored: an argument this binary does not know is passed over
+	// and the server starts, so following the old instructions would have served
+	// an installer and printed a setup token instead of booking an hour.
 	if len(os.Args) > 1 && os.Args[1] == "track" {
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		status := cli.Run(ctx, os.Args[2:], os.Getenv, os.Stdout, os.Stderr)
-
-		stop()
-		os.Exit(status)
+		_, _ = fmt.Fprintln(os.Stderr, "the terminal client is a binary of its own now: "+
+			"go-time-recording-client, from the release this installation runs")
+		os.Exit(2)
 	}
 
 	// Capture the process output before anything writes to it. GoFr's logger
