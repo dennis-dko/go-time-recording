@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -97,8 +98,15 @@ func TestBackToTheApplicationReturnsToTheTabItCameFrom(t *testing.T) {
 	}
 
 	// The tab closes under the press, which chromedp may report as the press
-	// failing; what happened to the tabs is what is asked below.
-	_ = chromedp.Run(docs, chromedp.Click(backToTheApplication, chromedp.ByQuery))
+	// failing - or not answer at all: the answer and the tab's going reach it
+	// together, and handled the other way round the answer is dropped as one for
+	// a tab that is gone, so an unanswered press would wait out the case's whole
+	// time. It gets seconds instead; what happened to the tabs is what is asked
+	// below.
+	pressing, pressed := context.WithTimeout(docs, 5*time.Second)
+	defer pressed()
+
+	_ = chromedp.Run(pressing, chromedp.Click(backToTheApplication, chromedp.ByQuery))
 
 	p.waitFor("the reference's tab to close", func() bool {
 		for _, page := range p.pages() {
