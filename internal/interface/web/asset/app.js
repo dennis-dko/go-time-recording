@@ -7364,6 +7364,8 @@ function forgetTheTokenValue() {
   panel.hidden = true;
   delete panel.dataset.token;
   $('#token-secret-value').textContent = '';
+  $('#token-address-value').textContent = '';
+  $('#token-address').hidden = true;
 
   // The code beside it carries the same value, in its picture rather than as
   // text, so it goes with it - from the screen and from the markup.
@@ -7390,6 +7392,13 @@ function wireTokens() {
       // of what was meant.
       $('#token-secret-value').textContent = created.secret;
       $('#token-secret').dataset.token = String(created.id);
+
+      // The address the value is used at, as the terminal client's GTR_URL -
+      // read out of the code's own URI rather than from this page, so that the
+      // text and the code cannot name two different installations.
+      const address = new URLSearchParams(created.connectUri?.split('?')[1]).get('url');
+      $('#token-address-value').textContent = address ?? '';
+      $('#token-address').hidden = !address;
 
       // And the same value with the installation's address, as a code an app
       // scans instead of being typed what the terminal client reads from
@@ -15348,6 +15357,8 @@ async function loadAddressCode() {
     qr.src = answer.qr;
     qr.alt = t('install.qrAlt', 'QR code with the address of this installation');
     qr.hidden = false;
+    $('#install-address').textContent = answer.address;
+    $('#install-address').hidden = false;
     $('#install-phone').hidden = false;
   } catch {
     // The card offers installing in this browser either way.
@@ -15365,6 +15376,8 @@ function forgetTheAddressCode() {
 
   qr.hidden = true;
   qr.removeAttribute('src');
+  $('#install-address').textContent = '';
+  $('#install-address').hidden = true;
   $('#install-phone').hidden = true;
 }
 

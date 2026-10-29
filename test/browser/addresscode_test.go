@@ -40,4 +40,10 @@ func TestTheInstallCardShowsThisAddressAsACode(t *testing.T) {
 	if !p.visible("#install-phone") {
 		t.Error("the code stands on the card without the sentence saying what it is for")
 	}
+
+	// And the address itself, for whoever would rather type it than scan it.
+	if address := p.text("#install-address"); address != shown.Origin || !p.visible("#install-address") {
+		t.Errorf("the address beside the code reads %q (shown %v), want %q",
+			address, p.visible("#install-address"), shown.Origin)
+	}
 }

@@ -71,8 +71,9 @@ interface has no sentence for it.
 
 An app that books the way the terminal client does needs the same two values:
 the installation's address and a personal token. A token is made under *My
-account*, API tokens, and the card shows both together once, as a QR code
-beside the token's value. The code holds a connection address:
+account*, API tokens, and the card shows both once: as text, the token's value
+and the address, and together, as a QR code. The code holds a connection
+address:
 
 ```text
 go-time-recording://connect?token=gtr_...&url=https%3A%2F%2Ftime.example.com

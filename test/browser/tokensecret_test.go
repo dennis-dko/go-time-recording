@@ -76,11 +76,26 @@ func TestATokenValueDoesNotOutliveTheScreen(t *testing.T) {
 			code, p.visible("#token-qr"))
 	}
 
+	// And what the code holds besides the value, as text: the address an app or
+	// the terminal client is given with it, for somebody who cannot scan.
+	var origin string
+
+	p.run("read the page's origin", chromedp.Evaluate(`location.origin`, &origin))
+
+	if address := p.text("#token-address-value"); address != origin || !p.visible("#token-address-value") {
+		t.Errorf("the address beside the code reads %q (shown %v), want this page's %q",
+			address, p.visible("#token-address-value"), origin)
+	}
+
 	// The half the comment claims.
 	p.run("go somewhere else", p.click(`.tab[data-view="timesheets"]`),
 		chromedp.WaitVisible("#form-timesheet", chromedp.ByID))
 
 	awayValue, awayShown, awayCode := read("after navigating away")
+
+	if address := p.text("#token-address-value"); address != "" {
+		t.Errorf("the address that came with the token is still on the card after leaving the screen (%q)", address)
+	}
 
 	if awayValue != "" || awayShown || awayCode != "" {
 		t.Errorf("the token value is still in the document after leaving the screen "+
