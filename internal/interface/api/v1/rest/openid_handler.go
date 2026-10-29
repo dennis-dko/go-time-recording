@@ -3,6 +3,8 @@ package rest
 import (
 	"crypto/subtle"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"gofr.dev/pkg/gofr"
@@ -280,4 +282,20 @@ func requestOrigin(r *http.Request) string {
 	}
 
 	return scheme + "://" + requestHost(r)
+}
+
+// addressAsSeen is this installation's address as the page asking sees it, for
+// a code another device opens: the Origin its browser sent, which is the page's
+// own location.origin, where that names the host the request reached - and
+// requestOrigin otherwise, for a request no page made. The page writes the same
+// address beside the code, so the two cannot differ even behind a proxy that
+// does not say which scheme the browser used.
+func addressAsSeen(r *http.Request) string {
+	origin, err := url.Parse(r.Header.Get("Origin"))
+	if err == nil && (origin.Scheme == "http" || origin.Scheme == "https") &&
+		origin.Host != "" && strings.EqualFold(origin.Host, requestHost(r)) {
+		return origin.Scheme + "://" + strings.ToLower(origin.Host)
+	}
+
+	return requestOrigin(r)
 }

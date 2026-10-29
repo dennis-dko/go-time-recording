@@ -222,6 +222,11 @@ address, and that decides the rest:
   address takes the old one back at once, and so does removing it - which is
   what to do if anybody may have seen it. The card says when the address was
   last read, which is how to tell whether a calendar is reading it at all.
+- **It comes as a code as well.** Beside the address, and as briefly, is a QR
+  code of exactly that address, for the telephone a calendar is usually on:
+  scanned, the address is on the phone without anybody typing it, and is added
+  to the calendar there as a subscribed one. The code is the key as much as the
+  text is, and leaves the screen with it.
 - **It is hidden in the log.** Every reading is logged under its address, so the
   process log writes `gtrcal_[hidden]` in place of the key - on the console as
   well as in the log viewer - and whoever reads the log learns that a calendar

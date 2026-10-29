@@ -8,6 +8,7 @@ import (
 
 	"github.com/dennis-dko/go-time-recording/internal/application/v1/service"
 	"github.com/dennis-dko/go-time-recording/internal/domain/model"
+	"github.com/dennis-dko/go-time-recording/internal/support/qrcode"
 )
 
 // CalendarFeedPath is where a feed is read, followed by its key: the route
@@ -49,6 +50,12 @@ type CalendarFeedResponse struct {
 	// installation's own address. Only in the answer that created it: the key
 	// exists there and nowhere else, ever again.
 	Path *string `json:"path,omitempty"`
+
+	// QR is the whole address as a code, an SVG data URI, for the phone a calendar
+	// is usually on - which is where an address of this length is otherwise
+	// typed. It carries the key as Path does, so it is in the same answer and
+	// nowhere else.
+	QR *string `json:"qr,omitempty"`
 }
 
 func newCalendarFeedResponse(feed *model.CalendarFeed, path *string) CalendarFeedResponse {
@@ -103,7 +110,19 @@ func (h *CalendarFeedHandler) Create(c *gofr.Context) (any, error) {
 	// with it or without.
 	path := CalendarFeedPath + issued.Key + ".ics"
 
-	return newCalendarFeedResponse(issued.Feed, &path), nil
+	made := newCalendarFeedResponse(issued.Feed, &path)
+
+	// The address the page writes beside it, so the code and the text cannot
+	// differ. One that failed to render costs the address nothing.
+	if request := requestOf(c); request != nil {
+		if code, err := qrcode.SVGDataURI(addressAsSeen(request) + path); err == nil {
+			made.QR = &code
+		} else {
+			c.Logger.Errorf("could not render the calendar address's QR code: %v", err)
+		}
+	}
+
+	return made, nil
 }
 
 // Remove handles DELETE /api/v1/me/calendar-feed.

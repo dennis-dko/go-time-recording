@@ -7832,6 +7832,12 @@ function forgetTheFeedAddress() {
   panel.hidden = true;
   delete panel.dataset.prefix;
   $('#feed-address-value').textContent = '';
+
+  // The code carries the same key, in its picture, so it goes with the text.
+  const qr = $('#feed-qr');
+  qr.hidden = true;
+  qr.removeAttribute('src');
+  $('#feed-qr-hint').hidden = true;
 }
 
 /**
@@ -7874,6 +7880,15 @@ function wireCalendarFeed() {
       // the address a calendar needs is the one this page was reached at.
       $('#feed-address-value').textContent = `${location.origin}${feed.path}`;
       $('#feed-address').dataset.prefix = feed.prefix;
+
+      // The same address as a code, for the phone a calendar is usually on. The
+      // server builds it from this page's own origin, so it is the text above.
+      const qr = $('#feed-qr');
+      qr.hidden = !feed.qr;
+      qr.alt = feed.qr ? t('feed.qrAlt', 'QR code of the calendar address') : '';
+      if (feed.qr) qr.src = feed.qr;
+      $('#feed-qr-hint').hidden = !feed.qr;
+
       $('#feed-address').hidden = false;
 
       await loadCalendarFeed();

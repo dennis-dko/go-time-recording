@@ -22,7 +22,8 @@ import (
 // reason the class is worth having: it is the markup saying which text on the
 // page must not be handed on. A QR code carries its secret in its picture rather
 // than as text, so every img.qr is asked for its address the same way - the
-// enrolment's, and the one a new token is shown with for an app to scan.
+// enrolment's, the one a new token is shown with for an app to scan, and the
+// calendar address's.
 func TestNothingMarkedSecretSurvivesTheSignOut(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +76,7 @@ func TestNothingMarkedSecretSurvivesTheSignOut(t *testing.T) {
 		}
 	}
 
-	if held < 6 {
+	if held < 7 {
 		t.Fatalf("only %d of %d marked elements are holding anything, so this case "+
 			"is not covering what it means to: %v", held, len(before), before)
 	}

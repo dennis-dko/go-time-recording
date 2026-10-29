@@ -326,6 +326,8 @@
   "feed.create": "Adresse erstellen",
   "feed.hint": "Deine gebuchten Stunden Tag für Tag und die Tage, an denen du abwesend bist, in Outlook, Google oder auf dem Telefon – neben deinen Terminen. Die Adresse ist ein Schlüssel dazu: Wer sie hat, kann sie lesen. Deshalb wird sie nur einmal angezeigt, und eine neue Adresse nimmt die alte zurück.",
   "feed.none": "Noch keine Adresse.",
+  "feed.qrAlt": "QR-Code der Kalenderadresse",
+  "feed.qrHint": "Dieselbe Adresse als Code, um sie ohne Abtippen aufs Handy zu bringen. Dort fügst du sie deinem Kalender als abonnierten Kalender hinzu.",
   "feed.reach": "Google und Outlook im Web lesen die Adresse von ihren eigenen Servern aus, dafür muss diese Installation aus dem Internet erreichbar sein. Ein Kalender auf dem Telefon oder Rechner liest sie von dort, wo das Gerät gerade ist.",
   "feed.remove": "Adresse entfernen",
   "feed.removeText": "Jeder Kalender mit dieser Adresse zeigt deine Tage danach nicht mehr.",

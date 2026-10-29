@@ -8,12 +8,15 @@ import (
 	"testing"
 
 	"github.com/chromedp/chromedp"
+
+	"github.com/dennis-dko/go-time-recording/internal/support/qrcode"
 )
 
-// A calendar address is made on the account screen and shown there once: a
+// A calendar address is made on the account screen and shown there once, beside a
+// QR code of exactly that address for the phone a calendar is usually on: a
 // calendar reads the booked day at it without a session, it leaves the screen
-// with the screen, and making a new one - after saying what that does - takes the
-// old one back, as removing it does.
+// with the screen - the code with it - and making a new one, after saying what
+// that does, takes the old one back, as removing it does.
 func TestACalendarAddressIsShownOnceAndTakenBack(t *testing.T) {
 	t.Parallel()
 
@@ -35,6 +38,21 @@ func TestACalendarAddressIsShownOnceAndTakenBack(t *testing.T) {
 	first := strings.TrimSpace(p.text("#feed-address-value"))
 	if !strings.Contains(first, "/api/v1/calendar-feed/gtrcal_") || !strings.HasSuffix(first, ".ics") {
 		t.Fatalf("the address on screen is %q, want a feed's", first)
+	}
+
+	code := func() string {
+		t.Helper()
+
+		var src string
+
+		p.run("read the code", chromedp.Evaluate(`document.querySelector('#feed-qr')?.getAttribute('src') ?? ''`, &src))
+
+		return src
+	}
+
+	if want, err := qrcode.SVGDataURI(first); err != nil || code() != want || !p.visible("#feed-qr") {
+		t.Errorf("the code beside the address is not the address on screen (src %.40q, shown %v)",
+			code(), p.visible("#feed-qr"))
 	}
 
 	// As a calendar program reads it: the address and no cookie.
@@ -69,6 +87,10 @@ func TestACalendarAddressIsShownOnceAndTakenBack(t *testing.T) {
 
 	if p.visible("#feed-address") || strings.TrimSpace(p.text("#feed-address-value")) != "" {
 		t.Errorf("the address outlived the screen it was shown on")
+	}
+
+	if left := code(); left != "" {
+		t.Errorf("the address's code outlived the screen it was shown on (%.40q)", left)
 	}
 
 	p.run("make a new address", p.click("#feed-create"),

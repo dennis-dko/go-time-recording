@@ -2144,7 +2144,7 @@
         "description": "No body. Answers as GET does, with path added: the address the feed is read at, key included, relative to this installation - the only time the key is ever shown, because only a hash of it is kept. The address you had before reads nothing from this moment on, which is how a key somebody has seen is taken back.",
         "responses": {
           "201": {
-            "description": "The new feed, with its address"
+            "description": "The new feed, with its address: `path`, relative to this installation, and `qr`, the whole address - the page's own origin and the path - as a QR code in an SVG data URI, for a phone to scan. Both carry the feed's key and exist only in this response."
           }
         }
       },

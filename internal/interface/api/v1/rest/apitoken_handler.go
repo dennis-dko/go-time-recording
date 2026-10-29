@@ -183,10 +183,10 @@ func (h *APITokenHandler) Create(c *gofr.Context) (any, error) {
 
 	created := newAPITokenResponse(issued.Token, &issued.Secret)
 
-	// The installation as this request reached it, which for the browser asking
-	// is the address its owner types - the same one a passkey is bound to.
+	// The installation as the page asking sees it, which is the address its owner
+	// types into the browser - and so the one an app is to use as well.
 	if request := requestOf(c); request != nil {
-		connect := connectURI(requestOrigin(request), issued.Secret)
+		connect := connectURI(addressAsSeen(request), issued.Secret)
 		created.ConnectURI = &connect
 
 		// A code that failed to render must not take the token down with it: the
