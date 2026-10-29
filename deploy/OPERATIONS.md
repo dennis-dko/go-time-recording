@@ -1247,11 +1247,12 @@ a manual download says which version it is in its own name. An update installed
 from the interface does not rename anything: the new version is written to the
 path the running one already occupies, whatever that path is called.
 
-The release carries the same file once more as
-`go-time-recording_v1.2.3_windows_amd64.exe`, which is what the versions from
-before the binary was called `-web` download when they update themselves; they
-cannot be told another name. Updated that way, an installation keeps the file
-name it had.
+A version from before the binary was called `-web` cannot update itself from
+the interface to one that is: it asks the release for
+`go-time-recording_v1.2.3_windows_amd64.exe`, and releases no longer carry that
+name. Replace it by hand once - stop it, put the new file where the old one
+was, under the name the old one had, start it - and from then on it updates
+itself again.
 
 That is deliberate and not negotiable. The path is the installation - a systemd
 unit, a Windows service, a shortcut, a scheduled task and whatever scripts exist

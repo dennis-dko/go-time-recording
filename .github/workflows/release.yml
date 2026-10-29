@@ -280,14 +280,6 @@ jobs:
           build() {
             compile go-time-recording-web ./cmd "$@"
             compile go-time-recording-client ./cmd/client "$@"
-
-            # And the installation once more, under the name it had before it
-            # was called -web. Every version installed before then updates itself
-            # by downloading go-time-recording_<version>_<os>_<arch> and has no
-            # way to be told another name, so a release without it is one none
-            # of them can take. A copy rather than a second build, so the two
-            # names cannot be two programs; SHA256SUMS lists both with one hash.
-            cp "dist/go-time-recording-web_${VERSION}_$1_$2${3:-}" "dist/go-time-recording_${VERSION}_$1_$2${3:-}"
           }
 
           build linux   amd64
@@ -487,7 +479,6 @@ jobs:
           files: |
             dist/go-time-recording-web_*
             dist/go-time-recording-client_*
-            dist/go-time-recording_*
             dist/SHA256SUMS
           # append_body puts this below the generated notes, which is where it
           # belongs: the changelog is what a returning reader came for, and this
@@ -510,9 +501,13 @@ jobs:
             interface. `go-time-recording-client_*` is the terminal client, which books
             against an installation from the shell and serves nothing itself. It
             belongs to this release: use it with an installation that runs this
-            version. `go-time-recording_*` is the installation once more, under the name
-            the versions installed before the two were separated download when they
-            update themselves - the same file as `go-time-recording-web_*`.
+            version.
+
+            An installation running a version from before the binary was called
+            `go-time-recording-web` cannot update itself to this one from the
+            interface: it asks the release for a file under its old name, which
+            releases no longer carry. Replace it by hand once; from then on it
+            updates itself again.
 
             With **no database configured** it serves an installer on its own port
             and waits, so the first start needs nothing but the binary.
