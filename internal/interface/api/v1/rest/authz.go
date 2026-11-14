@@ -149,7 +149,9 @@ func (unauthorizedError) Response() map[string]any {
 //
 // That is now the arrangement, and the cost is exactly what the old comment
 // predicted: roles:write is the installation as well, because whoever holds it can
-// tick settings:manage on a role and assign it. Nothing here prevents that, and
+// tick settings:manage on a role and assign it, and so is users:write, because
+// whoever holds it can give any account - their own included - a role holding it.
+// model.AdministeringPermissions names the three. Nothing here prevents that, and
 // pretending otherwise would be worse than saying it - so it is said here, where
 // the next reader meets it.
 //
