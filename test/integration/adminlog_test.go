@@ -75,3 +75,48 @@ func TestTheAdministrationLogRecordsWhoChangedWhat(t *testing.T) {
 		t.Errorf("an ordinary account asking for the log was answered %d, want 403", refused.Status)
 	}
 }
+
+// Checking a file before importing it changes nothing, and the log says so: the
+// import is recorded once, and the check before it not at all. The check is the
+// same request as the import with dryRun set, which is what let the route's
+// entry in the log's table take it for an import of its own.
+func TestCheckingAnImportIsNotRecordedAsOne(t *testing.T) {
+	t.Parallel()
+
+	a := start(t)
+	admin := a.signInAsAdmin("a-much-better-password")
+
+	exported := admin.must(admin.api(http.MethodGet, "/roles/export", nil), http.StatusOK)
+
+	imports := func() int {
+		var log adminChanges
+
+		admin.must(admin.api(http.MethodGet, "/admin/changes", nil), http.StatusOK).Data(t, &log)
+
+		counted := 0
+
+		for _, entry := range log.Entries {
+			if entry.Action == "roles.imported" {
+				counted++
+			}
+		}
+
+		return counted
+	}
+
+	if _, r := importSheet(t, admin, "/roles/import", exported.Body, "true"); !accepted(r.Status) {
+		t.Fatalf("checking the file: status %d, body %.300q", r.Status, r.Body)
+	}
+
+	if got := imports(); got != 0 {
+		t.Errorf("after checking a file the log holds %d imports, want none", got)
+	}
+
+	if _, r := importSheet(t, admin, "/roles/import", exported.Body, "false"); !accepted(r.Status) {
+		t.Fatalf("importing the file: status %d, body %.300q", r.Status, r.Body)
+	}
+
+	if got := imports(); got != 1 {
+		t.Errorf("after checking a file and importing it the log holds %d imports, want one", got)
+	}
+}
