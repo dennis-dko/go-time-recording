@@ -437,8 +437,10 @@ managers switched on or off; an account's managers assigned; the directory
 synchronised; the application restarted, updated or set up. Everybody holding `settings:manage` can read it, and nobody else.
 
 A change is recorded once it has gone through - a refused request changed
-nothing and is not there - by a middleware working from one table of routes, so
-no screen and no API client can change accounts, roles or settings past it.
+nothing and is not there, and neither is *Check the file* before an import,
+which is the import's own request told not to write - by a middleware working
+from one table of routes, so no screen and no API client can change accounts,
+roles or settings past it.
 
 It keeps ids and reads the names when it is shown. An account renamed since
 appears under its new name; an account erased since appears by its number alone,

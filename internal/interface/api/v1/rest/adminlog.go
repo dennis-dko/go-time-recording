@@ -2,6 +2,7 @@ package rest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -85,9 +86,10 @@ type errorLogger interface {
 // made it - a middleware rather than a call in each handler, so a handler cannot
 // forget it, and after authentication, which is what says who is asking.
 //
-// A refused request changes nothing and is not recorded; a change that went
-// through and could not be recorded is logged as an error and still answered as
-// the success it was, because the change has happened either way.
+// A refused request changes nothing and is not recorded, and neither is one its
+// handler said changed nothing (see changedNothing); a change that went through
+// and could not be recorded is logged as an error and still answered as the
+// success it was, because the change has happened either way.
 func AdministrationLog(log *service.AdminLogService, logger errorLogger) func(http.Handler) http.Handler {
 	routes := loggedRoutes()
 
@@ -116,10 +118,13 @@ func AdministrationLog(log *service.AdminLogService, logger errorLogger) func(ht
 				r.Body = io.NopCloser(bytes.NewReader(read))
 			}
 
+			unchanged := false
+			r = r.WithContext(context.WithValue(r.Context(), unchangedKey{}, &unchanged))
+
 			answer := &answerRecorder{ResponseWriter: w, status: http.StatusOK, keep: target == 0}
 			next.ServeHTTP(answer, r)
 
-			if answer.status < http.StatusOK || answer.status >= http.StatusMultipleChoices {
+			if unchanged || answer.status < http.StatusOK || answer.status >= http.StatusMultipleChoices {
 				return
 			}
 
@@ -133,6 +138,23 @@ func AdministrationLog(log *service.AdminLogService, logger errorLogger) func(ht
 					route.action, principal.User.ID, err)
 			}
 		})
+	}
+}
+
+// unchangedKey carries, on a request the administration log is watching, the
+// place its handler says it changed nothing after all.
+type unchangedKey struct{}
+
+// changedNothing tells the administration log that this request, answered as a
+// success, changed nothing.
+//
+// Said by the handler because only the handler knows: an import's check is the
+// import's own request with dryRun set, the same route and the same success, and
+// the log took every check for an import that never happened. A request the log
+// is not watching carries no place to say it, and this does nothing.
+func changedNothing(c *gofr.Context) {
+	if unchanged, ok := c.Request.Context().Value(unchangedKey{}).(*bool); ok {
+		*unchanged = true
 	}
 }
 

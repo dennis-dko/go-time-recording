@@ -87,10 +87,11 @@ func TestASynchronisationCreatesAccountsWithTheDirectorysDefaultRole(t *testing.
 // - whoever can write an entry to the directory could name an administrator's
 // address - and a default role that administers would open the same door wider:
 // every entry anybody adds would arrive holding the installation. The settings
-// refuse to store one; this is the other half, for a role given settings:manage
-// or roles:write after it was chosen, and the account starts as an ordinary user.
+// refuse to store one; this is the other half, for a role given one of the rights
+// that amount to the installation after it was chosen, and the account starts as
+// an ordinary user.
 func TestADefaultRoleThatAdministersIsNotHandedOut(t *testing.T) {
-	for _, right := range []string{model.PermSettingsManage, model.PermRoleWrite} {
+	for _, right := range model.AdministeringPermissions() {
 		f, sessions := newSessionFixture(t, &service.ExternalUser{
 			ID: "uuid-1", Email: "new.person@example.com", Role: "keyholder",
 		})
@@ -129,19 +130,21 @@ func TestADefaultRoleThatIsGoneFallsBackToTheEverydayOne(t *testing.T) {
 // The settings refuse to store a default role that administers the installation,
 // so the screen cannot say one thing while the server does another.
 func TestTheDirectorysDefaultRoleMayNotAdminister(t *testing.T) {
-	f := newFixture(t)
-	customRole(t, f, "keyholder", model.PermTimesheetReadOwn, model.PermSettingsManage)
+	for _, right := range model.AdministeringPermissions() {
+		f := newFixture(t)
+		customRole(t, f, "keyholder", model.PermTimesheetReadOwn, right)
 
-	settings := service.NewSettingsService(newStubSettings(), f.roleRepo, f.userRepo, "Test")
+		settings := service.NewSettingsService(newStubSettings(), f.roleRepo, f.userRepo, "Test")
 
-	config := model.DefaultLDAPConfig()
-	config.DefaultRole = "keyholder"
+		config := model.DefaultLDAPConfig()
+		config.DefaultRole = "keyholder"
 
-	err := settings.SaveLDAP(context.Background(), config)
+		err := settings.SaveLDAP(context.Background(), config)
 
-	detail, ok := apperror.Detail(err)
-	if !ok || detail.Code != "directoryRoleAdministers" {
-		t.Fatalf("storing an administering default role answered %v, want directoryRoleAdministers", err)
+		detail, ok := apperror.Detail(err)
+		if !ok || detail.Code != "directoryRoleAdministers" {
+			t.Errorf("storing a default role holding %s answered %v, want directoryRoleAdministers", right, err)
+		}
 	}
 }
 

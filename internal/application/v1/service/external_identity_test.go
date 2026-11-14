@@ -514,6 +514,21 @@ func TestADirectoryEntryCannotClaimARoleEditorsAccount(t *testing.T) {
 	}
 }
 
+// And for somebody who can change accounts, which is the installation by a third
+// route: give yourself the admin role.
+func TestADirectoryEntryCannotClaimAnAccountEditorsAccount(t *testing.T) {
+	f, sessions := newSessionFixture(t, &service.ExternalUser{
+		ID: "uuid-intruder", Email: "accounts@example.com",
+	})
+
+	customRole(t, f, "account-editor", model.PermUserRead, model.PermUserWrite)
+	localUserWithRole(t, f, "accounts@example.com", "account-editor")
+
+	if _, err := sessions.Login(context.Background(), "accounts@example.com", "anything", ""); err == nil {
+		t.Fatal("the directory signed in as somebody who can hand themselves the admin role")
+	}
+}
+
 // And the migration this is all for still works: an ordinary member of staff
 // with a local password is adopted by the directory, keeping their account.
 func TestAnOrdinaryLocalAccountIsStillAdoptedByTheDirectory(t *testing.T) {

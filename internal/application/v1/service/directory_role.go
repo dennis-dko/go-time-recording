@@ -43,13 +43,15 @@ func roleForArrival(
 }
 
 // roleAdministers reports whether a role holds rights over the installation
-// rather than over a working day.
+// rather than over a working day: any of model.AdministeringPermissions.
 //
-// Both rights are asked about, because they are the same right one step apart:
-// settings:manage is the installation, and roles:write is the ability to tick
-// settings:manage on a role and assign it to yourself. Guarding one without the
-// other would leave the door beside the one that was locked.
+// All three are asked about, because they are the same right a step or two
+// apart: settings:manage is the installation, roles:write can tick it on a role,
+// and users:write can hand that role - or the admin role itself - to its own
+// account. Guarding one without the others leaves the door beside the one that
+// was locked, and users:write was that door until 2026-11-14.
 func roleAdministers(role *model.Role) bool {
-	return slices.Contains(role.Permissions, model.PermSettingsManage) ||
-		slices.Contains(role.Permissions, model.PermRoleWrite)
+	return slices.ContainsFunc(model.AdministeringPermissions(), func(right string) bool {
+		return slices.Contains(role.Permissions, right)
+	})
 }

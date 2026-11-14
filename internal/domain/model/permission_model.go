@@ -180,6 +180,17 @@ func ManagerPermissions() []string {
 	return append(UserPermissions(), TeamPermissions()...)
 }
 
+// AdministeringPermissions are the rights that amount to the installation:
+// settings:manage is it, roles:write can tick it on a role, and users:write can
+// hand that role - or the admin role itself - to any account, its holder's own
+// included. A role holding any of them is not handed to an account nobody chose
+// one by one: the directory's default role may hold none of them, and a
+// directory entry naming the address of a local account that holds one does not
+// take that account over.
+func AdministeringPermissions() []string {
+	return []string{PermSettingsManage, PermRoleWrite, PermUserWrite}
+}
+
 // IsPermission reports whether name is a permission this application enforces.
 func IsPermission(name string) bool {
 	return slices.Contains(AllPermissions(), name)

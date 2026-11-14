@@ -2889,12 +2889,14 @@ function roleChoices() {
  * None that administers the installation: the server refuses to store one as
  * the directory's default, because every entry anybody writes to the directory
  * would arrive holding the installation, so offering it would be offering a
- * refusal. Without the role list - which somebody holding settings:manage but
- * not roles:read never loads - the ordinary role is the only one known not to
- * administer, so it is the one choice.
+ * refusal. The rights are the server's model.AdministeringPermissions, copied
+ * because the page cannot ask for them and held to them by a test. Without the
+ * role list - which somebody holding settings:manage but not roles:read never
+ * loads - the ordinary role is the only one known not to administer, so it is
+ * the one choice.
  */
 function directoryRoleChoices() {
-  const administering = ['settings:manage', 'roles:write'];
+  const administering = ['settings:manage', 'roles:write', 'users:write'];
 
   const allowed = cache.roles.length > 0
     ? new Set(cache.roles

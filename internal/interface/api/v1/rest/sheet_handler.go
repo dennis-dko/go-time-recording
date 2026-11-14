@@ -210,6 +210,8 @@ func (h *SheetHandler) ImportUsers(c *gofr.Context) (any, error) {
 
 	out := sheetResponse(sent.dryRun, &plan.SheetPlan)
 	if sent.dryRun {
+		changedNothing(c)
+
 		return out, nil
 	}
 
@@ -270,6 +272,8 @@ func (h *SheetHandler) ImportRoles(c *gofr.Context) (any, error) {
 
 	out := sheetResponse(sent.dryRun, &plan.SheetPlan)
 	if sent.dryRun {
+		changedNothing(c)
+
 		return out, nil
 	}
 

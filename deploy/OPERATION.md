@@ -1563,10 +1563,12 @@ mistakes it for a configured installation.
 - Changing your own password ends every other session you have, and only those.
 - API tokens carry no rights of their own. Every request is evaluated against the
   owner's current role, so changing or revoking that role bites on the next call.
-- Whoever holds `roles:write` can grant themselves `settings:manage`, and
+- Whoever holds `roles:write` can grant themselves `settings:manage`, and so can
+  whoever holds `users:write`, by giving their own account a role that holds it;
   `settings:manage` is the installation. That is the cost of Settings following
   granted rights rather than the built-in account, and it is intentional — but it
-  means `roles:write` is an installation-level right, not a personnel one.
+  means `roles:write` and `users:write` are installation-level rights, not
+  personnel ones. The directory never hands out a role holding any of the three.
 
 ## Troubleshooting
 
